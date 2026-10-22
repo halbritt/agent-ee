@@ -490,7 +490,9 @@ Outputs are `verdict` and `run-directory`. The action:
    `agent-ee verify` on the new run. Their exit statuses are recorded, not judged:
    checks-only always exits 1.
 3. Runs [scripts/action_gate.py](../scripts/action_gate.py) on the run. It writes
-   the verdict, a check table and the run's `REPORT.md` to the job summary.
+   the verdict, a check table and the run's `REPORT.md` to the job summary. The
+   gate judges `result.json`'s checks only after binding each one, and the check
+   findings derived from them, to the retained `checks/<id>.json` record.
 4. Uploads the whole run directory, including hidden scratch files, as an
    artifact whatever the verdict.
 5. Fails the step unless the verdict is `checks_passed`.
@@ -500,11 +502,20 @@ Outputs are `verdict` and `run-directory`. The action:
 | `checks_passed` | Every declared check executed with `pass` or `info` | Success |
 | `check_failed` | Every declared check executed; at least one reports `defect` | Failure |
 | `coverage_incomplete` | A declared check is missing, `unknown` or not executed; or the run errored, was interrupted or never finalized | Failure |
-| `result_invalid` | `result.json` missing, unreadable or malformed; no new run directory; or `agent-ee verify` refused the run | Failure |
+| `result_invalid` | `result.json` missing, unreadable or malformed; its checks or check findings contradict the retained `checks/<id>.json` records; no new run directory; or `agent-ee verify` refused the run | Failure |
 
 No model review or adjudication runs, and `checks_passed` is not design
 acceptance. It says only that the declared native checks executed and passed
-for the captured candidate. The gate's tests are in
+for the captured candidate.
+
+`agent-ee verify` applies the same binding for every run state, including
+checks-only, errored and interrupted runs, not only complete ones (AGENTEE-16).
+Every retained check record must be projected unchanged, and every check
+finding must equal the one its record derives. A projected check without a
+retained record must be an unexecuted `unknown` placeholder for a check the run
+never finished. The result's check inventory must equal the captured scope's
+declared checks. Any contradiction refuses verification with a specific reason.
+The gate's tests are in
 [test_action_gate.py](../tests/test_action_gate.py).
 
 A consumer repository uses the action by reference or from a copy. Each run builds the image unless an `image` is

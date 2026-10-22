@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -12,6 +13,8 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "action_gate.py"
 spec = importlib.util.spec_from_file_location("action_gate", SCRIPT)
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
+
+from agent_ee.findings import collect_findings
 
 
 def check(cid, execution="ok", outcome="pass", summary="native check summary"):
@@ -37,6 +40,12 @@ class ActionGateTests(unittest.TestCase):
             "limitations": ["Checks-only run: independent agent reviews and adjudication not performed."]}
 
     def write(self):
+        # Like the writer: each executed check is retained as checks/<id>.json and its defect becomes a finding.
+        shutil.rmtree(self.run_dir / "checks", ignore_errors=True)
+        (self.run_dir / "checks").mkdir()
+        for record in self.result["checks"]:
+            (self.run_dir / "checks" / f"{record['id']}.json").write_text(json.dumps(record))
+        self.result["findings"] = collect_findings([], self.result["checks"])
         (self.run_dir / "result.json").write_text(json.dumps(self.result))
 
     def gate(self, *args):
@@ -94,6 +103,7 @@ class ActionGateTests(unittest.TestCase):
         for change in ({"error": "ValueError: declared native/requirement input was not captured"},
                        {"state": "interrupted"}, {"state": "running"}, {"finished_utc": None},
                        {"candidate_id": None}):
+            self.write()
             value = dict(self.result, **change)
             (self.run_dir / "result.json").write_text(json.dumps(value))
             self.assertEqual(gate.judge(self.run_dir)["verdict"], "coverage_incomplete", change)
@@ -144,6 +154,102 @@ class ActionGateTests(unittest.TestCase):
         self.write()
         self.assertEqual(self.gate("--expect", "checks_passed")[0], 0)
         self.assertEqual(self.gate("--expect", "check_failed", "--expect-check", "rc-step=defect")[0], 1)
+
+    def test_projection_contradicting_retained_check_evidence_is_invalid(self):
+        self.result["checks"][1] = check("rc-step", outcome="defect", summary="vout_1ms=0.095 V outside 0.62..0.65")
+        self.write()
+        retained = json.loads((self.run_dir / "result.json").read_text())
+        mutations = {
+            "outcome": lambda r: r["checks"][1].update(outcome="pass"),
+            "summary": lambda r: r["checks"][1].update(summary="within limits"),
+            "finding": lambda r: r["findings"][0].update(title="within limits"),
+            "dropped finding": lambda r: r.update(findings=[]),
+            "unretained check": lambda r: r["checks"].append(check("drc")) or r["expected_check_ids"].append("drc"),
+            "unprojected record": lambda r: r["checks"].pop(1) and r["expected_check_ids"].pop(1),
+        }
+        for name, mutate in mutations.items():
+            value = json.loads(json.dumps(retained))
+            mutate(value)
+            (self.run_dir / "result.json").write_text(json.dumps(value))
+            judgment = gate.judge(self.run_dir, verify_exit=0)
+            self.assertEqual(judgment["verdict"], "result_invalid", name)
+            self.assertIn("retained check evidence", judgment["reasons"][0], name)
+            self.assertEqual(self.gate("--verify-exit", "0")[0], 1, name)
+        # An unexecuted placeholder for a check the run never reached needs no retained record.
+        (self.run_dir / "checks" / "erc.json").unlink()
+        retained["checks"][0] = check("erc", execution="not_run", outcome="unknown")
+        (self.run_dir / "result.json").write_text(json.dumps(retained))
+        self.assertEqual(gate.judge(self.run_dir)["verdict"], "coverage_incomplete")
+
+
+class CheckProjectionBindingTests(unittest.TestCase):
+    """Real checks-only runs: verify and the gate bind result.json to the retained checks/<id>.json."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.toolchain import require_toolchain
+        require_toolchain(native=True)
+        from agent_ee.cli import run_review
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        fixtures = SCRIPT.parents[1] / "fixtures" / "rc"
+        for name in ("seeded", "control"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                run_review(fixtures / f"{name}.scope.json", cls.root / name / "run", 1200, checks_only=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def copy(self, name):
+        target = Path(tempfile.mkdtemp(dir=self.root)) / "run"
+        shutil.copytree(self.root / name / "run", target, symlinks=True)
+        return target
+
+    def judged(self, run):
+        from agent_ee.cli import verify
+        try:
+            verify(run)
+        except ValueError as exc:
+            return gate.judge(run, verify_exit=2)["verdict"], str(exc)
+        return gate.judge(run, verify_exit=0)["verdict"], None
+
+    def test_intact_seeded_and_control_runs_keep_their_verdicts(self):
+        self.assertEqual(self.judged(self.root / "seeded" / "run"), ("check_failed", None))
+        self.assertEqual(self.judged(self.root / "control" / "run"), ("checks_passed", None))
+
+    def test_mutated_check_or_finding_projection_fails_closed(self):
+        mutations = {
+            "rc-step outcome": (lambda r: next(c for c in r["checks"] if c["id"] == "rc-step").update(outcome="pass"),
+                                "check rc-step projection differs from retained native-check result"),
+            "rc-step summary": (lambda r: next(c for c in r["checks"] if c["id"] == "rc-step").update(summary="ok"),
+                                "check rc-step projection differs from retained native-check result"),
+            "finding title": (lambda r: r["findings"][0].update(title="within limits"),
+                              "finding check/rc-step differs from its retained native-check result"),
+            "dropped finding": (lambda r: r.update(findings=[]),
+                                "check findings differ from the defects in the retained native-check results"),
+            "check inventory": (lambda r: r["checks"].pop() and r["expected_check_ids"].pop(),
+                                "result check inventory differs from the captured scope's declared checks"),
+        }
+        for name, (mutate, reason) in mutations.items():
+            run = self.copy("seeded")
+            result = json.loads((run / "result.json").read_text())
+            self.assertEqual(result["state"], "incomplete")
+            mutate(result)
+            (run / "result.json").write_text(json.dumps(result))
+            verdict, error = self.judged(run)
+            self.assertEqual(verdict, "result_invalid", name)
+            self.assertIn(reason, error or "", name)
+            # The gate binds the evidence itself, even when told verification succeeded.
+            self.assertEqual(gate.judge(run, verify_exit=0)["verdict"], "result_invalid", name)
+
+    def test_missing_retained_check_record_fails_closed(self):
+        run = self.copy("control")
+        (run / "checks" / "rc-step.json").unlink()
+        verdict, error = self.judged(run)
+        self.assertEqual(verdict, "result_invalid")
+        self.assertIn("evidence changed", error)
+        self.assertEqual(gate.judge(run, verify_exit=0)["verdict"], "result_invalid")
 
 
 ACTION = SCRIPT.parents[1] / "action.yml"
