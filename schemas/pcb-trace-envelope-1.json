@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcb-trace-envelope/1",
+  "title": "Shared additive versioned PCB pipeline trace envelope, version 1",
+  "description": "Consumer-neutral timing and replay trace envelope. Readers of version 1 ignore unknown fields (additive) and refuse any other schema value. Removing or retyping a required field, or changing a field's meaning, requires pcb-trace-envelope/2. Consumer data lives in payload, versioned by its own schema. A partial sample set never qualifies complete parity. Cross-field rules a schema cannot express (every parent and within name exists, names are unique) are checked by the reference readers.",
+  "type": "object",
+  "required": ["schema", "consumer", "stage", "identity", "hashes", "state", "generation", "objective", "clock", "durations", "counters", "sampling", "payload"],
+  "properties": {
+    "schema": {"const": "pcb-trace-envelope/1"},
+    "consumer": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {"id": {"$ref": "#/$defs/name"}, "version": {"type": "string", "minLength": 1}}
+    },
+    "stage": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {"id": {"$ref": "#/$defs/name"}}
+    },
+    "identity": {
+      "type": "object",
+      "required": ["pcb", "project", "rules", "experiment"],
+      "additionalProperties": {"$ref": "#/$defs/identity"}
+    },
+    "hashes": {
+      "type": "object",
+      "required": ["source", "binary", "native_tools"],
+      "properties": {
+        "source": {"type": "array", "items": {"$ref": "#/$defs/hash"}},
+        "binary": {"type": "array", "items": {"$ref": "#/$defs/hash"}},
+        "native_tools": {"type": "array", "items": {"$ref": "#/$defs/hash"}}
+      }
+    },
+    "state": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["completed", "failed", "interrupted"]}, "reason": {"type": "string", "minLength": 1}},
+      "if": {"properties": {"status": {"enum": ["failed", "interrupted"]}}},
+      "then": {"required": ["reason"]}
+    },
+    "generation": {"$ref": "#/$defs/labelled"},
+    "objective": {
+      "allOf": [
+        {"$ref": "#/$defs/labelled"},
+        {"if": {"required": ["id"]}, "then": {"required": ["version"], "properties": {"version": {"type": "string", "minLength": 1}}}}
+      ]
+    },
+    "clock": {
+      "type": "object",
+      "required": ["source", "unit"],
+      "properties": {"source": {"const": "monotonic"}, "unit": {"$ref": "#/$defs/unit"}}
+    },
+    "durations": {"type": "array", "items": {"$ref": "#/$defs/duration"}},
+    "counters": {"type": "object", "additionalProperties": {"$ref": "#/$defs/count"}},
+    "sampling": {
+      "type": "object",
+      "required": ["limits", "recorded", "bytes", "dropped", "coverage", "partial_reasons"],
+      "properties": {
+        "limits": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/count"}},
+        "recorded": {"$ref": "#/$defs/count"},
+        "bytes": {"$ref": "#/$defs/count"},
+        "dropped": {"$ref": "#/$defs/count"},
+        "coverage": {"enum": ["complete", "partial"]},
+        "partial_reasons": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "if": {"properties": {"coverage": {"const": "complete"}}},
+      "then": {"properties": {"dropped": {"const": 0}, "partial_reasons": {"maxItems": 0}}},
+      "else": {"properties": {"partial_reasons": {"minItems": 1}}}
+    },
+    "payload": {
+      "type": "object",
+      "required": ["schema"],
+      "properties": {"schema": {"type": "string", "minLength": 1}}
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.:/-]*$"},
+    "count": {"type": "integer", "minimum": 0},
+    "unit": {"enum": ["ns"]},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identity": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["qualified", "unknown"]}, "sha256": {"$ref": "#/$defs/sha256"}},
+      "if": {"properties": {"status": {"const": "unknown"}}},
+      "then": {"required": ["reason"], "properties": {"reason": {"type": "string", "minLength": 1}}},
+      "else": {"anyOf": [{"required": ["sha256"]}, {"required": ["id"], "properties": {"id": {"type": "string", "minLength": 1}}}]}
+    },
+    "hash": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {"required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}}
+      ]
+    },
+    "labelled": {
+      "type": "object",
+      "if": {"properties": {"status": {"const": "unknown"}}, "required": ["status"]},
+      "then": {"required": ["reason"], "properties": {"reason": {"type": "string", "minLength": 1}}},
+      "else": {"required": ["id"], "properties": {"id": {"type": "string", "minLength": 1}}}
+    },
+    "duration": {
+      "type": "object",
+      "required": ["name", "unit", "value", "count", "boundary", "overlap", "parent"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "unit": {"$ref": "#/$defs/unit"},
+        "value": {"$ref": "#/$defs/count"},
+        "count": {"$ref": "#/$defs/count"},
+        "boundary": {"enum": ["inclusive", "exclusive"]},
+        "overlap": {"enum": ["disjoint", "nested"]},
+        "parent": {"type": ["string", "null"]},
+        "within": {"type": "array", "items": {"$ref": "#/$defs/name"}}
+      },
+      "if": {"properties": {"overlap": {"const": "nested"}}},
+      "then": {"required": ["within"], "properties": {"within": {"minItems": 1}}}
+    }
+  }
+}

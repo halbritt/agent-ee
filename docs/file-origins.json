@@ -529,6 +529,7 @@
     },
     {
       "paths": [
+        "schemas/",
         "src/",
         "scripts/",
         "tests/"

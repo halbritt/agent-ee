@@ -2002,3 +2002,9 @@ Proposals carry enabled project-local model files before candidate imaging.
 `project-models.json` records copied file hashes and missing references; the
 placement result includes the same receipt. See [model closure](pcb-renders.md#proposal-project-model-closure-agentee-394)
 for resolution provenance, path safety and publication checks.
+
+## Placement trace (AGENTEE-430)
+
+`placer_runner --trace PATH` and `python3 -m agent_ee.placement_trace pack` record
+an opt-in, bounded timing and Stage-A replay trace. Tracing is off by default and
+leaves plans and boards unchanged. See [placement trace](placement-trace.md).
