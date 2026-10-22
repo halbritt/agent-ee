@@ -1169,7 +1169,13 @@ bind each affected item to the rule areas it actually contacts. Board and peer
 contacts include absolute item geometry and area geometry; moving a pad with the
 same UUID inside an already violated board area is a new finding. An owner's
 own contact uses unchanged footprint-local copper and area geometry, retaining
-its rigid baseline finding through translation and every quarter turn. A new
+its rigid baseline finding through translation and every quarter turn. A side
+flip mirrors the pad and its own area together, so a flipped footprint is
+compared at its front-side local geometry, with pad layers restricted to the
+board's enabled layers (KiCad drops absent inner layers from a flipped
+through-hole pad), and keeps the same baseline on either side and in either
+native flip direction (AGENTEE-426). A new peer or board contact, or an owned
+area reshaped under the same UUID, still blocks after the flip. A new
 peer contact cannot hide behind that owner baseline. Custom disallow rules
 also bind to saved native geometry, including rules that reference areas whose
 built-in pad flag is false and rules without an area. Footprint-only findings
@@ -1183,23 +1189,30 @@ land geometry and native Pad 1 of C1 finding in failed-candidate diagnostics
 (coordinator ruling 424a); the healthy publication control is unchanged.
 `tests.test_placer_pad_keepout` also covers moved baseline items, both peer
 movement directions, missing coverage and the owner's rigid baseline at
-0/90/180/270 degrees.
+0/90/180/270 degrees, unflipped and side-flipped from either side, through both
+`_drc_comparison` and the complete `_proposal_drc`.
 
 ### Native keep-out witness cost (AGENTEE-427)
 
 `placer_runner._keepout_item_states` loads the saved board once and builds UUID
 indexes for footprints and local rule areas. It collects native contacts at the saved
 absolute poses before normalizing any footprint. Each contacted owner is then
-normalized once, and each absolute/local area record is serialized once per
-coordinate frame. No-contact custom-rule witnesses reuse the complete absolute
-area environment. Witness serialization and comparison verdicts below the work
-limit are unchanged, including unsupported contours and rigid-owner exemptions.
+normalized once, including side-flip canonicalization; its local pad/graphic
+inventory is recomputed once without scanning other owners. Each absolute/local
+area record is serialized once per coordinate frame. No-contact custom-rule
+witnesses reuse the complete absolute area environment. Absolute witnesses and
+unsupported-contour refusals are unchanged; owner-local witnesses apply the
+side-flip canonicalization above.
 
 The computational coverage guard is `KEEPOUT_MAX_STEPS = 1_000_000`. This is a
 resource budget requested by AGENTEE-427, not a sourced physical design limit.
 It counts native inventory visits, item/area pairs, layer tests weighted by area
 vertex count, area serialization weighted by vertex count, owner normalization
-and witness assembly (including each no-contact environment entry). The cap is
+(including side-flip canonicalization and cached local inventory), and witness
+assembly (including each no-contact environment entry). The existing per-owner
+normalization work unit is retained so unflipped inputs keep their exact budget
+boundary. Pad counts are bounded by the earlier inventory visits and the native
+layer count is fixed. The cap is
 checked before each charged operation; there is no wall-clock default. The
 scan remains O(copper items × rule areas), but stops at this deterministic
 budget. It does not bound native board-loading time, memory or the duration of

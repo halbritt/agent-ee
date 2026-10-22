@@ -114,6 +114,10 @@ def _padstack_refusal(board):
 
 
 def _pad_inventory(board):
+    return {fp.m_Uuid.AsString(): _footprint_pad_inventory(fp) for fp in board.GetFootprints()}
+
+
+def _footprint_pad_inventory(fp):
     """Footprint-local pad facts that a footprint move must leave unchanged.
 
     A quarter turn can report the unchanged relative angle as 360 degrees.
@@ -122,7 +126,7 @@ def _pad_inventory(board):
     every = pcbnew.PADSTACK.ALL_LAYERS
     def xy(v):
         return [int(v.x), int(v.y)]
-    return {fp.m_Uuid.AsString(): {
+    return {
         'fpid': fp.GetFPIDAsString(), 'pads': sorted([
             [pad.m_Uuid.AsString(), pad.GetNumber(), pad.GetNetname(), int(pad.GetAttribute()),
              int(pad.Padstack().Mode()), int(pad.GetShape(every)), xy(pad.GetSize(every)),
@@ -131,7 +135,7 @@ def _pad_inventory(board):
              int(pad.GetChamferPositions(every)), pad.GetLayerSet().FmtHex(),
              xy(pad.GetFPRelativePosition()), round(pad.GetFPRelativeOrientation().AsDegrees(), 6) % 360,
              custom_pad_geometry(pad) if pad.GetShape(every) == pcbnew.PAD_SHAPE_CUSTOM else None]
-            for pad in fp.Pads()])} for fp in board.GetFootprints()}
+            for pad in fp.Pads()])}
 
 
 def _native_drc(board, scratch):
@@ -302,14 +306,30 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
     environment = sorted(absolute.values(), key=lambda a: a['uuid']) if needs_environment else []
     environment_proven = all(a['outline']['status'] == 'proven' for a in environment)
     local_records = {}
-    normalized = set()
+    local_witnesses = {}
     for uid in sorted(local_ids):
         owner, area, _ = areas[uid]
-        if owner not in normalized:
+        if owner not in local_witnesses:
             charge()
-            owners[owner].SetOrientationDegrees(0)
-            owners[owner].SetPosition(k.VECTOR2I(0, 0))
-            normalized.add(owner)
+            fp = owners[owner]
+            # All absolute contacts and records are captured before normalization.
+            # Unflip the owner and its areas together on this disposable board.
+            if fp.IsFlipped():
+                fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+            fp.SetOrientationDegrees(0)
+            fp.SetPosition(k.VECTOR2I(0, 0))
+            enabled = board.GetEnabledLayers()
+            for pad in fp.Pads():
+                layers = k.LSET()
+                for layer in pad.GetLayerSet().Seq():
+                    if enabled.Contains(layer):
+                        layers.AddLayer(layer)
+                pad.SetLayerSet(layers)
+            # Inventory only this owner, once; do not rescan the board per contact.
+            # Keep the existing per-owner normalization work unit: inventory
+            # size is bounded by the earlier pad visits and native layer count.
+            local_witnesses[owner] = (owner, json.dumps({
+                'pads': _footprint_pad_inventory(fp), 'graphics': _local_graphics(fp)}, sort_keys=True))
             work['normalized_owners'] += 1
         local_records[uid] = record(local_areas[owner, area.m_Uuid.AsString()], owner)
 
@@ -323,7 +343,7 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
             if area_record['outline']['status'] != 'proven':
                 witnesses = None
                 break
-            witnesses.append((states[uid][:2] if local else states[uid], area_record))
+            witnesses.append((local_witnesses[states[uid][0]] if local else states[uid], area_record))
         if witnesses == []:
             charge(len(environment))
             witnesses = [(states[uid], environment)] if environment_proven else None
@@ -331,6 +351,13 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
     if stats is not None:
         stats.update(work)
     return result
+
+
+def _local_graphics(fp):
+    """Graphic primitives of a footprint already normalized to the origin at 0 degrees."""
+    return sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
+                    'shape': primitive(item)} for item in fp.GraphicalItems()
+                   if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
 
 
 def _drc_item_states(path):
@@ -350,10 +377,7 @@ def _drc_item_states(path):
                 fp.GetOrientationDegrees(), int(fp.GetLayer()))
         fp.SetOrientationDegrees(0)
         fp.SetPosition(pcbnew.VECTOR2I(0, 0))
-        graphics = sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
-                            'shape': primitive(item)} for item in fp.GraphicalItems()
-                           if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
-        geometry = json.dumps({'pads': inventory[owner], 'graphics': graphics}, sort_keys=True)
+        geometry = json.dumps({'pads': inventory[owner], 'graphics': _local_graphics(fp)}, sort_keys=True)
         for item in [fp, *fp.Pads(), *fp.GraphicalItems(), *fp.GetFields()]:
             uuid = item.m_Uuid.AsString()
             if uuid in states and states[uuid][0] != owner:

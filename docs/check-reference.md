@@ -2167,7 +2167,9 @@ The placer publication comparison independently refuses newly introduced copper
 the pose or the finding has advisory numeric provenance. Native saved shapes
 bind the affected item to each contacted board/peer area in absolute geometry;
 only its own footprint area uses rigid local geometry to retain an unchanged
-owner baseline through translation and quarter turns. Missing contact geometry,
+owner baseline through translation, quarter turns and a side flip (AGENTEE-426:
+the flipped footprint is compared at its front-side local geometry, pad layers
+restricted to the board's enabled layers). Missing contact geometry,
 unsupported contacted contours or ignored category coverage refuses publication.
 Footprint-only findings retain their prior treatment. The native regression is
 `tests.test_placer_pad_keepout`; the authorized courtyard-only mutant in
@@ -2179,7 +2181,8 @@ See [pad keep-outs](placer.md#peer-courtyards-and-pad-keep-outs-agentee-418).
 area geometry. A deterministic one-million-step computational guard refuses
 publication as typed `keepout_work_limit` unknown coverage; it returns no partial
 witnesses and adds no wall-clock default or physical design threshold. Native
-comparison bytes and verdicts remain unchanged within budget. The exact budget
+absolute witnesses and verdicts remain unchanged within budget; owner-local
+witnesses also canonicalize side flips as described above. The exact budget
 boundary, 1,024-pad/64-area case, default exhaustion and retained failure fields
 are exercised by `tests.test_placer_pad_keepout`.
 
