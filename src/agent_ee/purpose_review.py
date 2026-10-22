@@ -137,6 +137,15 @@ def canonical_findings(run, reviews, checks):
     return findings
 
 
+def strict_equal(left, right):
+    """Type-strict equality via canonical JSON: True is not 1, False is not 0, 1.0 is not 1."""
+    from .storage import canonical
+    try:
+        return canonical(left) == canonical(right)
+    except (TypeError, ValueError):
+        return False
+
+
 def verify_records(run, result):
     """Re-derive purpose coverage and every purpose finding from retained reviews and adjudications.
 
@@ -152,8 +161,8 @@ def verify_records(run, result):
     # A stored record must match; a complete run must have one. An incomplete run cannot be
     # accepted, and apply_decisions records coverage again before any completion.
     if stored is not None or (expected and result.get('state') == 'complete'):
-        if not isinstance(stored, list) or (sorted(stored, key=lambda r: str(r.get('role')))
-                                            != sorted(expected, key=lambda r: r['role'])):
+        if not isinstance(stored, list) or not strict_equal(
+                sorted(stored, key=lambda r: str(r.get('role'))), sorted(expected, key=lambda r: r['role'])):
             raise ValueError('purpose coverage differs from the retained initial reviews')
         if any(text not in result.get('limitations', []) for text in coverage_limitations(expected)):
             raise ValueError('result omits a purpose coverage unknown limitation')
@@ -175,7 +184,7 @@ def verify_records(run, result):
     for fid in sorted(granted):
         if fid not in by_id and result.get('state') != 'complete':
             continue
-        if by_id.get(fid) != canonical[fid]:
+        if not strict_equal(by_id.get(fid), canonical[fid]):
             raise ValueError(f'finding {fid}: purpose finding projection differs from its retained '
                              'initial review and adjudication records')
     return result

@@ -543,6 +543,24 @@ class PurposeIntegrityRunTests(unittest.TestCase):
             with self.subTest(event=field):
                 self.assertEqual(self.refused(run, result, purpose(forge), differs), 'criteria_satisfied')
 
+        # Ruling 385d H1: comparison is type-strict, so JSON booleans/floats never stand in for integers.
+        def coverage_of(value, role):
+            return next(r for r in value['purpose_coverage'] if r['role'] == role)
+
+        self.assertEqual(coverage_of(result, 'physical')['entries'], 0)
+        for label, mutate, message in (
+                ('event seq boolean', purpose(lambda f: f['events'][-1].update(seq=True)), differs),
+                ('event seq float', purpose(lambda f: f['events'][-1].update(seq=1.0)), differs),
+                ('coverage count boolean', lambda value: coverage_of(value, 'physical').update(entries=False),
+                 'purpose coverage differs'),
+                ('coverage count float', lambda value: coverage_of(value, 'physical').update(entries=0.0),
+                 'purpose coverage differs'),
+                ('circuit coverage count boolean', lambda value: coverage_of(value, 'circuit').update(entries=False),
+                 'purpose coverage differs')):
+            with self.subTest(label):
+                self.refused(run, result, mutate, message)
+        self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
+
         def drop_coverage(value):
             value['purpose_coverage'] = []
             value['limitations'] = [text for text in value['limitations'] if 'purpose coverage unknown' not in text]
