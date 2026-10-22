@@ -1320,6 +1320,9 @@ class NativeHelperDriverTest(unittest.TestCase):
         policy = policy or read_json(self.design / POLICY)
         spec, request = pa.prepare_step(self.root / name / 'step', self.source, policy, self.bound, list(refs))
         work = self.root / name / 'work'
+        # The sandbox clears the environment, so skip rendering through explicit request configuration.
+        request_path = self.root / name / 'step/request/request.json'
+        write_json(request_path, {**read_json(request_path), 'skip_visuals': True})
         record = execute(self.design, work, spec['argv'], timeout=300, network=False,
                          extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
         return record, work, request
