@@ -1,0 +1,97 @@
+{
+  "schema": "agent-ee.ee454-call-count/1",
+  "tests": [
+    "tests.test_pod_driver.PodDriverTests.test_checks_only_dry_run_reaches_schematic_without_later_steps",
+    "tests.test_pod_driver.PodDriverTests.test_actual_rev3_baseline_accepted_with_limitations_visible"
+  ],
+  "tests_run": 2,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "python": "3.12.3",
+  "watched": {
+    "baseline.py:compile_baseline": {
+      "calls": 16,
+      "cumtime": 0.1727,
+      "callers": {
+        "candidate.py:capture": 1,
+        "scaffold.py:scaffold": 2,
+        "pod_driver.py:validate_configuration": 4,
+        "preflight.py:capture_expectation": 2,
+        "baseline.py:load_baseline": 7
+      }
+    },
+    "baseline.py:load_baseline": {
+      "calls": 7,
+      "cumtime": 0.0393,
+      "callers": {
+        "board_envelope.py:final_qualification": 1,
+        "candidate.py:verify_snapshot": 5,
+        "baseline.py:evidence_seal": 1
+      }
+    },
+    "parts_manifest.py:dependency_closure": {
+      "calls": 2,
+      "cumtime": 0.0074,
+      "callers": {
+        "parts_manifest.py:qualify_manifest": 2
+      }
+    },
+    "parts_manifest.py:qualify_manifest": {
+      "calls": 2,
+      "cumtime": 0.1189,
+      "callers": {
+        "scaffold.py:scaffold": 2
+      }
+    },
+    "pod_driver.py:run_dry": {
+      "calls": 1,
+      "cumtime": 9.3682,
+      "callers": {
+        "pod_driver.py:build": 1
+      }
+    },
+    "pod_driver.py:validate_configuration": {
+      "calls": 4,
+      "cumtime": 0.4674,
+      "callers": {
+        "pod_driver.py:build": 4
+      }
+    },
+    "scaffold.py:scaffold": {
+      "calls": 2,
+      "cumtime": 2.4138,
+      "callers": {
+        "pod_driver.py:build": 2
+      }
+    },
+    "storage.py:digest": {
+      "calls": 4854,
+      "cumtime": 2.9602,
+      "callers": {
+        "catalog.py:capture_catalog": 2,
+        "candidate.py:source_manifest": 462,
+        "candidate.py:capture": 27,
+        "routing_rules.py:captured_file": 64,
+        "routing_adapter.py:preflight": 8,
+        "candidate.py:verify_snapshot": 130,
+        "tool_source.py:_files": 675,
+        "scaffold.py:scaffold": 46,
+        "rf_review.py:retained_routing": 1,
+        "baseline.py:evidence_seal": 28,
+        "pod_driver.py:run_dry": 1,
+        "test_parts_subset.py:captured_fixture": 6,
+        "pod_driver.py:build": 56,
+        "stage_receipts.py:observe_tool": 4,
+        "test_part_selection.py:snapshot": 4,
+        "cli.py:policy_files": 860,
+        "stage_receipts.py:_entry_digest": 2258,
+        "cli.py:artifacts": 194,
+        "candidate_visuals.py:produce": 2,
+        "test_parts_subset.py:put": 22,
+        "cli.py:save_result": 3,
+        "candidate.py:verify_source": 1
+      }
+    }
+  }
+}
