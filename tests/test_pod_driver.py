@@ -367,6 +367,76 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
             pod.build(self.plan_path, self.root/'refused')
         self.assertFalse((self.root/'refused').exists())
 
+    def cli_recapture(self, name, edit=None):
+        """Review H1: rename the supplied spec to ``name`` and recapture it with the ordinary capture CLI."""
+        spec_raw = (self.source/self.plan['spec']).read_bytes()
+        if edit is not None:
+            assert spec_raw.count(edit[0]) == 1
+            spec_raw = spec_raw.replace(*edit)
+        ids = read_json(self.source/self.plan['spec_record'])['ids']
+        (self.source/self.plan['spec']).unlink()
+        (self.source/self.plan['spec_record']).unlink()
+        (self.source/name).write_bytes(spec_raw)
+        self.scope['baseline']['targets'] = [name if t == self.plan['spec'] else t for t in self.scope['baseline']['targets']]
+        for requirement in self.scope['baseline']['requirements']:
+            if requirement['source']['path'] == self.plan['spec']:
+                requirement['source']['path'] = name
+        self.plan['spec'] = name
+        receipt = self.root/f'capture-{uuid.uuid4().hex}.receipt.json'
+        subprocess.run([sys.executable, '-m', 'agent_ee.spec_record', 'capture', str(self.source/name),
+                        '--out', str(self.source/self.plan['spec_record']), '--receipt', str(receipt),
+                        '--prefix', ids['prefix'], *[f'--code={h}={c}' for h, c in ids['codes'].items()]],
+                       check=True, capture_output=True, env={**os.environ, 'PYTHONPATH': str(ROOT/'src')})
+        record_raw = (self.source/self.plan['spec_record']).read_bytes()
+        record = spec_record.verify(record_raw, spec_raw)
+        self.assertEqual(record['spec']['name'], name)
+        self.save()
+        return record_raw
+
+    def renamed_recapture_accepted(self, source, name, count):
+        pin = pod.SOURCES[source]
+        record_raw = self.cli_recapture(name)
+        self.assertNotEqual(spec_record.sha256(record_raw), pin['record_sha256'])
+        with mock.patch('agent_ee.campaign.run_campaign', side_effect=AssertionError('inference forbidden')):
+            receipt = self.build()
+        found = receipt['validation']['requirement_set']
+        self.assertEqual((found['source'], found['spec_sha256'], found['record_sha256'], found['capture_name'],
+                          found['authoritative_record_sha256']),
+                         (source, pin['spec_sha256'], spec_record.sha256(record_raw), name, pin['record_sha256']))
+        self.assertEqual(found['acceptance'], [f'POD-AC-{n}' for n in range(1, count + 1)])
+        self.assertFalse(receipt['done'])
+
+    def test_cli_renamed_rev3_recapture_accepted_in_full_build(self):
+        # Review H1: the filename is not source authority. The actual Rev-3 spec, byte-identical,
+        # recaptured by the ordinary CLI under another filename is its pinned source.
+        self.use_rev3()
+        self.renamed_recapture_accepted('telemetry-pod-rev3', 'renamed.md', 11)
+        # The same renamed recapture with one byte changed is another source.
+        self.cli_recapture('renamed-edited.md', edit=(b'Revision 3,', b'Revision 3 ,'))
+        self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+
+    def test_cli_renamed_rev2_recapture_accepted_in_full_build(self):
+        self.renamed_recapture_accepted('telemetry-pod-rev2', 'pod-spec.md', 9)
+        # Genuine Rev-2 bytes under a new name remain the earlier pin when Rev-3 is selected.
+        self.plan['requirement_source'] = 'telemetry-pod-rev3'
+        self.save()
+        self.refused_build('downgraded-source', 'telemetry-pod-rev3')
+        # A renamed one-byte change is unapproved under either selection.
+        self.cli_recapture('renamed-edited.md', edit=(b'Revision 2', b'Revision 2 '))
+        self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+        self.plan['requirement_source'] = 'telemetry-pod-rev2'
+        self.save()
+        self.refused_build('unapproved-source', 'telemetry-pod-rev2')
+
+    def test_requirement_set_record_digest_must_be_the_verified_record(self):
+        spec_raw = (ROOT/'fixtures/telemetry-pod/spec.md').read_bytes()
+        record_raw = (ROOT/'fixtures/telemetry-pod/spec-record.json').read_bytes()
+        record = spec_record.verify(record_raw, spec_raw)
+        # A caller cannot present the pinned digest for a record whose content differs.
+        with self.assertRaisesRegex(ValueError, 'record_sha256 is not the digest of the verified spec record'):
+            pod.requirement_set('telemetry-pod-rev2', {**record, 'prose': []},
+                                pod.SOURCES['telemetry-pod-rev2']['record_sha256'], self.scope)
+
     def test_pinned_sources_are_the_captured_files(self):
         real_spec, real_record, _ = rev3_capture()
         rev2 = [(ROOT/'fixtures/telemetry-pod'/name).read_bytes() for name in ('spec.md', 'spec-record.json')]
@@ -376,6 +446,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
             self.assertEqual((spec_record.sha256(spec_raw), spec_record.sha256(record_raw)),
                              (entry['spec_sha256'], entry['record_sha256']))
             record = spec_record.verify(record_raw, spec_raw)
+            self.assertEqual(record['spec']['name'], entry['name'])
             self.assertEqual([r['id'] for r in record['requirements'] if r['kind'] == 'acceptance'],
                              [f'POD-AC-{n}' for n in range(1, count + 1)])
 

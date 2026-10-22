@@ -17,7 +17,7 @@ from .baseline import compile_baseline
 from .cli import validate_scope
 from .profiles import validate_profile
 from .tool_source import snapshot
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, identity, json_bytes, read_json, write_json
 
 SCHEMA = 'agent-ee.pod-plan/1'
 ORDER = ['schematic', 'placement', 'routing', 'verification']
@@ -33,17 +33,19 @@ SOURCE = Path(__file__).resolve().parents[1]
 # requirement_source; the supplied spec and its exact capture must be the pinned bytes, so the
 # revision, acceptance IDs and their locators come from that verified capture, never from
 # supplied prose. A new source is admitted only by a reviewed commit adding an entry here, with
-# both hashes taken from sha256sum of the captured files (see docs/pod-driver.md).
+# both hashes taken from sha256sum of the captured files (see docs/pod-driver.md). ``name`` is the
+# pinned record's spec.name: the capture CLI records the input basename there, so a byte-identical
+# spec recaptured under another filename differs only in that field and is compared normalized to it.
 SOURCES = {
     # agent-ee fixtures/telemetry-pod/spec.md and spec-record.json (POD-AC-1..9).
     'telemetry-pod-rev2': dict(
-        revision=2, bench=('POD-AC-8', 'POD-AC-9'),
+        revision=2, name='spec.md', bench=('POD-AC-8', 'POD-AC-9'),
         spec_sha256='09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493',
         record_sha256='58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250'),
     # fome-mc 1157b91899fd9f420089fbec4264b823310f0ad9
     # telemetry-pod/expansion/requirements/compiled/requirements-map/{spec.md,spec-record.json} (POD-AC-1..11).
     'telemetry-pod-rev3': dict(
-        revision=3, bench=('POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'),
+        revision=3, name='REQUIREMENTS.md', bench=('POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'),
         spec_sha256='e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6',
         record_sha256='1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b'),
 }
@@ -69,18 +71,26 @@ class RequirementSetError(ValueError):
 def requirement_set(source, spec, record_sha256, scope):
     """The pinned source's acceptance set, bound to the verified spec record and scope.
 
-    ``spec`` must already be verified as the exact capture of the spec bytes. Its spec and record
-    hashes must be the selected source's pins; a capture pinned for an earlier revision is a
-    downgrade, any other capture is unapproved. Rev-2 keeps its legacy scope contract (AC8/AC9
-    bench); Rev-3 must also account for every criterion in the scope and keep its bench obligations."""
+    ``spec`` must already be verified as the exact capture of the spec bytes, and ``record_sha256``
+    must be the sha256 of those record bytes. Its spec hash and its record hash, with only the
+    filename-derived ``spec.name`` normalized to the source's pinned name, must be the selected
+    source's pins; a capture pinned for an earlier revision is a downgrade, any other capture is
+    unapproved. Rev-2 keeps its legacy scope contract (AC8/AC9 bench); Rev-3 must also account for
+    every criterion in the scope and keep its bench obligations."""
     if not isinstance(source, str) or source not in SOURCES:
         raise RequirementSetError('undeclared-source', str(source),
                                   'requirement_source must be one of ' + ', '.join(sorted(SOURCES)))
+    from .spec_record import sha256
+    if sha256(json_bytes(spec)) != record_sha256:
+        raise ValueError('record_sha256 is not the digest of the verified spec record')
     rule = SOURCES[source]
+
+    def pinned_as(entry):
+        normalized = {**spec, 'spec': {**spec['spec'], 'name': entry['name']}}
+        return (spec['spec']['sha256'], sha256(json_bytes(normalized))) == (entry['spec_sha256'], entry['record_sha256'])
     supplied = (spec['spec']['sha256'], record_sha256)
-    if supplied != (rule['spec_sha256'], rule['record_sha256']):
-        pinned = [name for name, entry in SOURCES.items()
-                  if supplied == (entry['spec_sha256'], entry['record_sha256'])]
+    if not pinned_as(rule):
+        pinned = [name for name, entry in SOURCES.items() if pinned_as(entry)]
         if pinned and SOURCES[pinned[0]]['revision'] < rule['revision']:
             raise RequirementSetError('downgraded-source', source,
                                       f'supplied capture is {pinned[0]}, not the selected Revision {rule["revision"]}')
@@ -110,7 +120,8 @@ def requirement_set(source, spec, record_sha256, scope):
                 raise RequirementSetError('missing-bench-obligation', rid,
                                           'must remain an explicit BENCH REQUIRED obligation')
     return dict(source=source, revision=rule['revision'], revision_locator=prose[0]['locator'],
-                spec_sha256=supplied[0], record_sha256=supplied[1], acceptance=required,
+                spec_sha256=supplied[0], record_sha256=supplied[1], capture_name=spec['spec']['name'],
+                authoritative_record_sha256=rule['record_sha256'], acceptance=required,
                 locators={r['id']: [r['locator']['byte_start'], r['locator']['byte_end']] for r in entries},
                 bench=list(rule['bench']))
 

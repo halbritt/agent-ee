@@ -97,9 +97,15 @@ runs after the fact; neither is the entry boundary.
 
 The plan's `requirement_source` names one entry of `pod_driver.SOURCES`, a
 committed, reviewed registry. Each entry pins the sha256 of the captured spec
-and of its exact `spec_record` capture, the revision and the bench
-obligations. `requirement_set` requires the supplied spec and record to have
-exactly those hashes, so the source is never selected by supplied prose: a
+and of its exact `spec_record` capture, the capture's `spec.name`, the
+revision and the bench obligations. The supplied record must first verify as
+the exact capture of the supplied spec bytes. `requirement_set` then requires
+the spec hash to be the pin and the record hash, computed over the verified
+record with only `spec.name` replaced by the pinned name, to be the record
+pin. The filename is not source authority: the capture CLI records the input
+basename as `spec.name`, so a byte-identical spec recaptured under another
+filename is the same source, while every other field still has to match.
+The source is never selected by supplied prose: a
 recapture with an edited `Revision N`, a dropped, renamed or added criterion
 is another source and is refused. Only after the hashes match are the
 acceptance IDs and their byte locators read from the verified capture, and
@@ -107,8 +113,8 @@ the spec's own `POD-DOC-P1` must declare the pinned revision.
 
 | Source | Captured files | Revision, criteria | Bench obligations | Scope contract |
 |---|---|---|---|---|
-| `telemetry-pod-rev2` | `fixtures/telemetry-pod/spec.md` sha256 `09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493`, `spec-record.json` sha256 `58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250` | 2, `POD-AC-1`..`9` | `POD-AC-8`, `POD-AC-9` | Legacy, unchanged: each bench criterion appears in a `BENCH REQUIRED` limitation |
-| `telemetry-pod-rev3` | fome-mc `1157b91899fd9f420089fbec4264b823310f0ad9` `telemetry-pod/expansion/requirements/compiled/requirements-map/spec.md` sha256 `e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6`, `spec-record.json` sha256 `1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b`; `POD-DOC-P1` bytes 30-421, `POD-AC-10` bytes 21943-22224, `POD-AC-11` bytes 22229-22495 | 3, `POD-AC-1`..`11` | `POD-AC-8`..`11` | Every criterion is a baseline requirement ID or the prefix `POD-AC-n: ` of a limitation; each bench criterion has a limitation starting `POD-AC-n: BENCH REQUIRED` |
+| `telemetry-pod-rev2` | `fixtures/telemetry-pod/spec.md` sha256 `09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493`, `spec-record.json` sha256 `58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250`, name `spec.md` | 2, `POD-AC-1`..`9` | `POD-AC-8`, `POD-AC-9` | Legacy, unchanged: each bench criterion appears in a `BENCH REQUIRED` limitation |
+| `telemetry-pod-rev3` | fome-mc `1157b91899fd9f420089fbec4264b823310f0ad9` `telemetry-pod/expansion/requirements/compiled/requirements-map/spec.md` sha256 `e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6`, `spec-record.json` sha256 `1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b`, name `REQUIREMENTS.md`; `POD-DOC-P1` bytes 30-421, `POD-AC-10` bytes 21943-22224, `POD-AC-11` bytes 22229-22495 | 3, `POD-AC-1`..`11` | `POD-AC-8`..`11` | Every criterion is a baseline requirement ID or the prefix `POD-AC-n: ` of a limitation; each bench criterion has a limitation starting `POD-AC-n: BENCH REQUIRED` |
 
 Refusals raise `RequirementSetError` with `reason` and `requirement`:
 `undeclared-source` (the plan names no pinned source; refused with the plan,
@@ -116,8 +122,9 @@ before scaffolding), `downgraded-source` (the supplied capture is the pin of
 an earlier revision), `unapproved-source` (any other spec or record bytes),
 `revision-mismatch` (the pinned capture does not declare its revision),
 `unaccounted-acceptance-criterion` (the scope drops it) and
-`missing-bench-obligation`. The source name, revision, revision locator, both
-hashes, criteria and their locators are recorded as `requirement_set` in the
+`missing-bench-obligation`. The source name, revision, revision locator, the
+spec hash, the supplied record hash and capture name, the authoritative record
+pin, criteria and their locators are recorded as `requirement_set` in the
 driver receipt's validation. This proves only that every criterion is carried;
 it is not acceptance. Thermal, owner DFM/preview and bench limitations stay in
 the prepared scope. `test_pod_driver` reads the actual Rev-3 capture
@@ -127,7 +134,7 @@ captured files.
 Admitting a new source, or changing a pin, is a coordinator action: capture
 the spec with `python3 -m agent_ee.spec_record capture`, take both hashes from
 `sha256sum` of the captured spec and record, add a `SOURCES` entry naming its
-revision and bench obligations in a reviewed commit, extend
+capture name, revision and bench obligations in a reviewed commit, extend
 `test_pinned_sources_are_the_captured_files`, and select it by name in the
 plan. A plan never supplies its own hashes.
 Additional captured accounting artifacts, such as an evidence-index criterion
