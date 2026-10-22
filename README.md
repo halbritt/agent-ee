@@ -296,12 +296,12 @@ exercises 90–112 mechanical stand-ins on both sides across 80 × 50 to
 90 × 65 mm outlines, with a 48 × 21 mm keepout and native placement evidence.
 It measures fixture capacity and determinism; actual pod geometry needs its own checks.
 
-Original [RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
+[RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
 placed-unrouted and seeded placement defects with native checks and a KRT
-input receipt. The [routing equivalence check](docs/routing-equivalence.md)
+input receipt, both as pcbnew derivatives of the RC control
+(`fixtures/rc/derived/`) and as an original alternative (`fixtures/rc/stages/`). The [routing equivalence check](docs/routing-equivalence.md)
 compares repeated routed outputs by normalized copper geometry and records
-byte differences without failing them. The exact FOME-MC control derivatives requested by AGENTEE-103
-remain blocked by unresolved third-party rights.
+byte differences without failing them.
 
 The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
 projects from captured envelope and parts records plus an explicit stage-one

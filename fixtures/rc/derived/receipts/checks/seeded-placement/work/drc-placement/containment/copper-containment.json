@@ -1,0 +1,59 @@
+[
+  {
+    "description": "Saved effective copper polygon extends outside board material",
+    "items": [
+      {
+        "description": "PAD",
+        "pos": {
+          "x": 95.5,
+          "y": 100.0
+        },
+        "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+      }
+    ],
+    "layers": [
+      "F.Cu",
+      "B.Cu"
+    ],
+    "severity": "error",
+    "type": "copper_outside_outline"
+  },
+  {
+    "description": "Saved effective copper polygon extends outside board material",
+    "items": [
+      {
+        "description": "PAD",
+        "pos": {
+          "x": 95.5,
+          "y": 102.54
+        },
+        "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+      }
+    ],
+    "layers": [
+      "F.Cu",
+      "B.Cu"
+    ],
+    "severity": "error",
+    "type": "copper_outside_outline"
+  },
+  {
+    "description": "Saved effective copper polygon extends outside board material",
+    "items": [
+      {
+        "description": "PAD",
+        "pos": {
+          "x": 95.5,
+          "y": 105.08
+        },
+        "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+      }
+    ],
+    "layers": [
+      "F.Cu",
+      "B.Cu"
+    ],
+    "severity": "error",
+    "type": "copper_outside_outline"
+  }
+]

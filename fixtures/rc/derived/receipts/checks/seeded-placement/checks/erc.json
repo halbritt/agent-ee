@@ -1,0 +1,70 @@
+{
+  "candidate_id": "94c477f9ae043483145c9af21a042c02d017d5b98ab7a733c52dc12f680cc17f",
+  "details": {
+    "by_severity": {},
+    "by_type": {},
+    "erc_coordinates": {
+      "coordinate_units": "mm",
+      "regime": "native",
+      "report_kicad_version": "10.0.7",
+      "scale": 1,
+      "status": "trusted",
+      "version": "10.0.7"
+    },
+    "ignored_checks": [
+      "single_global_label",
+      "four_way_junction",
+      "simulation_model_issue",
+      "footprint_filter"
+    ],
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61",
+      "version": "10.0.7"
+    },
+    "kicad_version": "10.0.7",
+    "locations": [],
+    "schematic_files": [
+      "project/rc_filter.kicad_sch"
+    ],
+    "sheets_checked": 1,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/erc.json",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+      "duration_s": 2.001,
+      "exit_code": 0
+    },
+    "unwaived": 0,
+    "unwaived_by_severity": {},
+    "violations": 0,
+    "waived": [],
+    "waived_by_severity": {}
+  },
+  "evidence": [
+    "work/erc/kicad-version/execution.json",
+    "work/erc/kicad-version/console.log",
+    "work/erc/kicad-version/stdout.log",
+    "work/erc/kicad-version/stderr.log",
+    "work/erc/execution.json",
+    "work/erc/console.log",
+    "work/erc/erc.json"
+  ],
+  "execution": "ok",
+  "id": "erc",
+  "kind": "erc",
+  "limitations": [],
+  "outcome": "pass",
+  "summary": "ERC ran on 1 sheet instance(s) with zero unwaived violations; 0 waived"
+}

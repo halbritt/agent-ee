@@ -1,0 +1,38 @@
+{
+  "command": [
+    "ae-ci-exec",
+    ".",
+    "--",
+    "env",
+    "PYTHONPATH=src",
+    "python3",
+    "build/ee103c/route.py",
+    "build/ee103c/route1"
+  ],
+  "command_exit": 0,
+  "note": "AGENTEE-103: kicad-route run --backend krt (AGENTEE-93 routing_adapter.step via stage_receipts.run_step) on a read-only capture of control-derived placed-unrouted, in the pinned CI image with the 5f1c072 pin. route.py mirrors tests/test_rc_derived.NativeRoutingInput and writes summary.json from routing_adapter.verify. Exit code and result.json are recorded, not asserted. Provenance excerpts, not a portable complete stage receipt; the routed candidate board is not retained. Routing never grades agent-ee acceptance.",
+  "retained_sha256": {
+    "adapter-report.json": "2cc0a1ae365f4719edff498867c3757e8e4feb49a54d24df54a3de40e0ac330e",
+    "attempt/RESULT.md": "8f95854690822096f4b92b9280340b55f9f2b249a39afb377fbcad1d3c539218",
+    "attempt/attempt.json": "2be12a92d1ad7dadb39b69bc75397d55b00a6796b9860124ba0347b08bdb5fd9",
+    "attempt/facts/reference-facts.json": "f6e971fbd4f3f1866084da8bc4adf9c3d32834d23463f5908914310f4f0ddf66",
+    "attempt/facts/reference-facts.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/result.json": "3ab2c0c820670ff79ff2d5b554c8f61e8f7c5131ec231791eb12f47226f36dc4",
+    "attempt/snapshot.json": "82e4d1fc99d48a3beab361e0155e1009548a1fb5aeba4883e9024e5fa16027f1",
+    "attempt/validate/candidate-drc.json": "e1733f1be092f324aaf8a5d0466de607c540cbbb99fe4fc0ce54001cbaa0f9d7",
+    "attempt/validate/candidate-drc.log": "9d14bd782b92a1d2949031ed4ebb461987fb4d928251fb5b386f60df905c8c91",
+    "attempt/validate/candidate-facts.json": "7118b2c5b3e24690d33ac77c538a110490aa412efb17a5fd403413f3cee99d8d",
+    "attempt/validate/candidate-facts.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/candidate-pour.json": "e0ba84e41c04e68151937ea8124e86a03165082a7cfddfaf68dc1cd35e7b9343",
+    "attempt/validate/candidate-pour.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/candidate-refill.json": "5806817da21df68e221ef8d6994c94352efa63735d6a5728a47656b046887911",
+    "attempt/validate/candidate-refill.log": "93335795e00a4ec6d9dd35c7c217f862d1cd1c08878abf6964dfb8d34a0b7f9e",
+    "attempt/validate/new-findings.json": "5ff88c9f28b8acc5f2c72b470a49c028151205a12102b200c793d6ef1aeebbbd",
+    "attempt/validate/pour-integrity.json": "2755f937ea0fd9affbca2db2a5215f1388e0d5c845402358deaf88322c00b08b",
+    "attempt/validate/preservation.json": "aed727a8e3f03885aaf4404f88f17804807d81f58c37c65c3cd437b19e24071f",
+    "kicad-route.stderr": "8c9519da9fb668e9baa3556bf107b4591bffd027fc6be9fd61a5f0558fbf6be1",
+    "kicad-route.stdout": "1f4f7efbb79754d40f6d33e641d748bcb0b4f1f348584cc66a2db324ed5f24d7",
+    "receipt.json": "c14fb250ba62fce632e40be28b04886328f90685bc99ad2c824f23cd840bc0b3",
+    "summary.json": "bd0e2005ff1c0803c1b97c3f73f7eeb0df1a88354bb561d058c4c5757b0790b4"
+  }
+}

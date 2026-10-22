@@ -1,0 +1,53 @@
+{
+  "advisory": null,
+  "board_sha256": "a2e3ca22dcada2a097120c97c69f6f203ff15f8020518612f7fe3aabacdde3e0",
+  "candidate_id": "94c477f9ae043483145c9af21a042c02d017d5b98ab7a733c52dc12f680cc17f",
+  "criterion": "courtyard-overlap/1",
+  "defects": [
+    {
+      "kind": "courtyards_overlap",
+      "native": {
+        "description": "Courtyards overlap",
+        "items": [
+          {
+            "description": "Footprint C1",
+            "pos": {
+              "x": 108.0,
+              "y": 100.0
+            },
+            "uuid": "7e69886f-9bbf-4607-a40e-520cfd05e452"
+          },
+          {
+            "description": "Footprint R1",
+            "pos": {
+              "x": 105.0,
+              "y": 100.0
+            },
+            "uuid": "8404a180-a151-464e-8f25-8cf316cdcba5"
+          }
+        ],
+        "severity": "error",
+        "type": "courtyards_overlap"
+      },
+      "refs": [
+        "C1",
+        "R1"
+      ]
+    }
+  ],
+  "drc": {
+    "check_id": "drc-placement",
+    "drc_json": "work/drc-placement/drc.json",
+    "drc_sha256": "6d09c10eaec87dd31503440e34e0c8e823c4370d0e7742865114f97f8f806bb5",
+    "kicad_version": "10.0.7",
+    "outcome": "defect",
+    "projection": "placement-stage/1",
+    "result_sha256": "ce8c9b6847e1612779b0be9354b76cac6815b6a77bf95de0772c3b8165c910f8"
+  },
+  "notes": [],
+  "pcbnew_version": "10.0.7",
+  "routing_feedback": null,
+  "schema": "agent-ee.placement-predicate/1",
+  "status": "defect",
+  "unknown": []
+}

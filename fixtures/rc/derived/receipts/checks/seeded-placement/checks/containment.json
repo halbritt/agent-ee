@@ -1,0 +1,66 @@
+{
+  "candidate_id": "94c477f9ae043483145c9af21a042c02d017d5b98ab7a733c52dc12f680cc17f",
+  "details": {
+    "advisory": null,
+    "board_sha256": "a2e3ca22dcada2a097120c97c69f6f203ff15f8020518612f7fe3aabacdde3e0",
+    "candidate_id": "94c477f9ae043483145c9af21a042c02d017d5b98ab7a733c52dc12f680cc17f",
+    "criterion": "outline-containment/1",
+    "defects": [
+      {
+        "kind": "outside_outline",
+        "outside_area_mm2": 19.5674,
+        "ref": "J1",
+        "side": "F"
+      }
+    ],
+    "drc": {
+      "check_id": "drc-placement",
+      "drc_json": "work/drc-placement/drc.json",
+      "drc_sha256": "6d09c10eaec87dd31503440e34e0c8e823c4370d0e7742865114f97f8f806bb5",
+      "kicad_version": "10.0.7",
+      "outcome": "defect",
+      "projection": "placement-stage/1",
+      "result_sha256": "ce8c9b6847e1612779b0be9354b76cac6815b6a77bf95de0772c3b8165c910f8"
+    },
+    "gate_findings": [
+      {
+        "check_id": "containment",
+        "entity": "J1",
+        "kind": "outside_outline"
+      }
+    ],
+    "pcbnew_version": "10.0.7",
+    "routing_feedback": null,
+    "status": "defect",
+    "tool": {
+      "argv": [
+        "/usr/bin/python3",
+        "-B",
+        "-m",
+        "agent_ee.placement_probe",
+        "/candidate/project/rc_filter.kicad_pcb",
+        "--out",
+        "/work/placement-probe.json"
+      ],
+      "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+      "duration_s": 0.929,
+      "exit_code": 0
+    },
+    "unknown": []
+  },
+  "evidence": [
+    "work/drc-placement/drc.json",
+    "work/containment/execution.json",
+    "work/containment/console.log",
+    "work/containment/placement-probe.json",
+    "work/containment/placement-judgment.json"
+  ],
+  "execution": "ok",
+  "id": "containment",
+  "kind": "placement",
+  "limitations": [
+    "placement predicate over saved geometry and the prerequisite native DRC; no copper, thermal, EMC or routed-length analysis; advisory score and routing feedback never pass or fail"
+  ],
+  "outcome": "defect",
+  "summary": "outline-containment/1: 1 proved violation(s)"
+}

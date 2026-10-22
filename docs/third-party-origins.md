@@ -50,7 +50,7 @@ Most unresolved files are retained evidence, which is classified by directory.
 | --- | --- | --- | --- |
 | AE | agent-ee original material | MIT proposed | Code, tests, scripts, docs, planning records, original fixtures |
 | AE-RUN | agent-ee run outputs | MIT proposed | Records, native tool output and reviewer output from runs on agent-ee material |
-| T1 | FOME-MC RC filter fixture (`halbritt/fome-mc`, `5b7b175`) | No license found | `fixtures/rc/control/` and `seeded/`, 90 copies and variants in evidence, RC evidence directories and archives |
+| T1 | FOME-MC RC filter fixture (`halbritt/fome-mc`, `5b7b175`) | No license found | `fixtures/rc/control/`, `seeded/` and the AGENTEE-103 stage variants in `derived/`, 90 copies and variants in evidence, RC evidence directories and archives |
 | T2 | FOME-MC `toolchain/eda.py` | No license found | Adapted logic in `src/agent_ee/checks.py` |
 | T3 | Polygonus-Universal-112 donor (`FOME-Tech`, `ddcf0f7`) | No license found | Donor and model-baseline evidence, its Gerber/drill/render outputs, three reports, eight archives |
 | T4 | FOME-Tech kicad-libraries (`ab9c5f8`) | No license found; SamacSys terms not reviewed | Donor captures in archives; donor evidence |

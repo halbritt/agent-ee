@@ -1,0 +1,76 @@
+{
+  "candidate_id": "94c477f9ae043483145c9af21a042c02d017d5b98ab7a733c52dc12f680cc17f",
+  "details": {
+    "advisory_findings_count": 3,
+    "board_sha256": "a2e3ca22dcada2a097120c97c69f6f203ff15f8020518612f7fe3aabacdde3e0",
+    "by_severity": {
+      "error": 8,
+      "warning": 3
+    },
+    "by_type": {
+      "copper_edge_clearance": 3,
+      "courtyards_overlap": 1,
+      "silk_edge_clearance": 3,
+      "unconnected_items": 4
+    },
+    "constraint_classes": {
+      "default": 3,
+      "engineering": 7
+    },
+    "graded_unwaived": 11,
+    "ignored_checks": [
+      "missing_courtyard",
+      "track_not_centered_on_via",
+      "tuning_profile_track_geometries",
+      "footprint_filters_mismatch",
+      "footprint_type_mismatch"
+    ],
+    "kicad_version": "10.0.7",
+    "schematic_parity": 0,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ],
+      "console_sha256": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+      "duration_s": 1.983,
+      "exit_code": 0
+    },
+    "unconnected_items": 4,
+    "unwaived": 11,
+    "unwaived_by_severity": {
+      "error": 8,
+      "warning": 3
+    },
+    "violations": 7,
+    "waived": [],
+    "waived_by_severity": {}
+  },
+  "evidence": [
+    "work/drc-final/execution.json",
+    "work/drc-final/console.log",
+    "work/drc-final/drc.json",
+    "work/drc-final/containment/copper-containment.json",
+    "work/drc-final/containment/execution.json",
+    "work/drc-final/containment/console.log",
+    "work/drc-final/drc-constraints.json"
+  ],
+  "execution": "ok",
+  "id": "drc-final",
+  "kind": "drc",
+  "limitations": [
+    "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+  ],
+  "outcome": "defect",
+  "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)"
+}

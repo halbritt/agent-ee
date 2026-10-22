@@ -1,0 +1,29 @@
+{
+  "candidate_id": "c58b76eeb0e5275a6d3ea28a0fd34d4c9fbeb38a48dcf04f7ecfb84538e2b797",
+  "details": {
+    "components": 3,
+    "dnp_refs": [],
+    "nets": 3,
+    "refs": [
+      "C1",
+      "J1",
+      "R1"
+    ],
+    "schematic_files": [
+      "project/rc_filter.kicad_sch"
+    ],
+    "sheet_instances": 1
+  },
+  "evidence": [
+    "work/netlist/execution.json",
+    "work/netlist/console.log",
+    "work/netlist/design.xml",
+    "work/netlist/connectivity.json"
+  ],
+  "execution": "ok",
+  "id": "netlist",
+  "kind": "netlist",
+  "limitations": [],
+  "outcome": "info",
+  "summary": "native XML netlist exported from a complete 1-instance hierarchy: 3 component(s), 3 net(s), 0 DNP"
+}

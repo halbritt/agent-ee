@@ -2671,6 +2671,45 @@
     },
     {
       "paths": [
+        "fixtures/rc/derived/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T1",
+        "T6"
+      ],
+      "note": "AGENTEE-103 stage-boundary derivatives of fixtures/rc/control: boards saved by pcbnew from the control with tracks/via removed, the GND zone unfilled or removed and authored moves; schematic, project and library tables are byte copies of the control. See fixtures/rc/PROVENANCE.md."
+    },
+    {
+      "paths": [
+        "fixtures/rc/derived/generate.py",
+        "fixtures/rc/derived/expectations.json",
+        "fixtures/rc/derived/placed-unrouted.scope.json",
+        "fixtures/rc/derived/seeded-placement.scope.json",
+        "fixtures/rc/derived/unplaced.scope.json",
+        "fixtures/rc/derived/requirements/",
+        "fixtures/rc/derived/receipts/routing/route.py"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-103 original derivation script, scopes, independently authored requirements/expectations and the routing receipt driver; they name the control's references and coordinates as facts and copy no design bytes."
+    },
+    {
+      "paths": [
+        "fixtures/rc/derived/receipts/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ],
+      "note": "Actual generation, checks-only and KRT stage receipt excerpts over the control-derived boards (T1 with stock KiCad footprints, T6). Provenance only, not portable complete evidence stores."
+    },
+    {
+      "paths": [
         "tests/test_campaign.py"
       ],
       "kind": "owned-source",

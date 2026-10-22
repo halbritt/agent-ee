@@ -1,0 +1,77 @@
+{
+  "candidate_id": "c58b76eeb0e5275a6d3ea28a0fd34d4c9fbeb38a48dcf04f7ecfb84538e2b797",
+  "details": {
+    "advisory_findings_count": 0,
+    "board_sha256": "787def8dda99dde63ddfd175441853236d2928afafb09374033398c0d5cca26f",
+    "by_severity": {
+      "error": 4
+    },
+    "by_type": {
+      "unconnected_items": 4
+    },
+    "constraint_classes": {},
+    "graded": [
+      "violations",
+      "schematic_parity"
+    ],
+    "graded_unwaived": 4,
+    "ignored_checks": [
+      "missing_courtyard",
+      "track_not_centered_on_via",
+      "tuning_profile_track_geometries",
+      "footprint_filters_mismatch",
+      "footprint_type_mismatch"
+    ],
+    "kicad_version": "10.0.7",
+    "projection": "placement-stage/1",
+    "schematic_parity": 0,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ],
+      "console_sha256": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
+      "duration_s": 1.459,
+      "exit_code": 0
+    },
+    "unconnected_items": 4,
+    "ungraded": {
+      "unconnected_items": 4
+    },
+    "unwaived": 4,
+    "unwaived_by_severity": {
+      "error": 4
+    },
+    "violations": 0,
+    "waived": [],
+    "waived_by_severity": {}
+  },
+  "evidence": [
+    "work/drc-placement/execution.json",
+    "work/drc-placement/console.log",
+    "work/drc-placement/drc.json",
+    "work/drc-placement/containment/copper-containment.json",
+    "work/drc-placement/containment/execution.json",
+    "work/drc-placement/containment/console.log",
+    "work/drc-placement/drc-constraints.json"
+  ],
+  "execution": "ok",
+  "id": "drc-placement",
+  "kind": "drc",
+  "limitations": [
+    "zone fill evaluated as saved; the read-only candidate forbids a refill pass",
+    "placement-stage/1: unconnected items are retained in drc.json but not graded; a later full DRC with connectivity remains required"
+  ],
+  "outcome": "pass",
+  "summary": "placement-stage/1 DRC with schematic parity reported zero unwaived violations and unwaived parity issues; 4 unconnected item(s) retained ungraded; 0 waived"
+}
