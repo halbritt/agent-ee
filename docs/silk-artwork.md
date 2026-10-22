@@ -120,9 +120,9 @@ produce a pass. Candidates without carry retain their existing fab behavior,
 including uncarried baseline silk findings.
 
 The one exception is a `drc` declaring `projection: "placement-stage/1"` with a
-placement-stage or unstaged declaration (AGENTEE-346); a schematic, routing,
-verification, fab or release declaration is not exempt and still refuses. It
-grades instead of refusing. A native silk conflict that is exactly an open carried defect is
+placement-stage or unstaged declaration (AGENTEE-346). That check grades
+instead of refusing. A `drc` under a schematic, routing, verification, fab or
+release declaration is outside the exception and still refuses. A native silk conflict that is exactly an open carried defect is
 graded as carried, not as a violation, so the campaign advances to routing.
 There the full `drc` and later gates refuse until closure. See the
 [check reference](check-reference.md#carried-silk-in-the-placement-projection-agentee-346).
@@ -151,11 +151,14 @@ cutout, than the bounds can separate leaves the outline unqualified.
 Touching/crossing contours, nested cutouts, multiple board islands, open rings,
 curves below twice the tolerance and polygons with arcs establish no
 containment. Bounding boxes may neither cross nor touch a cutout bound, nor
-enclose an entire cutout. The 5 um tolerance is the maximum error of the
-circumscribed hole bound, not a uniform exclusion band: a mark tangent to a
-round hole, or near a polygon vertex of its bound, refuses even though it does
-not touch the true circle, while a mark between two bound vertices may qualify
-closer than 5 um, because it still lies outside the bound.
+enclose an entire cutout. The 5 um tolerance bounds how far each polygon
+(the circumscribed cutout bound and the inscribed outer-ring bound) may deviate
+from its true curve; it is not a clearance guarantee and not a uniform
+exclusion band. A mark is judged only against the bound polygon: a mark
+touching or crossing the bound refuses even where it does not touch the true
+circle (up to 5 um away), while a mark between two bound vertices may qualify
+with less than 5 um to the true circle, because it still lies outside the
+bound.
 
 Containment models only Edge.Cuts. Non-plated drills (for example an NPTH
 mounting-hole footprint) and plated or oval pad slots are not holes in this
