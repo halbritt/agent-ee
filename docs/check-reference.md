@@ -1749,7 +1749,7 @@ with a missing baseline entry refused and a whole-second clock fence before laun
 same-tick link cannot keep its time (AGENTEE-374). Mount, source and live tree walks are
 descriptor-relative; a component replaced mid-walk refuses as `mount_source_changed:<at>`.
 New receipts are `agent-ee.stage-receipt/2`; a `/1` receipt with a nested source whose
-identity has one entry (possibly an escaped link-only record) refuses on replay as
+identity has one entry (possibly an escaped link-only record), or a missing or non-integer count, refuses on replay as
 `legacy_source_identity:<source>` (AGENTEE-374).
 Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or

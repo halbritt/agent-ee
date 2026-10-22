@@ -250,9 +250,12 @@ nested (not a mount root) and whose `tool` or `tool_after` source identity has
 exactly one entry raises `LegacySourceIdentityError` (`ValueError`) with
 violation `legacy_source_identity:<source>`, so neither `validate_receipt` nor
 `adopt` accepts it, nor the binding-fill and carried-placement receipt readers.
+A nested-source `/1` receipt whose `tool` or `tool_after` source identity lacks a
+count, or whose count is not a non-negative integer (null, string, float, bool,
+negative), cannot show that it is outside that class and refuses the same way.
 The stored receipt is never rewritten or reinterpreted; re-run the step to obtain
 a `/2` receipt. Every other `/1` receipt (no source, a source at a mount root,
-or a nested source with zero or several entries) replays exactly as before.
+or a nested source whose two counts are both integers, each zero or at least two) replays exactly as before.
 Receipts written now are `agent-ee.stage-receipt/2`, produced only by the strict
 run observation above, so a one-entry nested source in a `/2` receipt is an
 ordinary one-file tree and replays. Transient

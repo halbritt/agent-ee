@@ -1292,7 +1292,9 @@ def legacy_source_refusal(receipt):
     identity whose target is not retained, which is indistinguishable from a one-file
     source tree. A /1 receipt with a nested source (not a mount root) and a one-entry
     source identity in either observation is refused with a typed reason; it is never
-    rewritten or reinterpreted. /2 receipts come only from strict source observation."""
+    rewritten or reinterpreted. A missing or malformed count (not a non-negative int) in
+    either observation cannot show it is outside that class and refuses the same way.
+    /2 receipts come only from strict source observation."""
     if not isinstance(receipt, dict) or receipt.get('schema') != LEGACY_RECEIPT_SCHEMA:
         return
     spec = receipt.get('spec')
@@ -1303,7 +1305,8 @@ def legacy_source_refusal(receipt):
         return
     observed = [value.get('source_tree') for value in (receipt.get('tool'), receipt.get('tool_after'))
                 if isinstance(value, dict)]
-    if any(not isinstance(tree, dict) or tree.get('files') == 1 for tree in observed) or len(observed) != 2:
+    if len(observed) != 2 or any(not isinstance(tree, dict) or type(tree.get('files')) is not int or
+                                 tree['files'] < 0 or tree['files'] == 1 for tree in observed):
         raise LegacySourceIdentityError(spec['source'])
 
 

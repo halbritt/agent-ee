@@ -1599,9 +1599,9 @@ class StepFixture(unittest.TestCase):
 
 
 class StepExecutionTests(StepFixture):
-    def _as_schema(self, path, schema, **fields):
+    def _as_schema(self, path, schema, tag='', **fields):
         # A retained receipt as an earlier implementation would have written it.
-        copy = self.root / 'historical' / f'{path.name}-{len(fields)}-{schema.rsplit("/", 1)[1]}'
+        copy = self.root / 'historical' / f'{path.name}-{len(fields)}-{schema.rsplit("/", 1)[1]}{tag}'
         shutil.copytree(path, copy, symlinks=True)
         receipt = {**read_json(path / 'receipt.json'), **fields, 'schema': schema}
         receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
@@ -1638,6 +1638,48 @@ class StepExecutionTests(StepFixture):
         # The same /2 receipt still replays and adopts.
         adopt(path, receipt, self.design)
         self.assertEqual(stage_receipts.file_tree(self.design)[0], stage_receipts.after_tree(receipt))
+
+    @toolchain_test
+    def test_legacy_receipt_with_malformed_source_count_is_refused_by_every_reader(self):
+        # AGENTEE-374 review H1: a /1 source count that is missing or not a non-negative int
+        # cannot show the identity is outside the one-entry class, so all readers refuse it.
+        from agent_ee import passive_ratings, placement_defects
+        (self.tool / 'lib').mkdir()
+        (self.tool / 'lib/module.py').write_text('mounted source')
+        (self.tool / 'lib/other.py').write_text('second module')
+        path, receipt = self.run_step(self.spec(source='/tool/lib'))
+        self.assertEqual((receipt['status'], receipt['tool']['source_tree']['files']), ('completed', 2))
+        tree = receipt['tool']['source_tree']
+        counts = {'missing': {k: v for k, v in tree.items() if k != 'files'}, 'null': {**tree, 'files': None},
+                  'string': {**tree, 'files': '2'}, 'negative': {**tree, 'files': -1},
+                  'bool': {**tree, 'files': True}, 'float': {**tree, 'files': 2.0}}
+        before = stage_receipts.file_tree(self.design)
+        for name, malformed in counts.items():
+            for observation in ('tool', 'tool_after', 'both'):
+                fields = {key: {**receipt[key], 'source_tree': malformed} for key in ('tool', 'tool_after')
+                          if observation in (key, 'both')}
+                with self.subTest(count=name, observation=observation):
+                    historical, stored = self._as_schema(path, 'agent-ee.stage-receipt/1', f'-{name}-{observation}',
+                                                         **fields)
+                    self.assertEqual(stored['status'], 'completed')
+                    with self.assertRaises(stage_receipts.LegacySourceIdentityError) as failure:
+                        validate_receipt(historical)
+                    self.assertEqual(failure.exception.violation, 'legacy_source_identity:/tool/lib')
+                    with self.assertRaises(stage_receipts.LegacySourceIdentityError):
+                        adopt(historical, stored, self.design)
+                    self.assertEqual(stage_receipts.file_tree(self.design), before)
+                    sha = digest(historical / 'receipt.json')
+                    with self.assertRaises(stage_receipts.LegacySourceIdentityError):
+                        passive_ratings.load_provenance(historical, {
+                            'receipt': 'receipt.json', 'receipt_sha256': sha, 'report': 'run/stdout.log'})
+                    with self.assertRaises(stage_receipts.LegacySourceIdentityError):
+                        placement_defects._bundle({'files': {'receipt.json': sha}}, historical,
+                                                  {'receipt': 'receipt.json', 'sha256': sha})
+                    self.assertEqual(read_json(historical / 'receipt.json'), stored)
+        # The well-formed two-entry /1 receipt still replays and adopts.
+        historical, stored = self._as_schema(path, 'agent-ee.stage-receipt/1')
+        self.assertEqual(validate_receipt(historical), stored)
+        adopt(historical, stored, self.design)
 
     @toolchain_test
     def test_legacy_receipts_outside_the_ambiguous_source_class_still_replay(self):
