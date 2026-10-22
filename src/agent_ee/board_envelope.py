@@ -1610,8 +1610,9 @@ def qualification_blockers(record):
 def final_qualification(run):
     """The final-acceptance guard over a run's CAPTURED baseline envelope; None without an envelope.
 
-    The candidate identity is verified first, and an envelope-less scope's retained
-    baseline must carry no envelope coverage, so None never means a removed declaration.
+    Unless the run has no baseline declaration or record at all, the candidate identity is
+    verified first and an envelope-less scope's retained baseline must carry no envelope
+    coverage, so None never means a removed declaration.
 
     The one shared guard for final review outcome, fab release and campaign
     acceptance/replay (AGENTEE-197). For a declared envelope it re-verifies the
@@ -1623,14 +1624,17 @@ def final_qualification(run):
     from .storage import identity, read_json
     run = Path(run)
     manifest = read_json(run / 'candidate.json')
+    path = run / 'baseline.json'
+    scope = manifest['scope']
+    if 'envelope' not in scope and 'baseline' not in scope and not (path.exists() or path.is_symlink()):
+        return None  # no captured baseline at all, so no envelope condition can exist
     # Authenticate the retained candidate before trusting the absence of an envelope: a
     # removed or edited scope declaration is refused, never read as "no envelope".
-    if identity({'scope': manifest['scope'], 'files': manifest['files']}) != manifest.get('candidate_id'):
+    if identity({'scope': scope, 'files': manifest['files']}) != manifest.get('candidate_id'):
         raise ValueError('candidate metadata differs from its captured identity; final qualification refused')
-    if 'envelope' not in manifest['scope']:
+    if 'envelope' not in scope:
         # The authenticated scope declares no envelope; the retained baseline must agree. Read
         # without recompiling, so an envelope-less verification hashes no input twice (AGENTEE-250).
-        path = run / 'baseline.json'
         if path.is_symlink():
             raise ValueError('immutable baseline changed')
         retained = read_json(path) if path.exists() else None

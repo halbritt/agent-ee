@@ -356,7 +356,8 @@ AGENTEE-177/179 evidence that adds a real binding.
 coverage in the run's captured, re-verified `baseline.json` (`load_baseline`),
 never the current envelope file, a scope field or a stored result. It returns
 `agent-ee.final-qualification/1` with the `baseline_id` and a `blocking` list,
-or `None` for a scope without an envelope. It first checks `candidate.json`
+or `None` for a scope without an envelope. Unless the run has neither a
+baseline declaration nor a `baseline.json`, it first checks `candidate.json`
 against its `candidate_id`, and only then reads the scope's envelope
 declaration. A removed or edited declaration therefore refuses: the identity
 differs; or, when the identity is recomputed, the recompiled baseline differs
