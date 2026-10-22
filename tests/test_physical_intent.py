@@ -7,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
-from agent_ee import physical_intent
+from agent_ee import locality_provenance, physical_intent
 from agent_ee.baseline import freeze_evidence
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
@@ -31,7 +31,11 @@ C1 = f'''	(footprint "pins:C2"
 		(pad "2" smd rect (at 1 0) (size 1 1) (layers "F.Cu" "F.Mask") (net "GND") (uuid "{C1_GND}"))
 	)
 	(gr_rect'''
-OWNER_TEXT = 'D-1 (owner of record): keep the C1 supply pad within 3 mm of U1 VCC.\n'
+OWNER_TEXT = ('D-1 (owner of record): keep the C1 supply pad within 3 mm of U1 VCC.\n'
+              'D-2 (owner of record): keep the C1 supply pad close to U1 VCC.\n'
+              'D-3 (owner of record): keep the C1 supply pad within 3 mm, never beyond 5 mm, of U1 VCC.\n'
+              'D-4 (owner of record): keep the C1 supply pad within 120 mil of U1 VCC.\n'
+              'D-5 (Trent): keep the C1 supply pad within 999 mm of U1 VCC.\n')
 LAYOUT_TEXT = 'Layout note L-2: place the decoupling capacitor within 3 mm of the VCC pin.\n'
 
 
@@ -253,10 +257,10 @@ class PhysicalIntentTests(unittest.TestCase):
                   'to': {'reference': 'C1', 'pad': '2', 'net': 'GND', 'uuid': C1_GND}}
         return [{'id': 'u1-decoupling', 'metric': 'pad-centre-to-centre', 'supply': supply, 'return': ground}]
 
-    def owner(self, owner='owner of record', text=OWNER_TEXT):
-        return {'class': 'owner', 'basis': 'D-1', 'decision_reference': {
-            'path': 'owner-decisions.md', 'sha256': sha(text), 'locator': 'D-1',
-            'quote': 'within 3 mm of U1 VCC', 'owner': owner}}
+    def owner(self, owner='owner of record', text=OWNER_TEXT, locator='D-1', quote='within 3 mm of U1 VCC'):
+        return {'class': 'owner', 'basis': locator, 'decision_reference': {
+            'path': 'owner-decisions.md', 'sha256': sha(text), 'locator': locator,
+            'quote': quote, 'owner': owner}}
 
     def datasheet(self, value_nm=3_000_000):
         return {'class': 'datasheet', 'basis': 'L-2', 'derivation': {'kind': 'numeric', 'value_nm': value_nm, 'source': {
@@ -264,18 +268,77 @@ class PhysicalIntentTests(unittest.TestCase):
 
     def test_sourced_locality_compiles_unchanged_without_guessed_semantics(self):
         records = ('layout-notes.md', 'owner-decisions.md')
-        for provenance in (self.owner(), self.datasheet(), None):
+        manufacturer = {'class': 'manufacturer', 'basis': 'captured JLCPCB record'}
+        for provenance, expected in ((self.datasheet(), 'hard'), (None, 'advisory'), (manufacturer, 'feasibility')):
             with self.subTest(provenance=provenance and provenance['class']):
                 authored = self.locality(self.pair(provenance))
-                out = compile_plan(self.local, self.intent(self.local, locality=copy.deepcopy(authored), records=records))
+                intent = self.intent(self.local, locality=copy.deepcopy(authored), records=records)
+                out = compile_plan(self.local, intent)
                 document = out['contracts/electrical-locality.json']
                 # locality/1 has no fact or function fields: the authored supply/return is emitted as written.
                 self.assertEqual(document['obligations'], authored)
                 self.assertEqual(set(document['source_records']), set(records))
-                expected = 'advisory' if provenance is None else 'hard'
                 self.assertEqual(out['receipt.json']['locality_qualification'][0]['enforcement'], expected)
                 self.assertIn('/contracts/electrical-locality.json#/obligations/0',
                               out['receipt.json']['assertions']['u1-decoupling'])
+                # The compiled package is a snapshot: later edits of the caller's intent do not reach it.
+                intent['locality'][0]['supply']['max_distance_nm'] = 1
+                self.assertEqual(document['obligations'], authored)
+                self.assertEqual(out['receipt.json']['artifacts']['contracts/electrical-locality.json'],
+                                 physical_intent.identity(document))
+
+    def test_owner_maximum_is_bound_but_never_hard(self):
+        # COORDINATOR RULING (agent-449, H1): no in-process owner authentication exists until
+        # AGENTEE-348, so a sourced owner maximum compiles to authority_unavailable, never hard.
+        records = ('owner-decisions.md',)
+        authored = self.locality(self.pair(self.owner()))
+        out = compile_plan(self.local, self.intent(self.local, locality=copy.deepcopy(authored), records=records))
+        supply = out['contracts/electrical-locality.json']['obligations'][0]['supply']
+        self.assertEqual(supply['max_distance_nm'], 3_000_000)
+        self.assertEqual(supply['provenance']['authority'], 'authority_unavailable')
+        self.assertIn('AGENTEE-348', supply['provenance']['authority_reason'])
+        self.assertNotIn('decision_reference', supply['provenance'])
+        self.assertEqual(supply['provenance']['unauthenticated_decision_reference'],
+                         authored[0]['supply']['provenance']['decision_reference'])
+        # The emitted contract never grades as an enforcing owner maximum downstream.
+        source_records = out['contracts/electrical-locality.json']['source_records']
+        self.assertEqual(locality_provenance.classify(supply, source_records)['enforcement'], 'advisory')
+        qualification = out['receipt.json']['locality_qualification'][0]
+        self.assertEqual((qualification['class'], qualification['enforcement'], qualification['owner'],
+                          qualification['stated_max_distance_nm']),
+                         ('owner', 'authority_unavailable', 'owner of record', 3_000_000))
+        self.assertIn('AGENTEE-348', qualification['reason'])
+        self.assertTrue(any('authority_unavailable' in x for x in out['receipt.json']['limitations']))
+        # A captured decision stated by someone else is bound to that identity, still never hard.
+        other = compile_plan(self.local, self.intent(self.local, records=records, locality=self.locality(self.pair(
+            self.owner(owner='Trent', locator='D-5', quote='within 999 mm of U1 VCC'), limit=999_000_000))))
+        self.assertEqual(other['receipt.json']['locality_qualification'][0]['enforcement'], 'authority_unavailable')
+
+    def test_owner_identity_must_be_stated_by_the_captured_decision(self):
+        records = ('owner-decisions.md',)
+        cases = [(self.owner(owner='Mallory'), "stated by 'owner of record', not 'Mallory'"),  # review H1 probe
+                 (self.owner(owner='Trent'), "stated by 'owner of record', not 'Trent'"),
+                 (self.owner(owner='owner'), "stated by 'owner of record', not 'owner'"),
+                 (self.owner(locator='D-9'), 'states no single decision D-9')]
+        for provenance, pattern in cases:
+            with self.subTest(provenance=provenance['decision_reference']):
+                self.refused(self.local, self.intent(self.local, locality=self.locality(self.pair(provenance)),
+                                                     records=records), pattern)
+
+    def test_owner_maximum_must_equal_the_decided_value(self):
+        records = ('owner-decisions.md',)
+        cases = [(self.pair(self.owner(), limit=999_000_000), 'states 3000000 nm, not declared max_distance_nm 999000000'),
+                 (self.pair(self.owner(), limit=2_000_000), 'states 3000000 nm, not declared'),
+                 (self.pair(self.owner(locator='D-2', quote='close to U1 VCC')), 'states no single resolvable maximum'),
+                 (self.pair(self.owner(locator='D-3', quote='never beyond 5 mm')), 'states no single resolvable maximum'),
+                 (self.pair(self.owner(locator='D-4', quote='within 120 mil')), 'unit that cannot be resolved')]
+        missing = self.pair(self.owner())
+        del missing['max_distance_nm']
+        cases.append((missing, 'no max_distance_nm is declared'))
+        for pair, pattern in cases:
+            with self.subTest(pattern=pattern):
+                self.refused(self.local, self.intent(self.local, locality=self.locality(pair), records=records),
+                             f'numeric mismatch: .*{pattern}')
 
     def test_spoofed_owner_authority_refuses(self):
         records = ('owner-decisions.md',)
@@ -345,6 +408,30 @@ class PhysicalIntentTests(unittest.TestCase):
         self.refused(self.local, self.intent(self.local, obligations=stale), 'stale join pad UUIDs')
         self.refused(self.local, self.intent(self.local, obligations=[{**obligations[1], 'terminals': ['ghost']}]),
                      'unresolved terminals')
+
+    def test_assertion_ids_share_one_namespace(self):
+        canl = self.locality(self.pair())
+        canl[0]['id'] = 'u1-canl'  # review H3 probe: already the CANL terminal
+        self.refused(self.local, self.intent(self.local, locality=canl), 'duplicate assertion id: u1-canl')
+        block = self.locality(self.pair())
+        block[0]['id'] = 'block:can'
+        self.refused(self.local, self.intent(self.local, locality=block, blocks=[{'id': 'can', 'references': ['U1']}]),
+                     'duplicate assertion id: block:can')
+        self.refused(self.control, self.intent(diagnostics=[
+            {'id': 'u1-canh', 'kind': 'access', 'status': 'unknown', 'statement': 'pad 7 escape unknown'}]),
+            'duplicate assertion id: u1-canh')
+        self.refused(self.local, self.intent(self.local, locality=self.locality(self.pair()), obligations=[
+            {'id': 'u1-decoupling', 'kind': 'current_loop', 'required': False, 'requirement': 'pins',
+             'terminals': ['u1-canl'], 'statement': 'fixture-only loop obligation'}]),
+            'duplicate assertion id: u1-decoupling')
+        # Distinct ids keep every mapping.
+        receipt = compile_plan(self.local, self.intent(self.local, locality=self.locality(self.pair()),
+                                                       blocks=[{'id': 'can', 'references': ['U1']}]))['receipt.json']
+        self.assertEqual(receipt['assertions'], {
+            'block:can': ['/contracts/block-allocation.json#/blocks/0'],
+            'u1-canh': ['/contracts/topology-rules.json#/rules/1'],
+            'u1-canl': ['/contracts/topology-rules.json#/rules/0'],
+            'u1-decoupling': ['/contracts/electrical-locality.json#/obligations/0']})
 
     def test_access_and_cut_stay_diagnostic(self):
         diagnostics = [{'id': 'u1-access', 'kind': 'access', 'status': 'unknown', 'statement': 'pad 6 escape unknown'},

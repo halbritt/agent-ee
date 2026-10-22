@@ -65,18 +65,41 @@ must exist in the run baseline; the compiler adds none.
 ## Locality, blocks and moves
 
 `locality` holds [`electrical-locality/1`](placer.md#pad-level-electrical-locality-agentee-322) obligations
-exactly as authored. They are emitted unchanged. locality/1 has no fact or
-function field, so the compiler adds no guessed IN/GND or role semantics to a
-supply/return pair. Every endpoint must carry its native pad `uuid`. The UUID,
+as authored. They are emitted unchanged except for owner provenance (below).
+locality/1 has no fact or function field, so the compiler adds no guessed IN/GND
+or role semantics to a supply/return pair. Every endpoint must carry its native pad `uuid`. The UUID,
 pad number and net must match the native board. Each pair is qualified with
 `locality_provenance.classify` on the captured records:
 
 - an integrity failure (record hash mismatch) is a stale source;
-- a pair declaring `owner` must classify `hard`: a captured, hash-verified decision
-  record containing the quote, from an owner that is not an agent label.
-  Otherwise the compiler refuses with `owner authority not established`;
+- a pair declaring `owner` must first pass `classify`: a captured, hash-verified
+  decision record containing the quote, from an owner that is not an agent label.
+  The cited decision must then be exactly one record line of the form
+  `<locator> (<owner identity>): <text containing the quote>`. The
+  `decision_reference.owner` must equal the stated identity, so `Mallory`
+  citing `D-1 (owner of record): ...` is refused. Any failure is
+  `owner authority not established`;
+- that decision text must state exactly one length in `nm` or `mm`, and it must
+  equal the declared `max_distance_nm`. A different value (3 mm cited, 999 mm
+  declared), no stated value, two values, a length in another unit (`mil`, `in`,
+  `um` and so on) or no declared `max_distance_nm` is a `numeric mismatch`;
 - a pair declaring `datasheet` must classify `hard`: the numeric derivation equals
   the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`.
+
+**Owner maxima never enforce.** Agents run as the owner's Unix user, so no
+in-process check can authenticate an owner or manufacturer author until
+AGENTEE-348 provides a signing boundary (coordinator ruling, consistent with the
+AGENTEE-342 trust-boundary ruling). A bound owner maximum is therefore published
+as `authority_unavailable`. In the emitted contract, its provenance keeps
+`class: owner` and the declared limit. It gains `authority:
+authority_unavailable` and `authority_reason`, and the cited decision moves from
+`decision_reference` to `unauthenticated_decision_reference`. As a result,
+`locality_provenance.classify`, and every downstream grader, treat it as
+advisory. The receipt's `locality_qualification` entry records
+`enforcement: authority_unavailable`, the reason, the stated `owner` and
+`stated_max_distance_nm`. A manufacturer record grades `feasibility` (a floor),
+never a hard maximum. The compiler refuses any emitted non-datasheet pair that
+would still classify `hard`.
 
 Requested enforcement never raises provenance. Other classes are compiled and
 reported as `advisory` or `feasibility` in `locality_qualification`.
@@ -119,6 +142,14 @@ records:
 - limitations;
 - a `package_id` over all of the above.
 
+Assertion IDs share one namespace: terminal IDs, locality obligation IDs,
+generated `block:<id>` keys, unsupported obligation IDs and diagnostic IDs. A
+collision, such as a locality obligation named `u1-canl` beside the CANL
+terminal, or one named `block:can` beside block `can`, is refused as `duplicate
+assertion id`. No receipt mapping is ever overwritten. The compiler works on a
+private JSON snapshot of the intent, so editing the caller's intent after
+compilation cannot change a compiled artifact without changing its digest.
+
 Any refusal raises `IntentRefused` before any write. Publication writes the
 complete package to a staging directory beside the destination and renames it
 into place with `RENAME_NOREPLACE`. An existing destination is refused, and a
@@ -144,7 +175,13 @@ covers:
 - duplicate pins and pad numbers;
 - failed topology and invented requirements;
 - conflicting membership and fixed moves;
-- owner spoofing, numeric mismatch and locality endpoint binding;
+- owner spoofing, owner identity binding (including the `Mallory` review
+  probe), owner value binding (3 mm against 999 mm, a missing value, two
+  values, an unresolvable unit) and the non-hard `authority_unavailable` owner
+  output;
+- datasheet numeric mismatch and locality endpoint binding;
+- assertion ID collisions (`u1-canl`, `block:can`, a diagnostic and an
+  unsupported obligation) and the input snapshot;
 - Kelvin and current-loop visibility, diagnostics, manual and disabled modes,
   isolation and failed publication.
 

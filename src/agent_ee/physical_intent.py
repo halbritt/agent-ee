@@ -10,10 +10,13 @@ package on any contradiction and publishes a complete directory atomically or
 nothing. Kelvin and current-loop obligations have no owned checker and stay
 visible as unsupported. Runtime activation remains gated by KICADROUTE-91.
 """
+import json
 import re
 import shutil
 import tempfile
 from pathlib import Path
+
+from fractions import Fraction
 
 from . import blocks, electrical_locality, locality_provenance, topology_rules
 from .baseline import load_baseline, verify_evidence
@@ -33,6 +36,12 @@ DIAGNOSTIC_KINDS = frozenset(('access', 'cut'))
 DIAGNOSTIC_STATUSES = frozenset(('unknown', 'observed'))
 UUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 SHA256 = re.compile('[0-9a-f]{64}')
+# A stated length in a captured decision: a number directly followed by a length unit.
+LENGTH = re.compile(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*(nm|um|µm|mm|cm|m|mils?|thou|in|inch(?:es)?)\b')
+NM_PER = {'nm': 1, 'mm': 1000000}
+OWNER_AUTHORITY = ('owner and manufacturer authors cannot be authenticated in-process: agents run as the '
+                   "owner's Unix user and no signing boundary exists until AGENTEE-348, so a sourced owner "
+                   'maximum is published as authority_unavailable and never enforces')
 CONTRACTS = {'topology': 'contracts/topology-rules.json', 'locality': 'contracts/electrical-locality.json',
              'allocation': 'contracts/block-allocation.json'}
 LIMITATIONS = (
@@ -46,6 +55,8 @@ LIMITATIONS = (
     'unsupported and prevent semantic completion when required.',
     'Access witnesses and cut inequalities are diagnostics only; an unknown access stays '
     'unknown and a cut inequality is not a routability or infeasibility proof.',
+    'An owner-sourced maximum is bound to the identity and value its captured decision states, '
+    'but it is authority_unavailable and advisory: ' + OWNER_AUTHORITY + '.',
     'Allowed moves are checked against native locked footprints only; no existing executable '
     'consumer reads them in this slice.',
     ACTIVATION,
@@ -166,6 +177,11 @@ def validate_plan(intent):
         if diagnostic['status'] not in DIAGNOSTIC_STATUSES:
             _refuse('a diagnostic is unknown or observed; an access witness or cut inequality is not a proof')
     _unique([d['id'] for d in intent.get('diagnostics', [])], 'diagnostic id')
+    # One receipt namespace: an assertion id never names two compiled or reported assertions.
+    _unique([t['id'] for t in terminals] + [o['id'] for o in intent.get('locality') or []]
+            + [f'block:{b["id"]}' for b in intent.get('blocks', [])]
+            + [o['id'] for o in intent.get('obligations', [])] + [d['id'] for d in intent.get('diagnostics', [])],
+            'assertion id')
     return intent
 
 
@@ -317,14 +333,48 @@ def _terminals(intent, src, board, native):
     return resolved, document
 
 
+def _owner_decision(pair, records, label):
+    """The cited captured decision must state this owner and exactly this maximum.
+
+    A decision is one record line ``<locator> (<owner identity>): <text with the quote>``.
+    The statement locates the decision; it does not authenticate its author.
+    """
+    decision = pair['provenance']['decision_reference']
+    head = re.compile(rf'\s*{re.escape(decision["locator"])}\s*\(([^()]+)\)\s*:')
+    stated = [(m[1].strip(), line[m.end():]) for line in records[decision['path']].splitlines()
+              if decision['quote'] in line and (m := head.match(line))]
+    if len(stated) != 1:
+        _refuse(f'{label}: owner authority not established: the captured record states no single decision '
+                f'{decision["locator"]} with an owner identity and the quote')
+    owner, text = stated[0]
+    if decision['owner'] != owner:
+        _refuse(f'{label}: owner authority not established: decision {decision["locator"]} is stated by '
+                f'{owner!r}, not {decision["owner"]!r}')
+    lengths = LENGTH.findall(text)
+    if any(unit not in NM_PER for _, unit in lengths):
+        _refuse(f'{label}: numeric mismatch: decision {decision["locator"]} states a length in a unit '
+                'that cannot be resolved to nm')
+    values = {Fraction(n) * NM_PER[unit] for n, unit in lengths}
+    if len(values) != 1 or next(iter(values)).denominator != 1:
+        _refuse(f'{label}: numeric mismatch: decision {decision["locator"]} states no single resolvable maximum')
+    value = int(next(iter(values)))
+    if 'max_distance_nm' not in pair:
+        _refuse(f'{label}: numeric mismatch: owner decision states {value} nm but no max_distance_nm is declared')
+    if pair['max_distance_nm'] != value:
+        _refuse(f'{label}: numeric mismatch: decision {decision["locator"]} states {value} nm, '
+                f'not declared max_distance_nm {pair["max_distance_nm"]}')
+    return owner, value
+
+
 def _locality(intent, src, board):
-    obligations = intent.get('locality', [])
-    if not obligations:
+    authored = intent.get('locality', [])
+    if not authored:
         return None, []
-    document = {'schema': electrical_locality.SCHEMA, 'obligations': obligations}
+    document = {'schema': electrical_locality.SCHEMA, 'obligations': authored}
     if src['records']:
         document['source_records'] = src['records']
     electrical_locality.validate(document)
+    obligations = json.loads(json_bytes(authored))
     qualification = []
     for obligation in obligations:
         for role in electrical_locality.roles(obligation):
@@ -345,8 +395,24 @@ def _locality(intent, src, board):
                 _refuse(f'{label}: owner authority not established by a captured, verified owner decision')
             if declared == 'datasheet' and authority['enforcement'] != 'hard':
                 _refuse(f'{label}: numeric mismatch: sourced derivation does not equal declared max_distance_nm')
-            qualification.append({'obligation': obligation['id'], 'role': role, 'class': authority['class'],
-                                  'enforcement': authority['enforcement'], 'reason': authority['reason']})
+            entry = {'obligation': obligation['id'], 'role': role, 'class': authority['class'],
+                     'enforcement': authority['enforcement'], 'reason': authority['reason']}
+            if declared == 'owner':
+                owner, value = _owner_decision(pair, src['records'], label)
+                # No in-process owner authentication: the cited decision is retained but moved
+                # out of the decision_reference slot locality_provenance reads as authority.
+                provenance = {k: v for k, v in pair['provenance'].items() if k != 'decision_reference'}
+                pair['provenance'] = {**provenance, 'authority': 'authority_unavailable',
+                                      'authority_reason': OWNER_AUTHORITY,
+                                      'unauthenticated_decision_reference': pair['provenance']['decision_reference']}
+                entry.update(enforcement='authority_unavailable', reason=OWNER_AUTHORITY,
+                             owner=owner, stated_max_distance_nm=value)
+            if (locality_provenance.classify(pair, src['records'])['enforcement'] == 'hard'
+                    and pair['provenance']['class'] != 'datasheet'):
+                _refuse(f'{label}: only a verified datasheet derivation may compile to a hard maximum')
+            qualification.append(entry)
+    document['obligations'] = obligations
+    electrical_locality.validate(document)
     return document, qualification
 
 
@@ -415,6 +481,10 @@ def compile_plan(run, intent, *, mode='manual'):
         _refuse(f'physical intent mode must be one of {list(MODES)}')
     if mode == 'disabled':
         return None
+    try:
+        intent = json.loads(json_bytes(intent))  # a private snapshot; artifacts never alias the caller
+    except (TypeError, ValueError) as exc:
+        _refuse(f'physical intent must be plain JSON: {exc}')
     validate_plan(intent)
     src = _run_sources(run, intent)
     board = native_board(src['paths']['board'])
@@ -428,15 +498,20 @@ def compile_plan(run, intent, *, mode='manual'):
     moves = _moves(intent, board)
     unsupported = _unsupported(intent, src, board, terminals, locality)
     artifacts = {CONTRACTS['topology']: topology}
-    pointers = {t['id']: [f'/{CONTRACTS["topology"]}#/rules/{i}'] for i, t in enumerate(terminals)}
+    bound = [(t['id'], f'/{CONTRACTS["topology"]}#/rules/{i}') for i, t in enumerate(terminals)]
     if locality:
         artifacts[CONTRACTS['locality']] = locality
-        pointers.update({o['id']: [f'/{CONTRACTS["locality"]}#/obligations/{i}']
-                         for i, o in enumerate(locality['obligations'])})
+        bound += [(o['id'], f'/{CONTRACTS["locality"]}#/obligations/{i}')
+                  for i, o in enumerate(locality['obligations'])]
     if allocation:
         artifacts[CONTRACTS['allocation']] = allocation
-        pointers.update({f'block:{b["id"]}': [f'/{CONTRACTS["allocation"]}#/blocks/{i}']
-                         for i, b in enumerate(allocation['blocks'])})
+        bound += [(f'block:{b["id"]}', f'/{CONTRACTS["allocation"]}#/blocks/{i}')
+                  for i, b in enumerate(allocation['blocks'])]
+    pointers = {}
+    for key, pointer in bound:
+        if key in pointers:
+            _refuse(f'assertion id {key} names two compiled assertions')
+        pointers[key] = [pointer]
     required_open = sorted(o['id'] for o in unsupported if o['required'])
     receipt = {
         'schema': RECEIPT_SCHEMA, 'mode': 'manual', 'activation': ACTIVATION,
