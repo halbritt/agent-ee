@@ -373,6 +373,22 @@ def save_result(run, result):
     render(run, result)
 
 
+def _recovered_execution(path):
+    """Read a review-execution record; a record cut off before it named its role or status is kept, not dropped.
+
+    review-executions/<role>.json is written per role, so a record without ``role`` takes it from the file
+    name and is flagged ``role_reconstructed``. A record without ``execution`` is cancelled evidence, not a pass.
+    """
+    record = read_json(path)
+    if "role" not in record:
+        record["role"] = path.stem
+        record["role_reconstructed"] = True
+    if "execution" not in record:
+        record["execution"] = "interrupted"
+        record.setdefault("error", "run stopped before this review execution record was completed")
+    return record
+
+
 def recover_records(run, result):
     """Project completed durable work after an exception or operator interrupt."""
     from .findings import collect_findings
@@ -380,7 +396,7 @@ def recover_records(run, result):
     previous = {f["id"]: f for f in result.get("findings", [])}
     result["checks"] = [read_json(p) for p in sorted((run / "checks").glob("*.json"))]
     result["reviews"] = [read_json(p) for p in sorted((run / "reviews").glob("*.json"))]
-    result["review_executions"] = [read_json(p) for p in sorted((run / "review-executions").glob("*.json"))]
+    result["review_executions"] = [_recovered_execution(p) for p in sorted((run / "review-executions").glob("*.json"))]
     if result.get("candidate_id"):
         scope = read_json(run / "candidate.json")["scope"]
         done = {c["id"] for c in result["checks"]}

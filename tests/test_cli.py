@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee.cli import outcome, run_review, verify
+from agent_ee.cli import outcome, recover_records, run_review, verify
 from agent_ee.storage import write_json
 
 
@@ -63,6 +63,38 @@ class OutcomeTests(unittest.TestCase):
         self.assertEqual(outcome(value), "criteria_satisfied")
         value["findings"][0]["status"] = "deferred"
         self.assertEqual(outcome(value), "defects_or_unresolved")
+
+
+class RecoverRecordsTests(unittest.TestCase):
+    def recover(self, record, roles=("circuit",)):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "review-executions").mkdir()
+            (root / "review-executions" / "circuit.json").write_text(json.dumps(record))
+            scope = {"checks": [], "review_profile": {"reviewers": [{"role": r} for r in roles]}}
+            (root / "candidate.json").write_text(json.dumps({"scope": scope}))
+            result = {"candidate_id": "synthetic-interrupted-candidate", "limitations": []}
+            recover_records(root, result)
+            return result["review_executions"]
+
+    def test_role_less_execution_record_is_kept_as_interrupted_evidence(self):
+        # review-ee14 probe: an empty record used to raise KeyError('role') and abort SIGINT recovery.
+        records = self.recover({})
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["role"], "circuit")
+        self.assertTrue(records[0]["role_reconstructed"])
+        self.assertEqual(records[0]["execution"], "interrupted")
+        self.assertIn("error", records[0])
+
+    def test_role_less_record_does_not_hide_missing_roles_or_overwrite_status(self):
+        records = self.recover({"execution": "timeout"}, roles=("circuit", "physical"))
+        by_role = {r["role"]: r for r in records}
+        self.assertEqual(by_role["circuit"]["execution"], "timeout")
+        self.assertEqual(by_role["physical"]["execution"], "not_run")
+
+    def test_complete_record_is_unchanged(self):
+        record = {"role": "circuit", "execution": "ok"}
+        self.assertEqual(self.recover(dict(record)), [record])
 
 
 class LifecycleTests(unittest.TestCase):
