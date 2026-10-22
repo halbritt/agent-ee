@@ -550,6 +550,15 @@ region's side) and `near` parts (exact courtyard edge distance at most
 not. Status is `info` when anything is listed and `pass` otherwise. A finding is
 review input: it never passes a physical requirement and is never a defect.
 
+Every grading path (planned result, arranged plan, saved board and the CLI)
+goes through one qualification, `advisory_regions.qualified`, and refuses what
+it cannot qualify instead of grading it clear: the capture schema and board
+hash, unique reference and UUID identities (`placement.validate_capture`), a
+mounting side and a courtyard there on every part, and every declared courtyard
+`proven` (a curved courtyard by its conservative outer bound). A part with no
+courtyard on the region's side, and a qualified one on its mounting side, is a
+legitimate opposite-side exclusion.
+
 ```json
 {"advisory_regions": [
  {"id": "imu-u2-back-box", "side": "B", "subject": "U2", "proximity_nm": 2000000,
@@ -581,12 +590,35 @@ review input: it never passes a physical requirement and is never a defect.
   record.
 
 `python3 -m agent_ee.advisory_regions --probe placement-probe.json --policy
-policy.json [--heights heights.json] --out report.json` grades a saved board's
-capture. `--heights` takes a native `agent-ee.component-height-probe/1` result
-for the same board. It attaches each intruding or nearby part's installed
-height (`native-step-bounds`) or `unknown`. `tall_heavy_risk` stays
-`unresolved` for physical review either way, because no sourced height or mass
-threshold exists to turn a height into a verdict.
+policy.json [--heights heights.json] [--sourced-heights parts.json] --out
+report.json` grades a saved board's capture. `--heights` takes a native
+`agent-ee.component-height-probe/1` result for the same board. It attaches each
+intruding or nearby part's installed height (`native-step-bounds`) or
+`unknown`. `--sourced-heights` takes an `agent-ee.sourced-heights/1` document
+that binds board references to heights from their sources:
+
+```json
+{"schema": "agent-ee.sourced-heights/1", "parts": [
+ {"reference": "L1", "part": "SRP7050TA-150M", "height_mm": "4.8", "tolerance_mm": "0.2",
+  "source": {"class": "datasheet", "citation": "captured SRP7050TA datasheet, dimensions",
+             "sha256": "<sha256 of the captured PDF>"}}]}
+```
+
+Heights and tolerances are decimal strings in mm. The source class is
+`datasheet` or `manufacturer` (each with a `citation` and the captured
+document's `sha256`) or `owner` (a `citation`). Every reference must be a
+unique board reference. A sourced height is the body's height
+(`status: sourced`) whatever the probe says: a probe `unknown` is kept beside it
+as `model_probe` and never replaces it, and a measured model outside the sourced
+tolerance makes the body a `conflict` with both values reported. A part with
+neither a source nor a measurement stays `unknown`. `tall_heavy_risk` stays
+`unresolved` for physical review in every case, because no sourced height or
+mass threshold exists to turn a height into a verdict. For the pod, agent-509
+bound L1 (SRP7050TA-150M) at 4.8 ± 0.2 mm and L2 (SRP7050WA-6R8M) at
+5.2 ± 0.2 mm from the captured datasheets; mass, centre of gravity and coupling
+remain unknown. A `near` entry's `distance_nm` is the part's courtyard distance
+to the region polygon (for the IMU ring, to the ring, not to U2's body); it is
+neither a body clearance nor a proven violation.
 
 Unchanged by this section: native footprint keep-outs and rule areas, sourced
 copper, drill, edge and access constraints (AGENTEE-366 copper extent,

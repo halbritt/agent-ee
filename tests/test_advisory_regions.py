@@ -154,6 +154,109 @@ class AdvisoryRegionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             advisory_regions.annotate(report, {**heights, 'footprints': heights['footprints'] * 2})
 
+    def test_unqualified_capture_geometry_or_identity_is_refused_never_clear(self):
+        box = region('box', side='B', polygons=[rectangle(0, 0, 5, 5)])
+        shadow = region('s', shadow_of={'reference': 'L1', 'margin_nm': 0})
+        inside = capture([part('L1', 12, 12), part('R1', 1, 1, 'B')])
+        self.assertEqual(advisory_regions.grade(inside, [box], set())['regions'][0]['status'], 'info')
+
+        def broken(change):
+            board = copy.deepcopy(inside)
+            change(board)
+            return board
+        def courtyard(ref, side, record):
+            return lambda b: next(f for f in b['footprints'] if f['ref'] == ref)['courtyards'].update({side: record})
+        def drop(ref, side):
+            return lambda b: next(f for f in b['footprints'] if f['ref'] == ref)['courtyards'].pop(side)
+        cases = {
+            'missing intruder courtyard': (broken(drop('R1', 'B')), box),
+            'missing shadow owner courtyard': (broken(drop('L1', 'F')), shadow),
+            'unproven courtyard': (broken(courtyard('R1', 'B', {'status': 'unproven',
+                                                               'polygons': [rectangle(1, 1, 2, 2)]})), box),
+            'courtyard without polygons': (broken(courtyard('R1', 'B', {'status': 'proven'})), box),
+            'unsupported courtyard side': (broken(courtyard('R1', 'X', {'status': 'proven',
+                                                                       'polygons': [rectangle(1, 1, 2, 2)]})), box),
+            'unknown mounting side': (broken(lambda b: b['footprints'][1].update(side='')), box),
+            'invalid schema': (broken(lambda b: b.update(schema='invalid')), box),
+            'invalid board hash': (broken(lambda b: b.update(board_sha256='invalid')), box),
+            'missing uuid': (broken(lambda b: b['footprints'][1].pop('uuid')), box),
+            'empty inventory': (broken(lambda b: b.update(footprints=[])), box),
+        }
+        for first, second in ((part('R1', 1, 1, 'B'), part('R1', 10, 10, 'B')),
+                              (part('R1', 10, 10, 'B'), part('R1', 1, 1, 'B'))):
+            cases[f"duplicate reference, inside {'first' if first['position_nm'][0] < MM * 5 else 'last'}"] = (
+                capture([first, {**second, 'uuid': 'other'}]), box)
+            cases[f"duplicate uuid, inside {'first' if first['position_nm'][0] < MM * 5 else 'last'}"] = (
+                capture([first, {**second, 'ref': 'R2'}]), box)
+        for name, (board, rule) in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(ValueError):
+                    advisory_regions.grade(board, [rule], set())
+                with tempfile.TemporaryDirectory() as root:
+                    root = Path(root)
+                    (root / 'probe.json').write_text(json.dumps(board))
+                    (root / 'policy.json').write_text(json.dumps(request(advisory_regions=[rule])))
+                    self.assertEqual(advisory_regions.main(
+                        ['--probe', str(root / 'probe.json'), '--policy', str(root / 'policy.json'),
+                         '--out', str(root / 'out.json')]), 1)
+                    self.assertFalse((root / 'out.json').exists())
+
+    def test_opposite_side_exclusion_and_two_sided_courtyards_still_grade(self):
+        box = region('box', side='B', polygons=[rectangle(0, 0, 5, 5)])
+        # A front part with no back courtyard is legitimately outside a back region.
+        row = advisory_regions.grade(capture([part('C1', 1, 1)]), [box], set())['regions'][0]
+        self.assertEqual((row['status'], row['intruders']), ('pass', []))
+        # A front part declaring a proven back courtyard (a through-hole body) is graded there.
+        tht = part('J1', 1, 1)
+        tht['courtyards']['B'] = {'status': 'proven', 'polygons': [rectangle(1, 1, 2, 2)]}
+        row = advisory_regions.grade(capture([tht]), [box], set())['regions'][0]
+        self.assertEqual(row['intruders'], [{'reference': 'J1', 'fixed': False}])
+
+    def test_sourced_height_binds_and_a_probe_never_overrides_it(self):
+        board = capture([part('L1', 2, 2), part('R1', 3, 3, 'B'), part('R2', 2, 3, 'B'), part('R3', 3, 2, 'B')])
+        report = advisory_regions.grade(board, [region('s', shadow_of={'reference': 'L1', 'margin_nm': 0})], set())
+        datasheet = {'class': 'datasheet', 'citation': 'Original fixture datasheet, dimensions table',
+                     'sha256': '0' * 64}
+        sourced = advisory_regions.sourced_heights({'schema': advisory_regions.SOURCED_HEIGHTS, 'parts': [
+            {'reference': 'R1', 'part': 'FIXTURE-1', 'height_mm': '4.8', 'tolerance_mm': '0.2', 'source': datasheet},
+            {'reference': 'R2', 'height_mm': '5.2', 'tolerance_mm': '0.2', 'source': datasheet}]},
+            {fp['ref'] for fp in board['footprints']})
+        heights = {'schema': advisory_regions.HEIGHTS, 'board_sha256': 'a' * 64, 'pcbnew_version': 'test',
+                   'footprints': [{'ref': 'R1', 'status': 'unknown', 'reason': 'no 3D model'},
+                                  {'ref': 'R2', 'status': 'measured', 'height_mm': '5.6', 'models': []}]}
+        out = advisory_regions.annotate(report, heights, sourced)
+        rows = {r['reference']: r for r in out['regions'][0]['intruders']}
+        self.assertEqual(rows['R1']['body'], {'status': 'sourced', 'height_mm': '4.8', 'tolerance_mm': '0.2',
+                                              'source': datasheet, 'part': 'FIXTURE-1',
+                                              'model_probe': {'status': 'unknown', 'reason': 'no 3D model'}})
+        # 5.6 mm measured is outside 5.2 +/- 0.2 mm: both are kept, the body is a conflict.
+        self.assertEqual(rows['R2']['body']['status'], 'conflict')
+        self.assertEqual(rows['R2']['body']['model_probe'], {'status': 'measured', 'height_mm': '5.6'})
+        self.assertEqual(rows['R3']['body'], {'status': 'unknown', 'reason': 'not measured'})
+        self.assertEqual({r['tall_heavy_risk'] for r in rows.values()}, {'unresolved'})
+        self.assertEqual(out['sourced_heights']['references'], ['R1', 'R2'])
+        heights['footprints'][1]['height_mm'] = '5.4'
+        self.assertEqual(advisory_regions.annotate(report, heights, sourced)['regions'][0]['intruders'][1]['body']
+                         ['status'], 'sourced')
+        # Sourced alone, with no probe: unsourced parts stay unknown.
+        alone = {r['reference']: r['body']['status']
+                 for r in advisory_regions.annotate(report, None, sourced)['regions'][0]['intruders']}
+        self.assertEqual(alone, {'R1': 'sourced', 'R2': 'sourced', 'R3': 'unknown'})
+        good = {'reference': 'R1', 'height_mm': '4.8', 'tolerance_mm': '0.2', 'source': datasheet}
+        for bad in ({**good, 'reference': 'Q9'}, {**good, 'height_mm': 4.8}, {**good, 'height_mm': '0'},
+                    {**good, 'tolerance_mm': '-0.1'}, {**good, 'height_mm': 'NaN'},
+                    {**good, 'source': {**datasheet, 'sha256': 'x'}},
+                    {**good, 'source': {'class': 'datasheet', 'citation': 'no hash'}},
+                    {**good, 'source': {'class': 'agent-advisory', 'reason': 'guess'}},
+                    {**good, 'source': {'class': 'owner', 'citation': 'owner note', 'sha256': '0' * 64}},
+                    {**good, 'extra': 1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                advisory_regions.sourced_heights({'schema': advisory_regions.SOURCED_HEIGHTS, 'parts': [bad]},
+                                                 {'R1'})
+        with self.assertRaises(ValueError):
+            advisory_regions.sourced_heights({'schema': advisory_regions.SOURCED_HEIGHTS, 'parts': [good, good]},
+                                             {'R1'})
+
     def test_cli_grades_a_capture(self):
         board = capture([part('L1', 2, 2), part('J3', 3, 3, 'B')])
         policy = request(fixed_refs=['L1', 'J3'],
