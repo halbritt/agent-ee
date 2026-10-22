@@ -39,6 +39,8 @@ PAD_SHAPE_PCBNEW_MAJOR = '10'
 # AGENTEE-331 reports edge clearance to 4 decimals of a millimetre: below 50 nm
 # touching cannot be told from crossing (design_rule_provenance), a structural defect.
 COPPER_REPORT_WINDOW_NM = 50
+# Every copper layer: a '*.Cu' pad or rule area (AGENTEE-418).
+ALL_COPPER = frozenset({'*.Cu'})
 
 
 def rotate(point, quarter_turns):
@@ -63,8 +65,9 @@ def _copy_footprint(fp):
     if '_packing_copper_setback' in fp:
         placed['_packing_copper_setback'] = fp['_packing_copper_setback']
     placed['courtyards'] = {side: dict(courtyard) for side, courtyard in fp['courtyards'].items()}
-    if 'packing_keepouts' in fp:
-        placed['packing_keepouts'] = [dict(keepout) for keepout in fp['packing_keepouts']]
+    for key in ('packing_keepouts', 'packing_pad_keepouts'):
+        if key in fp:
+            placed[key] = [dict(keepout) for keepout in fp[key]]
     geometry = fp.get('packing_pad_geometry')
     if isinstance(geometry, dict):
         placed['packing_pad_geometry'] = {**geometry, **{kind: [dict(entry) for entry in geometry[kind]]
@@ -78,7 +81,7 @@ def _move_geometry(placed, move):
         for key in ('polygons', 'inner_polygons'):
             if key in courtyard:
                 courtyard[key] = [[move(p) for p in poly] for poly in courtyard[key]]
-    for keepout in placed.get('packing_keepouts', []):
+    for keepout in placed.get('packing_keepouts', []) + placed.get('packing_pad_keepouts', []):
         keepout['polygons'] = [[move(p) for p in poly] for poly in keepout['polygons']]
     for kind in ('copper', 'holes'):
         for entry in placed.get('packing_pad_geometry', {}).get(kind, []):
@@ -137,6 +140,8 @@ def _translate(at_origin, position):
     # A rigid translation keeps which copper boxes leave the courtyards.
     if '_packing_copper' in at_origin:
         placed['_packing_copper'] = _shift_copper(at_origin['_packing_copper'], dx, dy)
+    if '_packing_lands' in at_origin:
+        placed['_packing_lands'] = _shift_lands(at_origin['_packing_lands'], dx, dy)
     return placed
 
 
@@ -383,18 +388,38 @@ def _qualified(capture):
     return outline[0]
 
 
-def _keepouts(capture, labels=None):
+def _copper_layers(layers):
+    """The copper layers a rule area or pad spans: a set of names, or ALL_COPPER for every copper layer."""
+    return ALL_COPPER if '*.Cu' in layers else frozenset(l for l in layers if l.endswith('.Cu'))
+
+
+def _layers_meet(a, b):
+    return bool(a) and bool(b) and (a == ALL_COPPER or b == ALL_COPPER or bool(a & b))
+
+
+def _keepouts(capture, labels=None, pads=None):
     """Reuse the native rule-area inventory; unqualified exclusions stop packing.
 
     ``labels``, when given, receives per owner ('board' or a reference) the
     name of each exclusion, parallel to the board obstacles or that part's
     ``packing_keepouts``, for typed findings.
+
+    A footprint exclusion binds a footprint on its own side's outer copper
+    layer only: KiCad 10 never reports a footprint against an inner-layer-only
+    area (AGENTEE-418, NativeRuleAreaSemanticsTest). A rule area forbidding
+    pads binds every pad whose copper layers meet its layers, inner layers
+    included; each part records those it owns as ``packing_pad_keepouts`` and
+    the board's are appended to ``pads``, which every caller must check
+    (_copper_escapes, fixed_input_copper). A record without the native ``pads``
+    flag is a hand-built one and forbids no pads.
     """
     labels = {} if labels is None else labels
+    pads = [] if pads is None else pads
     owners = {fp['uuid']: fp for fp in capture['footprints']}
     labels['board'] = []
     for fp in owners.values():
         fp['packing_keepouts'] = []
+        fp['packing_pad_keepouts'] = []
         labels[fp['ref']] = []
         if access_direction.hard(fp):
             _, _, _, lane = access_direction.geometry(fp)
@@ -408,7 +433,9 @@ def _keepouts(capture, labels=None):
         if (not isinstance(area, dict) or not isinstance(area.get('forbid'), dict) or
                 type(area['forbid'].get('footprints')) is not bool):
             raise ValueError('malformed rule-area footprint flag')
-        if not area['forbid']['footprints']:
+        if type(area['forbid'].get('pads', False)) is not bool:
+            raise ValueError('malformed rule-area pad flag')
+        if not area['forbid']['footprints'] and not area['forbid'].get('pads', False):
             continue
         owner = area.get('owner')
         if not isinstance(owner, str) or (owner != 'board' and owner not in owners):
@@ -420,6 +447,11 @@ def _keepouts(capture, labels=None):
                 len(set(layers)) != len(layers)):
             raise ValueError('malformed rule-area layers')
         polygons = qualified_polygons(area.get('outline'))
+        if area['forbid'].get('pads', False):
+            entry = {'layers': _copper_layers(layers), 'polygons': polygons, 'name': f"rule area {area.get('uuid')}"}
+            (pads if owner == 'board' else owners[owner]['packing_pad_keepouts']).append(entry)
+        if not area['forbid']['footprints']:
+            continue
         target = obstacles if owner == 'board' else owners[owner]['packing_keepouts']
         names = labels['board' if owner == 'board' else owners[owner]['ref']]
         for side in ('F', 'B'):
@@ -647,14 +679,26 @@ def _cache_copper_extent(fp):
     courtyards, for that side's footprint keep-outs. With S known, a part whose
     copper lies in its courtyards caches nothing, and its search is the
     courtyard-only one.
+
+    ``_packing_lands`` holds, for pad keep-outs (AGENTEE-418), every copper
+    land as (copper layers, box, proven); a hand-built land without native
+    facts is bounded by the part's courtyards instead, unproven.
     """
     fp.pop('_packing_copper', None)
+    fp.pop('_packing_lands', None)
     setback = fp.get('_packing_copper_setback')
     polygons = [(side, p) for side, c in fp['courtyards'].items() for p in c['polygons']]
-    outline, sides = [], {}
+    outline, sides, lands = [], {}, []
     for pad in fp['pads']:
         on, copper = _copper_sides(pad)
         box = _copper_box(fp, pad) if copper else None
+        if copper:
+            layers = ALL_COPPER if pad.get('layers') is None else _copper_layers(pad['layers'])
+            if box is None:
+                lands += [(layers, p, False) for _, p in polygons]
+            elif box[0] < box[2] and box[1] < box[3]:
+                x0, y0, x1, y1 = box
+                lands.append((layers, [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], True))
         if box is None or box[0] == box[2] or box[1] == box[3]:
             continue
         x0, y0, x1, y1 = box
@@ -668,6 +712,12 @@ def _cache_copper_extent(fp):
                 sides.setdefault(side, {'polygons': []})['polygons'].append(poly)
     if outline or sides:
         fp['_packing_copper'] = {'outline': outline, 'sides': sides}
+    if lands:
+        fp['_packing_lands'] = lands
+
+
+def _shift_lands(lands, dx, dy):
+    return [(layers, [(x + dx, y + dy) for x, y in poly], proven) for layers, poly, proven in lands]
 
 
 def _shift_copper(copper, dx, dy):
@@ -677,14 +727,41 @@ def _shift_copper(copper, dx, dy):
             'sides': {side: {'polygons': [move(p) for p in c['polygons']]} for side, c in copper['sides'].items()}}
 
 
-def _copper_escapes(candidate, outline, obstacles, placed=()):
-    """'outline' or 'rule_area' when copper outside the courtyards leaves the board or enters a keep-out.
+def _copper_meets(fp, peer):
+    """Copper of ``fp`` outside its courtyards meets a courtyard, or such copper, of ``peer`` on its side."""
+    copper = fp.get('_packing_copper')
+    if copper is None or not copper['sides']:
+        return False
+    targets = [{'side': side, 'polygons': c['polygons']} for side, c in peer['courtyards'].items()]
+    targets += [{'side': side, 'polygons': c['polygons']}
+                for side, c in peer.get('_packing_copper', {}).get('sides', {}).items()]
+    return _in_keepouts({'courtyards': copper['sides']}, targets)
 
-    Copper must stay the structural setback S inside the outline
-    (copper_setback); with S unknown, such copper is never admitted
-    ('setback_unknown'). The owner of a keep-out stays exempt from it; a placed peer's copper is
-    checked against the candidate's own keep-outs, and the candidate's copper
-    against every placed owner's. Returns (reason, blocking refs) or None.
+
+def _lands_in(lands, keepouts):
+    """Lands meeting, with positive area, a pad keep-out on a shared copper layer."""
+    return [land for land in lands for keepout in keepouts
+            if _layers_meet(land[0], keepout['layers']) and any(_overlaps(land[1], p) for p in keepout['polygons'])]
+
+
+def _copper_escapes(candidate, outline, obstacles, placed=(), pad_keepouts=()):
+    """A typed reason when copper leaves the board or meets a keep-out or a peer, else None.
+
+    'outline' or 'rule_area' when copper outside the courtyards leaves the
+    board or enters a keep-out. Copper must stay the structural setback S
+    inside the outline (copper_setback); with S unknown, such copper is never
+    admitted ('setback_unknown'). The owner of a keep-out stays exempt from it;
+    a placed peer's copper is checked against the candidate's own keep-outs,
+    and the candidate's copper against every placed owner's.
+
+    AGENTEE-418: 'peer_courtyard' when copper outside the courtyards of either
+    part meets the other's courtyard or such copper on its side; 'pad_rule_area'
+    when a land meets a rule area forbidding pads on one of its copper layers,
+    inner layers included (``pad_keepouts`` for the board's, each placed
+    owner's ``packing_pad_keepouts`` for theirs). An owner's own lands are
+    rigid in its own area at every pose: native DRC reports them on the
+    baseline, and they are not a placement constraint. Returns (reason,
+    blocking refs) or None.
     """
     copper = candidate.get('_packing_copper')
     if copper is not None:
@@ -701,10 +778,22 @@ def _copper_escapes(candidate, outline, obstacles, placed=()):
            if (copper is not None and fp.get('packing_keepouts')
                and _in_keepouts({'courtyards': copper['sides']}, fp['packing_keepouts']))
            or (own and '_packing_copper' in fp and _in_keepouts({'courtyards': fp['_packing_copper']['sides']}, own))}
-    return ('rule_area', hit) if hit else None
+    if hit:
+        return 'rule_area', hit
+    hit = {fp['ref'] for fp in placed if _copper_meets(candidate, fp) or _copper_meets(fp, candidate)}
+    if hit:
+        return 'peer_courtyard', hit
+    lands = candidate.get('_packing_lands', ())
+    if lands and _lands_in(lands, pad_keepouts):
+        return 'pad_rule_area', set()
+    own = candidate.get('packing_pad_keepouts', [])
+    hit = {fp['ref'] for fp in placed
+           if (lands and _lands_in(lands, fp.get('packing_pad_keepouts', ())))
+           or (own and _lands_in(fp.get('_packing_lands', ()), own))}
+    return ('pad_rule_area', hit) if hit else None
 
 
-def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried=None):
+def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried=None, pad_keepouts=()):
     """Typed refusal for fixed parts whose copper is an input defect (AGENTEE-371, ruling 371a), or None.
 
     A fixed footprint is the designer's pose and is never moved. Each native
@@ -722,6 +811,13 @@ def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried
     copper only; the outline itself and keep-outs still bind there, and every
     other edge still needs S. Each exempted box is appended to ``carried`` as
     a reported input fact naming the edge, its distance and the declaration.
+
+    AGENTEE-418: each copper land must also stay out of every rule area
+    forbidding pads on one of its copper layers, inner layers included: the
+    board's (``pad_keepouts``) and every other fixed part's (an owner's own
+    lands are rigid baseline findings, as in _copper_escapes). A native land
+    box there is a defect; a hand-built land without native facts, bounded only
+    by its courtyards, is unproven there and typed unknown.
     """
     findings, unproven = [], []
     declared = {}
@@ -734,9 +830,28 @@ def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried
         exits = declared.get(fp['ref'], {})
         peers = [(o, name) for peer in placed if peer is not fp
                  for o, name in zip(peer.get('packing_keepouts', []), labels.get(peer['ref'], []))]
+        pad_areas = list(pad_keepouts) + [k for peer in placed if peer is not fp
+                                          for k in peer.get('packing_pad_keepouts', [])]
         for pad in fp['pads']:
             on, copper = _copper_sides(pad)
             box = _copper_box(fp, pad) if copper else None
+            if copper and pad_areas:
+                layers = ALL_COPPER if pad.get('layers') is None else _copper_layers(pad['layers'])
+                if box is None:
+                    lands = [(layers, p, False) for c in fp['courtyards'].values() for p in c['polygons']]
+                elif box[0] < box[2] and box[1] < box[3]:
+                    lands = [(layers, [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])], True)]
+                else:
+                    lands = []
+                for area in pad_areas:
+                    if _lands_in(lands, [area]):
+                        row = {'kind': 'fixed_input_copper', 'reference': fp['ref'], 'pad': pad['number'],
+                               'copper_bounds_nm': None if box is None else list(box), 'setback_nm': setback,
+                               'keepout': area['name']}
+                        if box is None:
+                            unproven.append({**row, 'violation': 'pad_keepout_unproven'})
+                        else:
+                            findings.append({**row, 'violation': 'in_pad_keepout'})
             if box is None or box[0] == box[2] or box[1] == box[3]:
                 continue
             x0, y0, x1, y1 = box
@@ -764,7 +879,7 @@ def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried
                                                         'edge': copy.deepcopy(edge),
                                                         'source': copy.deepcopy(declaration['source'])}})
             elif setback is None:
-                unproven.append(row)
+                unproven.append({**row, 'violation': 'setback_unknown'})
             for side in on:
                 for obstacle, name in [*zip(obstacles, labels.get('board', [])), *peers]:
                     if obstacle['side'] == side and any(_overlaps(poly, p) for p in obstacle['polygons']):
@@ -774,11 +889,17 @@ def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried
         return {'outcome': 'defect', 'findings': findings,
                 'reason': f'fixed part copper outside the outline, within the copper setback of it, '
                           f'or in a keep-out: {refs}'}
+    reasons = []
+    refs = ', '.join(sorted({f['reference'] for f in unproven if f['violation'] == 'setback_unknown'}))
+    if refs:
+        reasons.append(f'copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError), '
+                       f'so the copper of fixed {refs} is not proven to stay the setback inside the outline')
+    refs = ', '.join(sorted({f['reference'] for f in unproven if f['violation'] == 'pad_keepout_unproven'}))
+    if refs:
+        reasons.append(f'pad keep-out unproven: fixed {refs} has lands without native land facts '
+                       f'whose courtyard meets a rule area forbidding pads')
     if unproven:
-        refs = ', '.join(sorted({f['reference'] for f in unproven}))
-        return {'outcome': 'unknown', 'findings': [{**f, 'violation': 'setback_unknown'} for f in unproven],
-                'reason': f'copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError), '
-                          f'so the copper of fixed {refs} is not proven to stay the setback inside the outline'}
+        return {'outcome': 'unknown', 'findings': unproven, 'reason': '; '.join(reasons)}
     return None
 
 
@@ -1540,6 +1661,10 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups, ca
         for peer in placed[:i]:
             if _hole_conflict(fp, peer):
                 raise ValueError(f"fixed placement {fp['ref']} conflicts with {peer['ref']} native through-hole reservation")
+            if _copper_meets(fp, peer) or _copper_meets(peer, fp):
+                # AGENTEE-418: copper outside a courtyard binds a peer's courtyard as a courtyard does.
+                raise ValueError(f"fixed placement {fp['ref']} copper outside its courtyard meets {peer['ref']}, "
+                                 f"or {peer['ref']}'s meets {fp['ref']}")
         for entry, origin in facts:
             if entry['side'] in fp['courtyards'] and _near(fp, [entry], gap):
                 d2 = _spacing(fp, entry)
@@ -1631,7 +1756,8 @@ class _Search:
     predicates. A rejection records which placed movable parts blocked it, so a
     failed part names the parts a backjump may move.
     """
-    def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat=None):
+    def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat=None,
+                 pad_keepouts=()):
         self.started = (time.monotonic() if heartbeat is not None or 'search_timeout_s' in policy else None)
         self.deadline = (self.started + policy['search_timeout_s']
                          if 'search_timeout_s' in policy else None)
@@ -1643,6 +1769,7 @@ class _Search:
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
         self.exact, self.obstacles, self.outline, self.margin_nm = exact, obstacles, outline, margin_nm
+        self.pad_keepouts = pad_keepouts
         self.solid = [(o['side'], slab) for o in exact for poly in o['polygons'] for slab in _slabs(poly) or ()]
         self.gap, self.budget, self.grounds = policy['gap_nm'], policy['step_budget'], policy['ground_nets']
         self.members, self.steps, self.placed, self.reserved = members, 0, [], []
@@ -1750,7 +1877,7 @@ class _Search:
                _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
         if hit:
             return set(hit) - self.fixed
-        escaped = _copper_escapes(proposed, self.outline, self.obstacles, self.placed)
+        escaped = _copper_escapes(proposed, self.outline, self.obstacles, self.placed, self.pad_keepouts)
         if escaped is not None:
             return escaped[1] - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
@@ -1776,6 +1903,9 @@ class _Search:
         # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
         anchors += self.solid
         anchors += _keepout_boxes(self.obstacles + [area for f in self.placed for area in f.get('packing_keepouts', [])])
+        # Pad keep-outs (AGENTEE-418) align candidates as footprint keep-outs do; a courtyard may enter them.
+        anchors += [(None, _box(k['polygons'])) for k in self.pad_keepouts + [
+            k for f in self.placed for k in f.get('packing_pad_keepouts', [])]]
         ties = self.ties(fp['ref'])
         targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', []) for p in poly]
         targets += [point for _, point, _ in ties]
@@ -1986,8 +2116,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
         for fp in capture['footprints']:
             if access_direction.hard(fp):
                 access_direction.geometry(fp)
-        labels = {}
-        obstacles = _keepouts(capture, labels)
+        labels, pad_keepouts = {}, []
+        obstacles = _keepouts(capture, labels, pad_keepouts)
         bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
     except ValueError as exc:
         return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, str(exc), margin_nm)
@@ -2012,7 +2142,7 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
         state['overhang_copper'] = []
         refusal = fixed_input_copper([fp for fp in placed if not _unchanged(fp, arranged.get(fp['ref']))],
                                      outline, obstacles, labels, policy.get('fixed_overhangs', []),
-                                     state['overhang_copper'])
+                                     state['overhang_copper'], pad_keepouts)
         if refusal is not None:
             if carried is not None:
                 state['carried'] = carried
@@ -2087,7 +2217,7 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
     missing = copper_setback_missing(fp for fp in capture['footprints'] if fp['ref'] not in fixed)
     if missing:
         return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, missing, margin_nm)
-    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
+    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat, pad_keepouts)
     search.copper_axes = copper_axes
     if runtime is not None:
         runtime['search'] = search
