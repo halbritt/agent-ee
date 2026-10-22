@@ -1,6 +1,7 @@
 import contextlib
 import hashlib
 import html
+import ipaddress
 import itertools
 import json
 import multiprocessing
@@ -160,12 +161,43 @@ def random_texts(seed, rounds):
         yield ''.join(parts + [rng.choice(separators)])
 
 
-LEAKS = ('hidden', 'file:', 'C:', '\\', 'fd00', 'private-', 'Alice', 'localhost')
+LEAKS = ('hidden', 'file:', 'C:', '\\', 'private-', 'Alice', 'localhost')
+ADDRESS_TOKEN = re.compile(r'[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*')
+
+
+def ula_addresses(body):
+    """fd00::/8 IPv6 addresses among the tokens of body. A hex id that merely contains "fd00" is no address."""
+    found = []
+    for token in ADDRESS_TOKEN.findall(body):
+        try:
+            address = ipaddress.IPv6Address(token.strip('.'))
+        except ValueError:
+            continue
+        if address in ipaddress.IPv6Network('fd00::/8'):
+            found.append(token)
+    return found
 
 
 def assert_no_uri_leak(test, body, where):
     for leak in LEAKS:
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
+    test.assertEqual(ula_addresses(body), [], where)
+
+
+class LeakScanTests(unittest.TestCase):
+    def test_generated_id_containing_fd00_is_not_a_leak(self):
+        body = json.dumps({'id': 'a1fd00b2c3d4e5f6', 'diagnostic': 'fd00deadbeef', 'sha256': 'fd00' + '0' * 60})
+        assert_no_uri_leak(self, body, 'hex id')
+
+    def test_real_ula_address_still_fails(self):
+        for body in ('http://[fd00:1234::1]/x', 'host fd00::1 end', '{"a": "FD00:abcd::2"}'):
+            with self.assertRaises(AssertionError, msg=body):
+                assert_no_uri_leak(self, body, body)
+
+    def test_leaked_uri_or_host_still_fails(self):
+        for body in ('file:///private-share/m.step', 'smb://user-hidden@server/x', 'http://localhost/x'):
+            with self.assertRaises(AssertionError, msg=body):
+                assert_no_uri_leak(self, body, body)
 
 
 def records(text):
