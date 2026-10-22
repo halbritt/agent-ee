@@ -60,7 +60,7 @@ class CandidateVisualTests(unittest.TestCase):
         packet = build_packet(run, result['checks'], result['run_id'])
         self.assertEqual(packet['candidate_visuals'], visuals)
         self.assertEqual(visuals['reproducibility']['status'], 'not_verified')
-        self.assertIn('0.67%', visuals['reproducibility']['reason'])
+        self.assertIn('AGENTEE-382 pod board', visuals['reproducibility']['reason'])
         self.assertIn('SVG <title> creation timestamp', visuals['reproducibility']['reason'])
         self.assertIn('not normalized', visuals['reproducibility']['reason'])
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.source.iterdir() if p.is_file()})
@@ -136,12 +136,14 @@ class CandidateVisualTests(unittest.TestCase):
                     'visuals': {'board_sha256': 'current',
                                 'images': [{'path': image.name, 'sha256': digest(image)}]}}
         image.unlink()
-        for state in ('missing', 'changed', 'directory', 'symlink'):
+        for state in ('missing', 'changed', 'directory', 'symlink', 'fifo'):
             with self.subTest(state=state):
                 if state == 'changed':
                     image.write_bytes(b'changed')
                 elif state == 'directory':
                     image.mkdir()
+                elif state == 'fifo':
+                    os.mkfifo(image)
                 elif state == 'symlink':
                     target = self.root / 'original.png'
                     target.write_bytes(b'original')
