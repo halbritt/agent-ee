@@ -7,6 +7,7 @@ import argparse
 import copy
 import io
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -28,6 +29,19 @@ RATING_PROVENANCE = 'rating-provenance'
 # Optional envelope-content inputs; envelope, parts and board are the plan's and scope's own.
 CONTENT_PATHS = ('intent', 'layout', 'antenna_facts', 'captured_rule_areas')
 SOURCE = Path(__file__).resolve().parents[1]
+# Acceptance criteria each declared spec revision must carry (AGENTEE-197 review gap 6). Each
+# set is the numbered acceptance list of that revision's captured source, read from the verified
+# spec record's own acceptance entries; a revision outside this table is refused, never guessed.
+#   Rev-2: fixtures/telemetry-pod/spec.md sha256 09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493,
+#          POD-DOC-P1 bytes 30-214 'Revision 2', POD-AC-1..9.
+#   Rev-3: fome-mc 1157b91899fd9f420089fbec4264b823310f0ad9
+#          telemetry-pod/expansion/requirements/compiled/requirements-map/spec.md sha256
+#          e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6 (spec-record.json sha256
+#          1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b), POD-DOC-P1 bytes 30-421
+#          'Revision 3', POD-AC-10 bytes 21943-22224, POD-AC-11 bytes 22229-22495.
+REVISIONS = {'2': dict(criteria=9, bench=('POD-AC-8', 'POD-AC-9')),
+             '3': dict(criteria=11, bench=('POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'))}
+REVISION = re.compile(r'\bRevision (\d+)\b')
 BUDGET_NOTE = ('Historical rung-1 estimate: $10-15 review plus $1-3.6 writing per iteration '
                'for three parts; pod work may multiply this. Estimate, not measurement or spending authority.')
 
@@ -36,6 +50,57 @@ def _path(value):
     if not isinstance(value, str) or str(candidate.safe_relative(value)) != value:
         raise ValueError('canonical candidate-relative path required')
     return value
+
+
+class RequirementSetError(ValueError):
+    """The captured spec or scope does not carry its revision's complete acceptance set."""
+
+    def __init__(self, reason, requirement, message):
+        super().__init__(f'{reason}: {requirement}: {message}')
+        self.reason, self.requirement = reason, requirement
+
+
+def requirement_set(spec, scope):
+    """The declared revision's acceptance set, bound to the verified spec record and scope.
+
+    The revision comes from the spec's own first paragraph (POD-DOC-P1); the criteria are the
+    record's acceptance entries. Rev-2 keeps its legacy scope contract (AC8/AC9 bench); Rev-3
+    must also account for every criterion in the scope and keep AC8-AC11 bench obligations."""
+    prose = [p for p in spec['prose'] if p['id'] == 'POD-DOC-P1']
+    found = set(REVISION.findall(prose[0]['text'])) if prose else set()
+    if len(found) != 1 or next(iter(found)) not in REVISIONS:
+        raise RequirementSetError('undeclared-revision', 'POD-DOC-P1',
+            'spec must declare exactly one of revisions ' + ', '.join(sorted(REVISIONS)))
+    revision = found.pop()
+    rule = REVISIONS[revision]
+    required = [f'POD-AC-{n}' for n in range(1, rule['criteria'] + 1)]
+    present = [r['id'] for r in spec['requirements'] if r['kind'] == 'acceptance']
+    for rid in required:
+        if rid not in present:
+            raise RequirementSetError('missing-acceptance-criterion', rid,
+                                      f'Revision {revision} spec record omits this criterion')
+    for rid in present:
+        if rid not in required:
+            raise RequirementSetError('unexpected-acceptance-criterion', rid,
+                                      f'Revision {revision} declares POD-AC-1..{rule["criteria"]} only')
+    limitations = scope.get('limitations', [])
+    if revision == '2':
+        # Legacy contract, preserved exactly.
+        for rid in rule['bench']:
+            if not any(rid in text and 'BENCH REQUIRED' in text for text in limitations):
+                raise ValueError(f'{rid} must remain an explicit BENCH REQUIRED obligation')
+    else:
+        mapped = {r['id'] for r in scope['baseline']['requirements']}
+        for rid in required:
+            if rid not in mapped and not any(text.startswith(rid + ': ') for text in limitations):
+                raise RequirementSetError('unaccounted-acceptance-criterion', rid,
+                                          'scope maps it to no baseline requirement and no limitation')
+        for rid in rule['bench']:
+            if not any(text.startswith(rid + ': BENCH REQUIRED') for text in limitations):
+                raise RequirementSetError('missing-bench-obligation', rid,
+                                          'must remain an explicit BENCH REQUIRED obligation')
+    return dict(revision=int(revision), revision_locator=prose[0]['locator'],
+                spec_sha256=spec['spec']['sha256'], acceptance=required, bench=list(rule['bench']))
 
 
 def _integer(value, name, low, high):
@@ -196,10 +261,10 @@ def validate_configuration(plan, scope, files, inputs):
         raise ValueError('expected the captured telemetry pod requirement record')
     if not {plan['spec'], plan['spec_record']} <= baseline['files'].keys():
         raise ValueError('pod spec and capture must be immutable baseline sources')
-    for requirement in ('POD-AC-8', 'POD-AC-9'):
-        if not any(requirement in text and 'BENCH REQUIRED' in text for text in scope.get('limitations', [])):
-            raise ValueError(f'{requirement} must remain an explicit BENCH REQUIRED obligation')
+    # The campaign baseline enters here: bind it to the complete acceptance set of the captured spec.
+    requirements = requirement_set(spec, scope)
     return dict(baseline_id=baseline['baseline_id'], stage_policy_id=identity(declaration),
+                requirement_set=requirements,
                 mutable_inputs=sorted(mutable), writer_inputs=sorted(writer),
                 coordinator_outputs=sorted(written), max_iterations=iterations,
                 max_seconds=seconds, implementation_steps=normalized, routing_step=route,

@@ -86,7 +86,30 @@ and the declared coordinator outputs, all of which must already be captured afte
 scaffolding. Baseline inputs stay immutable. It preserves requirements, baseline
 mappings, targets, reference architectures and limitations rather than inventing
 coverage. The spec and its exact capture must be immutable baseline sources.
-`POD-AC-8` and `POD-AC-9` must remain explicit `BENCH REQUIRED` limitations.
+
+### Requirement set (AGENTEE-197)
+
+The campaign baseline enters at `validate_configuration`, so the driver binds
+it there to the complete acceptance set of the verified spec capture. The
+generic `compile_baseline` knows nothing of the pod, and the evidence index
+runs after the fact; neither is the entry boundary. `requirement_set` reads the
+revision from the spec's own first paragraph (`POD-DOC-P1`) and the criteria
+from the record's acceptance entries. A missing or unlisted revision is refused.
+
+| Revision | Captured source | Criteria | Bench obligations | Scope contract |
+|---|---|---|---|---|
+| 2 | `fixtures/telemetry-pod/spec.md` sha256 `09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493`, `POD-DOC-P1` bytes 30-214 | exactly `POD-AC-1`..`9` | `POD-AC-8`, `POD-AC-9` | Legacy, unchanged: each bench criterion appears in a `BENCH REQUIRED` limitation |
+| 3 | fome-mc `1157b91899fd9f420089fbec4264b823310f0ad9` `telemetry-pod/expansion/requirements/compiled/requirements-map/spec.md` sha256 `e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6`, `POD-DOC-P1` bytes 30-421, `POD-AC-10` bytes 21943-22224, `POD-AC-11` bytes 22229-22495 | exactly `POD-AC-1`..`11` | `POD-AC-8`..`11` | Every criterion is a baseline requirement ID or the prefix `POD-AC-n: ` of a limitation; each bench criterion has a limitation starting `POD-AC-n: BENCH REQUIRED` |
+
+Refusals raise `RequirementSetError` with `reason` and `requirement`:
+`undeclared-revision`, `missing-acceptance-criterion` (the spec capture omits
+it), `unexpected-acceptance-criterion`, `unaccounted-acceptance-criterion`
+(the scope drops it) and `missing-bench-obligation`. The accepted set, revision
+locator and spec hash are recorded as `requirement_set` in the driver
+receipt's validation. This proves only that every criterion is carried; it is
+not acceptance. Thermal, owner DFM/preview and bench limitations stay in the
+prepared scope. `test_pod_driver` reads the actual Rev-3 capture read-only from
+the pinned fome-mc store.
 Additional captured accounting artifacts, such as an evidence-index criterion
 map, can be included in baseline targets without a new driver field.
 
