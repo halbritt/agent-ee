@@ -1384,6 +1384,38 @@ class PodReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'differs from the native capture|differs from the evidence it binds'):
             access.access_status(candidate, bound, **evidence)
 
+    def test_project_edited_after_native_load_never_binds_cached_rules(self):
+        """review-ee386e H1: load, edit the project, then issue: this process's cached rules never bind."""
+        board = self.copy_board('cache-order')
+        candidate, before, evidence = self.native_sidecar(board)
+        self.assertIn(access.access_status(candidate, before, **evidence)['status'], ('witnessed', 'partial'))
+        project = board.with_suffix('.kicad_pro')
+        settings = json.loads(project.read_text())
+        settings['board']['design_settings']['rules']['min_clearance'] = 10.0
+        project.write_text(json.dumps(settings))
+        # pcbnew may reuse the project it loaded first: whatever this process reads is never authority.
+        stale = routing_geometry(board)
+        stale_capture = extract(board)
+        print('\nAGENTEE-386 same-process floor after project edit:', stale['rules']['min_clearance_nm'], 'nm',
+              file=sys.stderr)
+        if stale['rules']['min_clearance_nm'] != 10 * MM:
+            with self.assertRaisesRegex(ValueError, 'routing geometry differs from the native capture'):
+                access.block_access(candidate, stale, POLICY, capture=stale_capture, board=board)
+        else:  # an uncached load read the edited project: it binds exactly like a fresh capture
+            self.assertEqual(access.block_access(candidate, stale, POLICY, capture=stale_capture,
+                                                 board=board)['summary']['witness'], 0)
+        with self.assertRaisesRegex(ValueError, 'differs from the native capture|differs from the evidence it binds'):
+            access.access_status(candidate, before, **evidence)
+        # The captures a fresh interpreter takes of the edited snapshot bind its bytes and its 10 mm floor.
+        fresh, fresh_capture, hashes = access._native_capture(board)
+        self.assertEqual(fresh['rules']['min_clearance_nm'], 10 * MM)
+        self.assertEqual(hashes['.kicad_pro'], hashlib.sha256(project.read_bytes()).hexdigest())
+        after = access.block_access(candidate, fresh, POLICY, capture=fresh_capture, board=board)
+        self.assertEqual(after['rule_authority']['project_sha256'], hashes['.kicad_pro'])
+        self.assertEqual(after['summary']['witness'], 0)
+        self.assertEqual(access.access_status(candidate, after, geometry=fresh, capture=fresh_capture,
+                                              board=board)['status'], 'unknown')
+
     def test_actual_candidate_sidecar_binds_and_witnesses_qualify(self):
         candidate = json.loads(self.candidate_raw)
         capture = extract(self.board)

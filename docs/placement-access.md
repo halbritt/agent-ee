@@ -177,7 +177,10 @@ runs in diagnostic mode only:
   canonical digest. It adds no field to that schema.
 - **Contour authority.** With `board` (the saved board file), the board's
   SHA-256 must be the captures' and both captures must equal fresh native
-  captures of it (`routing_geometry`, `extract`). Every native contour, drill
+  captures of it (`routing_geometry`, `extract`). The board, `.kicad_pro` and
+  `.kicad_dru` bytes are read once into a private snapshot directory, and a
+  fresh interpreter (`python -m agent_ee.placement_probe`) captures that
+  snapshot. A failed child capture refuses. Every native contour, drill
   and rule is then authoritative, and `contour_authority` is `native board`.
   Without it, `contour_authority` is `placement capture` and only what the
   placement capture specifies is bound, as below.
@@ -188,11 +191,14 @@ runs in diagnostic mode only:
   capture and candidate. Rules are therefore authoritative only from the saved
   board. With `board`, `rule_authority` is `{status: bound, board_sha256,
   project_sha256, custom_rules_sha256}`: the SHA-256 of the board,
-  `.kicad_pro` and `.kicad_dru` (`null` when absent). The custom-rule hash must
+  `.kicad_pro` and `.kicad_dru` of that snapshot (`null` when absent), which
+  are exactly the bytes the fresh interpreter loaded. The custom-rule hash must
   be the one captured in the routing geometry. pcbnew can cache a loaded
-  project within one process, so the files are bound by their bytes, not by
-  the settings that were read. A project or custom rule file that changes
-  after the sidecar refuses. Without `board`, `rule_authority` is `{status:
+  project within one process (review-ee386e H1): a project edited after a
+  first load in the caller's process still reads the earlier rules there, for
+  example a 0 nm floor under a 10 mm project. Those captures differ from the
+  fresh snapshot capture and refuse, so cached rules are never bound. A
+  project or custom rule file that changes after the sidecar also refuses. Without `board`, `rule_authority` is `{status:
   unbound, reason}`. That reason is a coverage reason, so every terminal is
   unknown, never witnessed. A sidecar cannot relabel its rules as bound or drop
   that reason.

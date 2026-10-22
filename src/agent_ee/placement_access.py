@@ -30,8 +30,9 @@ member's land pattern, courtyard, pads and nets. Copper contours are bound
 shape-specifically to the placement capture, or exactly to fresh native
 captures of the saved board (``contour_authority``). Board rules, own
 clearances and custom-rule presence are authoritative only from the saved
-board: ``rule_authority`` hash-binds its board, project and custom rule files,
-and without them every terminal is unknown. It is written only in
+board: ``rule_authority`` hash-binds the board, project and custom rule bytes
+of one snapshot that a fresh interpreter captured, and without them every
+terminal is unknown. It is written only in
 diagnostic mode and never changes a candidate, its order or its admission. Its
 status is derived from terminal evidence re-derived from the captures it binds.
 See docs/placement-access.md.
@@ -41,9 +42,12 @@ from collections import Counter
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
+import tempfile
 
 from .catalog import strict_json
 from .footprint_library import digest
@@ -1099,16 +1103,65 @@ def _member_evidence(candidate, geometry, capture):
 
 # ------------------------------------------------------------------ sidecar
 
-def _native_evidence(board, geometry, capture):
-    """The routing geometry and placement capture must be the native captures of the hashed saved board."""
-    from .placement_probe import extract, routing_geometry
+RULE_SOURCES = ('.kicad_pcb', '.kicad_pro', '.kicad_dru')
+
+
+def _native_capture(board):
+    """Both native captures of one stable snapshot of the board and its rule files, in a fresh interpreter.
+
+    pcbnew caches a loaded project within one process, so a capture in this
+    process can carry the rules of earlier project bytes. The board, project
+    and custom rule bytes are read once, written to a private directory and
+    captured there by a clean child; the returned hashes are of exactly the
+    bytes that child loaded.
+    """
     board = Path(board)
-    if hashlib.sha256(board.read_bytes()).hexdigest() != geometry['board_sha256']:
+    snapshot = {suffix: board.with_suffix(suffix).read_bytes() if board.with_suffix(suffix).is_file() else None
+                for suffix in RULE_SOURCES}
+    if snapshot['.kicad_pcb'] is None:
+        raise ValueError('native board is not a saved board file')
+    with tempfile.TemporaryDirectory(prefix='agent-ee-access-native-') as tmp:
+        copy = Path(tmp) / board.name
+        for suffix, raw in snapshot.items():
+            if raw is not None:
+                copy.with_suffix(suffix).write_bytes(raw)
+        captures = {}
+        for name, flags in (('geometry', ['--routing-geometry']), ('capture', [])):
+            out = Path(tmp) / f'{name}.json'
+            argv = [sys.executable, '-B', '-m', 'agent_ee.placement_probe', str(copy), '--out', str(out), *flags]
+            # The child imports this same package source, whatever the caller's path.
+            env = {**os.environ, 'PYTHONPATH': os.pathsep.join(
+                [str(Path(__file__).resolve().parents[1])] + [p for p in [os.environ.get('PYTHONPATH')] if p])}
+            try:
+                completed = subprocess.run(argv, capture_output=True, text=True, timeout=600, env=env, cwd=tmp)
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError(f'native capture could not run: {exc}') from exc
+            if completed.returncode != 0 or not out.is_file():
+                raise ValueError(f'native {name} capture failed (exit {completed.returncode}): '
+                                 + completed.stderr.strip()[-400:])
+            captures[name] = strict_json(out.read_bytes())
+        for suffix, raw in snapshot.items():
+            if raw is not None and copy.with_suffix(suffix).read_bytes() != raw:
+                raise ValueError('native rule sources changed during capture')
+    hashes = {suffix: hashlib.sha256(raw).hexdigest() if raw is not None else None
+              for suffix, raw in snapshot.items()}
+    return captures['geometry'], captures['capture'], hashes
+
+
+def _native_evidence(board, geometry, capture):
+    """The routing geometry and placement capture must be the fresh native captures of one board snapshot.
+
+    Returns the hashes of the snapshot's board, project and custom rule bytes:
+    the rule sources of the supplied geometry, since it equals their capture.
+    """
+    fresh_geometry, fresh_capture, hashes = _native_capture(board)
+    if hashes['.kicad_pcb'] != geometry['board_sha256']:
         raise ValueError('native board differs from the routing geometry board')
-    if digest(routing_geometry(board)) != digest(geometry):
+    if digest(fresh_geometry) != digest(geometry):
         raise ValueError('routing geometry differs from the native capture of the board')
-    if digest(extract(board)) != digest(capture):
+    if digest(fresh_capture) != digest(capture):
         raise ValueError('placement capture differs from the native capture of the board')
+    return hashes
 
 
 # A placement capture states no rules; rules supplied beside it are editable and prove nothing.
@@ -1116,22 +1169,12 @@ RULES_UNBOUND = 'board rules, own clearances and custom-rule presence not bound 
 RULE_AUTHORITY_KEYS = ('status', 'board_sha256', 'project_sha256', 'custom_rules_sha256')
 
 
-def _file_sha256(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
-
-
-def _rule_authority(board, geometry):
-    """Hashes of the native rule sources of the saved board: design settings, project and custom rule files.
-
-    pcbnew caches a loaded project within one process, so the project and
-    custom rule files are bound by their bytes, not by the settings read.
-    """
-    board = Path(board)
-    custom = _file_sha256(board.with_suffix('.kicad_dru'))
-    if custom != geometry['rules']['custom_rules'].get('sha256'):
+def _rule_authority(hashes, geometry):
+    """Hashes of the native rule sources the geometry was freshly captured from: board, project, custom rules."""
+    if hashes['.kicad_dru'] != geometry['rules']['custom_rules'].get('sha256'):
         raise ValueError('routing geometry custom rules differ from the board custom rule file')
-    return {'status': 'bound', 'board_sha256': geometry['board_sha256'],
-            'project_sha256': _file_sha256(board.with_suffix('.kicad_pro')), 'custom_rules_sha256': custom}
+    return {'status': 'bound', 'board_sha256': hashes['.kicad_pcb'],
+            'project_sha256': hashes['.kicad_pro'], 'custom_rules_sha256': hashes['.kicad_dru']}
 
 
 def block_access(candidate, geometry, routing_policy, limits=None, *, capture, board=None):
@@ -1142,12 +1185,14 @@ def block_access(candidate, geometry, routing_policy, limits=None, *, capture, b
     same saved board; the routing geometry is bound to it (``bind_capture``)
     and every member's land pattern, courtyard, footprint and pin nets are
     recomputed from it and must equal the candidate's. With ``board`` (the
-    saved board file), both captures must equal fresh native captures of it,
-    so every native contour and rule is authoritative (``contour_authority``
+    saved board file), both captures must equal the native captures a fresh
+    interpreter takes of one snapshot of it and its rule files (never this
+    process's possibly cached project), so every native contour and rule is
+    authoritative (``contour_authority``
     ``native board``); without it only contours the placement capture
     specifies are bound (``placement capture``). Rules, own clearances and
     custom-rule presence are bound only with ``board`` (``rule_authority``
-    hashes its board, project and custom rule files); without it they are
+    hashes that snapshot's board, project and custom rule bytes); without it they are
     unbound coverage and every terminal is unknown, never witnessed. Every
     member must sit on the board at the candidate's frame poses relative to
     its anchor. Witnesses that use space outside the block (edge, neighbours,
@@ -1157,8 +1202,7 @@ def block_access(candidate, geometry, routing_policy, limits=None, *, capture, b
     blocks.validate_candidate(candidate)
     validate_geometry(geometry)
     if board is not None:
-        _native_evidence(board, geometry, capture)
-        rule_authority, rule_coverage = _rule_authority(board, geometry), []
+        rule_authority, rule_coverage = _rule_authority(_native_evidence(board, geometry, capture), geometry), []
     else:
         rule_authority, rule_coverage = {'status': 'unbound', 'reason': RULES_UNBOUND}, [RULES_UNBOUND]
     unbound, analysed, coverage = _bind(geometry, capture, board is not None)
