@@ -93,6 +93,12 @@ def copy_capture(source, destination):
             if seals.get(rel) != actual:
                 raise ValueError(f"unsealed or changed check evidence: {rel}")
             files[rel] = actual
+    # Coordinator images (AGENTEE-382) are packet inputs; build_packet re-verifies each one.
+    for image in (manifest.get("visuals") or {}).get("images", []):
+        rel = str(safe_relative(image["path"]))
+        if not rel.startswith("work/candidate.visuals/"):
+            raise ValueError(f"non-coordinator candidate image: {rel}")
+        files[rel] = image["sha256"]
     for rel, expected_hash in files.items():
         data = local_file(source, rel).read_bytes()
         if hashlib.sha256(data).hexdigest() != expected_hash:
