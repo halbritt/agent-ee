@@ -192,9 +192,10 @@ reference is marked `absolute: true` (AGENTEE-428). The proposal board is not
 rewritten, so native renders still read the source file; the recorded SHA-256 and
 the pre-publication source and copy checks bind those bytes. Before publication
 the literal absolute path is resolved again: it must still lead to the same
-real project file with the same bytes (a captured missing reference must still be
-absent there), so retargeting, swapping or escaping a symlink on that path after
-capture refuses the proposal. Absolute paths
+real project location recorded at capture (`real_path`) with the same bytes (a
+captured missing reference must still be absent there), so retargeting, swapping
+or escaping a symlink on that path after capture refuses the proposal, even when
+the new target holds identical bytes. Absolute paths
 outside the project are external files and are neither copied nor listed.
 
 Paths escaping the source project, including escaping symlinks, and collisions

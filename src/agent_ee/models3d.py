@@ -301,6 +301,11 @@ def copy_project_models(board: Path, destination: Path) -> dict:
                 raise ValueError(f'unsafe project model destination: {path}')
             record['proposal_path'] = target_relative.as_posix()
             if absolute is not None:
+                # The real file inspected (and hashed); a later retarget refuses even to identical bytes.
+                real = Path(model['resolved_path'])
+                if not real.is_relative_to(board.parent):
+                    raise ValueError(f'project model escapes source project: {path}')
+                record['real_path'] = real.relative_to(board.parent).as_posix()
                 _bind_absolute_reference(board, record)
             if model['status'] != 'resolved':
                 continue
@@ -326,10 +331,15 @@ def copy_project_models(board: Path, destination: Path) -> dict:
 
 
 def _bind_absolute_reference(board, record):
-    """The literal absolute path the proposal board names must resolve to its carried project file."""
+    """The literal absolute path the proposal board names must resolve to its carried project file.
+
+    Both spellings must still resolve to the real location recorded at capture.
+    """
     project = Path(board).parent.resolve()
     real = Path(record['path']).resolve()
-    if not real.is_relative_to(project) or real != (project / record['proposal_path']).resolve():
+    captured = record.get('real_path')
+    if (not isinstance(captured, str) or not real.is_relative_to(project)
+            or real != project / captured or real != (project / record['proposal_path']).resolve()):
         raise ValueError(f'absolute project model reference no longer resolves to its captured file: {record["path"]}')
 
 
@@ -337,7 +347,8 @@ def verify_project_models(board: Path, destination: Path, closure: dict):
     """Refuse changed source/proposal model bytes or newly appearing missing files.
 
     Absolute references are checked through the literal path the proposal board
-    still names: a symlink retarget, swap or escape after capture refuses.
+    still names against the real location captured: a symlink retarget (even to
+    identical bytes), swap or escape after capture refuses.
     """
     for relative, entry in closure['files'].items():
         source, target = Path(board).parent / relative, Path(destination) / relative

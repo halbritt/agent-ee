@@ -453,6 +453,59 @@ class ModelClosureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing.*appeared'):
             verify_project_models(self.board, destination, closure)
 
+    def _internal_alias_closure(self, directory, name):
+        # /project/<alias> -> /project/a/<...>, spelled absolutely inside the project.
+        project = self.root / 'project'
+        for side in ('a', 'b'):
+            (project / side).mkdir(parents=True)
+            if name == 'body.step':
+                (project / side / 'body.step').write_bytes(b'owned body')
+        alias = project / ('alias' if directory else 'alias.step')
+        alias.symlink_to(project / 'a' if directory else project / 'a' / name)
+        self.board = project / 'board.kicad_pcb'
+        self.write_board(f'(footprint "Owned" (model "{alias}{"/" + name if directory else ""}"))')
+        destination = project / 'proposal'
+        destination.mkdir()
+        closure = copy_project_models(self.board, destination)
+        return project, alias, destination, closure
+
+    def test_internal_absolute_symlink_unchanged_verifies_and_retarget_refuses(self):
+        # AGENTEE-428 H1: the captured real location binds, not two current resolutions.
+        for directory in (False, True):
+            for name, status in (('body.step', 'resolved'), ('gone.step', 'missing')):
+                with self.subTest(directory=directory, name=name), tempfile.TemporaryDirectory() as root:
+                    self.root = Path(root)
+                    project, alias, destination, closure = self._internal_alias_closure(directory, name)
+                    record = closure['references'][0]
+                    self.assertEqual((record['status'], record['real_path']), (status, f'a/{name}'))
+                    self.assertEqual(record['proposal_path'], f'alias/{name}' if directory else 'alias.step')
+                    verify_project_models(self.board, destination, closure)
+                    alias.unlink()
+                    alias.symlink_to(project / 'b' if directory else project / 'b' / name)
+                    self.assertNotEqual(Path(record['path']).resolve(), project / record['real_path'])
+                    with self.assertRaisesRegex(ValueError, 'no longer resolves'):
+                        verify_project_models(self.board, destination, closure)
+                    alias.unlink()
+                    alias.symlink_to(project / 'a' if directory else project / 'a' / name)
+                    verify_project_models(self.board, destination, closure)
+
+    def test_internal_absolute_symlink_swapped_real_directory_refuses(self):
+        # Replacing a component of the captured real path with a symlink is a retarget too.
+        project, alias, destination, closure = self._internal_alias_closure(False, 'body.step')
+        (project / 'a').rename(project / 'a-old')
+        (project / 'a').symlink_to(project / 'b')
+        with self.assertRaisesRegex(ValueError, 'no longer resolves'):
+            verify_project_models(self.board, destination, closure)
+        (project / 'a').unlink()
+        (project / 'a-old').rename(project / 'a')
+        verify_project_models(self.board, destination, closure)
+
+    def test_absolute_reference_without_captured_real_path_refuses(self):
+        project, alias, destination, closure = self._internal_alias_closure(False, 'body.step')
+        del closure['references'][0]['real_path']
+        with self.assertRaisesRegex(ValueError, 'no longer resolves'):
+            verify_project_models(self.board, destination, closure)
+
 
 class StockModelFetchTests(unittest.TestCase):
     def setUp(self):
