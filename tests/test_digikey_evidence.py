@@ -27,14 +27,17 @@ def parameters(height='0.069" (1.75mm)', temperature='-40°C ~ 85°C (TA)', pack
             for index, (name, value) in enumerate(rows) if value is not None]
 
 
-def write_capture(directory, items):
-    """Write ``digikey-capture.json`` for ``{key: product | 'not_found' | 'failed'}``; return its path."""
+def write_capture(directory, items, queries=None):
+    """Write ``digikey-capture.json`` for ``{key: product | 'not_found' | 'failed'}``; return its path.
+
+    ``queries`` maps a key to its query when they differ (a key cannot hold '/', an MPN can)."""
     directory = Path(directory)
     (directory / 'responses').mkdir(parents=True, exist_ok=True)
     requests, parts = [], {}
     for index, key in enumerate(sorted(items), 1):
         item = items[key]
-        entry = {'key': key, 'kind': 'product', 'query': key, 'fetched_at': FETCHED.format(index),
+        query = (queries or {}).get(key, key)
+        entry = {'key': key, 'kind': 'product', 'query': query, 'fetched_at': FETCHED.format(index),
                  'status': 'found', 'http_status': 200, 'response': None, 'reason': None}
         if item == 'failed':
             entry.update(status='failed', http_status=None, reason='synthetic transport failure')
@@ -45,7 +48,7 @@ def write_capture(directory, items):
             (directory / 'responses' / f'{key}.json').write_bytes(raw)
             entry['response'] = {'path': f'responses/{key}.json', 'sha256': hashlib.sha256(raw).hexdigest(),
                                  'size_bytes': len(raw)}
-            status, part = record.parse_response(raw, entry['kind'], key)
+            status, part = record.parse_response(raw, entry['kind'], query)
             if part is not None:
                 parts[key] = {**part, 'last_seen': entry['fetched_at']}
         requests.append(entry)

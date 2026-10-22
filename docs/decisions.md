@@ -495,6 +495,44 @@ U1/U2/U4 acceptance at 85 degC cannot suppress a rating or thermal defect. See
 [assembly readiness](assembly-readiness.md#digikey-operating-temperature) for
 the immutable owner and thermal file formats.
 
+### Delegated engineering acceptance (2026-10-22)
+
+A repository can delegate owner-reserved selection decisions to its agents and
+have them recorded, as fome-mc's `AGENTS.md` does. Under agent-509 request A,
+such a decision is accepted only as a distinct `delegated_acceptance` record,
+never as an owner line. The record states `authority: delegated_engineering`,
+and the report names the author (`agent`) separately from that authority. The
+record binds the recorded decision and the repository delegation by hash and
+line locator. It must match the decision's subject and stated range, and it
+fails closed on owner, withdrawn or non-autonomous decisions and on
+unrecognized delegations. Like owner acceptance, it records a selection
+exception only: the actual rating and thermal evidence are still judged.
+Direct-owner declarations are unchanged.
+
+Review of that first form (HOLD H1-H3) showed that captured files cannot carry
+authority. An agent could write its own grant and decisions and capture them,
+cite a different part under a genuine decision, or cite a prohibition that
+mentions "autonomously". Authority is now anchored in agent-ee itself.
+`OWNER_GRANTS` pins the owner's grant by repository, owner commit, path and
+the SHA-256 of the exact committed item. `DELEGATED_DECISIONS` registers each
+decision by recording commit and member hash, with its one reference, range
+and exact part (MPN and manufacturer). A captured grant or decision is accepted
+only when its bytes equal the pinned ones, and the evaluated part must be the
+registered part. Registering an entry is a reviewed agent-ee change that
+traces it to the owner's commit, and the tests repeat that trace against the
+fome-mc object store. See
+[the authority anchor](assembly-readiness.md#authority-anchor).
+
+Review of the anchored form (ee310e HOLD H1) found that the exact grant item
+still authorized when an agent placed it in a newly composed AGENTS.md: fenced
+as a revoked historical example, under an unmet owner-approval condition, or
+under a heading that scoped it to another part. The pinned item alone did not
+carry its context. Each pinned grant and registered decision now also lists
+its approved owner `snapshots` by full-file SHA-256. Both whole captured files
+must be one of these snapshots, so a grant authorizes only in the owner context
+that was reviewed. Byte-exact copies keep their provenance, wherever they were
+captured from.
+
 
 ## Copper locality and captured policy binding (AGENTEE-328)
 

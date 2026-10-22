@@ -49,6 +49,21 @@ validation summary to clear this gate. The old exemption file cannot pass.
 Use already captured local DigiKey evidence; live DigiKey capture remains
 owner-gated. The driver does not infer or synthesize these declarations.
 
+U3 NEO-M9N and J3 DM3AT-SF-PEJM5 are not owner acceptances. Their 85 degC
+exceptions are the recorded D-PCB-9 and D-PCB-12 decisions in
+`expansion/design-rules/constraints.json`, made under the repository's
+`AGENTS.md` delegation. Declare them as
+[`delegated_acceptance`](assembly-readiness.md#delegated-engineering-acceptance)
+records citing both files, with the decided ranges -40 to 85 and -25 to 85
+degC. The delegation names `github.com/halbritt/fome-mc` and the owner's grant
+commit `3f959131abca2dd9d40400496f3f6ebac9d363f5`. The decisions authorize
+exactly u-blox NEO-M9N-00B and Hirose Electric Co Ltd DM3AT-SF-PEJM5. Never
+add U3 or J3 lines to `operating-temperature-acceptances.txt`. They need the
+same DigiKey binding and thermal evidence. Two obligations stay open. The pod
+has no captured thermal validation, so every accepted part stays unknown. J3's
+rating comes only from the LCSC listing and is not yet captured, so J3 stays
+unknown until a rating is captured.
+
 ## Explicit plan
 
 A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
