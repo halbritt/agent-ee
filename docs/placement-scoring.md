@@ -1,5 +1,7 @@
 # Rust placement scorer
 
+For the separate interpreter experiment, see [PyPy placement](pypy-placement.md).
+
 The optional Rust scorer computes the same integer Manhattan cost as
 `placer._wire_cost`: each physical signal pad contributes its distance to the
 nearest same-net peer. Missing peer nets contribute zero; duplicate physical
