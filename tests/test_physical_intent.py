@@ -35,7 +35,12 @@ OWNER_TEXT = ('D-1 (owner of record): keep the C1 supply pad within 3 mm of U1 V
               'D-2 (owner of record): keep the C1 supply pad close to U1 VCC.\n'
               'D-3 (owner of record): keep the C1 supply pad within 3 mm, never beyond 5 mm, of U1 VCC.\n'
               'D-4 (owner of record): keep the C1 supply pad within 120 mil of U1 VCC.\n'
-              'D-5 (Trent): keep the C1 supply pad within 999 mm of U1 VCC.\n')
+              'D-5 (Trent): keep the C1 supply pad within 999 mm of U1 VCC.\n'
+              'D-6 (owner of record): keep the C1 supply pad within -3 mm of U1 VCC.\n'
+              'D-7 (owner of record): keep the C1 supply pad within 1,003 mm of U1 VCC.\n'
+              'D-8 (owner of record): keep the C1 supply pad within 3 mm and 999 MM of U1 VCC.\n'
+              'D-9 (owner of record): keep the C1 supply pad within 3mm of U1 VCC.\n'
+              'D-10 (owner of record): keep the C1 supply pad within 0.5 mm of U1 VCC.\n')
 LAYOUT_TEXT = 'Layout note L-2: place the decoupling capacitor within 3 mm of the VCC pin.\n'
 
 
@@ -339,6 +344,34 @@ class PhysicalIntentTests(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.refused(self.local, self.intent(self.local, locality=self.locality(pair), records=records),
                              f'numeric mismatch: .*{pattern}')
+
+    def test_owner_lengths_resolve_as_complete_lexemes(self):
+        # Review ee388b-hold H1: a signed, grouped or second unresolved length is refused whole,
+        # never read as a positive suffix (3 mm) or dropped, although owner maxima stay advisory.
+        records = ('owner-decisions.md',)
+        cases = [('D-6', 'within -3 mm of U1 VCC', "unresolvable length '-3 mm'"),
+                 ('D-7', 'within 1,003 mm of U1 VCC', "unresolvable length '1,003 mm'"),
+                 ('D-8', 'within 3 mm and 999 MM of U1 VCC', "length '999 MM' in a unit that cannot be resolved")]
+        for locator, quote, pattern in cases:
+            with self.subTest(locator=locator):
+                self.refused(self.local, self.intent(self.local, records=records, locality=self.locality(
+                    self.pair(self.owner(locator=locator, quote=quote)))), f'numeric mismatch: .*{pattern}')
+        # Complete supported lexemes still bind their exact stated value.
+        for locator, quote, nm in (('D-1', 'within 3 mm of U1 VCC', 3_000_000),
+                                   ('D-9', 'within 3mm of U1 VCC', 3_000_000),
+                                   ('D-10', 'within 0.5 mm of U1 VCC', 500_000)):
+            with self.subTest(locator=locator):
+                out = compile_plan(self.local, self.intent(self.local, records=records, locality=self.locality(
+                    self.pair(self.owner(locator=locator, quote=quote), limit=nm))))
+                qualification = out['receipt.json']['locality_qualification'][0]
+                self.assertEqual((qualification['enforcement'], qualification['stated_max_distance_nm']),
+                                 ('authority_unavailable', nm))
+        stated = physical_intent._stated_lengths
+        for text in ('2-3 mm', '\u2212 3 mm', '1 003 mm', '1\u2009003 mm', '003 mm', '1e3 mm', '3. mm', '.5 mm',
+                     'x3 mm', '\uff13 mm', '3 millimetres', '3 mm\u00b2', '3 Mm', '3"', '3 mm (3000 um)'):
+            with self.subTest(text=text), self.assertRaisesRegex(IntentRefused, 'numeric mismatch'):
+                stated(f'within {text} of U1 VCC', 'D-0', 'probe')
+        self.assertEqual(stated('3 more pads within 3 mm of pin 4.', 'D-0', 'probe'), [('3', 'mm')])
 
     def test_spoofed_owner_authority_refuses(self):
         records = ('owner-decisions.md',)

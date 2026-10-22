@@ -10,6 +10,7 @@ package on any contradiction and publishes a complete directory atomically or
 nothing. Kelvin and current-loop obligations have no owned checker and stay
 visible as unsupported. Runtime activation remains gated by KICADROUTE-91.
 """
+import itertools
 import json
 import re
 import shutil
@@ -36,8 +37,16 @@ DIAGNOSTIC_KINDS = frozenset(('access', 'cut'))
 DIAGNOSTIC_STATUSES = frozenset(('unknown', 'observed'))
 UUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 SHA256 = re.compile('[0-9a-f]{64}')
-# A stated length in a captured decision: a number directly followed by a length unit.
-LENGTH = re.compile(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*(nm|um|µm|mm|cm|m|mils?|thou|in|inch(?:es)?)\b')
+# Stated lengths in a captured decision are read as complete lexemes: a maximal run of
+# digits and grouping punctuation, then the word or mark that follows it. A word in the
+# length vocabulary (any case, by its leading letters) makes the lexeme a stated length; only an unsigned plain
+# decimal in exactly ``nm`` or ``mm`` resolves, every other stated length refuses.
+NUMERAL = re.compile(r"\d[\d.,_\u00a0\u2009\u202f]*")
+UNIT = re.compile(r'\s*([^\W\d_]\w*|["\'\u2032\u2033])')
+LENGTH_WORD = re.compile(r'(?:[nuµμmcdk]?m|mils?|thou|in|inch(?:es)?|ft|foot|feet|microns?|'
+                         r'(?:nano|micro|milli|centi|deci|kilo)?met(?:er|re)s?|["\'\u2032\u2033])')
+DECIMAL = re.compile(r'(?:0|[1-9][0-9]*)(?:\.[0-9]+)?')
+SIGNS = '+-\u2212\u2013\u00b1~<>\u2264\u2265'
 NM_PER = {'nm': 1, 'mm': 1000000}
 OWNER_AUTHORITY = ('owner and manufacturer authors cannot be authenticated in-process: agents run as the '
                    "owner's Unix user and no signing boundary exists until AGENTEE-348, so a sourced owner "
@@ -333,6 +342,36 @@ def _terminals(intent, src, board, native):
     return resolved, document
 
 
+def _stated_lengths(text, locator, label):
+    """Every length stated in decision text as (decimal, unit); refuse any it cannot resolve whole.
+
+    A signed, ranged, grouped, digit-separated, exponent or non-ASCII numeral, or a length unit
+    other than exactly ``nm`` or ``mm``, is unresolvable: no positive suffix is extracted and
+    no stated length is dropped.
+    """
+    lengths = []
+    for numeral in NUMERAL.finditer(text):
+        unit = UNIT.match(text, numeral.end())
+        if not unit:
+            continue
+        word = unit[1] if not unit[1][0].isalpha() else ''.join(itertools.takewhile(str.isalpha, unit[1]))
+        if not LENGTH_WORD.fullmatch(word.casefold()):
+            continue
+        number, before = numeral[0], text[:numeral.start()]
+        lexeme = re.search(r'\S*$', before)[0] + text[numeral.start():unit.end()]
+        if unit[1] not in NM_PER:
+            _refuse(f'{label}: numeric mismatch: decision {locator} states a length {lexeme!r} '
+                    'in a unit that cannot be resolved to nm')
+        prior = before.rstrip()[-1:]
+        if (not DECIMAL.fullmatch(number) or before[-1:].isalnum() or before[-1:] in tuple('._')
+                or prior and (prior in SIGNS or prior.isdigit())
+                or prior in tuple(',.') and before.rstrip()[-2:-1].isdigit()):
+            _refuse(f'{label}: numeric mismatch: decision {locator} states an unresolvable length {lexeme!r}: '
+                    'only an unsigned plain decimal resolves')
+        lengths.append((number, unit[1]))
+    return lengths
+
+
 def _owner_decision(pair, records, label):
     """The cited captured decision must state this owner and exactly this maximum.
 
@@ -350,11 +389,7 @@ def _owner_decision(pair, records, label):
     if decision['owner'] != owner:
         _refuse(f'{label}: owner authority not established: decision {decision["locator"]} is stated by '
                 f'{owner!r}, not {decision["owner"]!r}')
-    lengths = LENGTH.findall(text)
-    if any(unit not in NM_PER for _, unit in lengths):
-        _refuse(f'{label}: numeric mismatch: decision {decision["locator"]} states a length in a unit '
-                'that cannot be resolved to nm')
-    values = {Fraction(n) * NM_PER[unit] for n, unit in lengths}
+    values = {Fraction(n) * NM_PER[unit] for n, unit in _stated_lengths(text, decision['locator'], label)}
     if len(values) != 1 or next(iter(values)).denominator != 1:
         _refuse(f'{label}: numeric mismatch: decision {decision["locator"]} states no single resolvable maximum')
     value = int(next(iter(values)))

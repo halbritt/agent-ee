@@ -82,7 +82,15 @@ pad number and net must match the native board. Each pair is qualified with
 - that decision text must state exactly one length in `nm` or `mm`, and it must
   equal the declared `max_distance_nm`. A different value (3 mm cited, 999 mm
   declared), no stated value, two values, a length in another unit (`mil`, `in`,
-  `um` and so on) or no declared `max_distance_nm` is a `numeric mismatch`;
+  `um`, `millimetres`, `MM` and so on) or no declared `max_distance_nm` is a
+  `numeric mismatch`;
+- every length is read as a complete lexeme: the whole run of digits and grouping
+  punctuation before a length unit. Only an unsigned plain decimal (`3`, `0.5`)
+  directly followed by exactly `nm` or `mm` resolves (`3 mm` and `3mm` both
+  bind 3 mm). A signed or ranged value (`-3 mm`, `2-3 mm`), grouping (`1,003 mm`,
+  `1 003 mm`), leading zeros, exponents, a bare decimal point or non-ASCII digits
+  are an unresolvable length and a `numeric mismatch`. No positive suffix is
+  extracted, and a second unresolved length (`3 mm and 999 MM`) is never dropped;
 - a pair declaring `datasheet` must classify `hard`: the numeric derivation equals
   the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`.
 
@@ -177,7 +185,8 @@ covers:
 - conflicting membership and fixed moves;
 - owner spoofing, owner identity binding (including the `Mallory` review
   probe), owner value binding (3 mm against 999 mm, a missing value, two
-  values, an unresolvable unit) and the non-hard `authority_unavailable` owner
+  values, an unresolvable unit; signed, grouped and second unresolved lengths
+  against the matching 3 mm, 3mm and 0.5 mm controls) and the non-hard `authority_unavailable` owner
   output;
 - datasheet numeric mismatch and locality endpoint binding;
 - assertion ID collisions (`u1-canl`, `block:can`, a diagnostic and an
