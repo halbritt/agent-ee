@@ -379,15 +379,70 @@ footprint poses, zones, tracks, vias, setup and unknown attributes. Numeric
 coordinates are normalized only within permitted graphic translations. Any
 other token change refuses publication. Changed text or fields carrying a
 `render_cache` refuse because this producer does not regenerate and compare the
-cache. A backslash anywhere in either board also refuses the scope proof,
-including unchanged strings and non-silk content. A changed list-headed node,
+cache. A changed list-headed node,
 a property whose name is a nested list, a nameless property of a changed
 footprint, an empty `()` child of a changed silk graphic, a nested-list `uuid`
 value or a
 malformed movable-field declaration refuses with `ValueError`, never an untyped
-error or a silent skip (AGENTEE-364). This conservative scope limit
-can refuse legitimate boards: the shared parser decodes escapes, so decoded
-token equality cannot establish the saved spelling KiCad renders. The refusal is pinned by `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`. Project and custom-rule bytes
+error or a silent skip (AGENTEE-364).
+
+Escapes are compared exactly (AGENTEE-434). Every unchanged node must keep its
+raw saved spelling, compared through the shared parser's `raw=True` mode, so a
+decoded-equal respelling (`"x\ny"` against a literal line break, `"F.Fab"`
+against bare `F.Fab`, `"0"` against `0`) is a token change and refuses. A moved
+field or graphic must also keep the raw spelling of everything except its
+translation. A backslash is accepted only inside a quoted string as one of the
+escapes KiCad's writer emits: `\"`, `\\`, `\n` and `\r`. The shared parser
+decodes exactly these as KiCad's lexer does. Any other backslash refuses in
+either board, including unchanged strings: octal (`\1`, `\01`), hex (`\x41`),
+`\t`, `\a` and other escapes, a backslash in a bare token, and a backslash the
+parser skipped in a comment. Pod boards, whose `PARAM_Datasheet` and
+`AGENT_EE_Ratings` properties carry escaped JSON, therefore attest unchanged and
+can receive a receipted repair. The ambiguity refusal is pinned by
+`test_scope_refuses_backslashes_even_when_parser_erases_them` and
+`test_backslash_and_spelling_ambiguity_refuses`, the pod-like native board by
+`test_pod_board_with_escaped_json_properties_attests_unchanged`, all in
+`tests/test_routed_artwork.py`.
+
+`RealPodArtworkTest` in the same module repeats these checks on a real pod
+board. It reads the retained electrical-locality baseline
+(`telemetry-pod/expansion/electrical-locality/baseline.kicad_pcb`) from the
+fome-mc object store at pinned commit `154cb59e`. The bytes are never copied
+into this repository. Before use, the test checks them against that directory's
+`SHA256SUMS`. The board's footprints carry escaped `PARAM_Datasheet` and
+`AGENT_EE_Ratings` JSON. The test proves four things:
+
+- `write_scope(board, board)` attests unchanged.
+- A targeted native repair of the conflicting R73, R175 and U19 `Reference`
+  fields moves exactly those three fields and replays from its receipt. Every
+  other raw node is unchanged, and the remaining conflicts stay open defects.
+- Changing escaped property content, respelling an escape outside the writer
+  set, or moving an unselected field refuses.
+- A hidden property target refuses.
+
+The test runs on the board alone because the pod project ignores DRC classes
+that artwork DRC requires. An absent store is the `fome-mc-store` gap, which
+fails under `AGENT_EE_REQUIRE_TOOLCHAIN=1`.
+
+### Targeted repair (AGENTEE-434)
+
+`step(tool_dir, board, targets=[('C128', 'Reference'), ('R73', 'Reference')])`
+restricts the repair to the named footprint fields. The targets are receipted as
+`--target REFERENCE FIELD` producer arguments in sorted, duplicate-free order.
+Each target must name exactly one footprint (by its saved `Reference`) and one
+of that footprint's fields that is movable, visible and on a silk layer. An
+unknown, duplicated or unmovable target, an empty target set, and a name
+starting with `-` refuse. With targets, only conflicting target fields move.
+Conflicting fields outside the target and all silk graphics stay where they
+are and remain open defects. The scope proof records `targets` and refuses
+any other silk move, including a graphic or another field of a targeted
+footprint, so everything outside the target is proven unchanged.
+`qualify_receipt` and carry replay recover the targets from the receipted argv,
+refuse noncanonical or malformed target arguments, and recompute the proof with
+them. Untargeted proofs keep their historical shape with no `targets` key.
+Targeting changes only which fields may move. It adds no size, angle or
+legal-position search policy. Whether a relocation is feasible remains a
+separate coordinator decision. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
 open. The native DRC comparison has no saved geometry states; the scope proof,
@@ -410,6 +465,8 @@ without remaining silk findings on those identities. Graphics may differ only
 by the authenticated translation. A raw edit or unreceipted DRC cannot close carry.
 
 `tests.test_routed_artwork` exercises front/back fields, footprint/board graphics,
+escaped pod-like properties, a real pinned pod board, escape and spelling
+ambiguity, targeted relocation and its receipt binding,
 tracks/vias/zones preservation, non-silk and marking-damage refusals, source-pin
 and output binding, missing output, exhausted searches, ignored silk coverage
 and a nonroot read-only host sandbox.

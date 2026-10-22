@@ -308,7 +308,8 @@ def _bundle(manifest, inputs, link):
             (report.get('open_defects') and (report.get('outcome'), report.get('verdict')) != ('defect', 'defect'))):
         raise ValueError('carried placement result is not bound to its receipt')
     if artwork:
-        proof = routed_artwork.write_scope(loaded[routed_artwork.SOURCE].read_bytes(), loaded[BOARD].read_bytes())
+        proof = routed_artwork.write_scope(loaded[routed_artwork.SOURCE].read_bytes(), loaded[BOARD].read_bytes(),
+                                           targets=routed_artwork.receipt_targets(receipt['spec']['argv']))
         if (report.get('producer') != routed_artwork.STEP or report.get('write_scope') != proof or
                 digest(loaded[routed_artwork.SOURCE]) != receipt['inputs'].get(board)):
             raise ValueError('carried artwork scope differs from its receipt')
