@@ -1185,6 +1185,59 @@ land geometry and native Pad 1 of C1 finding in failed-candidate diagnostics
 movement directions, missing coverage and the owner's rigid baseline at
 0/90/180/270 degrees.
 
+### Native keep-out witness cost (AGENTEE-427)
+
+`placer_runner._keepout_item_states` loads the saved board once and builds UUID
+indexes for footprints and local rule areas. It collects native contacts at the saved
+absolute poses before normalizing any footprint. Each contacted owner is then
+normalized once, and each absolute/local area record is serialized once per
+coordinate frame. No-contact custom-rule witnesses reuse the complete absolute
+area environment. Witness serialization and comparison verdicts below the work
+limit are unchanged, including unsupported contours and rigid-owner exemptions.
+
+The computational coverage guard is `KEEPOUT_MAX_STEPS = 1_000_000`. This is a
+resource budget requested by AGENTEE-427, not a sourced physical design limit.
+It counts native inventory visits, item/area pairs, layer tests weighted by area
+vertex count, area serialization weighted by vertex count, owner normalization
+and witness assembly (including each no-contact environment entry). The cap is
+checked before each charged operation; there is no wall-clock default. The
+scan remains O(copper items × rule areas), but stops at this deterministic
+budget. It does not bound native board-loading time, memory or the duration of
+an individual native geometry operation.
+
+Exhaustion raises `KeepoutWorkLimit`, with `outcome: unknown`,
+`reason: keepout_work_limit`, `steps_used` and `max_steps`. No partial inventory
+is returned. Publication refuses the candidate and retains those typed fields
+in `failure.json` alongside native DRC diagnostics. A larger budget can be
+supplied to the low-level inventory function for measurement; placement uses
+the fixed default. The budget cannot certify physical acceptance or replace
+any native DRC verdict.
+
+Measured on `agent-ee-gate-c4` in the pinned CI image (2026-10-22, two repetitions,
+seconds; observational timings, no timing assertions):
+
+| Original board | Pads/tracks | Rule areas | Before | After | Charged steps |
+| --- | --- | --- | --- | --- | --- |
+| `fixtures/fab-export/pod4.kicad_pcb` (largest tracked fixture by bytes, 33,323) | 23 | 0 | 0.0034–0.0035 | 0.0039–0.0041 | 81 |
+| `fixtures/sublayout/top.kicad_pcb` (largest tracked fixture by copper-item count) | 30 | 0 | 0.0025–0.0026 | 0.0027–0.0028 | 101 |
+| Original stress fixture: 64 owners × 16 pads | 1,024 | 64 owned | 21.26–21.41 | 0.182–0.189 | 397,889 |
+
+All 60 tracked native boards were inventoried; none contains an owned rule area.
+The largest five by bytes and the largest five by copper-item count were
+measured against the original implementation, with byte-identical serialized
+witnesses. The original stress fixture supplies the missing many-owned-area
+case; its 3,815,424 witness bytes also compare byte-identically. It uses one
+load and 64 owner normalizations instead of 1,025 loads. These are software
+measurements, not a claim of pod-scale design qualification.
+
+`tests.test_placer_pad_keepout.large_board` authors that stress fixture from
+native primitives. `test_large_owned_board_work_and_default_exhaustion`
+checks 65,536 pairs on it and typed default-budget exhaustion on 128 owners ×
+16 pads. Other tests pin one load for 32 owned pad contacts, cached no-contact
+environments, the exact budget boundary and retained unknown publication
+failure. Existing native tests cover board/peer contact changes, unsupported
+contours, translations and quarter turns.
+
 Stage-B copper alignment axes, from AGENTEE-366e, live in
 `block_arrangement._copper_axes`. A block whose members have copper outside
 their courtyards gets origins that put that copper exactly S from an outline
