@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import html
 import ipaddress
+import urllib.parse
 import itertools
 import json
 import multiprocessing
@@ -162,18 +163,49 @@ def random_texts(seed, rounds):
 
 
 LEAKS = ('hidden', 'file:', 'C:', '\\', 'private-', 'Alice', 'localhost')
-ADDRESS_TOKEN = re.compile(r'[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*')
+ADDRESS_RUN = re.compile(r'[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*')
+URI_TOKEN = re.compile(r'[^\s"\'<>(){},;|]+')
+HOST_MARKERS = ('hidden', 'private-', 'localhost', 'alice')
+ULA = ipaddress.IPv6Network('fd00::/8')
 
 
 def ula_addresses(body):
-    """fd00::/8 IPv6 addresses among the tokens of body. A hex id that merely contains "fd00" is no address."""
+    """fd00::/8 IPv6 addresses among the tokens of body, parsed with ipaddress. A run of hex digits, colons and dots is
+    tried at every colon-group boundary, so a delimiter colon beside an address ("host:fd00::1", "fd00::1:") neither
+    hides it nor joins it; a hex id that merely contains "fd00" is no address."""
     found = []
-    for token in ADDRESS_TOKEN.findall(body):
+    for run in ADDRESS_RUN.findall(body):
+        colons = [i for i, c in enumerate(run) if c == ':']
+        starts = [0] + [i + 1 for i in colons]
+        ends = [i for i in colons] + [len(run)]
+        for start in starts:
+            for end in ends:
+                candidate = run[start:end].strip('.')
+                if end <= start or ':' not in candidate:
+                    continue
+                try:
+                    address = ipaddress.IPv6Address(candidate)
+                except ValueError:
+                    continue
+                if address in ULA:
+                    found.append(candidate)
+    return sorted(set(found))
+
+
+def uri_leaks(body):
+    """URI and host tokens of body that name a file, a credential, a private host or a ULA address, parsed with urllib."""
+    found = []
+    for token in URI_TOKEN.findall(body):
         try:
-            address = ipaddress.IPv6Address(token.strip('.'))
+            parts = urllib.parse.urlsplit(token)
+            host = (parts.hostname or '').lower()
+            user = parts.username
         except ValueError:
+            found.append(token)  # an unparsable URI-shaped token fails closed
             continue
-        if address in ipaddress.IPv6Network('fd00::/8'):
+        if parts.scheme.lower() == 'file' or user or any(m in host for m in HOST_MARKERS):
+            found.append(token)
+        elif host and ula_addresses(host):
             found.append(token)
     return found
 
@@ -181,6 +213,7 @@ def ula_addresses(body):
 def assert_no_uri_leak(test, body, where):
     for leak in LEAKS:
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
+    test.assertEqual(uri_leaks(body), [], where)
     test.assertEqual(ula_addresses(body), [], where)
 
 
@@ -190,7 +223,8 @@ class LeakScanTests(unittest.TestCase):
         assert_no_uri_leak(self, body, 'hex id')
 
     def test_real_ula_address_still_fails(self):
-        for body in ('http://[fd00:1234::1]/x', 'host fd00::1 end', '{"a": "FD00:abcd::2"}'):
+        for body in ('http://[fd00:1234::1]/x', 'host fd00::1 end', '{"a": "FD00:abcd::2"}', 'host:fd00::1',
+                     'fd00::1:', '"host:fd00::1:"', 'beef:fd00::1', '[fd00::1]:8080'):
             with self.assertRaises(AssertionError, msg=body):
                 assert_no_uri_leak(self, body, body)
 
@@ -198,6 +232,17 @@ class LeakScanTests(unittest.TestCase):
         for body in ('file:///private-share/m.step', 'smb://user-hidden@server/x', 'http://localhost/x'):
             with self.assertRaises(AssertionError, msg=body):
                 assert_no_uri_leak(self, body, body)
+
+    def test_uri_and_host_tokens_are_parsed(self):
+        for body, expected in (('see FILE:///x', ['FILE:///x']), ('"smb://bob@srv/x"', ['smb://bob@srv/x']),
+                               ('<http://LocalHost:80/x>', ['http://LocalHost:80/x']),
+                               ('http://[fd00::1]/x', ['http://[fd00::1]/x']), ('https://example.org/x', [])):
+            self.assertEqual(uri_leaks(body), expected, body)
+
+    def test_ula_tokenizer_survives_adjacent_delimiters(self):
+        for body in ('host:fd00::1', 'fd00::1:', ':fd00::1:'):
+            self.assertEqual(ula_addresses(body), ['fd00::1'], body)
+        self.assertEqual(ula_addresses('fcff::1 fe00::1 a1fd00b2c3d4e5f6 12:34:56'), [])
 
 
 def records(text):
