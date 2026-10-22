@@ -167,13 +167,18 @@ def require_kicad_route():
     if check['problems']:
         raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured} does not qualify: '
                              + '; '.join(check['problems']))
+    from agent_ee import kicad_route_attempt
     state = Path(check['state'])
+    # The engine the pin selects: a router generation's copy and venv, or the legacy layout.
+    generation, _ = kicad_route_attempt.state_generation(state)
+    venv, router = ((state / generation / 'venv', state / generation / 'router') if generation else
+                    (state / '.venv-krt', Path(check['checkout']) / 'src/kicad_route/router'))
     # KRT's runtime imports, as its startup checks spell them; -B writes no bytecode.
-    result = subprocess.run([str(state / '.venv-krt/bin/python'), '-I', '-B', '-c',
+    result = subprocess.run([str(venv / 'bin/python'), '-I', '-B', '-c',
                              'import sys; sys.path.insert(0, "rust_router"); import grid_router, numpy; '
                              'from scipy.optimize import linear_sum_assignment; '
                              'from shapely.geometry import Polygon'],
-                            cwd=Path(check['checkout']) / 'src/kicad_route/router', capture_output=True, text=True, timeout=60)
+                            cwd=router, capture_output=True, text=True, timeout=60)
     if result.returncode:
         raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured}: KRT runtime import failed: '
                              + result.stderr.strip()[-2000:])

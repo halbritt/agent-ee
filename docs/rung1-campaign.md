@@ -131,7 +131,7 @@ in the networkless sandbox, and only exit 0 is adoptable.
 | --- | --- | --- | --- |
 | `emit-schematic` | schematic | `steps/emit.py`: `agent_ee.schematic_emit` | the schematic, from `out/sch/` |
 | `build-board` | placement | `steps/placement.sh`: XML netlist from `/candidate`, then `agent_ee.board_build --placement-fallback row` | the board, from `out/board/placed/` |
-| `route-krt` | routing | `steps/route.sh`: `kicad-route run --backend krt --budget 300` on a copy of the project | the board, copied from the run's candidate to `out/candidate/` |
+| `route-krt` | routing | `steps/route.sh`: `kicad-route run --backend builtin --budget 300` on a copy of the project | the board, copied from the run's candidate to `out/candidate/` |
 | `export-fab` | fab | `agent_ee.fab_stage`: native export, sealed CPL correction, derived `fab-manifest.json` | the board, in place and unchanged |
 
 The schematic, placement and routing programs are in

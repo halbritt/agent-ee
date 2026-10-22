@@ -133,7 +133,7 @@ or complete pod acceptance.
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 \
-AGENT_EE_KICAD_ROUTE_CHECKOUT=/home/halbritt/git/agent-ee/build/kicad-route-pin-5f1c072 \
+AGENT_EE_KICAD_ROUTE_CHECKOUT=/home/halbritt/git/agent-ee/build/kicad-route-pin-b577449 \
 PYTHONPATH=src:tests python3 -m unittest tests.test_gnss_rf_path tests.test_requirement_map -v
 ```
 

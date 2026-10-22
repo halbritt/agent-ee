@@ -150,7 +150,7 @@ class NativeRoutingInput(unittest.TestCase):
             self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
             summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
             result = json.loads((receipt_dir / 'run/routing/attempt/result.json').read_text())
-            self.assertEqual(result['backend']['name'], 'krt')
+            self.assertEqual(result['backend']['name'], 'builtin')
             self.assertIsInstance(summary['router_exit'], int)  # No success-exit assertion.
             self.assertIn('routing', result)
             self.assertIn('validation', result)

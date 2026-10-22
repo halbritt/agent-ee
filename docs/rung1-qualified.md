@@ -31,7 +31,7 @@ route.
 
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
 `--kicad-route` must name a kicad-route checkout at the routing adapter's pin
-(`5f1c072`) with the owned engine and `.venv-krt` installed; the default is
+(`b577449`) with the owned engine and `.venv-krt` installed; the default is
 `$AGENT_EE_KICAD_ROUTE_CHECKOUT`, else the standard image path `/opt/kicad-route`
 (see [Routing pin](#routing-pin)). The test module gates on the same variable through
 `tests/toolchain.py`'s `require_kicad_route()`: unset is a skip, or a failure under
@@ -63,7 +63,7 @@ reviewer or writer call is recorded as it happened and never retried.
 | schematic | `schematic_emitter` (AGENTEE-40) | step `emit-schematic`: intent, layout and captured symbols |
 | board population | `forward_annotation` (AGENTEE-52) | step `forward-annotate`: native XML netlist, plan, apply to a new board |
 | placement | `placement_adapter` with helper `agent-ee.placer/1` (AGENTEE-91, AGENTEE-54) | campaign `placement_adapter` declaration; no row fallback |
-| routing | `routing_adapter.step` and `kicad_route_attempt` (AGENTEE-93) | step `kicad-route-krt`, adoptable exits `[0, 2]` as the adapter declares |
+| routing | `routing_adapter.step` and `kicad_route_attempt` (AGENTEE-93) | step `kicad-route-builtin`, adoptable exits `[0, 2]` as the adapter declares |
 | verification | `rc_transient` check | unchanged from the closed-loop control |
 | fab | `fab_export` (AGENTEE-23), `fab_consistency` (AGENTEE-73), `part_binding` (AGENTEE-32) checks; with `--cpl-inputs`, then `cpl_rotation` (AGENTEE-126) | stage `fab` in the scope; with `--cpl-inputs`, the receipted `export-fab` step, whose corrected package remains `PREVIEW_REQUIRED` |
 
@@ -181,7 +181,7 @@ failing stage (`campaign.step_plan`, `agent-ee.step-plan/1`):
 | --- | --- |
 | schematic | `emit-schematic` (`steps/emit.sh`), then `forward-annotate` (`steps/annotate.sh`) |
 | placement | the placement adapter: writer transforms, then one `agent-ee-placer` helper receipt |
-| routing | `kicad-route-krt` from `routing_adapter.step` |
+| routing | `kicad-route-builtin` from `routing_adapter.step` |
 | verification | none |
 | fab | with `--cpl-inputs` only: the shared `export-fab` step (`fab_export` followed by `cpl_rotation`), with an AGENTEE-95 receipt; otherwise none |
 
@@ -218,7 +218,7 @@ campaign budget stays at 3600 s, as the integrator set it.
 ### Routing pin
 
 Current `routing_adapter.preflight` accepts only
-`5f1c072b86e0caee82c7656226c4d0e3ec580a58`, with exact `bin/` and `src/`
+`b5774496d8466b67ffa0362b6665fee2108155a3`, with exact `bin/` and `src/`
 blob hashes and installed KRT state. Set `AGENT_EE_KICAD_ROUTE_CHECKOUT` to
 that detached checkout; the standard image provides `/opt/kicad-route`.
 [Owned-engine compatibility](routing-adapter.md#owned-routing-engine-agentee-277)
@@ -324,7 +324,7 @@ so `done` is false. `verify-campaign` exits 0 and prints `incomplete`.
   board itself with pcbnew. `SaveBoard` rewrote the immutable
   `project/rung1_rc.kicad_pro`, and the campaign stopped with `ValueError:
   implementation changed immutable verification input:
-  project/rung1_rc.kicad_pro` before the `kicad-route-krt` step ran. No
+  project/rung1_rc.kicad_pro` before the `kicad-route-builtin` step ran. No
   owned module refused anything. The driver did not retry.
 
 The final dry run, at the same code, shows the stages the campaign did not
