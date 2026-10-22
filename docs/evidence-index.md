@@ -1,6 +1,6 @@
 # Telemetry pod evidence index
 
-The index maps the pod's nine numbered acceptance criteria to existing sealed
+The index maps the pod's declared numbered acceptance criteria to existing sealed
 baseline requirements and check results. It reports what the mapped checks
 establish and what remains open. It does not accept a board, judge whether the
 mapping covers the specification, launch tools or models, or change retained
@@ -8,7 +8,7 @@ evidence.
 
 ## Capture the mapping before the run
 
-Create a JSON object with exactly the keys `1` through `9`. Each value lists
+Legacy Rev-2 maps are JSON objects with exactly the keys `1` through `9`. Each value lists
 existing baseline requirement IDs. Empty lists are permitted and remain **not
 met**. Every baseline requirement must appear in the mapping; a requirement may
 support more than one numbered criterion. The IDs below are examples, not a
@@ -27,6 +27,33 @@ qualified pod mapping:
   "9": []
 }
 ```
+
+For Rev-3, use the additive versioned format `agent-ee.pod-criteria/2`.
+`declared_criteria` is the full criterion set from the captured requirements;
+`criteria` must map exactly that set to existing baseline requirement IDs.
+For example, an eleven-criterion declaration is:
+
+```json
+{
+  "schema": "agent-ee.pod-criteria/2",
+  "declared_criteria": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"],
+  "criteria": {
+    "1": ["interfaces"], "2": ["parts"], "3": ["native-rules"],
+    "4": ["analysis"], "5": ["stock"], "6": ["fabrication"],
+    "7": ["mechanics"], "8": [], "9": [], "10": [], "11": []
+  }
+}
+```
+
+These IDs are examples too. The declaration uses unique positive decimal strings
+without leading zeros. Output rows are ordered numerically. No criterion is
+silently padded or truncated: a missing or undeclared mapping raises
+`CriteriaMapError` (a `ValueError`); the CLI refuses with exit 2 and names the
+missing and undeclared keys. Unknown schema versions, extra fields and malformed
+declarations also refuse. A versioned nine-criterion declaration preserves the
+legacy mapped statuses and obligations. The reader validates the declaration
+against its mapping, not against external or uncaptured requirements prose;
+the scope compiler/owner must declare the complete authoritative set.
 
 Capture this file as `requirements/pod-criteria.json` in the ordinary scope
 inputs and list it in `baseline.targets`. This makes the map an immutable
@@ -85,7 +112,10 @@ absence from an incomplete or failed fab check is not permission to order.
 Criteria 8 and 9 always remain built-board bench obligations in this file-based
 index: CAN/ECU rates and logging, then RaceChrono BLE operation. A separate
 physical validation workflow must discharge them. This reader does not infer
-physical success from a file check.
+physical success from a file check. When declared, Rev-3 criteria 10 and 11 also
+remain built-board obligations: concurrent analog/wheel acquisition and fault
+tests, then standalone logging, interrupted power, full media and digital tire
+sensors. Passing mapped file checks cannot discharge any of these obligations.
 
 The limitations-bearing completion record is the final `runs/N/result.json`,
 linked by path and hash from verified campaign history. Its limitations must

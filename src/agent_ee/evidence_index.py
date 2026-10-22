@@ -15,7 +15,13 @@ from .storage import digest, read_json, write_json
 BENCH = {
     '8': 'Built-board CAN/ECU bench: required frames and rates within 5%, and ECU .mlg logging.',
     '9': 'Built-board RaceChrono Pro BLE pairing, ECU RPM, pod lean and 25 Hz GPS speed.',
+    '10': 'Built-board concurrent eight-channel analog acquisition, wheel-speed range and sensor-fault validation.',
+    '11': 'Built-board standalone logging duration, power interruption, full-media and digital tire-sensor validation.',
 }
+
+
+class CriteriaMapError(ValueError):
+    """A captured criterion declaration cannot be mapped without loss or invention."""
 
 
 def criteria_map(run, relative, baseline):
@@ -25,17 +31,35 @@ def criteria_map(run, relative, baseline):
         raise ValueError('criteria map must be an immutable captured baseline input')
     path = run / 'inputs' / relative
     mapping = read_json(path)
-    if not isinstance(mapping, dict) or set(mapping) != {str(i) for i in range(1, 10)}:
-        raise ValueError('criteria map must contain exactly keys 1 through 9')
+    if isinstance(mapping, dict) and 'schema' in mapping:
+        if (set(mapping) != {'schema', 'declared_criteria', 'criteria'}
+                or mapping['schema'] != 'agent-ee.pod-criteria/2'):
+            raise CriteriaMapError('unsupported criteria map schema or fields')
+        declared = mapping['declared_criteria']
+        if (not isinstance(declared, list) or not declared
+                or any(not isinstance(number, str) or not number.isascii()
+                       or not number.isdecimal() or number.startswith('0') for number in declared)
+                or len(declared) != len(set(declared))):
+            raise CriteriaMapError('declared_criteria must list unique positive decimal criterion strings')
+        mapping = mapping['criteria']
+        if not isinstance(mapping, dict):
+            raise CriteriaMapError('criteria must map every declared criterion to requirement IDs')
+        if set(mapping) != set(declared):
+            missing = sorted(set(declared) - set(mapping), key=int)
+            extra = sorted(set(mapping) - set(declared))
+            raise CriteriaMapError(f'criteria declaration mismatch: missing={missing}; undeclared={extra}')
+        mapping = {number: mapping[number] for number in declared}
+    elif not isinstance(mapping, dict) or set(mapping) != {str(i) for i in range(1, 10)}:
+        raise CriteriaMapError('legacy criteria map must contain exactly keys 1 through 9')
     requirements = {r['id']: r for r in baseline['requirements']}
     covered = set()
     for number, ids in mapping.items():
         if (not isinstance(ids, list) or any(not isinstance(rid, str) for rid in ids)
                 or len(ids) != len(set(ids)) or not set(ids) <= requirements.keys()):
-            raise ValueError(f'criterion {number} must list unique existing baseline requirement IDs')
+            raise CriteriaMapError(f'criterion {number} must list unique existing baseline requirement IDs')
         covered.update(ids)
     if covered != requirements.keys():
-        raise ValueError('criteria map omits baseline requirements: ' + ', '.join(sorted(requirements.keys() - covered)))
+        raise CriteriaMapError('criteria map omits baseline requirements: ' + ', '.join(sorted(requirements.keys() - covered)))
     return mapping, {'path': 'inputs/' + relative, 'sha256': baseline['files'][relative]}
 
 
@@ -105,7 +129,7 @@ def build_index(run, criteria):
                 if rotation.get('preview_obligations'):
                     owner_obligations.append({'check_id': check['id'], **rotation['preview_obligations']})
         rows = []
-        for number in map(str, range(1, 10)):
+        for number in sorted(mapping, key=int):
             selected = [requirements[rid] for rid in mapping[number]]
             ids = sorted({cid for requirement in selected for cid in requirement['checks']})
             entries, inputs = [], set()
@@ -152,7 +176,9 @@ def build_index(run, criteria):
             'limitations': [*result.get('limitations', []),
                 'This index reports the captured mapping; it does not establish that the mapping covers the specification.',
                 'Receipt history and captured inputs are provenance, not passing criterion results.',
-                'No writer text is used to establish a criterion. Bench criteria 8 and 9 remain obligations.']}
+                'No writer text is used to establish a criterion. Bench criteria 8 and 9 remain obligations.',
+                *(['Bench criteria 10 and 11 remain obligations when declared.']
+                  if {'10', '11'} & mapping.keys() else [])]}
 
 
 def render_index(report):

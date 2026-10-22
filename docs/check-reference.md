@@ -32,6 +32,9 @@ feedback, see the [closed-loop contract and command reference](closed-loop.md).
 
 The [pod evidence index](evidence-index.md) maps captured criteria to existing
 check results, receipt history and outstanding obligations without running checks.
+Versioned pod maps declare the full criterion set, including Rev-3 criteria 10
+and 11; missing or undeclared mappings refuse with `CriteriaMapError`. Legacy
+nine-criterion maps retain their behavior. No check registration or verdict changes.
 
 The [seeded benchmark closure audit](seeded-benchmark.md#dependency-closure)
 requires exact tool and font inventories and verified licence files. Its CLI
