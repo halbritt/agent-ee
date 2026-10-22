@@ -10,7 +10,7 @@ from unittest.mock import patch
 from agent_ee.candidate import capture
 from agent_ee.candidate_visuals import produce, packet_visuals, capture_visuals
 from agent_ee.storage import digest
-from toolchain import enable_visuals_for_module, require_toolchain
+from toolchain import enable_visuals_for_module, native_board_render_test, require_toolchain
 
 
 setUpModule = enable_visuals_for_module
@@ -30,6 +30,7 @@ class CandidateVisualTests(unittest.TestCase):
         shutil.copytree(fixture, self.source)
         self.board = self.source / 'rc_filter.kicad_pcb'
 
+    @native_board_render_test
     def test_native_four_layer_images_and_packet_hashes(self):
         import pcbnew
         from agent_ee.reviewers import build_packet
@@ -69,6 +70,7 @@ class CandidateVisualTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'image changed'):
             build_packet(run, [], 'tampered')
 
+    @native_board_render_test
     def test_imaging_preserves_twenty_second_drc_budget(self):
         from agent_ee.cli import run_review
         outcomes = []
@@ -236,6 +238,7 @@ class CandidateVisualTests(unittest.TestCase):
                 place_candidate(fixture.source, fixture.netlist, destination, fixture.config)
         self.assertFalse(destination.exists())
 
+    @native_board_render_test
     def test_native_placement_default_retains_images_beside_result(self):
         from agent_ee.placer_runner import place_candidate
         fixture = self._placement_fixture()
@@ -250,6 +253,7 @@ class CandidateVisualTests(unittest.TestCase):
         self.assertTrue((destination / 'visuals/manifest.json').is_file())
         self.assertEqual(json.loads((destination / 'placement-result.json').read_text()), result)
 
+    @native_board_render_test
     def test_networkless_placement_runner_retains_images_through_nested_executor(self):
         from agent_ee.executor import execute
         fixture = self._placement_fixture()
@@ -271,6 +275,7 @@ class CandidateVisualTests(unittest.TestCase):
         for image in report['visuals']['images']:
             self.assertEqual(digest(work / 'proposal' / image['path']), image['sha256'])
 
+    @native_board_render_test
     def test_stock_defaults_and_project_models_survive_proposal_and_imaging(self):
         import pcbnew
         from agent_ee.placer_runner import place_candidate

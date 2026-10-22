@@ -39,6 +39,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select native board render regressions from the push
+        id: render-selection
+        env:
+          RENDER_BASE: ${{ github.event.before }}
+        run: |
+          mode=$(python3 scripts/strict_suite.py --print-render-mode --render-change-base "$RENDER_BASE")
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Native board render regressions: $mode"
 
       - name: Permit container user namespaces with a named AppArmor profile
         run: |
@@ -154,18 +165,23 @@ jobs:
           chmod 0444 "$drawing"
           echo "J1_DRAWING=$drawing" >> "$GITHUB_ENV"
 
-      # The required full gate. Every module runs, four at a time, in strict mode;
-      # any failure or skip fails the step. A test whose required input is absent
+      # Every module runs, four at a time, in strict mode. Native 3D board render
+      # regressions are selected for renderer changes and unknown change bases;
+      # the summary names any omitted tests. Any failure or skip fails the step.
+      # A test whose required input is absent
       # fails and is named in the job summary as not executed (docs/container.md).
       # The fome-mc store and the J1 drawing are mounted read-only.
       # AGENT_EE_POD_INPUTS stays unset: the J1 tests use their committed fixtures.
-      - name: Full test suite, strict toolchain mode, no skips
+      - name: Strict test suite, change-selected board renders, no skips
+        env:
+          RENDER_MODE: ${{ steps.render-selection.outputs.mode }}
         run: |
           summary=$(mktemp -d "$RUNNER_TEMP/agent-ee-suite-XXXXXX")
           chmod 0777 "$summary"
           store=$(realpath "$FOME_MC_STORE")
           status=0
-          docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 -e PYTHONPATH=src -v "$summary:/summary" \
+          docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 \
+            -e AGENT_EE_NATIVE_RENDER_MODE="$RENDER_MODE" -e PYTHONPATH=src -v "$summary:/summary" \
             -v "$store:/opt/fome-mc:ro" -e AGENT_EE_FOME_MC_CHECKOUT=/opt/fome-mc \
             -v "$J1_DRAWING:/opt/j1/te-776228-1.pdf:ro" -e AGENT_EE_J1_DRAWING=/opt/j1/te-776228-1.pdf \
             -w /opt/agent-ee "$IMAGE" python3 scripts/strict_suite.py --jobs 4 \

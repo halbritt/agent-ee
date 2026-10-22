@@ -49,7 +49,9 @@ runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` through
 `scripts/strict_suite.py`, which permits no skips. The workflow provisions the
 pinned fome-mc store and the J1 manufacturer drawing first; see
 [required external inputs](container.md#required-external-inputs). Without them
-the tests that need them fail. The full gate passes only with both inputs. Set
+the tests that need them fail. The strict gate passes only with both inputs.
+By default it includes native 3D board render regressions; CI selects them
+from changed paths and lists any omitted test IDs in its summary. Set
 `AGENT_EE_FOME_MC_CHECKOUT` to a fome-mc store containing `1289f31` and
 `AGENT_EE_J1_DRAWING` to the hash-checked drawing
 ([acquisition](../fixtures/telemetry-pod/j1/README.md)):
@@ -57,7 +59,7 @@ the tests that need them fail. The full gate passes only with both inputs. Set
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc \
   AGENT_EE_J1_DRAWING=/path/to/te-776228-1.pdf PYTHONPATH=src \
-  /usr/bin/python3 scripts/strict_suite.py --jobs 4
+  /usr/bin/python3 scripts/strict_suite.py --jobs 4 --render-mode run
 ```
 
 
