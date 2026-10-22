@@ -31,6 +31,7 @@ import copy
 from fractions import Fraction
 import functools
 import json
+import os
 import re
 import shutil
 import statistics
@@ -48,6 +49,10 @@ OBJECTIVE = {'id': 'agent-ee.placer.wire-cost', 'version': '1',
              'definition': 'per nonground signal pad, integer Manhattan nm to the nearest placed same-net pad'}
 GENERATION = 'agent-ee.placer.search-stack/1'
 LIMITS = {'requests': 256, 'samples': 8192, 'bytes': 8 * 1024 * 1024}
+# The overhead experiment gate (coordinator ruling on AGENTEE-430 H6): enabled-trace overhead
+# to export at most 5%, gated only for workloads whose tracing-off median is at least 100 ms.
+GATE_MAX_OVERHEAD = 0.05
+GATE_MIN_OFF_NS = 100_000_000
 ROTATIONS = (0, 90, 180, 270)
 # A complete replay is bound to the board and rules it scored; unknown ones leave it partial.
 QUALIFYING_IDENTITIES = ('pcb', 'rules')
@@ -63,6 +68,7 @@ DURATIONS = (
     ('stage_a.exact', 'stage_a.search', 'exclusive', 'disjoint', ()),
     ('stage_a.rank', 'stage_a.search', 'exclusive', 'disjoint', ()),
     ('stage_a.predicates', 'stage_a.search', 'exclusive', 'disjoint', ()),
+    ('stage_a.trace', 'stage_a.search', 'exclusive', 'disjoint', ()),
     ('stage_a.judge', 'pipeline', 'exclusive', 'nested', ('stage_b.arrange',)),
     ('stage_b.arrange', 'pipeline', 'inclusive', 'disjoint', ()),
     ('stage_b.search', 'stage_b.arrange', 'exclusive', 'disjoint', ()),
@@ -70,8 +76,10 @@ DURATIONS = (
     ('export', 'pipeline', 'exclusive', 'disjoint', ()),
 )
 COUNTERS = ('stage_a.searches', 'stage_a.scans', 'stage_a.candidates_generated', 'stage_a.exact_resolved',
-            'stage_a.steps', 'stage_a.doomed', 'stage_a.admitted', 'stage_a.rejected', 'stage_a.generations',
-            'stage_a.stale_samples', 'stage_b.arrangements', 'stage_b.steps')
+            'stage_a.steps', 'stage_a.doomed', 'stage_a.admitted', 'stage_a.rejected', 'stage_a.aborted',
+            'stage_a.generations', 'stage_a.stale_samples', 'stage_b.arrangements', 'stage_b.steps')
+# Counters added after the first traces were written: an absent one reads as 0.
+ADDED_COUNTERS = ('stage_a.aborted',)
 SOURCES = ('placer.py', 'block_arrangement.py', 'placer_runner.py', 'placement_trace.py', 'trace_envelope.py')
 
 now = time.perf_counter_ns  # Monotonic, nanoseconds.
@@ -198,16 +206,17 @@ class Recorder:
         self.samples.append(row)
 
     def timed_rank(self, ranked):
-        """``ranked`` re-yielded, timing the heap work exclusive of exact cost resolution."""
-        exact = self.durations['stage_a.exact']
+        """``ranked`` re-yielded, timing the heap work exclusive of exact cost resolution and of
+        sample recording (``stage_a.trace``); a raising step is timed too."""
+        exact, recorded = self.durations['stage_a.exact'], self.durations['stage_a.trace']
         while True:
-            t, before = now(), exact[0]
+            t, before = now(), exact[0] + recorded[0]
             try:
                 key = next(ranked)
             except StopIteration:
-                self.add('stage_a.rank', now() - t - (exact[0] - before))
                 return
-            self.add('stage_a.rank', now() - t - (exact[0] - before))
+            finally:
+                self.add('stage_a.rank', now() - t - (exact[0] + recorded[0] - before))
             yield key
 
     def finish(self):
@@ -318,9 +327,9 @@ def envelope(recorder, *, stage, identity, state, native_tools=(), outcome=None)
 
 
 def reconcile(counters):
-    """Counter identities every complete Stage-A trace satisfies."""
+    """Counter identities every Stage-A trace satisfies: a step whose predicate raised is aborted."""
     return {'steps': counters['stage_a.steps'] == counters['stage_a.doomed'] + counters['stage_a.admitted']
-            + counters['stage_a.rejected'],
+            + counters['stage_a.rejected'] + counters.get('stage_a.aborted', 0),
             'candidates': counters['stage_a.candidates_generated'] >= counters['stage_a.exact_resolved']}
 
 
@@ -388,7 +397,8 @@ def payload_problems(document):
     if not isinstance(searches, list) or not all(isinstance(s, dict) and _integer(s.get('generations'))
                                                  and s['generations'] >= 0 for s in searches):
         return ['generation.searches must list each search with its allocated generations']
-    missing = [name for name in COUNTERS + ('stage_a.unresolved',) if name not in counters]
+    missing = [name for name in COUNTERS + ('stage_a.unresolved',)
+               if name not in counters and name not in ADDED_COUNTERS]
     if missing:
         return [f'counters missing {", ".join(missing)}']
     problems = []
@@ -519,12 +529,14 @@ def replay(document):
 
     Invalid, unsupported, unknown or unreconciled evidence is ``refused`` with parity
     ``none``; agreement is ``complete`` only for a completed, fully sampled run bound to
-    qualified board and rules identities, and ``partial`` otherwise.
+    qualified board and rules identities, and ``partial`` otherwise. Only the typed
+    refusal (ValueError) of ``stage_a_inputs`` is a refusal: an unexpected error in the
+    reader or the placer's scorer propagates instead of being reported as evidence.
     """
     from .placer import _wire_bounds, _wire_cost
     try:
         inputs = stage_a_inputs(document)
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+    except ValueError as exc:
         return {'schema': REPLAY, 'status': 'refused', 'parity': 'none', 'reason': str(exc)}
     checked, mismatches = 0, []
     for entry in inputs:
@@ -561,10 +573,21 @@ def _canonical(value):
 
 
 def export(document, path):
-    """Write a trace to a fresh ``path`` as canonical JSON; the number of bytes written."""
+    """Write a trace to a fresh ``path`` as canonical JSON; the number of bytes written.
+
+    A write that fails after creating the file removes it: no truncated trace is left.
+    """
     data = (_canonical(document) + '\n').encode()
-    with Path(path).open('xb') as stream:
-        stream.write(data)
+    path = Path(path)
+    with path.open('xb') as stream:
+        try:
+            stream.write(data)
+            stream.flush()
+        except BaseException:
+            with contextlib.suppress(OSError):
+                if os.path.samestat(os.fstat(stream.fileno()), path.stat()):  # Only the file this call created.
+                    path.unlink()
+            raise
     return len(data)
 
 
@@ -572,7 +595,9 @@ def overhead(capture, policy, *, runs=5, warmups=1, limits=None):
     """Matched off/on ``pack`` timings: alternating order, median overhead and plan identity.
 
     An enabled run ends when its trace is on disk: recording, envelope assembly and
-    export to a fresh file are all inside the measured boundary.
+    export to a fresh file are all inside the measured boundary. The gate applies only
+    when the tracing-off median is at least 100 ms; a shorter workload is reported with
+    ``gate.applies`` false and ``gate.met`` null, never as met.
     """
     from .placer import pack
     if runs < 1 or warmups < 0:
@@ -607,15 +632,17 @@ def overhead(capture, policy, *, runs=5, warmups=1, limits=None):
                 identical = identical and _canonical(plan) == reference
     median_off, median_on, median_recorded = statistics.median(off), statistics.median(on), statistics.median(recorded)
     overhead_ratio = (median_on - median_off) / median_off if median_off else None
-    return {'schema': 'agent-ee.placement-trace-overhead/2', 'runs': runs, 'warmups': warmups,
+    applies = median_off >= GATE_MIN_OFF_NS
+    return {'schema': 'agent-ee.placement-trace-overhead/3', 'runs': runs, 'warmups': warmups,
             'unit': 'ns', 'off_ns': off, 'on_ns': on, 'recording_ns': recorded, 'export_ns': exported,
             'median_off_ns': median_off, 'median_on_ns': median_on, 'median_recording_ns': median_recorded,
             'median_export_ns': statistics.median(exported),
             'median_overhead': overhead_ratio,
             'median_recording_overhead': (median_recorded - median_off) / median_off if median_off else None,
             'outputs_identical': identical, 'trace_bytes_max': max(trace_bytes),
-            'gate': {'kind': 'experiment', 'provisional_max_median_overhead': 0.05,
-                     'met': overhead_ratio is not None and overhead_ratio <= 0.05,
+            'gate': {'kind': 'experiment', 'provisional_max_median_overhead': GATE_MAX_OVERHEAD,
+                     'min_off_ns': GATE_MIN_OFF_NS, 'applies': applies,
+                     'met': overhead_ratio <= GATE_MAX_OVERHEAD if applies else None,
                      'measures': 'median_overhead: placement with the trace recorded, assembled and exported '
                                  'to a fresh file, versus tracing off, alternating matched runs; '
                                  'median_recording_overhead is the recording alone'}}

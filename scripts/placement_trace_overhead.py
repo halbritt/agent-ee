@@ -5,12 +5,16 @@ Runs ``placement_trace.overhead`` (matched, alternating tracing-off/on ``pack`` 
 on the original pod-scale qualification boards (scripts/qualify_pod_placement.py,
 native generation in the sandbox) and the original search/cluster unit fixtures, and
 prints one JSON record. The <= 5% median gate is an experiment gate, not a physical
-constraint; a new host or session is a new measurement.
+constraint; a new host or session is a new measurement. Per the coordinator ruling on
+AGENTEE-430 H6 it applies only to fixtures whose tracing-off median is >= 100 ms, on an
+unloaded host (1-minute load average < 2 when the measurement starts and ends); shorter
+fixtures are reported, not gated.
 
     PYTHONPATH=src:tests:. python3 scripts/placement_trace_overhead.py --runs 5 [--no-native]
 """
 import argparse
 import json
+import os
 import platform
 import sys
 import tempfile
@@ -21,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tests'), str(ROOT)]
 
 from agent_ee import placement_trace  # noqa: E402
+
+MAX_LOAD = 2.0  # The gate is measured on an unloaded host: 1-minute load average below this.
 
 
 def unit_cases():
@@ -49,6 +55,7 @@ def main(argv=None):
     parser.add_argument('--warmups', type=int, default=1)
     parser.add_argument('--no-native', action='store_true', help='skip the natively generated pod-scale boards')
     args = parser.parse_args(argv)
+    load_before = os.getloadavg()
     with tempfile.TemporaryDirectory(prefix='agent-ee-trace-overhead-') as tmp:
         cases = unit_cases() + ([] if args.no_native else pod_cases(Path(tmp)))
         rows = []
@@ -64,13 +71,24 @@ def main(argv=None):
                                                    'median_export_ns', 'median_overhead', 'median_recording_overhead',
                                                    'outputs_identical', 'trace_bytes_max', 'off_ns', 'on_ns',
                                                    'recording_ns', 'export_ns')},
-                         'gate_met': result['gate']['met']})
-    print(json.dumps({'schema': 'agent-ee.placement-trace-overhead-report/2', 'runs': args.runs,
+                         'gate_applies': result['gate']['applies'], 'gate_met': result['gate']['met']})
+    load_after = os.getloadavg()
+    gated = [r for r in rows if r['gate_applies']]
+    unloaded = max(load_before[0], load_after[0]) < MAX_LOAD
+    print(json.dumps({'schema': 'agent-ee.placement-trace-overhead-report/3', 'runs': args.runs,
                       'warmups': args.warmups, 'python': platform.python_version(), 'machine': platform.machine(),
-                      'gate': {'kind': 'experiment', 'provisional_max_median_overhead': 0.05,
+                      'host': platform.node(), 'cpus': os.cpu_count(),
+                      'load_average': {'before': list(load_before), 'after': list(load_after)},
+                      'gate': {'kind': 'experiment',
+                               'provisional_max_median_overhead': placement_trace.GATE_MAX_OVERHEAD,
                                'boundary': 'recording, envelope assembly and export to a fresh file',
-                               'met_by': [r['case'] for r in rows if r['gate_met']],
-                               'exceeded_by': [r['case'] for r in rows if not r['gate_met']]},
+                               'min_off_ns': placement_trace.GATE_MIN_OFF_NS, 'max_load_average_1m': MAX_LOAD,
+                               'host_unloaded': unloaded,
+                               # Met only on an unloaded host, by every gated fixture, with at least one gated.
+                               'met': unloaded and bool(gated) and all(r['gate_met'] for r in gated),
+                               'met_by': [r['case'] for r in gated if r['gate_met']],
+                               'exceeded_by': [r['case'] for r in gated if not r['gate_met']],
+                               'reported_not_gated': [r['case'] for r in rows if not r['gate_applies']]},
                       'cases': rows}, indent=2, sort_keys=True))
     return 0 if all(r['outputs_identical'] for r in rows) else 1
 

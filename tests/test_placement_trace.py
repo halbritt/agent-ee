@@ -3,8 +3,10 @@
 Fixtures are the existing original placer fixtures (search, cluster, copper-extent,
 block arrangement and native runner cases); none is a third-party design.
 """
+import contextlib
 import copy
 import hashlib
+import io
 import json
 from pathlib import Path
 import random
@@ -13,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_ee import placement_trace, trace_envelope
@@ -645,7 +648,9 @@ class PlacementTraceTest(unittest.TestCase):
         self.assertGreater(result['trace_bytes_max'], 0)
         self.assertEqual(result['gate']['kind'], 'experiment')
         self.assertIsInstance(result['median_overhead'], float)
-        self.assertEqual(result['gate']['met'], result['median_overhead'] <= 0.05)
+        # Coordinator ruling on H6: a 2 ms unit fixture is reported, not gated, and never reported as met.
+        self.assertLess(result['median_off_ns'], placement_trace.GATE_MIN_OFF_NS)
+        self.assertEqual((result['gate']['applies'], result['gate']['met']), (False, None))
 
     def test_command_line(self):
         source, policy = promotion_case()
@@ -680,6 +685,374 @@ class PlacementTraceTest(unittest.TestCase):
             self.assertNotEqual(again.returncode, 0)
             self.assertIn('FileExistsError', again.stderr)
 
+
+
+class G0VerificationRegressionTest(unittest.TestCase):
+    """Agent-510's G0 verification findings R1-R5 at 0b868441, kept as regressions (AGENTEE-430)."""
+    @classmethod
+    def setUpClass(cls):
+        source, policy = anchor_case()
+        cls.source, cls.policy = source, policy
+        cls.plan, cls.document = traced(source, policy)
+
+    def changed(self, change):
+        document = copy.deepcopy(self.document)
+        change(document)
+        return json.loads(json.dumps(document))
+
+    def assert_refused(self, document, reason, label):
+        report = placement_trace.replay(document)
+        self.assertEqual((report['status'], report['parity']), ('refused', 'none'), (label, report))
+        self.assertIn(reason, report['reason'], label)
+
+    def test_agent510_replay_reproductions(self):
+        """R1/R2: the exact edits of 510's replay diagnostic; none may claim complete parity or raise."""
+        report = placement_trace.replay(self.document)
+        self.assertEqual((report['status'], report['parity'], report['requests'], report['samples_checked']),
+                         ('exact', 'complete', 4, 6))
+        self.assertEqual(self.document['counters']['stage_a.exact_resolved'], 6)
+        # samples-removed: only payload.samples is cleared; the envelope still validates.
+        removed = self.changed(lambda d: d['payload'].update(samples=[]))
+        self.assertEqual(trace_envelope.validate(removed), [])
+        self.assert_refused(removed, 'does not account for', 'samples removed')
+        # failed-complete: only the state changes; the run is retained but never complete evidence.
+        failed = self.changed(lambda d: d.update(state={'status': 'failed',
+                                                        'reason': 'diagnostic interrupted producer'}))
+        self.assertEqual(trace_envelope.validate(failed), [])
+        report = placement_trace.replay(failed)
+        self.assertEqual((report['status'], report['parity']), ('exact', 'partial'))
+        self.assertIn('traced run failed: diagnostic interrupted producer', report['partial_reasons'])
+        # unsupported-objective.
+        unsupported = self.changed(lambda d: d.update(objective={'id': 'different-objective', 'version': '2'}))
+        self.assert_refused(unsupported, 'objective different-objective/2 is not the supported', 'objective')
+        # invalid-rotation: a typed refusal, not KeyError('45').
+        self.assert_refused(self.changed(lambda d: d['payload']['samples'][0].__setitem__(4, 45)),
+                            'rotation 45', 'invalid rotation')
+        # The positive trace 510 retained predates the stage_a.aborted counter; it still reconciles.
+        older = self.changed(lambda d: (d['counters'].pop('stage_a.aborted'),
+                                        d['durations'].remove(next(r for r in d['durations']
+                                                                   if r['name'] == 'stage_a.trace'))))
+        self.assertEqual(placement_trace.replay(older)['parity'], 'complete')
+        self.assert_refused(self.changed(lambda d: d['counters'].update({'stage_a.aborted': 1})),
+                            'counters do not reconcile', 'aborted step that never ran')
+
+    def test_zero_work_trace_is_distinguished_from_lost_samples(self):
+        """R1: zero exact work whose counters agree is legitimate; zero samples against counted work is not."""
+        source, policy = promotion_case()
+        policy = {**policy, 'fixed_refs': [fp['ref'] for fp in source['footprints']]}
+        plan, document = traced(source, policy)
+        self.assertEqual(plan['status'], 'fixed_conflict')  # A typed failure before any Stage-A search.
+        counters = document['counters']
+        self.assertEqual((counters['stage_a.scans'], counters['stage_a.exact_resolved']), (0, 0))
+        self.assertEqual((document['payload']['requests'], document['payload']['samples']), ([], []))
+        report = placement_trace.replay(document)
+        # Complete over the empty set of recorded work: nothing was evaluated, and nothing is missing.
+        self.assertEqual((report['status'], report['parity'], report['samples_checked']), ('exact', 'complete', 0))
+        # The same empty payload against counted work is refused, whatever its coverage label says.
+        lost = self.changed(lambda d: (d['payload'].update(requests=[], samples=[]),
+                                       d['sampling'].update(recorded=0, bytes=placement_trace.FRAME_BYTES)))
+        self.assertEqual(lost['sampling']['coverage'], 'complete')
+        self.assert_refused(lost, 'does not account for', 'lost samples')
+        # Zero samples kept by a declared cap are partial, not complete and not refused.
+        _, capped = traced(self.source, self.policy, {'samples': 0})
+        self.assertEqual(capped['payload']['samples'], [])
+        report = placement_trace.replay(capped)
+        self.assertEqual((report['status'], report['parity']), ('exact', 'partial'))
+
+    def test_malformed_payloads_are_typed_refusals(self):
+        """R2: wrong arity and types, duplicate ids, missing rotation data and unsupported versions."""
+        def request(i, key, value):
+            return lambda d: d['payload']['requests'][i].__setitem__(key, value)
+
+        def sample(i, j, value):
+            return lambda d: d['payload']['samples'][i].__setitem__(j, value)
+        for change, reason, label in (
+                (sample(0, 4, '90'), 'must be integer', 'rotation as a string'),
+                (sample(0, 4, None), 'must be integer', 'rotation null'),
+                (sample(0, 4, 360), 'rotation 360', 'rotation out of range'),
+                (lambda d: d['payload']['samples'][0].append(0), 'must be integer', 'sample of nine fields'),
+                (lambda d: d['payload']['samples'].__setitem__(0, {'x_nm': 0}), 'must be integer', 'sample object'),
+                (sample(0, 0, -1), 'unrecorded request -1', 'negative request'),
+                (sample(0, 7, -5), 'non-negative', 'negative cost'),
+                (sample(0, 5, '1/0x'), 'must be integer', 'malformed local cost'),
+                (request(0, 'id', '0'), 'recording position', 'request id as a string'),
+                (request(2, 'id', 1), 'recording position', 'duplicate request id'),
+                (request(0, 'generation', -1), 'never allocated', 'negative generation'),
+                (request(0, 'generated', None), 'generated must be', 'generated null'),
+                (request(0, 'ref', ''), 'ref and uuid', 'empty ref'),
+                (lambda d: d['payload']['requests'][0]['pads'].update({'45': []}), 'pads must give',
+                 'extra rotation'),
+                (lambda d: d['payload']['requests'][0]['pads'].__setitem__('0', [['N', 1]]), 'pads must give',
+                 'pad row of two'),
+                (lambda d: d['payload']['requests'][0].__setitem__('pads', []), 'pads must give', 'pads a list'),
+                (lambda d: d['payload']['requests'][0]['peers'].update({'nowhere': [[0, 0]]}), 'peers must map',
+                 'peer net without a pad'),
+                (lambda d: d['payload']['requests'].__setitem__(0, None), 'not an object', 'request null'),
+                (lambda d: d['payload'].update(schema='agent-ee.placement-trace/2'),
+                 'not an agent-ee.placement-trace/1', 'payload version'),
+                (lambda d: d['payload'].update(sample_fields=list(reversed(placement_trace.SAMPLE_FIELDS))),
+                 'not an agent-ee.placement-trace/1', 'reordered sample fields'),
+                (lambda d: d['consumer'].update(version='2'), 'consumer agent-ee.placement/2', 'consumer version'),
+                (lambda d: d['generation'].update(id='agent-ee.placer.search-stack/2'), 'generation agent-ee.placer',
+                 'generation version'),
+                (lambda d: d['sampling']['limits'].pop('bytes'), 'sampling.limits must name',
+                 'limits missing bytes'),
+                (lambda d: d['counters'].pop('stage_a.scans'), 'counters missing stage_a.scans', 'counter missing'),
+                (lambda d: d['generation']['searches'][0].pop('generations'), 'generation.searches',
+                 'search without generations'),
+                (lambda d: d.update(schema='pcb-trace-envelope/2'), 'unsupported envelope version', 'envelope /2')):
+            self.assert_refused(self.changed(change), reason, label)
+        # Random structural damage: every outcome is typed and complete parity needs an exact replay.
+        rng = random.Random(510)
+        junk = (None, -1, 0, 7, True, '', 'x', '1/2', [], [0], {}, {'a': 1}, 45)
+        for _ in range(400):
+            document = copy.deepcopy(self.document)
+            node = document['payload']
+            for _ in range(rng.randrange(1, 4)):
+                key = rng.choice(list(node) if isinstance(node, dict) else range(len(node)))
+                if not isinstance(node[key], (dict, list)) or not node[key] or rng.random() < 0.3:
+                    break
+                node = node[key]
+            if isinstance(node, dict) and node:
+                node[rng.choice(list(node))] = rng.choice(junk)
+            elif isinstance(node, list) and node:
+                node[rng.randrange(len(node))] = rng.choice(junk)
+            report = placement_trace.replay(json.loads(json.dumps(document)))
+            self.assertIn(report['status'], ('refused', 'exact', 'mismatch'))
+            if report['parity'] == 'complete':
+                self.assertEqual(report['status'], 'exact')
+
+    def test_unexpected_reader_errors_are_not_refusals(self):
+        """R2: only the typed refusal is a refusal; an implementation error is never reported as evidence."""
+        with mock.patch.object(placement_trace, 'payload_problems', side_effect=KeyError('reader defect')):
+            with self.assertRaises(KeyError):
+                placement_trace.replay(self.document)
+        with mock.patch('agent_ee.placer._wire_cost', side_effect=TypeError('scorer defect')):
+            with self.assertRaises(TypeError):
+                placement_trace.replay(self.document)
+
+    def test_rank_time_excludes_trace_recording(self):
+        """R3: 510's deterministic-clock probe: 1 ms injected per sample is recording time, not rank time."""
+        class Clock:
+            value = 0
+
+            def __call__(self):
+                self.value += 1
+                return self.value
+        clock, original = Clock(), placement_trace.Recorder.sample
+
+        def slow_sample(recorder, *args):
+            original(recorder, *args)
+            clock.value += 1000000
+        source, policy = promotion_case()
+        with mock.patch.object(placement_trace, 'now', clock), \
+                mock.patch.object(placement_trace.Recorder, 'sample', slow_sample):
+            with placement_trace.recording() as recorder:
+                plan = pack(copy.deepcopy(source), policy)
+        self.assertEqual(plan['status'], 'planned')
+        samples = len(recorder.samples)
+        self.assertEqual(samples, 3)
+        self.assertLess(recorder.durations['stage_a.rank'][0], 1000000)  # Was 3,000,007 at 0b868441.
+        self.assertGreaterEqual(recorder.durations['stage_a.trace'][0], samples * 1000000)
+        scans = recorder.counters['stage_a.scans']
+        self.assertEqual(recorder.durations['stage_a.trace'][1], scans + recorder.durations['stage_a.exact'][1])
+
+    def failed_trace(self, target, attribute):
+        source, policy = promotion_case()
+        with self.assertRaisesRegex(RuntimeError, 'placement sentinel'):
+            with placement_trace.recording() as recorder:
+                with mock.patch.object(target, attribute, side_effect=RuntimeError('placement sentinel')):
+                    pack(copy.deepcopy(source), policy)
+        document = placement_trace.envelope(recorder, stage='pack', state={'status': 'failed', 'reason': 'sentinel'},
+                                            identity=placement_trace.pack_identity(source, policy, {}))
+        return {row['name']: row for row in document['durations']}, document
+
+    def assert_inclusive(self, durations):
+        children = sum(row['value'] for row in durations.values() if row['parent'] == 'stage_a.search')
+        self.assertGreater(children, 0)
+        self.assertLessEqual(children, durations['stage_a.search']['value'])
+        top = sum(durations[name]['value'] for name in ('prep', 'stage_a.search', 'stage_a.judge'))
+        self.assertLessEqual(top, durations['pipeline']['value'])
+
+    def test_a_raising_search_closes_its_spans(self):
+        """R3: 510's predicate-exception probe, and a failure inside candidate geometry."""
+        from agent_ee import placer
+        durations, document = self.failed_trace(placer._Search, 'blockers')
+        self.assertGreater(durations['prep']['value'], 0)  # Was 0 at 0b868441.
+        self.assertGreater(durations['stage_a.search']['value'], 0)  # Was 0 at 0b868441.
+        self.assertEqual(durations['stage_a.search']['count'], 1)
+        self.assertEqual(durations['stage_a.predicates']['count'], 1)  # The raising predicate is timed.
+        counters = document['counters']
+        self.assertEqual((counters['stage_a.steps'], counters['stage_a.aborted']), (1, 1))
+        self.assertEqual(document['payload']['reconciliation'], {'steps': True, 'candidates': True})
+        self.assertGreater(durations['stage_a.predicates']['value'], 0)
+        self.assert_inclusive(durations)
+        report = placement_trace.replay(document)
+        self.assertEqual((report['status'], report['parity']), ('exact', 'partial'))
+        self.assertIn('traced run failed: sentinel', report['partial_reasons'])
+        durations, document = self.failed_trace(placer, '_candidate_axes')
+        self.assertEqual(durations['stage_a.geometry']['count'], 1)
+        self.assertGreater(durations['stage_a.geometry']['value'], 0)
+        self.assertEqual(durations['stage_a.bounds']['count'], 0)
+        self.assert_inclusive(durations)
+        self.assertEqual(placement_trace.replay(document)['parity'], 'partial')
+
+    def test_a_raising_arrangement_closes_stage_b(self):
+        from agent_ee import block_arrangement
+        from test_block_arrangement import ArrangementFixture
+
+        class Case(ArrangementFixture, unittest.TestCase):
+            def runTest(self):
+                pass
+        case = Case()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        with self.assertRaisesRegex(RuntimeError, 'placement sentinel'):
+            with placement_trace.recording() as recorder:
+                with mock.patch.object(block_arrangement._Arrangement, 'candidates',
+                                       side_effect=RuntimeError('placement sentinel')):
+                    case.arrange()
+        arrange, search = recorder.durations['stage_b.arrange'], recorder.durations['stage_b.search']
+        self.assertEqual((arrange[1], search[1]), (1, 1))
+        self.assertLessEqual(search[0], arrange[0])
+        self.assertGreater(search[0], 0)
+
+    def test_smallest_byte_cap_keeps_counters_and_reasons(self):
+        """R5: limits below the empty sample set are refused before placement; at the smallest
+        supported cap the counters are those of the uncapped run and the partial reason names the cap."""
+        for limit in (0, 26, 27):
+            with self.assertRaisesRegex(ValueError, 'byte limit must be at least 28'):
+                traced(self.source, self.policy, {'bytes': limit})
+        plan, document = traced(self.source, self.policy, {'bytes': placement_trace.FRAME_BYTES})
+        self.assertEqual(canonical(plan), canonical(self.plan))
+        self.assertEqual(document['counters'], self.document['counters'])
+        sampling = document['sampling']
+        self.assertEqual((sampling['coverage'], sampling['recorded'], sampling['bytes']),
+                         ('partial', 0, placement_trace.FRAME_BYTES))
+        self.assertTrue(any(r.startswith(f'byte limit {placement_trace.FRAME_BYTES} reached')
+                            for r in sampling['partial_reasons']), sampling)
+        report = placement_trace.replay(document)
+        self.assertEqual((report['status'], report['parity']), ('exact', 'partial'))
+
+
+class TracePersistenceTest(unittest.TestCase):
+    """R4: a trace that cannot be written never replaces the placement outcome."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='agent-ee-trace-persist-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.scratch = self.root / 'scratch'
+        self.scratch.mkdir()
+        self.source = self.root / 'source.kicad_pcb'
+        self.source.write_text('(kicad_pcb)\n')
+        self.request = {'policy': {}, 'authorization': {
+            'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
+            'source_sha256': hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            'writable_root': str(self.scratch)}}
+        self.trace = self.scratch / 'trace.json'
+
+    @staticmethod
+    def placed(source, netlist, destination, request):
+        capture, policy = promotion_case()
+        plan = pack(capture, policy)  # Real Stage-A work under the recorder.
+        return {'status': 'placed', 'board_sha256': '0' * 64, 'plan': plan}
+
+    def run_traced(self, placement, **patches):
+        from agent_ee import placer_runner
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(placer_runner, 'place_candidate', side_effect=placement))
+            stack.enter_context(mock.patch.object(placement_trace, 'native_tool_hashes', return_value=[]))
+            for name, effect in patches.items():
+                stack.enter_context(mock.patch.object(placement_trace, name, side_effect=effect))
+            return placer_runner.traced_place_candidate(self.source, self.root / 'netlist.xml',
+                                                        self.scratch / 'proposal', self.request, self.trace)
+
+    def test_the_placement_error_survives_a_trace_write_failure(self):
+        """510's probe, with a valid authorization: the placement RuntimeError, not the OSError."""
+        with self.assertRaises(RuntimeError) as raised:
+            self.run_traced(RuntimeError('placement sentinel'), export=OSError('trace disk full sentinel'))
+        self.assertEqual(str(raised.exception), 'placement sentinel')
+        secondary = raised.exception.placement_trace_error
+        self.assertIsInstance(secondary, OSError)
+        self.assertEqual(str(secondary), 'trace disk full sentinel')
+        self.assertTrue(any('placement trace not written' in note and 'trace disk full sentinel' in note
+                            for note in raised.exception.__notes__))
+        self.assertFalse(self.trace.exists())
+        # An assembly defect is exposed the same way; it never replaces the placement error.
+        with self.assertRaises(RuntimeError) as raised:
+            self.run_traced(RuntimeError('placement sentinel'), envelope=ValueError('assembly defect'))
+        self.assertIsInstance(raised.exception.placement_trace_error, ValueError)
+        # Without a trace failure the placement error carries none, and the failed trace is written.
+        with self.assertRaises(RuntimeError) as raised:
+            self.run_traced(RuntimeError('placement sentinel'))
+        self.assertFalse(hasattr(raised.exception, 'placement_trace_error'))
+        document = json.loads(self.trace.read_text())
+        self.assertEqual(document['state'], {'status': 'failed', 'reason': 'RuntimeError: placement sentinel'})
+
+    def test_a_placed_candidate_with_an_unwritten_trace_is_reported_as_such(self):
+        from agent_ee.placer_runner import TracePersistenceError
+        for effect in (OSError('trace disk full sentinel'), FileExistsError('raced')):
+            with self.assertRaises(TracePersistenceError) as raised:
+                self.run_traced(self.placed, export=effect)
+            self.assertEqual(raised.exception.report['status'], 'placed')  # The candidate may exist.
+            self.assertIs(raised.exception.__cause__, effect)
+            self.assertIn('placement placed, but its trace was not written', str(raised.exception))
+            self.assertFalse(self.trace.exists())
+        report = self.run_traced(self.placed)
+        self.assertEqual(report['status'], 'placed')
+        self.assertEqual(placement_trace.replay(json.loads(self.trace.read_text()))['status'], 'exact')
+
+    def test_command_line_reports_the_candidate_and_fails_on_an_unwritten_trace(self):
+        from agent_ee import placer_runner
+        (self.root / 'request.json').write_text(json.dumps(self.request))
+        result = self.scratch / 'result.json'
+        stderr = io.StringIO()
+        with mock.patch.object(placer_runner, 'place_candidate', side_effect=self.placed), \
+                mock.patch.object(placement_trace, 'native_tool_hashes', return_value=[]), \
+                mock.patch.object(placement_trace, 'export', side_effect=OSError('trace disk full sentinel')), \
+                contextlib.redirect_stderr(stderr):
+            code = placer_runner.main([str(self.source), str(self.root / 'netlist.xml'),
+                                       '--request', str(self.root / 'request.json'),
+                                       '--destination', str(self.scratch / 'proposal'), '--result', str(result),
+                                       '--trace', str(self.trace)])
+        self.assertEqual(code, 3)
+        self.assertEqual(json.loads(result.read_text())['status'], 'placed')
+        self.assertIn('trace disk full sentinel', stderr.getvalue())
+
+    def test_a_failed_export_leaves_no_truncated_trace(self):
+        _, document = traced(*promotion_case())
+        original = Path.open
+
+        class Full:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.stream.close()
+
+            def fileno(self):
+                return self.stream.fileno()
+
+            def write(self, data):
+                self.stream.write(data[:len(data) // 2])
+                self.stream.flush()
+                raise OSError(28, 'No space left on device')
+
+            def flush(self):
+                self.stream.flush()
+
+        def opened(path, *args, **kwargs):
+            stream = original(path, *args, **kwargs)
+            return Full(stream) if path == self.trace else stream
+        with mock.patch.object(Path, 'open', opened):
+            with self.assertRaisesRegex(OSError, 'No space left'):
+                placement_trace.export(document, self.trace)
+        self.assertFalse(self.trace.exists())
+        self.assertGreater(placement_trace.export(document, self.trace), 0)
+        self.assertEqual(json.loads(self.trace.read_text()), document)
 
 class NativePlacementTraceTest(unittest.TestCase):
     """The traced disposable writer: identical candidate bytes, native-check and export stages."""

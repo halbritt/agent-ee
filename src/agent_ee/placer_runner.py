@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter
 from decimal import Decimal
+import functools
 import hashlib
 import json
 import os
@@ -814,6 +815,34 @@ def _trace_path(trace_path, root, destination):
     return trace_path
 
 
+class TracePersistenceError(RuntimeError):
+    """Placement returned its report, but its requested trace was not written (AGENTEE-430).
+
+    The trace is an observer: this is not a placement failure, and a placed candidate may
+    already be published at its destination. ``report`` is the placement report;
+    ``__cause__`` is the trace error.
+    """
+
+    def __init__(self, report, trace_path):
+        self.report, self.trace_path = report, trace_path
+        status = report.get('status') if isinstance(report, dict) else None
+        super().__init__(f'placement {status}, but its trace was not written to {trace_path}')
+
+
+def _persist_trace(recorder, trace_path, *, state, source, netlist, request, report, experiment):
+    """Assemble and export the trace; the exception that stopped it, or None once written."""
+    try:
+        document = placement_trace.envelope(
+            recorder, stage='place-candidate', state=state,
+            identity=_trace_identity(source, netlist, request, report, experiment),
+            native_tools=placement_trace.native_tool_hashes(),
+            outcome=report.get('status') if isinstance(report, dict) else None)
+        placement_trace.export(document, trace_path)
+    except Exception as exc:
+        return exc
+    return None
+
+
 def traced_place_candidate(source, netlist, destination, request, trace_path, *, experiment=None, limits=None):
     """``place_candidate`` with the opt-in placement trace written to a fresh ``trace_path`` (AGENTEE-430).
 
@@ -821,7 +850,13 @@ def traced_place_candidate(source, netlist, destination, request, trace_path, *,
     child of the authorized writable root, not the destination) are checked before
     anything is recorded or written: a refusal leaves no trace and no candidate. After
     that, the trace is written even when placement raises; it then records a failed
-    state and the error is re-raised. The candidate directory and report are unchanged.
+    state and the placement error is re-raised. The candidate directory and report are
+    unchanged.
+
+    A trace that cannot be written never replaces the placement outcome. When placement
+    raised, its own exception is re-raised, carrying the trace error as
+    ``placement_trace_error`` and a note. When placement returned, ``TracePersistenceError``
+    carries the report: the candidate may exist although its trace does not.
     """
     source, netlist = Path(source).resolve(), Path(netlist).resolve()
     destination = Path(destination).absolute()
@@ -829,22 +864,22 @@ def traced_place_candidate(source, netlist, destination, request, trace_path, *,
     trace_path = _trace_path(trace_path, root, destination)
     placement_trace.Recorder(limits)  # Refuse invalid limits before placement, not after it.
     recorder = report = None
+    persist = functools.partial(_persist_trace, trace_path=trace_path, source=source, netlist=netlist,
+                                request=request, experiment=experiment)
     try:
         with placement_trace.recording(limits) as recorder:
             report = place_candidate(source, netlist, destination, request)
-        state = {'status': 'completed'}
     except BaseException as exc:
         state = {'status': 'failed' if isinstance(exc, Exception) else 'interrupted',
                  'reason': f'{exc.__class__.__name__}: {exc}'}
+        failure = None if recorder is None else persist(recorder, report=report, state=state)
+        if failure is not None:
+            exc.placement_trace_error = failure
+            exc.add_note(f'placement trace not written to {trace_path}: {failure.__class__.__name__}: {failure}')
         raise
-    finally:
-        if recorder is not None:
-            document = placement_trace.envelope(
-                recorder, stage='place-candidate', state=state,
-                identity=_trace_identity(source, netlist, request, report, experiment),
-                native_tools=placement_trace.native_tool_hashes(),
-                outcome=report.get('status') if isinstance(report, dict) else None)
-            placement_trace.export(document, trace_path)
+    failure = persist(recorder, report=report, state={'status': 'completed'})
+    if failure is not None:
+        raise TracePersistenceError(report, trace_path) from failure
     return report
 
 
@@ -875,11 +910,21 @@ def main(argv=None):
         if trace_path == result_path:
             raise ValueError('trace must be a fresh file directly inside authorized scratch root, not the result')
         # traced_place_candidate checks authorization and the trace path before any write.
-        report = traced_place_candidate(args.board, args.netlist, args.destination, request, trace_path,
-                                        experiment=args.trace_experiment)
-    with result_path.open('x') as stream:
-        stream.write(json.dumps(report, indent=2, sort_keys=True) + '\n')
+        try:
+            report = traced_place_candidate(args.board, args.netlist, args.destination, request, trace_path,
+                                            experiment=args.trace_experiment)
+        except TracePersistenceError as exc:
+            # The placement outcome is still reported; the missing trace fails the command (exit 3).
+            _write_result(result_path, exc.report)
+            print(f'{exc}: {exc.__cause__.__class__.__name__}: {exc.__cause__}', file=sys.stderr)
+            return 3
+    _write_result(result_path, report)
     return 0 if report['status'] == 'placed' else 1
+
+
+def _write_result(path, report):
+    with path.open('x') as stream:
+        stream.write(json.dumps(report, indent=2, sort_keys=True) + '\n')
 
 
 if __name__ == '__main__':

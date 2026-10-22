@@ -36,7 +36,20 @@ result path. After these checks pass, the runner writes the trace even when
 placement raises. The trace then has state `failed` with the error, partial
 coverage and an unknown candidate identity, and the error is re-raised. Traces are
 written as canonical JSON (sorted keys, no whitespace) to a path that must not
-already exist. To roll back, turn the trace off.
+already exist. A write that fails after creating the file removes that file, so no
+truncated trace is left. To roll back, turn the trace off.
+
+The trace is an observer, and a failure to assemble or write it never replaces the
+placement outcome:
+
+- When placement raised, its own exception is re-raised. The trace error is
+  attached as `placement_trace_error`, plus a note that names the path.
+- When placement returned, `traced_place_candidate` raises
+  `TracePersistenceError`. Its `report` is the placement report, and `__cause__`
+  is the trace error. A placed candidate can already be published at its
+  destination, so the caller must not read this error as "no candidate".
+- The command line writes the placement report to `--result` as usual, prints
+  the trace error to stderr and exits 3.
 
 ## Outputs are unchanged
 
@@ -73,8 +86,9 @@ Durations are `time.perf_counter_ns` nanoseconds. Each row has a `boundary`
 | `stage_a.geometry` | stage_a.search | exclusive | disjoint | scan anchors, candidate axes, generation and locality constraints, without bounds |
 | `stage_a.bounds` | stage_a.search | exclusive | disjoint | `_wire_bounds`, once per quarter turn |
 | `stage_a.exact` | stage_a.search | exclusive | disjoint | each lazily resolved `_wire_cost` |
-| `stage_a.rank` | stage_a.search | exclusive | disjoint | `_ranked` heap work without exact resolution |
-| `stage_a.predicates` | stage_a.search | exclusive | disjoint | `blockers` for each non-doomed step |
+| `stage_a.rank` | stage_a.search | exclusive | disjoint | `_ranked` heap work, without exact resolution or sample recording |
+| `stage_a.predicates` | stage_a.search | exclusive | disjoint | `blockers` for each non-doomed step, a raising one included |
+| `stage_a.trace` | stage_a.search | exclusive | disjoint | the observer: recording each scan's request and each exact evaluation's sample |
 | `stage_a.judge` | pipeline | exclusive | nested in `stage_b.arrange` | complete-proposal judge, group and locality grading |
 | `stage_b.arrange` | pipeline | inclusive | disjoint | `block_arrangement.arrange`: admission, block search and residual Stage A |
 | `stage_b.search` | stage_b.arrange | exclusive | disjoint | the block search loop |
@@ -84,12 +98,27 @@ Durations are `time.perf_counter_ns` nanoseconds. Each row has a `boundary`
 Stage B's centroid objective has its own oracle in the plan. This trace times
 Stage B and counts its steps, but it samples only the Stage-A wire cost.
 
+The cost of recording requests and samples is reported in `stage_a.trace`
+(count: recorded scans plus exact evaluations). It is not included in
+`stage_a.rank` or `stage_a.geometry`. The clock reads and counter increments of
+the hooks themselves stay inside the stage they time.
+
+Every span closes when its code raises, as well as when it returns. A failed or
+interrupted run keeps the prep, search, judge, geometry, bounds, exact, rank,
+predicate and Stage-B time it entered, so `stage_a.search` still covers its
+children and `pipeline` its top-level rows. A raising exact resolution keeps its
+time but is not counted as resolved.
+
 ## Counters
 
 Counters are complete even when samples are capped:
 
 - `stage_a.steps` is the sum of `_Search.steps` over the searches. It equals
-  `doomed + admitted + rejected`, and for a plain `pack` the plan's `steps_used`.
+  `doomed + admitted + rejected + aborted`, and for a plain `pack` the plan's
+  `steps_used`. `stage_a.aborted` counts steps whose predicates raised. It is 0
+  in a completed run unless a search failure was handled inside the placer. A
+  trace written before this counter existed has no `stage_a.aborted`, and the
+  reader treats it as 0.
   With block arrangement, `stage_a.steps + stage_b.steps` equals the plan's `steps_used`.
 - `stage_a.candidates_generated` equals `stage_a.exact_resolved + stage_a.unresolved`.
   An unresolved candidate kept only its lower bound.
@@ -138,12 +167,22 @@ contract. Before it returns anything, it checks the evidence and raises
 
 `replay` recomputes each sample with the placer's own `_wire_cost` and
 `_wire_bounds`. Its `status` is `exact`, `mismatch` or `refused`. A refusal has
-parity `none` and a reason. Its `parity` is `complete` only for an exact replay of
+parity `none` and a reason. Only the typed `ValueError` from `stage_a_inputs`
+becomes a refusal. Any other error in the reader or the scorer propagates, so an
+implementation defect is never reported as a judgment on the evidence. Its `parity` is `complete` only for an exact replay of
 a completed run that has complete, reconciled coverage and qualified `pcb` and
 `rules` identities. An exact replay is `partial`, with a reason for each gap, in
 these cases: a capped trace, a `failed` or `interrupted` run (whatever its coverage
 label says), or an unknown `pcb` or `rules` identity. A trace with unknown fields
 stays a valid, retained record. It is never certified as complete evidence.
+
+A trace with no samples can still be complete, but only when the counters agree
+that nothing was evaluated. For example, a plan that fails on a fixed conflict
+before any search has zero scans and zero exact evaluations, and its exact replay
+is `complete` with `samples_checked` 0. If the counters report scans or exact
+evaluations that are neither in the payload nor counted as dropped, the same
+empty payload is refused. If a declared cap dropped all samples, the replay is
+`partial`.
 
 ## Limits
 

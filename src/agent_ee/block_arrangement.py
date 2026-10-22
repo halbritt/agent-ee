@@ -1245,6 +1245,9 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
     except electrical_locality.TargetBudgetExhausted:
         return stopped('arrangement_budget_exhausted', 'locality target budget exhausted',
                        order[len(search.placed_blocks)])
+    except BaseException:
+        searched()  # A raising search still accounts its traced time (AGENTEE-430).
+        raise
     searched()
     elapsed = time.monotonic() - search.started
     poses = {fp['ref']: fp for p in search.placed_blocks for fp in p['members']}
