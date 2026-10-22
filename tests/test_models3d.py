@@ -400,6 +400,59 @@ class ModelClosureTests(unittest.TestCase):
         self.assertEqual(closure['references'][0]['proposal_path'], 'body.step')
         verify_project_models(self.board, destination, closure)
 
+    def _alias_closure(self, name):
+        project = self.root / 'project'
+        project.mkdir()
+        (project / 'body.step').write_bytes(b'owned body')
+        (self.root / 'alias').symlink_to(project)
+        self.board = project / 'board.kicad_pcb'
+        self.write_board(f'(footprint "Owned" (model "{self.root}/alias/{name}"))')
+        destination = project / 'proposal'
+        destination.mkdir()
+        closure = copy_project_models(self.board, destination)
+        verify_project_models(self.board, destination, closure)
+        return project, destination, closure
+
+    def retarget(self, directory):
+        (self.root / 'alias').unlink()
+        (self.root / 'alias').symlink_to(directory)
+
+    def test_retarget_existing_absolute_reference_refuses(self):
+        # The proposal board still names the alias; verification follows that literal path.
+        project, destination, closure = self._alias_closure('body.step')
+        self.assertEqual(closure['references'][0]['proposal_path'], 'body.step')
+        for payload in (b'replacement body', b'owned body'):
+            other = self.root / f'other-{len(payload)}'
+            other.mkdir()
+            (other / 'body.step').write_bytes(payload)
+            self.retarget(other)
+            with self.assertRaisesRegex(ValueError, 'no longer resolves'):
+                verify_project_models(self.board, destination, closure)
+        # A retarget to another directory inside the project refuses too.
+        (project / 'sub').mkdir()
+        (project / 'sub/body.step').write_bytes(b'owned body')
+        self.retarget(project / 'sub')
+        with self.assertRaisesRegex(ValueError, 'no longer resolves'):
+            verify_project_models(self.board, destination, closure)
+        self.retarget(project)
+        verify_project_models(self.board, destination, closure)
+
+    def test_retarget_missing_absolute_reference_refuses(self):
+        project, destination, closure = self._alias_closure('gone.step')
+        self.assertEqual([(r['status'], r['proposal_path']) for r in closure['references']],
+                         [('missing', 'gone.step')])
+        other = self.root / 'other'
+        other.mkdir()
+        (other / 'gone.step').write_bytes(b'appeared elsewhere')
+        self.retarget(other)
+        with self.assertRaises((ValueError, OSError)):
+            verify_project_models(self.board, destination, closure)
+        self.retarget(project)
+        verify_project_models(self.board, destination, closure)
+        (project / 'gone.step').write_bytes(b'appeared')
+        with self.assertRaisesRegex(ValueError, 'missing.*appeared'):
+            verify_project_models(self.board, destination, closure)
+
 
 class StockModelFetchTests(unittest.TestCase):
     def setUp(self):

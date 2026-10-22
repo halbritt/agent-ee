@@ -300,6 +300,8 @@ def copy_project_models(board: Path, destination: Path) -> dict:
             if '..' in target_relative.parts or not target_relative.parts:
                 raise ValueError(f'unsafe project model destination: {path}')
             record['proposal_path'] = target_relative.as_posix()
+            if absolute is not None:
+                _bind_absolute_reference(board, record)
             if model['status'] != 'resolved':
                 continue
             key = target_relative.as_posix()
@@ -323,8 +325,20 @@ def copy_project_models(board: Path, destination: Path) -> dict:
                       for key, entry in sorted(files.items())}, 'references': references}
 
 
+def _bind_absolute_reference(board, record):
+    """The literal absolute path the proposal board names must resolve to its carried project file."""
+    project = Path(board).parent.resolve()
+    real = Path(record['path']).resolve()
+    if not real.is_relative_to(project) or real != (project / record['proposal_path']).resolve():
+        raise ValueError(f'absolute project model reference no longer resolves to its captured file: {record["path"]}')
+
+
 def verify_project_models(board: Path, destination: Path, closure: dict):
-    """Refuse changed source/proposal model bytes or newly appearing missing files."""
+    """Refuse changed source/proposal model bytes or newly appearing missing files.
+
+    Absolute references are checked through the literal path the proposal board
+    still names: a symlink retarget, swap or escape after capture refuses.
+    """
     for relative, entry in closure['files'].items():
         source, target = Path(board).parent / relative, Path(destination) / relative
         if not source.resolve().is_relative_to(Path(board).parent.resolve()):
@@ -335,6 +349,13 @@ def verify_project_models(board: Path, destination: Path, closure: dict):
         if digest(source) != entry['sha256'] or digest(target) != entry['sha256']:
             raise ValueError(f'captured placement project model changed: {relative}')
     for model in closure['references']:
+        if model.get('absolute') and 'proposal_path' in model:
+            _bind_absolute_reference(board, model)
+            if (model['status'] == 'resolved'
+                    and digest(Path(model['path'])) != closure['files'][model['proposal_path']]['sha256']):
+                raise ValueError(f'captured placement project model changed: {model["path"]}')
+            if model['status'] == 'missing' and Path(model['path']).exists():
+                raise ValueError(f'captured missing placement project model appeared: {model["path"]}')
         if model['status'] == 'missing' and (Path(board).parent / model['proposal_path']).exists():
             raise ValueError(f'captured missing placement project model appeared: {model["proposal_path"]}')
 
