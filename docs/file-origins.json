@@ -1042,9 +1042,21 @@
     },
     {
       "paths": [
+        "evidence/relocation.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-20 relocation record: store description without credentials, retained paths, and per-path content-marker labels and captured-origin ids recorded from fetched evidence; names file paths only."
+    },
+    {
+      "paths": [
         "evidence/model-comparison-summary.json",
         "evidence/fetch-local-check-20261017.json",
         "evidence/verify-baseline-20261017.json",
+        "evidence/verify-baseline-20261022.json",
+        "evidence/fetch-garage-check-20261022.json",
         "evidence/model-release/tests.log",
         "evidence/model-release/uncertainty-expectation.json",
         "evidence/archives/manifest.json"

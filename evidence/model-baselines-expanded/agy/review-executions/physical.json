@@ -1,5 +1,0 @@
-{
-  "error": "affected harness stopped after prior execution failure; no fallback",
-  "execution": "not_run",
-  "role": "physical"
-}

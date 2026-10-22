@@ -1,2 +1,0 @@
-Found 353 violations
-Saved ERC Report to /work/experiments/reproduced-erc.json

@@ -1,6 +1,0 @@
-R=10k, C=100n -> tau = 1.000000 ms
-v(out) at t=1ms for 1V step, vC(0)=0, unloaded: 0.632121 V
-required window: 0.62 .. 0.65 V
-margin to low limit : +0.012121 V
-margin to high limit: +0.017879 V
-tau range meeting window: 0.9525 ms .. 1.0335 ms (-4.75% .. +3.35% of nominal)

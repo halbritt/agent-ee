@@ -6,10 +6,15 @@ import gzip
 import hashlib
 import json
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class ArchiveRelocated(FileNotFoundError):
+    """Typed refusal: the archive bytes are not in this tree (AGENTEE-20 relocation)."""
 
 
 def sha(path):
@@ -64,13 +69,17 @@ def pack(group, source_ref):
     print(destination)
 
 
-def restore(group):
-    directory = ROOT / "evidence/archives"
+def restore(group, evidence=None):
+    target = Path(evidence) if evidence else ROOT / "evidence"
+    directory = target / "archives"
     manifest = json.loads((directory / "manifest.json").read_text())[group]
     path = directory / manifest["archive"]
+    if not path.is_file():
+        raise ArchiveRelocated(f"{path} is not present: archives were relocated to the evidence store; "
+                               "fetch the 'archives' group and the recorded group with scripts/evidence_fetch.py, "
+                               "then restore with --evidence FETCHED_DIR (docs/reproducing-evidence.md)")
     if sha(path) != manifest["sha256"]:
         raise ValueError("archive checksum mismatch")
-    target = ROOT / "evidence"
     with tarfile.open(path, "r:gz") as archive:
         # Check every retained path before creating any files.
         for info in archive.getmembers():
@@ -110,5 +119,14 @@ if __name__ == "__main__":
     p.add_argument("--source-ref", required=True)
     p = sub.add_parser("restore")
     p.add_argument("group")
+    p.add_argument("--evidence", type=Path, help="evidence root holding archives/ and the group "
+                   "(default: this checkout's evidence/)")
     args = parser.parse_args()
-    pack(args.group, args.source_ref) if args.command == "pack" else restore(args.group)
+    if args.command == "pack":
+        pack(args.group, args.source_ref)
+    else:
+        try:
+            restore(args.group, args.evidence)
+        except ArchiveRelocated as exc:
+            print(f"evidence_archive: refused (archive relocated): {exc}", file=sys.stderr)
+            sys.exit(3)

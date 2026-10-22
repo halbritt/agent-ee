@@ -1,2 +1,0 @@
-Review the saved assembly population: a fitted resistive DC path must connect /IN to /OUT. Do not assume an unpopulated footprint conducts. No alternate assembly override exists.
-Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

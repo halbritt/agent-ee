@@ -1,9 +1,0 @@
-{
-  "diagonal_spoke_points": {
-    "(99.3, 104.38)": true,
-    "(99.3, 105.78)": true,
-    "(100.7, 104.38)": true,
-    "(100.7, 105.78)": true
-  },
-  "interpretation": "Pad center and cardinal relief gaps are outside plane polygon by design. Four diagonal spoke points are in the saved fill; the J1.3 metal pad overlaps these diagonal spokes. Point tests supplement, but do not replace, native DRC connectivity inspection."
-}

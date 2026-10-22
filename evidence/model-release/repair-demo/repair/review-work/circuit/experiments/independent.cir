@@ -1,8 +1,0 @@
-* independent native-value RC verification, initial steady 0 V
-R1 in out 10k
-C1 out 0 100n
-V1 in 0 PWL(0 0 100u 0 100.001u 1 6m 1)
-.tran 0.5u 5.1m 0 0.5u
-.meas tran out_1ms FIND v(out) AT=1.1m
-.meas tran out_5ms FIND v(out) AT=5.1m
-.end

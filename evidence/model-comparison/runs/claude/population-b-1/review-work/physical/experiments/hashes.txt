@@ -1,2 +1,0 @@
-a058e910b3cb8e23aae6a74ff6011684d70809c30c333130c2cbdd8b5624d449  /candidate/project/rc_filter.kicad_sch
-b2c9655cd136794f6e13972112451fb4bece7367c9fe4e1c7db63bbe9b3bb736  /candidate/project/rc_filter.kicad_pcb

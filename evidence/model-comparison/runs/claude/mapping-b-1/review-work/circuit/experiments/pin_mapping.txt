@@ -1,3 +1,0 @@
-J1 pin 1 lands at (66.04, 66.04)
-J1 pin 2 lands at (66.04, 63.50)
-J1 pin 3 lands at (66.04, 60.96)

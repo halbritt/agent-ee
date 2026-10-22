@@ -1,2 +1,0 @@
-Evaluate only the ideal unloaded response to a 1 V step at /IN, initially discharged capacitor. At 1 ms require /OUT between 0.62 and 0.65 V. Ideal passive components only.
-Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

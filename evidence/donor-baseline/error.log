@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/home/halbritt/git/agent-ee/src/agent_ee/cli.py", line 270, in run_review
-    packet = build_packet(run, result["checks"], result["run_id"])
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/halbritt/git/agent-ee/src/agent_ee/reviewers.py", line 53, in build_packet
-    raise ValueError("packet_artifacts must name evidence produced by this run's declared checks")
-ValueError: packet_artifacts must name evidence produced by this run's declared checks

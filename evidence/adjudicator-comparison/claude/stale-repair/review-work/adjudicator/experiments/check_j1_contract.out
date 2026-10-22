@@ -1,2 +1,0 @@
-J1 pads (board): [('1', '/IN'), ('2', '/OUT'), ('3', 'GND')]
-Declared contract: {'2': 'input', '1': 'filtered output', '3': 'ground'}
