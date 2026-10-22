@@ -667,6 +667,13 @@ and stub tree, and the reference-plane return-corridor guard at a declared width
 with a recorded basis. An absent structure is a defect and never counts as
 microstrip. Missing bounds, widths or fills are unknown. It is not RF
 qualification.
+The [ESP32 antenna placement check](docs/antenna-placement.md) is a bare-board
+fab gate for the ESP32-S3-WROOM-1 outside-board case (Espressif guidelines
+section 1.4.7). It grades U1's saved pose, the board edge the antenna crosses,
+the feed-point corner and the retained module keepout against hash-pinned
+sources. Missing sources are unknown. The corner slot is an agent-derived class
+default, labelled as such; manufacturer corner compliance stays unknown. Housing, nearby metal, support and RF
+performance stay open physical and bench obligations.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. A pinned jlcparts feed
