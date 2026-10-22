@@ -265,15 +265,25 @@ class CandidateVisualTests(unittest.TestCase):
             **fixture.config['authorization'], 'writable_root': '/work'}}
         (inputs / 'request.json').write_text(json.dumps(config))
         work = self.root / 'sandbox-placement'
+        # An explicit milestone render: the typed policy crosses --clearenv as AGENT_EE_SKIP_VISUALS=0
+        # (AGENTEE-458); ordinary helper placement passes the skip instead.
         execution = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placer_runner',
             '/candidate/board.kicad_pcb', '/candidate/netlist.xml', '--request', '/candidate/request.json',
-            '--destination', '/work/proposal', '--result', '/work/result.json'], timeout=240)
+            '--destination', '/work/proposal', '--result', '/work/result.json'], timeout=240, skip_visuals=False)
         self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
+        options = execution['sandbox_argv'][:execution['sandbox_argv'].index('--')]
+        at = options.index('AGENT_EE_SKIP_VISUALS')
+        self.assertEqual(options[at - 1:at + 2], ['--setenv', 'AGENT_EE_SKIP_VISUALS', '0'])
         report = json.loads((work / 'result.json').read_text())
         self.assertEqual(report['visuals']['status'], 'available', report['visuals'])
         self.assertEqual(len(report['visuals']['images']), 4)
         for image in report['visuals']['images']:
             self.assertEqual(digest(work / 'proposal' / image['path']), image['sha256'])
+        # Candidate-bound: the retained imaging manifest names the published proposal board.
+        manifest = json.loads((work / 'proposal/visuals/manifest.json').read_text())
+        self.assertEqual(manifest['board_sha256'], digest(work / 'proposal/candidate.kicad_pcb'))
+        self.assertEqual((report['board_sha256'], report['visuals']['board_sha256']),
+                         (manifest['board_sha256'], manifest['board_sha256']))
 
     @native_board_render_test
     def test_stock_defaults_and_project_models_survive_proposal_and_imaging(self):

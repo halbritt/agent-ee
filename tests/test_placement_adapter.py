@@ -1641,5 +1641,90 @@ class ReceiptIterationTest(unittest.TestCase):
         self.assertEqual(read_json(self.work / 'stage-receipts.json')['receipts'], [])
 
 
+# Logs every call in the sandbox's HOME; a native board render start leaves a marker and is
+# refused, so neither the regression nor its control does any render work (AGENTEE-458).
+RENDER_SHIM = """#!/bin/sh
+printf '%s\\n' "$*" >> "$HOME/agent-ee-kicad-cli.log"
+if [ "$1" = pcb ] && [ "$2" = render ]; then
+    : > "$HOME/agent-ee-pcb-render-started"
+    echo 'agent-ee test shim: native board render refused' >&2
+    exit 97
+fi
+exec {cli} "$@"
+"""
+
+
+class OrdinaryPlacementRenderPolicyTest(unittest.TestCase):
+    """Ordinary placement never starts kicad-cli pcb render across the real nested sandbox (AGENTEE-458).
+
+    The test places a guarded kicad-cli shim on /usr/local/bin, first on the sandbox PATH,
+    of the outer helper sandbox. The helper's own nested imaging sandbox binds /usr from
+    that view, so a render started at either level leaves a marker; the control proves it."""
+    setUp = ReceiptIterationTest.setUp
+    iterate = ReceiptIterationTest.iterate
+
+    @classmethod
+    def setUpClass(cls):
+        ReceiptIterationTest.setUpClass.__func__(cls)
+        cli = shutil.which('kicad-cli')
+        if cli is None or not os.path.realpath(cli).startswith('/usr/'):
+            raise AssertionError(f'kicad-cli must resolve under the sandboxed /usr: {cli}')
+        cls.cli = os.path.realpath(cli)
+
+    def shimmed(self):
+        from agent_ee import executor
+        shim = self.root / 'shim-bin'
+        shim.mkdir()
+        (shim / 'kicad-cli').write_text(RENDER_SHIM.format(cli=self.cli))
+        (shim / 'kicad-cli').chmod(0o755)
+        real = executor.sandbox_argv
+
+        def with_shim(*args, **kwargs):
+            command = real(*args, **kwargs)
+            at = command.index('--clearenv')
+            return [*command[:at], '--ro-bind', str(shim), '/usr/local/bin', *command[at:]]
+        return patch('agent_ee.executor.sandbox_argv', side_effect=with_shim)
+
+    def calls(self, root):
+        return [line for log in Path(root).rglob('agent-ee-kicad-cli.log') for line in log.read_text().splitlines()]
+
+    def render_starts(self, root):
+        return sorted(p.relative_to(root).as_posix() for p in Path(root).rglob('agent-ee-pcb-render-started'))
+
+    def test_ordinary_helper_placement_starts_no_native_render(self):
+        with self.shimmed():
+            record = self.iterate()
+        self.assertEqual((record['status'], record['helper']['status']), ('proposed', 'completed'))
+        # The shim was on the outer sandbox PATH: the helper's netlist export went through it.
+        self.assertTrue(any(c.startswith('sch export netlist') for c in self.calls(self.work)), self.calls(self.work))
+        self.assertEqual(self.render_starts(self.work), [])
+        self.assertFalse(any(c.startswith('pcb render') for c in self.calls(self.work)))
+        receipt = self.receipts.validate_receipt(self.work / record['helper']['receipt'])
+        options = receipt['execution']['sandbox_argv'][:receipt['execution']['sandbox_argv'].index('--')]
+        self.assertIn('/usr/local/bin', options)
+        at = options.index('AGENT_EE_SKIP_VISUALS')
+        self.assertEqual(options[at - 1:at + 2], ['--setenv', 'AGENT_EE_SKIP_VISUALS', '1'])
+        result = read_json(self.work / record['helper']['receipt'] / 'run/placement/placement-result.json')
+        self.assertEqual((result['status'], result['visuals']['status']), ('placed', 'skipped'))
+        self.assertNotIn('execution', result['visuals'])
+
+    def test_control_shim_observes_a_render_started_in_the_nested_sandbox(self):
+        from agent_ee.executor import execute
+        source = (self.source / BOARD).read_bytes()
+        spec, _ = pa.prepare_step(self.root / 'control/step', source, read_json(self.source / POLICY),
+                                  {'board': BOARD, 'schematic': SCHEMATIC, 'timeout_s': 300}, ['J1'])
+        work = self.root / 'control/work'
+        with self.shimmed():
+            execution = execute(self.source, work, spec['argv'], timeout=300, network=False,
+                                extra_ro=[(m['source'], m['at']) for m in spec['mounts']], skip_visuals=False)
+        self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text()[-3000:])
+        result = read_json(work / 'placement/placement-result.json')
+        self.assertEqual((result['status'], result['visuals']['status']), ('placed', 'unavailable'))
+        # Only the nested imaging sandbox (its own HOME under the proposal) started the render.
+        started = self.render_starts(work)
+        self.assertTrue(started)
+        self.assertTrue(all(p.startswith('placement/placed/visuals/native/') for p in started), started)
+
+
 if __name__ == '__main__':
     unittest.main()

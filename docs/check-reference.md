@@ -2553,4 +2553,6 @@ The shared test harness defaults incidental candidate imaging off with the
 strict `AGENT_EE_SKIP_VISUALS=1` flag. Candidate-visual and 3D-render test modules
 force `0` while they run, retaining native image/hash coverage. Production
 continues to render by default; this test setting neither skips tests nor
-changes a check verdict.
+changes a check verdict. Ordinary placement helper steps run with the typed
+[sandbox render policy](pcb-renders.md#sandbox-render-policy-agentee-458)
+`skip_visuals=True` and never image their proposal (AGENTEE-458).

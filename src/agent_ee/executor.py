@@ -46,7 +46,19 @@ raise OSError(error, os.strerror(error), sys.argv[3])
 MOUNT_GUARD_PREFIX = ['/usr/bin/python3', '-I', '-B', '-c', MOUNT_GUARD]
 
 
-def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=(), mount_identities=None):
+def visual_policy(skip_visuals):
+    """The one candidate-imaging setting a caller may pass into the cleared sandbox environment.
+
+    None adds nothing, so every existing sandbox argv stays byte-identical. A boolean
+    becomes the strict AGENT_EE_SKIP_VISUALS flag candidate_visuals reads (AGENTEE-458)."""
+    if skip_visuals is None:
+        return []
+    if type(skip_visuals) is not bool:
+        raise ValueError('skip_visuals must be a boolean or None')
+    return ["--setenv", "AGENT_EE_SKIP_VISUALS", "1" if skip_visuals else "0"]
+
+
+def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=(), mount_identities=None, skip_visuals=None):
     # A small filesystem view also hides other reviewers' scratch and the source
     # checkout. No host home, /run sockets or host /tmp are exposed.
     command = ["bwrap", "--die-with-parent", "--new-session", "--unshare-pid",
@@ -67,7 +79,8 @@ def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=(), mount_identi
                 "--setenv", "KICAD_CONFIG_HOME", "/work/kicad-config",
                 "--setenv", "KICAD10_SYMBOL_DIR", "/candidate/stock/symbols",
                 "--setenv", "KICAD10_FOOTPRINT_DIR", "/candidate/stock/footprints",
-                "--setenv", "KICAD10_TEMPLATE_DIR", "/candidate/stock/template"]
+                "--setenv", "KICAD10_TEMPLATE_DIR", "/candidate/stock/template",
+                *visual_policy(skip_visuals)]
     if not network:
         command += ["--unshare-net"]
     # /etc/resolv.conf can point into /run, which is deliberately hidden.
@@ -198,13 +211,15 @@ def _displace(directory, before):
     return displaced
 
 
-def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=(), cancellation=None):
+def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=(), cancellation=None,
+            skip_visuals=None):
     # A tool may change files in place; no digest observation spans its run (AGENTEE-250).
+    visual_policy(skip_visuals)  # An invalid policy refuses before the work directory is touched.
     forget_scope()
     work, directory = _open_work(work)
     try:
         return _execute(inputs, work, directory, argv, timeout=timeout, stdin=stdin, network=network,
-                        extra_ro=extra_ro, cancellation=cancellation)
+                        extra_ro=extra_ro, cancellation=cancellation, skip_visuals=skip_visuals)
     finally:
         os.close(directory)
         forget_scope()
@@ -229,9 +244,9 @@ def held_interrupt():
         signal.signal(signal.SIGINT, previous)
 
 
-def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation):
+def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation, skip_visuals):
     extra_ro = tuple(extra_ro)
-    command = sandbox_argv(inputs, work, argv, network=network, extra_ro=extra_ro)
+    command = sandbox_argv(inputs, work, argv, network=network, extra_ro=extra_ro, skip_visuals=skip_visuals)
     record = {"argv": list(map(str, argv)), "sandbox_argv": command,
               "timeout_s": timeout, "execution": "not_run", "exit_code": None}
     # Records an earlier run left here are replaced; anything else at these names is the tool's.
