@@ -668,3 +668,13 @@ The default is legacy-first. The unchanged search passes run first, and the
 proof replaces only a failed search's result, keeping its search record and
 steps. `capacity_proof: true` keeps the pre-search proof, and `capacity_proof:
 false` opts out. See [board capacity](placer.md#board-capacity-agentee-249).
+
+Coordinator ruling (agent-449, relayed in the AGENTEE-249 follow-up
+assignment; coordinator reasoning, not an owner decision): a `judge_rejected`
+result is not a search failure for this purpose. The search completed a
+proposal that the independent judge or grading rejected, so the proof must not
+replace that rejection; only genuine search exhaustion is replaced. The same
+ruling accepts the access-direction comb fixture's new verdict: its ten
+fixture-author hard obstacles at gap 0 are hard sources, so the proved
+infeasibility is correctly a `defect`, and the declared and plain boards still
+agree on every compared key, including `search_failure`.

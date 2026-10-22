@@ -291,6 +291,30 @@ class CapacityDiagnosticTest(unittest.TestCase):
         finally:
             placer._capacity_impossibility = original
 
+    def test_default_proof_never_replaces_a_judge_rejection(self):
+        # Coordinator ruling: a judge rejection is not search exhaustion, so even an
+        # (artificially) exceeded row leaves its status and reason unchanged.
+        source, policy = columns_case(6)
+        fake = {'kind': 'board_capacity_gap', 'side': 'F', 'gap_nm': 0, 'blocked_by': [], 'square_nm': 0,
+                'references': ['C1'], 'required_grown_courtyard_area_nm2': [1, 1], 'available_area_upper_nm2': [0, 1]}
+        original = placer._capacity_impossibility, placer.judge
+        placer.judge = lambda capture, overhangs=None: {'verdict': 'defect'}
+        try:
+            rejected = pack(source, dict(policy, capacity_proof=False))
+            self.assertEqual(rejected['status'], 'judge_rejected')
+            placer._capacity_impossibility = lambda sides, policy: fake
+            report = pack(source, policy)
+            self.assertEqual(pack(source, dict(policy, capacity_proof=True))['status'], 'packing_infeasible')
+        finally:
+            placer._capacity_impossibility, placer.judge = original
+        self.assertEqual((report['status'], report['outcome'], report['reason']),
+                         ('judge_rejected', 'unknown', 'independent full-polygon judge rejected complete proposal'))
+        self.assertNotIn('proof', report)
+        self.assertNotIn('search_failure', report)
+        for key in set(report) | set(rejected):
+            if key != 'policy':
+                self.assertEqual(report.get(key), rejected.get(key), key)
+
     def test_squares_grown_by_half_the_gap_exceed_the_free_area(self):
         # Sixteen 2 mm squares (64 mm2) on a 10 x 10 mm board pass the plain area proof;
         # grown by 0.5 mm in a container shrunk by 0.5 - 0.5 = 0 mm they need 140 mm2.

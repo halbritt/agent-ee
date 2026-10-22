@@ -693,9 +693,10 @@ When the policy omits `capacity_proof` (the default since the
 the proof is legacy-first. The unchanged search, joint cluster and
 copper-aligned passes run first, and any plan they find is returned
 unchanged. Only when the final result is a search failure
-(`packing_search_exhausted`, `packing_budget_exhausted`,
-`locality_cluster_exhausted` or `judge_rejected`) and a row is exceeded does the
-proof replace it. That result keeps the search's `search` record, its
+(`packing_search_exhausted`, `packing_budget_exhausted` or
+`locality_cluster_exhausted`) and a row is exceeded does the proof replace it.
+A `judge_rejected` result keeps its own status and reason: the search completed
+a proposal, so it did not exhaust. That result keeps the search's `search` record, its
 `steps_used` and every other field, and records the replaced failure's
 `status`, `outcome` and `reason` as `search_failure`. Failures before the search
 (fixed conflicts, region proofs, unsupported geometry) are unchanged.

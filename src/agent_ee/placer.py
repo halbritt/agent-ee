@@ -2138,8 +2138,9 @@ def _pack_gated(capture, policy, *, heartbeat, seed, arranged):
     return aligned
 
 
-SEARCH_FAILURES = ('packing_search_exhausted', 'packing_budget_exhausted', 'locality_cluster_exhausted',
-                   'judge_rejected')
+# Genuine search exhaustion only: a judge rejection keeps its own status and reason
+# (coordinator ruling, AGENTEE-249).
+SEARCH_FAILURES = ('packing_search_exhausted', 'packing_budget_exhausted', 'locality_cluster_exhausted')
 
 
 def _proved_after_search(result, runtime):
