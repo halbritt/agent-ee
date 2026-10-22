@@ -107,7 +107,7 @@ def traceability(contract, spec_record):
 
 def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None, paths=None,
                    source_bytes=None, require_source_sha256=False, qualifications=None,
-                   history=None, record_path=None, report=None):
+                   history=None, record_path=None, report=None, origin_bytes=None):
     """Bindings borrow components/terminals from a validated interface/1 contract.
 
     Connector terminal IDs equal Connector_Pin; MCU IDs are MCU_Ref:MCU_Pin.
@@ -127,7 +127,10 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
     if history is not None:
         if qualifications is not None or not record_path:
             raise ValueError('history replaces qualifications and requires record_path')
-        qualifications = read_history(copy.deepcopy(history))['sourced']
+        checked = read_history(copy.deepcopy(history))
+        qualifications = checked['sourced']
+        if origin_bytes is not None and hashlib.sha256(origin_bytes).hexdigest() != checked['origin']['sha256']:
+            raise ValueError('historical origin bytes differ from the declared origin sha256')
     if qualifications is not None:
         if not isinstance(qualifications, dict):
             raise ValueError('qualifications must map requirement IDs to source references')
@@ -268,8 +271,10 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
         contract['qualification_record'] = {'path': record_path,
                                             'sha256': hashlib.sha256(json_bytes(record)).hexdigest()}
     if report is not None:
+        report['origin_verification'] = (None if history is None else
+                                         'verified' if origin_bytes is not None else 'declared-unverified')
         report['traceability'] = (traceability(contract, spec_record) if spec_record is not None else None)
-    return validate_contract(contract, qualification=record, require_source_sha256=require_source_sha256,
+    return validate_contract(contract, qualification=json_bytes(record) if record is not None else None, require_source_sha256=require_source_sha256,
                              source_bytes={source['path']: source_bytes} if source_bytes is not None else None)
 
 
@@ -290,6 +295,8 @@ def main(argv=None):
                         'requirements sourced; all other cited IDs are emitted unqualified-carryover')
     parser.add_argument('--history', help='agent-ee.io-map-history/1 binding original provenance; requires '
                         '--record-path and --record-out and replaces --qualifications')
+    parser.add_argument('--history-source', help='captured bytes of the history origin file; its sha256 must '
+                        'equal the declared origin sha256 (otherwise the origin is reported declared-unverified)')
     parser.add_argument('--record-path', help='captured path the contract declares for the qualification record')
     parser.add_argument('--record-out', help='file receiving the qualification record')
     parser.add_argument('--out', required=True)
@@ -307,7 +314,8 @@ def main(argv=None):
         contract = compile_io_map(Path(args.csv).read_bytes(), csv_path=args.csv_path,
             requirement=text(args.requirement), source=dict(path=args.source, locator=args.locator),
             bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths), qualifications=load(args.qualifications),
-            history=load(args.history), record_path=args.record_path, report=trace,
+            history=load(args.history),
+            origin_bytes=Path(args.history_source).read_bytes() if args.history_source else None, record_path=args.record_path, report=trace,
             source_bytes=source_bytes, require_source_sha256=args.require_source_sha256)
         write_json(args.out, contract)
         if args.history:
@@ -315,6 +323,8 @@ def main(argv=None):
     except (OSError, ValueError, UnicodeError) as exc:
         parser.exit(2, f'io-map: {exc}\n')
     print(f'compiled {len(contract["invariants"])} invariants; unresolved declarations remain unknown')
+    if args.history:
+        print('historical origin: ' + trace['origin_verification'])
     if trace.get('traceability'):
         split = trace['traceability']
         print('spec traceability: qualified=' + ','.join(split['qualified'])

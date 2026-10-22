@@ -128,6 +128,28 @@ def record_origins(record):
     return origins
 
 
+def history_report(record, files, inputs):
+    """Per-row honesty: an origin is verified only when its captured bytes match the declared sha256."""
+    status = {}
+    for entry in record['rows']:
+        origin = entry['origin']
+        path = origin['path']
+        if path in status:
+            continue
+        if path not in files:
+            status[path] = 'declared-unverified'
+        elif digest(Path(inputs) / path) != origin['sha256']:
+            raise ValueError('captured historical source differs from its declared sha256')
+        else:
+            status[path] = 'verified'
+    rows = [{'row': e['row'], 'origin_path': e['origin']['path'], 'origin': status[e['origin']['path']],
+             'requirements': {r['id']: ('sourced' if r['qualification'] == 'sourced'
+                                        else 'unqualified historical assertion') for r in e['requirements']}}
+            for e in record['rows']]
+    return {'qualification_bound': True, 'origins': record_origins(record),
+            'origin_verification': status, 'rows': rows}
+
+
 def requirement_authority(contract):
     """Split cited requirement IDs; an ID is sourced only when every citation of it is sourced."""
     status = {}
@@ -174,8 +196,15 @@ def validate_path(invariant, components, terminals):
             raise ValueError('indirect_path endpoint cannot be an intermediate device')
 
 
-def validate_contract(contract, *, source_bytes=None, require_source_sha256=False, qualification=None):
-    """Validate declarations; optional path-to-bytes inputs verify local source hashes."""
+def validate_contract(contract, *, source_bytes=None, require_source_sha256=False, qualification=None,
+                      unverified_shape=False):
+    """Validate declarations; optional path-to-bytes inputs verify local source hashes.
+
+    A qualification-bound contract (declaring `qualification_record`) is valid only when
+    `qualification` supplies the record's exact bytes: their sha256 must equal the declared pin and the
+    parsed record must match every citation. `unverified_shape=True` is the explicit shape-only mode for
+    callers that load a contract before the record is available; its result is not qualification-verified.
+    """
     exact_keys(contract, 'schema components terminals allowed_edits invariants' +
                (' qualification_record' if isinstance(contract, dict) and 'qualification_record' in contract else ''))
     bound = 'qualification_record' in contract
@@ -185,8 +214,21 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
         if (not isinstance(contract['qualification_record']['sha256'], str)
                 or not re.fullmatch(SHA256, contract['qualification_record']['sha256'])):
             raise ValueError('invalid qualification record sha256')
+        if qualification is None and not unverified_shape:
+            raise ValueError('qualification-bound contract requires its qualification record bytes')
+        if qualification is not None and unverified_shape:
+            raise ValueError('unverified_shape cannot be combined with a qualification record')
     elif qualification is not None:
         raise ValueError('qualification record supplied for a contract that declares none')
+    if qualification is not None:
+        if not isinstance(qualification, (bytes, bytearray)):
+            raise ValueError('qualification record must be supplied as exact bytes')
+        if hashlib.sha256(qualification).hexdigest() != contract['qualification_record']['sha256']:
+            raise ValueError('qualification record bytes differ from the declared sha256 pin')
+        try:
+            qualification = json.loads(bytes(qualification).decode('utf-8'), object_pairs_hook=unique_object)
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f'unreadable qualification record: {exc}') from exc
     if contract['schema'] != 'agent-ee.interface/1':
         raise ValueError('unsupported interface schema')
     components, terminals = contract['components'], contract['terminals']
@@ -342,7 +384,7 @@ def unique_object(pairs):
 
 def load_contract(inputs, path):
     raw = (Path(inputs) / str(safe_relative(path))).read_text()
-    return validate_contract(json.loads(raw, object_pairs_hook=unique_object))
+    return validate_contract(json.loads(raw, object_pairs_hook=unique_object), unverified_shape=True)
 
 
 def capability(params, scope, files, inputs, check_id, *, block_sources=False):
@@ -360,7 +402,7 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
             raise ValueError('contract must declare the qualification record pinned by the scope')
         if record_rel not in files or digest(Path(inputs) / record_rel) != pin['sha256']:
             raise ValueError('qualification record must be captured with matching sha256')
-        record = json.loads((Path(inputs) / record_rel).read_text(), object_pairs_hook=unique_object)
+        record = (Path(inputs) / record_rel).read_bytes()
     elif 'qualification_record' in contract:
         raise ValueError('declared qualification record must be pinned by the scope check parameters')
     requirements = {r['id']: r for r in scope.get('baseline', {}).get('requirements', [])}
@@ -382,6 +424,7 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
                if i['source'].get('kind') != 'pinned-external' and 'sha256' in i['source']}
     validate_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources},
                       qualification=record)
+    parsed = json.loads(record.decode('utf-8'), object_pairs_hook=unique_object) if record is not None else None
     immutable = {rel, *sources}
     if record is not None:
         immutable.add(record_rel)
@@ -400,8 +443,8 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
                     immutable.add(src['path'])
     return {'contract': contract, 'immutable_inputs': sorted(immutable),
             'requirement_authority': requirement_authority(contract),
-            'requirement_history': {'qualification_bound': record is not None,
-                                    'origins': record_origins(record) if record is not None else {}},
+            'requirement_history': history_report(
+                parsed, files, inputs) if record is not None else {'qualification_bound': False, 'origins': {}},
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 

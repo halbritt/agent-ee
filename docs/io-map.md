@@ -91,7 +91,17 @@ pins one is refused. With a record, `validate_contract(qualification=record)`
 and `capability` refuse: bare IDs, emptied or changed requirement lists, a
 removed `io_map` citation, an upgrade of any status or source, a changed
 signal or external destination, an uncited record row, and a record whose bytes
-differ from the pinned sha256. Contracts without a pin remain valid legacy
+differ from the pinned sha256. `validate_contract` itself enforces the declared pin: a qualification-bound
+contract validates only when `qualification=` supplies the record's exact bytes
+whose sha256 equals the declared `qualification_record.sha256`; a missing,
+non-bytes or digest-mismatched record is refused. `unverified_shape=True` is
+the explicit shape-only mode used by `load_contract`; it is not verification.
+`--history-source FILE` (API `origin_bytes=`) checks the captured original
+bytes against `origin.sha256`; otherwise the origin is reported
+`declared-unverified`, and the capability reports per row whether the origin is
+`verified` (captured bytes match) or `declared-unverified`, and whether each ID
+is a `sourced` or an `unqualified historical assertion` (`requirement_history.rows`).
+Contracts without a pin remain valid legacy
 inputs; coverage reports them as not qualification-bound.
 
 `--qualifications FILE` (API `qualifications=`) is the lighter form: it marks
