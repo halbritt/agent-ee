@@ -1020,6 +1020,9 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', ['process.measurement_qualification differs from the pinned tool']
     if canonical_backend(request['backend']) == 'builtin' and not runtime_shape(result.get('backend')):
         return 'contradiction', ['backend.runtime differs from the pinned tool']
+    if (canonical_backend(request['backend']) != 'builtin' and isinstance(result.get('backend'), dict) and
+            'runtime' in result['backend']):
+        return 'contradiction', ['backend.runtime is reported by a backend that has none']
     if result['kind'] != 'route' or not _is_int(result['exit_code']) or result['exit_code'] != exit_code:
         return 'contradiction', ['result.json kind or exit_code contradicts the process exit']
     statuses = [(result.get(k), k, allowed) for k, allowed in
@@ -1105,7 +1108,7 @@ def measurement_shape(result):
     value = process.get('measurement_qualification') if isinstance(process, dict) else None
     return (isinstance(value, dict) and set(value) == MEASUREMENT_QUALIFICATION and
             isinstance(value['measurement'], bool) and value['measurement'] is result.get('measurement') and
-            value['build_reproducible'] in (True, False, None) and isinstance(value['reasons'], list) and
+            (value['build_reproducible'] is None or type(value['build_reproducible']) is bool) and isinstance(value['reasons'], list) and
             all(isinstance(r, str) and r for r in value['reasons']))
 
 

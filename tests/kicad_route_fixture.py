@@ -228,6 +228,16 @@ if opts['--backend'] == 'builtin':
                                         'generation': '/elsewhere'}
     if name == 'runtime_extra_key':
         result['backend']['runtime']['python'] = '/usr/bin/python3'
+# A backend without an owned engine never writes backend.runtime, whatever its value.
+FOREIGN_RUNTIME = {'foreign_runtime_wellformed': {'source': '/opt/router', 'venv': '/opt/venv', 'generation': None},
+                   'foreign_runtime_null': None, 'foreign_runtime_empty': {},
+                   'foreign_runtime_malformed': {'unexpected': 'not-a-runtime'}}
+if name in FOREIGN_RUNTIME and opts['--backend'] != 'builtin':
+    result['backend']['runtime'] = FOREIGN_RUNTIME[name]
+REPRODUCIBLE = {'reproducible_one': 1, 'reproducible_zero': 0, 'reproducible_float': 0.0, 'reproducible_true': True,
+                'reproducible_false': False}
+if name in REPRODUCIBLE:
+    result['process']['measurement_qualification']['build_reproducible'] = REPRODUCIBLE[name]
 if name == 'measurement_missing':
     del result['process']['measurement_qualification']
 if name == 'measurement_disagrees':

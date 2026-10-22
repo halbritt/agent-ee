@@ -254,6 +254,53 @@ class LayoutPolicyTest(unittest.TestCase):
         self.assertEqual(set(result['backend']['runtime']), attempt.RUNTIME_KEYS)
         self.assertNotIn('copper_ownership', result)
 
+    def test_runtime_is_refused_on_every_backend_that_does_not_own_it(self):
+        for scenario in ('foreign_runtime_wellformed', 'foreign_runtime_null', 'foreign_runtime_empty',
+                         'foreign_runtime_malformed'):
+            with self.subTest(scenario=scenario):
+                case = self.case(scenario)
+                (case.checkout / 'vendor/freerouting').mkdir()
+                self.run_case(case, REQUEST + ['--backend', 'freerouting'])
+                sem = case.report['semantics']
+                self.assertEqual((sem['classification'], sem['proposal']), ('contradiction', 'none'))
+                self.assertIn('backend.runtime is reported by a backend that has none', sem['reasons'])
+                self.assertEqual(case.exit, attempt.EXIT_CONTRADICTION)
+                self.assertIsNone(case.report['candidate'])
+                case.verify()  # the contradiction itself verifies; it delivers nothing
+        # The same scenario names are inert on the owned engine, which still requires its exact runtime.
+        case = self.run_case(self.case('foreign_runtime_malformed'))
+        self.assertEqual(case.report['semantics']['classification'], 'complete', case.report['semantics'])
+
+    def test_a_runtime_added_to_an_eligible_freerouting_report_does_not_verify(self):
+        case = self.case('complete')
+        (case.checkout / 'vendor/freerouting').mkdir()
+        self.run_case(case, REQUEST + ['--backend', 'freerouting'])
+        self.assertEqual(case.report['semantics']['classification'], 'complete')
+        path = case.work / 'routing/attempt/result.json'
+        result = json.loads(path.read_text())
+        result['backend']['runtime'] = {'unexpected': 'not-a-runtime'}
+        path.write_text(json.dumps(result))
+        report = json.loads((case.work / 'routing/adapter-report.json').read_text())
+        report['retained']['attempt/result.json'] = attempt.digest(path)
+        report['backend']['value'] = result['backend']
+        attempt.write_report(case.work / 'routing/adapter-report.json', report)
+        with self.assertRaises(ValueError):
+            case.verify()
+
+    def test_build_reproducible_is_a_boolean_or_null_only(self):
+        for scenario in ('reproducible_one', 'reproducible_zero', 'reproducible_float'):
+            with self.subTest(scenario=scenario):
+                case = self.run_case(self.case(scenario))
+                sem = case.report['semantics']
+                self.assertEqual((sem['classification'], sem['proposal']), ('contradiction', 'none'))
+                self.assertTrue(any(r.startswith('process.measurement_qualification differs')
+                                    for r in sem['reasons']), sem['reasons'])
+        for scenario in ('reproducible_true', 'reproducible_false', 'complete'):
+            with self.subTest(scenario=scenario):
+                case = self.run_case(self.case(scenario))
+                self.assertEqual(case.report['semantics']['classification'], 'complete',
+                                 case.report['semantics'])
+
     def test_shape_helpers(self):
         good = {'measurement': False, 'process': {'measurement_qualification': {
             'measurement': False, 'build_reproducible': None, 'reasons': ['basis']}}}
@@ -264,6 +311,14 @@ class LayoutPolicyTest(unittest.TestCase):
             bad = json.loads(json.dumps(good))
             change(bad)
             self.assertFalse(attempt.measurement_shape(bad))
+        for value in (True, False, None):
+            ok = json.loads(json.dumps(good))
+            ok['process']['measurement_qualification']['build_reproducible'] = value
+            self.assertTrue(attempt.measurement_shape(ok), value)
+        for value in (0, 1, 0.0, 1.0, 'true'):
+            bad = json.loads(json.dumps(good))
+            bad['process']['measurement_qualification']['build_reproducible'] = value
+            self.assertFalse(attempt.measurement_shape(bad), value)
         runtime = {'source': '/opt/kicad-route/src/kicad_route/router', 'venv': '/opt/kicad-route/.venv-krt',
                    'generation': None}
         self.assertTrue(attempt.runtime_shape({'runtime': runtime}))

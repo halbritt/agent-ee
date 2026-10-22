@@ -67,30 +67,40 @@ class ContractSummaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             routing_adapter.validate_declaration({**declaration, key: 'other'})
         request = {'project': 'p', 'board': 'b.kicad_pcb', 'name': 'n', 'backend': 'builtin', 'budget_s': 10}
-        versions = {}
+        versions, results = {}, {}
         for paired in (False, True):
             asked = {**request, **({key: value} if paired else {})}
             result = dict.fromkeys(attempt.RESULT_KEYS)
-            result.update(kind='route', exit_code=0, backend={'name': 'builtin'},
+            result.update(kind='route', exit_code=0, measurement=False,
+                          backend={'name': 'builtin', 'runtime': {'source': '/src', 'venv': '/venv',
+                                                                  'generation': None}},
                           input={'board': 'b.kicad_pcb', 'project': 'n'},
                           settings=attempt.expected_settings(asked, None, [] if paired else None),
-                          process={'status': 'PASS'}, routing={'status': 'COMPLETE'},
+                          process={'status': 'PASS', 'measurement_qualification': {
+                              'measurement': False, 'build_reproducible': None, 'reasons': ['synthetic']}},
+                          routing={'status': 'COMPLETE'},
                           validation={'status': 'PASS'}, **({'pairs': []} if paired else {}),
                           # The pin's custody pointer on every builtin process-PASS result.
                           copper_ownership={'status': 'unavailable', 'reasons': ['synthetic'],
                                             'replay_authority': False})
             keys = attempt.ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set())
-            for version in (1, 2, 3):
-                # A record reaches the attempt-schema check only if its result schema was accepted.
-                record = dict.fromkeys(keys, None)
-                record['schema'] = f'kicad-route/attempt/{version}'
-                outcome = attempt.semantics(0, {**result, 'schema': f'kicad-route/route/{version}'}, record,
-                                            False, True, asked)
-                accepted = 'unknown attempt schema version' not in outcome[1] and \
-                    'unknown result schema version' not in outcome[1]
-                if accepted:
-                    versions.setdefault(paired, set()).add(version)
-        self.assertEqual(versions, {False: {1}, True: {2}})
+            # Result and attempt schema versions vary independently: the attempt check is only reached
+            # once the result schema is accepted, so each grid cell is judged on its own reason.
+            for result_version in (1, 2, 3):
+                for attempt_version in (1, 2, 3):
+                    record = dict.fromkeys(keys, None)
+                    record['schema'] = f'kicad-route/attempt/{attempt_version}'
+                    outcome = attempt.semantics(0, {**result, 'schema': f'kicad-route/route/{result_version}'},
+                                                record, False, True, asked)
+                    self.assertNotIn('result.json shape differs from the pinned tool', outcome[1])
+                    self.assertNotIn('process.measurement_qualification differs from the pinned tool', outcome[1])
+                    self.assertNotIn('backend.runtime differs from the pinned tool', outcome[1])
+                    if 'unknown result schema version' not in outcome[1]:
+                        results.setdefault(paired, set()).add(result_version)
+                        if 'unknown attempt schema version' not in outcome[1]:
+                            versions.setdefault(paired, set()).add((result_version, attempt_version))
+        self.assertEqual(results, {False: {1}, True: {2}})
+        self.assertEqual(versions, {False: {(1, 1)}, True: {(2, 2)}})
         self.assertEqual(sorted(f'kicad-route/attempt/{v}' for v in (1, 2)), sorted(consumes['attempt']))
         self.assertEqual(sorted(f'kicad-route/route/{v}' for v in (1, 2)), sorted(consumes['result']))
         # The refusal schema is exactly one version; neighbours are not read as refusals.
