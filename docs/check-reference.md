@@ -425,6 +425,15 @@ these rule failures from independently established manufacturing failures.
 Native DRC coverage also depends on the project's configured checks and ignored
 rules; passing these checks is not full circuit function or fab qualification.
 
+Known limit (AGENTEE-400): native DRC prints four decimal places, and constraint
+provenance matches a printed limit and grades a measured deficit with a
+0.00005 mm (50 nm) tolerance. A sourced-limit violation smaller than 50 nm
+therefore grades as not violated, and a printed limit within 50 nm of a sourced
+value matches it. The report alone cannot resolve a smaller deficit. Copper-edge
+actuals below 0.00005 mm remain structural; this limit does not weaken that rule.
+It is a print-resolution limit, not a geometric proof, and the behaviour is
+unchanged. See [native finding resolution](scaffold.md#native-drc-match-tolerance-known-limit-agentee-400).
+
 The severities in force are the immutable project file's. ERC and DRC both record
 `details.by_severity`, `details.by_type` and `details.ignored_checks`, the keys
 kicad-cli reports at severity `ignore`. A warning is graded like an error. The
