@@ -35,8 +35,30 @@ PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.
 ```
 
 `--viewer` is optional. Three completed native still views are required. Import
-checks image hashes and the viewer's board/model identity, copies only declared
-images and bundled viewer assets, then atomically publishes the new index.
+checks the render manifest against its own records (no recorded errors, source
+unchanged, each image named for its view, matching the per-view record, hash,
+valid PNG and recorded dimensions, three distinct images, snapshot board present
+and hashed), then image hashes and the viewer's board/model/candidate identity.
+It copies only declared images and bundled viewer assets, then atomically
+publishes the new index.
+
+For a render taken from a retained run directory add `--candidate RUN_DIR`.
+Publication then verifies the retained snapshot and requires the manifest's
+`candidate_id`, `captured_board` and board hash to match it; a manifest that
+names a candidate is refused without `--candidate`, and an unbound manifest is
+refused with it. A viewer must carry the same candidate identity. These checks
+catch an edited or mismatched manifest but cannot prove the producer ran
+KiCad honestly.
+
+Absolute host paths in model coverage, warnings and `viewer.json` are replaced
+by `<redacted>/basename` at publication, and the server redacts
+`manifest.json` and `viewer.json` of older bundles on the way out.
+
+Each card shows model coverage outside any collapsed element: a badge ("Incomplete
+models" when any model is missing, unresolved or disabled or a footprint has no
+model; "Model coverage unknown" when counts are absent) and the counts of
+resolved, missing, unresolved, disabled and model-less items. Only the individual
+warnings are collapsed.
 Failed imports leave the previous latest item visible. Concurrent publishers are
 serialized with a file lock. Each publication gets an immutable URL; history is
 retained until an operator explicitly archives it. Artifacts may consume substantial
