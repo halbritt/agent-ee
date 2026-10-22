@@ -740,6 +740,57 @@ class PhysicalIntentTests(unittest.TestCase):
         compile_and_publish(distinct, good, out)
         verify_receipt(out, distinct, good)
 
+    def test_native_admission_refuses_boards_pcbnew_does_not_load(self):
+        # Review ee388f-native-forms H1: a quoted keyword or a nested UUID published and verified
+        # although pcbnew.LoadBoard returns None. The board must load natively before any board
+        # fact is read, and the typed text parse refuses the same forms on its own.
+        import pcbnew
+        board = (FIXTURE / 'control/pins.kicad_pcb').read_text()
+        u1 = f'(uuid "{U1_UUID}")'
+        second = '00000000-0000-4000-8000-000000000001'
+        canl = [terminal('l', '6', 'CANL', 'canl')]
+        block = [{'id': 'can', 'references': ['U1']}]
+        # name: (board text, pcbnew loads it, text-parse refusal or None where the text parse reads no such node)
+        cases = {
+            'quoted-lock-key': (lock(board, '("locked" no)'), False, 'node without a bare keyword'),
+            'nested-uuid': (board.replace(u1, f'(uuid "{U1_UUID}" (uuid "{second}"))', 1), False, 'malformed uuid node'),
+            'quoted-uuid-key': (board.replace(u1, f'("uuid" "{U1_UUID}")', 1), False, 'node without a bare keyword'),
+            'quoted-lock-value': (lock(board, '(locked "no")'), False, 'quoted lock value'),
+            'quoted-lock-yes': (lock(board, '(locked "yes")'), False, 'quoted lock value'),
+            'quoted-flag': (board.replace('(footprint "pins:SO8"', '(footprint "pins:SO8" "locked"', 1), False,
+                            'unrecognized footprint atoms'),
+            'nested-lock': (lock(board, '(locked (no))'), False, 'unrecognized lock form'),
+            'unknown-node': (lock(board, '(frobnicate 1)'), False, None),
+            # pcbnew loads these; the duplicated identity nodes are ambiguous to the text parse.
+            'duplicate-uuid': (board.replace(u1, u1 + u1, 1), True, 'missing or ambiguous footprint identity'),
+            'duplicate-pad-uuid': (board.replace(f'(uuid "{PAD["6"]}")', f'(uuid "{PAD["6"]}")(uuid "{PAD["6"]}")', 1),
+                                   True, 'a pad has 2 uuid nodes'),
+            # pcbnew invents an identity for a pad without one; the text has none, so they disagree.
+            'missing-pad-uuid': (board.replace(f'(uuid "{PAD["6"]}")', '', 1), True, None),
+        }
+        good = self.intent(terminals=canl, blocks=block)
+        for name, (text, loads, parse) in cases.items():
+            with self.subTest(form=name):
+                run = self.board_run(f'admission-{name}', text, {})
+                path = run / 'inputs/project/pins.kicad_pcb'
+                self.assertEqual(pcbnew.LoadBoard(str(path)) is not None, loads)
+                if parse:
+                    with self.assertRaisesRegex(IntentRefused, parse):
+                        physical_intent.native_board(path)
+                else:
+                    self.assertIn('U1', physical_intent.native_board(path))
+                pattern = (parse if parse and loads else
+                           'native admission: pcbnew and the board text disagree on footprints \\[\'U1\'\\]' if loads
+                           else 'native admission: pcbnew does not load the bound board')
+                intent = self.intent(run, terminals=canl, blocks=block)
+                self.refused(run, intent, pattern)
+                # A package an earlier compiler published from a loadable board's identities.
+                out = physical_intent.publish(compile_plan(self.control, good), self.root / f'admission-stale-{name}')
+                with self.assertRaisesRegex(IntentRefused, pattern):
+                    verify_receipt(out, run, intent)
+        # Every valid lock form still loads natively and compiles (test_native_lock_forms_follow_pcbnew).
+        self.assertIn('receipt.json', compile_plan(self.control, good))
+
     # ------------------------------------------- unsupported and diagnostic
 
     def test_kelvin_and_current_loop_obligations_stay_visible(self):

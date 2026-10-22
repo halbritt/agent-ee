@@ -34,6 +34,25 @@ names the run's [`pin_map`](datasheet-facts.md) check; its `facts_check` and
 captured candidate input paths to their hashes. They become
 `source_records` for locality provenance. Any difference is a stale source.
 
+## Native admission
+
+The bound board is admitted natively before the compiler reads any board fact
+(review ee388f-native-forms H1). The existing `placement_probe` runs
+`pcbnew.LoadBoard` on the captured board inside the networkless tool sandbox.
+If pcbnew cannot load the board, the compiler refuses with `native admission:
+pcbnew does not load the bound board`. The probe must also report the bound
+board SHA-256. The board text is then read with the quote-preserving
+`schematic_emit.parse_quoted`, which the shared `symbol_library.parse_sexpr`
+checks. Every node must be headed by a bare keyword, so `("locked" no)` and
+`("uuid" ...)` refuse. Every `uuid` node must hold exactly one atom, so a nested
+or second UUID refuses. A pad with two `uuid` nodes also refuses. The text
+parse and the pcbnew objects must agree on every footprint reference, UUID,
+library ID, lock state and pad number, UUID and net. Otherwise the compiler
+refuses with `native admission: pcbnew and the board text disagree`. For
+example, pcbnew invents an identity for a pad that has no `uuid`. The compiler
+uses the native values. `verify_receipt` recompiles, so a package bound to a
+board that pcbnew cannot load also fails verification.
+
 ## Terminal join
 
 Each `terminals` entry names `id`, `reference`, `pin`, the native `pad_uuid`,
@@ -165,9 +184,9 @@ UUID with another footprint, refuses as `missing or ambiguous footprint
 identity`, the same refusal `derive` gives on a pcbnew capture (review
 ee388e-510-r1r5 H3). Lock state follows pcbnew: the bare `locked` footprint
 atom, `(locked)`, `(locked yes)` and `(locked true)` are locked, and `(locked
-no)` and `(locked false)` are not. Any other lock value, a quoted value, a
-second lock declaration (pcbnew lets the last one win) or an unrecognized
-footprint atom refuses; no unrecognized form defaults to unlocked (review
+no)` and `(locked false)` are not. Any other lock value (quoted, nested or
+unknown), a second lock declaration (pcbnew lets the last one win) or an
+unrecognized or quoted footprint atom refuses; no unrecognized form defaults to unlocked (review
 ee388e-510-r1r5 H1). `derive` refuses a locked member, with or without
 a `moves` entry, so the locked U1 of the defect board is refused (verification
 510 R3). It also refuses a footprint that is not an on-board native component,
@@ -229,9 +248,10 @@ current sources and requires byte equality and no extra files. Every refusal
 above therefore also refuses `verify_receipt` for a package that a laxer earlier
 compiler published.
 
-Pure compilation of the fixture takes well under the provisional 10-second
-budget. The test asserts the bound. The budget excludes native netlist export
-and PDF extraction, which the review run has already done.
+Compilation of the fixture takes well under the provisional 10-second budget,
+including the sandboxed pcbnew board load of native admission. The test asserts
+the bound. The budget excludes native netlist export and PDF extraction, which
+the review run has already done.
 
 ## Tests and limits
 
@@ -269,6 +289,11 @@ covers:
   fixed-move refusals for the locked forms and actual-`derive` positives for the
   unlocked forms. Repeated, unknown and quoted lock forms and unknown atoms
   refuse;
+- native admission: boards pcbnew does not load (quoted `locked` and `uuid`
+  keywords, a nested UUID, quoted lock values, a quoted footprint flag, a nested
+  lock value and an unknown node only pcbnew reads), duplicate footprint and pad
+  `uuid` nodes, and a pad without a UUID that pcbnew and the text disagree on.
+  Each refuses before output and at `verify_receipt`;
 - footprint identity equal to pcbnew on the fixture boards. Duplicate and
   missing footprint UUIDs refuse, both before output and at `verify_receipt`;
 - datasheet record-line binding: the six signed, grouped, fractional and

@@ -5,11 +5,13 @@ sealed review run into the existing executable contracts: topology-rules/1 pin
 bindings, electrical-locality/1 obligations and block-allocation/1 membership.
 Terminal functions are joined to the run's own verified datasheet facts and
 ``pin_map`` comparisons, the native netlist and the native board pad UUIDs. The
-compiler adds no fact, function, net role or authority; it refuses the whole
-package on any contradiction and publishes a complete directory atomically or
-nothing. Kelvin and current-loop obligations have no owned checker and stay
+board is admitted only if the pinned pcbnew loads it in the tool sandbox and agrees
+with the typed text parse. The compiler adds no fact, function, net role or
+authority; it refuses the whole package on any contradiction and publishes a
+complete directory atomically or nothing. Kelvin and current-loop obligations have no owned checker and stay
 visible as unsupported. Runtime activation remains gated by KICADROUTE-91.
 """
+import hashlib
 import json
 import re
 import shutil
@@ -18,12 +20,13 @@ from pathlib import Path
 
 from fractions import Fraction
 
-from . import blocks, electrical_locality, locality_provenance, placement, topology_rules
+from . import blocks, electrical_locality, executor, locality_provenance, placement, topology_rules
 from .baseline import load_baseline, verify_evidence
 from .candidate import safe_relative, verify_snapshot
 from .native_netlist import read_native_inventory, read_sheet_names
 from .storage import digest, identity, json_bytes, read_json, rename_noreplace
-from .symbol_library import LibraryError, children, parse_sexpr
+from .schematic_emit import Quoted, parse_quoted
+from .symbol_library import LibraryError, children
 
 SCHEMA = 'agent-ee.physical-intent/1'
 RECEIPT_SCHEMA = 'agent-ee.physical-intent-receipt/1'
@@ -253,7 +256,7 @@ def _run_sources(run, intent):
             _refuse(f'stale source: record {rel} is not the captured input the intent names')
         records[rel] = (run / 'inputs' / rel).read_text(encoding='utf-8')
     requirements = {r['id'] for r in baseline['requirements']}
-    return {'manifest': manifest, 'paths': paths, 'records': records, 'requirements': requirements,
+    return {'run': run, 'manifest': manifest, 'paths': paths, 'records': records, 'requirements': requirements,
             'sources': sources,
             'pin_map': read_json(paths['pin_map']), 'facts': read_json(paths['facts'])}
 
@@ -262,25 +265,49 @@ def _atoms(node):
     return [x for x in node[1:] if isinstance(x, str)]
 
 
+def _bare(token):
+    """A bare symbol; a quoted string (``Quoted``) or a list is never a native keyword or boolean."""
+    return type(token) is str
+
+
 LOCK_VALUES = {'yes': True, 'true': True, 'no': False, 'false': False}
 FOOTPRINT_FLAGS = frozenset(('locked', 'placed'))
+
+
+def _shape(root):
+    """Every node is headed by a bare keyword and every ``uuid`` node holds exactly one atom.
+
+    pcbnew never reads a quoted head as structure (``("uuid" ...)``, ``("locked" no)``) and
+    rejects children in a UUID; such a board is no native board, so it refuses whole.
+    """
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if not node or not _bare(node[0]):
+            _refuse(f'native board has a node without a bare keyword: {node[:1]!r}')
+        if node[0] == 'uuid' and (len(node) != 2 or not isinstance(node[1], str)):
+            _refuse(f'native board has a malformed uuid node {node!r}; a UUID is exactly one atom')
+        stack.extend(x for x in node[1:] if isinstance(x, list))
 
 
 def _locked(fp, ref):
     """Lock state with pcbnew semantics: the bare ``locked`` atom, ``(locked)`` or ``(locked yes|true)``.
 
-    ``(locked no|false)`` is unlocked. Any other atom or value, and more than one lock
-    declaration (pcbnew lets the last one win), refuses: no form defaults to unlocked.
+    ``(locked no|false)`` is unlocked. Any other atom or value (quoted, nested or unknown), and
+    more than one lock declaration (pcbnew lets the last one win), refuses: no form defaults
+    to unlocked.
     """
     flags = _atoms(fp)[1:]
-    unknown = sorted(set(flags) - FOOTPRINT_FLAGS)
+    unknown = sorted(f for f in flags if not _bare(f) or f not in FOOTPRINT_FLAGS)
     if unknown:
         _refuse(f'native footprint {ref}: unrecognized footprint atoms {unknown}')
     declared = [True] * flags.count('locked')
     for node in children(fp, 'locked'):
+        if len(node) == 2 and type(node[1]) is Quoted:
+            _refuse(f'native footprint {ref}: quoted lock value; pcbnew lock booleans are bare yes/no/true/false')
         if len(node) == 1:
             declared.append(True)
-        elif len(node) == 2 and node[1] in LOCK_VALUES:
+        elif len(node) == 2 and _bare(node[1]) and node[1] in LOCK_VALUES:
             declared.append(LOCK_VALUES[node[1]])
         else:
             _refuse(f'native footprint {ref}: unrecognized lock form {node!r}')
@@ -289,23 +316,22 @@ def _locked(fp, ref):
     return bool(declared and declared[0])
 
 
-def native_board(path):
-    """Footprints by reference: library ID, UUID, lock state and pads (number, UUID, net) from the native board.
+def native_board(path, data=None):
+    """Footprints by reference: library ID, UUID, lock state and pads (number, UUID, net) from the board text.
 
-    Footprint identity is the footprint's own single UUID, unique on the board; pad UUIDs are
-    separate identities and never stand in for it.
+    This is the text side of native admission; ``compile_plan`` also requires the pinned
+    pcbnew to load the same bytes and agree (``admitted_board``). Footprint identity is the
+    footprint's own single UUID, unique on the board; pad UUIDs are separate identities and
+    never stand in for it.
     """
     try:
-        raw = Path(path).read_bytes()
-        root = parse_sexpr(raw)
+        raw = Path(path).read_bytes() if data is None else data
+        root = parse_quoted(raw)
     except LibraryError as exc:
         _refuse(f'native board unreadable: {exc}')
     if root[0] != 'kicad_pcb':
         _refuse('native board is not a kicad_pcb')
-    # parse_sexpr drops quoting; pcbnew rejects a quoted boolean, so a quoted lock value is no
-    # native lock state at all.
-    if re.search(rb'\(\s*locked\s+"', raw):
-        _refuse('native board has a quoted lock value; pcbnew lock booleans are bare yes/no/true/false')
+    _shape(root)
     footprints, identities = {}, {}
     for fp in children(root, 'footprint'):
         refs = [_atoms(p)[1] for p in children(fp, 'property') if _atoms(p)[:1] == ['Reference']]
@@ -324,12 +350,57 @@ def native_board(path):
         pads = []
         for pad in children(fp, 'pad'):
             pad_uuids, nets = children(pad, 'uuid'), children(pad, 'net')
+            if len(pad_uuids) > 1:
+                _refuse(f'native footprint {refs[0]}: a pad has {len(pad_uuids)} uuid nodes')
             pads.append({'number': _atoms(pad)[0] if _atoms(pad) else '',
-                         'uuid': _atoms(pad_uuids[0])[0] if len(pad_uuids) == 1 and _atoms(pad_uuids[0]) else None,
+                         'uuid': pad_uuids[0][1] if pad_uuids else None,
                          'net': _atoms(nets[0])[-1] if len(nets) == 1 and _atoms(nets[0]) else ''})
         footprints[refs[0]] = {'locked': _locked(fp, refs[0]), 'pads': pads,
                                'fpid': _atoms(fp)[0] if _atoms(fp) else None, 'uuid': fp_uuid[0]}
     return footprints
+
+
+def _native_rows(footprints):
+    return sorted((ref, fp['uuid'], fp['fpid'], fp['locked'],
+                   tuple(sorted((p['number'], p['uuid'], p['net']) for p in fp['pads'])))
+                  for ref, fp in footprints)
+
+
+def admitted_board(run, src):
+    """Native admission: the pinned pcbnew must load the bound board bytes before any board fact is read.
+
+    ``placement_probe`` runs ``pcbnew.LoadBoard`` in the networkless tool sandbox over the
+    captured inputs. A load failure refuses. The text parse must then agree with the native
+    objects on every footprint reference, UUID, library ID, lock state and pad (number, UUID,
+    net); the returned facts are the native ones.
+    """
+    path, sha = src['paths']['board'], src['sources']['board_sha256']
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != sha:
+        _refuse('stale source: board bytes differ from the intent')
+    rel = path.relative_to(Path(src['run']) / 'inputs').as_posix()
+    with tempfile.TemporaryDirectory(prefix='physical-intent-native-') as work:
+        record = executor.execute(Path(src['run']) / 'inputs', work, [
+            '/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', f'/candidate/{rel}',
+            '--out', '/work/native-board.json'], timeout=600)
+        if record['execution'] != 'ok':
+            lines = (Path(work) / 'stderr.log').read_text(errors='replace').strip().splitlines()
+            _refuse(f'native admission: pcbnew does not load the bound board ({record["execution"]}, '
+                    f'exit {record["exit_code"]}): {lines[-1] if lines else "no diagnostic"}')
+        try:
+            facts = read_json(Path(work) / 'native-board.json')
+        except (OSError, ValueError) as exc:
+            _refuse(f'native admission: no native board record: {exc}')
+    if facts.get('board_sha256') != sha:
+        _refuse('native admission: pcbnew did not read the bound board bytes')
+    native = [(f['ref'], {'uuid': f['uuid'], 'fpid': f['fpid'], 'locked': f['locked'],
+                          'pads': [{k: p[k] for k in ('number', 'uuid', 'net')} for p in f['pads']]})
+              for f in facts['footprints']]
+    text = native_board(path, data)
+    if _native_rows(native) != _native_rows(text.items()):
+        differ = sorted({row[0] for row in set(_native_rows(native)) ^ set(_native_rows(text.items()))})
+        _refuse(f'native admission: pcbnew and the board text disagree on footprints {differ}')
+    return dict(native)
 
 
 def _pad(board, reference, number, uuid, label):
@@ -693,7 +764,7 @@ def compile_plan(run, intent, *, mode='manual'):
         _refuse(f'physical intent must be plain JSON: {exc}')
     validate_plan(intent)
     src = _run_sources(run, intent)
-    board = native_board(src['paths']['board'])
+    board = admitted_board(run, src)
     try:
         native = read_native_inventory(src['paths']['netlist'])
     except (OSError, ValueError) as exc:
