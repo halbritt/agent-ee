@@ -700,3 +700,34 @@ rule. Reasons: 0.98 is the ticket's own rule, the supplier pad geometry really
 differs from the IPC-nominal KiCad pads, and an earlier `nearest_variant`
 acceptance rule was rejected on review. The supplier bytes stay unpublished. See
 the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).
+
+## RC 2-layer stackup authority (AGENTEE-85, 2026-10-22)
+
+Provenance: a coordinator ruling in the agent-449 AGENTEE-85 assignment
+(2026-10-22) made this agent-decidable. It is not an owner decision. The
+reasoning below is agent-drafted and unconfirmed.
+
+The earlier comment asked the owner to choose between (a) a declared nominal
+stackup, (b) another citable source and (c) unknown. The decision is (b) for
+every field JLCPCB publishes, and (c) for the field it does not:
+
+- the recorded [JLCPCB 2-layer profile](../fixtures/board-envelope/jlc-2layer/fab-profile.json)
+  declares a partial stackup. It cites the 1.6 mm nominal thickness and two 1 oz
+  (35 µm) copper layers from the source recorded on 2026-10-19. The `core`
+  thickness and the physical total are `null`, meaning unpublished;
+- that copper-weight authority binds `board_envelope` `stackup/1`. The RC
+  scope captures with every obligation bound, and the AGENTEE-92 criterion-3
+  connector test runs the coordinator path without a stand-in;
+- the RC's 1.53 mm core stays an owned assumption. `stackup/1` reports it
+  unknown, so stackup acceptance stays unknown and never passes. It is never
+  derived as nominal minus copper, because JLCPCB publishes a ±10% finished
+  tolerance, not a physical layer sum;
+- option (a) was not taken. A declared nominal stackup would be an agent label
+  standing as a value. The constraint-provenance rule refuses that.
+
+The shared `rc.envelope.json` fixtures keep `fab_profile: null`, which is the
+unselected-profile case that existing tests assert. Production RC scopes use
+`rc-jlc-2layer.envelope.json`. See
+[RC envelope on the recorded JLCPCB 2-layer profile](board-envelope.md#rc-envelope-on-the-recorded-jlcpcb-2-layer-profile).
+This decision concerns board stackup only. The component-side ±10% THT fit
+(AGENTEE-448) is separate.

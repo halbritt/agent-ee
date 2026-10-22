@@ -35,14 +35,20 @@ UTC time, response SHA-256 and byte count, the table locators and the
 interpretation limits. Raw responses stay in the worker's scratch directory and
 are not committed.
 
-The profile declares no `stackup`. JLCPCB publishes 1 oz (35 µm) outer copper
-and one FR-4 dielectric for 2-layer boards, but no dielectric thickness. The
-manifest lists the pages searched under `stackup_authority`.
+JLCPCB publishes 1 oz (35 µm) outer copper, the 1.6 mm nominal and one FR-4
+dielectric for 2-layer boards, but no dielectric thickness. The manifest lists
+the pages searched under `stackup_authority`. On 2026-10-22 (AGENTEE-85 G1) the
+profile gained a partial `stackup` that cites four consecutive lines of the
+unchanged recorded source. It declares the 1.6 mm nominal and two 1 oz, 0.035 mm
+copper layers, with the `core` thickness and physical total `null`
+(unpublished). No new capture was made, and the source bytes are unchanged.
+Without that member, the profile bytes are exactly the 2026-10-19 record.
 
 `rc-jlc-2layer.envelope.json` is `rc.envelope.json` with only `fab_profile`
-changed, to reference that profile's name and SHA-256. Its 0.035/1.53/0.035 mm
-stackup and 1 oz weights remain the owned assumptions described above, not
-fabricator facts.
+changed, to reference that profile's name and SHA-256. Its 1 oz weights,
+0.035 mm copper and 1.6 mm total now match the profile's cited facts. Its
+1.53 mm core remains the owned assumption described above, not a fabricator
+fact, and `stackup/1` reports it as unknown.
 
 ## Constraint provenance fixture (AGENTEE-266)
 
