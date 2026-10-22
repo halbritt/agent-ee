@@ -1413,7 +1413,7 @@ The same module checks that a bytecode addition to an actual tool mount still
 refuses adoption (AGENTEE-299); check verdicts and receipt validation are unchanged.
 
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
-`agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
+`agent-ee.fab-manifest/2` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
 completion unless BOM/CPL/board designators agree, and applies no CPL rotation
 policy. Board footprint DNP flags decide assembly. A schematic/board DNP

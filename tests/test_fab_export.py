@@ -700,6 +700,13 @@ class PackagingTests(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ['a.gtl', 'b.gbl'])
                 self.assertEqual({i.date_time for i in archive.infolist()}, {(1980, 1, 1, 0, 0, 0)})
 
+    def test_manifest_non_string_schema_is_refused_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for value in ([], {}, None, 2, True):
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(ValueError, 'not an'):
+                        verify_manifest(Path(tmp), {'schema': value, 'files': {}})
+
     def test_manifest_inventory_mismatch_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
             fab = Path(tmp)
@@ -921,7 +928,8 @@ class NativeFabExportTests(unittest.TestCase):
         fab = run / 'work/fab/fab'
         manifest = read_json(fab / 'manifest.json')
         candidate = read_json(run / 'candidate.json')
-        self.assertEqual(manifest['schema'], 'agent-ee.fab-manifest/1')
+        self.assertEqual(manifest['schema'], 'agent-ee.fab-manifest/2')
+        self.assertEqual(manifest['designators']['mechanical'], [])
         self.assertEqual(set(manifest), {'schema', 'candidate_id', 'board_path', 'board_sha256', 'tool',
                                          'files', 'headers', 'copper_layers', 'enabled_fab_layers', 'drill',
                                          'designators', 'generated_utc'})
@@ -1197,7 +1205,7 @@ class NativeFabExportTests(unittest.TestCase):
         manifest = read_json(fab / 'manifest.json')
         self.assertEqual(manifest['designators'], {
             'board_non_dnp': ['C1', 'C2', 'C10', 'J1', 'R1', 'R2'],
-            'excluded': [{'designator': 'J1', 'rule': RULE}], 'exclusion_rule': RULE})
+            'excluded': [{'designator': 'J1', 'rule': RULE}], 'exclusion_rule': RULE, 'mechanical': []})
         bom_refs = [ref for row in list(csv.reader(io.StringIO((fab / 'bom.csv').read_text())))[1:]
                     for ref in row[0].split(',')]
         cpl_refs = [row[0] for row in list(csv.reader(io.StringIO((fab / 'cpl.csv').read_text())))[1:]]
