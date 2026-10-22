@@ -112,6 +112,53 @@ class PlacementDefectContractTests(unittest.TestCase):
             write_json(work / 'receipt.json', {'spec': {'step': STEP}, 'status': 'completed'})
             self.assertIsNone(placement_defects.adopted(root, {}, 1))
 
+    def test_artwork_receipt_requires_the_coordinator_stage_receipt_anchor(self):
+        # AGENTEE-408 G4: the coordinator's anchored index is the artwork receipt anchor.
+        from agent_ee.routed_artwork import STEP
+        from agent_ee.placement_adapter import STEP as PLACER
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work = root / 'implementations/1'
+            receipt = work / f'receipts/1-{STEP}/receipt.json'
+            write_json(receipt, {'spec': {'step': STEP}, 'status': 'completed'})
+            index = work / 'stage-receipts.json'
+            write_json(index, {'receipts': [{'path': receipt.relative_to(work).as_posix(),
+                                             'sha256': digest(receipt)}]})
+            run = root / 'runs/1'
+            write_json(run / 'candidate.json', {'candidate_id': 'c1'})
+            state = {'history': [{'run': str(run)}], 'stage_receipts': {'1': digest(index)}}
+            # Control: an anchored artwork receipt proceeds to authentication.
+            with patch('agent_ee.stage_receipts.validate_receipt',
+                       side_effect=RuntimeError('authenticating')) as validate:
+                with self.assertRaisesRegex(RuntimeError, 'authenticating'):
+                    placement_defects.adopted(root, state, 1)
+            self.assertEqual(validate.call_args.kwargs['binding'],
+                             {'implementation': 1, 'source_candidate_id': 'c1', 'receipt_index': 1})
+            # A present index without its coordinator anchor, or with a different one, refuses.
+            for anchors in ({}, {'2': digest(index)}, {'1': '0' * 64}):
+                with self.subTest(anchors=anchors), self.assertRaisesRegex(
+                        ValueError, 'stage receipt index changed or missing'):
+                    placement_defects.adopted(root, {**state, 'stage_receipts': anchors}, 1)
+            # A receipt substituted after the coordinator indexed it refuses.
+            write_json(receipt, {'spec': {'step': STEP}, 'status': 'completed', 'forged': True})
+            with self.assertRaisesRegex(ValueError, 'stage receipt changed after indexing'):
+                placement_defects.adopted(root, state, 1)
+            # An artwork receipt appended to an anchored index refuses.
+            write_json(receipt, {'spec': {'step': STEP}, 'status': 'completed'})
+            extra = work / f'receipts/2-{STEP}/receipt.json'
+            write_json(extra, {'spec': {'step': STEP}, 'status': 'completed'})
+            links = read_json(index)['receipts']
+            write_json(index, {'receipts': [*links, {'path': extra.relative_to(work).as_posix(),
+                                                     'sha256': digest(extra)}]})
+            with self.assertRaisesRegex(ValueError, 'stage receipt index changed or missing'):
+                placement_defects.adopted(root, state, 1)
+            # An anchored placer receipt without its placement record is not carry.
+            write_json(receipt, {'spec': {'step': PLACER}, 'status': 'completed'})
+            write_json(index, {'receipts': [{'path': receipt.relative_to(work).as_posix(),
+                                             'sha256': digest(receipt)}]})
+            self.assertIsNone(placement_defects.adopted(
+                root, {**state, 'stage_receipts': {'1': digest(index)}}, 1))
+
     def test_graphic_text_style_damage_retains_known_defect(self):
         with tempfile.TemporaryDirectory() as directory:
             before, after = (Path(directory) / name for name in ('before.kicad_pcb', 'after.kicad_pcb'))
