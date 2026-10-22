@@ -588,7 +588,11 @@ there (boards, project and rule files, including KRT's project writeback) are
 hashed under `omitted_design_files` and not copied. The router's prepared
 backend input under `work/input` is observed the same way: its regular design
 files are hashed under `omitted_design_files`, and nothing under `work/input`
-is copied (links there are ignored). The only board that leaves
+is copied. A design-file name there that is not a regular file is recorded by
+its path type alone, never followed: `link` for a symbolic link (valid,
+dangling or looping) and `special` for a directory or special file, so an
+absent file (no entry) stays distinct from a linked one (agent-510 R4). Other
+links under `work/input` are ignored. The only board that leaves
 an attempt is `routing/candidate/P/B` of an eligible exit. Missing reports are
 listed under `missing_artifacts`; none is invented. The raw OUT stays in the
 step's work directory.
@@ -864,7 +868,10 @@ Experiment evidence is never dropped and is never qualified.
         by the digests `retain()` recorded in `omitted_design_files`.
         `identity.effective.input` and the `input` of both sealed manifests must
         equal it, and a run without a regular prepared board and project there
-        is refused. The original and prepared boards may differ: a
+        is refused. The optional `.kicad_dru` is null only when it is absent: a
+        link (valid or dangling) or a directory or special file there is
+        refused without being followed, as kicad-route's input guard rejects it
+        (agent-510 R4). The original and prepared boards may differ: a
         `protect existing` run locks copper in the prepared input;
       - the request settings must restate `attempt.json` `settings`, which the
         adapter checks against its fixed request: `protect`, `mode`, the
@@ -930,7 +937,13 @@ Experiment evidence is never dropped and is never qualified.
     when it is absent. Resealed with the rules declared absent, or with an
     invented not-loaded file, in both the attempt record and the sidecar, it is
     refused (agent-510 R1), and so is a prepared-input observation that is not
-    the one the manifests captured;
+    the one the manifests captured. Private copies whose prepared
+    `route_demo.kicad_dru` is removed, or replaced by a link to the known rules
+    file or by a dangling link, resealed to claim it null, are adversarial
+    copies, not native executions: the absent one is `retained` and both links
+    are refused (agent-510 R4). The synthetic adapter router exercises the same
+    through `step`, `verify` and `adopt`: absent and regular prepared rules are
+    adopted, linked, dangling, self-looping and directory ones refused;
   - `ProtectedExistingReceiptTest` and `ProtectedHumanFallbackReceiptTest`
     grade agent-507's protected native `a0ed434` receipts (`--protect
     existing`, and `--protect human` falling back to existing protection) the

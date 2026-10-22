@@ -496,6 +496,9 @@ EXPERIMENT_CONTRACT = ('agent-ee/AGENTEE-442: routability-experiment/1 as writte
 EXPERIMENT_REFUSALS = ('missing', 'malformed', 'unknown_schema', 'tampered', 'incompatible_schema',
                        'incompatible_policy', 'unbound', 'ineligible', 'unqualified', 'run_mismatch')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
+# The path type retain() records, in place of a digest, for a prepared design-file
+# name under work/input that is not a regular file (agent-510 R4).
+PATH_TYPES = {'link': 'link', 'dir': 'special', 'other': 'special'}
 
 
 def _shape(kind, **rules):
@@ -1160,18 +1163,32 @@ def _rules_inventory(files, board):
 
 
 def _prepared_input(record, board, observed):
-    """The prepared backend input the adapter observed (kicad-route a0ed434
-    experiment._retained_backend_input): work/input/<reference name>/<board> and its
-    .kicad_pro and .kicad_dru, by the digests retain() recorded, or None without a
-    regular prepared board and project."""
+    """(prepared, refusal): the prepared backend input the adapter observed (kicad-route
+    a0ed434 experiment._retained_backend_input): work/input/<reference name>/<board> and
+    its .kicad_pro and .kicad_dru, by the digests retain() recorded.
+
+    Without a regular prepared board and project, prepared is None. The optional
+    .kicad_dru is null only when retain() observed no entry: a link (valid or dangling)
+    or special file there is neither absent nor regular, and is refused without being
+    followed, as the producer's input guard rejects it (agent-510 R4)."""
     reference = record.get('reference_dir')
     name = PurePosixPath(reference).name if isinstance(reference, str) else ''
     if name in ('', '.', '..') or PurePosixPath(board).name != board:
-        return None
+        return None, None
     path = PurePosixPath('work/input', name, board)
-    prepared = {'board_sha256': observed.get(str(path)),
-                'rules': {s: observed.get(str(path.with_suffix(s))) for s in ('.kicad_pro', '.kicad_dru')}}
-    return prepared if prepared['board_sha256'] and prepared['rules']['.kicad_pro'] else None
+
+    def regular(p):
+        value = observed.get(str(p))
+        return value if isinstance(value, str) and SHA256.match(value) else None
+    prepared = {'board_sha256': regular(path),
+                'rules': {s: regular(path.with_suffix(s)) for s in ('.kicad_pro', '.kicad_dru')}}
+    if not (prepared['board_sha256'] and prepared['rules']['.kicad_pro']):
+        return None, None
+    rules = str(path.with_suffix('.kicad_dru'))
+    if rules in observed and prepared['rules']['.kicad_dru'] is None:
+        kind = {'link': 'link', 'special': 'directory or special file'}.get(observed[rules], 'unrecognised entry')
+        return None, f'the prepared {rules} is a {kind}, neither absent nor a regular file'
+    return prepared, None
 
 
 def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run_dir, observed):
@@ -1212,7 +1229,9 @@ def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run
     if project_name not in files:
         return 'run_mismatch', f'the snapshot has no {project_name}: kicad-route refuses such an input'
     # agent-510 R2: the prepared input is observed in work/input, not the snapshot.
-    prepared = _prepared_input(record, board, observed)
+    prepared, unresolved = _prepared_input(record, board, observed)
+    if unresolved is not None:
+        return 'run_mismatch', unresolved
     if prepared is None:
         return 'run_mismatch', ('the adapter observed no regular prepared input board and project in work/input '
                                 'for attempt.json reference_dir and board')
@@ -2340,7 +2359,11 @@ def retain(run_dir, dest):
     """Copy the attempt's diagnostics, regular files only, no design files.
 
     Design files are observed by digest and not copied (omitted), including the
-    prepared backend input under work/input; links under work/input are ignored."""
+    prepared backend input under work/input. There a design-file name that is not a
+    regular file is observed by its path type alone, never followed: 'link' for a
+    symbolic link (valid, dangling or looping alike), 'special' for a directory or
+    special file, so an absent optional file (no entry) stays distinct from a linked
+    or unresolvable one (agent-510 R4). Other links under work/input are ignored."""
     retained, omitted, links = {}, {}, []
     if run_dir is None:
         return retained, omitted, links
@@ -2365,8 +2388,8 @@ def retain(run_dir, dest):
                 # The prepared backend input (after protection and preprocessing) is
                 # observed, never copied: its regular design files by digest only, so
                 # experiment_grade can bind the sidecar's effective input to it.
-                if entry[0] == 'file' and name.endswith(DESIGN_SUFFIXES):
-                    omitted[name] = entry[1]
+                if name.endswith(DESIGN_SUFFIXES):
+                    omitted[name] = entry[1] if entry[0] == 'file' else PATH_TYPES.get(entry[0], 'special')
                 continue
             if entry[0] in ('link', 'other'):
                 links.append(name)

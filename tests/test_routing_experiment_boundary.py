@@ -729,6 +729,36 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 self.assert_refused({'name': 'complete', **scenario}, 'run_mismatch', detail,
                                     design_files=design_files)
 
+    def test_an_optional_prepared_rules_link_is_not_absence(self):
+        # agent-510 R4: the original input loads rc.kicad_dru; every prepared-stage record
+        # (both manifests, the effective identity, the binding) claims the prepared
+        # .kicad_dru null. Only an actually absent one is that input. A link, valid or
+        # dangling, or a directory there is refused, never followed, as kicad-route a0ed434
+        # experiment._retained_backend_input rejects it; retain() records its path type.
+        rules = {'rc.kicad_dru': '(version 1)\n'}
+        name = 'work/input/project/rc.kicad_dru'
+        for prepared, observed in ((None, None), ('(version 1) (rule prepared)\n',
+                                                  hashlib.sha256(b'(version 1) (rule prepared)\n').hexdigest())):
+            with self.subTest(prepared=prepared):
+                receipt, receipt_dir, design, report = self.receipt(
+                    {'name': 'complete', 'prepared': {'rc.kicad_dru': prepared}}, CURRENT, rules)
+                self.assertEqual(report['semantics']['experiment']['status'], 'retained', report['semantics'])
+                body = json.loads((receipt_dir / 'run/routing/attempt' / attempt.EXPERIMENT_SIDECAR).read_text())
+                self.assertEqual(body['identity']['effective']['input']['rules']['.kicad_dru'], observed)
+                self.assertEqual(body['identity']['input']['rules']['name'], 'rc.kicad_dru')
+                self.assertEqual(report['omitted_design_files'].get(name), observed)
+                shutil.rmtree(receipt_dir / 'run/routing/out')
+                self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], report['semantics']['experiment'])
+                stage_receipts.adopt(receipt_dir, receipt, design)
+        for entry, kind in (('link:../../../reference/project/rc.kicad_dru', 'link'), ('link:missing.kicad_dru', 'link'),
+                            ('link:rc.kicad_dru', 'link'), ('dir:', 'special')):
+            with self.subTest(entry=entry):
+                receipt_dir = self.assert_refused({'name': 'complete', 'prepared': {'rc.kicad_dru': entry}},
+                                                  'run_mismatch', f'the prepared {name} is a ', design_files=rules)
+                report = json.loads((receipt_dir / 'run/routing/adapter-report.json').read_text())
+                self.assertEqual(report['omitted_design_files'][name], kind)
+                self.assertIn('neither absent nor a regular file', report['semantics']['experiment']['detail'])
+
     def test_the_three_board_seals_are_bound_to_their_own_stage_records(self):
         # kicad-route a0ed434: the raw backend output, the wrapper output before native
         # refill and the graded refilled board are distinct seals, each bound to its record.
@@ -1519,6 +1549,49 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                              ({k: v for k, v in observed.items() if not k.startswith('work/input/')}, absent)):
             with self.subTest(detail=detail, observed=sorted(set(seen.items()) - set(observed.items()))):
                 self.assert_refused(self.grade(attempt_dir, seen), 'run_mismatch', detail, attempt_dir, seen)
+
+    def test_an_optional_prepared_rules_link_in_a_resealed_copy_is_refused(self):
+        # agent-510 R4 on the real receipt: a private copy whose prepared
+        # route_demo.kicad_dru is removed, or replaced by a link to the known original
+        # rules file or by a dangling link, with both manifests, the effective identity
+        # and the binding resealed to claim it null. These are resealed adversarial
+        # copies graded by the consumer's helpers, not new native executions. Only the
+        # actually absent file is that input; kicad-route a0ed434's input guard rejects
+        # both links, and retain() records their path type without following them.
+        name = 'work/input/route_demo/route_demo.kicad_dru'
+        config_name, request_name = attempt.EXPERIMENT_MANIFESTS
+
+        def null_rules(attempt_dir):
+            for manifest in (request_name, config_name):
+                doc = json.loads((attempt_dir / manifest).read_text())
+                doc['input']['rules']['.kicad_dru'] = None
+                if manifest == config_name:
+                    doc['request_sha256'] = sha256(attempt_dir / request_name)
+                (attempt_dir / manifest).write_text(json.dumps(doc, indent=2) + '\n')
+            result = self.resealed(attempt_dir, edit_body=lambda b: b['identity']['effective']['input']['rules']
+                                   .update({'.kicad_dru': None}))
+            result['process']['effective_configuration'].update(
+                sha256=sha256(attempt_dir / config_name), request_sha256=sha256(attempt_dir / request_name))
+            return result
+        for entry in (None, self.RUN + '/' + name, 'missing.kicad_dru'):
+            with self.subTest(entry=entry):
+                if not self.run_copy.exists():
+                    shutil.copytree(self.source, self.run_copy, symlinks=True)
+                (self.run_copy / name).unlink()
+                if entry is not None:
+                    (self.run_copy / name).symlink_to(entry)
+                attempt_dir, observed = self.retained()
+                result = null_rules(attempt_dir)
+                record = self.grade(attempt_dir, observed, result=result)
+                if entry is None:
+                    self.assertNotIn(name, observed)
+                    self.assertEqual((record['status'], record['qualified']), ('retained', False), record.get('detail'))
+                    shutil.rmtree(self.run_copy)
+                    self.assertEqual(self.grade(attempt_dir, observed, result=result), record)
+                    continue
+                self.assert_refused(record, 'run_mismatch', f'the prepared {name} is a link, neither absent nor a '
+                                    'regular file', attempt_dir, observed, result=result)
+                self.assertEqual(observed[name], 'link')
 
     def test_the_real_receipt_as_an_adapter_execution_is_refused_and_not_adopted(self):
         # The same receipt delivered by a router the adapter ran is not that execution: its

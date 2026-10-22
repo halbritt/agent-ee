@@ -263,7 +263,8 @@ wrapper and graded board seals, and run), never trusted on the producer's flag.
 The original input is the snapshot, with the rules inventory derived from it as
 kicad-route `cli.rules_files` derives it. The prepared input (the effective
 configuration's `input` and `captured_input_sha256`) is the `work/input` the
-adapter observes by digest. The real replay covers two-layer route_demo
+adapter observes by digest; an optional rules file there that is a link or
+special file is refused, never read as absent. The real replay covers two-layer route_demo
 current-policy evidence, clean and protected, graded with each receipt's own
 execution identity by the consumer's helpers. The adapter cannot run those
 receipts before a re-pin, so integration activation stays gated.

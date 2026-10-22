@@ -42,6 +42,19 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2) + '\n')
 
 
+def prepare(path, text):
+    """Make a prepared-input entry: text, None (absent), 'link:TARGET' or 'dir:'."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    path.unlink(missing_ok=True)
+    if isinstance(text, str) and text.startswith('link:'):
+        path.symlink_to(text[len('link:'):])
+    elif text == 'dir:':
+        path.mkdir()
+    elif text is not None:
+        path.write_text(text)
+
+
 src, board, sch = Path(opts['--dir']), opts['--board'], opts['--schematic']
 project, label = opts['--name'], opts['--label']
 state = Path(os.environ['KICAD_ROUTE_STATE'])
@@ -254,9 +267,12 @@ if experiment is not None and experiment != 'omit':
     for f in sorted(ref.iterdir()):
         shutil.copy2(f, prepared / f.name)
     for rel, text in scenario.get('prepared', {}).items():
-        (prepared / rel).write_text(text)
+        prepare(prepared / rel, text)
+    # A forged capture states null for a prepared file that is not regular (agent-510 R4:
+    # kicad-route itself refuses such an input; a resealed copy claims it is absent).
     captured = {'board_sha256': sha(prepared / board),
-                'rules': {suffix: sha(prepared / (stem + suffix)) if (prepared / (stem + suffix)).is_file() else None
+                'rules': {suffix: sha(prepared / (stem + suffix)) if (prepared / (stem + suffix)).is_file() and
+                          not (prepared / (stem + suffix)).is_symlink() else None
                           for suffix in ('.kicad_pro', '.kicad_dru')}}
     # The raw backend output kicad-route seals (a design file the adapter never retains);
     # the fixture's wrapper changes nothing, so it is the delivered board.
@@ -403,16 +419,12 @@ if experiment is not None and experiment != 'omit':
     else:
         sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
     # scenario['remove'] [run-relative names] deletes sealed files after sealing;
-    # scenario['prepared_after'] {name: text | None | 'link:TARGET'} then changes the
-    # prepared input the adapter observes (None deletes it).
+    # scenario['prepared_after'] {name: text | None | 'link:TARGET' | 'dir:'} then changes
+    # the prepared input the adapter observes (prepare()).
     for rel in scenario.get('remove', []):
         (run / rel).unlink()
     for rel, text in scenario.get('prepared_after', {}).items():
-        (prepared / rel).unlink(missing_ok=True)
-        if isinstance(text, str) and text.startswith('link:'):
-            (prepared / rel).symlink_to(text[len('link:'):])
-        elif text is not None:
-            (prepared / rel).write_text(text)
+        prepare(prepared / rel, text)
     # Byte edits [file, old, new, 'first'|'last'] of one occurrence (AGENTEE-442
     # duplicate-key probes); an edit that finds nothing writes an unmistakable file.
     for file, before, after, which in scenario.get('edits', []):
