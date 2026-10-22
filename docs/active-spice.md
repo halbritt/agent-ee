@@ -184,9 +184,15 @@ the dialect. Pin order is never inferred.
 PYTHONPATH=src python3 scripts/qualify_vendor_spice.py MANIFEST MODEL_DIR --out NEW_PRIVATE_DIR
 ```
 
-Every declared file must exist unlinked in `MODEL_DIR` with exactly its
-declared hash, or the run refuses before anything is written. The closure is
-then parsed with the same `capture_models` policy as the check; a refused
+`MODEL_DIR` is read exactly once. Each declared file is opened without
+following links, read once into a private read-only `snapshot/` under the
+output directory, and the hash of exactly the copied bytes is compared with the
+manifest. A missing, linked, non-regular or changed file (including one whose
+inode, size or modification time moves while it is copied) refuses, the partial
+snapshot is removed and no receipt is written. The parse and every scenario are
+derived from that verified snapshot only; each scenario source rechecks the
+snapshot bytes, so a later change to the live directory cannot reach a run. The
+closure is parsed with the same `capture_models` policy as the check; a refused
 closure (unsupported dialect, non-ASCII text, unsafe directive) or a pin map
 whose formals differ from the actual header is recorded as unqualified with the
 reason, and no scenario runs. Otherwise six real active_spice runs go through
@@ -201,11 +207,18 @@ capture, the native netlist, sandboxed ngspice and the evidence seal:
 | `unsafe_directive` | `.control` block appended to a copy of each root model | `unsupported/unknown`, before any ngspice invocation |
 | `solver_failure` | a second, conflicting supply source | `failed/unknown` |
 
-The model is qualified only if every scenario returns exactly its required
-status. The receipt (`agent-ee.vendor-spice-receipt/1`) records the manifest
-and model hashes, header locator, metrics, deck hashes, ngspice hash and each
-scenario's evidence-seal hash; it contains no model text. The private output
-directory does keep copies of the model inside each run and is never a
+After each run the candidate snapshot is reverified and its captured
+`design/vendor/` hashes are compared with the verified hashes and recorded as
+the scenario's `model_binding`. The `unsafe_directive` roots must equal the
+verified bytes plus exactly the declared appended `.control` block (its hash and
+the mutated roots are recorded); every other file and scenario must equal the
+verified bytes. The model is qualified only if every scenario returns exactly
+its required status and binds the verified bytes; an unbound capture is never
+credited, even when its status matches. The receipt
+(`agent-ee.vendor-spice-receipt/1`) records the manifest and model hashes,
+header locator, metrics, deck hashes, ngspice hash, each scenario's model
+binding and evidence-seal hash; it contains no model text. The private output
+directory does keep copies of the model in `snapshot/` and inside each run and is never a
 publication artifact. Qualification covers only these declared conditions at
 the declared supplies and 25 C; it says nothing about the model's accuracy
 elsewhere; the bounds exercise a unity-gain follower at low frequency only.

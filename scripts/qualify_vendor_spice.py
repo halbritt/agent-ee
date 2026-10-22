@@ -16,8 +16,15 @@ ngspice through capture, the native netlist and the evidence seal:
   refused before ngspice runs;
 - solver_failure: a conflicting supply source must be a solver failure.
 
+The live MODEL_DIR is read exactly once: each declared file is copied into a
+private read-only snapshot, the copied bytes are verified against the manifest,
+and the parse and every scenario are derived from that snapshot. Each scenario's
+captured model bytes are then compared with the verified hashes (the unsafe
+scenario with its declared appended block), so a source changed during the run
+cannot be qualified under the manifest's hashes.
+
 The model is qualified only if every scenario returns exactly its expected
-status. A closure the bounded dialect refuses is recorded as unqualified with
+status and binds the verified bytes. A closure the bounded dialect refuses is recorded as unqualified with
 the refusal; it is never loosened to run. The receipt records hashes, observed
 statuses and evidence seals, never vendor bytes, but the private output
 directory retains copies of the model files and is never a publication artifact
@@ -27,15 +34,18 @@ directory retains copies of the model files and is never a publication artifact
 """
 import argparse
 import copy
+import hashlib
 import math
+import os
 import re
+import stat
 import shutil
 import time
 from pathlib import Path
 
 from agent_ee.active_spice import capture_models, model_path
 from agent_ee.baseline import freeze_evidence, verify_evidence
-from agent_ee.candidate import capture
+from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.checks import run_checks
 from agent_ee.storage import digest, read_json, write_json
 
@@ -46,6 +56,7 @@ MANIFEST_SCHEMA = 'agent-ee.vendor-spice-manifest/1'
 RECEIPT_SCHEMA = 'agent-ee.vendor-spice-receipt/1'
 REGISTRY_SCHEMA = 'agent-ee.vendor-spice-qualifications/1'
 SYMBOL_PINS = ('2', '3', '4', '6', '7')
+UNSAFE_SUFFIX = b'\n.control\nshell true\n.endc\n'
 SAFE_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,63}')
 SHA256 = re.compile(r'[0-9a-f]{64}')
 EXPECTED = {
@@ -110,6 +121,50 @@ def bind_model_dir(manifest, model_dir):
     return observed
 
 
+def snapshot_model_dir(manifest, model_dir, snapshot):
+    """Copy each declared file once into a private snapshot and verify the copied bytes.
+
+    The source is opened without following links, read once, and the hash of exactly the
+    bytes written is compared with the manifest; a file changed, replaced, linked or
+    missing while it is copied refuses. Nothing later reads the live directory."""
+    model_dir = Path(model_dir).resolve()
+    snapshot.mkdir(mode=0o700)
+    observed = {}
+    for rel, expected in manifest['model_files'].items():
+        path = model_dir
+        for part in Path(rel).parts:
+            path = path / part
+            if path.is_symlink():
+                raise ValueError(f'vendor model file is linked: {rel}')
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            raise ValueError(f'vendor model file is missing: {rel}') from None
+        except OSError as exc:
+            raise ValueError(f'vendor model file is linked or unreadable: {rel}: {exc}') from None
+        with os.fdopen(descriptor, 'rb') as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError(f'vendor model file is not a regular file: {rel}')
+            data = stream.read()
+            after = os.fstat(stream.fileno())
+        current = os.lstat(path)
+        identity = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+        if identity(before) != identity(after) or identity(before) != identity(current):
+            raise ValueError(f'vendor model file changed while it was snapshotted: {rel}')
+        observed[rel] = hashlib.sha256(data).hexdigest()
+        if observed[rel] != expected:
+            raise ValueError(f'vendor model file hash differs from manifest: {rel}')
+        target = snapshot / rel
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with open(target, 'xb') as handle:
+            handle.write(data)
+        target.chmod(0o400)
+        if digest(target, follow_symlinks=False) != expected:
+            raise ValueError(f'snapshot copy differs from manifest: {rel}')
+    return observed
+
+
 def base_scope(manifest, source):
     scope = read_json(FIXTURE / 'control.scope.json')
     scope['name'] = f'Vendor model qualification {manifest["id"]}'
@@ -128,14 +183,18 @@ def base_scope(manifest, source):
     return scope
 
 
-def stage(manifest, model_dir, directory):
+def stage(observed, snapshot, directory):
+    """Scenario source from the verified snapshot only; each copy is rechecked."""
     source = directory / 'source'
     source.mkdir(parents=True)
     for name in ('active.kicad_sch', 'requirements.md', 'active.kicad_pcb'):
         shutil.copyfile(FIXTURE / name, source / name)
-    for rel in manifest['model_files']:
+    for rel, sha in observed.items():
+        data = (snapshot / rel).read_bytes()
+        if hashlib.sha256(data).hexdigest() != sha:
+            raise ValueError(f'private snapshot changed after verification: {rel}')
         (source / 'vendor' / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(Path(model_dir) / rel, source / 'vendor' / rel)
+        (source / 'vendor' / rel).write_bytes(data)
     return source
 
 
@@ -153,9 +212,33 @@ def unmodeled(source):
     path.write_text(path.read_text().replace('"Device:R"', '"agent:Unknown"').replace('"R_1_1"', '"Unknown_1_1"'))
 
 
-def scenario(name, manifest, model_dir, root, model_file, roots, max_seconds):
+def bind_capture(name, run, observed, snapshot, roots):
+    """Compare the run's captured vendor bytes with the verified snapshot hashes.
+
+    The unsafe scenario's roots must equal the verified bytes plus UNSAFE_SUFFIX
+    exactly; every other file, and every file of every other scenario, must equal
+    the verified bytes. The candidate snapshot itself is reverified after the run."""
+    files = verify_snapshot(run)['files']
+    expected = {}
+    for rel, sha in observed.items():
+        if name == 'unsafe_directive' and rel in roots:
+            data = (snapshot / rel).read_bytes()
+            if hashlib.sha256(data).hexdigest() != sha:
+                raise ValueError(f'private snapshot changed after verification: {rel}')
+            expected[rel] = hashlib.sha256(data + UNSAFE_SUFFIX).hexdigest()
+        else:
+            expected[rel] = sha
+    captured = {rel: files.get(f'design/vendor/{rel}') for rel in observed}
+    record = {'captured_sha256': captured, 'bound': captured == expected}
+    if name == 'unsafe_directive':
+        record['mutation'] = {'appended_sha256': hashlib.sha256(UNSAFE_SUFFIX).hexdigest(),
+                              'roots': sorted(r for r in roots if r in observed)}
+    return record
+
+
+def scenario(name, manifest, observed, snapshot, root, model_file, roots, max_seconds):
     directory = root / name
-    source = stage(manifest, model_dir, directory)
+    source = stage(observed, snapshot, directory)
     scope = base_scope(manifest, source)
     params = scope['checks'][1]['params']
     params['active_parts']['U1']['model_file'] = model_file
@@ -167,8 +250,8 @@ def scenario(name, manifest, model_dir, root, model_file, roots, max_seconds):
         params['active_parts']['U1']['pin_map']['3'] = 'AGENT_EE_NONEXISTENT_FORMAL'
     elif name == 'unsafe_directive':
         for rel in roots:
-            with open(source / 'vendor' / rel, 'a', encoding='ascii') as handle:
-                handle.write('\n.control\nshell true\n.endc\n')
+            with open(source / 'vendor' / rel, 'ab') as handle:
+                handle.write(UNSAFE_SUFFIX)
     elif name == 'solver_failure':
         supply = next(s for s in params['sources'] if s['id'] == 'positive')
         params['sources'].append({**copy.deepcopy(supply), 'id': 'conflict', 'dc_v': supply['dc_v'] / 2})
@@ -179,17 +262,18 @@ def scenario(name, manifest, model_dir, root, model_file, roots, max_seconds):
     results = run_checks(run, time.monotonic() + max_seconds)
     freeze_evidence(run, results)
     verify_evidence(run, results, required=True)
+    binding = bind_capture(name, run, observed, snapshot, roots)
     result = results[-1]
     execution, outcome, marker = EXPECTED[name]
-    observed = {'netlist': results[0]['execution'], 'execution': result['execution'],
-                'outcome': result['outcome'], 'summary': result['summary']}
-    matched = (results[0]['execution'] == 'ok' and (result['execution'], result['outcome']) == (execution, outcome)
+    status = {'netlist': results[0]['execution'], 'execution': result['execution'],
+              'outcome': result['outcome'], 'summary': result['summary']}
+    matched = (binding['bound'] and results[0]['execution'] == 'ok' and (result['execution'], result['outcome']) == (execution, outcome)
                and (marker is None or marker in result['summary']))
     if name == 'unsafe_directive':
         # Refusal must precede any ngspice invocation, including the version probe.
         matched = matched and not (run / 'work/active/version').exists()
     record = {'expected': {'execution': execution, 'outcome': outcome, 'summary_contains': marker},
-              'observed': observed, 'matched': matched,
+              'observed': status, 'matched': matched, 'model_binding': binding,
               'evidence_seal_sha256': digest(run / 'work/verification/evidence.json')}
     if 'metrics' in result['details']:
         record['metrics'] = {k: v['value'] for k, v in result['details']['metrics'].items()}
@@ -206,7 +290,12 @@ def qualify(manifest_path, model_dir, destination, max_seconds=300):
     manifest = load_manifest(manifest_path)
     destination = Path(destination).resolve()
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
-    observed = bind_model_dir(manifest, model_dir)
+    snapshot = destination / 'snapshot'
+    try:
+        observed = snapshot_model_dir(manifest, model_dir, snapshot)
+    except BaseException:
+        shutil.rmtree(snapshot, ignore_errors=True)
+        raise
     receipt = {'schema': RECEIPT_SCHEMA, 'id': manifest['id'], 'vendor': manifest['vendor'],
                'part': manifest['part'], 'source': manifest['source'],
                'manifest_sha256': digest(Path(manifest_path)), 'model_files': observed,
@@ -214,7 +303,7 @@ def qualify(manifest_path, model_dir, destination, max_seconds=300):
                'supplies': manifest['supplies'], 'dialect': manifest['dialect'],
                'analytic': ANALYTIC, 'scenarios': {}, 'qualified': False}
     try:
-        models = capture_models(Path(model_dir).resolve(), observed, list(manifest['model_files']))
+        models = capture_models(snapshot, observed, list(manifest['model_files']))
         header = models['subcircuits'].get(manifest['subcircuit'].lower())
         if header is None:
             raise ValueError(f'subcircuit {manifest["subcircuit"]} is not defined in the closure')
@@ -228,11 +317,14 @@ def qualify(manifest_path, model_dir, destination, max_seconds=300):
     receipt['header'] = {'path': header['path'], 'line': header['line'], 'formals': header['formals']}
     model_file = f'design/vendor/{header["path"]}'
     for name in EXPECTED:
-        receipt['scenarios'][name] = scenario(name, manifest, model_dir, destination / 'scenarios',
+        receipt['scenarios'][name] = scenario(name, manifest, observed, snapshot, destination / 'scenarios',
                                               model_file, models['roots'], max_seconds)
     failed = [name for name, record in receipt['scenarios'].items() if not record['matched']]
+    unbound = [name for name, record in receipt['scenarios'].items() if not record['model_binding']['bound']]
     receipt['qualified'] = not failed
-    if failed:
+    if unbound:
+        receipt['reason'] = 'scenario captures do not bind the verified model bytes: ' + ', '.join(unbound)
+    elif failed:
         receipt['reason'] = 'scenarios did not return their expected status: ' + ', '.join(failed)
     write_json(destination / 'receipt.json', receipt)
     return receipt
