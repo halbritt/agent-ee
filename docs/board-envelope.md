@@ -337,7 +337,8 @@ at. Validation moves a staged entry's predicates from `unresolved` to
 derived requirement's statement names the witnesses and open items.
 `obligation_coverage` reports the entry as `staged`, with each witness's
 requirement, checks and status, and the open items. A missing or unbound witness
-makes it `unknown`. A baseline requirement that maps a staged obligation to a
+makes it `unknown`. Soft provenance on the generic obligation itself does not
+change this: it stays `staged` with its open items. A baseline requirement that maps a staged obligation to a
 check, or changes its statement, is refused: no check qualifies it.
 
 `require_obligations` admits `staged` entries, so capture, scaffold and

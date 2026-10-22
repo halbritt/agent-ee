@@ -1222,6 +1222,14 @@ def obligation_coverage(scope, requirements, record, files):
         entry = {'id': rid, 'locator': item['source']['locator'], 'check_kinds': kinds, 'checks': []}
         provenance = requirements.get('provenance', {}).get(rid, {'class': 'unknown', 'enforcement': 'hard'})
         entry['provenance'] = provenance
+        if field == 'obligations' and 'coverage' in (declared := record['obligations'][index_of(item)]):
+            # Staged before the soft branch: soft provenance cannot hide open items. Never bound: no check evaluates a generic obligation, so a mapping claims too much.
+            if mapped is not None and (mapped.get('checks') or mapped.get('statement') != item['statement']
+                                       or mapped.get('source') != item['source']):
+                raise ValueError(f'envelope obligation {rid} is staged: a baseline mapping cannot claim its '
+                                 'final qualification or alter its statement or source')
+            staged.append((entry, declared))
+            continue
         intent = item.get('intent', 'acceptance')
         if intent == 'informational':
             # A soft limit (AGENTEE-266) is reported for owner confirmation; it is not acceptance
@@ -1231,14 +1239,6 @@ def obligation_coverage(scope, requirements, record, files):
                 raise ValueError(f'envelope obligation {rid} statement, source or informational intent differs')
             report.append({**entry, 'checks': list(mapped.get('checks', [])) if mapped else [], 'status': 'soft',
                            'reason': f"{provenance['class']} limit is soft: {provenance['soft_reason']}"})
-            continue
-        if field == 'obligations' and 'coverage' in (declared := record['obligations'][index_of(item)]):
-            # Staged, never bound: no check evaluates a generic obligation, so a mapping claims too much.
-            if mapped is not None and (mapped.get('checks') or mapped.get('statement') != item['statement']
-                                       or mapped.get('source') != item['source']):
-                raise ValueError(f'envelope obligation {rid} is staged: a baseline mapping cannot claim its '
-                                 'final qualification or alter its statement or source')
-            staged.append((entry, declared))
             continue
         if mapped is None or not mapped.get('checks'):
             report.append({**entry, 'status': 'unmapped', 'reason': f'no mapped check; {UNBOUND[field]}'})

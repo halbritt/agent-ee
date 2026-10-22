@@ -460,6 +460,17 @@ class EnvelopeMechanicsTests(unittest.TestCase):
                 self.assertFalse((self.root / f'run-{self.count}' / 'baseline.json').exists())
 
     def test_final_qualification_cannot_be_claimed(self):
+        from agent_ee.board_envelope import require_qualified
+        self.stage()
+        # Soft provenance on the generic obligation itself still leaves it staged and open.
+        self.envelope['constraint_provenance'] = {'/obligations/1': {
+            'class': 'assumed', 'rationale': 'Owned test assumption awaiting owner confirmation.'}}
+        run, _ = self.capture()
+        report = read_json(run / 'baseline.json')['envelope']['coverage']
+        height = next(r for r in report if r['id'].endswith('obligation-height'))
+        self.assertEqual(height['status'], 'staged')
+        with self.assertRaisesRegex(ValueError, 'obligation-height \\(candidate-heights'):
+            require_qualified(report)
         for mode in ('no-open', 'status', 'mapped', 'statement'):
             with self.subTest(mode=mode):
                 self.stage()
