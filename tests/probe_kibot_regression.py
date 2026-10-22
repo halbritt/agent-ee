@@ -37,7 +37,7 @@ def main():
     version = subprocess.run([str(args.kibot.resolve()), '--version'], env=env,
                              capture_output=True, text=True, check=True, timeout=30)
     print(version.stdout.strip(), flush=True)
-    for label, expected in (('legacy', 22), ('encoded', 0)):
+    for label in ('legacy', 'encoded'):
         destination = scratch / label
         shutil.copytree(project, destination)
         for filename, kind in (('probe.kicad_pcb', 'footprint'), ('probe.kicad_sch', 'symbol')):
@@ -69,14 +69,15 @@ def main():
                                 text=True, timeout=180)
         (scratch / (label + '.log')).write_text(result.stdout + result.stderr)
         print(label, command, 'exit', result.returncode, flush=True)
-        assert result.returncode == expected, result.stdout + result.stderr
-        if label == 'legacy':
-            assert 'Footprint with more than one colon' in result.stderr, result.stderr
-        else:
-            for directory, pattern in (('gerbers', '*-F_Cu.gbr'), ('gerbers', '*-F_Mask.gbr'),
-                                       ('gerbers', '*.drl'), ('assembly', '*.csv'), ('bom', '*.csv')):
-                assert list((destination / 'export' / directory).glob(pattern)), (directory, pattern)
-    print('PASS: legacy exit 22; encoded exit 0 with copper, mask, drill, position and BOM outputs')
+        # Since AGENTEE-444 Footprint precedes custom fields, so KiBot exports the legacy
+        # inline JSON too; legacy markers are refused at admission (above), not by KiBot.
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert 'Footprint with more than one colon' not in result.stdout + result.stderr
+        for directory, pattern in (('gerbers', '*-F_Cu.gbr'), ('gerbers', '*-F_Mask.gbr'),
+                                   ('gerbers', '*.drl'), ('assembly', '*.csv'), ('bom', '*.csv')):
+            assert list((destination / 'export' / directory).glob(pattern)), (label, directory, pattern)
+    print('PASS: legacy refused at admission; legacy and encoded KiBot exit 0 with copper, mask, '
+          'drill, position and BOM outputs')
 
 
 if __name__ == '__main__':
