@@ -25,6 +25,12 @@ def declaration(*, cited=True, width=2):
     return value
 
 
+def reviewer_relaxing(value):
+    value['provenance']['class'] = 'manufacturer'
+    value['travel_nm'] = 30 * MM
+    return value
+
+
 def socket(*, cited=True, width=2, side='B'):
     fp = part('J3', 7, 7, side)
     fp['access_direction'] = declaration(cited=cited, width=width)
@@ -71,6 +77,7 @@ class AccessTests(unittest.TestCase):
 
     def test_courtyard_lane_overhang_avoids_false_area_width_and_capacity_proofs(self):
         fp = socket(width=20)
+        fp['access_direction'] = reviewer_relaxing(fp['access_direction'])
         fp['courtyards']['B']['polygons'] = [rectangle(7, 7, 32, 20)]
         board = capture([fp])
         plan = pack(board, request(fixed_refs=[], capacity_proof=True))
@@ -86,6 +93,7 @@ class AccessTests(unittest.TestCase):
 
     def test_only_cited_lane_authorizes_courtyard_overhang(self):
         fp = socket()
+        fp['access_direction'] = reviewer_relaxing(fp['access_direction'])
         fp['access_direction']['mouth_nm'] = [1500000, MM]
         fp['access_direction']['lane_polygons_nm'] = [rectangle(1.5, 0, 30, 2)]
         fp = transform(fp, [18500000, 5*MM], 0)
@@ -100,6 +108,7 @@ class AccessTests(unittest.TestCase):
     def test_exit_edge_permission_preserves_other_edge_margins(self):
         from agent_ee.placer import _fits
         fp = socket()
+        fp['access_direction'] = reviewer_relaxing(fp['access_direction'])
         fp['access_direction']['mouth_nm'] = [1500000, MM]
         fp['access_direction']['lane_polygons_nm'] = [rectangle(1.5, 0, 30, 2)]
         outline = rectangle(0, 0, 20, 20)
@@ -110,6 +119,7 @@ class AccessTests(unittest.TestCase):
 
     def test_existing_fixed_envelope_maximum_is_not_relaxed_by_a_lane(self):
         fp = socket()
+        fp['access_direction'] = reviewer_relaxing(fp['access_direction'])
         fp['access_direction']['mouth_nm'] = [1500000, MM]
         fp['access_direction']['lane_polygons_nm'] = [rectangle(1.5, 0, 30, 2)]
         fp = transform(fp, [18500000, 5*MM], 0)
@@ -389,7 +399,7 @@ class BlockAccessTests(ArrangementFixture, unittest.TestCase):
     def test_stage_a_defers_access_and_stage_b_rotates_storage_member_to_edge(self):
         # Original block fixture substitutes a storage socket role on a movable member.
         fp = next(f for f in self.board['footprints'] if f['ref'] == 'U2')
-        fp['access_direction'] = declaration()
+        fp['access_direction'] = reviewer_relaxing(declaration())
         fp['access_direction']['mouth_nm'] = [2750000, MM]
         fp['access_direction']['lane_polygons_nm'] = [rectangle(2.75, 0, 30, 3)]
         self.entries = [{'candidate': blocks.pack_block(self.board, self.inv, self.derivation, b['id'],
@@ -438,7 +448,7 @@ class NativeAccessTests(unittest.TestCase):
             path = fixture.board('overlap')
             board = k.LoadBoard(str(path))
             fp = next(f for f in board.GetFootprints() if f.GetReference() == 'U1')
-            value = declaration()
+            value = reviewer_relaxing(declaration())
             value['mouth_nm'] = [750000, 0]
             value['lane_polygons_nm'] = [rectangle(.75, -1, 30, 2)]
             value['lane_polygons_nm'][0].reverse()
