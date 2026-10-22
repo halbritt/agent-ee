@@ -69,8 +69,11 @@ only checked against the manifest's own hashes.
 
 Absolute host paths in model coverage, warnings and `viewer.json` (every string
 and key) are replaced by `<redacted>/basename` at publication: POSIX paths,
-Windows drive paths with either slash, UNC paths and `file://` URLs, including
+Windows drive paths with either slash, UNC paths and `file:` URIs, including
 directory names with spaces (a path runs to the end of the text or a quote).
+The `file:` scheme is matched case-insensitively (`FILE:///...`,
+`File:///C:/...`), and a file URI's authority (`file://host/share/...`) is
+removed together with its path.
 Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
 server applies the same redaction to `manifest.json`, `viewer.json` and page
 warnings of older bundles on the way out.

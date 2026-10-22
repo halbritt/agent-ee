@@ -25,12 +25,14 @@ from .symbol_library import LibraryError, children, parse_sexpr
 from .viewer import _ASSETS, _source_board, _stage_board, _validate_glb
 
 _VIEWS = ("top", "bottom", "isometric")
-# URLs other than file:// are not host paths; everything else that starts at a
+# URLs other than file:// (scheme matched case-insensitively, RFC 3986) are not
+# host paths; a file URI's authority (file://host/share) is redacted with its path.
+# Everything else that starts at a
 # POSIX root, a drive letter (either slash) or a UNC prefix is. A path runs to the
 # end of the text or a quote, so directory names containing spaces are removed too.
 # Already redacted text is left alone, so serving a redacted bundle is idempotent.
-_URL = re.compile(r"(?<![\w.+-])(?!file:)[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]*")
-_ABSOLUTE = re.compile(r"(?<![\w.}\])/\\])(?<!<redacted>)(?:file://)?(?:/|\\\\|[A-Za-z]:[\\/])(?=[^\s'\"<>])[^'\"<>\r\n]*")
+_URL = re.compile(r"(?<![\w.+-])(?!(?i:file):)[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]*")
+_ABSOLUTE = re.compile(r"(?<![\w.}\])/\\])(?<!<redacted>)(?:(?i:file):(?://[^/\\\s'\"<>]*)?)?(?:/|\\\\|[A-Za-z]:[\\/])(?=[^\s'\"<>])[^'\"<>\r\n]*")
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
 _ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC

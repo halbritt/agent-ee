@@ -419,6 +419,57 @@ class GalleryTests(unittest.TestCase):
         self.assertIn('R9: missing 3D model <redacted>/b.step', record['warnings'])
         self.assertIn('<redacted>/e.step', bodies[1])
 
+    # File URI schemes are case-insensitive (RFC 3986); the authority (host or UNC
+    # share) of a file URI is part of the private location and is removed too.
+    FILE_URIS = ('FILE:///home/Alice/private-project/board.kicad_pcb',
+                 'File:///C:/Users/Alice/private-project/b.step',
+                 'fIlE://fileserver/private-share/c.step',
+                 'file://fileserver/private-share/d.step',
+                 'FILE:\\\\fileserver\\private-share\\e.step')
+
+    def test_case_insensitive_and_authority_file_uris_are_redacted_at_publication_and_when_served(self):
+        uris = self.FILE_URIS
+        self.manifest['model_coverage']['board']['path'] = uris[0]
+        self.manifest['model_coverage']['extra'] = ['path:' + u for u in uris]
+        self.manifest['warnings'] = ['R9: missing 3D model ' + u for u in uris]
+        self.save()
+        viewer = self.make_viewer()
+        metadata = json.loads((viewer / 'viewer.json').read_text())
+        metadata['board']['path'] = uris[0]
+        metadata['warnings'] = list(uris)
+        (viewer / 'viewer.json').write_text(json.dumps(metadata))
+        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=viewer)
+        stored = [(self.root / 'bundles' / bundle / name).read_text()
+                  for name in ('manifest.json', 'viewer/viewer.json')]
+        with self.serving() as url:
+            served = [urlopen(url + '/bundles/' + bundle + '/' + suffix).read().decode()
+                      for suffix in ('manifest.json', 'viewer/viewer.json')]
+            served.append(urlopen(url).read().decode())
+        for body in stored + served:
+            for leak in ('Alice', 'private-project', 'fileserver', 'private-share', 'C:', 'FILE', 'File', 'fIlE'):
+                self.assertNotIn(leak, body)
+        record = json.loads(served[0])
+        self.assertEqual(record['model_coverage']['board']['path'], '<redacted>/board.kicad_pcb')
+        self.assertEqual(record['warnings'], ['R9: missing 3D model <redacted>/' + n
+                                              for n in ('board.kicad_pcb', 'b.step', 'c.step', 'd.step', 'e.step')])
+        self.assertEqual(json.loads(served[1])['warnings'],
+                         ['<redacted>/' + n for n in ('board.kicad_pcb', 'b.step', 'c.step', 'd.step', 'e.step')])
+        self.assertIn('R9: missing 3D model &lt;redacted&gt;/c.step', served[2])
+
+    def test_legacy_bundle_with_uppercase_file_uri_is_redacted_when_served(self):
+        bundle = self.add()
+        path = self.root / 'bundles' / bundle / 'manifest.json'
+        record = json.loads(path.read_text())
+        record['warnings'] = ['R1: ' + u for u in self.FILE_URIS]
+        path.write_text(json.dumps(record))
+        with self.serving() as url:
+            body = urlopen(url + '/bundles/' + bundle + '/manifest.json').read().decode()
+            page_body = urlopen(url).read().decode()
+        for text in (body, page_body):
+            for leak in ('Alice', 'private-project', 'fileserver', 'private-share', 'C:'):
+                self.assertNotIn(leak, text)
+        self.assertIn('R1: <redacted>/e.step', json.loads(body)['warnings'])
+
     def test_redact_path_forms(self):
         cases = {'C:/Users/A/m.step': '<redacted>/m.step', 'C:\\Users\\A B\\m.step': '<redacted>/m.step',
                  '\\\\srv\\share\\m.step': '<redacted>/m.step', '//srv/share/m.step': '<redacted>/m.step',
@@ -427,6 +478,16 @@ class GalleryTests(unittest.TestCase):
                  'see https://x.org/a/b and ${KIPRJMOD}/m.step': 'see https://x.org/a/b and ${KIPRJMOD}/m.step'}
         for text, expected in cases.items():
             self.assertEqual(redact(text), expected, text)
+        uri_cases = {'FILE:///home/a/m.step': '<redacted>/m.step', 'File:///C:/Users/A/m.step': '<redacted>/m.step',
+                     'fIlE://srv/share/m.step': '<redacted>/m.step', 'file://srv/share/m.step': '<redacted>/m.step',
+                     'FILE://localhost/C:/Users/A/m.step': '<redacted>/m.step', 'file:/home/a/m.step': '<redacted>/m.step',
+                     'FILE:\\\\srv\\share\\m.step': '<redacted>/m.step', 'x="File:///home/a b/m.step" y': 'x="<redacted>/m.step" y',
+                     'HTTPS://X.org/a/b http://x.org/c x-file:///a/b': 'HTTPS://X.org/a/b http://x.org/c x-file:///a/b',
+                     'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step FILE:///home/a/m.step':
+                         'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step <redacted>/m.step'}
+        for text, expected in uri_cases.items():
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
         self.assertEqual(redact({'/home/a/key': 1}), {'<redacted>/key': 1})
 
     def test_malformed_counts_or_coverage_are_never_complete(self):
@@ -752,3 +813,32 @@ class DiagnosticSupplementTests(unittest.TestCase):
         record = json.loads(bodies[2])
         self.assertEqual(record['source_packet']['name'], '<redacted>/INDEX.md')
         self.assertEqual(record['label'], 'see <redacted>/board.kicad_pcb')
+
+    def test_case_insensitive_and_authority_file_uris_are_redacted_on_every_supplement_surface(self):
+        uris = GalleryTests.FILE_URIS
+        identifier = self.add(label='see ' + uris[0], stage=' '.join(uris))
+        stored = (self.root/'diagnostics'/identifier/'manifest.json').read_text()
+        stored += (self.root/'diagnostics.json').read_text()
+        base = self.serving()
+        listing = json.loads((self.root/'diagnostics.json').read_text())
+        legacy_id = '8' * 12 + '-' + '9' * 12
+        legacy = dict(listing[0], id=legacy_id, label=uris[1], stage=uris[2],
+                      source_packet={'name': uris[3], 'sha256': 'c' * 64})
+        (self.root/'diagnostics'/legacy_id).mkdir()
+        (self.root/'diagnostics'/legacy_id/'manifest.json').write_text(json.dumps(legacy))
+        (self.root/'diagnostics.json').write_text(json.dumps([legacy, *listing]))
+        bodies = [stored]
+        for ident in (identifier, legacy_id):
+            bodies += [self.get(base + '/diagnostics/' + ident + suffix) for suffix in ('/index.html', '/manifest.json')]
+        bodies.append(self.get(base))
+        for body in bodies:
+            for leak in ('Alice', 'private-project', 'fileserver', 'private-share', 'C:', 'FILE', 'File', 'fIlE'):
+                self.assertNotIn(leak, body)
+        record = json.loads(bodies[2])
+        self.assertEqual(record['label'], 'see <redacted>/board.kicad_pcb')
+        # A host path runs to the end of the text (spaced directory names), so the
+        # space-joined stage collapses to the last basename.
+        self.assertEqual(record['stage'], '<redacted>/e.step')
+        record = json.loads(bodies[4])
+        self.assertEqual(record['source_packet']['name'], '<redacted>/d.step')
+        self.assertEqual(record['label'], '<redacted>/b.step')
