@@ -19,8 +19,9 @@ from . import board_envelope as envelope
 
 SCHEMA = 'agent-ee.tht-thickness-fit/1'
 SOURCE_CLASSES = ('manufacturer', 'datasheet')
-# Owner engineering assumption (2026-10-22): a soldered through-hole part fits boards
-# within +/-10% of its recommended nominal. A screening default, not a hard ceiling.
+# Owner-relayed (agent-509, Cairn 9561cd0c, 2026-10-22), verbatim: "a soldered THROUGH-HOLE
+# component fits boards within +/-10% (or more) of its recommended nominal PCB thickness".
+# Agent reading: a screening default, not a hard ceiling.
 SCREENING_BAND = Fraction(1, 10)
 MAX_PARTS = 256
 

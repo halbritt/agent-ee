@@ -656,10 +656,13 @@ inside the band, such as 1.55-1.60 mm for J1, leaves the band at
 another is unknown, the check reports unknown and keeps the defect in
 `defects`.
 
-The +/-10% default is the owner's engineering assumption for screening
-(2026-10-22). It is not a universal hard ceiling, so a board outside it is never
-rejected. Only an explicit manufacturer limit makes a defect. Each declared part
-must bind to exactly one native footprint with that reference and the declared
+The +/-10% default implements an owner assumption, owner-relayed (agent-509,
+Cairn 9561cd0c, 2026-10-22) and quoted verbatim from the AGENTEE-448 ticket: "a
+soldered THROUGH-HOLE component fits boards within +/-10% (or more) of its
+recommended nominal PCB thickness". The rest of this section is agent wording.
+Agent reading: the band is a screening default, not a universal hard ceiling,
+so a board outside it is never rejected. Only an explicit manufacturer limit
+makes a defect. Each declared part must bind to exactly one native footprint with that reference and the declared
 `footprint_id`. That footprint needs at least one plated through-hole pad, and
 its saved part number (or value) must equal `part_number`. Anything else is
 unknown, never a pass. Parts without a declaration are not graded, so every

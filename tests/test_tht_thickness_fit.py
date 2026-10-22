@@ -124,7 +124,7 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(grade('2.0', j1(fit_range=documented, hard_limits=hard))['status'], 'defect')
 
     def test_narrow_documented_fit_range_never_shrinks_the_screening_band(self):
-        # Owner rule: at least +/-10%. A documented range inside the band leaves the band as is.
+        # Owner-relayed (Cairn 9561cd0c) "+/-10% (or more)": a documented range inside the band leaves it as is.
         narrow = {'min_mm': 1.55, 'max_mm': 1.6, 'source': dict(TE)}
         for thickness, status in (('1.65', 'pass'), ('1.413', 'pass'), ('1.727', 'pass'),
                                   ('1.412999', 'unknown'), ('1.727001', 'unknown')):
