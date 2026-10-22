@@ -7,6 +7,7 @@ from agent_ee import electrical_locality as locality, locality_provenance
 from agent_ee.placer import pack, transform
 from test_electrical_locality import board, declaration, MM
 from test_placer import request
+from owner_fixture import committed
 
 
 def source(text='Original numeric requirement: 1 mm'):
@@ -92,7 +93,12 @@ class LocalityProvenanceTests(unittest.TestCase):
         self.assertFalse(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])
 
     def test_sourced_infeasibility_and_advisory_below_floor(self):
-        for kind in ('owner', 'datasheet', 'default'):
+        """AGENTEE-348 ruling (b): an uncommitted owner decision is advisory like an unsourced bound.
+
+        Only a decision cited at a resolving commit proves infeasibility, so the hard owner case
+        now carries a committed citation and the former uncommitted owner case is advisory.
+        """
+        for kind in ('owner', 'uncommitted owner', 'datasheet', 'default'):
             with self.subTest(kind=kind):
                 facts, doc = board(), declaration(limit=1000)
                 facts['footprints'][0]['pads'][0]['size_nm'] = [1500000, 1500000]
@@ -101,9 +107,12 @@ class LocalityProvenanceTests(unittest.TestCase):
                 doc['source_records'] = {**doc['source_records'], source(text)['path']: text}
                 for role in ('supply', 'return'):
                     pair = doc['obligations'][0][role]
-                    if kind == 'owner':
+                    if kind in ('owner', 'uncommitted owner'):
+                        decision = {**source(text), 'owner': 'fixture author'}
+                        if kind == 'owner':
+                            decision.update(committed(decision['path'], text))
                         pair['provenance'] = {'class': 'owner', 'basis': 'fixture requirement',
-                            'decision_reference': {**source(text), 'owner': 'fixture author'}}
+                                              'decision_reference': decision}
                     elif kind == 'datasheet':
                         pair['provenance'] = {'class': 'datasheet', 'basis': 'fixture number',
                             'derivation': {'kind': 'numeric', 'value_nm': 1000, 'source': source(text)}}
@@ -112,7 +121,7 @@ class LocalityProvenanceTests(unittest.TestCase):
                 result = locality.grade(facts, doc)
                 self.assertTrue(all(m['manufacturing_floor']['floor_nm'] == 650000
                                     for m in result['measured']))
-                if kind == 'default':
+                if kind in ('default', 'uncommitted owner'):
                     self.assertEqual(result['status'], 'info')
                     self.assertTrue(all(a['below_floor'] for a in result['advisories']))
                 else:
@@ -121,16 +130,31 @@ class LocalityProvenanceTests(unittest.TestCase):
                     self.assertEqual((refusal['status'], refusal['outcome']), ('locality_infeasible', 'defect'))
 
     def test_numeric_datasheet_and_owner_decision_block(self):
-        for kind in ('datasheet', 'owner'):
+        """AGENTEE-348 ruling (b): an owner decision blocks only when cited at a resolving commit.
+
+        The former uncommitted fixture-author decision is now advisory with its reason recorded;
+        the committed citation of the same captured text keeps the two hard defects.
+        """
+        for kind in ('datasheet', 'owner', 'uncommitted owner'):
             facts, doc = board(), declaration(limit=MM)
             doc['source_records'] = {**doc['source_records'], 'requirements/owned-numeric.txt': 'Original numeric requirement: 1 mm'}
             for role in ('supply', 'return'):
                 pair = doc['obligations'][0][role]
                 numeric(pair)
-                if kind == 'owner':
+                if kind != 'datasheet':
+                    decision = {**source(), 'owner': 'fixture author'}
+                    if kind == 'owner':
+                        decision.update(committed(decision['path'], decision['quote']))
                     pair['provenance'] = {'class': 'owner', 'basis': 'Owned fixture requirement',
-                        'decision_reference': {**source(), 'owner': 'fixture author'}}
+                                          'decision_reference': decision}
             result = locality.grade(facts, doc)
+            if kind == 'uncommitted owner':
+                self.assertEqual(result['status'], 'info', result)
+                self.assertFalse(result['defects'])
+                self.assertEqual([a['constraint_provenance']['reason'] for a in result['advisories']],
+                                 ['owner decision is not cited at a commit (uncommitted)'] * 2)
+                self.assertFalse(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])
+                continue
             self.assertEqual(result['status'], 'defect')
             self.assertEqual(len(result['defects']), 2)
             self.assertTrue(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])

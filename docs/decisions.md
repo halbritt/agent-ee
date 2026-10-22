@@ -609,14 +609,15 @@ bind retained unsourced geometry settings and their potential router/zone-filler
 consumers in `unsourced_geometry`. Native values and existing DRC verdicts stay
 unchanged; unsourced numeric limits remain advisory. Only owner, manufacturer
 and datasheet sources omit value-matched settings from that inventory.
-G4 (verified reference authority) remains owner work; importing a class and
-citation does not validate their authority.
+G4 (verified reference authority) was implemented under AGENTEE-348; see the
+AGENTEE-348 G4 entry below.
 
 AGENTEE-437 preserves name-based owner-rule DRC authority while disclosing
 shadowed generated geometry by position and its original source. Source-class
 exclusion requires a citation. Grading re-derives bound geometry inventories;
 stale, edited or missing inventories refuse evaluation as unknown. This is
-captured-input consistency, not the owner authority verification in G4 above.
+captured-input consistency. Owner authority verification is the separate
+AGENTEE-348 G4 citation model.
 Coordinator ruling 437a binds a serialized emission witness and permits only
 materialized additions equal to a closed, cited KiCad 10.0.7 native default.
 The witness hash excludes itself to avoid a circular digest. Changed/removed
@@ -700,3 +701,32 @@ rule. Reasons: 0.98 is the ticket's own rule, the supplier pad geometry really
 differs from the IPC-nominal KiCad pads, and an earlier `nearest_variant`
 acceptance rule was rejected on review. The supplier bytes stay unpublished. See
 the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).
+
+## Common citation model (AGENTEE-348 G4, 2026-10-22)
+
+Coordinator ruling (agent-449, AGENTEE-348 G4 worker assignment; not an owner
+statement): options (b) and (c). Its stated basis is the fome-mc `AGENTS.md`
+gating-provenance rule and the owner-relayed AGENTEE-348 Plane comment "Owner
+decision (2026-10-22, owner via agent-519 decision quiz): ... Owner authority =
+a citation to a committed owner decision (pinned commit + hash, as OWNER_GRANTS
+does)" (class owner-relayed).
+
+- (b) A free-text owner, manufacturer, datasheet or engineering label without a
+  resolvable citation is advisory in both the design-rule import (AGENTEE-331)
+  and locality (AGENTEE-337). It is disclosed with `unsourced_reason` in the
+  geometry inventory and is never dropped. `source_authority` implements the
+  resolution once for both consumers. See the
+  [citation model](scaffold.md#declared-design-rule-sources-agentee-331).
+- (c) Records with a real captured source keep their hard verdict through the
+  cited form. Fab-profile-derived manufacturer settings already cite a captured
+  file by hash and locator, and they are unchanged. Original test fixtures moved
+  to the cited form. The six named tests changed one at a time, each with a
+  docstring justification.
+
+Agent reasoning, flagged for review. `OWNER_DECISIONS` ships empty: no reviewed
+owner commit is pinned yet. Captured `.kicad_dru` owner rules keep their
+existing file-hash authority (AGENTEE-331/437). Demoting them would change
+verdicts outside the ruling, so that question is left open for a separate ruling.
+The physical-intent compiler keeps its existing owner precondition. That is a
+verified captured decision by a named non-agent owner, and it compiles to
+`authority_unavailable`, so it never enforces.

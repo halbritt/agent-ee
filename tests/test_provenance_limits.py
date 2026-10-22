@@ -8,6 +8,7 @@ from agent_ee.design_rule_provenance import (
     advisory_numeric, bind_project, classify_finding, finding_sources, import_constraints)
 from agent_ee.placer_runner import _drc_comparison
 from agent_ee.storage import json_bytes, write_json
+from owner_fixture import cite
 
 
 def source(field, value, cls):
@@ -314,6 +315,7 @@ class NativeLimitsTest(unittest.TestCase):
                 'net_settings': {'meta': {'version': 5}, 'classes': [{'name': 'Default', 'clearance': .2}]}}
             doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                 'min_clearance': {'value_mm': .09, 'class': 'manufacturer', 'basis': 'original probe minimum'}}}
+            cite(doc, doc['board_setup_rules']['min_clearance'])  # AGENTEE-348 cited form keeps it hard
             project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
             bind_project(project, record); write_json(path.with_suffix('.kicad_pro'), project)
             for x, refuses in ((3.65, False), (3.55, True)):
@@ -373,6 +375,8 @@ class NativeLimitsTest(unittest.TestCase):
             for cls in ('default', 'manufacturer'):
                 doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_text_height': {'value_mm': 8, 'class': cls, 'basis': 'original text probe'}}}
+                if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                    cite(doc, doc['board_setup_rules']['min_text_height'])
                 template = copy.deepcopy(original)
                 template['board']['design_settings']['rules']['min_text_height'] = 8
                 project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
@@ -402,6 +406,8 @@ class NativeLimitsTest(unittest.TestCase):
         for cls in ('default', 'manufacturer'):
             doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                 'min_text_height': {'value_mm': 8, 'class': cls, 'basis': 'original row text probe'}}}
+            if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                cite(doc, doc['board_setup_rules']['min_text_height'])
             project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
             bind_project(project, record); write_json(template_path, project)
             out = fixture.root/('row-'+cls); out.mkdir()
@@ -463,6 +469,8 @@ class NativePlaneLimitsTest(plane_fixture.PlaneFixture, unittest.TestCase):
                     'net_settings': {'meta': {'version': 5}, 'classes': [{'name': 'Default', 'clearance': .2}]}}
                 doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_clearance': {'value_mm': .09, 'class': cls, 'basis': 'original plane probe'}}}
+                if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                    cite(doc, doc['board_setup_rules']['min_clearance'])
                 project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
                 bind_project(project, record)
                 write_json((self.source/self.board).with_suffix('.kicad_pro'), project)

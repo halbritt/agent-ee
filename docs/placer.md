@@ -1632,9 +1632,17 @@ For `owner`, `decision_reference` carries the same verified source reference
 plus a nonempty `owner` identity. An agent identity or a case-insensitive
 `design-owner`, `design_owner`, `design owner` or `designowner` label is
 not admitted. An owner label without the recorded decision stays advisory.
+Under AGENTEE-348 the decision must also name a `repository` and a 40-hex
+`commit` pinned in `source_authority.OWNER_DECISIONS` with the same SHA-256.
+An uncommitted, unresolvable or stale decision is advisory, and its `reason`
+says which. These are the same functions the
+[design-rule import](scaffold.md#declared-design-rule-sources-agentee-331) uses.
 This checks the retained decision reference, not authenticated authorship.
 Original tests use explicit fixture-author decisions to retain their numerical
-contracts; those decisions establish no real hardware requirements.
+contracts; those decisions establish no real hardware requirements. A test
+commits each one to a private temporary repository, checks the commit and bytes
+with `verify_committed` and pins it only in the test process
+(`tests/owner_fixture.py`).
 
 For `manufacturer`, the pinned original numeric records in
 `src/agent_ee/data/jlcpcb-locality.json` retain host capture URLs, timestamps,

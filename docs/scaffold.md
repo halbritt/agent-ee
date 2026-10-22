@@ -646,22 +646,45 @@ A producer plan may name a captured `constraint_source`, for example
 `"constraint_source": "design-rules/constraints.json"`. Stage-one Python callers
 can pass `constraint_source=Path(...)` to `scaffold`. The document uses the design
 lane's existing `fome-mc.constraint-provenance/1` format. `board_setup_rules`
-entries contain `value_mm`, `class` and a nonempty citation `basis`.
+entries contain `value_mm`, `class` and a nonempty prose `basis`.
 `net_class_default` can declare clearance, track width, via diameter and via drill
 in millimetres. Classes are `owner`, `manufacturer`, `datasheet`, `engineering`
 and `default`. Importing a citation does not certify its applicability. A declared
 non-default net-class setting requires one explicit native `Default` class in
 the project template; the importer refuses an implicit or ambiguous class.
 
-**Open authority gap (AGENTEE-348 G4):** this importer currently accepts a class
-and free-text `basis` as hard authority for every non-default class. It does not
-verify a captured JLCPCB/datasheet reference or a committed owner decision, and
-does not refuse an agent-named owner. This is weaker than the locality reference
-checks described in [locality provenance](placer.md#locality-provenance-agentee-337).
-Locality owner references also do not currently require a pinned decision commit.
-These behaviors do not meet the requested common authority model. In particular,
-the geometry inventory's source exclusions below inherit this authority gap;
-an excluded setting is not proof of a verified owner or vendor source.
+**Citation model (AGENTEE-348 G4).** A class label and its prose `basis` never
+grant hard authority. A declaration (board rule, `net_class_default` or
+`custom_rules` entry) is hard only when its `citation` resolves, through
+`source_authority.cite`, the same functions that grade
+[locality provenance](placer.md#locality-provenance-agentee-337):
+
+| Class | Resolving `citation` |
+| --- | --- |
+| `owner` | `kind: owner_decision`, with `path`, `sha256`, `locator`, `quote`, a non-agent `owner`, `repository` and a 40-hex `commit`. `(repository, commit, path)` must be pinned in `source_authority.OWNER_DECISIONS` with the same SHA-256. |
+| `manufacturer` | `kind: manufacturer_capture`, with `capture` naming a source in the hash-pinned `data/jlcpcb-locality.json`, its `sha256` and a `locator`. |
+| `datasheet` | `kind: captured_source`, with `path`, `sha256`, `locator` and `quote` verified against the document's `source_records`. |
+| `engineering` | Any of the three citation forms above, under the same checks. |
+
+`source_records` maps cited paths to captured UTF-8 text, as in
+electrical-locality/1. The `quote` of an owner or captured-source citation must
+state each declared millimetre value. A declaration without a resolving citation
+keeps its class label and its value is still emitted. It has no citation, is
+`advisory`, and records `unsourced_reason`, for example
+`free-text owner label without a resolvable citation`,
+`owner decision is not cited at a commit (uncommitted)`,
+`owner decision commit does not resolve to a pinned owner commit`,
+`owner decision bytes differ from the pinned owner commit (stale)` or
+`owner decision names no owner, or names an agent or the design-owner role`.
+A cited record whose captured text hashes differently refuses the import, so
+present corrupt evidence never becomes advisory.
+
+`OWNER_DECISIONS` ships empty. An entry is added only by a reviewed agent-ee
+change that traced the commit and bytes to the owner's repository;
+`source_authority.verify_committed` checks the commit and bytes read-only.
+Until then, no design-rule owner declaration is hard. The
+`fome-mc.constraint-provenance/1` documents that cite JLCPCB by URL alone are
+advisory. They become hard by citing the pinned capture.
 
 The importer applies declared non-default values. A declared default does not
 replace the template value. The captured source is immutable. The receipt's
@@ -828,8 +851,10 @@ candidate inputs, not an independent signature or owner evidence store.
 
 This is an inventory of emitted project/rule settings, not of KiCad or router
 implementation constants, nor of explicit pad, zone or footprint geometry.
-It does not certify citations' engineering applicability; verified reference
-authority remains the separate owner item G4. No router code changes; valid
+It does not certify citations' engineering applicability. Exclusion requires the
+resolving citation of the AGENTEE-348 G4 citation model above. A free-text
+owner, manufacturer or datasheet label stays in the inventory with its
+`unsourced_reason`. No router code changes; valid
 inventories preserve existing acceptance verdicts.
 
 Thermal-spoke counts are dimensionless numeric limits. A native

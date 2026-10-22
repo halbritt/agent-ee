@@ -11,6 +11,7 @@ import unittest
 
 from agent_ee import block_arrangement as arrangement, blocks, placer
 from test_blocks import Fixture, PARTS, ROOT, SHEETS, board, native_xml, obligations, policy
+from owner_fixture import module_command
 from test_placement import MM, part, rectangle
 
 CITE = 'Owned fixture rule EE340: authored test requirement.'
@@ -747,7 +748,8 @@ class CliTests(ArrangementFixture, unittest.TestCase):
             path = self.dir / (entry['candidate']['block_id'] + '.json')
             path.write_text(json.dumps(entry['candidate']))
             paths += ['--candidate', path]
-        args = [sys.executable, '-m', 'agent_ee.block_arrangement', '--probe', self.dir / 'probe.json',
+        # AGENTEE-348: the child keeps the committed fixture decision pinned in this process.
+        args = [*module_command('agent_ee.block_arrangement'), '--probe', self.dir / 'probe.json',
                 '--netlist', self.dir / 'design.xml', '--policy', self.dir / 'policy.json',
                 '--arrangement', self.dir / 'rules.json', *paths, '--out', self.dir / 'plan.json']
         done = subprocess.run(list(map(str, args)), capture_output=True, text=True, timeout=300,

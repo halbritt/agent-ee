@@ -10,7 +10,7 @@ import json
 import math
 import re
 
-from .candidate import safe_relative
+from . import source_authority
 
 CLASSES = frozenset(('datasheet', 'manufacturer', 'owner', 'engineering', 'default'))
 RECORD_SHA256 = '92561871360fe5652778275ab31009e80e70b2e15af3d905a8d16eaa67aa063d'
@@ -27,33 +27,8 @@ def manufacturing_record():
     return json.loads(raw)
 
 
-def reference(value):
-    if not isinstance(value, dict):
-        return False
-    if any(not isinstance(value.get(k), str) or not value[k].strip()
-           for k in ('path', 'sha256', 'locator')):
-        return False
-    try:
-        safe_relative(value['path'])
-    except ValueError:
-        return False
-    return re.fullmatch('[0-9a-f]{64}', value['sha256']) is not None
-
-
-def verified_reference(value, records):
-    """Return typed verification, distinguishing absent evidence from corruption."""
-    advisory = {'enforcement': 'advisory', 'reason': 'unsourced numeric locality bound'}
-    if not reference(value):
-        return advisory
-    text = records.get(value['path'])
-    if not isinstance(text, str):
-        return advisory
-    if hashlib.sha256(text.encode('utf-8')).hexdigest() != value['sha256']:
-        return {'enforcement': 'integrity', 'reason': 'source record sha256 mismatch'}
-    quote = value.get('quote')
-    if not isinstance(quote, str) or not quote.strip() or quote not in text:
-        return advisory
-    return {'enforcement': 'verified', 'reason': 'source record and quote verified'}
+# One citation model with the design-rule import (AGENTEE-348).
+reference, verified_reference = source_authority.reference, source_authority.verified_reference
 
 
 def classify(pair, records=None):
@@ -70,14 +45,15 @@ def classify(pair, records=None):
         return {**result, 'enforcement': 'feasibility',
                 'reason': 'Captured manufacturing minimum cannot establish an electrical maximum'}
     if result['class'] == 'owner':
-        decision = provenance.get('decision_reference')
-        verification = verified_reference(decision, records)
+        # Hard only at a pinned owner commit; a verified but uncommitted, stale or
+        # unresolvable decision is advisory with its reason (AGENTEE-348).
+        verification = source_authority.owner_decision(provenance.get('decision_reference'), records)
         if verification['enforcement'] == 'integrity':
             return {**result, **verification}
-        if (verification['enforcement'] == 'verified' and isinstance(decision.get('owner'), str)
-                and decision['owner'].strip() and not re.search(
-                    r'\bagent(?:[- _]?\d+)?\b|design[-_ ]?owner', decision['owner'], re.I)):
+        if verification['enforcement'] == 'hard':
             return {**result, 'enforcement': 'hard', 'reason': 'explicit owner decision reference'}
+        if source_authority.reference(provenance.get('decision_reference')):
+            return {**result, 'reason': verification['reason']}
     if result['class'] == 'datasheet':
         derivation = provenance.get('derivation', {})
         if not isinstance(derivation, dict):

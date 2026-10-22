@@ -143,11 +143,13 @@ class NativeBoardBuildTest(unittest.TestCase):
         from agent_ee.design_rule_provenance import import_constraints, bind_project, PROJECT_KEY
         from agent_ee.storage import json_bytes
         project = json.loads((ROOT / 'fixtures/netclass-completeness/native.kicad_pro').read_bytes())
-        project, record = import_constraints(project, json_bytes({
+        from owner_fixture import cite
+        declared = {
             'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                 'min_clearance': {'class': 'owner', 'basis': 'Original synthetic board-build limit', 'value_mm': 0.17}},
-            'net_class_default': {'class': 'datasheet', 'basis': 'Original synthetic width source', 'track_width_mm': 0.29}}),
-            'source.json', 'fixture')
+            'net_class_default': {'class': 'datasheet', 'basis': 'Original synthetic width source', 'track_width_mm': 0.29}}
+        cite(declared, declared['board_setup_rules']['min_clearance'], declared['net_class_default'])  # AGENTEE-348 cited form keeps it hard
+        project, record = import_constraints(project, json_bytes(declared), 'source.json', 'fixture')
         bind_project(project, record)
         project['net_settings']['classes'][0]['clearance'] = 0.43
         template_project = self.template / 'rc_filter.kicad_pro'

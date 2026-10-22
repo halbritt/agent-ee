@@ -321,8 +321,12 @@ class SublayoutProvenanceTests(unittest.TestCase):
         from agent_ee import design_rule_provenance as drp
         project = {'board': {'design_settings': {'rules': {'min_track_width': SublayoutProvenanceTests.LIMIT}}}}
         if spec is not None:
-            raw = json.dumps({'schema': drp.SCHEMA, 'board_setup_rules': {'min_track_width': dict(
-                spec, value_mm=SublayoutProvenanceTests.LIMIT)}}).encode()
+            from owner_fixture import cite
+            declared = {'schema': drp.SCHEMA, 'board_setup_rules': {'min_track_width': dict(
+                spec, value_mm=SublayoutProvenanceTests.LIMIT)}}
+            if spec['class'] != 'default':  # AGENTEE-348 cited form keeps it hard
+                cite(declared, declared['board_setup_rules']['min_track_width'])
+            raw = json.dumps(declared).encode()
             project, record = drp.import_constraints(project, raw, 'constraints/ee399.json',
                                                      hashlib.sha256(raw).hexdigest())
             drp.bind_project(project, record)

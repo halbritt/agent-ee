@@ -2186,26 +2186,30 @@ The [scaffold constraint-source import](scaffold.md#declared-design-rule-sources
 records every emitted numeric setting's class and citation in its receipt and
 immutable project binding. Native DRC classifies findings against that binding
 and captured custom rules. `default` or unresolved numeric limits remain reported
-advisories. Owner, manufacturer, datasheet and engineering limits remain hard.
+advisories. Owner, manufacturer, datasheet and engineering limits are hard only
+when their citation resolves under the AGENTEE-348 citation model.
 The DRC check retains the raw `drc.json`, raw counts, waiver keys and locators;
 `drc-constraints.json` adds the source inventory and classified violations.
 `details.advisory_findings_count`, `constraint_classes` and `graded_unwaived` separate numeric advisories
 from graded issues without changing connectivity or parity treatment.
 A native tool failure or missing/malformed output cannot become a pass.
 
-AGENTEE-348 G4 remains open: the design-rule importer accepts declared
-non-default classes with a free-text basis, without verifying the source or an
-owner decision commit. Locality validates captured text references and rejects
-agent-named owners, but does not require a committed owner citation either.
-See the [authority gap](scaffold.md#declared-design-rule-sources-agentee-331).
-Existing hard classifications and geometry-inventory source exclusions must
-not be interpreted as evidence that this common authority model is implemented.
+AGENTEE-348 G4 gives both consumers one citation model (`source_authority`).
+An owner limit is hard only at a pinned owner commit whose bytes match. A
+manufacturer limit must cite a hash-pinned capture. A datasheet limit must cite
+a captured record by hash, locator and quote. An engineering limit may use any
+of these citations. A free-text label, an agent-named owner, or an uncommitted,
+unresolvable or stale commit is advisory. It keeps its class label, emitted
+value and `unsourced_reason`, and stays in the geometry inventory. See the
+[citation model](scaffold.md#declared-design-rule-sources-agentee-331). Captured
+`.kicad_dru` owner rules keep their existing file-hash authority (see the
+AGENTEE-348 entry in [decisions](decisions.md)).
 
 AGENTEE-425 adds the [unsourced geometry inventory](scaffold.md#unsourced-geometry-inventory-agentee-425)
 to scaffold receipts and project bindings; board-build refreshes it on template
 merge. It lists retained unsourced settings and potential router/zone-filler
 consumers, including generated native constraints. Value-matched owner,
-manufacturer and datasheet settings are excluded. This disclosure changes no
+manufacturer and datasheet settings with a resolving citation are excluded. This disclosure changes no
 native value, check registration or schema version. AGENTEE-437 requires a
 nonempty citation for those exclusions and discloses shadowed generated forms
 by position without changing name-based owner DRC authority. Before grading,

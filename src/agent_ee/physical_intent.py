@@ -21,7 +21,7 @@ from pathlib import Path
 from collections import Counter
 from fractions import Fraction
 
-from . import blocks, electrical_locality, executor, locality_provenance, placement, topology_rules
+from . import blocks, electrical_locality, executor, locality_provenance, placement, source_authority, topology_rules
 from .baseline import load_baseline, verify_evidence
 from .candidate import safe_relative, verify_snapshot
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -679,7 +679,10 @@ def _locality(intent, src, board):
             declared = pair.get('provenance', {}).get('class', 'default')
             if authority['enforcement'] == 'integrity':
                 _refuse(f'{label}: stale source record: {authority["reason"]}')
-            if declared == 'owner' and authority['enforcement'] != 'hard':
+            # A captured, verified decision by a named owner compiles; it publishes as
+            # authority_unavailable below whether or not its commit resolves (AGENTEE-348).
+            if declared == 'owner' and source_authority.owner_reference(
+                    pair['provenance'].get('decision_reference'), src['records'])['enforcement'] != 'verified':
                 _refuse(f'{label}: owner authority not established by a captured, verified owner decision')
             if declared == 'datasheet' and authority['enforcement'] != 'hard':
                 _refuse(f'{label}: numeric mismatch: sourced derivation does not equal declared max_distance_nm')

@@ -17,6 +17,7 @@ from agent_ee.placement_predicates import segment_distance2
 from agent_ee.placer import _fits, pack, transform
 from test_placement import MM, capture, polygon, rectangle
 from test_placer import request
+from owner_fixture import committed
 from test_placer_copper_extent import copper_violations
 
 
@@ -71,7 +72,9 @@ def seeded_board(seed):
                           'decision_reference': {'path': 'fixture-decisions/geometry-cost.txt',
                               'sha256': hashlib.sha256(text.encode()).hexdigest(),
                               'locator': 'supply and return limits', 'quote': text,
-                              'owner': 'Original fixture author'}}
+                              'owner': 'Original fixture author',
+                              # AGENTEE-348 cited form: resolves at a committed fixture commit.
+                              **committed('fixture-decisions/geometry-cost.txt', text)}}
             policy['electrical_locality'] = {'schema': 'agent-ee.electrical-locality/1',
                 'source_records': {'fixture-decisions/geometry-cost.txt': text}, 'obligations': [{
                 'id': 'o1', 'metric': 'pad-centre-to-centre',

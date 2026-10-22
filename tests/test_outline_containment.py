@@ -10,6 +10,7 @@ from agent_ee.design_rule_provenance import classify_finding, import_constraints
 from agent_ee.placer_runner import _proposal_drc
 from agent_ee.storage import json_bytes, read_json, write_json
 from tests.toolchain import require_toolchain
+from owner_fixture import cite
 
 
 class NativeOutlineTest(unittest.TestCase):
@@ -235,6 +236,7 @@ class NativeOutlineTest(unittest.TestCase):
         k.SaveBoard(str(source), board)
         doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
             'min_copper_edge_clearance': {'value_mm': .5, 'class': 'manufacturer', 'basis': 'original edge probe'}}}
+        cite(doc, doc['board_setup_rules']['min_copper_edge_clearance'])  # AGENTEE-348 cited form keeps it hard
         project, record = import_constraints({}, json_bytes(doc), 'limits.json', 'probe')
         bind_project(project, record); write_json(source.with_suffix('.kicad_pro'), project)
         work = self.root / 'edge'; work.mkdir(); output = work / 'candidate.kicad_pcb'
@@ -278,6 +280,7 @@ class NativeOutlineTest(unittest.TestCase):
             'net_settings': {'meta': {'version': 5}, 'classes': [{'name': 'Default', 'clearance': .09}]}}
         doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {},
             'net_class_default': {'clearance_mm': .09, 'class': 'manufacturer', 'basis': 'original copied-item probe'}}
+        cite(doc, doc['net_class_default'])  # AGENTEE-348 cited form keeps it hard
         project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
         bind_project(project, record); write_json(source.with_suffix('.kicad_pro'), project)
         candidate = self.root / 'copied-items.kicad_pcb'
@@ -301,6 +304,8 @@ class NativeOutlineTest(unittest.TestCase):
         for cls in ('default', 'manufacturer'):
             doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                 'min_text_height': {'value_mm': 8, 'class': cls, 'basis': 'original probe text limit'}}}
+            if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                cite(doc, doc['board_setup_rules']['min_text_height'])
             project, record = import_constraints(original, json_bytes(doc), 'limits.json', 'probe')
             bind_project(project, record); write_json(path.with_suffix('.kicad_pro'), project)
             drc = native_drc(path, self.root / cls)

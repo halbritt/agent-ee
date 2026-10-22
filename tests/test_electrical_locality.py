@@ -10,6 +10,7 @@ from agent_ee.placer import pack, transform
 from agent_ee.placement_check import parameters, predicate_names
 from test_placement import capture, part, MM
 from test_placer import request
+from owner_fixture import committed
 
 
 
@@ -22,7 +23,9 @@ def fixture_provenance():
             'decision_reference': {'path': 'fixture-decisions/EE322.txt',
                 'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
                 'locator': 'EE322 test parameter contract', 'quote': FIXTURE_DECISION,
-                'owner': 'Original fixture author'}}
+                'owner': 'Original fixture author',
+                # AGENTEE-348 cited form: the decision resolves at a committed fixture commit.
+                **committed('fixture-decisions/EE322.txt', FIXTURE_DECISION)}}
 
 
 def endpoint(ref, pad, net):

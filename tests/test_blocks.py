@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 
 from agent_ee import blocks, electrical_locality, placement_groups, placer
 from agent_ee.native_netlist import read_native_inventory, read_sheet_names
+from owner_fixture import committed, module_command
 from test_placement import MM, capture, part, rectangle
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,7 +102,9 @@ def obligations(limit=6 * MM):
                     'decision_reference': {'path': 'fixture-decisions/EE339.txt',
                         'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
                         'locator': 'EE339 test parameter contract', 'quote': FIXTURE_DECISION,
-                        'owner': 'Original fixture author'}}}
+                        'owner': 'Original fixture author',
+                        # AGENTEE-348 cited form: the decision resolves at a committed fixture commit.
+                        **committed('fixture-decisions/EE339.txt', FIXTURE_DECISION)}}}
     return {'schema': electrical_locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': [
         {'id': 'input-C1', 'metric': 'pad-centre-to-centre', 'supply': pair(('U1', '1'), ('C1', '1'), 'VIN'),
          'return': pair(('U1', '2'), ('C1', '2'), 'GND')},
@@ -1461,7 +1464,8 @@ class NativeHierarchyTests(unittest.TestCase):
 
 class CliTests(Fixture, unittest.TestCase):
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, '-m', 'agent_ee.blocks', *map(str, args)], capture_output=True,
+        # AGENTEE-348: the child keeps the committed fixture decision pinned in this process.
+        return subprocess.run([*module_command('agent_ee.blocks'), *map(str, args)], capture_output=True,
                               text=True, env={'PYTHONPATH': str(ROOT / 'src')}, timeout=120)
 
     def test_derive_pack_match(self):
