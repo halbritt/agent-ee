@@ -1610,12 +1610,12 @@ def qualification_blockers(record):
 def final_qualification(run):
     """The final-acceptance guard over a run's CAPTURED baseline envelope; None without an envelope.
 
-    The candidate identity and immutable baseline are verified first, so None
-    means a verified envelope-less capture, never a removed declaration.
+    The candidate identity is verified first, and an envelope-less scope's retained
+    baseline must carry no envelope coverage, so None never means a removed declaration.
 
     The one shared guard for final review outcome, fab release and campaign
-    acceptance/replay (AGENTEE-197). It re-verifies the immutable baseline.json
-    (load_baseline) and reads its envelope coverage; the candidate's current
+    acceptance/replay (AGENTEE-197). For a declared envelope it re-verifies the
+    immutable baseline.json (load_baseline) and reads its envelope coverage; the candidate's current
     envelope file, scope fields and stored results are never consulted, so
     nothing a writer or reviewer changes can close an open item.
     """
@@ -1623,16 +1623,22 @@ def final_qualification(run):
     from .storage import identity, read_json
     run = Path(run)
     manifest = read_json(run / 'candidate.json')
-    # Authenticate the retained candidate and its baseline before trusting the absence of an
-    # envelope: a removed or edited scope declaration is refused, never read as "no envelope".
+    # Authenticate the retained candidate before trusting the absence of an envelope: a
+    # removed or edited scope declaration is refused, never read as "no envelope".
     if identity({'scope': manifest['scope'], 'files': manifest['files']}) != manifest.get('candidate_id'):
         raise ValueError('candidate metadata differs from its captured identity; final qualification refused')
-    baseline = load_baseline(run)
-    record = (baseline or {}).get('envelope')
     if 'envelope' not in manifest['scope']:
-        if record is not None:
+        # The authenticated scope declares no envelope; the retained baseline must agree. Read
+        # without recompiling, so an envelope-less verification hashes no input twice (AGENTEE-250).
+        path = run / 'baseline.json'
+        if path.is_symlink():
+            raise ValueError('immutable baseline changed')
+        retained = read_json(path) if path.exists() else None
+        if retained is not None and (not isinstance(retained, dict) or 'envelope' in retained):
             raise ValueError('captured baseline carries envelope coverage the candidate no longer declares')
         return None
+    baseline = load_baseline(run)
+    record = (baseline or {}).get('envelope')
     if not isinstance(record, dict) or record.get('schema') != 'agent-ee.envelope-baseline/1':
         raise ValueError('scope declares an envelope but its captured baseline carries no envelope coverage')
     return {'schema': QUALIFICATION_SCHEMA, 'baseline_id': baseline['baseline_id'],

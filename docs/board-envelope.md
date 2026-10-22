@@ -357,12 +357,15 @@ coverage in the run's captured, re-verified `baseline.json` (`load_baseline`),
 never the current envelope file, a scope field or a stored result. It returns
 `agent-ee.final-qualification/1` with the `baseline_id` and a `blocking` list,
 or `None` for a scope without an envelope. It first checks `candidate.json`
-against its `candidate_id` and re-verifies the baseline, and only then reads
-the scope's envelope declaration. A removed or edited declaration therefore
-refuses: the identity differs, the recompiled baseline differs or refuses the
-envelope the scope still consumes, or the baseline carries envelope coverage
-that the candidate no longer declares. `None` means a verified capture without
-an envelope. Each blocker is
+against its `candidate_id`, and only then reads the scope's envelope
+declaration. A removed or edited declaration therefore refuses: the identity
+differs; or, when the identity is recomputed, the recompiled baseline differs
+or refuses the envelope the scope still consumes; or the retained
+`baseline.json` still carries envelope coverage that the candidate no longer
+declares. `None` means an authenticated scope without an envelope whose
+retained baseline has no envelope coverage. That path reads `baseline.json`
+without recompiling it, so verification hashes no input twice (AGENTEE-250).
+Each blocker is
 `{id, status, open}`: a `staged` obligation with its open item IDs, an
 obligation that is not `bound` or `soft`, a derived obligation missing from the
 coverage, or unresolved requirements. An empty `unresolved` list is not

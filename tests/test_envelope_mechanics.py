@@ -946,9 +946,10 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             candidate['scope']['envelope']['profile'] = 'targets.md'
             candidate['candidate_id'] = identity({'scope': candidate['scope'], 'files': candidate['files']})
         cases = {'removed declaration': (removed, 'candidate metadata differs from its captured identity'),
-                 # Recompiling the captured scope refuses the envelope it still consumes.
+                 # The retained baseline still carries the staged envelope coverage.
                  'removed declaration, re-identified': (removed_reidentified,
-                                                        'consumed envelope .*without a scope envelope declaration'),
+                                                        'captured baseline carries envelope coverage the candidate '
+                                                        'no longer declares'),
                  'changed declaration, re-identified': (changed_reidentified, 'immutable baseline changed|fab profile')}
         for mode, (change, message) in cases.items():
             with self.subTest(mode=mode):
