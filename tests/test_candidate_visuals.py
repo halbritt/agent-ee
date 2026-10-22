@@ -1,5 +1,6 @@
 """Original four-layer native fixture and explicit visual failure boundaries."""
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
