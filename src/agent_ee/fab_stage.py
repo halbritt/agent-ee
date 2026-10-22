@@ -175,6 +175,8 @@ def pending_checks(result):
     # Evaluate readiness without the absent artifacts, never change their recorded unknown verdicts.
     ready = {**result, 'checks': [c for c in result['checks'] if c['id'] not in pending],
              'expected_check_ids': [c for c in result['expected_check_ids'] if c not in pending]}
+    # The fab turn is generation: open final qualification holds its release (fab_package), not the turn.
+    ready.pop('final_qualification', None)
     return pending if outcome(ready) == 'criteria_satisfied' else []
 
 

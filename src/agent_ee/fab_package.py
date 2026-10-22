@@ -224,7 +224,8 @@ def artifact_record(run_dir, check):
     """`agent-ee.fab-artifacts/1` recomputed from a retained passing fab_package result.
 
     Raises ValueError when the result did not pass or a listed file is absent,
-    empty, unsealed or differs from its manifest digest. With a declared
+    empty, unsealed or differs from its manifest digest, and while the captured
+    baseline envelope qualification is open (require_final). With a declared
     cpl_rotation check the CPL artifact is its corrected cpl.csv.
     """
     run_dir = Path(run_dir)
@@ -267,6 +268,9 @@ def artifact_record(run_dir, check):
         if rotation['cpl'] not in sealed:
             raise ValueError(f"fab_package {cid!r} did not seal {rotation['cpl']}")
         files[rotation['cpl']] = rotation['cpl_sha256']
+    from .board_envelope import require_final
+    # Last, bound to the candidate the done check ran for: a re-identified run is refused.
+    require_final(run_dir, check['candidate_id'])
     value = {'schema': ARTIFACT_SCHEMA, 'check_id': cid, 'candidate_id': check['candidate_id'],
              'board_path': manifest['board_path'], 'board_sha256': manifest['board_sha256'],
              'files': dict(sorted(files.items())), 'rotation': rotation}
@@ -322,6 +326,12 @@ def check_fab_package(ctx):
         for rel in (f"work/{rotation['id']}/cpl-rotation.json", f"work/{rotation['id']}/cpl/cpl.csv"):
             if rel in prior.get('evidence', []) and rel not in ctx.result['evidence']:
                 ctx.result['evidence'].append(rel)
+    from .board_envelope import require_final
+    try:
+        # The exports above stay as diagnostics; the done gate and sealed release wait for qualification.
+        require_final(ctx.run_dir, ctx.manifest['candidate_id'])
+    except ValueError as exc:
+        raise CheckError('unsupported', f'fab package done gate held: {exc}') from exc
     try:
         from .placement_defects import prepare_release
         prepare_release(ctx)

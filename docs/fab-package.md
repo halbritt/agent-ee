@@ -72,6 +72,7 @@ baseline, and `verify` refuses the run if any of them changes.
 | Any `fab_consistency` structural fault or coverage gap: missing, empty, unlisted or rehashed staged file, broken zip, unparseable CSV or summary, unverifiable tool identity, missing geometry | The gate's `malformed` or `unsupported`, `unknown` |
 | A gate defect: designator parity, LCSC/footprint conflict, CPL side or coordinates, unresolved 3D model, export-log diagnostic | `ok`, `defect`, summary `fab package done gate failed: ...` |
 | `gerbers.zip`, `bom.csv`, `cpl.csv`, the PTH or NPTH drill or `manifest.json` absent, empty, unsealed or not matching the manifest at seal time | `malformed`, `unknown` |
+| Export and gate succeed, but the captured baseline envelope has open final qualification ([final guard](board-envelope.md#final-acceptance-guard)) | `unsupported`, `unknown`, summary `fab package done gate held: ...` naming each obligation and open item; the exports stay in `work/ID/fab/` as diagnostics, no `details.artifacts` |
 | Export, gate and seal all succeed | `ok`, `pass`, `details.artifacts` recorded |
 
 A missing, empty or unparseable export file is therefore always `unknown` or a
@@ -188,8 +189,10 @@ The [rung-1 campaign](rung1-campaign.md) scaffold writes the marker, the
 When a campaign over a generation scope reaches `criteria_satisfied`, its
 `state.json` lists `fab_artifacts`, the `agent-ee.fab-artifacts/1` record
 recomputed from the final run's retained `checks/ID.json` and files. If the
-done check did not pass or an artifact does not verify, the campaign stops
-`incomplete` instead.
+done check did not pass, an artifact does not verify or the captured envelope
+qualification is open, the campaign stops `incomplete` instead.
+`artifact_record` applies the same final guard, so no release is sealed while it
+blocks.
 
 `agent-ee verify-campaign ROOT` recomputes the record from the final run and
 refuses the campaign if the stored hashes differ, are missing from a satisfied

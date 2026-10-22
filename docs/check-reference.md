@@ -1330,6 +1330,24 @@ saved-declaration semantics. See the [native envelope contract](board-envelope.m
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.
+An obligation's `coverage` record can [stage](board-envelope.md#staged-obligations)
+it for candidate generation. The record cites bound hole, keepout and
+connector-edge witnesses, plus `outline-containment/1` for declared overhangs.
+Its open qualification items keep `require_qualified` refusing final acceptance.
+The shared [final guard](board-envelope.md#final-acceptance-guard)
+`final_qualification` reads the captured baseline's coverage. While an item is
+open, a review that would satisfy its criteria is `incomplete`, a `fab_package`
+that would pass is `unsupported`/`unknown` with its exports kept as diagnostics,
+and a campaign cannot accept or replay as done. A `connector-edge/1` pass proves
+pose only, not part identity or mating and enclosure fit. Staging is admitted
+only under a reviewed [source contract](board-envelope.md#source-contracts).
+The contract fixes the minimum witnesses and open items, so coverage cannot
+drop them. It also requires the telemetry pod's J1 `part-identity/1` witness,
+taken from the scope's `parts_subset` check over the captured parts manifest
+and footprint, with the complete manifest passing `qualify_manifest`. The
+`corner-holes` witnesses are the source holes H1–H4 by identity. The final
+guard verifies the candidate identity and baseline before it reads the scope's
+envelope declaration.
 
 `component-height/1` binds the optional envelope `max_component_height_mm` field
 and supplies `envelope:component-height/1`. It grades every native footprint from
