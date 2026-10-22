@@ -87,22 +87,70 @@ status) to its original provenance, and the contract declares
 The scope's `hardware_interface` check params must pin the same record with the
 optional `qualification_record` `{path, sha256}`; the contract may not declare a
 record the scope does not pin, and stripping the declaration while the scope
-pins one is refused. With a record, `validate_contract(qualification=record)`
-and `capability` refuse: bare IDs, emptied or changed requirement lists, a
-removed `io_map` citation, an upgrade of any status or source, a changed
-signal or external destination, an uncited record row, and a record whose bytes
-differ from the pinned sha256. `validate_contract` itself enforces the declared pin: a qualification-bound
-contract validates only when `qualification=` supplies the record's exact bytes
-whose sha256 equals the declared `qualification_record.sha256`; a missing,
-non-bytes or digest-mismatched record is refused. `unverified_shape=True` is
-the explicit shape-only mode used by `load_contract`; it is not verification.
-`--history-source FILE` (API `origin_bytes=`) checks the captured original
-bytes against `origin.sha256`; otherwise the origin is reported
-`declared-unverified`, and the capability reports per row whether the origin is
-`verified` (captured bytes match) or `declared-unverified`, and whether each ID
-is a `sourced` or an `unqualified historical assertion` (`requirement_history.rows`).
-Contracts without a pin remain valid legacy
-inputs; coverage reports them as not qualification-bound.
+pins one is refused. A present but null, empty or wrong-typed pin or
+declaration is refused, never read as absent.
+
+#### One record loader
+
+Every consumer obtains a record through one typed loader:
+`load_qualification_record(declaration, raw) -> QualificationRecord`. It takes
+the record's exact bytes, checks their sha256 against the declared pin, parses
+strict JSON (UTF-8, unique keys, no NaN) and validates the
+`agent-ee.io-map-qualification/1` schema unconditionally. A parsed `null`,
+empty or wrong-typed record or field is refused; absent means no bytes were
+supplied, and a bound contract then refuses. `bind_qualification_record`
+binds the loaded record to the contract and to captured bytes. Every citation
+must equal its record row: row number, connector pin, signal, external
+destination, and the complete requirement entries with their statuses. Every
+record row must be cited. The captured io-map CSV must match the record's
+`io_map` sha256. Each record row must equal the CSV row it names: descriptive
+values and the `POD-IF-*` IDs in its Notes. Each `sourced` source must be
+captured with its declared sha256.
+
+The consumers are `verify_contract`, `validate_contract` (which returns only
+the contract), `capability` (and through it `compile_coverage` and the native
+check) and `compile_io_map`. They all call `verify_contract(contract,
+qualification=raw_bytes, captured={path: bytes})`; `capability` supplies its
+captured inputs on demand. A bound contract therefore validates only with the
+record bytes and the captured CSV and sources. `validate_contract_shape` and
+`load_contract_unverified` are the explicitly UNVERIFIED shape-only forms.
+They are used for input discovery and never for a qualification verdict.
+
+#### Original provenance
+
+Origins are verified per distinct (`path`, `sha256`) pair. One origin path
+must declare one revision and sha256 on every row. Conflicting declarations
+are refused before any row is labelled, in any row order, whether or not that
+path is captured. Each row's label comes from its own pair. The label is
+`verified` only when that pair's captured bytes match; it is
+`declared-unverified` when the path is not captured, and mismatching captured
+bytes refuse. A verified origin becomes an immutable input.
+`--history-source FILE` (API `origin_bytes=`) supplies the origin bytes to the
+compiler, and `--captured PATH` (API `captured=`) supplies each sourced
+requirement source. The compiler verifies its own output with the same loader,
+so a history whose sourced source is missing or mismatching is refused. The
+CLI refuses a JSON input file whose value is not an object, for example
+`null`. `requirement_history.rows` reports per row whether the origin is
+`verified` or `declared-unverified`, and whether each ID is `sourced` or an
+`unqualified historical assertion`. The native check reports this as
+`details.requirement_history`.
+Contracts without a declaration remain valid legacy inputs, reported
+`qualification_bound: false`. They cannot stand in for a bound contract under
+a pinned scope.
+
+#### Mutation matrix
+
+`tests/test_qualification_matrix.py` is the regression gate for this boundary.
+It runs every case against the validator, capability, coverage and compiler,
+and every refusal case must refuse in all of them. The cases cover null,
+empty, wrong-typed and missing records and fields, declarations and pins,
+loss, upgrade and bare-ID citation changes, and changed descriptions with the
+CSV unchanged. They also cover records omitted, substituted or changed under
+an unchanged pin, conflicting origins in every order, legacy stand-ins and the
+reviewer probes. The compiler consumer accepts a bundle only if it would emit
+that contract and record. The validator and compiler have no scope input, so
+the scope-pin cases do not apply to them. `python3 -m
+tests.test_qualification_matrix` prints the per-consumer verdict table.
 
 `--qualifications FILE` (API `qualifications=`) is the lighter form: it marks
 sourced IDs and emits the rest explicitly, without a record. A mapping for an ID

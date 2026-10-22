@@ -41,55 +41,100 @@ def citation_requirements(citation):
     return rows
 
 
+def rel_path(value):
+    """A safe captured relative path; non-text is refused, never coerced."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'expected a relative captured path, got {type(value).__name__}')
+    return str(safe_relative(value))
+
+
+SHA256 = '[0-9a-f]{64}'
+
+
+def sha256_text(value, what):
+    if not isinstance(value, str) or not re.fullmatch(SHA256, value):
+        raise ValueError(f'invalid {what} sha256')
+    return value
+
+
 def validate_requirement_entry(entry):
     if isinstance(entry, str):
         text(entry)
         return entry
-    if not isinstance(entry, dict) or entry.get('qualification') not in QUALIFICATIONS:
+    if not isinstance(entry, dict) or not isinstance(entry.get('qualification'), str) or (
+            entry['qualification'] not in QUALIFICATIONS):
         raise ValueError('io_map requirement qualification must be one of ' + ', '.join(QUALIFICATIONS))
     if entry['qualification'] == 'sourced':
         exact_keys(entry, 'id qualification source')
         source = entry['source']
         exact_keys(source, 'path sha256 locator')
-        safe_relative(source['path'])
+        rel_path(source['path'])
         text(source['locator'])
-        if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
-            raise ValueError('invalid sourced requirement sha256')
+        sha256_text(source['sha256'], 'sourced requirement')
     else:
         exact_keys(entry, 'id qualification')
     return text(entry['id'])
 
 
+# Qualification records: ONE typed loader. Every consumer (validate_contract, capability, coverage via
+# capability, the io_map compiler) obtains a record only from load_qualification_record, which takes the
+# exact bytes, authenticates them against the declared pin and validates the schema unconditionally. A
+# parsed value (null, empty, wrong type) is never "absent": absent means no bytes, which a bound contract
+# refuses. bind_qualification_record then ties the record to the contract and to captured bytes.
 RECORD_SCHEMA = 'agent-ee.io-map-qualification/1'
 RECORD_ROW_FIELDS = 'row connector_pin signal external_destination requirements'
-SHA256 = '[0-9a-f]{64}'
+
+
+class QualificationRecord:
+    """A record authenticated by load_qualification_record: pin path, pin sha256, exact bytes, parsed data."""
+    __slots__ = ('path', 'sha256', 'raw', 'data')
+
+    def __init__(self, path, sha256, raw, data):
+        self.path, self.sha256, self.raw, self.data = path, sha256, raw, data
+
+
+def validate_pin(declaration, what='qualification record'):
+    """A {path, sha256} pin; returns the safe relative path."""
+    exact_keys(declaration, 'path sha256')
+    path = rel_path(declaration['path'])
+    sha256_text(declaration['sha256'], what)
+    return path
 
 
 def validate_origin(origin):
     exact_keys(origin, 'path revision sha256 locator')
-    safe_relative(origin['path'])
+    rel_path(origin['path'])
     text(origin['revision'])
     text(origin['locator'])
-    if not isinstance(origin['sha256'], str) or not re.fullmatch(SHA256, origin['sha256']):
-        raise ValueError('invalid historical origin sha256')
+    sha256_text(origin['sha256'], 'historical origin')
 
 
-def validate_record(contract, record):
-    """Bind the complete expected citation set, statuses and original provenance to the compiled rows."""
+def refuse_constant(name):
+    raise ValueError(f'non-finite JSON number {name}')
+
+
+def strict_json(raw, what):
+    """Exact UTF-8 JSON with unique keys and finite numbers; the parsed value is returned as is (null stays null)."""
+    try:
+        return json.loads(bytes(raw).decode('utf-8'), object_pairs_hook=unique_object, parse_constant=refuse_constant)
+    except (UnicodeError, ValueError) as exc:
+        raise ValueError(f'unreadable {what}: {exc}') from exc
+
+
+def validate_record_schema(record):
+    """Schema of agent-ee.io-map-qualification/1 alone; any null, empty or wrong-typed value is refused."""
     exact_keys(record, 'schema io_map rows')
     if record['schema'] != RECORD_SCHEMA:
         raise ValueError('unsupported qualification record schema')
-    exact_keys(record['io_map'], 'path sha256')
-    safe_relative(record['io_map']['path'])
-    if not isinstance(record['io_map']['sha256'], str) or not re.fullmatch(SHA256, record['io_map']['sha256']):
-        raise ValueError('invalid qualification record io_map sha256')
+    csv_path = validate_pin(record['io_map'], 'qualification record io_map')
     if not isinstance(record['rows'], list) or not record['rows']:
         raise ValueError('qualification record requires rows')
-    by_row = {}
+    rows, origins = set(), {}
     for entry in record['rows']:
         exact_keys(entry, RECORD_ROW_FIELDS + ' origin')
-        if type(entry['row']) is not int or entry['row'] < 2 or entry['row'] in by_row:
+        if type(entry['row']) is not int or entry['row'] < 2 or entry['row'] in rows:
             raise ValueError('invalid or duplicate qualification record row')
+        rows.add(entry['row'])
         for field in ('connector_pin', 'signal', 'external_destination'):
             text(entry[field])
         validate_origin(entry['origin'])
@@ -98,23 +143,55 @@ def validate_record(contract, record):
         ids = [validate_requirement_entry(r) for r in entry['requirements']]
         if len(set(ids)) != len(ids):
             raise ValueError('duplicate text identity')
-        by_row[entry['row']] = entry
-    seen = set()
-    for invariant in contract['invariants']:
-        citation = invariant.get('io_map')
-        if citation is None:
-            raise ValueError('qualification-bound contract requires an io_map citation on every invariant')
-        if (citation['path'], citation['sha256']) != (record['io_map']['path'], record['io_map']['sha256']):
-            raise ValueError('io_map citation differs from qualification record CSV identity')
-        entry = by_row.get(citation['row'])
-        if entry is None or {k: entry[k] for k in RECORD_ROW_FIELDS.split()} != {
-                k: citation[k] for k in RECORD_ROW_FIELDS.split()}:
-            raise ValueError(f"io_map citation row {citation['row']} differs from qualification record "
-                             '(statuses, requirements or descriptive values)')
-        seen.add(citation['row'])
-    if seen != set(by_row):
-        raise ValueError('qualification record rows are not all cited by the contract')
+        if any(r['qualification'] == 'sourced' and rel_path(r['source']['path']) == csv_path
+               for r in entry['requirements']):
+            raise ValueError('sourced requirement cannot cite the inherited io_map CSV itself')
+        # One captured path has one content: conflicting declarations refuse before any row is labelled.
+        origin = entry['origin']
+        declared = (origin['revision'], origin['sha256'])
+        if origins.setdefault(rel_path(origin['path']), declared) != declared:
+            raise ValueError(f"conflicting historical origin declarations for {origin['path']!r} "
+                             '(one path must declare one revision and sha256)')
     return record
+
+
+def load_qualification_record(declaration, raw):
+    """The only constructor of QualificationRecord: pin -> exact bytes -> strict JSON -> schema."""
+    path = validate_pin(declaration)
+    if raw is None:
+        raise ValueError('qualification-bound contract requires its qualification record bytes')
+    if not isinstance(raw, (bytes, bytearray)):
+        raise ValueError('qualification record must be supplied as exact bytes')
+    raw = bytes(raw)
+    if hashlib.sha256(raw).hexdigest() != declaration['sha256']:
+        raise ValueError('qualification record bytes differ from the declared sha256 pin')
+    return QualificationRecord(path, declaration['sha256'], raw,
+                               validate_record_schema(strict_json(raw, 'qualification record')))
+
+
+def captured_bytes(captured, path, what):
+    """Captured bytes for path, authenticated against sha256 by the caller; None when not captured."""
+    data = captured.get(path)
+    if data is not None and not isinstance(data, (bytes, bytearray)):
+        raise ValueError(f'captured {what} must be exact bytes')
+    return data
+
+
+def verify_origins(record, captured):
+    """Status per DISTINCT (path, sha256): verified only when that pair's own captured bytes match."""
+    status = {}
+    for entry in record['rows']:
+        pair = (entry['origin']['path'], entry['origin']['sha256'])
+        if pair in status:
+            continue
+        data = captured_bytes(captured, pair[0], 'historical origin')
+        if data is None:
+            status[pair] = 'declared-unverified'
+        elif hashlib.sha256(data).hexdigest() != pair[1]:
+            raise ValueError(f'captured historical source {pair[0]!r} differs from its declared sha256')
+        else:
+            status[pair] = 'verified'
+    return status
 
 
 def record_origins(record):
@@ -128,26 +205,62 @@ def record_origins(record):
     return origins
 
 
-def history_report(record, files, inputs):
-    """Per-row honesty: an origin is verified only when its captured bytes match the declared sha256."""
-    status = {}
-    for entry in record['rows']:
-        origin = entry['origin']
-        path = origin['path']
-        if path in status:
-            continue
-        if path not in files:
-            status[path] = 'declared-unverified'
-        elif digest(Path(inputs) / path) != origin['sha256']:
-            raise ValueError('captured historical source differs from its declared sha256')
-        else:
-            status[path] = 'verified'
-    rows = [{'row': e['row'], 'origin_path': e['origin']['path'], 'origin': status[e['origin']['path']],
+def bind_qualification_record(contract, record, captured):
+    """Tie an authenticated record to every citation, to the captured CSV rows and to captured sources.
+
+    Returns the qualification report; each row's origin label comes from its own (path, sha256) pair.
+    """
+    if not isinstance(record, QualificationRecord):
+        raise ValueError('qualification record must come from load_qualification_record')
+    if (record.path, record.sha256) != (contract['qualification_record']['path'],
+                                        contract['qualification_record']['sha256']):
+        raise ValueError('qualification record differs from the contract declaration')
+    if captured is None:
+        raise ValueError('qualification-bound validation requires captured io_map CSV and source bytes')
+    data = record.data
+    by_row = {entry['row']: entry for entry in data['rows']}
+    seen = set()
+    for invariant in contract['invariants']:
+        citation = invariant['io_map']
+        if (citation['path'], citation['sha256']) != (data['io_map']['path'], data['io_map']['sha256']):
+            raise ValueError('io_map citation differs from qualification record CSV identity')
+        entry = by_row.get(citation['row'])
+        if entry is None or {k: entry[k] for k in RECORD_ROW_FIELDS.split()} != {
+                k: citation[k] for k in RECORD_ROW_FIELDS.split()}:
+            raise ValueError(f"io_map citation row {citation['row']} differs from qualification record "
+                             '(statuses, requirements or descriptive values)')
+        seen.add(citation['row'])
+    if seen != set(by_row):
+        raise ValueError('qualification record rows are not all cited by the contract')
+    raw = captured_bytes(captured, data['io_map']['path'], 'io_map CSV')
+    if raw is None or hashlib.sha256(raw).hexdigest() != data['io_map']['sha256']:
+        raise ValueError('io_map CSV must be captured with matching sha256')
+    from .io_map import row_citations
+    expected = row_citations(raw)
+    if set(expected) != set(by_row):
+        raise ValueError('qualification record rows differ from the captured io_map CSV rows')
+    for number, entry in by_row.items():
+        actual = {k: entry[k] for k in ('connector_pin', 'signal', 'external_destination')}
+        actual['requirements'] = [r['id'] for r in entry['requirements']]
+        if actual != expected[number]:
+            raise ValueError(f'qualification record row {number} differs from the captured io_map CSV '
+                             '(descriptive values or cited requirement IDs)')
+    for entry in data['rows']:
+        for req in entry['requirements']:
+            if req['qualification'] == 'sourced':
+                src = req['source']
+                body = captured_bytes(captured, src['path'], 'requirement source')
+                if body is None or hashlib.sha256(body).hexdigest() != src['sha256']:
+                    raise ValueError('sourced requirement must be captured with matching sha256')
+    status = verify_origins(data, captured)
+    rows = [{'row': e['row'], 'origin_path': e['origin']['path'], 'origin_sha256': e['origin']['sha256'],
+             'origin': status[(e['origin']['path'], e['origin']['sha256'])],
              'requirements': {r['id']: ('sourced' if r['qualification'] == 'sourced'
                                         else 'unqualified historical assertion') for r in e['requirements']}}
-            for e in record['rows']]
-    return {'qualification_bound': True, 'origins': record_origins(record),
-            'origin_verification': status, 'rows': rows}
+            for e in data['rows']]
+    return {'qualification_bound': True, 'record': {'path': record.path, 'sha256': record.sha256},
+            'origins': record_origins(data),
+            'origin_verification': {path: label for (path, _), label in status.items()}, 'rows': rows}
 
 
 def requirement_authority(contract):
@@ -197,38 +310,40 @@ def validate_path(invariant, components, terminals):
 
 
 def validate_contract(contract, *, source_bytes=None, require_source_sha256=False, qualification=None,
-                      unverified_shape=False):
+                      captured=None):
     """Validate declarations; optional path-to-bytes inputs verify local source hashes.
 
     A qualification-bound contract (declaring `qualification_record`) is valid only when
-    `qualification` supplies the record's exact bytes: their sha256 must equal the declared pin and the
-    parsed record must match every citation. `unverified_shape=True` is the explicit shape-only mode for
-    callers that load a contract before the record is available; its result is not qualification-verified.
+    `qualification` supplies the record's exact bytes and `captured` (path -> bytes) supplies the
+    cited io_map CSV and every sourced requirement source; see verify_contract.
     """
+    return verify_contract(contract, source_bytes=source_bytes, require_source_sha256=require_source_sha256,
+                           qualification=qualification, captured=captured)[0]
+
+
+def verify_contract(contract, *, source_bytes=None, require_source_sha256=False, qualification=None,
+                    captured=None):
+    """(contract, qualification report). The single bound-verdict path for every consumer.
+
+    Bound: load_qualification_record(declaration, qualification) then bind_qualification_record.
+    Unbound (legacy): supplying a record is refused and the report says not qualification-bound.
+    """
+    validate_contract_shape(contract, source_bytes=source_bytes, require_source_sha256=require_source_sha256)
+    if 'qualification_record' in contract:
+        record = load_qualification_record(contract['qualification_record'], qualification)
+        return contract, bind_qualification_record(contract, record, captured)
+    if qualification is not None:
+        raise ValueError('qualification record supplied for a contract that declares none')
+    return contract, {'qualification_bound': False, 'origins': {}}
+
+
+def validate_contract_shape(contract, *, source_bytes=None, require_source_sha256=False):
+    """UNVERIFIED shape only: never a qualification verdict. Bound contracts need verify_contract."""
     exact_keys(contract, 'schema components terminals allowed_edits invariants' +
                (' qualification_record' if isinstance(contract, dict) and 'qualification_record' in contract else ''))
     bound = 'qualification_record' in contract
     if bound:
-        exact_keys(contract['qualification_record'], 'path sha256')
-        safe_relative(contract['qualification_record']['path'])
-        if (not isinstance(contract['qualification_record']['sha256'], str)
-                or not re.fullmatch(SHA256, contract['qualification_record']['sha256'])):
-            raise ValueError('invalid qualification record sha256')
-        if qualification is None and not unverified_shape:
-            raise ValueError('qualification-bound contract requires its qualification record bytes')
-        if qualification is not None and unverified_shape:
-            raise ValueError('unverified_shape cannot be combined with a qualification record')
-    elif qualification is not None:
-        raise ValueError('qualification record supplied for a contract that declares none')
-    if qualification is not None:
-        if not isinstance(qualification, (bytes, bytearray)):
-            raise ValueError('qualification record must be supplied as exact bytes')
-        if hashlib.sha256(qualification).hexdigest() != contract['qualification_record']['sha256']:
-            raise ValueError('qualification record bytes differ from the declared sha256 pin')
-        try:
-            qualification = json.loads(bytes(qualification).decode('utf-8'), object_pairs_hook=unique_object)
-        except (UnicodeError, json.JSONDecodeError) as exc:
-            raise ValueError(f'unreadable qualification record: {exc}') from exc
+        validate_pin(contract['qualification_record'])
     if contract['schema'] != 'agent-ee.interface/1':
         raise ValueError('unsupported interface schema')
     components, terminals = contract['components'], contract['terminals']
@@ -290,9 +405,8 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
         if 'io_map' in invariant:
             citation = invariant['io_map']
             exact_keys(citation, 'path sha256 row connector_pin signal external_destination requirements')
-            safe_relative(citation['path'])
-            if not isinstance(citation['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', citation['sha256']):
-                raise ValueError('invalid io_map sha256')
+            rel_path(citation['path'])
+            sha256_text(citation['sha256'], 'io_map')
             if type(citation['row']) is not int or citation['row'] < 2:
                 raise ValueError('invalid io_map row')
             for field in ('connector_pin', 'signal', 'external_destination'):
@@ -305,7 +419,8 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
                     raise ValueError('qualification-bound contract refuses bare requirement IDs')
                 cited = [validate_requirement_entry(e) for e in reqs]
                 for e in reqs:
-                    if isinstance(e, dict) and e['qualification'] == 'sourced' and e['source']['path'] == citation['path']:
+                    if isinstance(e, dict) and e['qualification'] == 'sourced' and (
+                            rel_path(e['source']['path']) == rel_path(citation['path'])):
                         raise ValueError('sourced requirement cannot cite the inherited io_map CSV itself')
                 if len(set(cited)) != len(cited):
                     raise ValueError('duplicate text identity')
@@ -361,8 +476,6 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
                 raise ValueError('relation requires two declared terminals')
     if bound and any('io_map' not in i for i in invariants):
         raise ValueError('qualification-bound contract requires an io_map citation on every invariant')
-    if qualification is not None:
-        validate_record(contract, qualification)
     paths = {frozenset((i['terminals'][0], i['terminals'][-1])) for i in invariants if i['kind'] == 'indirect_path'}
     if any(i['kind'] == 'same_net' and frozenset(i['terminals']) in paths for i in invariants):
         raise ValueError('same_net cannot be asserted across a declared indirect path')
@@ -382,9 +495,29 @@ def unique_object(pairs):
     return fields
 
 
-def load_contract(inputs, path):
-    raw = (Path(inputs) / str(safe_relative(path))).read_text()
-    return validate_contract(json.loads(raw, object_pairs_hook=unique_object), unverified_shape=True)
+def load_contract_unverified(inputs, path):
+    """UNVERIFIED: parse and shape-check only, for input discovery; never a qualification verdict."""
+    raw = (Path(inputs) / str(safe_relative(path))).read_bytes()
+    return validate_contract_shape(strict_json(raw, 'interface contract'))
+
+
+class CapturedInputs:
+    """Read-on-demand captured bytes; a path outside the manifest is not captured (None).
+
+    Callers authenticate the returned bytes against the sha256 they declare."""
+
+    def __init__(self, files, inputs):
+        self.files, self.inputs = files, Path(inputs)
+
+    def get(self, path):
+        path = rel_path(path)
+        if path not in self.files:
+            return None
+        try:
+            data = (self.inputs / path).read_bytes()
+        except OSError as exc:
+            raise ValueError(f'captured input {path!r} is unreadable: {exc}') from exc
+        return data
 
 
 def capability(params, scope, files, inputs, check_id, *, block_sources=False):
@@ -392,17 +525,17 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
     rel = str(safe_relative(params['contract']))
     if rel not in files or inputs is None:
         raise ValueError('interface contract must be captured')
-    contract = load_contract(inputs, rel)
-    pin = params.get('qualification_record')
-    record = None
-    if pin is not None:
-        exact_keys(pin, 'path sha256')
-        record_rel = str(safe_relative(pin['path']))
-        if contract.get('qualification_record') != pin:
+    contract = load_contract_unverified(inputs, rel)
+    captured = CapturedInputs(files, inputs)
+    record, record_rel = None, None
+    if 'qualification_record' in params:
+        pin = params['qualification_record']
+        record_rel = validate_pin(pin)
+        if 'qualification_record' not in contract or contract['qualification_record'] != pin:
             raise ValueError('contract must declare the qualification record pinned by the scope')
-        if record_rel not in files or digest(Path(inputs) / record_rel) != pin['sha256']:
+        record = captured.get(record_rel)
+        if record is None or hashlib.sha256(record).hexdigest() != pin['sha256']:
             raise ValueError('qualification record must be captured with matching sha256')
-        record = (Path(inputs) / record_rel).read_bytes()
     elif 'qualification_record' in contract:
         raise ValueError('declared qualification record must be pinned by the scope check parameters')
     requirements = {r['id']: r for r in scope.get('baseline', {}).get('requirements', [])}
@@ -422,29 +555,30 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
             raise ValueError('interface invariant requires exact captured requirement source and check mapping')
     sources = {i['source']['path'] for i in contract['invariants']
                if i['source'].get('kind') != 'pinned-external' and 'sha256' in i['source']}
-    validate_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources},
-                      qualification=record)
-    parsed = json.loads(record.decode('utf-8'), object_pairs_hook=unique_object) if record is not None else None
+    contract, history = verify_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources},
+                                        qualification=record, captured=captured)
     immutable = {rel, *sources}
-    if record is not None:
+    if record_rel is not None:
         immutable.add(record_rel)
+        immutable.update(path for path, label in history['origin_verification'].items() if label == 'verified')
     for invariant in contract['invariants']:
         citation = invariant.get('io_map')
         if citation:
             path = citation['path']
-            if path not in files or digest(Path(inputs) / path) != citation['sha256']:
+            data = captured.get(path)
+            if data is None or hashlib.sha256(data).hexdigest() != citation['sha256']:
                 raise ValueError('io_map CSV must be captured with matching sha256')
             immutable.add(path)
             for row in citation_requirements(citation):
                 if row['qualification'] == 'sourced':
                     src = row['source']
-                    if src['path'] not in files or digest(Path(inputs) / src['path']) != src['sha256']:
+                    data = captured.get(src['path'])
+                    if data is None or hashlib.sha256(data).hexdigest() != src['sha256']:
                         raise ValueError('sourced requirement must be captured with matching sha256')
                     immutable.add(src['path'])
     return {'contract': contract, 'immutable_inputs': sorted(immutable),
             'requirement_authority': requirement_authority(contract),
-            'requirement_history': history_report(
-                parsed, files, inputs) if record is not None else {'qualification_bound': False, 'origins': {}},
+            'requirement_history': history,
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 
@@ -1012,6 +1146,7 @@ def check_hardware_interface(ctx):
         'undeclared topology, PCB routing, physical access and electrical transfer are outside coverage.')
     authority = descriptor['requirement_authority']
     ctx.result['details']['requirement_qualification'] = authority
+    ctx.result['details']['requirement_history'] = descriptor['requirement_history']
     if authority['unqualified-carryover']:
         ctx.result['limitations'].append('Unqualified carry-over requirement citations are reported, never graded '
             'as harness or electrical authority: ' + ', '.join(authority['unqualified-carryover']))

@@ -11,7 +11,8 @@ from pathlib import Path
 
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
-from agent_ee.hardware_interface import capability, evaluate, requirement_authority, validate_contract
+from agent_ee.hardware_interface import (capability, evaluate, requirement_authority, validate_contract,
+                                        validate_contract_shape)
 from agent_ee.capabilities import compile_coverage
 from agent_ee.io_map import REQUIRED, build_record, compile_io_map, main, traceability
 from agent_ee.storage import digest, json_bytes, read_json, write_json
@@ -876,6 +877,7 @@ class HistoricalQualificationTests(unittest.TestCase):
     FIELDS = RequirementQualificationTests.FIELDS
     ROWS = RequirementQualificationTests.ROWS
     RAW = csv_bytes(ROWS, fields=FIELDS)
+    CAPTURED = {'io-map.csv': RAW}
     HISTORY = dict(schema='agent-ee.io-map-history/1', rows={'J1-2': 'v9 table 2 / J1-2'}, sourced={},
                    origin=dict(path='v9/io-map.csv', revision='v9', sha256='a' * 64, locator='v9 table 2'))
     SCOPE = dict(schema='agent-ee.scope/3', checks=[dict(id='interface', kind='hardware_interface',
@@ -884,12 +886,12 @@ class HistoricalQualificationTests(unittest.TestCase):
         intent='acceptance', source=SOURCE, checks=['interface'])], targets=['requirements.md'],
         reference_architectures=['requirements.md']))
 
-    def compile_bound(self, history=None):
+    def compile_bound(self, history=None, captured=None):
         return compile_(self.RAW, bindings=probe_bindings(), history=history or self.HISTORY,
-                        record_path='qualification.json')
+                        record_path='qualification.json', captured=captured)
 
-    def record(self, history=None):
-        return build_record(self.compile_bound(history), history or self.HISTORY)
+    def record(self, history=None, captured=None):
+        return build_record(self.compile_bound(history, captured), history or self.HISTORY)
 
     def capture(self, contract, record, *, pin=True, extra=None):
         tmp = tempfile.TemporaryDirectory()
@@ -943,7 +945,7 @@ class HistoricalQualificationTests(unittest.TestCase):
         origins = {r['connector_pin']: r['origin'] for r in record['rows']}
         self.assertEqual(origins['J1-1'], self.HISTORY['origin'])
         self.assertEqual(origins['J1-2'], dict(self.HISTORY['origin'], locator='v9 table 2 / J1-2'))
-        self.assertEqual(validate_contract(copy.deepcopy(contract), qualification=json_bytes(record)), contract)
+        self.assertEqual(validate_contract(copy.deepcopy(contract), qualification=json_bytes(record), captured=self.CAPTURED), contract)
         descriptor = self.run_capability(contract, record)
         self.assertEqual(descriptor['requirement_authority'],
                          {'sourced': [], 'unqualified-carryover': ['POD-IF-A', 'POD-IF-B']})
@@ -957,7 +959,7 @@ class HistoricalQualificationTests(unittest.TestCase):
         for mode in self.MODES:
             contract = self.mutate(copy.deepcopy(original), mode)
             with self.subTest(mode, where='validator'), self.assertRaises(ValueError):
-                validate_contract(contract, qualification=json_bytes(record))
+                validate_contract(contract, qualification=json_bytes(record), captured=self.CAPTURED)
             with self.subTest(mode, where='capability'), self.assertRaises(ValueError):
                 self.run_capability(contract, record)
 
@@ -970,7 +972,7 @@ class HistoricalQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'must be pinned'):
             self.run_capability(original, record, pin=False)
         with self.assertRaisesRegex(ValueError, 'declares none'):
-            validate_contract(stripped, qualification=json_bytes(record))
+            validate_contract(stripped, qualification=json_bytes(record), captured=self.CAPTURED)
 
     def test_record_tampering_and_missing_provenance_refuse(self):
         original, record = self.compile_bound(), self.record()
@@ -993,7 +995,7 @@ class HistoricalQualificationTests(unittest.TestCase):
             pinned = copy.deepcopy(original)
             pinned['qualification_record']['sha256'] = hashlib.sha256(json_bytes(broken)).hexdigest()
             with self.assertRaises(ValueError):
-                validate_contract(pinned, qualification=json_bytes(broken))
+                validate_contract(pinned, qualification=json_bytes(broken), captured=self.CAPTURED)
 
     def test_legacy_inputs_stay_accepted_but_cannot_upgrade_from_the_inherited_csv(self):
         legacy = compile_(self.RAW, bindings=probe_bindings())
@@ -1027,24 +1029,28 @@ class HistoricalQualificationTests(unittest.TestCase):
             compile_(self.RAW, bindings=probe_bindings(), history=self.HISTORY)
 
     def test_mixed_statuses_in_record_are_reported_and_origin_retained(self):
+        body = b'owner item 4\n'
         history = copy.deepcopy(self.HISTORY)
-        history['sourced'] = {'POD-IF-A': dict(path='item4.md', sha256='c' * 64, locator='item 4')}
-        contract, record = self.compile_bound(history), self.record(history)
+        history['sourced'] = {'POD-IF-A': dict(path='item4.md', sha256=hashlib.sha256(body).hexdigest(),
+                                               locator='item 4')}
+        # the compiler verifies through the same loader: a sourced source must be supplied as matching bytes
+        for captured in (None, {'item4.md': b'x'}):
+            with self.subTest(captured=captured), self.assertRaisesRegex(
+                    ValueError, 'sourced requirement must be captured'):
+                self.compile_bound(history, captured)
+        item = history['sourced']['POD-IF-A']
+        contract, record = self.compile_bound(history, {'item4.md': body}), self.record(history, {'item4.md': body})
         self.assertEqual(requirement_authority(contract),
                          {'sourced': ['POD-IF-A'], 'unqualified-carryover': ['POD-IF-B']})
-        item = history['sourced']['POD-IF-A']
         scope, files, root = self.capture(contract, record, extra={'item4.md': b'x'})
         with self.assertRaisesRegex(ValueError, 'sourced requirement must be captured'):
             capability(scope['checks'][0]['params'], scope, files, root, 'interface')
-        body = b'owner item 4\n'
-        history['sourced']['POD-IF-A']['sha256'] = hashlib.sha256(body).hexdigest()
-        contract, record = self.compile_bound(history), self.record(history)
         descriptor = self.run_capability(contract, record, extra={'item4.md': body})
         self.assertEqual(descriptor['requirement_authority']['sourced'], ['POD-IF-A'])
         upgraded = copy.deepcopy(contract)
         for invariant in upgraded['invariants']:
             invariant['io_map']['requirements'] = [
-                dict(id=r['id'] if isinstance(r, dict) else r, qualification='sourced', source=dict(item, sha256=hashlib.sha256(body).hexdigest()))
+                dict(id=r['id'] if isinstance(r, dict) else r, qualification='sourced', source=dict(item))
                 for r in invariant['io_map']['requirements']]
         with self.assertRaisesRegex(ValueError, 'differs from qualification record'):
             self.run_capability(upgraded, record, extra={'item4.md': body})
@@ -1058,7 +1064,7 @@ class HistoricalQualificationTests(unittest.TestCase):
         altered['rows'][0]['origin']['revision'] = 'accidentally wrong revision'
         self.assertNotEqual(hashlib.sha256(json_bytes(altered)).hexdigest(), pin)
         with self.assertRaisesRegex(ValueError, 'differ from the declared sha256 pin'):
-            validate_contract(copy.deepcopy(contract), qualification=json_bytes(altered))
+            validate_contract(copy.deepcopy(contract), qualification=json_bytes(altered), captured=self.CAPTURED)
         # (b) record and matching citations upgraded together, pin unchanged
         source = dict(path='current.md', sha256=hashlib.sha256(b'current\n').hexdigest(), locator='item 4')
         upgraded, forged = copy.deepcopy(record), copy.deepcopy(contract)
@@ -1068,7 +1074,7 @@ class HistoricalQualificationTests(unittest.TestCase):
             invariant['io_map']['requirements'] = [
                 dict(id=e['id'], qualification='sourced', source=source) for e in invariant['io_map']['requirements']]
         with self.assertRaisesRegex(ValueError, 'differ from the declared sha256 pin'):
-            validate_contract(forged, qualification=json_bytes(upgraded))
+            validate_contract(forged, qualification=json_bytes(upgraded), captured=self.CAPTURED)
         # (c) record omitted: emptied lists, and the untouched contract, are both refused
         emptied = copy.deepcopy(contract)
         for invariant in emptied['invariants']:
@@ -1079,11 +1085,11 @@ class HistoricalQualificationTests(unittest.TestCase):
         # non-bytes and mixed shape-only supply are refused; the correct record still validates
         with self.assertRaisesRegex(ValueError, 'exact bytes'):
             validate_contract(copy.deepcopy(contract), qualification=record)
-        with self.assertRaises(ValueError):
-            validate_contract(copy.deepcopy(contract), qualification=json_bytes(record), unverified_shape=True)
-        self.assertEqual(validate_contract(copy.deepcopy(contract), qualification=json_bytes(record)), contract)
+        with self.assertRaisesRegex(ValueError, 'captured io_map CSV'):
+            validate_contract(copy.deepcopy(contract), qualification=json_bytes(record))
+        self.assertEqual(validate_contract(copy.deepcopy(contract), qualification=json_bytes(record), captured=self.CAPTURED), contract)
         # the explicit shape-only mode is available to loaders and is not a verification
-        self.assertEqual(validate_contract(copy.deepcopy(emptied), unverified_shape=True), emptied)
+        self.assertEqual(validate_contract_shape(copy.deepcopy(emptied)), emptied)
 
     def test_historical_origin_is_verified_only_against_captured_bytes(self):
         body = b'v9 io-map bytes\n'
@@ -1107,7 +1113,7 @@ class HistoricalQualificationTests(unittest.TestCase):
                           if 'POD-IF-A' in r['requirements']}, {'unqualified historical assertion'})
         verified = self.run_capability(contract, record, extra={'v9-io-map.csv': body})['requirement_history']
         self.assertEqual(verified['origin_verification'], {'v9-io-map.csv': 'verified'})
-        with self.assertRaisesRegex(ValueError, 'captured historical source differs'):
+        with self.assertRaisesRegex(ValueError, 'captured historical source .* differs'):
             self.run_capability(contract, record, extra={'v9-io-map.csv': b'tampered'})
 
     def coverage_scope(self, contract, record):
@@ -1144,7 +1150,7 @@ class HistoricalQualificationTests(unittest.TestCase):
         body = b'owner item 4\n'
         history = copy.deepcopy(self.HISTORY)
         history['sourced'] = {'POD-IF-A': dict(path='item4.md', sha256=hashlib.sha256(body).hexdigest(), locator='i4')}
-        contract, record = self.compile_bound(history), self.record(history)
+        contract, record = self.compile_bound(history, {'item4.md': body}), self.record(history, {'item4.md': body})
         scope, files, root = self.capture(contract, record, extra={'item4.md': body})
         scope['checks'].insert(0, dict(id='netlist', kind='netlist'))
         scope['baseline']['requirements'][0]['checks'].insert(0, 'netlist')
@@ -1202,8 +1208,43 @@ class HistoricalQualificationTests(unittest.TestCase):
             contract, record = read_json(root / 'out.json'), read_json(root / 'record.json')
             self.assertEqual(contract['qualification_record'],
                              dict(path='qualification.json', sha256=digest(root / 'record.json')))
-            self.assertEqual(validate_contract(contract, qualification=(root / 'record.json').read_bytes()), contract)
+            self.assertEqual(validate_contract(contract, qualification=(root / 'record.json').read_bytes(),
+                                               captured=self.CAPTURED), contract)
 
+
+    def test_cli_refuses_null_inputs_and_requires_captured_sourced_bytes(self):
+        """A supplied JSON file whose value is null is refused, never read as absent; sourced bytes are captured."""
+        body = b'owner item 4\n'
+        history = copy.deepcopy(self.HISTORY)
+        history['sourced'] = {'POD-IF-A': dict(path='item4.md', sha256=hashlib.sha256(body).hexdigest(),
+                                               locator='item 4')}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'in.csv').write_bytes(self.RAW)
+            (root / 'requirements.md').write_bytes(b'r\n')
+            (root / 'item4.md').write_bytes(body)
+            (root / 'null.json').write_bytes(b'null')
+            write_json(root / 'h.json', history)
+            write_json(root / 'b.json', probe_bindings())
+            argv = ['in.csv', '--csv-path', 'io-map.csv', '--requirement', 'interface', '--source',
+                    'requirements.md', '--locator', 'x', '--bindings', 'b.json', '--out', 'out.json']
+            bound = ['--record-path', 'qualification.json', '--record-out', 'record.json']
+            with contextlib.chdir(root):
+                for extra in (['--qualifications', 'null.json'], ['--history', 'null.json', *bound],
+                              ['--history', 'h.json', *bound]):
+                    with self.subTest(extra), self.assertRaises(SystemExit) as refused, \
+                            contextlib.redirect_stderr(io.StringIO()):
+                        main([*argv, *extra])
+                    self.assertEqual(refused.exception.code, 2)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    main([*argv, '--history', 'h.json', *bound, '--captured', 'item4.md'])
+            contract = read_json(root / 'out.json')
+            self.assertEqual(requirement_authority(contract)['sourced'], ['POD-IF-A'])
+            self.assertEqual(contract['qualification_record']['sha256'], digest(root / 'record.json'))
+            self.assertEqual(validate_contract(contract, qualification=(root / 'record.json').read_bytes(),
+                                               captured={'io-map.csv': self.RAW, 'item4.md': body}), contract)
+            with self.assertRaisesRegex(ValueError, 'require history'):
+                compile_(self.RAW, bindings=probe_bindings(), record_path='qualification.json')
 
 class NativeQualificationTests(unittest.TestCase):
     """Native pass keeps independent structural authority while carry-over is reported, never graded."""

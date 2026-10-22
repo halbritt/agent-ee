@@ -4,12 +4,11 @@ import copy
 import csv
 import hashlib
 import io
-import json
 import re
 from pathlib import Path
 
-from .hardware_interface import (RECORD_SCHEMA, exact_keys, requirement_authority, text, unique_object,
-                                validate_contract, validate_origin, validate_requirement_entry)
+from .hardware_interface import (RECORD_SCHEMA, exact_keys, requirement_authority, strict_json, text,
+                                validate_contract, validate_origin, validate_requirement_entry, verify_contract)
 from .storage import json_bytes, write_json
 
 REQUIRED = ('Connector_Pin', 'Signal_Name', 'Net', 'MCU_Ref', 'MCU_Pin', 'External_Destination')
@@ -45,6 +44,17 @@ def read_rows(raw):
     if not rows:
         raise ValueError('row 2: empty io-map')
     return rows
+
+
+def cited_ids(row):
+    return sorted(set(re.findall(r'\bPOD-IF-[A-Z0-9-]+\b', row.get('Notes', ''))))
+
+
+def row_citations(raw):
+    """Per CSV row number: the descriptive values and cited requirement IDs a compiled citation carries."""
+    return {number: {'connector_pin': row['Connector_Pin'], 'signal': row['Signal_Name'],
+                     'external_destination': row['External_Destination'], 'requirements': cited_ids(row)}
+            for number, row, _ in read_rows(raw)}
 
 
 PATH_FIELDS = 'terminals pin_names devices directions'
@@ -107,13 +117,17 @@ def traceability(contract, spec_record):
 
 def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None, paths=None,
                    source_bytes=None, require_source_sha256=False, qualifications=None,
-                   history=None, record_path=None, report=None, origin_bytes=None):
+                   history=None, record_path=None, report=None, origin_bytes=None, captured=None):
     """Bindings borrow components/terminals from a validated interface/1 contract.
 
     Connector terminal IDs equal Connector_Pin; MCU IDs are MCU_Ref:MCU_Pin.
     Missing bindings and TBD identities remain explicitly unresolved. Concrete
     MCU pins require MCU_Path=direct or ';'-separated IDs of declared indirect
     paths, one per ';'-separated MCU_Pin; anything else is refused.
+
+    With `history`, the emitted record is verified by the same loader every consumer uses
+    (verify_contract); `captured` (path -> bytes) supplies each sourced requirement source and,
+    optionally, original origins (`origin_bytes` is the origin path's entry).
     """
     source = copy.deepcopy(source)
     if source_bytes is not None:
@@ -124,13 +138,18 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
     elif require_source_sha256:
         raise ValueError('requirement source bytes are required to compute sha256')
     rows = read_rows(raw)
+    captured = dict(captured or {})
     if history is not None:
         if qualifications is not None or not record_path:
             raise ValueError('history replaces qualifications and requires record_path')
         checked = read_history(copy.deepcopy(history))
         qualifications = checked['sourced']
-        if origin_bytes is not None and hashlib.sha256(origin_bytes).hexdigest() != checked['origin']['sha256']:
-            raise ValueError('historical origin bytes differ from the declared origin sha256')
+        if origin_bytes is not None:
+            if hashlib.sha256(origin_bytes).hexdigest() != checked['origin']['sha256']:
+                raise ValueError('historical origin bytes differ from the declared origin sha256')
+            captured[checked['origin']['path']] = origin_bytes
+    elif record_path is not None or origin_bytes is not None or captured:
+        raise ValueError('record_path, origin_bytes and captured require history')
     if qualifications is not None:
         if not isinstance(qualifications, dict):
             raise ValueError('qualifications must map requirement IDs to source references')
@@ -195,7 +214,7 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
 
     for number, row, nc in rows:
         position = row['Connector_Pin']
-        ids = sorted(set(re.findall(r'\bPOD-IF-[A-Z0-9-]+\b', row.get('Notes', ''))))
+        ids = cited_ids(row)
         for rid in ids:
             coverage.setdefault(rid, []).append(position)
         if qualifications is not None:
@@ -267,15 +286,20 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
                              f'unknown={sorted(coverage.keys() - expected)}')
     record = None
     if history is not None:
-        record = build_record(contract, history)
-        contract['qualification_record'] = {'path': record_path,
-                                            'sha256': hashlib.sha256(json_bytes(record)).hexdigest()}
+        record = json_bytes(build_record(contract, history))
+        contract['qualification_record'] = {'path': record_path, 'sha256': hashlib.sha256(record).hexdigest()}
+        captured[csv_path] = raw
+    contract, verified = verify_contract(
+        contract, qualification=record, captured=captured if history is not None else None,
+        require_source_sha256=require_source_sha256,
+        source_bytes={source['path']: source_bytes} if source_bytes is not None else None)
     if report is not None:
+        report['qualification'] = verified
         report['origin_verification'] = (None if history is None else
-                                         'verified' if origin_bytes is not None else 'declared-unverified')
+                                          verified['origin_verification'][history['origin']['path']])
         report['traceability'] = (traceability(contract, spec_record) if spec_record is not None else None)
-    return validate_contract(contract, qualification=json_bytes(record) if record is not None else None, require_source_sha256=require_source_sha256,
-                             source_bytes={source['path']: source_bytes} if source_bytes is not None else None)
+        report['qualification_record'] = record
+    return contract
 
 
 def main(argv=None):
@@ -297,12 +321,21 @@ def main(argv=None):
                         '--record-path and --record-out and replaces --qualifications')
     parser.add_argument('--history-source', help='captured bytes of the history origin file; its sha256 must '
                         'equal the declared origin sha256 (otherwise the origin is reported declared-unverified)')
+    parser.add_argument('--captured', action='append', default=[], metavar='PATH',
+                        help='captured input at this relative path (repeatable): each sourced requirement '
+                        'source of --history must be supplied')
     parser.add_argument('--record-path', help='captured path the contract declares for the qualification record')
     parser.add_argument('--record-out', help='file receiving the qualification record')
     parser.add_argument('--out', required=True)
     args = parser.parse_args(argv)
     def load(path):
-        return json.loads(Path(path).read_text(encoding='utf-8'), object_pairs_hook=unique_object) if path else None
+        # A supplied file is parsed as is: JSON null or a non-object is refused, never read as "absent".
+        if path is None:
+            return None
+        value = strict_json(Path(path).read_bytes(), path)
+        if not isinstance(value, dict):
+            raise ValueError(f'{path}: expected a JSON object, got {type(value).__name__}')
+        return value
     trace = {}
     try:
         if bool(args.history) != bool(args.record_out):
@@ -315,11 +348,13 @@ def main(argv=None):
             requirement=text(args.requirement), source=dict(path=args.source, locator=args.locator),
             bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths), qualifications=load(args.qualifications),
             history=load(args.history),
-            origin_bytes=Path(args.history_source).read_bytes() if args.history_source else None, record_path=args.record_path, report=trace,
+            origin_bytes=Path(args.history_source).read_bytes() if args.history_source else None,
+            record_path=args.record_path, report=trace,
+            captured={path: Path(path).read_bytes() for path in args.captured} or None,
             source_bytes=source_bytes, require_source_sha256=args.require_source_sha256)
         write_json(args.out, contract)
         if args.history:
-            write_json(args.record_out, build_record(contract, load(args.history)))
+            Path(args.record_out).write_bytes(trace['qualification_record'])
     except (OSError, ValueError, UnicodeError) as exc:
         parser.exit(2, f'io-map: {exc}\n')
     print(f'compiled {len(contract["invariants"])} invariants; unresolved declarations remain unknown')
