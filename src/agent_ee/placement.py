@@ -264,7 +264,10 @@ def _geometry(capture, overhangs=None, access_lanes=None):
         unknown.append({'kind': 'outline', 'reason': str(exc)})
     bands = dict(access_lanes or {})
     # Explicit envelope maxima retain precedence over the access allowance.
-    bands.update(overhang_bands(overhangs, outline[0]) if outline and overhangs is not None else {})
+    explicit = overhang_bands(overhangs, outline[0]) if outline and overhangs is not None else {}
+    bands.update(explicit)
+    # An access lane allows overhang only on the declaring part's mounting side.
+    lane_only = set(access_lanes or ()) - set(explicit)
     for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
         courtyards = fp.get('courtyards', {})
         if fp.get('side') not in courtyards:
@@ -279,7 +282,7 @@ def _geometry(capture, overhangs=None, access_lanes=None):
                 continue
             courtyard_records.append((fp['ref'], side, polygons, inner))
             if outline:
-                band = bands.get(fp['ref'])
+                band = None if fp['ref'] in lane_only and side != fp.get('side') else bands.get(fp['ref'])
                 def beyond(contours):
                     return sum(Fraction(abs(area2(p)), 2) - intersection_area(p, outline[0]) -
                                sum(intersection_area(p, r) for r in band or ()) for p in contours)

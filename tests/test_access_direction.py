@@ -97,6 +97,21 @@ class AccessTests(unittest.TestCase):
         fp['access_direction'].pop('provenance')
         self.assertIn('outside_outline', [r['kind'] for r in judge(capture([fp]))['hard_failures']])
 
+    def test_lane_overhang_allowance_applies_only_to_the_mounting_side(self):
+        fp = part('J3', 0, 0, 'B')
+        fp['access_direction'] = declaration()
+        fp['access_direction']['mouth_nm'] = [1500000, MM]
+        fp['access_direction']['lane_polygons_nm'] = [rectangle(1.5, 0, 30, 2)]
+        fp['courtyards']['F'] = {'status': 'proven', 'polygons': [rectangle(0, 0, 4, 2)]}
+        fp = transform(fp, [18500000, 5*MM], 0)
+        # B-side courtyard overhangs inside the B-side lane; the F-side courtyard has no allowance.
+        failures = judge(capture([fp]))['hard_failures']
+        self.assertEqual([(r['kind'], r['side']) for r in failures], [('outside_outline', 'F')])
+        self.assertAlmostEqual(failures[0]['outside_area_mm2'], 5)
+        mounted = copy.deepcopy(fp)
+        del mounted['courtyards']['F']
+        self.assertEqual(judge(capture([mounted]))['verdict'], 'pass')
+
     def test_exit_edge_permission_preserves_other_edge_margins(self):
         from agent_ee.placer import _fits
         fp = socket()
