@@ -1,0 +1,22 @@
+{
+  "schema": "agent-ee.ee454-io-profile/1",
+  "workload": "closure",
+  "mode": "plain",
+  "manifest": "parts.json",
+  "outcome": 405,
+  "error": null,
+  "wall_s": 19.809,
+  "cpu_s": 19.802,
+  "rchar_bytes": 0,
+  "physical_read_bytes": 0,
+  "maxrss_kib": 54240,
+  "runtime": {
+    "agent_ee_head": "",
+    "agent_ee_src_dirty": false,
+    "python": "3.14.4",
+    "kicad_cli": "10.0.7",
+    "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "host": "peecee-wsl",
+    "root": "/tmp/agent-ee-burndown-20261017/workers/ee454b-read-once/scratch/root"
+  }
+}

@@ -1,12 +1,15 @@
 """Textual citation support and an explicitly scoped native symbol pin consumer."""
 
+import copy
+import json
+import os
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .candidate import safe_relative
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, identity, read_json, read_verified, write_json
 
 EXTRACTOR = '/usr/bin/pdftotext'
 
@@ -57,15 +60,40 @@ def validate_fact_records(facts):
                 raise ValueError(f'fact source needs {key}')
 
 
-def load_acquisition(inputs, locator, capture_bindings):
-    """Replay the shared AGENTEE-33 capture and all PDFs without network access."""
-    from .catalog import exact_fields, nonempty
+def load_acquisition(inputs, locator, capture_bindings, reads=None):
+    """Replay the shared AGENTEE-33 capture and all PDFs without network access.
+
+    Every file is hashed and checked on the bytes it was read as (AGENTEE-454). reads,
+    when given, is one validation call's storage.CallReads: a replay already done in that
+    call for the same resolved root and capture, pinned digest and bindings is reused, and
+    every captured path's link and containment policy is checked again at this use."""
+    from .catalog import exact_fields
     from .datasheet_parts import captured_path, _hash
     exact_fields(locator, ('path', 'sha256'))
+    if reads is None:
+        return _load_acquisition(inputs, locator, capture_bindings, None)
     source = captured_path(inputs, locator['path'])
-    if digest(source) != _hash(locator['sha256']):
+    try:
+        key = ('load_acquisition', os.path.realpath(inputs), os.path.realpath(source),
+               _hash(locator['sha256']), identity(capture_bindings))
+    except (TypeError, ValueError):
+        return _load_acquisition(inputs, locator, capture_bindings, reads)
+    acquired, dependencies = reads.result(
+        key, lambda: _load_acquisition(inputs, locator, capture_bindings, reads))
+    for rel in dependencies:
+        captured_path(inputs, rel)
+    return copy.deepcopy(acquired), set(dependencies)
+
+
+def _load_acquisition(inputs, locator, capture_bindings, reads):
+    from .catalog import exact_fields, nonempty
+    from .datasheet_parts import captured_path, _hash
+    source = captured_path(inputs, locator['path'])
+    expected = _hash(locator['sha256'])
+    raw, found = read_verified(source, expected, reads)
+    if found != expected:
         raise ValueError('acquisition hash mismatch')
-    acquisition = read_json(source)
+    acquisition = json.loads(raw.decode())
     dependencies = {locator['path']}
     by_id = {p['id']: p['datasheet_url'] for p in capture_bindings}
     if len(by_id) != len(capture_bindings):
@@ -92,7 +120,7 @@ def load_acquisition(inputs, locator, capture_bindings):
             note = record['source_note']
             exact_fields(note, ('path', 'sha256', 'entry'))
             note_rel = str(directory / str(safe_relative(note['path'])))
-            entry = historical_source(inputs, {**note, 'path': note_rel}, record['sha256'])
+            entry = historical_source(inputs, {**note, 'path': note_rel}, record['sha256'], reads)
             if (record['url'] != entry['url'] or record['captured_at'] != entry['captured_at_utc'] or
                     record['fetched_at'] != entry.get('fetched_at')):
                 raise ValueError('historical import contradicts source note')
@@ -119,9 +147,11 @@ def load_acquisition(inputs, locator, capture_bindings):
                 raise ValueError('successful acquisition cannot have missing reason')
             pdf_rel = str(directory / str(safe_relative(record['path'])))
             pdf = captured_path(inputs, pdf_rel)
-            if digest(pdf) != _hash(record['sha256']):
+            expected = _hash(record['sha256'])
+            # One read: the envelope is checked on exactly the bytes that were hashed.
+            raw, found = read_verified(pdf, expected, reads)
+            if found != expected:
                 raise ValueError('successful acquisition PDF hash mismatch')
-            raw = pdf.read_bytes()
             if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
                 raise ValueError('successful acquisition is not a PDF envelope')
             dependencies.add(pdf_rel)

@@ -97,6 +97,56 @@ def fingerprint(path, *, checkpoint=None):
         return value
 
 
+class CallReads:
+    """Bytes read inside one validation call, each named file at most once (AGENTEE-454).
+
+    The outermost call (e.g. parts_manifest.dependency_closure) creates one, passes it
+    explicitly and drops it on return; it is never module-level and never spans calls, so
+    every call rereads current bytes. Entries are keyed by resolved real path and the
+    SHA-256 of the bytes actually read, never by file status: a lookup that pins a
+    different digest, or a path resolving to a different file, misses and reads now.
+    Consumers in the call get the same bytes that were verified, not a later reread.
+    Callers apply their own path policy (links, containment, regular file) before every
+    lookup, so no refusal is ever served from here. digest() never consults this.
+    """
+
+    def __init__(self):
+        self._bytes = {}
+        self._first = {}
+        self._results = {}
+
+    def read(self, path, sha256=None):
+        """(bytes, sha256) of path: this call's bytes with that digest, else read now.
+
+        Without sha256, the first bytes this call read from that file, else read now."""
+        real = os.path.realpath(path)
+        known = sha256 if sha256 is not None else self._first.get(real)
+        if known is not None and (real, known) in self._bytes:
+            return self._bytes[real, known], known
+        raw = Path(path).read_bytes()
+        value = hashlib.sha256(raw).hexdigest()
+        self._bytes[real, value] = raw
+        self._first.setdefault(real, value)
+        return raw, value
+
+    def result(self, key, compute):
+        """compute() once per key in this call; the key must bind every input identity."""
+        if key not in self._results:
+            self._results[key] = compute()
+        return self._results[key]
+
+
+def read_verified(path, sha256=None, reads=None):
+    """(bytes, sha256) from one read: through reads when given, else read now.
+
+    The caller compares the returned digest with its pin; hashing the bytes it then
+    parses leaves no window between the checked and the consumed copy."""
+    if reads is not None:
+        return reads.read(path, sha256)
+    raw = Path(path).read_bytes()
+    return raw, hashlib.sha256(raw).hexdigest()
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 

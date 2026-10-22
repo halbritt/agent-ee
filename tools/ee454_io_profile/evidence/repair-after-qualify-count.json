@@ -1,0 +1,311 @@
+{
+  "schema": "agent-ee.ee454-io-profile/1",
+  "workload": "qualify",
+  "mode": "count",
+  "manifest": "parts.json",
+  "outcome": [
+    "cad",
+    "dependencies",
+    "missing_provenance",
+    "selection"
+  ],
+  "error": null,
+  "wall_s": 7.943,
+  "cpu_s": 7.672,
+  "rchar_bytes": 0,
+  "physical_read_bytes": 0,
+  "maxrss_kib": 167388,
+  "runtime": {
+    "agent_ee_head": "",
+    "agent_ee_src_dirty": false,
+    "python": "3.14.4",
+    "kicad_cli": "10.0.7",
+    "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "host": "peecee-wsl",
+    "root": "/tmp/agent-ee-burndown-20261017/workers/ee454b-read-once/scratch/root"
+  },
+  "attributed_bytes": 128117988,
+  "by_kind": [
+    {
+      "key": "pdf",
+      "calls": 100,
+      "bytes": 125968914
+    },
+    {
+      "key": "json",
+      "calls": 145,
+      "bytes": 1243310
+    },
+    {
+      "key": "jlc-response",
+      "calls": 100,
+      "bytes": 547976
+    },
+    {
+      "key": "other",
+      "calls": 86,
+      "bytes": 357788
+    }
+  ],
+  "by_chain": [
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > datasheet_facts.load_acquisition > storage.result > datasheet_facts.<lambda> > datasheet_facts._load_acquisition > storage.read_verified > storage.read",
+      "calls": 100,
+      "bytes": 125968914
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > parts_manifest._read_blob > storage.read_verified > storage.read",
+      "calls": 154,
+      "bytes": 921939
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > jlc_stock_capture.validate_capture > part_record.read_response > parts_manifest.read_captured > storage.read",
+      "calls": 100,
+      "bytes": 547976
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.load_manifest > parts_manifest.read_captured",
+      "calls": 1,
+      "bytes": 516995
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > parts_manifest._read_blob > storage.read_verified > storage.read",
+      "calls": 50,
+      "bytes": 115337
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > copper_features.qualify > parts_manifest._read_blob > storage.read_verified",
+      "calls": 10,
+      "bytes": 36530
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > probe_features.qualify > parts_manifest._read_blob > storage.read_verified",
+      "calls": 12,
+      "bytes": 6804
+    },
+    {
+      "key": "storage._hash_stream @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > datasheet_facts.load_acquisition > storage.result > datasheet_facts.<lambda> > datasheet_facts._load_acquisition > datasheet_capture.historical_source > storage.digest",
+      "calls": 1,
+      "bytes": 982
+    },
+    {
+      "key": "Path.read_text @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > datasheet_facts.load_acquisition > storage.result > datasheet_facts.<lambda> > datasheet_facts._load_acquisition > datasheet_capture.historical_source > storage.read_json",
+      "calls": 1,
+      "bytes": 982
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > parts_manifest.captured_sha256 > storage.read_verified > storage.read",
+      "calls": 1,
+      "bytes": 982
+    },
+    {
+      "key": "Path.read_bytes @ parts_manifest.qualify_manifest > footprint_library.check_assignments > footprint_library.index_footprints > footprint_library._footprint > footprint_library._native_custom_geometry",
+      "calls": 1,
+      "bytes": 547
+    }
+  ],
+  "by_path": [
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/cd526507a4888c45b384362d29899a9fec04747d73fde571846dcb726ce954f8.pdf",
+      "calls": 1,
+      "bytes": 7856403
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/c78a8563c100bc6ebee75a66191cd136f1f5df59b1e8bc56871c92be445ba737.pdf",
+      "calls": 1,
+      "bytes": 7856403
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/5f048753376f883d75ac1ccf8c9476540f2b77646df70b155c64fb54512af18c.pdf",
+      "calls": 1,
+      "bytes": 7856403
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/31dcfee0c881aec5faa07dff6cbb1538c3b56d14b890cce930ca276dceea4ae4.pdf",
+      "calls": 1,
+      "bytes": 7856403
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-current/6b1f4a5c0e27cb364413b0026a3a3dd89a5e667554df78583448d756f907cc4c.pdf",
+      "calls": 1,
+      "bytes": 7856403
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/12d35a93a218663b64b6926e3333c283c954263d84e3645b3079af51f4f26ac8.pdf",
+      "calls": 1,
+      "bytes": 5530656
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-final-adopt/2610fbb215351b8b45475fdc807dffe3aa2ffc609a4eaf561e79f61b81ae8ba7.pdf",
+      "calls": 1,
+      "bytes": 5082555
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/fdcf83bd7f5162aad92513140d5c67330845f54c7a7f64a435a6496d8ea394f3.pdf",
+      "calls": 1,
+      "bytes": 4344362
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf",
+      "calls": 1,
+      "bytes": 4072746
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/35b829a00b477f7a876aa5857a61d23c1273d070fd0c8ba56038666583d91725.pdf",
+      "calls": 1,
+      "bytes": 3087819
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/ef4da20ad515a5564c4a25139563699de7458856e744e7a8011d1a2958cd3a97.pdf",
+      "calls": 1,
+      "bytes": 2974017
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-adoption/d6b3c62b2d37a5cb6776d49d62cc4a48cd4fe7226fbd93e52583822adbdae3d0.pdf",
+      "calls": 1,
+      "bytes": 2848210
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-adoption/c9a2236e061021db944581507b83a6c66725c43d3de8498e19665bb16c3ebab4.pdf",
+      "calls": 1,
+      "bytes": 2837852
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition/31757ce81cf7a7b021f5f859736b428c4a5e5003a27545549aab9b9ac86f03a4.pdf",
+      "calls": 1,
+      "bytes": 2616743
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/57b556e738e55f009cd8ff2c24127afb851d0710334a77e9819b18964c077966.pdf",
+      "calls": 1,
+      "bytes": 2569622
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition/2b09978c5a36002dc49ca4300f119423ba99e96ccefbd1cd5eae582fb1690617.pdf",
+      "calls": 1,
+      "bytes": 2536822
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-tracker/f0068c8d96247b629703e6eacc46990097dff6779f4204d95b88ed3118e22827.pdf",
+      "calls": 1,
+      "bytes": 2148849
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition/7438702fe3f737612ed5c8f133f60b81eda9c68e3b74ddeffe913858f59c4892.pdf",
+      "calls": 1,
+      "bytes": 2091666
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-current/fce1bf36cb460a31e2d1f3ede054b5d2e68f07b8f9039cb09062522e9bcf4e2c.pdf",
+      "calls": 1,
+      "bytes": 2033305
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/a532d9af778af423c886fd94847f746eabb3839964d816fbe4d6bad87c6e03ca.pdf",
+      "calls": 1,
+      "bytes": 1955409
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-current/a02be00fc3187b19989ad92a989faf04a320a11231c2d8ccdd017eda6bd19883.pdf",
+      "calls": 1,
+      "bytes": 1908693
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-ua-supplement/e6af2a2fa244eda794e2840cd76eba2c0faa226ef1f0f4e132dfcb53b3abc930.pdf",
+      "calls": 1,
+      "bytes": 1803237
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-supplement/e6af2a2fa244eda794e2840cd76eba2c0faa226ef1f0f4e132dfcb53b3abc930.pdf",
+      "calls": 1,
+      "bytes": 1803237
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/a0c7b312fb10c26cde3d25d17395c8a398577ee6817b48cf2bd0e5db5543e057.pdf",
+      "calls": 1,
+      "bytes": 1798760
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition/cb8ebe03bcc7860306c5e291bd6d892cb951f20cf5f21f15ecbcd8efd3029dd1.pdf",
+      "calls": 1,
+      "bytes": 1752834
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/7de2372d6ac89f25ba79d9ba640029f49edcca877e6cb3a1e21659d367cb41b2.pdf",
+      "calls": 1,
+      "bytes": 1390037
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passive-exact/7f8040ff30575f0dea0a4805d4d71f5a69f97d78179a1331486678f83e69a9dc.pdf",
+      "calls": 1,
+      "bytes": 1363192
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/8140cdb2b057a6a77808b807118fb64e04d436d0024d2c08e5affe8e758d05f3.pdf",
+      "calls": 1,
+      "bytes": 1361902
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/e171be81af1fd58fcb06f260ba912d6d565041a69a7e6dd28d81f471710e97b2.pdf",
+      "calls": 1,
+      "bytes": 1355210
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-core/bcd526f54b8de686cec4db67219e36ea7ace50cddb0c92f3dfdac49cf99ffd2e.pdf",
+      "calls": 1,
+      "bytes": 1280501
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/0d15b97013acded49221450ce2ff25bee74441e68bee202233b619154fc9fa56.pdf",
+      "calls": 1,
+      "bytes": 1203677
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/b7bdecedb67453efb08bd5504879eff63e207fa05b205b9fa0819e45a9714586.pdf",
+      "calls": 1,
+      "bytes": 1182185
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/c4a24470983c67da07668e3329c1379074651e40792e9b785f0889436437517f.pdf",
+      "calls": 1,
+      "bytes": 1173292
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-auto-caps/af7ab261cd82a89576086a52e1dde1aaa9fdf1d8a1364544153fd90567a31812.pdf",
+      "calls": 1,
+      "bytes": 1142583
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-protection-resolved/120215f78f3abcdf1719371f93b746ffeba97d637f352d4cc131baf373fc88cc.pdf",
+      "calls": 1,
+      "bytes": 984493
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-auto-caps/3730fc86031735264f0a038d01d213d5b806f7e15aa01dbf0a2df46e67d78712.pdf",
+      "calls": 1,
+      "bytes": 902314
+    },
+    {
+      "key": "telemetry-pod/expansion/canonical-parts/acquisition/cd66a8a0c408b52e69dc5463f5e6634df10108915a6b48a1fcde536cf9b73a17.pdf",
+      "calls": 1,
+      "bytes": 739611
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-core/b0cadbda0fc05c619ebdfee6b96c09d99814bba70e534c0fdbbfe7ffe3f241ac.pdf",
+      "calls": 1,
+      "bytes": 739611
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/f0af36c4610db770cddb3187f5886f7dfecee94bebb3cbfbaa2a5814081aebab.pdf",
+      "calls": 1,
+      "bytes": 720424
+    },
+    {
+      "key": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-core/77a91ad2ec0cb517250cf68189d10140001682ec6b9c40cc264afb36ff9d972e.pdf",
+      "calls": 1,
+      "bytes": 653973
+    }
+  ],
+  "distinct_paths": 407,
+  "distinct_path_bytes": 128072143
+}
