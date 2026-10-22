@@ -103,6 +103,9 @@ around:
 
 - Native custom rules, an unproven outline, an unsupported rule-area outline, an
   arc track or a blind or buried via make every terminal unknown (`coverage`).
+- In a block sidecar without the saved board, the rules themselves are unbound,
+  and every terminal is unknown (see Rule authority below). `analyze_access` is
+  pure and non-authoritative: it searches with whatever rules it is given.
 - A different-net copper zone makes its layers unknown for the terminal, and no
   via is proposed through it.
 
@@ -178,6 +181,21 @@ runs in diagnostic mode only:
   and rule is then authoritative, and `contour_authority` is `native board`.
   Without it, `contour_authority` is `placement capture` and only what the
   placement capture specifies is bound, as below.
+- **Rule authority** (review-ee386d H1). The placement capture records no board
+  rules. The rule floor, native own clearances and custom-rule presence beside
+  it are editable inputs. Lowering a 10 mm floor to 0, or erasing a present
+  custom rule, used to turn ten unknowns into ten witnesses at an unchanged
+  capture and candidate. Rules are therefore authoritative only from the saved
+  board. With `board`, `rule_authority` is `{status: bound, board_sha256,
+  project_sha256, custom_rules_sha256}`: the SHA-256 of the board,
+  `.kicad_pro` and `.kicad_dru` (`null` when absent). The custom-rule hash must
+  be the one captured in the routing geometry. pcbnew can cache a loaded
+  project within one process, so the files are bound by their bytes, not by
+  the settings that were read. A project or custom rule file that changes
+  after the sidecar refuses. Without `board`, `rule_authority` is `{status:
+  unbound, reason}`. That reason is a coverage reason, so every terminal is
+  unknown, never witnessed. A sidecar cannot relabel its rules as bound or drop
+  that reason.
 - **Capture binding** (`bind_capture`). The two captures must name the same
   board SHA-256 and max error, the same footprints at the same poses and the
   same pads by UUID, with equal number, net, position, orientation, shape,
@@ -231,6 +249,9 @@ Validation has two steps, and any omission or inconsistency raises:
    - Policy, limits and search model.
    - Coverage: `unknown` exactly when it has reasons, and then no witness
      terminal.
+   - Rule authority: `bound` to the sidecar's board for `native board`. For
+     `placement capture` it must be `unbound`, with that coverage reason. A
+     witness terminal needs bound rules.
    - Terminals: they must cover exactly the member copper pads with their
      nets. A witness terminal needs witnesses whose forms are valid and whose
      source, net, layer, width and via match its terminal and policy.
@@ -295,6 +316,18 @@ PYTHONPATH=src python3 -m agent_ee.placement_access block --candidate block.cand
   re-derivation: suppressed copper flags, a deleted real unknown and an
   invented exemption. Copper stripped from the routing geometry stays an
   unknown obligation.
+- Rule authority (review-ee386d H1, agent-510's probe). At the fixed capture
+  and candidate, a 10 mm floor, a floor lowered to 0, present custom rules,
+  erased custom rules and a missing custom-rule record all give ten unknowns
+  and status `unknown` through `block_access` and `access_status`. Relabelled
+  or dropped unbound-rule statements refuse. On the native pod board, the
+  sidecar binds the board and project hashes. A substituted rule floor or
+  custom-rule record refuses against the native capture. A forged project or
+  custom-rule hash refuses on re-derivation. A native `.kicad_dru` makes every
+  terminal unknown, and deleting it afterwards refuses. Changing `.kicad_pro`
+  after the sidecar also refuses. Witness-bearing forgeries (unknown coverage,
+  missing witnesses, foreign sources, cross-kind keys, invented exemptions) run
+  on the native pod sidecar, which witnesses.
 - Witness kinds. A list or object `kind` is refused before materialization. It
   formerly raised `TypeError`.
 - The exact U23/C87 replay from the pinned fome-mc store. It includes the actual

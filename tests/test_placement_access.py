@@ -16,6 +16,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1020,8 +1021,13 @@ class SidecarTests(unittest.TestCase):
                                                     'reason': 'copper layers differ from the placement capture'}])
         record = next(t for t in sidecar['terminals'] if any(p['uuid'] == pad['uuid'] for p in t['pads']))
         self.assertEqual(record['status'], 'unknown')
-        self.assertEqual(record['reason'], 'unsupported_geometry')
+        self.assertEqual(record['reason'], 'coverage')  # rules without a native board are unbound
         access.validate_sidecar(candidate, sidecar, geometry=geometry, capture=capture)
+        # The bound copper alone is unsupported, whatever the rule coverage.
+        analysed = access._bind(geometry, capture, False)[1]
+        alone = next(t for t in access.analyze_access(analysed, None, POLICY)['terminals']
+                     if any(p['uuid'] == pad['uuid'] for p in t['pads']))
+        self.assertEqual((alone['status'], alone['reason']), ('unknown', 'unsupported_geometry'))
 
     def test_stripped_copper_keeps_its_obligation_unknown(self):
         """review-ee386c H2: copper removed from the routing geometry cannot drop a member obligation."""
@@ -1037,18 +1043,23 @@ class SidecarTests(unittest.TestCase):
         self.assertTrue(evidence['copper'])
 
     def test_status_is_derived_from_validated_evidence(self):
-        """review-ee386b H2: summaries are recounted; invented, partial or inconsistent sidecars refuse."""
+        """review-ee386b H2: summaries are recounted; invented, partial or inconsistent sidecars refuse.
+
+        Without the saved board the rules are unbound (review-ee386d H1) and every terminal is unknown;
+        the witness-bearing forgeries run on the native pod sidecar (PodReplayTests).
+        """
         candidate, geometry, capture = self.bound()
         sidecar = access.block_access(candidate, geometry, POLICY, capture=capture)
         evidence = {'geometry': geometry, 'capture': capture}
         status = access.access_status(candidate, sidecar, **evidence)
         self.assertEqual(sidecar['contour_authority'], 'placement capture')
+        self.assertEqual(sidecar['rule_authority'], {'status': 'unbound', 'reason': access.RULES_UNBOUND})
         # A sidecar written and read back as JSON (the CLI form) still re-derives exactly.
         self.assertEqual(access.access_status(candidate, json.loads(json.dumps(sidecar)), **evidence), status)
         counts = Counter(t['status'] for t in sidecar['terminals'])
         self.assertEqual(status['summary'], {k: counts.get(k, 0) for k in ('witness', 'unknown', 'not_required')})
-        self.assertIn(status['status'], ('witnessed', 'partial'))
-        witnessed = next(t for t in sidecar['terminals'] if t['status'] == 'witness')
+        self.assertEqual(status, {'status': 'unknown', 'summary': {'witness': 0, 'unknown': 10, 'not_required': 0}})
+        first = sidecar['terminals'][0]
 
         def refuses(pattern, edit):
             forged = copy.deepcopy(sidecar)
@@ -1060,45 +1071,43 @@ class SidecarTests(unittest.TestCase):
         refuses('needs exactly', lambda f: f.pop('terminals'))
         refuses('needs exactly', lambda f: f.pop('policy'))
         refuses('needs exactly', lambda f: f.pop('member_evidence'))
+        refuses('needs exactly', lambda f: f.pop('rule_authority'))
         refuses('summary is inconsistent', lambda f: f['summary'].update(witness=-1))
-        refuses('summary is inconsistent', lambda f: f['summary'].update(witness=f['summary']['witness'] + 1))
-
-        def unknown_coverage(f):
-            f['coverage'].update(status='unknown', reasons=['native custom rules present'])
-        refuses('witness terminal without modelled coverage', unknown_coverage)
-        refuses('coverage status must follow', lambda f: f['coverage'].update(status='unknown'))
+        refuses('summary is inconsistent', lambda f: f['summary'].update(unknown=f['summary']['unknown'] + 1))
+        refuses('coverage status must follow', lambda f: f['coverage'].update(status='modelled'))
 
         def drop_terminal(f):
-            gone = f['terminals'].pop(f['terminals'].index(next(t for t in f['terminals'] if t['status'] == 'witness')))
-            f['summary']['witness'] -= 1
-            self.assertTrue(gone)
+            f['terminals'].pop(0)
+            f['summary']['unknown'] -= 1
         refuses('do not cover exactly the member copper pads', drop_terminal)
 
-        def no_witnesses(f):
-            next(t for t in f['terminals'] if t['id'] == witnessed['id'])['witnesses'] = []
-        refuses('witness terminal without', no_witnesses)
-
         def promote(f):
-            target = next((t for t in f['terminals'] if t['status'] != 'witness'), None)
-            if target is None:
-                target = f['terminals'][0]
-                target['witnesses'] = []
-            f['summary'][target['status']] -= 1
+            target = f['terminals'][0]
+            target['witnesses'] = [{'kind': 'exit', 'source_pad': target['pads'][0]['uuid'], 'net': target['net'],
+                                    'layer': 'F.Cu', 'track_width_nm': POLICY['track_width_nm'],
+                                    'path_nm': [[0, 0], [MM, 0]], 'direction': 'right'}]
+            f['summary']['unknown'] -= 1
             target['status'] = 'witness'
             f['summary']['witness'] += 1
-        refuses('witness terminal without|carries witnesses', promote)
+        refuses('witness terminal without modelled coverage, bound rules', promote)
 
-        def foreign_source(f):
-            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
-            record['witnesses'][0]['source_pad'] = 'elsewhere'
-        refuses('witness source, net, layer or width differs', foreign_source)
+        # review-ee386d H1: rules the placement capture does not bind stay unbound coverage.
+        def bind_rules(f):
+            f['rule_authority'] = {'status': 'bound', 'board_sha256': f['board_sha256'],
+                                   'project_sha256': None, 'custom_rules_sha256': None}
+        refuses('must state its rules as unbound coverage', bind_rules)
 
-        def via_on_direct(f):
-            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
-            record['witnesses'][0]['via'] = {}
-            if record['witnesses'][0]['kind'] == 'via':
-                record['witnesses'][0]['kind'] = 'exit'
-        refuses('witness needs exactly', via_on_direct)
+        def drop_unbound_reason(f):
+            f['coverage']['reasons'].remove(access.RULES_UNBOUND)
+            f['coverage']['status'] = 'unknown' if f['coverage']['reasons'] else 'modelled'
+        refuses('must state its rules as unbound coverage', drop_unbound_reason)
+        refuses('rule authority needs exactly', lambda f: f.update(contour_authority='native board'))
+
+        def native_relabel(f):
+            f['contour_authority'] = 'native board'
+            bind_rules(f)
+        refuses('needs its saved board', native_relabel)
+        refuses('contour_authority must be', lambda f: f.update(contour_authority='owner'))
 
         def other_pins(f):
             f['member_evidence'][0]['pads'][0]['net'] = 'FORGED'
@@ -1111,8 +1120,8 @@ class SidecarTests(unittest.TestCase):
             counts = Counter(t['status'] for t in f['terminals'])
             f['summary'] = {k: counts.get(k, 0) for k in access.STATUSES}
 
-        def suppress_copper(f):  # nine member copper flags cleared, their terminals deleted, one witness kept
-            keep = witnessed['pads'][0]['uuid']
+        def suppress_copper(f):  # nine member copper flags cleared, their terminals deleted, one terminal kept
+            keep = first['pads'][0]['uuid']
             gone = {p['uuid'] for e in f['member_evidence'] for p in e['pads'] if p['copper'] and p['uuid'] != keep}
             self.assertGreaterEqual(len(gone), 9)
             for record in f['member_evidence']:
@@ -1120,12 +1129,12 @@ class SidecarTests(unittest.TestCase):
                     pad['copper'] = pad['copper'] and pad['uuid'] not in gone
             f['terminals'] = [t for t in f['terminals'] if not {p['uuid'] for p in t['pads']} & gone]
             recount(f)
-            self.assertEqual(access._validate_structure(candidate, f)['witness'], 1)  # the old boundary accepted it
+            self.assertEqual(access._validate_structure(candidate, f)['unknown'], 1)  # the structure accepts it
         refuses('differs from the evidence it binds', suppress_copper)
 
-        def invented_exemption(f):  # a witnessed terminal turned into an unproven not_required exemption
-            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
-            for key in ('witnesses', 'attempted', 'truncated', 'blockers', 'source_pad'):
+        def invented_exemption(f):  # an unknown terminal turned into an unproven not_required exemption
+            record = next(t for t in f['terminals'] if t['id'] == first['id'])
+            for key in ('witnesses', 'attempted', 'truncated', 'blockers', 'source_pad', 'details'):
                 record.pop(key, None)
             record.update(status='not_required', reason='no other terminal on the net')
             recount(f)
@@ -1138,13 +1147,39 @@ class SidecarTests(unittest.TestCase):
             refuses('bound to another routing geometry', forged_geometry)
         finally:
             evidence['geometry'] = geometry
-        native = copy.deepcopy(sidecar)
-        native['contour_authority'] = 'native board'
-        with self.assertRaisesRegex(ValueError, 'needs its saved board'):
-            access.access_status(candidate, native, **evidence)
+
+    def test_unbound_rules_never_witness(self):
+        """review-ee386d H1 / agent-510: rules beside a placement capture are unknown coverage, never witnessed.
+
+        Capture and candidate are fixed. A 10 mm rule floor leaves every terminal unknown; lowering it to
+        0, or erasing a present custom rule, used to turn the same ten unknowns into ten witnesses.
+        """
+        candidate, geometry, capture = self.bound()
+        high = copy.deepcopy(geometry)
+        high['rules']['min_clearance_nm'] = 10_000_000
+        custom = copy.deepcopy(geometry)
+        custom['rules']['custom_rules'] = {'status': 'present', 'rules': ['unsupported-native-rule']}
+        erased = copy.deepcopy(geometry)
+        del erased['rules']['custom_rules']
+        unknown = {'status': 'unknown', 'summary': {'witness': 0, 'unknown': 10, 'not_required': 0}}
+        for label, rules in (('high floor', high), ('lowered floor', geometry), ('custom present', custom),
+                             ('custom erased', geometry), ('custom key erased', erased)):
+            with self.subTest(label):
+                sidecar = access.block_access(candidate, rules, POLICY, capture=capture)
+                self.assertEqual(sidecar['rule_authority'], {'status': 'unbound', 'reason': access.RULES_UNBOUND})
+                self.assertEqual(sidecar['coverage']['status'], 'unknown')
+                self.assertIn(access.RULES_UNBOUND, sidecar['coverage']['reasons'])
+                self.assertEqual(sidecar['summary'], unknown['summary'])
+                self.assertTrue(all(t['status'] == 'unknown' and t['reason'] == 'coverage'
+                                    for t in sidecar['terminals']))
+                self.assertEqual(access.access_status(candidate, sidecar, geometry=rules, capture=capture), unknown)
+        # The pure diagnostic helper is unchanged and non-authoritative: it still reports its model's search.
+        self.assertEqual(access.analyze_access(geometry, None, POLICY)['coverage']['status'], 'modelled')
+        self.assertGreater(access.analyze_access(geometry, None, POLICY)['summary']['witness'], 0)
+        self.assertEqual(access.analyze_access(high, None, POLICY)['summary']['witness'], 0)
 
     def test_deleting_an_unknown_obligation_refuses(self):
-        """review-ee386c H2: a real layer-mismatch unknown cannot be deleted to promote partial to witnessed."""
+        """review-ee386c H2: a real layer-mismatch unknown cannot be deleted from the obligations."""
         candidate, geometry, capture = self.bound()
         pad = next(p for p in geometry['pads'] if p['uuid'] == 'U1-1')
         square = pad['copper']['F.Cu']['outer'][0]
@@ -1152,7 +1187,7 @@ class SidecarTests(unittest.TestCase):
         pad['own_clearance_nm']['B.Cu'] = 200_000
         sidecar = access.block_access(candidate, geometry, POLICY, capture=capture)
         status = access.access_status(candidate, sidecar, geometry=geometry, capture=capture)
-        self.assertEqual(status['status'], 'partial')
+        self.assertEqual(status['status'], 'unknown')
         forged = copy.deepcopy(sidecar)
         for record in forged['member_evidence']:
             for land in record['pads']:
@@ -1161,7 +1196,7 @@ class SidecarTests(unittest.TestCase):
         forged['terminals'] = [t for t in forged['terminals'] if not any(p['uuid'] == 'U1-1' for p in t['pads'])]
         counts = Counter(t['status'] for t in forged['terminals'])
         forged['summary'] = {k: counts.get(k, 0) for k in access.STATUSES}
-        self.assertEqual(access._validate_structure(candidate, forged)['unknown'], 0)  # the old boundary: witnessed
+        access._validate_structure(candidate, forged)  # the structure alone accepts it
         with self.assertRaisesRegex(ValueError, 'differs from the evidence it binds'):
             access.access_status(candidate, forged, geometry=geometry, capture=capture)
 
@@ -1229,6 +1264,126 @@ class PodReplayTests(unittest.TestCase):
         self.assertEqual(len(ep['pads']), 5)
         self.assertEqual(len({p['uuid'] for p in ep['pads']}), 5)
 
+    def native_sidecar(self, board=None):
+        board = board or self.board
+        candidate = json.loads(self.candidate_raw)
+        geometry = self.geometry if board == self.board else routing_geometry(board)
+        capture = extract(board)
+        sidecar = access.block_access(candidate, geometry, POLICY, capture=capture, board=board)
+        return candidate, sidecar, {'geometry': geometry, 'capture': capture, 'board': board}
+
+    def copy_board(self, name):
+        directory = self.dir / name
+        directory.mkdir()
+        for suffix in ('.kicad_pcb', '.kicad_pro'):
+            shutil.copyfile(self.board.with_suffix(suffix), (directory / 'candidate').with_suffix(suffix))
+        return directory / 'candidate.kicad_pcb'
+
+    def test_native_rule_authority_is_hash_bound(self):
+        """review-ee386d H1: native rules are bound by the board, project and custom rule file hashes."""
+        candidate, sidecar, evidence = self.native_sidecar()
+        self.assertEqual(sidecar['rule_authority'], {
+            'status': 'bound', 'board_sha256': POD_BOARD_SHA256, 'custom_rules_sha256': None,
+            'project_sha256': hashlib.sha256(self.board.with_suffix('.kicad_pro').read_bytes()).hexdigest()})
+        self.assertNotIn(access.RULES_UNBOUND, sidecar['coverage']['reasons'])
+        status = access.access_status(candidate, sidecar, **evidence)
+        self.assertIn(status['status'], ('witnessed', 'partial'))
+        witnessed = next(t for t in sidecar['terminals'] if t['status'] == 'witness')
+
+        def refuses(pattern, edit):
+            forged = copy.deepcopy(sidecar)
+            edit(forged)
+            with self.assertRaisesRegex(ValueError, pattern):
+                access.access_status(candidate, forged, **evidence)
+
+        def unknown_coverage(f):
+            f['coverage'].update(status='unknown', reasons=['native custom rules present'])
+        refuses('witness terminal without modelled coverage', unknown_coverage)
+        refuses('rule authority needs exactly', lambda f: f.update(rule_authority={'status': 'unbound',
+                                                                                     'reason': access.RULES_UNBOUND}))
+        refuses('native rule authority must be bound to its board',
+                lambda f: f['rule_authority'].update(board_sha256='0' * 64))
+        refuses('lowercase SHA-256', lambda f: f['rule_authority'].update(project_sha256='forged'))
+        # A well-formed rule authority of other rule files: the re-derived evidence differs.
+        refuses('differs from the evidence it binds', lambda f: f['rule_authority'].update(project_sha256='0' * 64))
+        refuses('differs from the evidence it binds',
+                lambda f: f['rule_authority'].update(custom_rules_sha256='0' * 64))
+
+        def no_witnesses(f):
+            next(t for t in f['terminals'] if t['id'] == witnessed['id'])['witnesses'] = []
+        refuses('witness terminal without', no_witnesses)
+
+        def foreign_source(f):
+            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
+            record['witnesses'][0]['source_pad'] = 'elsewhere'
+        refuses('witness source, net, layer or width differs', foreign_source)
+
+        def via_on_direct(f):
+            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
+            record['witnesses'][0]['via'] = {}
+            if record['witnesses'][0]['kind'] == 'via':
+                record['witnesses'][0]['kind'] = 'exit'
+        refuses('witness needs exactly', via_on_direct)
+
+        def invented_exemption(f):  # a witnessed terminal turned into an unproven not_required exemption
+            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
+            for key in ('witnesses', 'attempted', 'truncated', 'blockers', 'source_pad'):
+                record.pop(key, None)
+            record.update(status='not_required', reason='no other terminal on the net')
+            counts = Counter(t['status'] for t in f['terminals'])
+            f['summary'] = {k: counts.get(k, 0) for k in access.STATUSES}
+            access._validate_structure(candidate, f)
+        refuses('differs from the evidence it binds', invented_exemption)
+
+    def test_substituted_native_rules_are_unknown_or_refused(self):
+        """review-ee386d H1 on the native board: lowered, erased or replaced rules never witness."""
+        candidate, sidecar, evidence = self.native_sidecar()
+        capture, board = evidence['capture'], evidence['board']
+        lowered = copy.deepcopy(self.geometry)
+        floor = next(k for k in ('min_clearance_nm', 'hole_clearance_nm', 'copper_edge_clearance_nm')
+                     if lowered['rules'][k] > 0)
+        lowered['rules'][floor] = 0
+        erased = copy.deepcopy(self.geometry)
+        self.assertEqual(erased['rules']['custom_rules'], {'status': 'absent'})
+        erased['rules']['custom_rules'] = {'status': 'empty', 'sha256': '0' * 64, 'rules': []}
+        for label, geometry in (('lowered floor', lowered), ('replaced custom rules', erased)):
+            with self.subTest(label):
+                with self.assertRaisesRegex(ValueError, 'routing geometry differs from the native capture'):
+                    access.block_access(candidate, geometry, POLICY, capture=capture, board=board)
+                with self.assertRaisesRegex(ValueError, 'bound to another routing geometry'):
+                    access.access_status(candidate, sidecar, **{**evidence, 'geometry': geometry})
+                plain = access.block_access(candidate, geometry, POLICY, capture=capture)
+                self.assertEqual(plain['summary']['witness'], 0)
+        # A native custom rule file: every terminal unknown; erasing it afterwards refuses.
+        ruled = self.copy_board('custom-rules')
+        ruled.with_suffix('.kicad_dru').write_text(
+            '(version 1)\n(rule "owned_fixture" (constraint clearance (min 0.3mm))\n'
+            '  (condition "A.NetName == \'/GND\'"))\n')
+        candidate, present, evidence = self.native_sidecar(ruled)
+        self.assertEqual(present['rule_authority']['custom_rules_sha256'],
+                         hashlib.sha256(ruled.with_suffix('.kicad_dru').read_bytes()).hexdigest())
+        self.assertEqual(present['coverage']['status'], 'unknown')
+        self.assertEqual(present['summary']['witness'], 0)
+        self.assertEqual(access.access_status(candidate, present, **evidence)['status'], 'unknown')
+        erased = copy.deepcopy(evidence['geometry'])
+        erased['rules']['custom_rules'] = {'status': 'absent'}
+        with self.assertRaisesRegex(ValueError, 'routing geometry differs from the native capture'):
+            access.block_access(candidate, erased, POLICY, capture=evidence['capture'], board=ruled)
+        ruled.with_suffix('.kicad_dru').unlink()
+        with self.assertRaisesRegex(ValueError, 'differs from the native capture|differs from the evidence it binds'
+                                                '|custom rules differ from the board custom rule file'):
+            access.access_status(candidate, present, **evidence)
+        # A project replaced after the sidecar: its hash no longer binds (pcbnew may cache the old settings).
+        project = self.copy_board('project')
+        candidate, bound, evidence = self.native_sidecar(project)
+        self.assertIn(access.access_status(candidate, bound, **evidence)['status'], ('witnessed', 'partial'))
+        settings = json.loads(project.with_suffix('.kicad_pro').read_text())
+        rules = settings['board']['design_settings']['rules']
+        rules['min_clearance'] = rules['min_clearance'] + 0.05
+        project.with_suffix('.kicad_pro').write_text(json.dumps(settings, indent=2))
+        with self.assertRaisesRegex(ValueError, 'differs from the native capture|differs from the evidence it binds'):
+            access.access_status(candidate, bound, **evidence)
+
     def test_actual_candidate_sidecar_binds_and_witnesses_qualify(self):
         candidate = json.loads(self.candidate_raw)
         capture = extract(self.board)
@@ -1253,6 +1408,11 @@ class PodReplayTests(unittest.TestCase):
         shapes = {p['uuid']: p['shape'] for p in self.geometry['pads']}
         plain = access.block_access(candidate, self.geometry, POLICY, capture=capture)
         self.assertEqual(plain['contour_authority'], 'placement capture')
+        # ... and without the board its rules are unbound: nothing is witnessed (review-ee386d H1).
+        self.assertEqual(plain['rule_authority']['status'], 'unbound')
+        self.assertEqual(plain['summary']['witness'], 0)
+        self.assertEqual(access.access_status(candidate, plain, geometry=self.geometry, capture=capture)['status'],
+                         'unknown')
         unbound = {u['uuid'] for u in plain['unbound_pads']}
         self.assertTrue(unbound)
         self.assertTrue(all(shapes[u] not in access.SPECIFIED_SHAPES for u in unbound))

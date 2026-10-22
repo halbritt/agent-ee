@@ -28,7 +28,10 @@ existing sandbox. The ``agent-ee.block-access/1`` sidecar binds the strict
 candidate/2 digest and, through the placement capture of the same board, every
 member's land pattern, courtyard, pads and nets. Copper contours are bound
 shape-specifically to the placement capture, or exactly to fresh native
-captures of the saved board (``contour_authority``). It is written only in
+captures of the saved board (``contour_authority``). Board rules, own
+clearances and custom-rule presence are authoritative only from the saved
+board: ``rule_authority`` hash-binds its board, project and custom rule files,
+and without them every terminal is unknown. It is written only in
 diagnostic mode and never changes a candidate, its order or its admission. Its
 status is derived from terminal evidence re-derived from the captures it binds.
 See docs/placement-access.md.
@@ -1108,6 +1111,29 @@ def _native_evidence(board, geometry, capture):
         raise ValueError('placement capture differs from the native capture of the board')
 
 
+# A placement capture states no rules; rules supplied beside it are editable and prove nothing.
+RULES_UNBOUND = 'board rules, own clearances and custom-rule presence not bound to native rule authority'
+RULE_AUTHORITY_KEYS = ('status', 'board_sha256', 'project_sha256', 'custom_rules_sha256')
+
+
+def _file_sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
+def _rule_authority(board, geometry):
+    """Hashes of the native rule sources of the saved board: design settings, project and custom rule files.
+
+    pcbnew caches a loaded project within one process, so the project and
+    custom rule files are bound by their bytes, not by the settings read.
+    """
+    board = Path(board)
+    custom = _file_sha256(board.with_suffix('.kicad_dru'))
+    if custom != geometry['rules']['custom_rules'].get('sha256'):
+        raise ValueError('routing geometry custom rules differ from the board custom rule file')
+    return {'status': 'bound', 'board_sha256': geometry['board_sha256'],
+            'project_sha256': _file_sha256(board.with_suffix('.kicad_pro')), 'custom_rules_sha256': custom}
+
+
 def block_access(candidate, geometry, routing_policy, limits=None, *, capture, board=None):
     """Diagnostic ``agent-ee.block-access/1`` for a candidate/2 placed on a complete candidate board.
 
@@ -1119,20 +1145,26 @@ def block_access(candidate, geometry, routing_policy, limits=None, *, capture, b
     saved board file), both captures must equal fresh native captures of it,
     so every native contour and rule is authoritative (``contour_authority``
     ``native board``); without it only contours the placement capture
-    specifies are bound (``placement capture``). Every member must sit on the
-    board at the candidate's frame poses relative to its anchor. Witnesses that
-    use space outside the block (edge, neighbours, vias) must be rechecked
-    after arrangement.
+    specifies are bound (``placement capture``). Rules, own clearances and
+    custom-rule presence are bound only with ``board`` (``rule_authority``
+    hashes its board, project and custom rule files); without it they are
+    unbound coverage and every terminal is unknown, never witnessed. Every
+    member must sit on the board at the candidate's frame poses relative to
+    its anchor. Witnesses that use space outside the block (edge, neighbours,
+    vias) must be rechecked after arrangement.
     """
     from . import blocks
     blocks.validate_candidate(candidate)
     validate_geometry(geometry)
     if board is not None:
         _native_evidence(board, geometry, capture)
+        rule_authority, rule_coverage = _rule_authority(board, geometry), []
+    else:
+        rule_authority, rule_coverage = {'status': 'unbound', 'reason': RULES_UNBOUND}, [RULES_UNBOUND]
     unbound, analysed, coverage = _bind(geometry, capture, board is not None)
     evidence = _member_evidence(candidate, analysed, capture)
     index = AccessIndex(analysed, routing_policy, limits)
-    index.coverage = sorted(set(index.coverage) | set(coverage))
+    index.coverage = sorted(set(index.coverage) | set(coverage) | set(rule_coverage))
     members = [row['reference'] for row in candidate['members']]
     anchor = candidate['frame']['anchor']
     missing = [ref for ref in members if ref not in index.footprints]
@@ -1169,6 +1201,7 @@ def block_access(candidate, geometry, routing_policy, limits=None, *, capture, b
             'frame': candidate['frame'], 'board_sha256': report['board_sha256'],
             'geometry_sha256': digest(geometry), 'capture_sha256': digest(capture),
             'contour_authority': 'native board' if board is not None else 'placement capture',
+            'rule_authority': rule_authority,
             'pad_geometry_sha256': {row['reference']: row['pad_geometry_sha256'] for row in candidate['members']},
             'courtyard_sha256': {row['reference']: row['courtyard_sha256'] for row in candidate['members']},
             'member_evidence': evidence,
@@ -1183,8 +1216,8 @@ RECHECK = ('board edge', 'neighbour copper', 'via sites', 'planes')
 STATUSES = ('witness', 'unknown', 'not_required')
 SIDECAR_KEYS = frozenset((
     'schema', 'mode', 'block_id', 'candidate_sha256', 'candidate_status', 'frame', 'board_sha256', 'geometry_sha256',
-    'capture_sha256', 'contour_authority', 'pad_geometry_sha256', 'courtyard_sha256', 'member_evidence', 'unbound_pads', 'net_roles',
-    'policy', 'limits', 'search', 'coverage', 'recheck_after_arrangement', 'summary', 'terminals'))
+    'capture_sha256', 'contour_authority', 'rule_authority', 'pad_geometry_sha256', 'courtyard_sha256',
+    'member_evidence', 'unbound_pads', 'net_roles', 'policy', 'limits', 'search', 'coverage', 'recheck_after_arrangement', 'summary', 'terminals'))
 
 
 def _exact(value, keys, label, optional=()):
@@ -1235,8 +1268,6 @@ def validate_sidecar(candidate, sidecar, *, geometry, capture, board=None):
     ``ValueError``.
     """
     summary = _validate_structure(candidate, sidecar)
-    if sidecar['contour_authority'] not in ('native board', 'placement capture'):
-        raise ValueError('access sidecar contour_authority must be native board or placement capture')
     if digest(geometry) != sidecar['geometry_sha256'] or digest(capture) != sidecar['capture_sha256']:
         raise ValueError('access sidecar is bound to another routing geometry or placement capture')
     native = sidecar['contour_authority'] == 'native board'
@@ -1247,6 +1278,26 @@ def validate_sidecar(candidate, sidecar, *, geometry, capture, board=None):
     if digest(derived) != digest(sidecar):
         raise ValueError('access sidecar differs from the evidence it binds')
     return summary
+
+
+def _sidecar_rule_authority(sidecar):
+    """Rules are bound only by a native board; a placement-capture sidecar states them as unknown coverage."""
+    rules = sidecar['rule_authority']
+    if sidecar['contour_authority'] == 'native board':
+        _exact(rules, RULE_AUTHORITY_KEYS, 'rule authority')
+        if rules['status'] != 'bound' or rules['board_sha256'] != sidecar['board_sha256']:
+            raise ValueError('access sidecar native rule authority must be bound to its board')
+        for key in RULE_AUTHORITY_KEYS[2:]:
+            if rules[key] is not None:
+                _sha(rules[key], f'rule authority {key}')
+    elif sidecar['contour_authority'] == 'placement capture':
+        reasons = sidecar['coverage'].get('reasons') if isinstance(sidecar['coverage'], dict) else None
+        if rules != {'status': 'unbound', 'reason': RULES_UNBOUND} or \
+                not isinstance(reasons, list) or RULES_UNBOUND not in reasons:
+            raise ValueError('access sidecar without a native board must state its rules as unbound coverage')
+    else:
+        raise ValueError('access sidecar contour_authority must be native board or placement capture')
+    return rules
 
 
 def _validate_structure(candidate, sidecar):
@@ -1261,6 +1312,7 @@ def _validate_structure(candidate, sidecar):
         raise ValueError('access sidecar block, status or frame differs from its candidate')
     for key in ('board_sha256', 'geometry_sha256', 'capture_sha256'):
         _sha(sidecar[key], key)
+    rules = _sidecar_rule_authority(sidecar)
     for key in ('pad_geometry_sha256', 'courtyard_sha256'):
         if sidecar[key] != {row['reference']: row[key] for row in rows}:
             raise ValueError(f'access sidecar {key} differs from its candidate members')
@@ -1337,8 +1389,10 @@ def _validate_structure(candidate, sidecar):
         if not isinstance(witnesses, list):
             raise ValueError('access sidecar witnesses must be a list')
         if status == 'witness':
-            if coverage['status'] != 'modelled' or not witnesses or {p['uuid'] for p in pads} & unbound:
-                raise ValueError('access sidecar witness terminal without modelled coverage, witnesses or bound copper')
+            if coverage['status'] != 'modelled' or rules['status'] != 'bound' or not witnesses or \
+                    {p['uuid'] for p in pads} & unbound:
+                raise ValueError('access sidecar witness terminal without modelled coverage, bound rules, witnesses '
+                                 'or bound copper')
             for witness in witnesses:
                 problem = _witness_form(witness)
                 if problem is None and (witness['source_pad'] not in {p['uuid'] for p in pads}
@@ -1690,7 +1744,8 @@ def main(argv=None):
             command.add_argument('--capture', required=True,
                                  help='agent-ee.placement-probe/1 capture of the same board (placement_probe)')
             command.add_argument('--board', help='the saved board: both captures must equal its native captures '
-                                                 '(contour authority native board)')
+                                                 '(contour and rule authority native board); without it the '
+                                                 'rules are unbound and every terminal is unknown')
     args = parser.parse_args(argv)
     geometry = strict_json(Path(args.geometry).read_bytes())
     policy = strict_json(Path(args.policy).read_bytes())
