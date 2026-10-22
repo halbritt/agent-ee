@@ -50,6 +50,7 @@ SOURCES = {
         record_sha256='1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b'),
 }
 REVISION = re.compile(r'\bRevision (\d+)\b')
+DEFAULT_ITERATIONS = 10
 BUDGET_NOTE = ('Historical rung-1 estimate: $10-15 review plus $1-3.6 writing per iteration '
                'for three parts; pod work may multiply this. Estimate, not measurement or spending authority.')
 
@@ -187,7 +188,15 @@ def validate_plan(plan):
     validate_profile(plan['review_profile'])
     validate_profile({**plan['review_profile'], 'adjudicator': plan['implementation']})
     _require_rf_reviewer(plan)
-    iterations = _integer(plan.get('max_iterations', 10), 'max_iterations', 8, 100)
+    derivation = budget_derivation(plan)
+    return derivation['max_iterations']['value'], derivation['max_seconds']['value']
+
+
+def budget_derivation(plan):
+    """Iteration and wall-clock budgets with their sources; the derived time never sets another budget."""
+    from .campaign import MAX_ITERATIONS, validate_iterations
+    # The engine's 1-100 range is the only iteration bound; the driver adds no minimum of its own.
+    iterations = validate_iterations(plan.get('max_iterations', DEFAULT_ITERATIONS))
     routing = _integer(plan['routing_budget_s'], 'routing_budget_s', 1, 3600)
     review = _integer(plan['review_budget_s'], 'review_budget_s', 1, 86400)
     # Reserve two full routing turns, each with coordinator overhead, plus explicit review time.
@@ -197,7 +206,16 @@ def validate_plan(plan):
         raise ValueError('routing adapter budget must match and timeout must cover twice budget plus 300 seconds')
     minimum = 2 * (route['timeout'] + STEP_MARGIN_S) + review
     seconds = _integer(plan.get('max_seconds', minimum), 'max_seconds', minimum, 86400)
-    return iterations, seconds
+    return dict(
+        max_iterations=dict(value=iterations, source='plan' if 'max_iterations' in plan else 'default',
+                            default=DEFAULT_ITERATIONS, engine_range=[1, MAX_ITERATIONS]),
+        routing=dict(budget_s=route['budget'], timeout_s=route['timeout'], step_margin_s=STEP_MARGIN_S,
+                     reserved_turns=2),
+        review_budget_s=review,
+        max_seconds=dict(value=seconds, source='plan' if 'max_seconds' in plan else 'derived', minimum_s=minimum,
+                         formula='2 * (routing.timeout_s + routing.step_margin_s) + review_budget_s'),
+        note=('max_seconds is the campaign wall clock only; it is derived from, and never changes, '
+              'the routing adapter budget/timeout or max_iterations.'))
 
 
 def validate_configuration(plan, scope, files, inputs):
@@ -473,7 +491,8 @@ def build(plan_path, out, *, dry_run=False):
     record = dict(schema='agent-ee.pod-driver-receipt/1', status='preparing', done=False,
                   plan_sha256=digest(plan_path), source_scope_sha256=digest(scope_path),
                   tool=dict(module_sha256=digest(Path(__file__)), python=sys.version.split()[0]),
-                  source_files=before, validation=validation, inference_budget_note=BUDGET_NOTE,
+                  source_files=before, validation=validation, budget_derivation=budget_derivation(plan),
+                  inference_budget_note=BUDGET_NOTE,
                   limitations=scope.get('limitations', []),
                   acceptance='Preparation is not design acceptance; owner DFM and physical bench obligations remain.')
     write_json(out / 'driver-receipt.json', record)

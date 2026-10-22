@@ -84,7 +84,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `implementation` | Explicit subscription writer definition |
 | `routing_budget_s` | Integer matching the routing adapter's budget |
 | `review_budget_s` | Explicit time reserved for reviews |
-| `max_iterations` | Optional, default 10; minimum 8, maximum 100 |
+| `max_iterations` | Optional, default 10; any integer in the campaign engine's 1–100 range (`campaign.validate_iterations`) |
 | `max_seconds` | Optional, defaults to two full receipt timeouts plus review time; may increase up to the engine's 86400-second ceiling |
 
 Each routing timeout must be at least twice the routing budget plus 300 seconds.
@@ -93,6 +93,19 @@ is 6000 seconds: each receipt includes the adapter timeout plus its 300-second
 coordinator margin. `max_schema_resubmissions` is fixed at one in the generated
 campaign. Stage `finding_retry_limit` is validated by the existing loader and
 must be at least two.
+
+The driver adds no iteration minimum of its own (AGENTEE-197, agent-509
+production decision 2026-10-22): an explicit `max_iterations` such as 2 is
+accepted when it lies in the engine's 1–100 range, and the default stays 10.
+Zero, more than 100, non-integers and booleans are refused before any output,
+as is any profile or writer outside the explicit subscription harnesses.
+`max_seconds` is the campaign wall clock, not a placement or routing timeout.
+It is derived from the routing adapter's budget/timeout and the review reserve
+and never changes them, nor `max_iterations`. The driver receipt records the
+derivation as `budget_derivation`: the iteration value with its source
+(`plan` or `default`) and the engine range, the routing budget, timeout, step
+margin and two reserved turns, the review reserve, and `max_seconds` with its
+source (`plan` or `derived`), minimum and formula.
 
 The scope captures all dependencies needed by its checks and producers, including
 the project template, libraries and initial intent/deviation records. Its native
@@ -298,7 +311,7 @@ the fresh checks grade the board that results.
 | `scaffold-receipt/` | Ordinary sandbox receipt, tool identities and retained output |
 | `constraints-receipt/` | Constraint application receipt, only when `net_constraints` is declared |
 | `content-receipt/` | Envelope-content sandbox receipt, only when `envelope_content` is declared |
-| `driver-receipt.json` | Source hashes, validation identities, config/scope hashes, scaffold binding and inference estimate note |
+| `driver-receipt.json` | Source hashes, validation identities, budget derivation, config/scope hashes, scaffold binding and inference estimate note |
 | `dry-run/` | Ordinary checks-only review, when requested |
 | `dry-run-record.json` | Exact check results, stage reachability and sealed result hash; always `done: false`, `inference: false` |
 | `campaign/` | Ordinary campaign run only with explicit `--run` |
@@ -337,7 +350,9 @@ cannot be combined into an unrelated chain.
 `tests.test_pod_driver` runs the shared scaffold in the real receipt sandbox and
 executes the checks-only path using an explicitly synthetic parts fixture. Its
 production driver has no fixture fallback. Tests also cover malformed plans,
-small budgets, subscription-route refusal, removed bench obligations, widened
+iteration budgets outside the engine's 1–100 range (0 and 101 refused before
+output, by the driver and by `run_campaign`), a real two-iteration plan to
+campaign to driver receipt, small wall-clock budgets, subscription-route refusal, removed bench obligations, widened
 writes, tampered scaffold receipts and failed scaffold execution. They also
 prepare a plan with the owned placement adapter, pass the engine's own campaign
 start validation (without launching an iteration), and refuse the adapter beside

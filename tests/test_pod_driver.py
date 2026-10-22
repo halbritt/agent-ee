@@ -1,5 +1,7 @@
 """Real scaffold/receipt/check execution; synthetic inputs never qualify pod hardware."""
+import contextlib
 import copy
+import io
 import json
 import os
 from pathlib import Path
@@ -121,6 +123,8 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.assertEqual(config['max_iterations'],10)
         self.assertEqual(config['max_schema_resubmissions'],1)
         self.assertEqual(config['max_seconds'],6000)
+        self.assertEqual(receipt['budget_derivation']['max_iterations']['source'],'default')
+        self.assertEqual(receipt['budget_derivation']['max_seconds']['source'],'derived')
         self.assertEqual(receipt['validation']['routing_step']['adoptable_exits'],[0,2])
         self.assertEqual(receipt['validation']['routing_step']['step'],'kicad-route-krt')
         self.assertFalse(receipt['done'])
@@ -169,16 +173,79 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'outside writer inputs'):
             pod.build(self.plan_path,self.root/'refused')
 
-    def test_small_iteration_budget_and_provider_fallback_refused(self):
-        for changed in ({'max_iterations':7},{'max_seconds':100},{'max_iterations':True}):
+    def test_out_of_engine_range_budget_and_provider_fallback_refused(self):
+        for changed in ({'max_iterations':0},{'max_iterations':101},{'max_iterations':-1},{'max_iterations':2.0},
+                        {'max_iterations':'2'},{'max_seconds':100},{'max_iterations':True}):
             with self.subTest(changed=changed),self.assertRaises(ValueError):
                 pod.validate_plan({**self.plan,**changed})
         self.plan['implementation']={**self.plan['implementation'],'harness':'openrouter'}
         with self.assertRaisesRegex(ValueError,'harness'):
             pod.validate_plan(self.plan)
 
+    def test_explicit_iteration_budgets_refused_before_output(self):
+        # AGENTEE-197 (agent-509 production decision): the engine's 1-100 range is the only bound.
+        cases=[({'max_iterations':0},'between 1 and 100'),({'max_iterations':101},'between 1 and 100'),
+               ({'max_iterations':2,'implementation':{**self.plan['implementation'],'harness':'openrouter'}},'harness'),
+               ({'max_iterations':2,'review_profile':{**self.plan['review_profile'],'reviewers':[
+                   {**r,'harness':'openrouter'} if i==0 else r
+                   for i,r in enumerate(self.plan['review_profile']['reviewers'])]}},'harness')]
+        original=copy.deepcopy(self.plan)
+        for n,(changed,message) in enumerate(cases):
+            with self.subTest(changed=sorted(changed)):
+                self.plan={**original,**changed}
+                self.save()
+                with self.assertRaisesRegex(ValueError,message):
+                    pod.build(self.plan_path,self.root/f'refused-{n}')
+                self.assertFalse((self.root/f'refused-{n}').exists())
+                stderr=io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(pod.main([str(self.plan_path),'--out',str(self.root/f'cli-{n}')]),2)
+                self.assertRegex(stderr.getvalue(),'pod driver refused: .*'+message)
+                self.assertFalse((self.root/f'cli-{n}').exists())
+
+    def test_two_iteration_plan_produces_campaign_and_receipt(self):
+        from agent_ee import campaign
+        self.plan['max_iterations']=2
+        self.save()
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            receipt=self.build()
+        config=read_json(self.root/'run/campaign.json')
+        self.assertEqual(config['max_iterations'],2)
+        self.assertEqual(campaign.validate_iterations(config['max_iterations']),2)
+        self.assertEqual(receipt['validation']['max_iterations'],2)
+        stored=read_json(self.root/'run/driver-receipt.json')
+        self.assertEqual(stored['status'],'prepared')
+        self.assertEqual(stored['campaign_sha256'],digest(self.root/'run/campaign.json'))
+        derivation=stored['budget_derivation']
+        self.assertEqual(derivation['max_iterations'],
+                         dict(value=2,source='plan',default=10,engine_range=[1,100]))
+        # The derived wall clock covers two routing receipts and the review reserve and changes neither.
+        self.assertEqual(derivation['routing'],dict(budget_s=300,timeout_s=900,step_margin_s=300,reserved_turns=2))
+        self.assertEqual(derivation['review_budget_s'],3600)
+        self.assertEqual(derivation['max_seconds']['value'],config['max_seconds'])
+        self.assertEqual((derivation['max_seconds']['minimum_s'],derivation['max_seconds']['source']),(6000,'derived'))
+        self.assertEqual(config['max_seconds'],2*(900+300)+3600)
+        self.assertEqual(config['routing_adapter'],self.plan['routing_adapter'])
+        self.assertEqual((receipt['validation']['routing_step']['timeout_s'],config['routing_adapter']['budget']),
+                         (900+300,300))
+        self.assertTrue(receipt['first_capture_binding']['bound'])
+        # The engine itself refuses a campaign outside its range before reading scope or creating output.
+        for bad in (0,101):
+            with self.subTest(engine=bad):
+                path=self.root/f'engine-{bad}.json'
+                write_json(path,{**config,'max_iterations':bad})
+                with self.assertRaisesRegex(ValueError,'between 1 and 100'):
+                    campaign.run_campaign(path,self.root/f'engine-{bad}')
+                self.assertFalse((self.root/f'engine-{bad}').exists())
+
     def test_budget_covers_two_full_receipt_envelopes_and_reviews(self):
         self.assertEqual(pod.validate_plan({**self.plan,'max_seconds':6000}),(10,6000))
+        self.assertEqual(pod.validate_plan({**self.plan,'max_iterations':2}),(2,6000))
+        self.assertEqual(pod.validate_plan({**self.plan,'max_iterations':1}),(1,6000))
+        self.assertEqual(pod.validate_plan({**self.plan,'max_iterations':100}),(100,6000))
+        explicit=pod.budget_derivation({**self.plan,'max_iterations':2,'max_seconds':7000})
+        self.assertEqual((explicit['max_seconds']['source'],explicit['max_seconds']['minimum_s']),('plan',6000))
+        self.assertEqual(explicit['routing']['timeout_s'],900)
         with self.assertRaisesRegex(ValueError,'max_seconds'):
             pod.validate_plan({**self.plan,'max_seconds':5999})
 
