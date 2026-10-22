@@ -1822,6 +1822,19 @@ of the board `m_MaxError` plus 50 nm inside the outline, so it composes with the
 AGENTEE-331 publication gate. The setback is typed unknown when the facts lack
 `max_error_nm`, for in-courtyard copper as well. With the fact present, parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
 
+AGENTEE-371 reports [fixed parts' copper](placer.md#fixed-part-input-copper-agentee-371)
+outside the outline, within the setback of it, or in a keep-out as a typed
+input defect up front: `fixed_input_copper`, `outcome=defect`, with findings
+naming the part, pad, copper bounds and outline or keep-out. An unknown setback
+is `unsupported_geometry`, `outcome=unknown`. The fixed part is never moved.
+A reference's declared `fixed_overhangs` exit edge waives the setback for its
+own copper on that edge only (ruling 371c), reported as `fixed_overhang_copper`
+input facts; copper past the outline or in a keep-out still refuses. A
+failed copper-aligned pass is recorded as `search.copper_aligned_attempt`, a
+diagnostic only. Every fixed part is checked whatever the `seed` (ruling 371d);
+only an arranged block member at its exact admitted pose is excluded. This adds
+no registered check or acceptance predicate.
+
 ## Copper feature consumers (AGENTEE-315)
 
 AGENTEE-315 cross-checks `fab_export` and `fab_package` copper declarations

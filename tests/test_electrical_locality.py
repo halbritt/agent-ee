@@ -1260,7 +1260,9 @@ class LocalityIndexTests(unittest.TestCase):
             fp.update(ref='P'+str(i), uuid='P'+str(i))
             for pad in fp['pads']:
                 pad['uuid'] = fp['ref'] + pad['number']
-            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+            # Ruling 371b: pad 1 sits on the courtyard's top edge; 0.1 mm keeps row 0's
+            # fixed copper the setback S inside the outline.
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM + MM//10], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
         b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
@@ -1355,7 +1357,9 @@ class LocalityIndexTests(unittest.TestCase):
             fp.update(ref='P'+str(i), uuid='P'+str(i))
             for pad in fp['pads']:
                 pad['uuid'] = fp['ref'] + pad['number']
-            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+            # Ruling 371b: pad 1 sits on the courtyard's top edge; 0.1 mm keeps row 0's
+            # fixed copper the setback S inside the outline.
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM + MM//10], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
         b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits

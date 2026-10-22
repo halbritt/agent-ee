@@ -98,7 +98,7 @@ PINNED = {
     1: '0d5aa4f15a941cc0',
     2: 'ae08e933892b1e88',
     3: 'fa3fa6268bd1e59b',
-    4: '09b23360d8a95cc5',
+    4: '9d1123eb54b7b44c',  # ruling 371a; was '09b23360d8a95cc5' (planned around P0's off-board copper)
     5: '3c46df6fd9305d1a',
     6: 'd313f75a3cfdbd56',
     7: '777a59037f3ffdc4',
@@ -136,6 +136,9 @@ PINNED = {
     39: '9bf5febe723a0055',
 }
 COPPER_GATED = {0, 3, 23, 38}
+# Coordinator ruling 371a: seed 4's fixed P0 has pad 2 copper off the board in the input itself;
+# it is now the typed fixed_input_copper refusal (AGENTEE-371) instead of a plan around it.
+FIXED_INPUT_COPPER = {4}
 
 
 def oracle_transform(fp, position, rotation):
@@ -360,6 +363,9 @@ class SeededPackDifferentialTests(unittest.TestCase):
                 if seed in COPPER_GATED:
                     self.assertEqual((result['status'], result['outcome']), ('planned', 'info'))
                     self.assertEqual(copper_violations(board, result['placements']), [])
+                if seed in FIXED_INPUT_COPPER:
+                    self.assertEqual((result['status'], result['outcome']), ('fixed_input_copper', 'defect'))
+                    self.assertEqual([(f['reference'], f['pad']) for f in result['findings']], [('P0', '2')])
         self.assertIn('planned', statuses)
 
 

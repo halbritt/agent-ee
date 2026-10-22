@@ -7,6 +7,7 @@ import copy
 from fractions import Fraction
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import tempfile
@@ -573,6 +574,329 @@ class BlockArrangementCopperTest(unittest.TestCase):
         self.assertEqual((plan['status'], plan['outcome']), ('unsupported_geometry', 'unknown'), plan)
         self.assertIn('copper setback unknown', plan['reason'])
 
+    def test_fixed_part_copper_off_the_board_is_an_input_defect(self):
+        # AGENTEE-371: fixed H1 (courtyard x in [40, 42] mm on a 50 mm board) gets copper reaching x = 51 mm.
+        board_ = copy.deepcopy(self.case.board)
+        h1 = next(f for f in board_['footprints'] if f['ref'] == 'H1')
+        for right, refused in ((50 * MM - SETBACK, False), (51 * MM, True)):
+            with self.subTest(right=right):
+                h1['pads'] = [{**custom_pad(bbox=[40_500_000, 30_500_000, right, 31_500_000]), 'uuid': 'H1-1'}]
+                plan = self.case.arrange(capture=board_)
+                if not refused:
+                    self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+                    continue
+                self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                                 ('fixed_input_copper', 'defect', []), plan.get('reason'))
+                self.assertEqual(plan['findings'], [
+                    {'kind': 'fixed_input_copper', 'reference': 'H1', 'pad': '1',
+                     'copper_bounds_nm': [40_500_000, 30_500_000, 51 * MM, 31_500_000], 'setback_nm': SETBACK,
+                     'violation': 'outside_outline', 'outline': 'board outline'}])
+
+
+
+class FixedInputCopperTest(unittest.TestCase):
+    """A fixed part's copper off the board, within S of it or in a keep-out is an input defect (AGENTEE-371).
+
+    Coordinator ruling 371a: the placer refuses with a typed fixed_input_copper
+    finding and never moves the fixed part; an unknown S is typed unknown.
+    """
+
+    def fixed(self, outline, rule_areas=(), max_error=MAX_ERROR, **changes):
+        capture_ = board([offset_part()], outline, max_error)
+        capture_['rule_areas'] = list(rule_areas)
+        return pack(copy.deepcopy(capture_), request(fixed_refs=['C1'], **changes))
+
+    @staticmethod
+    def nm_rectangle(x0, y0, x1, y1):
+        return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+    def finding(self, violation, **extra):
+        return {'kind': 'fixed_input_copper', 'reference': 'C1', 'pad': '1', 'copper_bounds_nm': BBOX,
+                'setback_nm': SETBACK, 'violation': violation, **extra}
+
+    def test_copper_must_stay_the_setback_inside_the_outline_on_every_side(self):
+        # C1's courtyard is [-2, 2] mm; its copper reaches BBOX. Each outline edge sits d from the copper.
+        far = 10 * MM
+        for edge in range(4):
+            for d, outcome in ((-1, 'outside_outline'), (0, 'within_setback'), (SETBACK - 1, 'within_setback'),
+                               (SETBACK, None), (SETBACK + 1, None)):
+                with self.subTest(edge=edge, distance=d):
+                    bounds = [-far, -far, far, far]
+                    bounds[edge] = BBOX[edge] - d if edge < 2 else BBOX[edge] + d
+                    plan = self.fixed(self.nm_rectangle(*bounds))
+                    if outcome is None:
+                        self.assertEqual((plan['status'], plan['outcome']), ('planned', 'info'), plan)
+                        self.assertEqual(plan['placements'][0]['position_nm'], [0, 0])
+                        continue
+                    self.assertEqual((plan['status'], plan['outcome'], plan['steps_used'], plan['placements']),
+                                     ('fixed_input_copper', 'defect', 0, []), plan)
+                    extra = {'outline': 'board outline'}
+                    if outcome == 'within_setback':
+                        extra['outline_distance_nm'] = d
+                    self.assertEqual(plan['findings'], [self.finding(outcome, **extra)])
+                    self.assertIn('C1 pad 1', plan['reason'])
+
+    def test_copper_in_a_keepout_is_named_on_its_side_only(self):
+        area = {'uuid': 'strip', 'owner': 'board', 'forbid': {'footprints': True},
+                'outline': {'status': 'proven', 'polygons': [rectangle(-6, -6, 3, 12)]}}
+        outline = rectangle(-6, -6, 12, 12)
+        for layers, refused in ((['F.Cu'], True), (['B.Cu'], False), (['*.Cu'], True)):
+            with self.subTest(layers=layers):
+                plan = self.fixed(outline, [{**area, 'layers': layers}])
+                if not refused:
+                    self.assertEqual(plan['status'], 'planned', plan)
+                    continue
+                self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+                self.assertEqual(plan['findings'], [self.finding('in_keepout', side='F', keepout='rule area strip')])
+        # A keep-out the copper only touches is not entered (closed sets, positive area).
+        touching = {**area, 'layers': ['F.Cu'], 'outline': {'status': 'proven', 'polygons': [
+            self.nm_rectangle(-6 * MM, -6 * MM, BBOX[0], 6 * MM)]}}
+        self.assertEqual(self.fixed(outline, [touching])['status'], 'planned')
+
+    def test_peer_keepouts_refuse_and_an_owner_is_exempt_from_its_own(self):
+        # Fixed U1 owns a front keep-out over C1's copper, which C1's courtyard does not reach.
+        u1 = part('U1', 7, 7, shape=rectangle(6, 6, 2, 2))
+        keepout = {'uuid': 'owned', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+                   'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1.5, 2)]}}
+        for owner, refused in (('U1', True), ('C1', False)):
+            with self.subTest(owner=owner):
+                capture_ = board([offset_part(), u1], rectangle(-8, -8, 18, 18))
+                capture_['rule_areas'] = [{**keepout, 'owner': owner}]
+                plan = pack(copy.deepcopy(capture_), request(fixed_refs=['C1', 'U1'], gap_nm=0))
+                if not refused:
+                    self.assertEqual(plan['status'], 'planned', plan)
+                    continue
+                self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+                self.assertEqual(plan['findings'], [self.finding('in_keepout', side='F', keepout='rule area owned')])
+
+    def test_unknown_setback_is_typed_unknown_and_never_masks_a_defect(self):
+        inside = rectangle(-5, -5, 10, 10)
+        plan = self.fixed(inside, max_error=None)
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                         ('unsupported_geometry', 'unknown', []), plan)
+        self.assertIn('copper setback unknown', plan['reason'])
+        self.assertEqual(plan['findings'], [self.finding('setback_unknown', setback_nm=None)])
+        # Copper outside the outline itself is determinate without S.
+        plan = self.fixed(rectangle(-3, -5, 10, 10), max_error=None)
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['findings'], [self.finding('outside_outline', setback_nm=None, outline='board outline')])
+        # Copper the courtyard holds is unknown without S as well (ruling 366e).
+        held = offset_part(pads=[{**custom_pad(bbox=[-MM, -MM, MM, MM])}])
+        capture_ = board([held], inside, None)
+        plan = pack(copy.deepcopy(capture_), request(fixed_refs=['C1']))
+        self.assertEqual((plan['status'], plan['outcome']), ('unsupported_geometry', 'unknown'), plan)
+        capture_['max_error_nm'] = MAX_ERROR
+        self.assertEqual(pack(copy.deepcopy(capture_), request(fixed_refs=['C1']))['status'], 'planned')
+
+    def test_declared_overhang_and_seed_pair_carry_never_admit_off_board_copper(self):
+        # Seed-pair carry (AGENTEE-376) covers spacing to seed facts, not copper off the board.
+        plan = self.fixed(rectangle(-3, -5, 10, 10), carry_seed_fixed_pairs=True, gap_nm=250000)
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['carried_fixed_pairs'], [])
+        # A declared courtyard overhang admits the courtyard across the left edge, never its copper.
+        overhang = [{'reference': 'C1', 'edges': [{'name': 'left', 'start_nm': [-MM, 6 * MM], 'end_nm': [-MM, -6 * MM],
+                                                   'outward': 'x-', 'max_nm': 3 * MM}],
+                     'source': {'envelope_id': 'original EE371 fixture', 'envelope_sha256': 'a' * 64,
+                                'pointer': '/fixed_footprints/0'}}]
+        outline = rectangle(-1, -6, 7, 12)
+        self.assertEqual(self.fixed(outline)['status'], 'fixed_conflict')
+        plan = self.fixed(outline, fixed_overhangs=overhang)
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['findings'], [self.finding('outside_outline', outline='board outline')])
+
+    def test_declared_exit_edge_alone_is_exempt_from_the_setback(self):
+        # Coordinator ruling 371c: a declared fixed_overhangs exit edge (AGENTEE-212, e.g. an
+        # edge-launch connector) waives S for that reference's copper on that edge only.
+        far = 10 * MM
+        source = {'envelope_id': 'original EE371 fixture', 'envelope_sha256': 'b' * 64,
+                  'pointer': '/fixed_footprints/0'}
+
+        def declared(ref, name, start, end, outward):
+            return [{'reference': ref, 'edges': [{'name': name, 'start_nm': start, 'end_nm': end,
+                                                  'outward': outward, 'max_nm': MM}], 'source': source}]
+
+        def left(x, ref='C1', top=-far):
+            return declared(ref, 'left', [x, far], [x, top], 'x-')
+
+        for d in (0, SETBACK - 1, SETBACK):
+            with self.subTest(distance=d):
+                x = BBOX[0] - d
+                plan = self.fixed(self.nm_rectangle(x, -far, far, far), fixed_overhangs=left(x))
+                self.assertEqual((plan['status'], plan['outcome']), ('planned', 'info'), plan)
+                self.assertEqual(plan['placements'][0]['position_nm'], [0, 0])
+                if d == SETBACK:
+                    self.assertNotIn('fixed_overhang_copper', plan)
+                    continue
+                self.assertEqual(plan['fixed_overhang_copper'], [{
+                    'kind': 'fixed_overhang_copper', 'reference': 'C1', 'pad': '1', 'copper_bounds_nm': BBOX,
+                    'setback_nm': SETBACK, 'edge': 'left', 'outline_distance_nm': d,
+                    'declaration': {'reference': 'C1', 'edge': left(x)[0]['edges'][0], 'source': source}}])
+        flush = BBOX[0]
+        # The same flush copper on an undeclared edge still needs S.
+        plan = self.fixed(self.nm_rectangle(flush, -far, far, far),
+                          fixed_overhangs=declared('C1', 'right', [far, -far], [far, far], 'x+'))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']), ('fixed_input_copper', 'defect', []))
+        self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
+                                                         outline_distance_nm=0)])
+        # A declared edge never admits copper beyond the outline: 1 nm outside refuses.
+        plan = self.fixed(self.nm_rectangle(flush + 1, -far, far, far), fixed_overhangs=left(flush + 1))
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['findings'], [self.finding('outside_outline', outline='board outline')])
+        # Every other edge still binds: the top edge S - 1 from the copper refuses with that distance.
+        top = BBOX[1] - (SETBACK - 1)
+        plan = self.fixed(self.nm_rectangle(flush, top, far, far), fixed_overhangs=left(flush, top=top))
+        self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
+                                                         outline_distance_nm=SETBACK - 1)])
+        # Keep-outs still bind on the declared edge.
+        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+                 'outline': {'status': 'proven', 'polygons': [self.nm_rectangle(flush, -far, -3 * MM, far)]}}
+        plan = self.fixed(self.nm_rectangle(flush, -far, far, far), [strip], fixed_overhangs=left(flush))
+        self.assertEqual(plan['findings'], [self.finding('in_keepout', side='F', keepout='rule area strip')])
+        # Another reference's declaration of the same edge exempts only that reference's copper.
+        capture_ = board([offset_part(), part('U1', 5, 5)], self.nm_rectangle(flush, -far, far, far))
+        plan = pack(capture_, request(fixed_refs=['C1', 'U1'], fixed_overhangs=left(flush, 'U1')))
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
+                                                         outline_distance_nm=0)])
+
+    def test_a_changed_or_missing_seed_never_waives_fixed_copper(self):
+        # Coordinator ruling 371d: every fixed part's copper is validated whatever the seed,
+        # with seed-pair carry on or off; a seed mismatch is no arrangement copper proof.
+        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+                 'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1, 2)]}}
+        cases = (('outline', rectangle(-3, -6, 9, 12), (), MAX_ERROR, ('fixed_input_copper', 'defect'),
+                  self.finding('outside_outline', outline='board outline')),
+                 ('keepout', rectangle(-6, -6, 12, 12), [strip], MAX_ERROR, ('fixed_input_copper', 'defect'),
+                  self.finding('in_keepout', side='F', keepout='rule area strip')),
+                 ('unknown_S', rectangle(-6, -6, 12, 12), (), None, ('unsupported_geometry', 'unknown'),
+                  self.finding('setback_unknown', setback_nm=None)))
+
+        def seeds(capture_):
+            missing, shifted, courtyard = (copy.deepcopy(capture_) for _ in range(3))
+            missing['footprints'] = []
+            shifted['footprints'][0]['position_nm'][0] += 1
+            courtyard['footprints'][0]['courtyards']['F']['polygons'][0][0][0] += 1
+            return (('missing', missing), ('shifted 1 nm', shifted), ('courtyard', courtyard))
+
+        for kind, outline, areas, max_error, verdict, finding in cases:
+            capture_ = board([offset_part()], outline, max_error)
+            capture_['rule_areas'] = list(areas)
+            for carry in (False, True):
+                policy = request(fixed_refs=['C1'], carry_seed_fixed_pairs=carry, gap_nm=250000)
+                for name, seed in seeds(capture_):
+                    with self.subTest(kind=kind, carry=carry, seed=name):
+                        before = copy.deepcopy(capture_)
+                        plan = pack(capture_, policy, seed=seed)
+                        self.assertEqual(capture_, before)
+                        self.assertEqual((plan['status'], plan['outcome'], plan['placements']), (*verdict, []), plan)
+                        self.assertEqual(plan['findings'], [finding])
+        # The seeded board 4 fixed part P0, whose land is off the board, likewise.
+        from test_placer_geometry_cost import seeded_board
+        capture_, policy = seeded_board(4)
+        for name, seed in seeds(capture_):
+            with self.subTest(board='seeded 4', seed=name):
+                plan = pack(copy.deepcopy(capture_), policy, seed=seed)
+                self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+                self.assertEqual({f['reference'] for f in plan['findings']}, {'P0'})
+
+    def test_only_the_exact_admitted_arranged_pose_skips_the_input_gate(self):
+        # Ruling 371d: arrangement's admitted member footprint exempts that reference at that
+        # exact pose and courtyards only; any other pose, or another reference, is validated.
+        capture_ = board([offset_part()], rectangle(-3, -6, 9, 12))
+        policy = request(fixed_refs=['C1'])
+        admitted = copy.deepcopy(capture_['footprints'][0])
+        plan = placer._pack_gated(copy.deepcopy(capture_), policy, heartbeat=None, seed=None,
+                                  arranged={'C1': admitted})
+        self.assertEqual(plan['status'], 'planned', plan)
+        moved = copy.deepcopy(admitted)
+        moved['position_nm'][1] += 1
+        recourted = copy.deepcopy(admitted)
+        recourted['courtyards']['F']['polygons'][0][0][0] += 1
+        for name, arranged in (('none', None), ('other pose', {'C1': moved}), ('other courtyard', {'C1': recourted}),
+                               ('other reference', {'U1': admitted})):
+            with self.subTest(arranged=name):
+                plan = placer._pack_gated(copy.deepcopy(capture_), policy, heartbeat=None, seed=None,
+                                          arranged=arranged)
+                self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+                self.assertEqual(plan['findings'], [self.finding('outside_outline', outline='board outline')])
+
+    def test_seeded_board_4_reports_its_fixed_part_copper(self):
+        # Coordinator ruling 371a: the only pin this changes. P0 pad 2's land reaches
+        # y = 48165155/3 nm (boxed outward to 16055052) on the 16 mm board.
+        from test_placer_geometry_cost import seeded_board
+        capture_, policy = seeded_board(4)
+        self.assertEqual(capture_['outline']['polygons'][0][2], [16 * MM, 16 * MM])
+        plan = pack(capture_, policy)
+        self.assertEqual((plan['status'], plan['outcome'], plan['steps_used'], plan['placements']),
+                         ('fixed_input_copper', 'defect', 0, []), plan)
+        self.assertEqual(plan['findings'], [{'kind': 'fixed_input_copper', 'reference': 'P0', 'pad': '2',
+                                             'copper_bounds_nm': [2799254, 15855051, 2999254, 16055052],
+                                             'setback_nm': SETBACK, 'violation': 'outside_outline',
+                                             'outline': 'board outline'}])
+        self.assertEqual(math.ceil(Fraction(48165155, 3) + 0), plan['findings'][0]['copper_bounds_nm'][3])
+        # The independent check agrees that the input itself has the land off the board.
+        self.assertIn(('P0', 'pad 2', 'outline'),
+                      {(r, i, why) for r, i, _, why in copper_violations(capture_, [])})
+
+    def test_fixed_copper_is_reported_before_an_unrelated_area_proof(self):
+        # Review H1 on ruling 371d: each courtyard fits the board, only their sum exceeds its area, so
+        # the area proof fires; the fixed part's copper problem must still be reported first.
+        for kind in ('outline', 'unknown_S', 'keepout'):
+            with self.subTest(kind=kind):
+                b = board([offset_part()], rectangle(-3, -6, 9, 12) if kind == 'outline' else rectangle(-6, -6, 12, 12),
+                          None if kind == 'unknown_S' else MAX_ERROR)
+                if kind == 'keepout':
+                    b['rule_areas'] = [{'uuid': 'review-strip', 'owner': 'board', 'layers': ['F.Cu'],
+                                        'forbid': {'footprints': True},
+                                        'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1, 2)]}}]
+                b['footprints'].append(part('U1', 0, 0, shape=rectangle(-3, -6, 8, 12) if kind == 'outline'
+                                            else rectangle(-6, -6, 11, 12)))
+                plan = pack(b, request(fixed_refs=['C1']))
+                want = ('unsupported_geometry', 'unknown') if kind == 'unknown_S' else ('fixed_input_copper', 'defect')
+                self.assertEqual((plan['status'], plan['outcome']), want, plan)
+                self.assertEqual((plan['steps_used'], plan['placements']), (0, []))
+                self.assertTrue(plan['findings'], plan)
+                # Without the fixed-copper problem the area proof is what answers.
+                clean = copy.deepcopy(b)
+                clean['footprints'] = [part('U1', 0, 0, shape=rectangle(-6, -6, 11, 12)),
+                                       part('U2', 0, 0, shape=rectangle(-6, -6, 11, 12))]
+                clean['outline'] = {**clean['outline'], 'polygons': [rectangle(-6, -6, 12, 12)]}
+                clean.pop('rule_areas', None)
+                self.assertEqual(pack(clean, request(fixed_refs=[]))['status'], 'packing_infeasible')
+
+    def test_clean_proof_results_carry_no_reservation_state(self):
+        # Review H1 (371e): a proof result with no fixed parts is exactly the pre-371 result, so it
+        # never gains carried_fixed_pairs whether or not seed pairs are carried.
+        for kind in ('area', 'part'):
+            parts = ([part('U1', 0, 0, shape=rectangle(-6, -6, 11, 12)), part('U2', 0, 0, shape=rectangle(-6, -6, 11, 12))]
+                     if kind == 'area' else [part('U1', 0, 0, shape=rectangle(0, 0, 20, 1))])
+            for carry in (False, True):
+                with self.subTest(kind=kind, carry=carry):
+                    plan = pack(board(parts, rectangle(-6, -6, 12, 12)),
+                                request(fixed_refs=[], carry_seed_fixed_pairs=carry, gap_nm=250000))
+                    self.assertEqual(plan['status'], 'packing_infeasible', plan)
+                    self.assertNotIn('carried_fixed_pairs', plan)
+
+
+class FailedCopperAlignedPassTest(unittest.TestCase):
+    """366b gap 4: a failed copper-aligned pass is recorded as a diagnostic only (AGENTEE-371)."""
+
+    def test_failed_aligned_pass_is_recorded_and_the_legacy_result_is_otherwise_unchanged(self):
+        from test_placer_clusters import without_joint_diagnostics
+        # The 4 mm courtyard fits the 4.5 mm board; the 6.1 mm copper never does.
+        capture_ = board([offset_part()], rectangle(0, 0, 4.5, 4.5))
+        policy = request(fixed_refs=[], step_budget=500)
+        legacy = placer._pack(copy.deepcopy(capture_), policy, heartbeat=None, joint=False)
+        result = pack(copy.deepcopy(capture_), policy)
+        self.assertEqual((legacy['status'], legacy['outcome']), ('packing_search_exhausted', 'unknown'), legacy)
+        attempt = result['search']['copper_aligned_attempt']
+        self.assertEqual((attempt['status'], attempt['outcome'], attempt['prior_steps_used']),
+                         ('packing_search_exhausted', 'unknown', legacy['steps_used']))
+        self.assertGreater(attempt['steps_used'], 0)
+        self.assertLessEqual(legacy['steps_used'] + attempt['steps_used'], policy['step_budget'])
+        self.assertEqual(result['steps_used'], legacy['steps_used'])
+        self.assertNotEqual(result, legacy)
+        self.assertEqual(without_joint_diagnostics(result), without_joint_diagnostics(legacy))
 
 
 class NativeBoard:

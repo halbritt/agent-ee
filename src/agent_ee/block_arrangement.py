@@ -1082,7 +1082,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         for fp in work['footprints']:
             if placer.access_direction.hard(fp):
                 placer.access_direction.geometry(fp)
-        keepouts = placer._keepouts(work)
+        labels = {}
+        keepouts = placer._keepouts(work, labels)
         bands = overhang_bands(effective.get('fixed_overhangs', []), outline)
     except ValueError as exc:
         return failure('unsupported_geometry', str(exc))
@@ -1126,6 +1127,15 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     except ValueError as exc:
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
+    # A fixed part's copper off the board or in a keep-out is an input defect (AGENTEE-371).
+    exempt = []
+    refusal = placer.fixed_input_copper(placed, outline, keepouts, labels, effective.get('fixed_overhangs', []), exempt)
+    if refusal is not None:
+        status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
+        return {**failure(status, refusal['reason']), 'outcome': refusal['outcome'], 'findings': refusal['findings']}
+    if exempt:
+        # Copper within S of its reference's declared exit edge: reported input facts (ruling 371c).
+        record['fixed_overhang_copper'] = exempt
     missing = placer.copper_setback_missing(fp for fp in work['footprints'] if fp['ref'] not in fixed)
     if missing:
         return failure('unsupported_geometry', missing)
@@ -1204,7 +1214,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
                           'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
     # Block members are re-posed, so only parts unchanged from the capture stay seed facts.
-    plan = placer.pack(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture)
+    # Members at exactly their admitted poses passed the arrangement copper gate (ruling 371d).
+    plan = placer._pack_gated(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture, arranged=poses)
     if plan['status'] != 'planned':
         return {**plan, 'block_arrangement': record}
     plan['placements'] = [{**p, 'fixed': p['ref'] in fixed} for p in plan['placements']]
