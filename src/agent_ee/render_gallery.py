@@ -16,23 +16,45 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from .candidate import verify_snapshot
-from .render3d import RenderError, _png_info
+from .render3d import _VIEWS as _VIEW_COMMANDS, RenderError, _png_info
 from .storage import digest
-from .viewer import _ASSETS, _validate_glb
+from .viewer import _ASSETS, _source_board, _stage_board, _validate_glb
 
 _VIEWS = ("top", "bottom", "isometric")
-_ABSOLUTE = re.compile(r"(?<![\w.}\])/:])(?:/[^\s'\"<>]+|[A-Za-z]:\\[^\s'\"<>]+)")
+# URLs other than file:// are not host paths; everything else that starts at a
+# POSIX root, a drive letter (either slash) or a UNC prefix is. A path runs to the
+# end of the text or a quote, so directory names containing spaces are removed too.
+# Already redacted text is left alone, so serving a redacted bundle is idempotent.
+_URL = re.compile(r"(?<![\w.+-])(?!file:)[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]*")
+_ABSOLUTE = re.compile(r"(?<![\w.}\])/\\])(?<!<redacted>)(?:file://)?(?:/|\\\\|[A-Za-z]:[\\/])(?=[^\s'\"<>])[^'\"<>\r\n]*")
+_COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
+
+
+def _redact_text(text):
+    return _ABSOLUTE.sub(lambda m: "<redacted>/" + re.split(r"[\\/]", m.group().rstrip("/\\ \t"))[-1], text)
 
 
 def redact(value):
-    """Replace absolute host paths in any JSON value with <redacted>/basename."""
+    """Replace absolute host paths in any JSON value (keys included) with <redacted>/basename."""
     if isinstance(value, str):
-        return _ABSOLUTE.sub(lambda m: "<redacted>/" + re.split(r"[\\/]", m.group().rstrip("/\\"))[-1], value)
+        kept, parts = 0, []
+        for url in _URL.finditer(value):
+            parts += [_redact_text(value[kept:url.start()]), url.group()]
+            kept = url.end()
+        return "".join(parts) + _redact_text(value[kept:])
     if isinstance(value, list):
         return [redact(v) for v in value]
     if isinstance(value, dict):
-        return {k: redact(v) for k, v in value.items()}
+        return {redact(k): redact(v) for k, v in value.items()}
     return value
+
+
+def coverage_counts(coverage):
+    """Return the model counts, with None for any that are absent or not nonnegative integers."""
+    summary = coverage.get("summary") if isinstance(coverage, dict) else None
+    summary = summary if isinstance(summary, dict) else {}
+    return {key: value if type(value) is int and value >= 0 else None
+            for key, value in ((key, summary.get(key)) for key in _COUNTS)}
 
 
 def _json(path):
@@ -43,13 +65,20 @@ def _write(path, data):
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def _copy(source, relative, target, expected):
+def _artifact(source, relative):
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("unsafe artifact path")
     relative = Path(relative)
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("unsafe artifact path")
     file = source / relative
     if any(p.is_symlink() for p in (file, *file.parents)) or not file.is_file():
         raise ValueError("artifact must be a regular file without symlinks")
+    return file
+
+
+def _copy(source, relative, target, expected):
+    file = _artifact(source, relative)
     if digest(file) != expected:
         raise ValueError("artifact hash mismatch")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -58,12 +87,52 @@ def _copy(source, relative, target, expected):
         raise ValueError("artifact changed while copying")
 
 
+def _option(command, flag):
+    return command[command.index(flag) + 1] if flag in command[:-1] else None
+
+
+def _verify_receipt(renders, manifest, item, snapshot):
+    """Check an image against the per-view receipt written by its own native process."""
+    view = item["view"]
+    try:
+        receipt = _json(_artifact(renders, f"{view}.json"))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"{view} native render receipt is missing or unreadable: {error}") from None
+    command = receipt.get("command") if isinstance(receipt, dict) else None
+    settings = manifest.get("settings") or {}
+    side, rotation = _VIEW_COMMANDS[view]
+    if (not isinstance(command, list) or not all(isinstance(c, str) for c in command) or len(command) < 4
+            or command[1:3] != ["pcb", "render"] or receipt.get("view") != view
+            or receipt.get("status") != "completed"
+            or any(receipt.get(key) != item.get(key) for key in ("path", "sha256", "width", "height"))
+            or _option(command, "--side") != side or _option(command, "--rotate") != rotation
+            or Path(_option(command, "--output") or "").name != item["path"]
+            or Path(command[-1]).name != snapshot.name
+            or _option(command, "--width") != str(settings.get("width"))
+            or _option(command, "--height") != str(settings.get("height"))):
+        raise ValueError(f"{view} image does not match its native render receipt")
+
+
+def _verify_snapshot_against(candidate, snapshot, project):
+    """Re-stage the verified retained board and require the render snapshot to be those bytes."""
+    board, _, _ = _source_board(Path(candidate).expanduser().resolve())
+    with tempfile.TemporaryDirectory(prefix="agent-ee-gallery-stage-") as temporary:
+        expected, _ = _stage_board(board, Path(temporary))
+        expected_project = expected.with_suffix(".kicad_pro")
+        if snapshot.read_bytes() != expected.read_bytes():
+            raise ValueError("render snapshot board is not the retained candidate board")
+        if (expected_project.read_bytes() if expected_project.is_file() else None) != (
+                project.read_bytes() if project is not None else None):
+            raise ValueError("render snapshot project is not the retained candidate project")
+
+
 def _verify_provenance(manifest, renders, candidate):
-    """Cross-check the render manifest against its own records, files and retained candidate."""
+    """Bind the render snapshot, images and receipts to each other and to the retained candidate."""
     if manifest.get("errors") or manifest.get("source_unchanged") is not True:
         raise ValueError("render manifest records errors or a changed source")
     candidate_id, captured = manifest.get("candidate_id"), manifest.get("captured_board")
     board = manifest["board"]
+    retained = None
     if candidate is None:
         if candidate_id is not None or captured is not None:
             raise ValueError("render manifest names a retained candidate; pass --candidate to verify it")
@@ -74,6 +143,21 @@ def _verify_provenance(manifest, renders, candidate):
             raise ValueError("render manifest is bound to a different candidate")
         if board["sha256"] != retained["files"].get(relative):
             raise ValueError("render board hash is not the retained candidate board")
+    records = manifest.get("snapshot") if isinstance(manifest.get("snapshot"), dict) else {}
+    record = records.get("board") or {}
+    if not isinstance(record, dict) or record.get("path") != f"snapshot/{board['name']}":
+        raise ValueError("render snapshot board is missing or does not match the manifest")
+    try:
+        snapshot = _artifact(renders, record["path"])
+        project = _artifact(renders, records["project"]["path"]) if records.get("project") else None
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(f"render snapshot board is missing or does not match the manifest: {error}") from None
+    if manifest.get("staged_board_sha256") != record.get("sha256") or digest(snapshot) != record["sha256"]:
+        raise ValueError("render snapshot board is missing or does not match the manifest")
+    if project is not None and digest(project) != records["project"].get("sha256"):
+        raise ValueError("render snapshot project does not match the manifest")
+    if retained is not None:
+        _verify_snapshot_against(candidate, snapshot, project)
     views, images, seen = manifest.get("views") or {}, manifest["images"], set()
     stem = Path(board["name"]).stem
     for item in images:
@@ -94,11 +178,8 @@ def _verify_provenance(manifest, renders, candidate):
             raise ValueError(f"{view} image does not match its recorded dimensions")
     if len(seen) != 3:
         raise ValueError("view images must be distinct")
-    snapshot = (manifest.get("snapshot") or {}).get("board") or {}
-    staged = renders / str(snapshot.get("path", ""))
-    if (not snapshot or manifest.get("staged_board_sha256") != snapshot.get("sha256")
-            or not staged.is_file() or digest(staged) != snapshot["sha256"]):
-        raise ValueError("render snapshot board is missing or does not match the manifest")
+    for item in images:
+        _verify_receipt(renders, manifest, item, snapshot)
 
 
 def publish(root, renders, *, label, stage, viewer=None, candidate=None):
@@ -162,18 +243,17 @@ def page(index):
         base = "/bundles/" + item["id"] + "/"
         pictures = "".join(f'<a href="{base}{i["path"]}"><figure><img src="{base}{i["path"]}" alt="{i["view"]} native 3D view"><figcaption>{i["view"].title()}</figcaption></figure></a>' for i in item["images"])
         viewer = f'<a class="button" href="{base}viewer/index.html">Open interactive 3D viewer</a>' if item["viewer"] else '<p>Interactive viewer not published for this candidate.</p>'
-        coverage = item["model_coverage"] or {}
-        summary = coverage.get("summary") if isinstance(coverage.get("summary"), dict) else {}
-        counts = [summary.get(k) for k in ("resolved", "missing", "unresolved", "disabled", "no_model")]
-        known = all(isinstance(c, int) and not isinstance(c, bool) for c in counts)
-        if not known:
+        summary = coverage_counts(item.get("model_coverage"))
+        counts = list(summary.values())
+        if None in counts:
             badge = '<p class="badge unknown" role="status">Model coverage unknown: do not treat this geometry as complete</p>'
         elif any(counts[1:]):
             badge = '<p class="badge incomplete" role="status">Incomplete models: geometry is missing components</p>'
         else:
             badge = '<p class="badge complete">All declared 3D models resolved</p>'
-        coverage_text = (f'Models: {summary.get("resolved", "unknown")} resolved; {summary.get("missing", "unknown")} missing; {summary.get("unresolved", "unknown")} unresolved; {summary.get("disabled", "unknown")} disabled; {summary.get("no_model", "unknown")} footprints without a model.')
-        warnings = "".join('<li>' + escape(str(w)) + '</li>' for w in item["warnings"])
+        summary = {key: "unknown" if value is None else value for key, value in summary.items()}
+        coverage_text = (f'Models: {summary["resolved"]} resolved; {summary["missing"]} missing; {summary["unresolved"]} unresolved; {summary["disabled"]} disabled; {summary["no_model"]} footprints without a model.')
+        warnings = "".join('<li>' + escape(redact(str(w))) + '</li>' for w in item["warnings"])
         cards.append(f'<section><h2>{"Latest: " if position == 0 else ""}{escape(item["label"])}</h2><p>{escape(item["stage"])} · Rendered {escape(str(item["rendered_at"]))}</p><p class="hash">Board SHA-256: {item["board_sha256"]}</p>{badge}<p class="coverage">{escape(coverage_text)}</p>{viewer}<div class="images">{pictures}</div><details><summary>Model warnings ({len(item["warnings"])})</summary><ul>{warnings}</ul></details><a href="{base}manifest.json">Publication manifest</a></section>')
     return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PCB render gallery</title><style>body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;color:#fff}.complete{background:#1e5a3a;color:#fff}.button{display:inline-block;padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section{padding:16px}.images{grid-template-columns:1fr}}</style><h1>PCB render gallery</h1><p>Native KiCad images · Latest candidate and retained history</p><p>Visual inspection only. Missing component models can make geometry incomplete; these images do not approve electrical or fabrication readiness.</p>' + (''.join(cards) or '<p>No completed render bundles have been published yet.</p>') + '</html>').encode()
 

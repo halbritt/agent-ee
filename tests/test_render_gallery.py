@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import shutil
 import struct
 import tempfile
 import threading
@@ -9,11 +10,14 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import urlopen
 from agent_ee.candidate import capture
+from agent_ee.render3d import render_board
 from agent_ee.render_gallery import page, publish, redact, serve
 from agent_ee.storage import digest
-from agent_ee.viewer import _ASSETS
+from agent_ee.viewer import _ASSETS, build_viewer
+from toolchain import require_toolchain
 
 HOST = '/home/someone/secret-project'
+SIDES = {'top': ['--side', 'top'], 'bottom': ['--side', 'bottom'], 'isometric': ['--side', 'top', '--rotate', '315,0,45']}
 
 
 def png_bytes(shade, width=2, height=2):
@@ -51,16 +55,22 @@ class GalleryTests(unittest.TestCase):
             p.write_bytes(png_bytes(shade * 40))
             images.append(dict(view=view, path=p.name, width=2, height=2, sha256=digest(p)))
             views[view] = dict(images[-1], status='completed')
+            self.write_receipt(view, views[view])
         self.manifest = dict(
             schema='agent-ee.render3d/1', status='completed', errors=[], source_unchanged=True,
             board={'name': 'board.kicad_pcb', 'path': HOST + '/board.kicad_pcb', 'sha256': self.board_hash},
-            candidate_id=None, captured_board=None, images=images, views=views,
+            candidate_id=None, captured_board=None, images=images, views=views, settings={'width': 2, 'height': 2},
             staged_board_sha256=digest(staged),
             snapshot={'board': {'path': 'snapshot/board.kicad_pcb', 'sha256': digest(staged)}},
             warnings=['R1: missing 3D model ' + HOST + '/models/r.step'],
             model_coverage={'board': {'path': HOST + '/board.kicad_pcb'},
                             'summary': {'resolved': 3, 'missing': 1, 'unresolved': 2, 'disabled': 4, 'no_model': 5}})
         self.save()
+
+    def write_receipt(self, view, record):
+        command = ['kicad-cli', 'pcb', 'render', '--width', '2', '--height', '2', *SIDES[view],
+                   '--output', HOST + '/renders/' + record['path'], HOST + '/work/' + view + '/board.kicad_pcb']
+        (self.renders / f'{view}.json').write_text(json.dumps(dict(record, command=command)))
 
     def save(self):
         (self.renders / 'render-manifest.json').write_text(json.dumps(self.manifest))
@@ -204,6 +214,9 @@ class GalleryTests(unittest.TestCase):
         return run, capture(scope, run)
 
     def bind(self, run, candidate):
+        staged = self.renders / 'snapshot' / 'board.kicad_pcb'
+        shutil.copyfile(run / 'inputs' / 'project' / 'board.kicad_pcb', staged)
+        self.manifest['staged_board_sha256'] = self.manifest['snapshot']['board']['sha256'] = digest(staged)
         self.manifest['candidate_id'] = candidate['candidate_id']
         self.manifest['captured_board'] = 'project/board.kicad_pcb'
         self.manifest['board']['sha256'] = candidate['files']['project/board.kicad_pcb']
@@ -329,3 +342,141 @@ class GalleryTests(unittest.TestCase):
             self.assertTrue((self.root / 'bundles' / item['id'] / 'top.png').is_file())
         self.assertEqual(len(list((self.root / 'bundles').iterdir())), 6)
         self.assertEqual(list(self.root.glob('.publish-*')), [])
+
+    # --- HOLD follow-up: snapshot, receipts, path forms, malformed counts ----
+    def test_unrelated_or_rehashed_snapshot_with_verified_candidate_is_refused(self):
+        run, candidate = self.make_candidate()
+        self.bind(run, candidate)
+        staged = self.renders / 'snapshot' / 'board.kicad_pcb'
+        for text in ('unrelated staged board', 'board text (thickness 2.0)'):
+            staged.write_text(text)
+            self.manifest['staged_board_sha256'] = self.manifest['snapshot']['board']['sha256'] = digest(staged)
+            self.save()
+            self.refuses('not the retained candidate board', candidate=run)
+        self.assertEqual((run / 'inputs' / 'project' / 'board.kicad_pcb').read_text(), 'board text')
+        self.bind(run, candidate)
+        publish(self.root, self.renders, label='x', stage='y', candidate=run)
+        self.manifest['snapshot']['project'] = {'path': 'snapshot/board.kicad_pro', 'sha256': digest(staged)}
+        shutil.copyfile(staged, self.renders / 'snapshot' / 'board.kicad_pro')
+        self.save()
+        self.refuses('snapshot project is not the retained', candidate=run)
+
+    def test_snapshot_path_must_be_a_contained_regular_file(self):
+        staged = self.renders / 'snapshot' / 'board.kicad_pcb'
+        outside = Path(self.tmp.name) / 'board.kicad_pcb'
+        shutil.copyfile(staged, outside)
+        for path in ('../board.kicad_pcb', HOST + '/board.kicad_pcb', 'snapshot/other.kicad_pcb', None):
+            self.manifest['snapshot']['board']['path'] = path
+            self.save()
+            self.refuses('snapshot board')
+        self.manifest['snapshot']['board']['path'] = 'snapshot/board.kicad_pcb'
+        staged.unlink()
+        staged.symlink_to(outside)
+        self.save()
+        self.refuses('snapshot board')
+
+    def test_full_permutation_of_distinct_images_is_refused_by_native_receipts(self):
+        top, bottom = (self.renders / f'board-3d-{v}.png' for v in ('top', 'bottom'))
+        a, b = top.read_bytes(), bottom.read_bytes()
+        top.write_bytes(b)
+        bottom.write_bytes(a)
+        for item in self.manifest['images'][:2]:
+            item['sha256'] = self.manifest['views'][item['view']]['sha256'] = digest(self.renders / item['path'])
+        self.save()
+        self.refuses('native render receipt')
+
+    def test_receipt_for_another_view_or_missing_receipt_is_refused(self):
+        receipt = json.loads((self.renders / 'top.json').read_text())
+        receipt['command'][receipt['command'].index('--side') + 1] = 'bottom'
+        (self.renders / 'top.json').write_text(json.dumps(receipt))
+        self.refuses('native render receipt')
+        (self.renders / 'top.json').unlink()
+        self.refuses('receipt is missing')
+
+    def test_windows_unc_and_spaced_paths_are_redacted_in_both_served_json_endpoints(self):
+        paths = ('C:/Users/Alice/private-project/board.kicad_pcb', 'C:\\Users\\Alice\\private-project\\b.step',
+                 '\\\\fileserver\\private-share\\c.step', '/home/Alice Smith/private-project/d.step',
+                 'file:///home/alice/private-project/e.step')
+        self.manifest['model_coverage']['board']['path'] = paths[0]
+        self.manifest['model_coverage']['extra'] = ['path:' + p for p in paths]
+        self.manifest['warnings'] = ['R9: missing 3D model ' + p for p in paths]
+        self.save()
+        viewer = self.make_viewer()
+        metadata = json.loads((viewer / 'viewer.json').read_text())
+        metadata['board']['path'] = paths[0]
+        metadata['warnings'] = list(paths)
+        (viewer / 'viewer.json').write_text(json.dumps(metadata))
+        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=viewer)
+        with self.serving() as url:
+            bodies = [urlopen(url + '/bundles/' + bundle + '/' + suffix).read().decode()
+                      for suffix in ('manifest.json', 'viewer/viewer.json')]
+            bodies.append(urlopen(url).read().decode())
+        for body in bodies:
+            for leak in ('Alice', 'private-project', 'fileserver', 'private-share', 'C:'):
+                self.assertNotIn(leak, body)
+        record = json.loads(bodies[0])
+        self.assertEqual(record['model_coverage']['board']['path'], '<redacted>/board.kicad_pcb')
+        self.assertIn('R9: missing 3D model <redacted>/b.step', record['warnings'])
+        self.assertIn('<redacted>/e.step', bodies[1])
+
+    def test_redact_path_forms(self):
+        cases = {'C:/Users/A/m.step': '<redacted>/m.step', 'C:\\Users\\A B\\m.step': '<redacted>/m.step',
+                 '\\\\srv\\share\\m.step': '<redacted>/m.step', '//srv/share/m.step': '<redacted>/m.step',
+                 'path:/home/a/m.step': 'path:<redacted>/m.step', '/home/A B/p q/m.step': '<redacted>/m.step',
+                 'x="/home/a/b" y': 'x="<redacted>/b" y', 'and/or a/b 1/2': 'and/or a/b 1/2',
+                 'see https://x.org/a/b and ${KIPRJMOD}/m.step': 'see https://x.org/a/b and ${KIPRJMOD}/m.step'}
+        for text, expected in cases.items():
+            self.assertEqual(redact(text), expected, text)
+        self.assertEqual(redact({'/home/a/key': 1}), {'<redacted>/key': 1})
+
+    def test_malformed_counts_or_coverage_are_never_complete(self):
+        good = dict(resolved=3, missing=0, unresolved=0, disabled=0, no_model=0)
+        malformed = [{'summary': dict(good, resolved=bad)} for bad in (-1, True, None, 3.0, '3')]
+        malformed += [{'summary': dict(good, disabled=-2)}, {'summary': []}, [], ['bad'], 'bad', 7]
+        for coverage in malformed:
+            visible, _ = self.visible_html(coverage)
+            self.assertIn('Model coverage unknown', visible, coverage)
+            self.assertNotIn('All declared 3D models resolved', visible, coverage)
+
+    def test_native_render_binding_refuses_snapshot_and_permutation_tampering(self):
+        require_toolchain(native=True)
+        source = Path(self.tmp.name) / 'native-source'
+        shutil.copytree(Path(__file__).resolve().parents[1] / 'fixtures/rc/control', source)
+        scope = Path(self.tmp.name) / 'native-scope.json'
+        scope.write_text(json.dumps({'schema': 'agent-ee.scope/1', 'board': 'project/rc_filter.kicad_pcb',
+                                     'inputs': [{'path': 'native-source', 'at': 'project'}]}))
+        run = Path(self.tmp.name) / 'native-run'
+        run.mkdir()
+        capture(scope, run)
+        out = Path(self.tmp.name) / 'native-renders'
+        manifest_path = render_board(run, out, width=128, height=128, quality='basic', jobs=1, timeout=120)
+        viewer = Path(self.tmp.name) / 'native-viewer'
+        build_viewer(run, viewer)
+        bundle = publish(self.root, out, label='native', stage='y', viewer=viewer, candidate=run)
+        record = json.loads((self.root / 'bundles' / bundle / 'manifest.json').read_text())
+        self.assertEqual(set(record['model_coverage']['summary']) >= {'resolved', 'disabled', 'no_model'}, True)
+        published = ''.join(p.read_text() for p in (self.root / 'bundles' / bundle).rglob('*.json') if 'vendor' not in p.parts)
+        self.assertNotIn(self.tmp.name, published)
+        pristine = manifest_path.read_text()
+        manifest = json.loads(pristine)
+        staged = out / manifest['snapshot']['board']['path']
+        original = staged.read_bytes()
+        changed = original.replace(b'(thickness 1.6)', b'(thickness 2.0)', 1)
+        self.assertNotEqual(changed, original)
+        staged.write_bytes(changed)
+        manifest['snapshot']['board']['sha256'] = manifest['staged_board_sha256'] = digest(staged)
+        manifest_path.write_text(json.dumps(manifest))
+        self.renders = out
+        self.refuses('not the retained candidate board', candidate=run)
+        staged.write_bytes(original)
+        manifest = json.loads(pristine)
+        images = {item['view']: item for item in manifest['images']}
+        top, bottom = out / images['top']['path'], out / images['bottom']['path']
+        a, b = top.read_bytes(), bottom.read_bytes()
+        self.assertNotEqual(a, b)
+        top.write_bytes(b)
+        bottom.write_bytes(a)
+        for view in ('top', 'bottom'):
+            images[view]['sha256'] = manifest['views'][view]['sha256'] = digest(out / images[view]['path'])
+        manifest_path.write_text(json.dumps(manifest))
+        self.refuses('native render receipt', candidate=run)
