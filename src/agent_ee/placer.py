@@ -1995,12 +1995,13 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
     loose = sorted(set(bands) - fixed)
     if loose:
         raise ValueError(f"courtyard overhang declared for movable reference {', '.join(loose)}")
-    if _carries_seed_pairs(policy):
-        state['carried'] = []
+    # The carried list is published to ``state`` only after the area and part proofs, so a proof
+    # result never gains a carried_fixed_pairs field the pre-371 result lacked.
+    carried = [] if _carries_seed_pairs(policy) else None
     conflict = None
     try:
         fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members,
-                                                     state.get('carried'), seed)
+                                                     carried, seed)
     except ValueError as exc:
         conflict = exc
     # Every fixed part's copper is an input, whatever the seed (ruling 371d), and is reported before
@@ -2013,6 +2014,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
                                      outline, obstacles, labels, policy.get('fixed_overhangs', []),
                                      state['overhang_copper'])
         if refusal is not None:
+            if carried is not None:
+                state['carried'] = carried
             status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
             return {**_failure(capture, policy, status, refusal['outcome'], 0, refusal['reason'], margin_nm),
                     'findings': refusal['findings']}
@@ -2026,6 +2029,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's", margin_nm)
         return _soft_proof({**failure, 'proof': proof}, _binding_constraints({**policy, 'gap_nm': 0}, 0))
+    if carried is not None:
+        state['carried'] = carried
     if conflict is not None:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(conflict), margin_nm)
     if locality:

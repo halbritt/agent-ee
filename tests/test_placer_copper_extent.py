@@ -864,6 +864,19 @@ class FixedInputCopperTest(unittest.TestCase):
                 clean.pop('rule_areas', None)
                 self.assertEqual(pack(clean, request(fixed_refs=[]))['status'], 'packing_infeasible')
 
+    def test_clean_proof_results_carry_no_reservation_state(self):
+        # Review H1 (371e): a proof result with no fixed parts is exactly the pre-371 result, so it
+        # never gains carried_fixed_pairs whether or not seed pairs are carried.
+        for kind in ('area', 'part'):
+            parts = ([part('U1', 0, 0, shape=rectangle(-6, -6, 11, 12)), part('U2', 0, 0, shape=rectangle(-6, -6, 11, 12))]
+                     if kind == 'area' else [part('U1', 0, 0, shape=rectangle(0, 0, 20, 1))])
+            for carry in (False, True):
+                with self.subTest(kind=kind, carry=carry):
+                    plan = pack(board(parts, rectangle(-6, -6, 12, 12)),
+                                request(fixed_refs=[], carry_seed_fixed_pairs=carry, gap_nm=250000))
+                    self.assertEqual(plan['status'], 'packing_infeasible', plan)
+                    self.assertNotIn('carried_fixed_pairs', plan)
+
 
 class FailedCopperAlignedPassTest(unittest.TestCase):
     """366b gap 4: a failed copper-aligned pass is recorded as a diagnostic only (AGENTEE-371)."""
