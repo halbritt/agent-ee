@@ -205,11 +205,18 @@ source authority.
 It checks name pattern, contiguous numbering from 001, listed order, duplicates,
 unlisted parts on disk, regular-file status, size and SHA-256, then streams the
 parts into a private temporary file and requires a readable ZIP whose only
-member is the declared one. It then streams that member into a byte counter
-(bounded by `max_member_bytes`) to verify its local header, offsets within the
-archive body and CRC-32 (`archive_member_corrupt`, `archive_member_bounds`,
-`archive_member_oversized`); a valid manifest hash alone does not establish
-archive integrity. It reports counts and sizes, and never reads the
+member is the declared one. It then verifies that member from its raw
+compressed span, never from `zipfile`'s reader. The local header must agree with
+the central directory on flags, method, name, CRC-32 and both sizes, ZIP64
+included (`archive_member_header_mismatch`). Only STORED and DEFLATE are
+accepted. Other methods, encryption and data descriptors are refused
+(`archive_member_unsupported`). The member must tile the archive body exactly
+with no gap or overlap (`archive_member_bounds`). Exactly the compressed span is
+read. A STORED span must equal its declared size. A DEFLATE span is decoded
+incrementally and must reach its end-of-stream marker with no data left over.
+The size limit (`max_member_bytes`) and the CRC-32 apply to the actual output,
+not the declared sizes (`archive_member_oversized`, `archive_member_corrupt`).
+A valid manifest hash alone does not establish archive integrity. It reports counts and sizes, and never reads the
 member as a catalog. Every refusal is a `BouniRefusal` with a typed `reason`
 (`missing_part`, `reordered_parts`, `duplicate_part`, `checksum_mismatch`,
 `size_mismatch`, `archive_truncated`, `unlisted_part`, `manifest_malformed`, ...).
