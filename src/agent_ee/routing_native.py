@@ -316,6 +316,9 @@ def stage_board(source, directory, constraint):
 
 def run_constraint(source, root, constraint, probe, directory=None):
     record = {k: constraint[k] for k in ('id', 'requirement', 'expected')}
+    if 'applicability' in constraint:
+        # A silk minimum's verified supplier scope, checked against the saved stackup.
+        record['applicability'] = constraint['applicability']
     record.update(status='not_evaluated', execution='unsupported')
     if constraint['execution'] != 'ready':
         return {**record, 'reason': constraint['reason'],

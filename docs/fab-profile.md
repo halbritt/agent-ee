@@ -392,11 +392,43 @@ Silk keys are minimum tier only. Their rules stage no `.kicad_pro` board
 minimum, and the keys are kept out of the `NATIVE` table, so scaffold template
 guards are unchanged. A `/1` profile refuses them.
 
-The native inventory adds `silk`: every saved item on `F.SilkS`/`B.SilkS`, as
+A silk citation binds the meaning of its fact, not only its occurrence. The
+quote must be one whole recorded line `<subject> / <role>: <value> mm`. Its
+subject must state the key's quantity, and its value must equal the limit's
+value exactly. A limit must cite a `minimum` or `absolute minimum` role. A
+recommendation cited as a limit, with its source and value unchanged, is
+unknown (`code=source_role_mismatch`) and stages no rule, at any value. A
+separately sourced minimum with the same number still grades. Other mismatches
+are `source_subject_mismatch`, `source_value_mismatch` and
+`source_fact_unparsed`. Advisories are bound the same way: a `recommended`
+advisory must cite a recommendation, and a `guide_minimum` must cite a minimum.
+
+Silk minima also need supplier applicability. Profile-level `applicability`
+entries (fab-profile/2) each hold exactly `id`, `base_materials` and a
+`source`. The quote must be one whole recorded line
+`scope / <subject> / base material: <names>` (or `supported base materials`)
+naming exactly `base_materials`. Each entry covers the silk minima that cite its
+source page. An unverified entry refuses the descriptor. The inventory adds
+`dielectrics`: the saved `core`/`prepreg` stackup layers of the board and their
+`material` names, read with the shared S-expression parser, or `null` when the
+board saves no stackup. Applicability is checked first, and every outcome but
+the last is unknown:
+
+- no verified scope for the cited page: `silk_applicability_unsourced`
+- no saved stackup, a dielectric with no material, or a material outside the
+  qualified mapping (only KiCad `FR4` maps, to `FR-4`): `silk_material_unverified`
+- a mapped material outside the page's scope: `silk_applicability_mismatch`
+- every saved dielectric maps into the scope: grading continues
+
+KiCad writes `FR4` into a new stackup by default, so the saved material is the
+designer's declaration, not proof of the order. Order-form options are not
+captured.
+
+The native inventory also adds `silk`: every saved item on `F.SilkS`/`B.SilkS`, as
 `texts` (class, visibility, stroke font or font name, knockout, height,
 thickness, enabled textbox border width), `graphics` (shape, integer-nanometre
 stroke width, fill) and `other` (any other class, such as dimensions, tables,
-zones or pads on silk). Before a silk record is graded:
+zones or pads on silk). After applicability, and before a silk record is graded:
 
 - any `other` item makes every silk record unknown (`silk_item_unqualified`)
 - a native finding that cites hidden text is unknown (`hidden_silk_text`).
@@ -439,6 +471,14 @@ A candidate that needs both runs two `fab_profile` checks.
 | `recommended-line-width` | 0.2 mm | Recommended only |
 | `recommended-silk-to-mask` | 0.25 mm | Recommended only |
 
+| Applicability | Base materials | Source |
+| --- | --- | --- |
+| `capability-scope` (page 1) | FR-4 | Capabilities page, Rigid PCB Manufacturing Capabilities, Material row |
+| `guide-scope` (page 2) | FR-4, Aluminum, Copper Core, Flex (FPC) | Silkscreen guide table, Supported Base Materials |
+
+So `pad-to-silk` and `silk-text-height` grade only a saved FR4 stackup, and
+`silk-line-width` grades it under the guide's wider scope.
+
 The capabilities table also says characters narrower than 0.15 mm are
 unidentifiable. That value is recorded on page 1. The graded line-width limit
 cites the guide, which names lines and text thickness. The guide's 0.15 mm
@@ -450,18 +490,26 @@ SHA-256 values, byte counts, locators and interpretation limits. The
 [numeric record](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/jlcpcb-silkscreen.txt)
 holds numbers and names only. Page 1 is the capabilities table and page 2,
 after a form feed, is the guide. Raw vendor HTML remains in worker scratch,
-as for the via preset. Material, process and order-option applicability are
-not checked automatically. This is not complete DFM or supplier approval.
+as for the via preset. Raw bytes were rechecked against the recorded lengths
+and SHA-256 values during review; the committed tests verify the numeric record
+only. Base-material applicability is checked as above. Order options are not
+checked, and this is not complete DFM or supplier approval.
 
 `tests.test_silk_fab_profile` covers the preset contract: distinct page/quote
-bindings, advisory refusal and `/1` refusal. It refuses missing, changed,
+bindings, advisory refusal and `/1` refusal. It also covers fact role, subject
+and value binding (recommendations cited as minima), and applicability scope
+lines. It refuses missing, changed,
 misquoted and wrong-page captures, and runs the qualification gates on unit
 records. Real sandboxed KiCad DRC covers: a compliant board (pass, or unknown
 with `silk-to-mask`), the exact 0.15 mm boundary, and a 0.14 mm pad gap with
 0.8 mm text, 0.1 mm thickness and a 0.1 mm line as a defect citing saved silk
 and pad UUIDs. It also covers mask-margin independence, back-side grading
 with opposite-side silk ignored, tented pads and outline fonts as unknown,
-hidden footprint fields and the saved silk inventory.
+hidden footprint fields and the saved silk inventory. It also covers the 0.2 mm
+and 0.25 mm recommendations promoted to minima (unknown, not a defect). A
+missing scope, a missing stackup or material, Polyimide and an owned out-of-scope
+record are all unknown, with `native_status` kept for compliant and violating
+boards.
 
 ## Evidence and failure
 

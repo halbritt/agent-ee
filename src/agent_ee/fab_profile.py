@@ -1,12 +1,15 @@
 """Offline, source-bound fabricator limits using the staged native rule compiler.
 
 Captured source text verifies citation occurrence, not fabricator authenticity or
-engineering applicability. No built-in fabricator values or pricing are supplied.
+engineering applicability; only silk minima also bind a recorded supplier material
+scope. No built-in fabricator values or pricing are supplied.
 """
 import copy
 import datetime
+import re
 from collections import defaultdict
 from fractions import Fraction
+from pathlib import Path
 
 from .routing_rules import (ID, captured_file, load_document, native_rule_inputs, number,
                             rule_text, run_compiled, sha_text, validate_mappings)
@@ -45,6 +48,23 @@ UNMEASURED = {
                             'measures pad copper, not mask apertures'),
 }
 ADVISORY_ROLES = ('recommended', 'guide_minimum')
+# A silk quote is one whole recorded line '<subject> / <role>: <value> mm' whose subject
+# states the key's quantity and whose role fits its use: a limit cites a minimum, so a
+# recommendation never stands as a hard limit, whatever its value.
+FACT = re.compile(r'(?P<subject>.+) / (?P<role>[a-z ]+): (?P<value>[0-9]+(?:\.[0-9]+)?) mm')
+SILK_SUBJECTS = {
+    'min_pad_to_silk_mm': ('legend / pad to silkscreen',),
+    'min_silk_text_height_mm': ('legend / text height', 'legend / character height'),
+    'min_silk_line_width_mm': ('legend / line width (characters)', 'legend / line width / text thickness'),
+    'min_silk_to_mask_mm': ('legend / silkscreen to solder mask clearance',),
+}
+MINIMUM_ROLES = ('minimum', 'absolute minimum')
+FACT_ROLES = {'limit': MINIMUM_ROLES, 'guide_minimum': MINIMUM_ROLES, 'recommended': ('recommended',)}
+# Supplier base-material scope of one source page, recorded as a whole names-only line.
+SCOPE = re.compile(r'scope / (?P<subject>.+) / (?:base material|supported base materials): (?P<names>.+)')
+# Saved KiCad stackup dielectric material names qualified to a supplier base-material
+# name. Any other saved name, or none, leaves silk applicability unverified.
+BASE_MATERIALS = {'FR4': 'FR-4'}
 
 
 def date(text):
@@ -76,6 +96,62 @@ def verify_source(source, inputs, files, as_of):
     if not isinstance(quote, str) or not quote.strip() or page > len(pages) or quote not in pages[page-1]:
         raise ValueError('exact source quote absent on captured page')
     return source['path']
+
+
+def recorded_line(source, inputs, files):
+    """True when a verified quote is one whole line of its captured page."""
+    text = captured_file(inputs, files, source['path']).read_text(encoding='utf-8')
+    return source['quote'] in text.split('\f')[source['page'] - 1].splitlines()
+
+
+def silk_fact(source, key, value, roles, inputs, files):
+    """Bind a verified silk quote's subject, role and value to its use; (code, reason) or None."""
+    match = FACT.fullmatch(source['quote'])
+    if not match or not recorded_line(source, inputs, files):
+        return 'source_fact_unparsed', 'silk quote must be one whole recorded "<subject> / <role>: <value> mm" line'
+    if match['subject'] not in SILK_SUBJECTS[key]:
+        return 'source_subject_mismatch', f'cited fact {match["subject"]!r} does not state {key}'
+    if match['role'] not in roles:
+        return 'source_role_mismatch', (f'cited fact role {match["role"]!r} cannot stand as '
+                                        + ' or '.join(repr(r) for r in roles))
+    if Fraction(match['value']) != Fraction(str(value)):
+        return 'source_value_mismatch', f'cited fact value {match["value"]} mm differs from {value} mm'
+    return None
+
+
+def compile_applicability(entries, files, inputs, as_of, dependencies):
+    """Supplier base-material scope per cited source page; never a rule, grade or charge."""
+    if not isinstance(entries, list) or not entries:
+        raise ValueError('applicability must be a nonempty list')
+    records, ids, pages = [], set(), set()
+    for entry in entries:
+        if (not isinstance(entry, dict) or set(entry) != {'id', 'base_materials', 'source'} or
+                not isinstance(entry['id'], str) or not ID.fullmatch(entry['id'])):
+            raise ValueError('applicability needs exactly id/base_materials/source')
+        names, source = entry['base_materials'], entry['source']
+        if (not isinstance(names, list) or not names or len(set(map(repr, names))) != len(names) or
+                not all(isinstance(n, str) and n.strip() == n and n for n in names)):
+            raise ValueError('base_materials must be unique nonempty names')
+        page = (repr(source.get('path')), repr(source.get('page'))) if isinstance(source, dict) else None
+        if entry['id'] in ids or page in pages:
+            raise ValueError('duplicate applicability id or source page')
+        ids.add(entry['id']); pages.add(page)
+        record = {'id': entry['id'], 'expected': copy.deepcopy(entry), 'execution': 'unsupported'}
+        try:
+            if isinstance(source, dict) and isinstance(source.get('path'), str):
+                captured_file(inputs, files, source['path'])
+                dependencies.add(source['path'])
+            verify_source(source, inputs, files, as_of)
+            match = SCOPE.fullmatch(source['quote'])
+            if not match or not recorded_line(source, inputs, files) or match['names'].split(', ') != names:
+                raise ValueError('applicability quote must be one whole recorded scope line naming '
+                                 'exactly base_materials')
+        except (ValueError, KeyError, OSError, UnicodeError) as exc:
+            record['reason'] = str(exc)
+        else:
+            record['execution'] = 'ready'
+        records.append(record)
+    return sorted(records, key=lambda r: r['id'])
 
 
 def validate_conjunctive(limit):
@@ -197,6 +273,10 @@ def compile_advisories(advisories, files, inputs, as_of, dependencies):
                 captured_file(inputs, files, source['path'])
                 dependencies.add(source['path'])
             verify_source(source, inputs, files, as_of)
+            problem = silk_fact(source, key, advisory['value'], FACT_ROLES[role], inputs, files) \
+                if key in SILK_SUBJECTS else None
+            if problem:
+                raise ValueError(problem[1])
         except (ValueError, KeyError, OSError, UnicodeError) as exc:
             record['reason'] = str(exc)
         else:
@@ -235,7 +315,7 @@ def compile_stackup(value, files, inputs, as_of):
 def compile_profile(profile, files, inputs):
     required = {'schema', 'name', 'as_of', 'limits'}
     if (not isinstance(profile, dict) or not required <= profile.keys() or
-            set(profile) - required - ({'finished_thickness_tolerance', 'stackup', 'advisories'}
+            set(profile) - required - ({'finished_thickness_tolerance', 'stackup', 'advisories', 'applicability'}
                                       if profile.get('schema') == SCHEMAS[1] else set()) or
             profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
@@ -243,6 +323,12 @@ def compile_profile(profile, files, inputs):
         raise ValueError('named, dated nonempty agent-ee.fab-profile/1 or /2 required; no defaults')
     as_of = date(profile['as_of'])
     records, dependencies, ids, keys = [], set(), set(), set()
+    metadata = {}
+    if 'applicability' in profile:
+        metadata['applicability'] = compile_applicability(profile['applicability'], files, inputs, as_of,
+                                                          dependencies)
+    scopes = {(a['expected']['source']['path'], a['expected']['source']['page']): a
+              for a in metadata.get('applicability', []) if a['execution'] == 'ready'}
     for limit in profile['limits']:
         validate_limit(limit, profile['schema'])
         lid, key, tier = limit['id'], limit.get('key'), limit['tier']
@@ -262,6 +348,11 @@ def compile_profile(profile, files, inputs):
         except (ValueError, KeyError, OSError, UnicodeError) as exc:
             records.append({**record, 'reason': str(exc)})
             continue
+        problem = silk_fact(source, key, limit['value'], FACT_ROLES['limit'], inputs, files) \
+            if key in SILK_SUBJECTS else None
+        if problem:
+            records.append({**record, 'code': problem[0], 'reason': problem[1]})
+            continue
         record['execution'] = 'ready'
         if key is None:
             # Each term is its own isolated native run under a marker outside the ID alphabet.
@@ -272,13 +363,17 @@ def compile_profile(profile, files, inputs):
                                for term in limit['all']]
         elif key in NATIVE or key in SILK:
             native_rule(record, key, limit['value'])
+            scope = scopes.get((source['path'], source['page']))
+            if key in SILK and scope is not None:
+                # Graded only where the saved board material is in this page's scope.
+                record['applicability'] = {'id': scope['id'], 'base_materials': scope['expected']['base_materials'],
+                                           'source_path': source['path'], 'source_page': source['page']}
         elif key in UNMEASURED:
             code, reason = UNMEASURED[key]
             record.update(execution='unsupported', code=code, reason=reason)
         else:
             record['geometry'] = key
         records.append(record)
-    metadata = {}
     if 'finished_thickness_tolerance' in profile:
         tolerance = profile['finished_thickness_tolerance']
         if (not isinstance(tolerance, dict) or set(tolerance) != {'percent', 'min_nominal_thickness_mm', 'source'} or
@@ -329,6 +424,9 @@ def capability(params, scope, files, inputs, cid):
     unverified = [a for a in compiled.get('advisories', []) if a['execution'] != 'ready']
     if unverified:
         raise ValueError('advisory source not verified: ' + unverified[0]['reason'])
+    unverified = [a for a in compiled.get('applicability', []) if a['execution'] != 'ready']
+    if unverified:
+        raise ValueError('applicability source not verified: ' + unverified[0]['reason'])
     validate_mappings(compiled['constraints'], scope, files, cid)
     return {'compiled': compiled,
             'immutable_inputs': sorted({params['fab_profile'], *compiled['immutable_inputs'],
@@ -445,7 +543,27 @@ def native_inventory(board_path):
     if problem:
         inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
     inventory['silk'] = silk_inventory(board)
+    inventory['dielectrics'] = saved_dielectrics(board_path)
     return inventory
+
+
+def saved_dielectrics(board_path):
+    """Saved stackup core/prepreg layers with their material names; None without one stackup."""
+    from .board_envelope import atoms
+    from .symbol_library import LibraryError, children, parse_sexpr
+    try:
+        root = parse_sexpr(Path(board_path).read_bytes())
+    except LibraryError:
+        return None
+    setups = children(root, 'setup')
+    stackups = children(setups[0], 'stackup') if len(setups) == 1 else []
+    if len(stackups) != 1:
+        return None
+    return [{'layer': layer[1] if len(layer) > 1 and isinstance(layer[1], str) else None,
+             # Sublayers repeat material within the same saved layer.
+             'materials': [atoms(m)[0] for m in children(layer, 'material') if atoms(m)]}
+            for layer in children(stackups[0], 'layer')
+            if any(atoms(t)[:1] in (['core'], ['prepreg']) for t in children(layer, 'type'))]
 
 
 def silk_inventory(board):
@@ -544,6 +662,21 @@ def qualify_silk(records, inventory):
         texts = {t['uuid']: t for t in silk['texts']}
         cited = {i['uuid'] for f in record['native_findings'] for i in f['items']}
         refusals = []
+        # Supplier applicability comes first: a measurement outside its scope proves nothing.
+        scope, dielectrics = record.get('applicability'), inventory.get('dielectrics')
+        if scope is None:
+            refusals.append(('silk_applicability_unsourced', 'no verified supplier base-material scope '
+                             'on the cited source page', []))
+        elif not dielectrics or any(not d['materials'] or set(d['materials']) - BASE_MATERIALS.keys()
+                                    for d in dielectrics):
+            refusals.append(('silk_material_unverified', 'saved board stackup names no dielectric material '
+                             'qualified to a supplier base-material name', dielectrics or []))
+        else:
+            outside = [d for d in dielectrics if {BASE_MATERIALS[m] for m in d['materials']}
+                       - set(scope['base_materials'])]
+            if outside:
+                refusals.append(('silk_applicability_mismatch', 'saved dielectric material outside the '
+                                 'cited supplier base-material scope', outside))
         if silk['other']:
             refusals.append(('silk_item_unqualified', 'silkscreen items outside the qualified text and '
                              'stroked-shape classes', silk['other']))

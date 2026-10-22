@@ -28,8 +28,8 @@
   "recorded_sources": {
     "jlcpcb-silkscreen.txt": {
       "path": "jlcpcb-silkscreen.txt",
-      "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
-      "bytes": 759
+      "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
+      "bytes": 905
     }
   },
   "pages": {
@@ -45,7 +45,9 @@
     "guide-text-height": "Silkscreen guide / same table / Character Height / absolute minimum 0.8 mm; recommended >=1.0 mm",
     "recommended-line-width": "Silkscreen guide / same table / Line Width / Text Thickness / recommended >=0.2 mm",
     "recommended-silk-to-mask": "Silkscreen guide / same table / Silkscreen-to-Solder Mask Clearance / recommended >=0.25 mm",
-    "pad-clipping": "Silkscreen guide / 2. Automated CAM Adjustments / legend trimmed within 0.15 mm of a solder pad perimeter; recorded, not graded"
+    "pad-clipping": "Silkscreen guide / 2. Automated CAM Adjustments / legend trimmed within 0.15 mm of a solder pad perimeter; recorded, not graded",
+    "capability-scope": "PCB capabilities / h1 Rigid PCB Manufacturing Capabilities / PCB Specifications / Material / FR-4 Grade A laminates",
+    "guide-scope": "Silkscreen guide / 1. Geometrical Constraints and Tolerances / Supported Base Materials / FR-4, Aluminum, Copper Core, Flex (FPC)"
   },
   "interpretation_limits": [
     "Pad-to-silkscreen (capability table) and silkscreen-to-solder-mask clearance (silkscreen guide) are distinct limits with distinct sources; neither is derived from the other.",
@@ -54,7 +56,8 @@
     "Recommendations (0.2 mm line width, 0.25 mm silkscreen-to-mask) are advisories only: no native rule, predicate, defect or extra charge.",
     "Text height and thickness are graded for KiCad stroke-font silk text by native text_height/text_thickness; KiCad stroke-font nominal height equals the centreline cap height (printed extent adds the stroke). Outline-font or knockout text, and other unqualified silk items, leave silk limits unknown.",
     "No silkscreen-to-silkscreen limit was found in either source; none is recorded.",
-    "No automatic applicability gate for material, process or order options is claimed; this is an explicitly selected legend profile, not complete DFM, pricing, assembly or supplier approval.",
+    "Applicability is bound per source page: each graded silk limit needs the base-material scope recorded on its own page, and the saved board stackup must name only dielectric materials qualified to a supplier name in that scope (KiCad FR4 as FR-4). A board without a saved stackup material, with another material, or outside the scope leaves the limit unknown. Order-form options, pricing, assembly and supplier approval are not claimed.",
+    "Each limit and advisory quote must be one whole recorded fact line whose subject matches the key and whose role matches its use: limits cite a minimum or absolute minimum, recommended advisories cite a recommendation. A recommendation cited as a limit is unknown.",
     "Source verification proves occurrence in the original numeric record, not authenticity or interpretation of vendor bytes. Raw response hashes cannot replay absent vendor pages."
   ],
   "recording_method": "Worker reviewed the host HTML Legend table and the silkscreen guide table and recorded numbers/names only; no vendor prose, graphics, designs or code retained."

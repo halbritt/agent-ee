@@ -546,7 +546,13 @@ pad-to-silk (native `silk_over_copper`, measured to pad copper), stroke-font
 silk text height and thickness, and saved silk stroke widths. Silk-to-mask
 clearance has no qualified measurement and is always unknown
 (`code=silk_to_mask_unmeasured`). Tented pads, outline-font or knockout text,
-filled shapes and other silk classes are typed unknowns. Sourced `advisories`
+filled shapes and other silk classes are typed unknowns. Silk citations bind the
+fact's role and value, so a recommendation cited as a minimum is unknown
+(`source_role_mismatch`). Silk minima grade only when profile `applicability`
+cites a supplier base-material scope for the source page, and the saved board
+stackup material maps into it. Otherwise they are unknown, with codes
+`silk_applicability_unsourced`, `silk_material_unverified` or
+`silk_applicability_mismatch`. Sourced `advisories`
 (recommendations, guide values) never grade. The
 [2026-10-22 JLCPCB silkscreen profile](fab-profile.md#dated-jlcpcb-silkscreen-profile)
 binds the capability Legend table and the silkscreen guide.

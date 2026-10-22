@@ -12,7 +12,7 @@
       "tier": "minimum",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB capabilities, Legend table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 1,
@@ -28,7 +28,7 @@
       "tier": "minimum",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB capabilities, Legend table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 1,
@@ -44,7 +44,7 @@
       "tier": "minimum",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 2,
@@ -60,7 +60,7 @@
       "tier": "minimum",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 2,
@@ -77,7 +77,7 @@
       "role": "guide_minimum",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 2,
@@ -92,7 +92,7 @@
       "role": "recommended",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 2,
@@ -107,11 +107,44 @@
       "role": "recommended",
       "source": {
         "path": "jlcpcb-silkscreen.txt",
-        "sha256": "7b0b72d667d4071dd158714f081bac37e08867584820f2e8343e435571ebcda0",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
         "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
         "as_of": "2026-10-22",
         "page": 2,
         "quote": "legend / silkscreen to solder mask clearance / recommended: 0.25 mm"
+      }
+    }
+  ],
+  "applicability": [
+    {
+      "id": "capability-scope",
+      "base_materials": [
+        "FR-4"
+      ],
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
+        "source": "JLCPCB rigid PCB capabilities, PCB Specifications material row; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "scope / rigid PCB capabilities / base material: FR-4"
+      }
+    },
+    {
+      "id": "guide-scope",
+      "base_materials": [
+        "FR-4",
+        "Aluminum",
+        "Copper Core",
+        "Flex (FPC)"
+      ],
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "6d8176237d3c42c66b9939c84532043657a4c6efff940efcb34996dee79872e1",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table supported base materials; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "scope / legend DFM table / supported base materials: FR-4, Aluminum, Copper Core, Flex (FPC)"
       }
     }
   ]
