@@ -2302,6 +2302,12 @@ other backslash refuses (tests: `test_scope_refuses_backslashes_even_when_parser
 AGENTEE-434). An optional receipted target set of footprint reference and
 field pairs restricts the repair to those fields; the proof refuses any other
 silk move ([targeted repair](silk-artwork.md#targeted-repair-agentee-434)).
+An exact field-pose request, bound to the source digest and to footprint and
+field uuids, permits only its named source-to-destination poses. An angle may
+change only where the request names it. Pose tokens must be unquoted plain
+decimals, and an explicit `null` request refuses rather than selecting the
+default search. Everything else must stay byte-exact
+([field-pose request](silk-artwork.md#exact-field-pose-request-agentee-434)).
 This adds no check registration or verdict waiver. The initial placer continues
 to refuse routed boards. The native campaign regression proves downstream
 refusal before the repair and passing verification geometry and native fab export after closure.

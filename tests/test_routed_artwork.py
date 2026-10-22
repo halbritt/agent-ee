@@ -1,6 +1,7 @@
 """Native routed-board silk repair, restricted geometry and receipt boundaries."""
 import copy
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -680,6 +681,258 @@ class RoutedArtworkTest(unittest.TestCase):
             with self.subTest(argv=argv), self.assertRaisesRegex(ValueError, message):
                 art.qualify_receipt(receipt_dir, changed, 'board.kicad_pcb', policy_files())
 
+    def test_field_pose_request_allows_only_exact_requested_poses(self):
+        F = FieldPoseFixture
+        board, after = F.board(), F.board(**F.MOVED)
+        request = F.request(board)
+        proof = art.write_scope(board, after, field_poses=request)
+        self.assertEqual(proof['moved_identities'], sorted([F.uid(1), F.uid(4)]))
+        self.assertEqual(proof['field_poses'], art.normalize_field_poses(request))
+        self.assertEqual(proof['before_sha256'], hashlib.sha256(board).hexdigest())
+        # The historical translation-only default still refuses the requested rotation.
+        with self.assertRaisesRegex(ValueError, 'translation authority'):
+            art.write_scope(board, after)
+        translated = F.board(c128='3.975 -0.925 0')
+        only = F.request(board, fields=[F.C128])
+        self.assertEqual(art.write_scope(board, translated, field_poses=only)['moved_identities'], [F.uid(4)])
+
+        def entry(name, **changes):
+            r = F.request(board)
+            r['fields'] = [dict(e, **changes) if e['field_uuid'] == F.uid(1) else e for e in r['fields']]
+            return name, r
+        refused = [
+            ('wrong board hash', after, dict(F.request(board), source_sha256='0' * 64), 'different source board'),
+            ('wrong field uuid', after, entry('', field_uuid=F.uid(99))[1], 'no unique footprint field'),
+            ('wrong footprint uuid', after, entry('', footprint_uuid=F.uid(20))[1], 'no unique footprint field'),
+            ('wrong source pose', after, entry('', **{'from': dict(F.U31['from'], x_nm=7_600_001)})[1],
+             'source pose differs'),
+            ('wrong source angle', after, entry('', **{'from': dict(F.U31['from'], angle_deg='270')})[1],
+             'source pose differs'),
+            ('wrong destination', after, entry('', to=dict(F.U31['to'], y_nm=22_425_001))[1],
+             'destination position differs'),
+            ('unrequested rotation', F.board(**dict(F.MOVED, c128='3.975 -0.925 90')), request,
+             'destination angle differs'),
+            ('requested rotation not applied', F.board(**dict(F.MOVED, u31='2.425 -0.575 90')), request,
+             'destination angle differs'),
+            ('unselected silk field', F.board(**F.MOVED, r9='0.5 2'), request, 'outside the field-pose request'),
+            ('unselected footprint graphic', F.board(**F.MOVED, line='(start 0.5 1) (end 1.5 1)'), request,
+             'outside the field-pose request'),
+            ('unselected fab value', F.board(**F.MOVED, value='0.5 -2.4 90'), request, 'non-silk board token'),
+            ('style: font size', F.board(**F.MOVED, size='1.2 1.2'), request, 'translation authority'),
+            ('style: stroke', F.board(**F.MOVED, stroke='0.2'), request, 'translation authority'),
+            ('style: mirroring', F.board(**F.MOVED, justify=''), request, 'translation authority'),
+            ('style: text', F.board(**F.MOVED, text='U32'), request, 'translation authority'),
+            ('style: layer', F.board(**F.MOVED, layer='F.SilkS'), request, 'translation authority'),
+            ('visibility', F.board(**F.MOVED, hide='(hide yes)'), request, 'not a movable visible silk field'),
+            ('property content', F.board(**F.MOVED, datasheet='other.pdf'), request, 'non-silk board token'),
+            # A footprint move also moves its fields, so the bound destination refuses first.
+            ('footprint pose', F.board(**F.MOVED, fp='10 20.1 -90'), request, 'destination position differs'),
+            ('copper pad', F.board(**F.MOVED, pad='0.1 0'), request, 'non-silk board token'),
+            ('copper track', F.board(**F.MOVED, track='5.1'), request, 'non-silk board token'),
+            # KiCad refuses to load quoted or non-native pose numbers; so does the qualifier,
+            # alongside an otherwise valid requested edit, before any value comparison.
+            ('quoted destination x', F.board(**dict(F.MOVED, u31='"2.425" -0.575 0')), request, 'native number'),
+            ('quoted destination y', F.board(**dict(F.MOVED, u31='2.425 "-0.575" 0')), request, 'native number'),
+            ('quoted destination angle', F.board(**dict(F.MOVED, u31='2.425 -0.575 "0"')), request,
+             'native number'),
+            ('list destination token', F.board(**dict(F.MOVED, u31='2.425 (-0.575) 0')), request, 'native number'),
+            ('exponent destination', F.board(**dict(F.MOVED, u31='2.425e0 -0.575 0')), request, 'native number'),
+            ('signed-plus destination', F.board(**dict(F.MOVED, u31='+2.425 -0.575 0')), request, 'native number'),
+            ('bare-point destination', F.board(**dict(F.MOVED, u31='2.425 -.575 0')), request, 'native number'),
+            ('quoted footprint angle', F.board(**dict(F.MOVED, fp='10 20 "-90"')), request, 'native number'),
+        ]
+        for name, changed, req, message in refused:
+            self.assertNotEqual(changed, after if req is request else b'')
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
+                art.write_scope(board, changed, field_poses=req)
+        # A quoted source pose refuses too, even when its request is bound to those bytes.
+        quoted = F.board(u31='0 "2.4" 90')
+        with self.assertRaisesRegex(ValueError, 'native number'):
+            art.write_scope(quoted, after, field_poses=F.request(quoted))
+        invalid = {
+            'targets too': (dict(field_poses=request, targets=[('U31', 'Reference')]), 'exclusive'),
+            'fab field': (dict(field_poses=F.request(board, fields=[dict(
+                F.U31, field_uuid=F.uid(2))])), 'not a movable visible silk field'),
+            'non-quarter-turn footprint': (dict(field_poses=F.request(board, fields=[dict(
+                F.U31, footprint_uuid=F.uid(30), field_uuid=F.uid(31))])), 'quarter-turn footprint'),
+            'no-op': (dict(field_poses=F.request(board, fields=[dict(F.U31, to=F.U31['from'])])), 'does not change'),
+            'duplicate': (dict(field_poses=F.request(board, fields=[F.U31, F.U31])), 'twice'),
+            'non-canonical angle': (dict(field_poses=F.request(board, fields=[dict(
+                F.U31, to=dict(F.U31['to'], angle_deg='0.0'))])), 'canonical angle'),
+            'full turn': (dict(field_poses=F.request(board, fields=[dict(
+                F.U31, to=dict(F.U31['to'], angle_deg='360'))])), 'canonical angle'),
+            'float coordinate': (dict(field_poses=F.request(board, fields=[dict(
+                F.U31, to=dict(F.U31['to'], x_nm=10575000.0))])), 'integer'),
+            'unknown key': (dict(field_poses=dict(F.request(board), note='x')), 'malformed'),
+            'empty': (dict(field_poses=F.request(board, fields=[])), 'malformed'),
+        }
+        for name, (kwargs, message) in invalid.items():
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
+                art.write_scope(board, after, **kwargs)
+
+    def test_field_pose_receipt_scope_is_canonical(self):
+        F = FieldPoseFixture
+        request = F.request(F.board())
+        canonical = art.canonical_field_poses(request)
+        head = ['/usr/bin/python3', '-B', '-I', '/artwork-tool/artwork.py', '/candidate/b.kicad_pcb']
+        self.assertEqual(art.receipt_scope(head + ['--field-pose', canonical]),
+                         {'field_poses': art.normalize_field_poses(request)})
+        self.assertEqual(art.receipt_scope(head), {'targets': None})
+        self.assertEqual(art.receipt_scope(head + ['--target', 'C1', 'Reference']),
+                         {'targets': frozenset({('C1', 'Reference')})})
+        reordered = dict(request, fields=request['fields'][::-1])
+        for argv, message in ((['--field-pose', json.dumps(request)], 'not canonical'),
+                              (['--field-pose', json.dumps(reordered, sort_keys=True, separators=(',', ':'))],
+                               'not canonical'),
+                              (['--field-pose'], 'malformed'), (['--field-pose', '{'], 'malformed'),
+                              # An explicit null is not an absent request and never selects the default.
+                              (['--field-pose', 'null'], 'is null'), (['--field-pose', '[]'], 'malformed'),
+                              (['--field-pose', canonical, '--target', 'C1', 'Reference'], 'malformed')):
+            with self.subTest(argv=argv), self.assertRaisesRegex(ValueError, message):
+                art.receipt_scope(head + argv)
+        for call in (lambda: art.canonical_field_poses(None), lambda: art.decode_field_poses('null')):
+            with self.assertRaisesRegex(ValueError, 'is null'):
+                call()
+        self.assertEqual(art.decode_field_poses(canonical), art.normalize_field_poses(request))
+
+    def test_explicit_null_field_pose_receipt_refuses_without_edits(self):
+        from agent_ee.cli import policy_files
+        source = self.pod_board(graphic=True)
+        design = self.root / 'design'
+        design.mkdir()
+        (design / 'board.kicad_pcb').write_bytes(source.read_bytes())
+        # The reviewer's repro: an ordinary step with an explicit JSON-null request appended.
+        spec = art.step(self.root / 'tool', 'board.kicad_pcb')
+        spec['argv'] += ['--field-pose', 'null']
+        receipt_dir = self.root / 'receipt'
+        receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1})
+        self.assertNotEqual(receipt['status'], 'completed')
+        self.assertFalse((receipt_dir / 'run' / art.BOARD).exists())
+        self.assertFalse((receipt_dir / 'run' / art.ARTWORK).exists())
+        # No board was written: the receipt records the output as absent, never as an edit.
+        self.assertIsNone(receipt['outputs']['board.kicad_pcb'])
+        self.assertIn('field-pose request is null', (receipt_dir / 'run' / 'stderr.log').read_text())
+        self.assertEqual((design / 'board.kicad_pcb').read_bytes(), source.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())
+        # The same graphic search, receipted without the flag, still qualifies; relabelling
+        # its argv with an explicit null is refused by the qualifier.
+        default = art.step(self.root / 'tool2', 'board.kicad_pcb')
+        receipt_dir = self.root / 'default'
+        receipt = stage_receipts.run_step(receipt_dir, design, default, {'implementation': 2})
+        self.assertEqual(receipt['status'], 'completed', read_json(receipt_dir / 'run/execution.json'))
+        self.assertTrue(art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())['moved_identities'])
+        forged = copy.deepcopy(receipt)
+        forged['spec']['argv'] += ['--field-pose', 'null']
+        with self.assertRaisesRegex(ValueError, 'is null'):
+            art.qualify_receipt(receipt_dir, forged, 'board.kicad_pcb', policy_files())
+
+    def test_native_field_pose_producer_writes_exact_rotation_and_receipts_it(self):
+        from agent_ee.cli import policy_files
+        import pcbnew as k
+        source = self.pod_board()
+        before = source.read_bytes()
+        fp = [f for f in k.LoadBoard(str(source)).GetFootprints() if f.GetReference() == 'C1'][0]
+        field = fp.Reference()
+        pos = field.GetPosition()
+        start = {'x_nm': pos.x, 'y_nm': pos.y, 'angle_deg': str(art._native_pose(field)[2])}
+        request = {'schema': art.FIELD_POSE_SCHEMA, 'source_sha256': hashlib.sha256(before).hexdigest(),
+                   'fields': [{'footprint_uuid': fp.m_Uuid.AsString(), 'field_uuid': field.m_Uuid.AsString(),
+                               'from': start, 'to': {'x_nm': pos.x + 500000, 'y_nm': pos.y - 250000,
+                                                     'angle_deg': '90' if start['angle_deg'] != '90' else '0'}}]}
+        report = art.produce(source, self.root / 'run', field_poses=request)
+        artwork = read_json(self.root / 'run' / art.ARTWORK)
+        self.assertEqual([(m['reference'], m['field'], m['to']) for m in artwork['moved_fields']],
+                         [('C1', 'Reference', request['fields'][0]['to'])])
+        output = (self.root / 'run' / art.BOARD).read_bytes()
+        proof = art.write_scope(before, output, field_poses=request)
+        self.assertEqual(proof, report['write_scope'])
+        self.assertEqual(proof['moved_identities'], [field.m_Uuid.AsString()])
+        # Native reload and the independent byte-level qualifier agree on the pose.
+        reloaded = {f.m_Uuid.AsString(): art._native_pose(f) for f in
+                    next(f for f in k.LoadBoard(str(self.root / 'run' / art.BOARD)).GetFootprints()
+                         if f.GetReference() == 'C1').GetFields()}
+        self.assertEqual(reloaded[field.m_Uuid.AsString()], art._request_pose(request['fields'][0]['to']))
+        # Native refusals before any write: wrong board and wrong source pose.
+        for name, changed, message in (
+                ('board', dict(request, source_sha256='0' * 64), 'different source board'),
+                ('pose', dict(request, fields=[dict(request['fields'][0], **{'from': dict(start, x_nm=pos.x + 1)})]),
+                 'source pose differs')):
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
+                art.produce(source, self.root / name, field_poses=changed)
+        # The receipt binds the canonical request and the qualifier replays it.
+        design = self.root / 'design'
+        design.mkdir()
+        (design / 'board.kicad_pcb').write_bytes(before)
+        spec = art.step(self.root / 'tool', 'board.kicad_pcb', field_poses=request)
+        self.assertEqual(spec['argv'][5:], ['--field-pose', art.canonical_field_poses(request)])
+        receipt_dir = self.root / 'receipt'
+        receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1})
+        self.assertEqual(receipt['status'], 'completed', read_json(receipt_dir / 'run/execution.json'))
+        qualified = art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())
+        self.assertEqual(qualified['field_poses'], art.normalize_field_poses(request))
+        stale = dict(request, fields=[dict(request['fields'][0], to=dict(request['fields'][0]['to'],
+                                                                         x_nm=pos.x + 750000))])
+        for argv, message in ((['--field-pose', art.canonical_field_poses(stale)], 'destination position differs'),
+                              ([], 'translation authority'),
+                              (['--target', 'C1', 'Reference'], 'translation authority')):
+            changed = copy.deepcopy(receipt)
+            changed['spec']['argv'] = receipt['spec']['argv'][:5] + argv
+            with self.subTest(argv=argv[:1]), self.assertRaisesRegex(ValueError, message):
+                art.qualify_receipt(receipt_dir, changed, 'board.kicad_pcb', policy_files())
+        with self.assertRaisesRegex(ValueError, 'exclusive'):
+            art.step(self.root / 'tool2', 'board.kicad_pcb', field_poses=request, targets=[('C1', 'Reference')])
+
+
+class FieldPoseFixture:
+    """An original saved-board fragment with a quarter-turn and a half-turn bottom footprint.
+
+    U31 (at 10 20 -90) has its Reference at board (7.6, 20) 90 deg; C128 (at 30 20 180)
+    has its Reference at board (30, 18.15) 0 deg. MOVED writes U31 to (10.575, 22.425)
+    0 deg and C128 to (26.025, 20.925) 0 deg, as footprint-relative file tokens.
+    """
+    MOVED = {'u31': '2.425 -0.575 0', 'c128': '3.975 -0.925 0'}
+
+    @staticmethod
+    def uid(n):
+        return f'00000000-0000-4000-8000-{n:012d}'
+
+    U31 = {'footprint_uuid': uid.__func__(10), 'field_uuid': uid.__func__(1),
+           'from': {'x_nm': 7600000, 'y_nm': 20000000, 'angle_deg': '90'},
+           'to': {'x_nm': 10575000, 'y_nm': 22425000, 'angle_deg': '0'}}
+    C128 = {'footprint_uuid': uid.__func__(20), 'field_uuid': uid.__func__(4),
+            'from': {'x_nm': 30000000, 'y_nm': 18150000, 'angle_deg': '0'},
+            'to': {'x_nm': 26025000, 'y_nm': 20925000, 'angle_deg': '0'}}
+
+    @classmethod
+    def board(cls, *, u31='0 2.4 90', c128='0 1.85 0', r9='0 2', line='(start 0 1) (end 1 1)',
+              value='0 -2.4 90', size='1 1', stroke='0.15', justify='(justify mirror)', text='U31',
+              layer='B.SilkS', hide='', datasheet='d.pdf', fp='10 20 -90', pad='0 0', track='5'):
+        u = cls.uid
+        effects = '(effects (font (size %s) (thickness %s)) %s)'
+        return (
+            f'(kicad_pcb (version 20250000)\n'
+            f'(footprint "SOT-23" (layer "B.Cu") (uuid "{u(10)}") (at {fp})\n'
+            f'(property "Reference" "{text}" (at {u31}) (layer "{layer}") {hide} (uuid "{u(1)}") '
+            f'{effects % (size, stroke, justify)})\n'
+            f'(property "Value" "TL431" (at {value}) (layer "B.Fab") (uuid "{u(2)}") {effects % ("1 1", "0.15", "")})\n'
+            f'(property "Datasheet" "{datasheet}" (at 0 0 90) (layer "B.Fab") (hide yes) (uuid "{u(3)}"))\n'
+            f'(fp_line {line} (stroke (width 0.12) (type solid)) (layer "B.SilkS") (uuid "{u(11)}"))\n'
+            f'(pad "1" smd rect (at {pad}) (size 1 1) (layers "B.Cu" "B.Mask") (net 1 "N") (uuid "{u(12)}")))\n'
+            f'(footprint "C_1206" (layer "B.Cu") (uuid "{u(20)}") (at 30 20 180)\n'
+            f'(property "Reference" "C128" (at {c128}) (layer "B.SilkS") (uuid "{u(4)}") '
+            f'{effects % ("1 1", "0.15", "(justify mirror)")}))\n'
+            f'(footprint "R_0603" (layer "B.Cu") (uuid "{u(30)}") (at 40 40 45)\n'
+            f'(property "Reference" "R9" (at {r9} 45) (layer "B.SilkS") (uuid "{u(31)}") '
+            f'{effects % ("1 1", "0.15", "(justify mirror)")}))\n'
+            f'(segment (start 1 1) (end {track} 1) (width 0.25) (layer "B.Cu") (net 1) (uuid "{u(40)}")))\n'
+        ).encode()
+
+    @classmethod
+    def request(cls, board, fields=None):
+        return {'schema': art.FIELD_POSE_SCHEMA, 'source_sha256': hashlib.sha256(board).hexdigest(),
+                'fields': [cls.U31, cls.C128] if fields is None else fields}
+
 
 # A real telemetry-pod board read from the pinned fome-mc store (never committed
 # here): the retained electrical-locality baseline, whose footprints carry the
@@ -806,3 +1059,44 @@ class RealPodArtworkTest(unittest.TestCase):
                     art.write_scope(self.pod, after, targets=targets)
         with self.assertRaisesRegex(ValueError, 'not a movable visible silk field'):
             art.produce(self.source, self.root / 'hidden', targets=[('R73', 'PARAM_Datasheet')])
+
+    def test_real_pod_field_pose_transform_and_rotation_request(self):
+        import pcbnew as k
+        root = parse_sexpr(self.pod)
+        # The qualifier's exact file transform equals native poses for every field.
+        native = {f.m_Uuid.AsString(): art._native_pose(f)
+                  for fp in k.LoadBoard(str(self.source)).GetFootprints() for f in fp.GetFields()}
+        exact = {children(p, 'uuid')[0][1]: art.field_pose(fp, p)
+                 for fp in children(root, 'footprint') for p in children(fp, 'property')}
+        self.assertGreater(len(exact), 1000)
+        self.assertEqual(exact, native)
+        # A requested 270 -> 0 deg rotation of R73's Reference, read back natively.
+        after = self.footprint_edit(self.pod, b'R73', b'(at 0 -1.65 270)', b'(at 0.5 -1.65 0)')
+        edited = self.root / 'edited.kicad_pcb'
+        edited.write_bytes(after)
+        fp, prop = next((fp, p) for fp in children(root, 'footprint') for p in children(fp, 'property')
+                        if p[1:3] == ['Reference', 'R73'])
+        field = next(f for f in next(f for f in k.LoadBoard(str(edited)).GetFootprints()
+                                     if f.GetReference() == 'R73').GetFields() if f.GetName() == 'Reference')
+        def pose(p):
+            return {'x_nm': p[0], 'y_nm': p[1], 'angle_deg': str(p[2])}
+        entry = {'footprint_uuid': children(fp, 'uuid')[0][1], 'field_uuid': children(prop, 'uuid')[0][1],
+                 'from': pose(art.field_pose(fp, prop)), 'to': pose(art._native_pose(field))}
+        self.assertEqual(entry['from']['angle_deg'], '270')
+        self.assertEqual(entry['to']['angle_deg'], '0')
+        request = {'schema': art.FIELD_POSE_SCHEMA, 'source_sha256': hashlib.sha256(self.pod).hexdigest(),
+                   'fields': [entry]}
+        proof = art.write_scope(self.pod, after, field_poses=request)
+        self.assertEqual(proof['moved_identities'], [self.reference_uuid('R73')])
+        # Translation-only authority and unrelated edits still refuse on the escaped board.
+        with self.assertRaisesRegex(ValueError, 'translation authority'):
+            art.write_scope(self.pod, after, targets=[('R73', 'Reference')])
+        for name, changed, message in (
+                ('escaped content', self.footprint_edit(after, b'R73', b'"PARAM_Datasheet" "{\\"',
+                                                        b'"PARAM_Datasheet" "{ \\"'), 'non-silk board token'),
+                ('unselected field', self.footprint_edit(after, b'R175', b'(at 0 2.63 0)', b'(at 0.5 2.63 0)'),
+                 'outside the field-pose request'),
+                ('unrequested angle', self.footprint_edit(self.pod, b'R73', b'(at 0 -1.65 270)', b'(at 0.5 -1.65 90)'),
+                 'destination angle differs')):
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
+                art.write_scope(self.pod, changed, field_poses=request)

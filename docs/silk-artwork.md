@@ -450,6 +450,86 @@ whose digests must equal both DRC'd boards, is its witness that copper is
 unchanged, so unmeasured pre-existing collisions keep baseline treatment
 (AGENTEE-369). Without that proof such a comparison refuses. Uncarried baseline findings retain their existing check verdicts.
 
+### Exact field-pose request (AGENTEE-434)
+
+`step(tool_dir, board, field_poses=request)` replaces the search with an exact,
+candidate-bound request. Its schema is `agent-ee.artwork-field-pose/1`, and it carries:
+
+- `source_sha256`: the source board's digest;
+- `fields`: one entry per field, each with
+  - `footprint_uuid` and `field_uuid`;
+  - `from`: the field's board pose in that source, as `{x_nm, y_nm, angle_deg}`;
+  - `to`: the exact board pose to write, in the same form.
+
+Coordinates are integer nanometres. `angle_deg` is a canonical decimal string
+in [0, 360). The whole request is receipted as one canonical JSON argument,
+`--field-pose JSON`. Fields are sorted by uuid and keys are sorted, with no
+whitespace. `qualify_receipt` and carry replay refuse a noncanonical or
+malformed request and recompute the proof with it.
+
+An absent request is spelled only by omitting `--field-pose`. An explicitly
+supplied JSON `null` is not an absent request: the producer CLI, receipt
+recovery and canonicalization all refuse it (`field-pose request is null`)
+before any search runs or any proof is granted, so it can never select the
+default search and its graphic moves.
+
+The producer works natively:
+
+1. It checks the source digest and each native source pose.
+2. It writes each pose with `SetPosition` and `SetTextAngle`, and saves.
+3. It reloads the saved board and requires exactly the requested poses.
+
+The independent byte-level qualifier (`write_scope(..., field_poses=request)`)
+derives every board pose from the saved tokens. The board position is the
+footprint `at` plus the footprint-relative field `at`, rotated by the footprint
+orientation. The saved field angle is the board angle. Only quarter-turn
+footprints have an exact transform; any other orientation refuses.
+`tests.test_routed_artwork` checks this transform against native poses for
+every field of the real pod board.
+
+The qualifier requires each of these, and refuses otherwise:
+
+- the before bytes have the named digest;
+- every token of the requested field's `at` node and its footprint's `at`
+  node, in both boards, is an unquoted plain decimal (`-?digits[.digits]`).
+  KiCad refuses to load a quoted pose number such as `(at "2.425" -0.575 0)`,
+  and the decoded tree would lose the quotes, so the raw spelling is checked
+  first. Quoted, list, exponent, `+`-signed and bare-point tokens refuse
+  (`field-pose position token is not a native number`);
+- each field is unique, in its named footprint, movable, visible and on a silk layer;
+- each source pose equals `from`, and each saved pose equals `to`;
+- exactly the requested fields change, and only in their `at` node;
+- style, text, visibility, mirroring, layer, uuid, footprint pose, other
+  fields, graphics, copper, pads and rules stay byte-exact.
+
+An angle changes only where the request names a different `to` angle. The
+translation-only default (no request) and target sets still refuse any rotation.
+There is no blanket angle allowance and no graphic rotation. A request that
+moves nothing, names a field twice, or is combined with a target set refuses.
+Native DRC then applies as for every artwork run: new non-silk findings refuse,
+and remaining silk conflicts stay open defects. The proof records the
+normalized request as `field_poses`.
+
+The refusal tests cover a wrong board hash, a wrong footprint or field uuid, a
+wrong source pose or angle, a wrong destination, an unrequested or unapplied
+rotation, an unselected field or graphic, style, text, layer, visibility and
+property edits, and footprint and copper edits. They also cover quoted x, y
+and angle tokens, list, exponent, `+`-signed and bare-point tokens alongside
+an otherwise valid requested edit, a quoted source pose and footprint angle,
+and an explicit `null` request: in the receipt argv, and as a freshly executed
+receipt whose producer refuses before writing any board.
+
+The first pod use of a field-pose request (the iter8u C128/U31 derivative of
+iter8t, 2026-10-22) is **experimental and not adopted**; it is retained only
+as diagnostic evidence of the mechanism. It qualified its write scope and
+natively closed eight studied silk findings with no new findings, but
+agent-509 rejected it for adoption: the C128 label reads as belonging to the
+neighbouring R14/R16 passives. Its measured legend-to-mask clearances
+(C128 0.1400 mm, U31 0.1438 mm) are also below the sourced JLCPCB minimum
+silkscreen-to-solder-mask clearance of 0.15 mm, so the derivative is not
+fab-acceptable. The captured fab profile does not yet carry that limit; a
+qualified correction needs the sourced limit captured and bound first.
+
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed
 board artifact. Carry adoption reads artwork receipts only through the
@@ -466,7 +546,8 @@ by the authenticated translation. A raw edit or unreceipted DRC cannot close car
 
 `tests.test_routed_artwork` exercises front/back fields, footprint/board graphics,
 escaped pod-like properties, a real pinned pod board, escape and spelling
-ambiguity, targeted relocation and its receipt binding,
+ambiguity, targeted relocation and its receipt binding, exact field-pose
+requests and their receipt binding,
 tracks/vias/zones preservation, non-silk and marking-damage refusals, source-pin
 and output binding, missing output, exhausted searches, ignored silk coverage
 and a nonroot read-only host sandbox.
