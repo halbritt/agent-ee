@@ -67,7 +67,7 @@ Only single-layer SMD terminal pairs on a proved unbranched saved track/via
 route are qualified for numeric measurements. Enabled copper layers are read
 from the native board stack. Straight tracks, non-reversing bends and through
 vias joining two distinct incident layers are supported. Every member needs
-exactly two pads, distinct degree-one endpoints inside actual native pad copper,
+exactly two pads, distinct degree-one terminals inside actual native pad copper,
 positive copper widths and connected copper without branches, stubs
 or disconnected islands. Native finite-width shape collision checks refuse
 nonincident track intersections, overlaps and pad/via contacts, including contact
@@ -116,18 +116,50 @@ Native rule semantics: [KiCad 10 PCB documentation](https://docs.kicad.org/10.0/
 
 ## Native pad contacts (AGENTEE-185)
 
-KRT may stop a route inside an SMD pad instead of at its centre. Coverage now
-requires exactly one graph vertex inside each native pad shape on its copper
-layer, with degree one and distinct terminal assignments. A bounding box,
-endcap-only contact, multiple endpoints in a pad or incidental contact with
-other copper cannot establish this path. Existing branch, intersection,
-backtracking, pad-overlap and unsupported topology refusals remain.
+KRT may stop a route inside an SMD pad instead of at its centre. Coverage
+uses `GetEffectiveShape(layer).Collide` on the native copper, including rotated
+and curved pads. Each terminal must contain exactly one degree-one endpoint.
+Additional vertices qualify only as one contiguous entry chain with exactly one
+exit from the pad. Multi-vertex entry chains are limited to native convex rect,
+circle, oval and roundrect pads; other shapes keep the single-vertex limit.
+Disconnected in-pad copper, multiple endpoints, branches, re-entry, loops,
+interior crossings and contact with other nets still refuse. Endcap-only contact
+with a pad, without an endpoint inside its copper, remains unsupported.
 
-This changes only path coverage, not length measurement. Native KiCad DRC
-continues to evaluate saved copper length with the captured project settings.
-The CAN probe's 10 mm pad-centre separation produces 9.8125 mm of straight copper
-per member; no pad-centre offset is added by the checker. See
+Through-via contacts may end off-centre inside the native via copper on each of
+two distinct incident layers. Each endpoint must identify at most one via;
+ambiguous via contacts refuse. The graph uses that via's native identity for
+incidence, while retaining the actual saved endpoint and its offset in evidence.
+Track-to-track junctions still require shared endpoints. Width-only overlaps and
+interior crossings never establish a measurable route. PTH terminals and
+multi-terminal nets remain unsupported; this does not qualify the pod CAN buses.
+Native connectivity is checked as well as the path proof; connectivity alone
+cannot establish a unique numeric route.
+
+`pad_contacts` records the native pad UUID, layer, terminal position, all contained
+vertices with incident copper UUIDs and offsets from the pad position (signed
+`offset_nm` and Euclidean `offset_distance_nm`). It also records UUIDs and native
+centreline lengths of track segments wholly inside the pad as
+`fully_in_pad_copper_ids` and `fully_in_pad_track_length_nm`. The latter is a
+subtotal of wholly contained centrelines, not a clipping estimate for partially
+contained entry segments. `junction_contacts` records track/via UUIDs, the native
+layer, actual endpoint and offsets from the via position.
+
+The explicit `in_pad_length_convention` includes **all saved track copper** in
+native length measurement, including entry tails and the in-pad portion of an
+entry segment. No fictitious pad-centre or via-centre extension is added, and no
+in-pad segment is silently zeroed or removed from the native board. Native KiCad
+DRC remains the numeric authority, with captured via-height settings. A native
+DRC test measures a 9.2 mm entry track plus two 0.3 mm in-pad tails as 9.8 mm,
+exceeding a 9.5 mm maximum. The CAN probe's 10 mm pad-centre separation still
+produces 9.8125 mm of straight copper per member; see
 [the CAN pair probe](pod-can-routing.md) for the controlled 5 mm skew negative.
+
+`tests.test_routing_native` covers off-centre pad and through-via contacts,
+rotated native shapes, entry chains, explicit length/identity/offset evidence,
+and the ambiguity, loop, branch, re-entry, crossing and other-net boundaries.
+These owned fixtures and historical pod diagnostics are software coverage
+qualification only; they do not establish campaign adoption or full CAN support.
 
 ## Filled planes and multilayer connectivity (AGENTEE-206)
 

@@ -500,6 +500,11 @@ runs. Scope/2 and scope/3 bind exactly one requirement per routing check and
 freeze its rule document and captured native rule sidecars. Complete route and
 constraint coverage is required; unsupported topology or missing inputs are
 unknown. General DRC and schematic parity remain separate obligations.
+Native pad entry chains and unique off-centre through-via endpoints retain
+native copper UUIDs and offsets in `routing-probe.json`; saved in-pad copper
+remains included in native length measurements, without pad-centre extensions.
+Ambiguous, branched, looped, crossing and other-net contacts still refuse; see
+[native pad contacts](routing-rules.md#native-pad-contacts-agentee-185).
 The evidence includes generated and staged effective rule hashes and the native
 DRC reports. An impedance target remains unverified because no qualified stackup
 and solver path is implemented, even when those inputs are named in the contract.
