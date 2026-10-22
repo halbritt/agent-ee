@@ -553,8 +553,13 @@ native measurements against all applicable sourced minima, rather than relying
 on the largest limit printed by KiCad. Co-located drills and copper beyond the
 outline are structural engineering findings. Reject declarations that demote
 owner rules. Plane production and the row stand-in share provenance grading.
-G4 (verified reference authority) and G5 (native geometry defaults) remain
-follow-up work; importing a class and citation does not validate their authority.
+G5 (AGENTEE-425) uses the explicit inventory alternative: scaffold and board-build
+bind retained unsourced geometry settings and their potential router/zone-filler
+consumers in `unsourced_geometry`. Native values and existing DRC verdicts stay
+unchanged; unsourced numeric limits remain advisory. Only owner, manufacturer
+and datasheet sources omit value-matched settings from that inventory.
+G4 (verified reference authority) remains owner work; importing a class and
+citation does not validate their authority.
 
 The coordinator's 2026-10-21 ruling preserves the group-copper campaign's
 initial structural findings: its unplaced copper fails both `drc-placement` and

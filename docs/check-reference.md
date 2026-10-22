@@ -2077,6 +2077,13 @@ The DRC check retains the raw `drc.json`, raw counts, waiver keys and locators;
 from graded issues without changing connectivity or parity treatment.
 A native tool failure or missing/malformed output cannot become a pass.
 
+AGENTEE-425 adds the [unsourced geometry inventory](scaffold.md#unsourced-geometry-inventory-agentee-425)
+to scaffold receipts and project bindings; board-build refreshes it on template
+merge. It lists retained unsourced settings and potential router/zone-filler
+consumers, including generated native constraints. Value-matched owner,
+manufacturer and datasheet settings are excluded. This disclosure changes no
+native value, check registration, schema version or DRC verdict.
+
 The placement comparison retains classified baseline and candidate findings,
 including baseline silk/text, and derives added numeric blockers from those
 classifications. Structural shorts, PTH courtyard intrusion and introduced

@@ -295,6 +295,8 @@ rules from the envelope, its fab profile and the parts manifest instead, and
 refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331)
 records design-rule classes and citations. Native DRC retains unsourced numeric
 findings as advisories while sourced limits and structural gates remain hard.
+Scaffold and board-build also bind an [inventory of retained unsourced geometry defaults](docs/scaffold.md#unsourced-geometry-inventory-agentee-425)
+with their potential router and zone-filler consumers (AGENTEE-425).
 Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through

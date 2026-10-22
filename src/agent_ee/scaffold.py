@@ -962,7 +962,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
             owner_names = {str(n[1]) for n in rule_forms(read_captured(inputs, owner_rules), native=True)
                            if len(n) > 1 and n[0] == 'rule'}
             require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
-        bind_project(project, constraint_record)
+        bind_project(project, constraint_record, composed_rules)
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
