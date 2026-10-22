@@ -8,7 +8,9 @@ from agent_ee.executor import execute
 from agent_ee.schematic_emitter import emit_schematic, publish
 from agent_ee.schematic_text import collisions, measured_text, overlap, place_native_text, stroke_text
 from tests.schematic_text_fixture import inputs
-from tests.toolchain import require_toolchain
+from tests.toolchain import enable_visuals_for_module, require_toolchain
+
+setUpModule = enable_visuals_for_module
 
 
 class StrokeBoundsTests(unittest.TestCase):

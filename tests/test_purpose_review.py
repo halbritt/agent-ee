@@ -10,6 +10,9 @@ from agent_ee.findings import adjudicate, collect_findings, validate_review
 from agent_ee.reviewers import adjudicator_call, build_packet, initial_reviews
 from agent_ee.storage import digest, identity, read_json, write_json
 from tests import test_findings as fixture
+from tests.toolchain import enable_visuals_for_module
+
+setUpModule = enable_visuals_for_module
 
 
 class PurposeReviewTests(unittest.TestCase):

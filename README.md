@@ -960,6 +960,10 @@ PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
 python3 scripts/check_docs.py
 ```
 
+The test harness skips incidental candidate imaging by default; the imaging
+modules still produce and verify native images. Production imaging stays on.
+See [candidate inspection images](docs/pcb-renders.md#candidate-inspection-images-agentee-382).
+
 Native-dependent tests skip with a stated prerequisite reason when their
 toolchain is unavailable. Set `AGENT_EE_REQUIRE_TOOLCHAIN=1` to make missing
 prerequisites fail (the CI mode). Assertions remain failures. See the
