@@ -1,5 +1,12 @@
 # Native and engineering checks
 
+[Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
+records environment/default resolution and hashed proposal-local model files.
+Missing model files remain explicit inspection gaps; coverage adds no check
+kind and does not change engineering verdicts.
+Inventory fixtures can inject explicit stock defaults independently of installed
+host models; ordinary candidate coverage keeps native default discovery.
+
 The [purpose review](purpose-review.md) asks independent reviewers to justify
 constraints, reserves, empty fields and interface poses using captured geometry
 and renders. It adds an advisory packet dimension, not a check kind or acceptance

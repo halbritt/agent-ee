@@ -1841,3 +1841,10 @@ including carried silk defects. Requests can explicitly set `skip_visuals: true`
 for fixtures; rendering failures retain unavailable coverage and native logs.
 The writer rechecks the original board, netlist and project/rule bytes after
 imaging, immediately before publication.
+
+### Project-local 3D models
+
+Proposals carry enabled project-local model files before candidate imaging.
+`project-models.json` records copied file hashes and missing references; the
+placement result includes the same receipt. See [model closure](pcb-renders.md#proposal-project-model-closure-agentee-394)
+for resolution provenance, path safety and publication checks.
