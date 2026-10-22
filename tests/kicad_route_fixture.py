@@ -161,6 +161,22 @@ board_sha = sha(cand / board) if process_ok else None
 validation = {'status': 'PASS', 'reasons': [], 'delivered_board_sha256': board_sha,
               'validated_board_sha256': board_sha, 'candidate_board_sha256': board_sha,
               'refill_modified_board': False, 'restored_project_files': []}
+# The pin's native terminal preservation (KICADROUTE-98), from native partitions.
+deficit = 0 if routing_status == 'COMPLETE' else 2
+validation['net_completion'] = {'status': 'PASS', 'nets_connected_in_input': 0, 'nets_lost': [],
+                                'split_components': []}
+validation['native_terminal_evidence'] = {
+    'reference': os.path.relpath(run / 'validate/reference-terminal-components.json'),
+    'candidate': os.path.relpath(run / 'validate/candidate-terminal-components.json'),
+    'metrics': {'reference': {'terminal_nets': 2, 'incomplete_nets': 2, 'component_deficit': 4},
+                'candidate': {'terminal_nets': 2, 'incomplete_nets': 1 if deficit else 0,
+                              'component_deficit': deficit}}}
+if name == 'terminal_split':
+    validation['net_completion']['split_components'] = [{'net': '/IN', 'pads': ['u1', 'u2']}]
+if name == 'terminal_missing':
+    del validation['net_completion']
+if name == 'terminal_complete_split':
+    validation['native_terminal_evidence']['metrics']['candidate'].update(incomplete_nets=1, component_deficit=1)
 if name == 'refill_modified':
     validation.update(delivered_board_sha256='1' * 64, refill_modified_board=True)
 if name == 'validation_failed':
@@ -194,6 +210,21 @@ result = {'schema': 'kicad-route/route/1', 'measurement': False, 'evidence': {},
           'finished_utc': '2026-10-17T00:00:00+00:00', 'exit_code': code, 'ledger': {}}
 if paired:
     result.update(schema='kicad-route/route/2', pairs=[{**p, 'routed': True} for p in plans])
+# The pin adds copper custody to a builtin attempt whose process passed (AGENTEE-450).
+if opts['--backend'] == 'builtin' and process_ok and name != 'custody_missing':
+    if name == 'custody_unavailable':
+        result['copper_ownership'] = {'status': 'unavailable', 'reasons': ['fixture custody unavailable'],
+                                      'replay_authority': False}
+    else:
+        write(run / 'validate/copper-ownership.json', {'schema': 'kicad-route/copper-ownership/1',
+                                                       'replay_authority': False, 'board_sha256': board_sha})
+        custody = sha(run / 'validate/copper-ownership.json')
+        result['copper_ownership'] = {'status': 'bound', 'record': 'validate/copper-ownership.json',
+                                      'sha256': '0' * 64 if name == 'custody_forged' else custody,
+                                      'coverage': 'current_run_only_input_fixed', 'replay_authority': False}
+        result['evidence'] = {'records': {'validate/copper-ownership.json': custody}}
+        if name == 'custody_authority':
+            result['copper_ownership']['replay_authority'] = True
 if name == 'result_exit_mismatch':
     result['exit_code'] = 2
 if name == 'unknown_result_version':

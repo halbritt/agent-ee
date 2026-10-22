@@ -27,7 +27,7 @@ value: adoption stays with the pod lane.
 | Alias | Location | Revision |
 | --- | --- | --- |
 | A | this repository | base `f06b30bc` |
-| K | pinned checkout `build/kicad-route-pin-5f1c072`, read only; `routing_adapter.preflight` reports no problems | `5f1c072b86e0caee82c7656226c4d0e3ec580a58` |
+| K | pinned checkout `build/kicad-route-pin-b577449`, read only; `routing_adapter.preflight` reports no problems (re-pinned by AGENTEE-450; the sections below were first written against `5f1c072`) | `b5774496d8466b67ffa0362b6665fee2108155a3` |
 | F | fome-mc store, read only | `8c42f2ee3e7c5c77c51e21632a8900bfbef23726` |
 
 F paths below are relative to `telemetry-pod/expansion/`. File hashes were
@@ -68,7 +68,7 @@ the read-only input tree. The adapter's request carries only:
   `reference` and optional `per_net_signal_layers`;
 - an optional `diff_pairs: "auto"`, which cannot be combined with a layer policy.
 
-The fixed argv is `kicad-route run --out /work/routing/out --json --backend krt
+The fixed argv is `kicad-route run --out /work/routing/out --json --backend builtin
 --dir /candidate/P --board B --schematic S --name N --label L --protect existing
 --budget T`. A layer policy adds `--pour-area-loss PCT` and
 `--backend-arg=--layers --backend-arg=<layer> ...`, plus `--layer-costs` when
@@ -239,15 +239,21 @@ agent-ee runs only `kicad-route run`. It accepts:
 - `route/2` together with `attempt/2`, only with `diff_pairs: "auto"`;
 - `kicad-route/attempt/1`;
 - `kicad-route/refusal/1`, with `reason_class` one of usage, input, ledger, canary
-  or state.
+  or state;
+- on a `builtin` result whose process passed, the `copper_ownership` pointer
+  (`status` `bound` or `unavailable`, `replay_authority: false`). A bound pointer
+  must name `validate/copper-ownership.json` with the hash of the retained bytes,
+  also listed in `result.evidence.records`. agent-ee binds it and never grades
+  from it.
 
-It never reads `kicad-route/route-campaign/1` (the pin's campaign record),
-`blocked/2`, revalidation records, or any planned `campaign/2` or
-`routability-experiment/1`. A `grep` of `src/` finds no other kicad-route schema.
+It never reads `kicad-route/route-campaign/1` or `/2` (the pin's campaign record),
+`blocked/2`, revalidation records, the `kicad-route/copper-ownership/1` record's
+content, or any planned `campaign/2` or `routability-experiment/1`. A `grep` of
+`src/` finds no other kicad-route schema.
 
 The code pin is still byte-exact over every tracked `bin/` and `src/` file:
-276 files, including `src/kicad_route/campaign.py`
-(`5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6`). A
+309 files, including `src/kicad_route/campaign.py`
+(`c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9`). A
 campaign-only change therefore stops every agent-ee routing step:
 
 - a changed file is refused as `tool file differs from pin`;
@@ -264,7 +270,9 @@ When agent-ee re-pins onto a commit with that work:
    `pinned_code_sha256`, `pinned_campaign_py_sha256`).
 2. **Installed state.** Rebuild the engine and state for the new pin. Point
    `docker/kicad-route/install.sh` `KICAD_ROUTE_COMMIT` and the host
-   `build/kicad-route-pin-<sha>` checkout at it. `preflight` must report no
+   `build/kicad-route-pin-<sha>` checkout at it. Since `b577449` the state manifest
+   is bound to its location: record it where the sandbox mounts it
+   (`/opt/kicad-route`, or `/opt/kicad-route-state` for a separate state). `preflight` must report no
    problems, because `verify_state` imports the pin's own `engine` and
    `statemanifest` and checks the manifest digests.
 3. **Schema acceptance.** The adapter checks exact shapes:

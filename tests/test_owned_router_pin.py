@@ -78,7 +78,11 @@ class OwnedRouterPinTests(unittest.TestCase):
                                 ignore=shutil.ignore_patterns('__pycache__'))
             (root / '.git').mkdir()
             (root / '.git/HEAD').write_text(attempt.PIN + '\n')
-            self.assertEqual(routing_adapter.preflight(root, self.checkout)['problems'], [])
+            # The pin binds its manifest to the sandbox location of a checkout state
+            # (/opt/kicad-route), so the copy reuses the qualified runtime as its own state.
+            (root / '.venv-krt').symlink_to(self.checkout / '.venv-krt')
+            shutil.copyfile(self.checkout / 'manifest.json', root / 'manifest.json')
+            self.assertEqual(routing_adapter.preflight(root)['problems'], [])
             source = root / 'src/kicad_route/engine.py'
             cache = Path(importlib.util.cache_from_source(str(source)))
             cache.parent.mkdir(exist_ok=True)
@@ -91,4 +95,47 @@ class OwnedRouterPinTests(unittest.TestCase):
             data[8:16] = struct.pack('<II', int(source.stat().st_mtime), source.stat().st_size)
             cache.write_bytes(data)
             self.assertEqual(attempt.verify_code(root), [])
-            self.assertEqual(routing_adapter.preflight(root, self.checkout)['problems'], [])
+            self.assertEqual(routing_adapter.preflight(root)['problems'], [])
+
+    def test_state_manifest_must_describe_the_sandbox_location(self):
+        """b577449 refuses a manifest recorded for another directory (AGENTEE-450).
+
+        The sandbox mounts a checkout state at /opt/kicad-route and a separate state at
+        /opt/kicad-route-state; a manifest recorded anywhere else is refused at preflight,
+        before the sandboxed router would refuse it."""
+        self.assertEqual(json.loads((self.checkout / 'manifest.json').read_text())['state_dir'],
+                         attempt.SANDBOX['checkout'])
+        # The qualified checkout used as a separate state describes the wrong mount point.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'tool'
+            for top in ('bin', 'src'):
+                shutil.copytree(self.checkout / top, root / top, ignore=shutil.ignore_patterns('__pycache__'))
+            (root / '.git').mkdir()
+            (root / '.git/HEAD').write_text(attempt.PIN + '\n')
+            problems = routing_adapter.preflight(root, self.checkout)['problems']
+            self.assertEqual(problems, [
+                "state manifest describes '/opt/kicad-route', not the sandbox state '/opt/kicad-route-state'; "
+                "record it with `kicad-route state-manifest` where KICAD_ROUTE_STATE is '/opt/kicad-route-state'"])
+        for described in ('/home/elsewhere/kicad-route', None, attempt.SANDBOX['state']):
+            with self.subTest(described=described), tempfile.TemporaryDirectory() as tmp:
+                state = Path(tmp)
+                (state / '.venv-krt').symlink_to(self.checkout / '.venv-krt')
+                m = json.loads((self.checkout / 'manifest.json').read_text())
+                m['state_dir'] = described
+                (state / 'manifest.json').write_text(json.dumps(m))
+                problems = attempt.verify_state(self.checkout, state)
+                self.assertTrue(any('state manifest describes' in p and 'not the sandbox state' in p
+                                    for p in problems), problems)
+                # The same manifest qualifies where the sandbox would mount it.
+                if described == attempt.SANDBOX['state']:
+                    self.assertEqual(attempt.verify_state(self.checkout, state, mounted_at=described), [])
+
+    def test_a_staged_router_generation_is_not_the_qualified_engine(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            (state / '.venv-krt').symlink_to(self.checkout / '.venv-krt')
+            m = json.loads((self.checkout / 'manifest.json').read_text())
+            m['krt']['generation'] = '.router-generations/g1'
+            (state / 'manifest.json').write_text(json.dumps(m))
+            self.assertIn('state manifest selects a router generation; only the checkout engine is qualified',
+                          attempt.verify_state(self.checkout, state))

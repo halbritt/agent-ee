@@ -288,7 +288,7 @@ contains captured vendor documents.
 
 ```sh
 PYTHONPATH=src:tests python3 -m unittest tests.test_rf_review -v
-AGENT_EE_KICAD_ROUTE_CHECKOUT=/path/to/kicad-route-5f1c072 \
+AGENT_EE_KICAD_ROUTE_CHECKOUT=/path/to/kicad-route-b577449 \
   PYTHONPATH=src python3 -m unittest tests.test_rf_layer_wiring -v
 ```
 

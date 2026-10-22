@@ -1,7 +1,8 @@
 """KICADROUTE-82 backend rename: 'builtin' is canonical, 'krt' its alias (AGENTEE-343).
 
-Requests and parsed results accept both names, a request keeps the name it was written
-with, and the pinned 5f1c072 tool is still invoked with the one name it knows ('krt').
+Requests and parsed results accept both names and a request keeps the name it was written
+with, so retained 'krt' records still read. Since the b577449 pin (AGENTEE-450) agent-ee
+emits only 'builtin': it is the default and the only name the pinned tool is given.
 """
 import contextlib
 import io
@@ -38,7 +39,7 @@ class BackendAliasTest(unittest.TestCase):
                 self.assertEqual(attempt.parse_request(REQUEST + ['--backend', name])['backend'], name)
                 request = attempt.parse_request(REQUEST + ['--backend', name, '--diff-pairs', 'auto'])
                 self.assertEqual(request['diff_pairs'], 'auto')
-        self.assertEqual(attempt.parse_request(REQUEST)['backend'], 'krt')
+        self.assertEqual(attempt.parse_request(REQUEST)['backend'], 'builtin')
 
     def test_unknown_backend_is_refused(self):
         for name in ('', 'KRT', 'Builtin', 'krt2', 'builtin '):
@@ -47,11 +48,12 @@ class BackendAliasTest(unittest.TestCase):
         with self.assertRaisesRegex(attempt.RequestError, 'diff-pairs'):
             attempt.parse_request(REQUEST + ['--backend', 'freerouting', '--diff-pairs', 'auto'])
 
-    def test_pinned_tool_still_receives_krt(self):
+    def test_pinned_tool_receives_only_builtin(self):
         layout = {'work': '/w', 'candidate': '/c', 'checkout': '/k'}
         for name in ('krt', 'builtin'):
             argv = attempt.tool_argv(attempt.parse_request(REQUEST + ['--backend', name]), layout)
-            self.assertEqual(argv[argv.index('--backend') + 1], 'krt')
+            self.assertEqual(argv[argv.index('--backend') + 1], 'builtin')
+            self.assertNotIn('krt', argv)
         argv = attempt.tool_argv(attempt.parse_request(REQUEST + ['--backend', 'freerouting']), layout)
         self.assertEqual(argv[argv.index('--backend') + 1], 'freerouting')
 
@@ -77,7 +79,7 @@ class BackendAliasTest(unittest.TestCase):
             self.assertEqual(summary['proposal'], 'eligible')
             self.assertEqual(summary['reproducibility'], attempt.REPRODUCIBILITY[name])
             result = json.loads((case.work / 'routing/attempt/result.json').read_text())
-            self.assertEqual(result['backend']['name'], 'krt')  # what the 5f1c072 tool echoes
+            self.assertEqual(result['backend']['name'], 'builtin')  # the tool echoes the emitted name
             reports[name] = case.report
         self.assertEqual(reports['krt']['reproducibility'], reports['builtin']['reproducibility'])
 

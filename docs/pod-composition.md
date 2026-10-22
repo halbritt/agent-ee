@@ -19,7 +19,7 @@ router, check or model. It is not acceptance evidence and does not adopt the pod
 | Binding | `binding_fill.configuration(intent='intent.unbound.json', output='intent.json', captures='.')` | accepted; dependency closure from the captured report, all 278 captured |
 | Emit and annotate | `schematic_stage.configuration` | accepted |
 | Placement | `placement_adapter.validate_declaration` (`agent-ee.placer/1`, captured packing policy) | accepted, declared only |
-| Routing | `routing_adapter.preflight`, `validate_declaration` (pin 5f1c072) | accepted, declared only |
+| Routing | `routing_adapter.preflight`, `validate_declaration` (pin b577449) | accepted, declared only |
 | Criterion map | `evidence_index.criteria_map` against the compiled baseline (pre-capture) | accepted |
 
 The captured binding report matches the separate-output form: its input is

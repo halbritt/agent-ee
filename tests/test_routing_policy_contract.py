@@ -44,7 +44,7 @@ class ContractSummaryTests(unittest.TestCase):
         consumes = self.adapter['consumes']
         self.assertEqual(attempt.RESULT_SCHEMA, consumes['result'][0])
         self.assertEqual(attempt.REPORT_SCHEMA, 'agent-ee.kicad-route-attempt/1')
-        policy = {'project': 'p', 'board': 'b.kicad_pcb', 'name': 'n', 'backend': 'krt'}
+        policy = {'project': 'p', 'board': 'b.kicad_pcb', 'name': 'n', 'backend': 'builtin'}
         # Version 2 only with declared pairs; any other version is a contradiction either way.
         for version, paired in ((1, False), (2, True), (2, False), (3, True)):
             with self.subTest(version=version, paired=paired):
@@ -66,16 +66,19 @@ class ContractSummaryTests(unittest.TestCase):
         self.assertEqual(routing_adapter.validate_declaration({**declaration, key: value})[key], value)
         with self.assertRaises(ValueError):
             routing_adapter.validate_declaration({**declaration, key: 'other'})
-        request = {'project': 'p', 'board': 'b.kicad_pcb', 'name': 'n', 'backend': 'krt', 'budget_s': 10}
+        request = {'project': 'p', 'board': 'b.kicad_pcb', 'name': 'n', 'backend': 'builtin', 'budget_s': 10}
         versions = {}
         for paired in (False, True):
             asked = {**request, **({key: value} if paired else {})}
             result = dict.fromkeys(attempt.RESULT_KEYS)
-            result.update(kind='route', exit_code=0, backend={'name': 'krt'},
+            result.update(kind='route', exit_code=0, backend={'name': 'builtin'},
                           input={'board': 'b.kicad_pcb', 'project': 'n'},
                           settings=attempt.expected_settings(asked, None, [] if paired else None),
                           process={'status': 'PASS'}, routing={'status': 'COMPLETE'},
-                          validation={'status': 'PASS'}, **({'pairs': []} if paired else {}))
+                          validation={'status': 'PASS'}, **({'pairs': []} if paired else {}),
+                          # The pin's custody pointer on every builtin process-PASS result.
+                          copper_ownership={'status': 'unavailable', 'reasons': ['synthetic'],
+                                            'replay_authority': False})
             keys = attempt.ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set())
             for version in (1, 2, 3):
                 # A record reaches the attempt-schema check only if its result schema was accepted.
@@ -126,7 +129,7 @@ class ContractSummaryTests(unittest.TestCase):
         attempt.validate_layer_policy(derived)
         self.assertEqual(attempt.policy_backend_args(derived), example['expected_backend_args'])
         routing_adapter.validate_declaration({**example['declaration'], 'layer_policy': derived})
-        request = {'backend': 'krt', 'budget_s': example['declaration']['budget']}
+        request = {'backend': 'builtin', 'budget_s': example['declaration']['budget']}
         self.assertEqual(attempt.expected_settings(request, None), example['expected_settings_without_policy'])
         with_policy = attempt.expected_settings({**request, 'layer_policy': derived}, None)
         self.assertEqual(with_policy['backend_args'], ['--layers', 'F.Cu', 'In2.Cu', 'B.Cu'])
@@ -154,8 +157,8 @@ class PinnedCheckoutContractTests(unittest.TestCase):
         self.assertEqual(schema['properties']['reason_class']['enum'], load()['adapter']['refusal_reason_classes'])
         # The pin's campaign record is a different kind that agent-ee never reads.
         source = (self.checkout / 'src/kicad_route/campaign.py').read_text()
-        self.assertIn('contract.schema_id("route-campaign")', source)
-        self.assertIn('kicad-route/route-campaign/1', load()['adapter']['never_consumed'])
+        self.assertIn('contract.schema_id("route-campaign", major=2)', source)
+        self.assertIn('kicad-route/route-campaign/2', load()['adapter']['never_consumed'])
 
 
 if __name__ == '__main__':

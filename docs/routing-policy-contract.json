@@ -2,27 +2,28 @@
   "schema": "agent-ee.routing-policy-contract-example/1",
   "status": "documentation example for KICADROUTE-91 (AGENTEE-388); no agent-ee code reads this file. tests/test_routing_policy_contract.py checks it against the adapter constants",
   "sources": {
-    "agent_ee": "f06b30bc (wt/ee-krt91-contract base)",
+    "agent_ee": "81e387ee (AGENTEE-450 re-pin base; contract first written at f06b30bc)",
     "fome_mc": "8c42f2ee3e7c5c77c51e21632a8900bfbef23726",
-    "kicad_route_pin": "5f1c072b86e0caee82c7656226c4d0e3ec580a58"
+    "kicad_route_pin": "b5774496d8466b67ffa0362b6665fee2108155a3"
   },
   "adapter": {
-    "pin": "5f1c072b86e0caee82c7656226c4d0e3ec580a58",
-    "pinned_code_files": 276,
-    "pinned_code_sha256": "1ef09f3aa3eed99ebcd58224475fd7deff8a6444a4605c67e8a0b17374e6e7a2",
+    "pin": "b5774496d8466b67ffa0362b6665fee2108155a3",
+    "pinned_code_files": 309,
+    "pinned_code_sha256": "78e9ae907ff86aa5e282b4cda8b4c0a77eed6bf3dba0c5a23e7cb1b94ba7e47b",
     "pinned_code_digest_rule": "sha256 of kicad_route_attempt.canonical_json(PINNED_CODE)",
-    "pinned_campaign_py_sha256": "5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6",
+    "pinned_campaign_py_sha256": "c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9",
     "command": "run",
     "consumes": {
       "result": ["kicad-route/route/1", "kicad-route/route/2"],
       "attempt": ["kicad-route/attempt/1", "kicad-route/attempt/2"],
       "refusal": ["kicad-route/refusal/1"],
-      "version_2_only_with": "diff_pairs auto"
+      "version_2_only_with": "diff_pairs auto",
+      "copper_ownership": "builtin process-PASS results only: the kicad-route/copper-ownership/1 pointer, bound to the retained validate/copper-ownership.json bytes; replay_authority false, never graded"
     },
     "refusal_reason_classes": ["usage", "input", "ledger", "canary", "state"],
     "retained_files": ["result.json", "attempt.json", "RESULT.md", "snapshot.json"],
     "retained_dirs": ["validate", "facts", "work"],
-    "never_consumed": ["kicad-route/route-campaign/1", "campaign/2 (planned)", "routability-experiment/1 (planned)", "blocked/2"]
+    "never_consumed": ["kicad-route/route-campaign/1", "kicad-route/route-campaign/2", "campaign/2 (planned)", "routability-experiment/1 (planned)", "blocked/2"]
   },
   "request_example": {
     "declaration": {
@@ -39,7 +40,7 @@
     "pour_area_loss_pct_note": "never stated in configuration: derived per routing turn by layer_policy_derivation (AGENTEE-260) from an agent-ee.via-budget/2 pilot; null here means unknown, not zero",
     "expected_backend_args": ["--layers", "F.Cu", "In2.Cu", "B.Cu"],
     "expected_settings_without_policy": {
-      "backend": "krt", "budget_s": 900, "protect": "existing", "max_iterations": null, "passes": null,
+      "backend": "builtin", "budget_s": 900, "protect": "existing", "max_iterations": null, "passes": null,
       "default_clearance_mm": null, "clearance_margin_mm": null, "pour_area_loss_pct": null,
       "pour_min_spokes": null, "backend_args": [], "backend_env": {}, "reserve_spokes": null,
       "barrier": null, "stall_s": null, "mode": "all", "rule_floor_sha256": null
