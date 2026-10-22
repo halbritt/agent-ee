@@ -146,5 +146,39 @@
       "page": 1,
       "quote": "nominal >= 1.0 mm / finished thickness: +/-10 %"
     }
+  },
+  "stackup": {
+    "name": "jlc-2layer-fr4-1oz-1.6mm",
+    "layer_count": 2,
+    "nominal_thickness_mm": 1.6,
+    "thickness_mm": null,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1
+      },
+      {
+        "name": "core",
+        "kind": "dielectric",
+        "thickness_mm": null
+      },
+      {
+        "name": "B.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1
+      }
+    ],
+    "layer_thickness_tolerance_mm": 0,
+    "source": {
+      "path": "sources/jlcpcb-2layer.txt",
+      "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+      "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+      "as_of": "2026-10-19",
+      "page": 1,
+      "quote": "nominal 1.6 mm / finished thickness: 1.44 to 1.76 mm\n2-layer / finished outer copper: 1 / 2 / 2.5 / 3.5 / 4.5 oz\n1 oz / copper thickness: 35 um\n2-layer / copper layers: 2 x 1 oz (35 um) / dielectric: 1 x FR-4"
+    }
   }
 }

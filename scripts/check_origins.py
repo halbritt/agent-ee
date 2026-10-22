@@ -44,6 +44,8 @@ UNRESOLVED = 'unresolved-owner-decision-required'
 CONFIRMED = 'owner-confirmed'
 DERIVED = 'derived'
 STATUSES = (PROPOSED, UNRESOLVED, CONFIRMED)
+# A structured owner_record names when, what (verbatim relay) and where the decision was given.
+RECORD_FIELDS = ('date', 'decision', 'where')
 
 # Mirrors .gitignore for checkouts without .git (for example the container image).
 IGNORED_DIRS = {'.git', '__pycache__', '.venv', 'build', '.pytest_cache'}
@@ -106,7 +108,11 @@ def validate(inventory):
         status = origin.get('permission_status')
         if status not in STATUSES:
             errors.append(f'origin {key}: unknown permission_status {status!r}')
-        if status == CONFIRMED and not str(origin.get('owner_record') or '').strip():
+        record = origin.get('owner_record')
+        if status == CONFIRMED and isinstance(record, dict):
+            errors.extend(f'origin {key}: owner_record needs {field}' for field in RECORD_FIELDS
+                          if not isinstance(record.get(field), str) or not record[field].strip())
+        elif status == CONFIRMED and not str(record or '').strip():
             errors.append(f'origin {key}: owner-confirmed requires owner_record')
         if key not in OWNED and status == PROPOSED:
             errors.append(f'origin {key}: third-party origin cannot be proposed under MIT')

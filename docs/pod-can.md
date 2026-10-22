@@ -7,7 +7,7 @@ fome-mc Git objects at `df304f3321296f7e517e0d2e2aa52e1380d52993`.
 The block requirements record the owner's accepted departure, composed from two
 sheets (2026-10-18). The block source records the combined upstream origins and
 licences under the existing [fome-mc notice](../fixtures/fome-mc/LICENSE-NOTICE.md)
-and origin T16; the repository's MIT proposal does not cover those captures.
+and origin T16; the repository's MIT license does not cover those captures.
 
 ## Reproduce the capture and native audit
 

@@ -77,6 +77,109 @@ class ReportTests(unittest.TestCase):
         self.assertNotEqual(canonical_check(record),canonical_check(other))
         self.assertNotEqual(canonical_check(record),canonical_check({**record,'location':'R2'}))
 
+    @staticmethod
+    def failed(run, duration, exit_code=1, board='/candidate/b.kicad_pcb', executed=None, inputs=None, text=None,
+               extra=()):
+        """A DRC record whose containment reason embeds the record sealed under ``run``.
+
+        ``executed`` is the directory the record ran in (default: ``run``, unrelocated).
+        """
+        import json
+        from pathlib import Path
+        executed = str(executed or run)
+        record = {'argv':['python3',board],'sandbox_argv':['bwrap','--ro-bind',inputs or executed+'/inputs','/candidate',
+                  '--ro-bind','/opt/agent-ee/src','/app','--bind',executed+'/work/drc/containment','/work',
+                  *[a.replace('<executed>',executed) for a in extra],'--',board],
+                  'timeout_s':120,'execution':'failed','exit_code':exit_code,'duration_s':duration}
+        sealed = Path(run)/'work/drc/containment';sealed.mkdir(parents=True,exist_ok=True)
+        (sealed/'execution.json').write_text(json.dumps(record,sort_keys=True))
+        reason = 'native copper containment failed: '+str(record if text is None else text)
+        return {'id':'drc','kind':'drc','summary':'DRC copper containment: '+reason,
+                'limitations':['zone fill evaluated as saved','Copper containment unavailable: '+reason],
+                'details':{'containment':{'reason':reason},'input':executed+'/inputs/b.kicad_pcb'}}
+
+    def test_sealed_containment_record_masks_only_its_run_directory_and_duration(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import canonical_check
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            one, two = tmp/'run1/runs/a', tmp/'run2/runs/a'
+            first = canonical_check(self.failed(one,0.57),one)
+            # The embedded record, not the free-text check field beside it.
+            self.assertEqual(first['details']['containment']['reason']['execution']['duration_s'],'<volatile>')
+            self.assertIn('<run>/inputs',first['details']['containment']['reason']['execution']['sandbox_argv'])
+            self.assertEqual(first['limitations'][0],'zone fill evaluated as saved')
+            self.assertEqual(first['summary']['containment_failure'],'DRC copper containment: ')
+            self.assertEqual(first['limitations'][1]['execution'],first['summary']['execution'])
+            other = self.failed(two,0.64)
+            self.assertNotEqual(first,canonical_check(other,two),'details.input is not an identified field')
+            del other['details']['input']
+            reference = self.failed(one,0.57);del reference['details']['input']
+            first = canonical_check(reference,one)
+            self.assertEqual(first,canonical_check(other,two))
+            # Anything else in the embedded record stays significant.
+            for changed in (self.failed(two,0.64,exit_code=2),self.failed(two,0.64,board='/candidate/c.kicad_pcb'),
+                            # bound outside its own run: the identity is not validated
+                            self.failed(two,0.64,inputs=str(tmp/'other/runs/a/inputs')),
+                            # a sibling of the run directory is not inside it
+                            self.failed(two,0.64,inputs=str(two)+'-backup/inputs'),
+                            # reason text that does not reproduce the sealed record
+                            self.failed(two,0.64,text={'argv':['python3','/candidate/b.kicad_pcb'],'exit_code':1})):
+                del changed['details']['input']
+                with self.subTest(changed=changed['details']['containment']['reason'][-90:]):
+                    self.assertNotEqual(first,canonical_check(changed,two))
+            # Masking stops at a path-component boundary.
+            def pair(extra):
+                a = self.failed(one,0.57,extra=extra);del a['details']['input'];a = canonical_check(a,one)
+                b = self.failed(two,0.64,extra=extra);del b['details']['input']
+                return a, canonical_check(b,two)
+            self.assertEqual(*pair(('--ro-bind','<executed>/lib','/lib')))
+            self.assertNotEqual(*pair(('--ro-bind','<executed>-backup/lib','/lib')))
+            # Environment values are not path fields, even when they begin with the run directory.
+            label = ('--setenv','DESCRIPTION','<executed>/ is the literal label printed on R1')
+            self.assertNotEqual(*pair(label))
+            # Unsupported option layouts stay unnormalized (exact comparison).
+            self.assertNotEqual(*pair(('--unknown-option','<executed>/x')))
+            # Without a sealed record nothing is masked.
+            self.assertNotEqual(canonical_check(reference),canonical_check(self.failed(two,0.64)))
+
+    def test_relocated_storage_uses_the_sealed_execution_identity(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import canonical_check
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            executed, stored = tmp/'exec/run1/runs/a', tmp/'fetched/x/runs/a'
+            check = self.failed(executed,0.57);del check['details']['input']
+            shutil.copytree(executed,stored)
+            self.assertEqual(canonical_check(check,stored),canonical_check(check,executed))
+            other = self.failed(tmp/'run2/runs/a',0.64);del other['details']['input']
+            self.assertEqual(canonical_check(check,stored),canonical_check(other,tmp/'run2/runs/a'))
+            # The retained run must carry the executed run's name.
+            renamed = tmp/'fetched/x/runs/b';shutil.copytree(executed,renamed)
+            self.assertNotEqual(canonical_check(check,renamed),canonical_check(check,executed))
+
+    def test_free_text_paths_and_locators_stay_significant(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import canonical_check
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            runs = []
+            for name in ('run1','run2'):
+                run = tmp/name;self.failed(run,0.5);runs.append(run)
+            for run in (None,*runs):
+                with self.subTest(sealed=run is not None):
+                    one, two = (run and runs[0]), (run and runs[1])
+                    self.assertNotEqual(canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run1-backup/b.kicad_pcb'}},one),
+                                        canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run2-backup/b.kicad_pcb'}},two))
+                    self.assertNotEqual(canonical_check({'id':'drc','kind':'drc','location':"R1 value 'duration_s': 1"},one),
+                                        canonical_check({'id':'drc','kind':'drc','location':"R1 value 'duration_s': 2"},two))
+                    self.assertNotEqual(canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run1/b'}},one),
+                                        canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run2/b'}},two))
+
 
 class WiringTests(unittest.TestCase):
     def schematic(self, wires):
@@ -327,8 +430,11 @@ class ConnectionSemanticsTests(unittest.TestCase):
         self.assertIsNone(connection_semantics(self.native(('pad','a1'),('a2','b1'),('pad','b1')),self.islands))
 
 
-def owned_split_board(directory):
-    """One net in three saved-copper islands: a lone pad and two separate tracks."""
+def owned_split_board(directory, closed=True):
+    """One net in three saved-copper islands: a lone pad and two separate tracks.
+
+    ``closed=False`` saves two edge segments that do not close the outline.
+    """
     import pcbnew
     from pathlib import Path
     board = pcbnew.BOARD()
@@ -346,9 +452,15 @@ def owned_split_board(directory):
             tracks.append(track)
     # An outline keeps DRC from reporting the board itself, whose item UUID
     # KiCad regenerates on every load.
-    outline = pcbnew.PCB_SHAPE(board);outline.SetShape(pcbnew.SHAPE_T_RECT);outline.SetLayer(pcbnew.Edge_Cuts)
-    outline.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(-5),pcbnew.FromMM(-5)))
-    outline.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(15),pcbnew.FromMM(15)));board.Add(outline)
+    if closed:
+        outline = pcbnew.PCB_SHAPE(board);outline.SetShape(pcbnew.SHAPE_T_RECT);outline.SetLayer(pcbnew.Edge_Cuts)
+        outline.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(-5),pcbnew.FromMM(-5)))
+        outline.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(15),pcbnew.FromMM(15)));board.Add(outline)
+    else:
+        for start,end in (((-5,-5),(15,-5)),((15,-5),(15,15))):
+            edge = pcbnew.PCB_SHAPE(board);edge.SetShape(pcbnew.SHAPE_T_SEGMENT);edge.SetLayer(pcbnew.Edge_Cuts)
+            edge.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(start[0]),pcbnew.FromMM(start[1])))
+            edge.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(end[0]),pcbnew.FromMM(end[1])));board.Add(edge)
     path = Path(directory)/'owned.kicad_pcb';pcbnew.SaveBoard(str(path),board)
     text = path.read_text()
     from agent_ee.benchmark import parse, children, one, uid, values
@@ -389,10 +501,11 @@ class NativeConnectionWitnessTests(unittest.TestCase):
                 self.assertFalse(compare_records(first,other,board)['semantic'])
 
 
-def owned_native_run(root):
+def owned_native_run(root, text=None):
     """One owned checks-only review with native ERC and DRC, in a benchmark run layout.
 
-    The board is the owned split net, so DRC retains unconnected-item witnesses.
+    The board is the owned split net, so DRC retains unconnected-item witnesses;
+    ``text`` supplies its saved bytes instead of a freshly generated board.
     """
     import json
     import shutil
@@ -403,8 +516,8 @@ def owned_native_run(root):
     source = root/'source';source.mkdir()
     for name in ('interface.kicad_sch','requirements.md'):
         shutil.copyfile(fixture/name,source/name)
-    text = owned_split_board(source)[0]
-    (source/'interface.kicad_pcb').write_text(text);(source/'owned.kicad_pcb').unlink()
+    text = text or owned_split_board(source)[0]
+    (source/'interface.kicad_pcb').write_text(text);(source/'owned.kicad_pcb').unlink(missing_ok=True)
     checks = [{'id':'owned-netlist','kind':'netlist'},{'id':'owned-erc','kind':'erc'},{'id':'owned-drc','kind':'drc'}]
     scope = {'schema':'agent-ee.scope/2','name':'owned','scope':'Owned native rerun fixture.',
         'schematic':'interface.kicad_sch','board':'interface.kicad_pcb',
@@ -458,6 +571,38 @@ class NativeRerunTests(unittest.TestCase):
             (run/'result.json').write_text(json.dumps({**retained,'outcome':'changed'}))
             with self.assertRaisesRegex(ValueError,'retained result changed'):
                 native_rerun(first,Path(tmp)/'tampered-result')
+
+
+class RelocatedEvidenceTests(unittest.TestCase):
+    def test_relocated_runs_reproduce_check_assessments_with_failed_containment(self):
+        """Fetched evidence lives elsewhere than it ran; the sealed record names where it ran."""
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import observations
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            # Both runs review one prepared board, whose outline is not closed.
+            text = owned_split_board(tmp,closed=False)[0]
+            executed = []
+            for name in ('one','two'):
+                (tmp/name).mkdir()
+                executed.append(owned_native_run(tmp/name,text)[1])
+            fetched = []
+            for n, run in enumerate(executed):
+                target = tmp/f'fetched-{n}'/'runs'/run.name
+                shutil.copytree(run,target,symlinks=True);shutil.rmtree(run)
+                fetched.append(target)
+            records = [observations(run) for run in fetched]
+            drc = [r['owned-drc']['check'] for r in records]
+            self.assertEqual(drc[0]['details']['containment']['execution'],'unavailable')
+            reason = drc[0]['details']['containment']['reason']
+            self.assertEqual(reason['execution']['execution'],'failed',reason)
+            self.assertEqual(reason['execution']['duration_s'],'<volatile>')
+            self.assertIn('<run>/inputs',reason['execution']['sandbox_argv'])
+            self.assertEqual({k:v['check'] for k,v in records[0].items()},{k:v['check'] for k,v in records[1].items()})
 
 
 class ControlAdjudicationTests(unittest.TestCase):
@@ -528,6 +673,184 @@ class ControlAdjudicationTests(unittest.TestCase):
             result = adjudicate_controls(manifest,tmp)
         self.assertEqual(result['per_kind']['erc']['rate'],1.0)
         self.assertEqual(result['per_kind']['hardware_interface']['rate'],0.0)
+
+
+class ControlJudgementTests(unittest.TestCase):
+    """Judged layer: facts re-derived from captured inputs bind each verdict to one open record."""
+    PIN = '00000000-0000-0000-0000-0000000000a1'
+    WIRE = '00000000-0000-0000-0000-0000000000b1'
+    STALE = '00000000-0000-0000-0000-0000000000c1'
+    EDGE = '00000000-0000-0000-0000-0000000000d1'
+
+    def schematic(self, flag=False):
+        lib = ('(lib_symbols (symbol "power:VCC" (power) (symbol "VCC_1_1" (pin power_in line (at 0 0 90) (length 0) (name "VCC") (number "1"))))'
+               ' (symbol "power:PWR_FLAG" (power) (symbol "PWR_FLAG_1_1" (pin power_out line (at 0 0 90) (length 0) (name "pwr") (number "1"))))'
+               ' (symbol "Device:R" (symbol "R_1_1" (pin passive line (at 0 3.81 270) (length 1.27) (name "~") (number "1"))'
+               ' (pin passive line (at 0 -3.81 90) (length 1.27) (name "~") (number "2")))))')
+        def symbol(lib_id, at, ref, value, uuid):
+            return (f'(symbol (lib_id "{lib_id}") (at {at} 0) (unit 1) (uuid "{uuid}") (property "Reference" "{ref}")'
+                    f' (property "Value" "{value}") (pin "1" (uuid "{self.PIN if ref=="#PWR01" else uuid[:-2]+"ff"}")))')
+        parts = [lib, symbol('power:VCC','25.4 25.4','#PWR01','VCC','00000000-0000-0000-0000-000000000001'),
+                 symbol('Device:R','25.4 29.21','R1','10k','00000000-0000-0000-0000-000000000002'),
+                 f'(wire (pts (xy 25.4 33.02) (xy 26.035 33.02)) (uuid "{self.WIRE}"))']
+        if flag:
+            parts.append(symbol('power:PWR_FLAG','25.4 25.4','#FLG01','PWR_FLAG','00000000-0000-0000-0000-000000000003'))
+        return '(kicad_sch '+' '.join(parts)+')'
+
+    def control(self, root, flag=False):
+        import json
+        from pathlib import Path
+        manifest = ControlAdjudicationTests().control(root)
+        run = Path(root)/'runs'/'owned-control'
+        (run/'inputs/hw/owned.kicad_sch').write_text(self.schematic(flag))
+        (run/'inputs/hw/owned.kicad_pcb').write_text(
+            '(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer "Edge.Cuts") (uuid "r1"))'
+            f' (gr_line (start 10 5) (end 12 5) (layer "Edge.Cuts") (uuid "{self.EDGE}")))')
+        (run/'inputs/hw/owned.kicad_pro').write_text(json.dumps({
+            'erc':{'rule_severities':{'endpoint_off_grid':'warning'},
+                   'erc_exclusions':[f'power_pin_not_driven|1|2|{self.STALE}|00000000-0000-0000-0000-000000000000|/r|/r|']},
+            'board':{'design_settings':{'rule_severities':{},'rules':{'min_copper_edge_clearance':0.5}}},
+            'schematic':{'connection_grid_size':50.0}}))
+        erc = json.loads((run/'work/erc/erc.json').read_text())
+        erc['sheets'][0]['violations'] += [
+            {'type':'power_pin_not_driven','severity':'error','description':'Input Power pin not driven by any Output Power pins',
+             'items':[{'description':'Symbol #PWR01 Pin 1 [Power input, Line]','pos':{'x':25.4,'y':25.4},'uuid':self.PIN}]},
+            {'type':'endpoint_off_grid','severity':'warning','description':'Symbol pin or wire end off connection grid',
+             'items':[{'description':'Horizontal Wire, length 0.635 mm','pos':{'x':25.4,'y':33.02},'uuid':self.WIRE}]}]
+        erc['sheets'][0]['violations'][5]['excluded'] = True
+        (run/'work/erc/erc.json').write_text(json.dumps(erc))
+        drc = json.loads((run/'work/drc/drc.json').read_text())
+        drc['violations'] += [
+            {'type':'copper_edge_clearance','severity':'error','items':[
+                {'description':'Segment on Edge.Cuts','pos':{'x':10.0,'y':5.0},'uuid':self.EDGE}],
+             'description':'Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.3000 mm)'},
+            {'type':'invalid_outline','severity':'error','description':'Board has malformed outline (not a closed shape)',
+             'items':[{'description':'Segment on Edge.Cuts','pos':{'x':10.0,'y':5.0},'uuid':self.EDGE}]}]
+        (run/'work/drc/drc.json').write_text(json.dumps(drc))
+        (Path(root)/'request.json').write_text(json.dumps({'image_id':'sha256:'+'0'*64}))
+        return manifest
+
+    def facts(self, root, flag=False):
+        from agent_ee.benchmark_run import open_control_facts
+        rows = open_control_facts(self.control(root,flag),root)
+        return {(r['check_id'],r['type'],r['raw_locator']):r for r in rows}
+
+    def test_facts_rederive_the_stated_condition_from_captured_inputs(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp)
+        power = rows[('erc','power_pin_not_driven','/sheets/0/violations/6')]['facts']
+        self.assertEqual((power['pin']['type'],power['conductor'],power['condition_holds']),
+                         ('power_in',[{'reference':'R1','number':'1','type':'passive'}],True))
+        grid = rows[('erc','endpoint_off_grid','/sheets/0/violations/7')]['facts']
+        self.assertEqual((grid['grid_mm'],grid['condition_holds'],grid['project_severity']),(1.27,True,'warning'))
+        # The item-less excluded marker names a stored exclusion whose item is not in the design.
+        stale = rows[('erc','power_pin_not_driven','/sheets/0/violations/5')]['facts']
+        self.assertEqual((stale['excluded'],stale['stored_exclusions']),(True,[{'items_in_native_file':[False]}]))
+        edge = rows[('drc','copper_edge_clearance','/violations/2')]['facts']
+        self.assertEqual((edge['required_mm'],edge['actual_mm'],edge['required_from_project']),
+                         (0.5,0.3,['board.design_settings.rules.min_copper_edge_clearance']))
+        outline = rows[('drc','invalid_outline','/violations/3')]['facts']
+        # A line end on a rectangle side, not at a corner, does not close the outline either.
+        self.assertEqual((outline['open_outline_ends'],outline['condition_holds']),([[10.0,5.0],[12.0,5.0]],True))
+
+    def test_a_power_output_on_the_conductor_falsifies_the_condition(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp,flag=True)
+        power = rows[('erc','power_pin_not_driven','/sheets/0/violations/6')]['facts']
+        self.assertIn({'reference':'#FLG01','number':'1','type':'power_out'},power['conductor'])
+        self.assertFalse(power['condition_holds'])
+
+    def ledger(self, rows, **override):
+        bases = {'verified':{'verdict':'genuine'},'stale':{'verdict':'false_alarm'},'open':{'verdict':'unadjudicated'}}
+        entries = []
+        for row in rows.values():
+            basis = 'stale' if row['raw_locator']=='/sheets/0/violations/5' else 'verified'
+            entries.append({**{k:row[k] for k in ('control','check_id','raw_locator','type','location_hash','facts_sha256')},
+                            'verdict':bases[basis]['verdict'],'basis':basis,'reason':'test'})
+        return {'schema':'agent-ee.benchmark-control-judgements/1','adjudicator':'test','provenance':'test',
+                'bases':bases,'judgements':entries,**override}
+
+    def test_judged_layer_is_separate_and_bound_to_current_facts(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import adjudicate_controls, judge_controls, judged_false_alarms
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp)
+            manifest = {'boards':[{'id':'owned'}]}
+            fixed = adjudicate_controls(manifest,tmp)
+            before = json.dumps(fixed,sort_keys=True)
+            ledger = self.ledger(rows)
+            judged = judge_controls(manifest,tmp,ledger)
+            self.assertEqual(json.dumps(adjudicate_controls(manifest,tmp),sort_keys=True),before)
+            erc = judged['per_kind']['erc']
+            # Two library-table records are decided by the fixed rules; the other six are open.
+            self.assertEqual((erc['open_records'],erc['false_alarm'],erc['genuine'],erc['unjudged']),(6,1,5,0))
+            shares = judged_false_alarms(fixed,judged)['erc']
+            self.assertEqual((shares['records'],shares['false_alarm'],shares['fixed_rule_false_alarm']),(8,3,2))
+            self.assertEqual(shares['share'],3/8)
+            # An entry left out stays unadjudicated and keeps the share a bound.
+            partial = {**ledger,'judgements':ledger['judgements'][1:]}
+            open_ = judged_false_alarms(fixed,judge_controls(manifest,tmp,partial))
+            self.assertIsNone(open_[ledger['judgements'][0]['check_id']]['share'])
+            # A rerun may order native records differently; judgements follow the records.
+            path = Path(tmp)/'runs/owned-control/work/erc/erc.json'
+            erc_report = json.loads(path.read_text())
+            erc_report['sheets'][0]['violations'].reverse()
+            path.write_text(json.dumps(erc_report))
+            reordered = judge_controls(manifest,tmp,ledger)
+            self.assertEqual(reordered['per_kind'],judged['per_kind'])
+            self.assertNotEqual([r['raw_locator'] for r in reordered['records']],
+                                [r['raw_locator'] for r in judged['records']])
+            # Changed evidence makes the judgement stale, never silently reused.
+            schematic = Path(tmp)/'runs/owned-control/inputs/hw/owned.kicad_sch'
+            schematic.write_text(self.schematic(flag=True))
+            with self.assertRaisesRegex(ValueError,'stale judgement'):
+                judge_controls(manifest,tmp,ledger)
+
+    def test_unknown_duplicate_and_contradictory_entries_are_refused(self):
+        import copy
+        import tempfile
+        from agent_ee.benchmark_run import apply_judgements, judge_controls
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp)
+            manifest = {'boards':[{'id':'owned'}]}
+            ledger = self.ledger(rows)
+            unknown = copy.deepcopy(ledger);unknown['judgements'].append({**unknown['judgements'][0],
+                'raw_locator':'/sheets/0/violations/99','location_hash':'0'*64})
+            with self.assertRaisesRegex(ValueError,'names no open control record'):
+                judge_controls(manifest,tmp,unknown)
+            duplicate = copy.deepcopy(ledger);duplicate['judgements'].append(duplicate['judgements'][0])
+            with self.assertRaisesRegex(ValueError,'duplicate judgement'):
+                judge_controls(manifest,tmp,duplicate)
+            contradiction = copy.deepcopy(ledger);contradiction['judgements'][0]['verdict'] = 'false_alarm'
+            with self.assertRaisesRegex(ValueError,'contradicts its basis'):
+                judge_controls(manifest,tmp,contradiction)
+            undeclared = copy.deepcopy(ledger);undeclared['judgements'][0]['basis'] = 'guess'
+            with self.assertRaisesRegex(ValueError,'declared basis'):
+                judge_controls(manifest,tmp,undeclared)
+            with self.assertRaisesRegex(ValueError,'expected a control judgement ledger'):
+                apply_judgements(tmp,tmp,{**ledger,'schema':'other'})
+            other = {**ledger,'manifest_sha256':'0'*64,'image_id':'sha256:'+'0'*64}
+            from pathlib import Path
+            (Path(tmp)/'m.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'another manifest or image'):
+                apply_judgements(Path(tmp)/'m.json',tmp,other)
+
+    def test_committed_ledger_covers_each_open_record_once_with_declared_bases(self):
+        import json
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        ledger = json.loads((root/'benchmarks/seeded/control-judgements.json').read_text())
+        keys = [(j['control'],j['check_id'],j['raw_locator']) for j in ledger['judgements']]
+        self.assertEqual(len(keys),len(set(keys)))
+        kinds = [j['check_id'].split('-')[-1] for j in ledger['judgements']]
+        self.assertEqual((kinds.count('erc'),kinds.count('drc')),(149,50))
+        self.assertTrue(all(ledger['bases'][j['basis']]['verdict']==j['verdict'] and j['reason']
+                            for j in ledger['judgements']))
+        self.assertIn('not owner-stated',ledger['provenance'])
 
 
 class DependencyClosureTests(unittest.TestCase):

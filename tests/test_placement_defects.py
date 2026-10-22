@@ -2060,7 +2060,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         result = read_json(fixture.out / 'implementations/1' / placement['helper']['receipt'] / pa.RESULT)
         self.assertTrue(result['open_defects'])
         self.assertNotIn('2', state['placement_records'])
-        receipt_dir = fixture.out / 'implementations/2/receipts/1-kicad-route-krt'
+        receipt_dir = fixture.out / 'implementations/2/receipts/1-kicad-route-builtin'
         routed = stage_receipts.validate_receipt(receipt_dir)
         self.assertIn(routed['status'], ('completed', 'partial'))
         self.assertEqual(routed['violations'], [])

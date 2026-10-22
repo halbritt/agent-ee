@@ -167,7 +167,7 @@ class IntentAndLayoutTest(unittest.TestCase):
 
 class StepsTest(unittest.TestCase):
     def fake_route(self):
-        return {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': 'kicad-route-krt',
+        return {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': 'kicad-route-builtin',
                 'argv': ['/usr/bin/true'], 'mounts': [], 'writes': {f'project/{q.NAME}.kicad_pcb': 'x'},
                 'artifacts': [], 'adoptable_exits': [0, 2], 'timeout_s': 60}
 
@@ -181,7 +181,7 @@ class StepsTest(unittest.TestCase):
         steps = q.check_steps(self.schematic_steps(), mutable)
         self.assertEqual([(s['stage'], s['step']) for s in steps],
                          [('schematic', 'emit-schematic'), ('schematic', 'forward-annotate'),
-                          ('routing', 'kicad-route-krt')])
+                          ('routing', 'kicad-route-builtin')])
         for name in ('emit.sh', 'annotate.sh'):
             self.assertTrue((q.STEPS_DIR / name).is_file())
 

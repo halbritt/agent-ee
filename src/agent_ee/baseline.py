@@ -156,6 +156,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "rf_geometry":
             from .rf_geometry import capability
             paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
+        if spec.get("kind") == "antenna_placement":
+            from .antenna_placement import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "dfm_geometry":
             from .dfm_geometry import capability
             paths.update(capability(params, scope, files, inputs)["immutable_inputs"])

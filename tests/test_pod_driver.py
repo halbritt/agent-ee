@@ -126,7 +126,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.assertEqual(receipt['budget_derivation']['max_iterations']['source'],'default')
         self.assertEqual(receipt['budget_derivation']['max_seconds']['source'],'derived')
         self.assertEqual(receipt['validation']['routing_step']['adoptable_exits'],[0,2])
-        self.assertEqual(receipt['validation']['routing_step']['step'],'kicad-route-krt')
+        self.assertEqual(receipt['validation']['routing_step']['step'],'kicad-route-builtin')
         self.assertFalse(receipt['done'])
         self.assertTrue(receipt['first_capture_binding']['bound'])
         self.assertEqual(before,{str(p):digest(p) for p in self.source.rglob('*') if p.is_file()})

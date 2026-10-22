@@ -142,7 +142,7 @@ class LayerPolicyCampaignTests(unittest.TestCase):
         turn's own re-derivation refuses it independently."""
         self.refused('not the coordinator binding of the pre-routing derivation')
         state = read_json(self.campaign_root / 'state.json')
-        receipt = read_json(self.work() / 'receipts/2-kicad-route-krt/receipt.json')
+        receipt = read_json(self.work() / 'receipts/2-kicad-route-builtin/receipt.json')
         with self.assertRaisesRegex(ValueError, message):
             lineage.verify_turn(self.campaign_root, state, read_json(self.campaign_root / 'config.json'), 1,
                                 self.planed_sha, receipt)
@@ -195,9 +195,9 @@ class LayerPolicyCampaignTests(unittest.TestCase):
         self.assertEqual(record['layer_policy'], {**POLICY, 'pour_area_loss_pct': expected['pour_area_loss_pct']})
         self.assertGreater(expected['pour_area_loss_pct'], 0)
         # The router ran with exactly that bound; only --layer-policy differs from the frozen binding.
-        receipt = stage_receipts.validate_receipt(work / 'receipts/2-kicad-route-krt')
+        receipt = stage_receipts.validate_receipt(work / 'receipts/2-kicad-route-builtin')
         self.assertEqual(receipt['inputs']['design/rc.kicad_pcb'], self.planed_sha)
-        report = read_json(work / 'receipts/2-kicad-route-krt/run/routing/adapter-report.json')
+        report = read_json(work / 'receipts/2-kicad-route-builtin/run/routing/adapter-report.json')
         self.assertEqual(report['request']['layer_policy'], record['layer_policy'])
         self.assertEqual(lineage.declared_form(receipt['spec']), self.state['routing_binding']['spec'])
         self.assertNotIn('--layer-policy', self.state['routing_binding']['spec']['argv'])
@@ -272,7 +272,7 @@ class LayerPolicyCampaignTests(unittest.TestCase):
         config = read_json(self.campaign_root / 'config.json')
         source = read_json(self.campaign_root / 'runs/1/candidate.json')
         record = read_json(work / 'layer-policy/record.json')
-        receipt = read_json(work / 'receipts/2-kicad-route-krt/receipt.json')
+        receipt = read_json(work / 'receipts/2-kicad-route-builtin/receipt.json')
         relaxed = lineage.routing_spec(config, source, self.state['mutable_inputs'],
                                        {**record['layer_policy'], 'pour_area_loss_pct': 100})
         with self.assertRaisesRegex(ValueError, 'not the coordinator derivation'):
@@ -335,7 +335,7 @@ class LayerPolicyUnknownCampaignTests(unittest.TestCase):
         self.assertEqual((record['status'], record['layer_policy'], record['derivation']), ('unknown', None, None))
         self.assertIn(reason, record['reason'])
         self.assertTrue((work / 'receipts/1-add-planes/receipt.json').is_file())
-        self.assertFalse((work / 'receipts/2-kicad-route-krt').exists())
+        self.assertFalse((work / 'receipts/2-kicad-route-builtin').exists())
         self.assertFalse((work / 'proposal.scope.json').exists())
         # The retained unknown record verifies; it is evidence, not acceptance.
         campaign.verify_campaign(root)
@@ -374,7 +374,7 @@ class LayerPolicyUnknownCampaignTests(unittest.TestCase):
         self.assertIn('pour budget measurement failed', state['error'])
         record = read_json(root / 'implementations/1/layer-policy/record.json')
         self.assertEqual((record['status'], record['layer_policy']), ('unknown', None))
-        self.assertFalse((root / 'implementations/1/receipts/2-kicad-route-krt').exists())
+        self.assertFalse((root / 'implementations/1/receipts/2-kicad-route-builtin').exists())
         campaign.verify_campaign(root)
 
 
@@ -399,7 +399,7 @@ class LiteralLayerPolicyCampaignTests(unittest.TestCase):
         self.assertEqual([c.kwargs['binding'] for c in verified.call_args_list], [state['routing_binding']])
         from agent_ee.rf_review import campaign_routing_context
         context = campaign_routing_context(lane.root / 'campaign', state)
-        self.assertEqual(context['receipt']['path'], str(work / 'receipts/1-kicad-route-krt/receipt.json'))
+        self.assertEqual(context['receipt']['path'], str(work / 'receipts/1-kicad-route-builtin/receipt.json'))
 
 
 class LayerPolicyConfigurationTests(unittest.TestCase):

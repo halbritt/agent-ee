@@ -225,7 +225,8 @@ A second corpus seeds 16 review-derived defect classes into scratch copies of th
 hierarchical fome-mc board; its expectations and reports live in a private
 Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository. The public corpus records a
-verified dependency closure, deterministic control false-alarm bounds and native
+verified dependency closure, deterministic control false-alarm bounds, a
+separate agent-drafted judgement of the remaining control records and native
 rerun comparisons. The closure audit exits 1 whenever tool or font licence
 evidence is unverified; owner review and any publication remain outstanding.
 
@@ -630,7 +631,7 @@ The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
 The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
-`5f1c072` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+`b577449` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 with read-only state, retains hashed attempt diagnostics, and verifies routing
 semantics before adopting a proposal. Fresh checks determine acceptance.
 Its optional [per-net layer policy](docs/routing-adapter.md#per-net-signal-layers-agentee-258)
@@ -666,6 +667,13 @@ and stub tree, and the reference-plane return-corridor guard at a declared width
 with a recorded basis. An absent structure is a defect and never counts as
 microstrip. Missing bounds, widths or fills are unknown. It is not RF
 qualification.
+The [ESP32 antenna placement check](docs/antenna-placement.md) is a bare-board
+fab gate for the ESP32-S3-WROOM-1 outside-board case (Espressif guidelines
+section 1.4.7). It grades U1's saved pose, the board edge the antenna crosses,
+the feed-point corner and the retained module keepout against hash-pinned
+sources. Missing sources are unknown. The corner slot is an agent-derived class
+default, labelled as such; manufacturer corner compliance stays unknown. Housing, nearby metal, support and RF
+performance stay open physical and bench obligations.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. A pinned jlcparts feed
@@ -1030,13 +1038,16 @@ series/parallel networks; unsupported conductors leave coverage incomplete.
 
 ## License
 
-The [MIT License](LICENSE) is proposed for material written for agent-ee and
-for outputs of its runs on that material, and it is declared in the package
-metadata. The proposal is included for review; the owner has not yet approved it.
+agent-ee is licensed under the [MIT License](LICENSE), declared in the package
+metadata. The license covers material written for agent-ee, outputs of its runs
+on that material, the RC fixture copied from FOME-MC and the logic in
+`src/agent_ee/checks.py` adapted from FOME-MC. The owner approved MIT for these
+on 2026-10-22 ([decision](docs/decisions.md#mit-license-approved-agentee-14-2026-10-22),
+relayed by the coordinator). The RC fixture embeds stock KiCad library data,
+which keeps its own license.
 
 The MIT grant does not cover files that come from other projects. These include
-the RC fixture copied from FOME-MC, logic in `src/agent_ee/checks.py` adapted
-from FOME-MC, donor ECU design files and their libraries, stock KiCad libraries
+donor ECU design files and their libraries, stock KiCad libraries
 inside the evidence archives, datasheets and fetched web pages. The
 [file-origin inventory](docs/file-origins.json) classifies every tracked file by
 origin, upstream license and publication status, and
@@ -1044,8 +1055,8 @@ origin, upstream license and publication status, and
 Publication rights for those files are unresolved, and each origin needs an
 owner decision. The public repository already contains many of them. That does
 not establish a right to publish them.
-The fome-mc block fixtures under `fixtures/fome-mc/` are the one exception
-with a recorded owner decision (2026-10-18). The owner holds the rights to
+The fome-mc block fixtures under `fixtures/fome-mc/` have a separate recorded
+owner decision (2026-10-18). The owner holds the rights to
 fome-mc. Those files are still outside the MIT grant. See their
 [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md).
 

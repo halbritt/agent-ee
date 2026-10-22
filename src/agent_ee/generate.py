@@ -1108,9 +1108,8 @@ def stage_routing(stage, state, options):
     stage.tool('kicad-route')
     stage.tool('kicad-cli')
     out = stage.dir / 'out'
-    # 'builtin' is the canonical name since KICADROUTE-82; the pin (5f1c072) only accepts 'krt', so emit that
-    # until the pin moves.
-    command = stage.run(['kicad-route', '--out', str(out), 'run', '--backend', 'krt', '--budget', '300'],
+    # 'builtin' is the canonical name since KICADROUTE-82; the deprecated 'krt' is never emitted (AGENTEE-450).
+    command = stage.run(['kicad-route', '--out', str(out), 'run', '--backend', 'builtin', '--budget', '300'],
                         cwd=project, timeout=1500, label='kicad-route')
     # kicad-route also links runs/<project>/<label>/latest to the stamp directory.
     results = sorted(p for p in out.glob('runs/*/*/*/result.json') if not p.parent.is_symlink())

@@ -11,7 +11,7 @@ import unittest
 import zipfile
 import zlib
 
-from agent_ee.catalog_bouni import (BouniRefusal, SCHEMA, inspect_split, lcsc_pdf_url,
+from agent_ee.catalog_bouni import (BouniRefusal, KNOWN_FAMILIES, SCHEMA, inspect_split, lcsc_pdf_url,
                                     passive_boundary, validate_manifest)
 
 
@@ -355,6 +355,17 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaises(BouniRefusal) as ctx:
             passive_boundary()
         self.assertEqual(ctx.exception.reason, 'boundary_not_supplied')
+
+    def test_known_families_are_the_value_resolved_families(self):
+        from agent_ee.catalog_identity import GENERIC_FAMILIES
+        from agent_ee.part_selection import VALUE_ATTRIBUTES
+        self.assertEqual(KNOWN_FAMILIES, tuple(VALUE_ATTRIBUTES))
+        self.assertEqual(passive_boundary(GENERIC_FAMILIES), tuple(sorted(KNOWN_FAMILIES)))
+        for family in ('diode', 'led', 'connector', 'regulator', 'switching_regulator', 'ferrite_bead',
+                       'crystal', 'fuse'):
+            with self.assertRaises(BouniRefusal) as ctx:
+                passive_boundary([*GENERIC_FAMILIES, family])
+            self.assertEqual(ctx.exception.reason, 'boundary_invalid')
 
     def test_explicit_values(self):
         self.assertEqual(passive_boundary(['resistor', 'capacitor']), ('capacitor', 'resistor'))

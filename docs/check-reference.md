@@ -248,6 +248,7 @@ registered check kind.
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
 | `rf_geometry` | `/usr/bin/python3 -B -m agent_ee.rf_geometry BOARD --request /work/rf-request.json --out /work/rf-native.json`, then a coordinator evaluation against the captured declaration; see [RF geometry](rf-geometry.md) | 600 s |
+| `antenna_placement` | `/usr/bin/python3 -B -m agent_ee.antenna_placement BOARD --request /work/antenna-request.json --out /work/antenna-native.json` when the footprint is captured, then a coordinator evaluation against the captured declaration and pinned sources; see [ESP32 antenna placement](antenna-placement.md) | 300 s |
 | `placement_congestion` | `/usr/bin/python3 -B -m agent_ee.placement_probe BOARD --out /work/placement-probe.json`, then an offline coordinator analysis of the captured probe ([details](placement-congestion.md)) | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -478,7 +479,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`5f1c072` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+`b577449` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -627,6 +628,35 @@ A missing coplanar ground or reference is a defect stated as an absent
 structure, never graded as microstrip. A `null` bound, an unfilled zone or an
 unrouted branch is unknown, with execution `unsupported`. The check is not RF
 qualification, and the guard is a geometric guard result only.
+
+## ESP32 outside-board antenna placement
+
+The [antenna placement check](antenna-placement.md) (AGENTEE-453) takes exactly
+`params.declaration`, a captured `agent-ee.antenna-placement-declaration/1`
+record. It binds the reviewed `outside_board` policy for the Espressif
+guidelines snapshot (section 1.4.7, page 33, Fig. 24/25), the module datasheet
+and the stock footprint, each to its reviewed SHA-256 pin. It also names the
+board edge the antenna must cross. If a source is captured with other bytes,
+capture is refused. A source that is not captured is `unknown`. On the saved
+board the check grades seven sections: sources, footprint identity and pose,
+antenna area outside board material, feed point on the board edge, feed-side
+corner on the declared edge, retained module keepout, and copper inside that
+keepout. Missing evidence, a back-side or off-axis pose, and a body overhang
+beyond the edge are `unknown`. Overlap, a wrong edge, a removed or altered rule
+area, keepout copper and a pad whose native copper differs from the captured
+footprint (for example one pad rotated in place) are defects. No clearance is
+derived: the Figure 11-1 pin label is not a clearance. Espressif prints no
+corner distance, so `manufacturer_corner_compliance` is always `unknown`. The
+feed-side corner is graded only when the declaration carries the exact
+agent-derived class-default `corner_policy` (an 18 mm slot taken from the
+module width). That section, and any verdict it decides, has
+`verdict_authority: agent-derived-class-default`, never
+`manufacturer-sourced`. Without the policy the corner is `unknown`. This is a
+bare-board gate. Housing pocket, in-housing clearance, nearby metal, support and
+installed RF performance stay open obligations, carried by `bare_board_claim`,
+the AGENTEE-449 composition point. The claim requires the unchanged candidate
+snapshot, the immutable baseline, the complete sealed check set and a report
+equal to its re-derivation from the sealed native measurement.
 
 ## Native netlist
 
@@ -1322,6 +1352,8 @@ check is acceptance evidence for it until the owner confirms the limit.
 matches the envelope reference and contains a source-verified stackup declaration.
 Saved layer thicknesses use the profile's explicit exact matching tolerance;
 nominal copper weights come from the cited declaration, with no oz-to-mm conversion.
+A profile dielectric recorded as unpublished (`null`) binds the check, but its
+envelope and saved thicknesses are unknown unless another field proves a defect.
 Missing or unverified authority stays unknown and capture refuses it. Each
 `placement` `connector-edge/1` check selects a fixed `reference` and supplies
 `placement:connector-edge/1:<reference>`; a single fixed footprint may omit the

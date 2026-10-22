@@ -214,6 +214,46 @@ unadjudicated, it reports only bounds covering every possible decision of them.
 An unadjudicated record is neither a false alarm nor a genuine defect. The rules
 were written after the controls' records were inspected. They change no seed
 result. Model results, if added later, must stay in a separate report.
+
+### Judged control layer
+
+Records the fixed rules leave open can be judged one by one in a ledger,
+[`control-judgements.json`](../benchmarks/seeded/control-judgements.json). The
+ledger is agent-drafted engineering judgement: not owner-stated and not
+owner-reviewed. `report --judgements LEDGER` reports it beside the fixed-rule
+results, as `judged_control_adjudication` and `judged_false_alarms`. It never
+changes `control_adjudication`, `false_alarms` or any seed result.
+
+```sh
+python3 scripts/seeded_benchmark.py control-facts benchmarks/seeded/expectations.json RUN
+python3 scripts/seeded_benchmark.py report benchmarks/seeded/expectations.json RUN --judgements benchmarks/seeded/control-judgements.json
+```
+
+`control-facts` re-derives the facts for each open record from the run's
+captured inputs (`control_record_facts`). It records the project's severity for
+the rule and whether each named item exists in the native file. For ERC pin
+records it records the pin's schematic conductor and pin types. For
+`endpoint_off_grid` it records the native endpoints against the project
+connection grid. For DRC records it records any stated threshold and the project
+settings that supply it, the item nets and any substituted font face. It also
+reads footprint/symbol attributes, text mirroring and Edge.Cuts endpoints where
+the record type names one. An item-less marker gets the stored project
+exclusions of its type. Each ledger entry names its raw locator, location hash
+and the SHA-256 of these facts. A stale, unknown, duplicate or contradictory entry
+is refused. A record without an entry stays unadjudicated.
+
+The ledger defines a false alarm as a record that names no condition present in
+the unmodified design, or that exists only because of the review environment. A
+record is genuine when its condition holds under the design's own project rules,
+whatever its engineering consequence. Missing `PWR_FLAG` drivers and off-grid
+endpoints are therefore genuine. Every entry cites one declared basis:
+
+| Basis | Verdict |
+|---|---|
+| `native-condition-verified`: the condition is re-derived from the native files | genuine |
+| `designer-rule-native-measurement`: items exist, the threshold is the project's own, saved copper, no substituted font; KiCad's geometry is not re-measured | genuine |
+| `stale-stored-exclusion`: an excluded marker without items whose stored exclusion names no item of the design | false alarm |
+| `font-substitution-dependent`: the record measures text in a font the image substitutes | unadjudicated |
 Reviewer false-positive rates are measured separately by the
 [false-positive calibration](fp-calibration.md) (AGENTEE-70).
 
@@ -301,6 +341,77 @@ not equivalent. The host substitutes Liberation Sans for `Arial`, where the imag
 uses DejaVu Sans. All seven `tmf8829` DRC reports then gained five
 `text_thickness` records and lost one `silk_overlap` record. Font substitution
 is therefore part of the closure, and `native-rerun` reports it.
+
+### Same-image rerun (2026-10-22)
+
+The retained 2026-10-17 inputs and runs had been lost to `/tmp` cleaning, so no
+open control record could be decided. A fresh rerun was made and its evidence
+kept outside `/tmp`. The host-side re-fetch rests on an owner decision relayed by
+agent-519 and recorded verbatim in an AGENTEE-21 Plane comment (2026-10-22). This
+is owner-relayed text, not confirmed by the owner in this repository: "Owner
+decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: the
+host-side network re-fetch of the 5 redistributable boards for the fresh rerun,
+with evidence stored in the private Garage bucket."
+
+`fetch` downloaded the five pinned archives and verified each archive, native
+file and licence hash against the manifest. The expectations are unchanged since
+`3b2da2c`. Runs 1 and 2 used that expectation commit, implementation `7c239e8`
+and the pinned image `sha256:d6094c3b…0234`, from one prepared input set, with
+no network and no model pass. The private evidence bucket holds them under
+`agentee-21-rerun-20261022/`: one archive each for the cache, the prepared inputs,
+both runs, and the reports with the facts and launch logs. `SHA256SUMS` covers
+the archives and `FILES.SHA256SUMS` every file in them. Board files and run
+artifacts are not in this repository.
+
+Seed results equal the retained runs: 22 of 30 seeds detected, 23 with an
+evaluated prediction. `hardware_interface` has 9 detections, 1 miss and 15
+unsupported; `drc` has 18 detections and 1 miss. `i2c-rj45-swap-01` is again
+missed by both predicted checks. The control record counts (501 ERC, 76 DRC)
+and the fixed-rule decisions (352 and 26 library-table false alarms) are also
+unchanged.
+
+Run 2 reproduced every check execution, outcome, assessment and seed
+classification (`same_check_assessments`, `same_seed_classifications`). Its
+check records agree with run 1 by connection semantics. The one exact difference
+is again the DRC `unconnected_items` witness choice in `tmf8829-footprint-01`.
+A failed copper-containment sub-step on `usb-host-pmod`, whose outline is not
+closed, embeds its sandbox execution record, with the run directory and a
+duration, in the DRC record's containment reason, limitation and (when the DRC
+is malformed) summary text. The same record is sealed as check evidence
+(`work/<check>/containment/execution.json`). The comparator masks it only where
+the text reproduces that sealed record exactly. It masks the record's
+`duration_s` and the run directory that the record's own `/candidate` and `/work`
+binds name, matched at path-component boundaries. That directory must be the
+same in both binds and carry the retained run's name. The current storage
+directory is never used, so evidence fetched to another directory compares as
+it executed. Any other string, including locators, values, descriptions and
+paths outside the bound run directory, is compared exactly. The run 2
+comparison above was made by the earlier comparator at the original execution
+paths. That comparator masked any substring and any `duration_s` text, and was
+corrected after review. The corrected comparator has not yet been re-run on
+the fetched private evidence.
+
+The [judged control layer](#judged-control-layer) decides the 199 open records
+from run 1, and gives identical results on run 2:
+
+| Control kind | Records | False alarm (fixed + judged) | Genuine (judged) | Unadjudicated | Share |
+|---|---|---|---|---|---|
+| `erc` | 501 | 352 + 3 | 146 | 0 | 355/501 = 0.71 |
+| `drc` | 76 | 26 + 0 | 46 | 4 | 0.34 to 0.39 |
+
+The three judged ERC false alarms are `qwiic-dpad` markers restored from stale
+stored exclusions. The 146 genuine ERC records are 126 off-grid endpoints in
+`tmf8829`, 18 power inputs without a power output on their conductor, and two
+records for the unconnected, undriven `EN` input of the `i2c-rj45` buffer. Four
+of the 18 power inputs are `tmf8829` signal pins (SDA, SCL, INT, SCLK) that its
+symbol declares as power inputs. The 46 genuine DRC records are
+copper, hole and edge clearances below the designs' own rules, fiducial
+solder-mask openings into a ground pour, courtyard overlaps, silkscreen records,
+an unclosed outline, a mirrored front-layer field and two parity records. The
+four unadjudicated DRC records are `tmf8829` `text_thickness` and `silk_overlap`
+records on `Arial` text, which the image renders with DejaVu Sans. These shares
+include records that have no electrical consequence. They are agent judgement
+and need independent and owner review.
 
 ## fome-mc corpus (AGENTEE-108)
 

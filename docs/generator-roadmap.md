@@ -348,7 +348,7 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `5f1c072`. At that commit agent-ee relies on the following from
+kicad-route `b577449` (AGENTEE-450). At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
@@ -410,11 +410,12 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 ## Licence posture
 
-- agent-ee: MIT is proposed in main (AGENTEE-14), with
+- agent-ee: MIT (AGENTEE-14), approved for agent-ee material and the FOME-MC
+  RC fixture and `eda.py`-derived logic on 2026-10-22
+  ([decision](decisions.md#mit-license-approved-agentee-14-2026-10-22)), with
   a [file-origin inventory](file-origins.json) of every tracked file and a
-  [summary](third-party-origins.md). The proposal is merged; owner confirmation remains pending.
-  FOME-MC fixture, donor, vendor and other third-party files stay excluded
-  until the owner decides each origin.
+  [summary](third-party-origins.md). Donor, vendor and other third-party files
+  stay excluded until the owner decides each origin.
 - kicad-route: the current pin carries an MIT `LICENSE`; its owned routing
   engine retains the MIT upstream and fork notices.
 - KRT (KiCadRoutingTools) is MIT. Freerouting (GPL-3.0) runs as a separate

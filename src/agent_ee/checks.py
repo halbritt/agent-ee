@@ -1111,6 +1111,7 @@ from .assembly_readiness import check_assembly_readiness
 from .dfa_dft import check_dfa_dft
 from .dfm_geometry import check_dfm_geometry
 from .rf_geometry import check_rf_geometry
+from .antenna_placement import check_antenna_placement
 
 
 from .catalog_checks import check_catalog
@@ -1151,7 +1152,8 @@ CHECK_FUNCS = {
                "placement": check_placement, "placement_congestion": check_placement_congestion,
                "board_envelope": check_board_envelope,
                "assembly_readiness": check_assembly_readiness, "dfa_dft": check_dfa_dft,
-               "dfm_geometry": check_dfm_geometry, "rf_geometry": check_rf_geometry}
+               "dfm_geometry": check_dfm_geometry, "rf_geometry": check_rf_geometry,
+               "antenna_placement": check_antenna_placement}
 
 
 # ------------------------------------------------------------------ entry point

@@ -1,4 +1,4 @@
-"""Actual kicad-route (pinned 5f1c072) and KRT on the original placed RC, read-only.
+"""Actual kicad-route (pinned b577449) and its owned engine on the original placed RC, read-only.
 
 AGENT_EE_KICAD_ROUTE_CHECKOUT names a clean kicad-route checkout at the pin with
 its installed KRT state; the standard image sets it to /opt/kicad-route. Unset,
@@ -197,7 +197,9 @@ class NativeKicadRouteTest(unittest.TestCase):
         return placed
 
     def state(self):
-        return {rel: attempt.tree(self.checkout / rel) for rel in ('bin', 'src', '.venv-krt')}
+        generation, _ = attempt.state_generation(self.checkout)
+        return {rel: attempt.tree(self.checkout / rel)
+                for rel in ('bin', 'src', *attempt.state_components('builtin', generation))}
 
     def spec(self):
         return routing_adapter.step(project='project', board='rc_filter.kicad_pcb', schematic='rc_filter.kicad_sch',
@@ -205,14 +207,14 @@ class NativeKicadRouteTest(unittest.TestCase):
 
     def assert_native_attempt(self, work, summary):
         self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'))
-        self.assertEqual(summary['backend']['value']['name'], 'krt')
+        self.assertEqual(summary['backend']['value']['name'], 'builtin')
         self.assertEqual(summary['tool_version']['status'], 'unknown')
-        self.assertEqual(summary['reproducibility'], attempt.REPRODUCIBILITY['krt'])
+        self.assertEqual(summary['reproducibility'], attempt.REPRODUCIBILITY['builtin'])
         result = json.loads((work / 'routing/attempt/result.json').read_text())
         self.assertEqual(summary['backend']['value'], result['backend'])
         self.assertEqual(result['validation']['status'], 'PASS')
         self.assertEqual(result['schema'], attempt.RESULT_SCHEMA)
-        self.assertEqual(set(result), attempt.RESULT_KEYS)
+        self.assertEqual(set(result), attempt.RESULT_KEYS | {'copper_ownership'})
         record = json.loads((work / 'routing/attempt/attempt.json').read_text())
         self.assertEqual(set(record), attempt.ATTEMPT_KEYS)
         self.assertTrue(attempt.validated_candidate(result['validation'], summary['candidate_sha256']))
@@ -341,12 +343,12 @@ class NativeKicadRouteTest(unittest.TestCase):
         result = json.loads((work / 'routing/attempt/result.json').read_text())
         record = json.loads((work / 'routing/attempt/attempt.json').read_text())
         self.assertEqual(result['schema'], 'kicad-route/route/2')
-        self.assertEqual(set(result), attempt.RESULT_KEYS | {'pairs'})
+        self.assertEqual(set(result), attempt.RESULT_KEYS | {'pairs', 'copper_ownership'})
         self.assertEqual(record['schema'], 'kicad-route/attempt/2')
         self.assertEqual(set(record), attempt.ATTEMPT_KEYS | {'pairs', 'pair_routing'})
         self.assertEqual((result['pairs'], record['pairs'], record['pair_routing']), ([], [], {}))
         self.assertEqual(result['settings'], attempt.expected_settings(
-            {'backend': 'krt', 'budget_s': 120, 'diff_pairs': 'auto'}, None, []))
+            {'backend': 'builtin', 'budget_s': 120, 'diff_pairs': 'auto'}, None, []))
         self.forge_validated_board(work)
         with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
             routing_adapter.verify(work, receipt=receipt)
@@ -448,6 +450,8 @@ class NativeKicadRouteTest(unittest.TestCase):
         broken = self.root / 'broken-route'
         for top in ('bin', 'src'):
             shutil.copytree(self.checkout / top, broken / top, ignore=shutil.ignore_patterns('__pycache__'))
+        # A checkout has its pyproject.toml; without it the pin looks for a home state.
+        shutil.copyfile(self.checkout / 'pyproject.toml', broken / 'pyproject.toml')
         (broken / '.git').mkdir()
         (broken / '.git/HEAD').write_text(attempt.PIN + '\n')
         subprocess.run(['/usr/bin/python3', '-m', 'venv', '--without-pip', str(broken / '.venv-krt')], check=True)
@@ -467,7 +471,7 @@ class NativeKicadRouteTest(unittest.TestCase):
         placed = self.placed_rc()
         spec = self.spec()
         before = self.state()
-        receipt_dir = self.root / 'receipts/1-kicad-route-krt'
+        receipt_dir = self.root / 'receipts/1-kicad-route-builtin'
         receipt = stage_receipts.run_step(receipt_dir, placed, spec, {'implementation': 1, 'receipt_index': 1})
         self.assertEqual(self.state(), before, 'kicad-route code or state changed on the host')
         self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
