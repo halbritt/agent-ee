@@ -63,7 +63,11 @@ thickness using exact rational arithmetic, including the tolerance endpoints.
 An out-of-range sum or nominal below the captured applicability is refused.
 Missing source evidence stays unknown. The validator's `stackup.thickness_mm`
 is the nominal value for existing native/fab consumers; its additional fields
-retain the physical total, citations and source paths. Version 1 keeps the
+retain the physical total, citations and source paths.
+The finished-thickness tolerance is the fabricator's tolerance on the board.
+It is not a component-side fit tolerance. The
+[through-hole thickness fit](#through-hole-thickness-fit) reads only the
+nominal value. Version 1 keeps the
 exact shape and sum in the table above and refuses version 2 fields.
 
 Version 2 also requires `obligations`, a list of `{id, requirement_ids,
@@ -602,6 +606,7 @@ above and complete obligation coverage; missing manufacturing authority stays un
 | `mounting-holes/1` | `envelope:mounting-holes/1:<id>` | Exactly one footprint with reference `id`, origin within the declared Euclidean tolerance, one round drilled pad whose centre is within the same tolerance, of the declared diameter and PTH/NPTH attribute, and its whole circle inside the native outline |
 | `keepouts/1` | `envelope:keepouts/1:<id>` | At least one saved rule area covers every edge of the declared polygon, all declared copper layers and at least the declared forbid set |
 | `component-height/1` | `envelope:component-height/1` | Every native footprint has a verified applicable installed maximum height or qualified resolved STEP bounds at most `max_component_height_mm` |
+| `tht-thickness-fit/1` | `envelope:tht-thickness-fit/1` | Every declared through-hole part, bound to one installed PTH footprint of the declared part, fits the envelope nominal thickness under its explicit hard limits, documented fit range or the default +/-10% screening band. It binds no envelope obligation |
 
 ### Component height
 
@@ -762,6 +767,95 @@ hole/keepout refusals. Run it on the host with the strict toolchain gate:
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_envelope_check -v
+```
+
+### Through-hole thickness fit
+
+A soldered through-hole part fits a board within a range around the PCB
+thickness its manufacturer recommends (AGENTEE-448). This component-side
+tolerance is separate from the fabricator's finished-thickness tolerance
+(`finished_thickness_tolerance`, for example the JLCPCB +/-10% source). The
+check never reads that tolerance, the physical stackup total or any other fab
+tolerance as component fit. The board side is the envelope's nominal
+`stackup.thickness_mm` (`nominal_thickness_mm` in envelope/2), and the native
+board thickness must equal it.
+
+The check selects the captured immutable declaration with `thickness_fit`:
+
+```json
+{"id": "j1-fit", "kind": "board_envelope", "params": {
+  "criterion": "tht-thickness-fit/1", "envelope": "envelope.json",
+  "thickness_fit": "tht-thickness-fit.json"}}
+```
+
+```json
+{"schema": "agent-ee.tht-thickness-fit/1", "parts": [
+  {"reference": "J1", "part_number": "1-776163-1",
+   "footprint_id": "PodConnector:AMPSEAL_35_1-776163-1",
+   "recommended_mm": 1.57,
+   "recommended_source": {"class": "manufacturer",
+     "citation": "TE Connectivity 1-776163-1 customer drawing: recommended PCB thickness 1.57 mm"}}]}
+```
+
+Each part may also declare `hard_limits: {min_mm?, max_mm?, source}`, the
+manufacturer's explicit limits with at least one bound, and
+`fit_range: {min_mm, max_mm, source}`, a documented fit range. Every
+`source` is `{class, citation}`. The class is `manufacturer` or `datasheet`,
+and the citation is a nonempty string. A missing or blank citation, an unknown
+field, a duplicate reference, a bound that excludes the recommended nominal, or
+a value that is not exact to 1 nm is refused at capture, and the check reports
+it as malformed. The citation names its source. Authenticating that source is
+outside this check.
+
+Each side of the band (minimum and maximum) is graded on its own, with exact
+rational arithmetic and inclusive bounds:
+
+| Governing bound for that side | Board nominal inside | Board nominal outside |
+| --- | --- | --- |
+| Explicit `hard_limits` bound | pass | **defect** |
+| Otherwise the `fit_range` bound, where it is wider than the default band | pass | unknown: needs feature geometry or evidence |
+| Otherwise the default band, recommended x 0.9 or x 1.1 | pass, `screened (default +/-10% component fit)` | unknown: needs feature geometry or evidence |
+
+A documented fit range only widens the default band, one side at a time: the
+minimum is the lower of `fit_range.min_mm` and recommended x 0.9, and the
+maximum is the higher of `fit_range.max_mm` and recommended x 1.1. A range
+inside the band, such as 1.55-1.60 mm for J1, leaves the band at
+1.413-1.727 mm, so a 1.65 mm board is still screened. Only an explicit
+`hard_limits` bound can narrow the pass region. When one part is a defect and
+another is unknown, the check reports unknown and keeps the defect in
+`defects`.
+
+The +/-10% default implements an owner assumption, owner-relayed (agent-509,
+Cairn 9561cd0c, 2026-10-22) and quoted verbatim from the AGENTEE-448 ticket: "a
+soldered THROUGH-HOLE component fits boards within +/-10% (or more) of its
+recommended nominal PCB thickness". The rest of this section is agent wording.
+Agent reading: the band is a screening default, not a universal hard ceiling,
+so a board outside it is never rejected. Only an explicit manufacturer limit
+makes a defect. Each declared part must bind to exactly one native footprint with that reference and the declared
+`footprint_id`. That footprint needs at least one plated through-hole pad, and
+its saved part number (or value) must equal `part_number`. Anything else is
+unknown, never a pass. Parts without a declaration are not graded, so every
+existing check keeps its verdict. The criterion covers no envelope field.
+Baseline binding refuses it for any envelope obligation, so it is mapped only
+by a requirement that names component thickness fit.
+
+For J1, TE 1-776163-1 recommends 1.57 mm. The default band is 1.413-1.727 mm,
+and the 1.6 mm pod board is about 1.9% above the recommendation, so it is
+screened. The J1 declaration is part data for the consuming design. In
+fome-mc it is a captured `tht-thickness-fit.json` holding the J1 entry above,
+plus one `board_envelope` `tht-thickness-fit/1` check over the pod envelope.
+agent-ee carries only the contract and original test fixtures.
+
+`tests.test_tht_thickness_fit` covers J1 at 1.6 mm, the exact 1.413 and
+1.727 mm boundaries and 1 nm outside them, 1.40 mm as advisory, explicit-limit
+pass and fail, documented ranges that are wider, narrower or one-sided wider
+than the band, hard limits narrowing a documented range, mixed defect and
+unknown parts (the summary names the defect), refused citations, unbound parts, and
+proof that the fab tolerance does not change the verdict. Its native tests run
+the registered check over original pcbnew boards:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_tht_thickness_fit -v
 ```
 
 ## Consumed envelopes

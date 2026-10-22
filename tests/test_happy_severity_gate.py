@@ -69,6 +69,45 @@ class SeverityPolicyTests(unittest.TestCase):
             'rule_id': 'DET', 'severity': 'info'}]
         evaluate(data, {})  # Both native two-part and three-part identities are valid.
 
+    def test_assumptions_at_every_severity_require_exact_dispositions(self):
+        for analyzer in SEVERITY_ANALYZERS:
+            for severity in ('error', 'warning', 'info'):
+                for metadata in ({'assumptions': ['unverified threshold']},
+                                 {'source_path': 'assumed'}):
+                    with self.subTest(analyzer=analyzer, severity=severity, metadata=metadata):
+                        data = reports()
+                        f = {**finding(analyzer, severity), **metadata}
+                        fid = f['finding_id']
+                        data[analyzer]['findings'] = [f]
+                        data[analyzer]['summary']['total_findings'] = 1
+                        data[analyzer]['summary']['by_severity'][severity] = 1
+                        for ids in ([], [fid], [fid + '-other']):
+                            recorded = dispositions({'schema': SCHEMA,
+                                'dispositions': [entry(i) for i in ids]})
+                            result = evaluate(data, recorded)
+                            self.assertEqual(result['undispositioned_warning_ids'],
+                                             [] if fid in ids else [fid])
+                            self.assertEqual(result['error_finding_ids'],
+                                             [fid] if severity == 'error' else [])
+                            self.assertEqual(result['unused_disposition_ids'],
+                                             [i for i in ids if i != fid])
+                            self.assertEqual('disposition' in result['findings'][0], fid in ids)
+
+    def test_plain_info_remains_unrestricted_and_its_disposition_unused(self):
+        data = reports()
+        f = {**finding('schematic', 'info'), 'assumptions': [], 'source_path': 'topology'}
+        fid = f['finding_id']
+        data['schematic']['findings'] = [f]
+        data['schematic']['summary']['total_findings'] = 1
+        data['schematic']['summary']['by_severity']['info'] = 1
+        for ids in ([], [fid]):
+            result = evaluate(data, dispositions({'schema': SCHEMA,
+                'dispositions': [entry(i) for i in ids]}))
+            self.assertEqual(result['error_finding_ids'], [])
+            self.assertEqual(result['undispositioned_warning_ids'], [])
+            self.assertEqual(result['unused_disposition_ids'], ids)
+            self.assertNotIn('disposition', result['findings'][0])
+
     def test_unknown_output_dominates_known_errors(self):
         base = reports()
         base['schematic']['findings'] = [finding('schematic', 'error')]

@@ -112,6 +112,29 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(strict_suite.modules(), sorted(p.stem for p in (ROOT / 'tests').glob('test_*.py')))
         self.assertIn('test_strict_suite', strict_suite.modules())
 
+    def test_native_board_render_regressions_have_explicit_selection_markers(self):
+        def cases(group):
+            for member in group:
+                if isinstance(member, unittest.TestSuite):
+                    yield from cases(member)
+                else:
+                    yield member
+        marked = set()
+        for name in ('test_candidate_visuals', 'test_render3d', 'test_render_gallery'):
+            suite = unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern=name + '.py')
+            marked.update(test.id() for test in cases(suite)
+                          if getattr(getattr(test, test._testMethodName),
+                                     '_agent_ee_native_board_render', False))
+        self.assertEqual(marked, {
+            'test_candidate_visuals.CandidateVisualTests.test_native_four_layer_images_and_packet_hashes',
+            'test_candidate_visuals.CandidateVisualTests.test_imaging_preserves_twenty_second_drc_budget',
+            'test_candidate_visuals.CandidateVisualTests.test_native_placement_default_retains_images_beside_result',
+            'test_candidate_visuals.CandidateVisualTests.test_networkless_placement_runner_retains_images_through_nested_executor',
+            'test_candidate_visuals.CandidateVisualTests.test_stock_defaults_and_project_models_survive_proposal_and_imaging',
+            'test_render3d.NativeRenderSmokeTests.test_real_small_fixture_renders_all_three_views_without_source_changes',
+            'test_render_gallery.GalleryTests.test_native_render_binding_refuses_snapshot_and_permutation_tampering',
+        })
+
     def test_runner_recognises_exactly_the_toolchain_partitions(self):
         self.assertEqual(strict_suite.REQUIRED_INPUTS, toolchain.REQUIRED_INPUTS)
         for gap in toolchain.REQUIRED_INPUTS:
@@ -127,6 +150,15 @@ class MainTests(unittest.TestCase):
             class T(unittest.TestCase):
                 def test_passes(self):
                     pass
+            """,
+        'test_render_selection': """
+            import unittest
+            class T(unittest.TestCase):
+                def test_regular(self):
+                    pass
+                def test_native_board_render(self):
+                    pass
+                test_native_board_render._agent_ee_native_board_render = True
             """,
         'test_skipping': f"""
             import unittest
@@ -176,6 +208,20 @@ class MainTests(unittest.TestCase):
         self.assertIn('strict suite passed: 1 modules, 1 tests, no skips', err)
         self.assertIn('strict suite passed', summary)
 
+    def test_native_render_selection_preserves_other_tests_and_reports_omissions(self):
+        code, out, err, summary = self.run_main(['test_render_selection'],
+                                                AGENT_EE_NATIVE_RENDER_MODE='omit')
+        self.assertEqual(code, 0, out + err)
+        self.assertIn('1 tests', err)
+        self.assertIn('test_render_selection.T.test_native_board_render', summary)
+        self.assertIn('not selected', summary)
+        code, out, err, summary = self.run_main(['test_render_selection'],
+                                                AGENT_EE_NATIVE_RENDER_MODE='run')
+        self.assertEqual(code, 0, out + err)
+        self.assertIn('2 tests', err)
+        self.assertNotIn('not selected', summary)
+
+
     def test_expected_failure_fails_the_run(self):
         code, out, err, summary = self.run_main(['test_passing', 'test_expected_failure'])
         self.assertEqual(code, 1, out + err)
@@ -202,6 +248,56 @@ class MainTests(unittest.TestCase):
                               'test_inputs.T.test_store not executed', out)
                 self.assertIn('### Required input `fome-mc-store` missing: 1 required test(s) not executed',
                               summary)
+
+
+class RenderChangeSelectionTests(unittest.TestCase):
+    def test_changed_renderer_runs_native_tests_and_unrelated_change_omits_them(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-render-selection-') as tmp:
+            root = Path(tmp)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            (root / 'src/agent_ee').mkdir(parents=True)
+            (root / 'src/agent_ee/render3d.py').write_text('original\n')
+            (root / 'README.md').write_text('original\n')
+            def git(*args):
+                return subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test',
+                                       '-c', 'user.email=test@example.invalid', *args],
+                                      check=True, capture_output=True, text=True).stdout.strip()
+            git('add', '.')
+            git('commit', '-qm', 'base')
+            base = git('rev-parse', 'HEAD')
+            (root / 'README.md').write_text('changed\n')
+            git('commit', '-qam', 'docs')
+            with patch.object(strict_suite, 'ROOT', root):
+                self.assertEqual(strict_suite.render_mode_from_change_base(base), 'omit')
+                self.assertEqual(strict_suite.render_mode_from_change_base(''), 'run')
+                self.assertEqual(strict_suite.render_mode_from_change_base('unknown-base'), 'run')
+                (root / 'src/agent_ee/render3d.py').write_text('changed\n')
+                self.assertEqual(strict_suite.render_mode_from_change_base(base), 'run')
+                git('commit', '-qam', 'renderer')
+                self.assertEqual(strict_suite.render_mode_from_change_base(base), 'run')
+                for path in ('Dockerfile', 'docker/kicad-10.0-releases.asc', 'docker/apt-retry.sh',
+                             'docker/agent-ee.apparmor', '.dockerignore', 'scripts/container_apparmor.sh'):
+                    with self.subTest(path=path):
+                        previous = git('rev-parse', 'HEAD')
+                        changed = root / path
+                        changed.parent.mkdir(parents=True, exist_ok=True)
+                        changed.write_text('changed\n')
+                        git('add', path)
+                        git('commit', '-qm', 'image toolchain')
+                        self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'run')
+                previous = git('rev-parse', 'HEAD')
+                gallery_installer = root / 'scripts/install_render_gallery.sh'
+                gallery_installer.write_text('changed\n')
+                git('add', 'scripts/install_render_gallery.sh')
+                git('commit', '-qm', 'gallery deployment')
+                self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'omit')
+                for path in ('src/agent_ee/candidate.py', 'src/agent_ee/executor.py'):
+                    with self.subTest(path=path):
+                        previous = git('rev-parse', 'HEAD')
+                        (root / path).write_text('generic change\n')
+                        git('add', path)
+                        git('commit', '-qm', 'unrelated source')
+                        self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'omit')
 
 
 class RequiredInputTests(unittest.TestCase):
@@ -268,8 +364,16 @@ class WorkflowInputTests(unittest.TestCase):
     WORKFLOW = (ROOT / '.github/workflows/ci.yml').read_text()
 
     def suite_step(self):
-        step = self.WORKFLOW.split('- name: Full test suite, strict toolchain mode, no skips', 1)[1]
+        step = self.WORKFLOW.split('- name: Strict test suite, change-selected board renders, no skips', 1)[1]
         return step.split('\n      - name: ', 1)[0]
+
+    def test_ci_uses_the_changed_base_and_passes_selection_to_the_strict_runner(self):
+        self.assertIn('fetch-depth: 0', self.WORKFLOW)
+        self.assertIn('RENDER_BASE: ${{ github.event.before }}', self.WORKFLOW)
+        self.assertIn('python3 scripts/strict_suite.py --print-render-mode --render-change-base "$RENDER_BASE"',
+                      self.WORKFLOW)
+        self.assertIn('RENDER_MODE: ${{ steps.render-selection.outputs.mode }}', self.suite_step())
+        self.assertIn('-e AGENT_EE_NATIVE_RENDER_MODE="$RENDER_MODE"', self.suite_step())
 
     def test_fome_mc_fetch_is_the_tests_pin_without_credentials(self):
         fetch = self.WORKFLOW.split('- name: Fetch the pinned fome-mc object store', 1)[1]

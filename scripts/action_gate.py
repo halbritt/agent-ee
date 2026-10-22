@@ -10,8 +10,12 @@ check table and the run's REPORT.md) to stdout and returns one verdict:
   check_failed         every declared check executed; at least one reports a defect
   coverage_incomplete  a declared check is absent, unknown or not executed, or the
                        run errored, was interrupted or never finalized
-  result_invalid       result.json is missing, unreadable or malformed, or
-                       `agent-ee verify` refused the run (--verify-exit nonzero)
+  result_invalid       result.json is missing, unreadable or malformed, its checks or
+                       check findings contradict the retained checks/<id>.json records,
+                       or `agent-ee verify` refused the run (--verify-exit nonzero)
+
+The verdict is derived from the retained native-check records: result.json's check
+projection is used only after it is bound to checks/<id>.json, for every run state.
 
 Without --expect the exit status is 0 only for checks_passed. With --expect it
 is 0 only when the verdict and every --expect-check ID=OUTCOME match. The gate
@@ -21,6 +25,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from agent_ee.cli import bind_check_findings, bind_checks  # noqa: E402
 
 VERDICTS = ("checks_passed", "check_failed", "coverage_incomplete", "result_invalid")
 CHECK_OUTCOMES = ("pass", "info", "defect", "unknown")
@@ -57,6 +64,12 @@ def judge(run, verify_exit=None):
         return invalid("result.json contains an unrecognized check outcome")
     if any(c["execution"] != "ok" and c["outcome"] != "unknown" for c in checks):
         return invalid("a check that did not execute claims a known outcome")
+    try:
+        # The projection is judged only once it equals the retained native-check evidence.
+        bind_checks(run, checks)
+        bind_check_findings(result)
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+        return invalid(f"result.json contradicts retained check evidence: {exc}", checks)
 
     incomplete, defects = [], []
     if result.get("state") not in ("complete", "incomplete") or not result.get("finished_utc"):

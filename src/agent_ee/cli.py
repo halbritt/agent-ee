@@ -247,6 +247,12 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         raise ValueError("stored final qualification differs from the captured baseline envelope coverage")
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
+    # Every run state, checks-only and interrupted runs included, projects the retained checks.
+    if ("expected_check_ids" in result and
+            result["expected_check_ids"] != [c.get("id") for c in manifest["scope"].get("checks", [])]):
+        raise ValueError("result check inventory differs from the captured scope's declared checks")
+    bind_checks(run, result["checks"])
+    bind_check_findings(result)
     if result["state"] == "complete":
         expected = {c["id"] for c in manifest["scope"]["checks"]}
         if expected != {c["id"] for c in result["checks"]}:
@@ -258,6 +264,50 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
             if review != read_json(run / "reviews" / (review["role"] + ".json")):
                 raise ValueError("review projection differs from retained initial review")
     return result
+
+
+def bind_checks(run, checks):
+    """Raise unless the projected checks are exactly the retained checks/*.json records.
+
+    A projected check without a retained record is accepted only as an unexecuted unknown, the
+    placeholder recover_records writes for a check the run never finished (AGENTEE-16)."""
+    retained = {p.name: read_json(p) for p in sorted((Path(run) / "checks").glob("*.json"))}
+    if not isinstance(checks, list) or not all(isinstance(c, dict) for c in checks):
+        raise ValueError("result checks are not a list of records")
+    for check in checks:
+        cid = check.get("id")
+        name = f"{cid}.json" if isinstance(cid, str) else None
+        if name in retained:
+            if check != retained.pop(name):
+                raise ValueError(f"check {cid} projection differs from retained native-check result checks/{name}")
+            continue
+        # A malformed declaration is retained as checks/invalid-<index>.json.
+        malformed = next((n for n, r in retained.items() if n.startswith("invalid-") and r == check), None)
+        if malformed is not None:
+            del retained[malformed]
+        elif check.get("execution") == "ok" or check.get("outcome") != "unknown":
+            raise ValueError(f"check {cid!r} projects an executed or known result without a retained "
+                             "native-check record")
+    if retained:
+        raise ValueError("retained native-check results are not projected: " + ", ".join(sorted(retained)))
+
+
+# Fields adjudication owns; every other collected field derives from the check record.
+ADJUDICATED_FIELDS = ("status", "disposition", "events")
+
+
+def bind_check_findings(result):
+    """Raise unless the check findings are those the (bound) projected checks derive."""
+    from .findings import collect_findings
+    expected = {f["id"]: f for f in collect_findings([], result["checks"])}
+    stored = [f for f in result.get("findings", []) if not isinstance(f, dict) or f.get("source") == "check"]
+    ids = [f.get("id") if isinstance(f, dict) else None for f in stored]
+    if len(ids) != len(set(ids)) or set(ids) != set(expected):
+        raise ValueError("check findings differ from the defects in the retained native-check results")
+    for finding in stored:
+        derived = expected[finding["id"]]
+        if any(finding.get(key) != value for key, value in derived.items() if key not in ADJUDICATED_FIELDS):
+            raise ValueError(f"finding {finding['id']} differs from its retained native-check result")
 
 
 def finding_status(finding):

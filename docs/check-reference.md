@@ -993,12 +993,22 @@ PCB, cross-analysis and EMC analyzers offline in the sandbox. It requires a
 scope/2 or scope/3 baseline and exactly `installation`, `installation_sha256`
 and `dispositions` parameters. The installation pin follows the existing
 `kicad_happy` inventory. `dispositions` is a captured immutable requirement file
-using `agent-ee.happy-dispositions/1`; every warning finding ID requires its own
+using `agent-ee.happy-dispositions/1`; every warning or assumption-bearing finding ID requires its own
 record with `disposition: accepted_risk|false_positive`, `rationale` and
 `recorded_by`. No disposition can waive an error.
 
-Any error or warning without an exact-ID disposition is `ok/defect`. Valid
-reports with no errors and every warning dispositioned are `ok/pass`; unknown,
+The AC4 false-positive regression reconstructs its proposed analyzer from a
+retained MIT patch against the verified pinned installation and verifies the
+resulting identity; it requires no host-only correction checkout or Git objects.
+The installed v2.3.1 limitations remain blocking; see the
+[limitation record](happy-severity-gate.md#known-analyzer-limitations-pinned-231).
+
+Every error is `ok/defect`. A warning, or any severity with nonempty native
+`assumptions` or `source_path: assumed`, is also a defect without an exact-ID
+disposition. Assumption-bearing info accepts dispositions; plain info does not
+and its dispositions stay unused. `undispositioned_warning_ids` includes both
+warnings and assumptions. Valid reports with no errors and every warning and
+assumption dispositioned are `ok/pass`; unknown,
 missing or malformed analyzer output stays unknown. The exact disposition bytes,
 raw reports and normalized native/disposition pointers are cited and sealed;
 preflight and public `verify` recheck the installed pin. Scope/3 predicates are
@@ -1006,7 +1016,9 @@ preflight and public `verify` recheck the installed pin. Scope/3 predicates are
 See the [schema, failure boundaries and original fixtures](happy-severity-gate.md).
 Thermal and SPICE are excluded from this kind. Existing `kicad_happy` stages and
 policy are unchanged. This is a severity policy over emitted findings, not
-complete analyzer rule coverage or electrical/EMC certification.
+complete analyzer rule coverage or electrical/EMC certification. Pinned 2.3.1
+PP-001 and PR-001 have [known false positives](happy-severity-gate.md#known-analyzer-limitations-pinned-231)
+that stay blocking errors until a requalified pin replaces them.
 
 ## Hardware interface invariants
 
@@ -1155,9 +1167,10 @@ raw EasyEDA geometry and KiCad library members. The check retains native
 extraction and bounded overlap evidence through the coordinator seal; missing
 or unsupported geometry cannot pass. See the [contract and qualification](land-pattern.md)
 for exact parameters, pin-number comparisons and coverage limits. The actual
-C11702/0402 comparison does not meet the requested 0.98 threshold. The absolute
-threshold is the only acceptance rule. Any other acceptance criterion for that
-pair is an owner decision.
+C11702/0402 comparison is a `low_accuracy` defect at IoU about 0.67. A
+coordinator ruling (2026-10-22) amended the ticket's acceptance example to
+match; see the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).
+The absolute threshold is the only acceptance rule.
 
 ## Footprint and catalog package names
 
@@ -1362,6 +1375,27 @@ An optional `package_map` (AGENTEE-274) makes a DigiKey package that differs
 from the footprint a defect, and an unmapped one unknown. See
 [component height](board-envelope.md#component-height) for parameter contracts,
 source applicability, model transform qualification and AGENTEE-209.
+
+`tht-thickness-fit/1` (AGENTEE-448) adds a captured immutable `thickness_fit`
+declaration and supplies `envelope:tht-thickness-fit/1`. It grades each declared
+through-hole part against the envelope's NOMINAL board thickness. Each part
+cites the manufacturer's recommended nominal thickness, and may add explicit hard
+limits or a wider documented fit range. Two tolerances are involved and are
+never conflated. The fabricator's finished-thickness tolerance
+(`finished_thickness_tolerance`) bounds the board the fab delivers and is never
+read as component fit. The component-side fit band uses, per side, the explicit
+hard limit if there is one. Otherwise it uses the default +/-10% screening band
+around the recommendation (inclusive, exact), widened on that side by a
+documented fit range that reaches further. A documented range never narrows the
+band; only an explicit hard limit can. Inside passes; the default band
+reports `screened (default +/-10% component fit)`. Outside an explicit hard
+limit is a defect. Outside the widened screening band is
+advisory: unknown, needing feature geometry or evidence, never a rejection. A
+mix of defects and unknowns reports unknown, keeps every defect in
+`defects` and names each defect in the summary before the unknown reasons. An uncited declaration is refused. A part not bound to one installed PTH footprint
+of the declared part number is unknown. Undeclared parts and every other
+criterion are unchanged. See
+[through-hole thickness fit](board-envelope.md#through-hole-thickness-fit).
 
 ## Assembly and test access
 

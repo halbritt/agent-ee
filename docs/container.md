@@ -297,12 +297,16 @@ repository. One job:
    runner: an anonymous clone of the public fome-mc repository at the
    pinned commit, verified before use, and the J1 manufacturer drawing, checked
    against its pinned SHA-256. A mismatch or failed download fails the job.
-4. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
+4. Runs every test module in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
-   a time, with both inputs mounted read-only. This is the required full gate: it fails if any test fails, errors or
-   is skipped, or if any module produces no valid result. Its job summary gives
-   the module and test counts and names every test that did not execute because a
-   [required external input](#required-external-inputs) is absent.
+   a time, with both inputs mounted read-only. Native 3D board render tests run
+   when renderer-related files or the pinned KiCad image inputs changed.
+   GitHub's preceding push commit is the
+   comparison base; manual dispatch, an unknown base, or a dirty checkout runs
+   them. Every selected test must pass without a skip, and every module must
+   produce a valid result. The job summary gives the module and test counts,
+   names render tests omitted by change selection, and names tests that did not
+   execute because a [required external input](#required-external-inputs) is absent.
 5. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
    check and step 6 also run after a failed suite step, so that their own results
    are reported. Any failed step still fails the job.
@@ -324,9 +328,17 @@ job page.
 
 The shared test harness defaults incidental candidate imaging off with
 `AGENT_EE_SKIP_VISUALS=1`. The candidate-visual and 3D-render modules explicitly
-restore imaging for their tests, including native image/hash checks. This test
-setting does not change production defaults or skip any unittest. See
+restore imaging for their tests, including native image/hash checks. Native 3D
+render tests have explicit markers; the strict runner excludes them before
+execution only when the change selector returns `omit`. This test setting does
+not change production defaults or turn any selected unittest into a skip. See
 [candidate inspection images](pcb-renders.md#candidate-inspection-images-agentee-382).
+
+For an explicit full render regression run, use
+`scripts/strict_suite.py --render-mode run` with the same strict toolchain and external inputs. A local
+change-selected run can use `--render-change-base origin/main`; a missing base
+runs the render tests. Candidate-bound milestone gallery rendering remains a
+separate workflow and is not selected by this regression-test gate.
 
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` is the strict-toolchain contract: toolchain tests
 must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user
@@ -479,7 +491,9 @@ Outputs are `verdict` and `run-directory`. The action:
    `agent-ee verify` on the new run. Their exit statuses are recorded, not judged:
    checks-only always exits 1.
 3. Runs [scripts/action_gate.py](../scripts/action_gate.py) on the run. It writes
-   the verdict, a check table and the run's `REPORT.md` to the job summary.
+   the verdict, a check table and the run's `REPORT.md` to the job summary. The
+   gate judges `result.json`'s checks only after binding each one, and the check
+   findings derived from them, to the retained `checks/<id>.json` record.
 4. Uploads the whole run directory, including hidden scratch files, as an
    artifact whatever the verdict.
 5. Fails the step unless the verdict is `checks_passed`.
@@ -489,11 +503,20 @@ Outputs are `verdict` and `run-directory`. The action:
 | `checks_passed` | Every declared check executed with `pass` or `info` | Success |
 | `check_failed` | Every declared check executed; at least one reports `defect` | Failure |
 | `coverage_incomplete` | A declared check is missing, `unknown` or not executed; or the run errored, was interrupted or never finalized | Failure |
-| `result_invalid` | `result.json` missing, unreadable or malformed; no new run directory; or `agent-ee verify` refused the run | Failure |
+| `result_invalid` | `result.json` missing, unreadable or malformed; its checks or check findings contradict the retained `checks/<id>.json` records; no new run directory; or `agent-ee verify` refused the run | Failure |
 
 No model review or adjudication runs, and `checks_passed` is not design
 acceptance. It says only that the declared native checks executed and passed
-for the captured candidate. The gate's tests are in
+for the captured candidate.
+
+`agent-ee verify` applies the same binding for every run state, including
+checks-only, errored and interrupted runs, not only complete ones (AGENTEE-16).
+Every retained check record must be projected unchanged, and every check
+finding must equal the one its record derives. A projected check without a
+retained record must be an unexecuted `unknown` placeholder for a check the run
+never finished. The result's check inventory must equal the captured scope's
+declared checks. Any contradiction refuses verification with a specific reason.
+The gate's tests are in
 [test_action_gate.py](../tests/test_action_gate.py).
 
 A consumer repository uses the action by reference or from a copy. Each run builds the image unless an `image` is

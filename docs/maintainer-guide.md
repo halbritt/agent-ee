@@ -49,7 +49,9 @@ runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` through
 `scripts/strict_suite.py`, which permits no skips. The workflow provisions the
 pinned fome-mc store and the J1 manufacturer drawing first; see
 [required external inputs](container.md#required-external-inputs). Without them
-the tests that need them fail. The full gate passes only with both inputs. Set
+the tests that need them fail. The strict gate passes only with both inputs.
+By default it includes native 3D board render regressions; CI selects them
+from changed paths and lists any omitted test IDs in its summary. Set
 `AGENT_EE_FOME_MC_CHECKOUT` to a fome-mc store containing `1289f31` and
 `AGENT_EE_J1_DRAWING` to the hash-checked drawing
 ([acquisition](../fixtures/telemetry-pod/j1/README.md)):
@@ -57,7 +59,7 @@ the tests that need them fail. The full gate passes only with both inputs. Set
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc \
   AGENT_EE_J1_DRAWING=/path/to/te-776228-1.pdf PYTHONPATH=src \
-  /usr/bin/python3 scripts/strict_suite.py --jobs 4
+  /usr/bin/python3 scripts/strict_suite.py --jobs 4 --render-mode run
 ```
 
 
@@ -72,7 +74,7 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc \
 | [test_profiles.py](../tests/test_profiles.py) | Explicit allocation, profile freshness, subscription response handling, native adapter contracts and refusal of profile-only repair closure |
 | [test_cli.py](../tests/test_cli.py) | Required work, outcome projection, interruption/budget preservation and correction behavior |
 | [test_doctor.py](../tests/test_doctor.py) | Doctor version output and binary hashes, missing tools, unimportable pcbnew, unhashable binaries and `--checks-only` |
-| [test_action_gate.py](../tests/test_action_gate.py) | CI/action verdicts from `result.json`: passing checks, defects, incomplete coverage, missing or malformed results and failed verification |
+| [test_action_gate.py](../tests/test_action_gate.py) | CI/action verdicts from `result.json`: passing checks, defects, incomplete coverage, missing or malformed results, failed verification, and projections that contradict retained check records (real seeded/control checks-only runs) |
 | [test_file_origins.py](../tests/test_file_origins.py) | MIT declaration in LICENSE, package metadata and README; every file classified once by origin; unreviewed third-party-looking files, undeclared capture origins and archive gaps refused |
 
 Avoid tests that only echo generated implementation text. Define the engineering

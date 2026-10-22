@@ -410,6 +410,25 @@
       "capture_sources": [
         "/fixtures/fome-mc/"
       ]
+    },
+    "KICAD-HAPPY-219": {
+      "name": "kicad-happy MIT correction fixture",
+      "upstream": {
+        "repository": "https://github.com/aklofas/kicad-happy",
+        "revisions": {
+          "06840467ad0f5d76af45f64449b1f5ecb10f052f": "v2.3.1 patch base",
+          "60ad2290819477357c9101627b83ce2d6096a000": "Owner-authorized isolated correction; not adopted"
+        },
+        "license_file": "LICENSE"
+      },
+      "upstream_license": "MIT; Copyright (c) 2025 Andrew Klofas; retained in fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "The 2026-10-19 AGENTEE-219e assignment authorizes retaining this exact MIT software diff locally with its notice for portable tests. Publication is not authorized by this assignment; record an owner publication decision before distribution. This third-party software is excluded from the agent-ee proposed MIT grant.",
+      "evidence": [
+        "fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",
+        "fixtures/kicad-happy/ac4-false-positives/correction.patch"
+      ]
     }
   },
   "rules": [
@@ -3019,6 +3038,20 @@
     },
     {
       "paths": [
+        "fixtures/kicad-happy/ac4-false-positives/EXPECTATIONS.md",
+        "fixtures/kicad-happy/ac4-false-positives/expected.json",
+        "fixtures/kicad-happy/ac4-false-positives/generate.py",
+        "fixtures/kicad-happy/ac4-false-positives/reproducer.kicad_pro",
+        "fixtures/kicad-happy/ac4-false-positives/reproducer.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-219 analyzer false-positive reproducer, generator and expectations, reviewed 2026-10-19. Every symbol, pin list, net name and coordinate is authored here; no pod, third-party design, stock library or footprint bytes. LSM6DSO32 is a part-number fact only; the kicad-happy commit and installation hashes are identifiers, not copied analyzer content."
+    },
+    {
+      "paths": [
         "fixtures/jlc-dfm/"
       ],
       "kind": "owned-fixture",
@@ -3765,6 +3798,17 @@
         "AE"
       ],
       "reviewed": "Original gallery service, HTML markup, native fixture browser configuration and user service unit written for agent-ee; existing third-party viewer assets remain under their existing origin rules."
+    },
+    {
+      "paths": [
+        "fixtures/kicad-happy/ac4-false-positives/correction.patch",
+        "fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt"
+      ],
+      "kind": "third-party-source",
+      "origins": [
+        "KICAD-HAPPY-219"
+      ],
+      "reviewed": "Exact git diff of six changed software/documentation/CI files from v2.3.1 to the proposed correction; no design or library files. Upstream MIT notice retained separately."
     }
   ]
 }
