@@ -131,6 +131,35 @@ class ProbeContractTests(unittest.TestCase):
                 self.assertNotIn(':', value)
                 self.assertNotIn('\n', value)
 
+    def test_legacy_marker_refused_at_schematic_admission_without_native_tools(self):
+        # KiBot exports legacy inline JSON once Footprint precedes it (AGENTEE-444);
+        # admission, not the exporter, is what refuses the legacy transport.
+        from agent_ee.schematic_emit import parse_quoted, Quoted as Q
+        from agent_ee.schematic_emitter import emit_schematic
+        from agent_ee.scaffold import sexpr
+        from agent_ee.storage import canonical
+        from agent_ee.symbol_library import children
+        intent = self.filled()
+        libraries = {lib['path']: (self.root / lib['path']).read_bytes() for lib in intent['libraries']}
+        result, files = emit_schematic(intent, libraries, {'schema': 'agent-ee.schematic-layout/1',
+            'namespace': '81ae10f4-1c43-4370-88c2-32c41b90fd70', 'project': 'probe', 'transforms': {}})
+        self.assertEqual(result['execution'], 'ok', result)
+        probes = pf.declarations(self.parts, self.root)
+        self.assertEqual(pf.validate_schematic(files['probe.kicad_sch'], probes), set(probes))
+        for legacy_refs in ({'TP1'}, set(probes)):
+            with self.subTest(legacy=sorted(legacy_refs)):
+                tree = parse_quoted(files['probe.kicad_sch'])
+                for sym in children(tree, 'symbol'):
+                    props = pf.properties(sym)
+                    if props.get('Reference') not in legacy_refs:
+                        continue
+                    for prop in children(sym, 'property'):
+                        if prop[1] == pf.PROPERTY:
+                            prop[2] = Q(canonical(pf.parse_marker(prop[2])).decode())
+                with self.assertRaisesRegex(ValueError,
+                        r'TP[1-6]: legacy AGENT_EE_Probe property requires forward-annotation migration'):
+                    pf.validate_schematic(sexpr(tree), probes)
+
     def test_encoded_marker_rejects_malformed_payload_and_schema(self):
         import base64
         from agent_ee.storage import canonical

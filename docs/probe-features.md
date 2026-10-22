@@ -89,7 +89,9 @@ Admission checks refuse the exact canonical inline `agent-ee.bare-copper-probe/1
 JSON emitted before AGENTEE-279 with a `legacy AGENT_EE_Probe` migration finding
 (AGENTEE-283). A legacy marker in the schematic cannot qualify membership
 through `parts_subset`; a legacy board cannot pass `part_binding`, `fab_export`
-or `fab_consistency`. KiBot 1.9.1 cannot export a board carrying it. Explicit source
+or `fab_consistency`. Legacy markers are refused here, at admission, not by
+KiBot: since AGENTEE-444 writes `Footprint` before custom fields, KiBot 1.9.1
+exports a legacy board without error. Explicit source
 migration and forward-annotation planning allow the legacy identity, with the same native
 identity, flags, source bytes and geometry checks. AGENTEE-302 converts validated
 legacy fields from the native XML and retained board to the KiBot-safe encoding
@@ -145,9 +147,14 @@ binding fill and schematic emission of the custom fields copied to footprints,
 requires the versioned base64 alphabet, and rejects legacy JSON, colons and
 control characters. The native fixture also checks the saved footprint values
 and exercises all three admission consumers against a newly captured legacy board.
+`test_legacy_marker_refused_at_schematic_admission_without_native_tools`
+requires `validate_schematic` to refuse one or all legacy markers in an
+emitted schematic with the migration finding, without native tools.
 
 The retained external regression requires legacy board and schematic admission
 to reject the inline JSON with a migration finding, while encoded properties
-pass both validators. Its KiBot section reproduces legacy exit 22 and requires
-exit 0 and fabrication outputs for the encoded fixture. Dependencies are read
+pass both validators. Its KiBot section requires exit 0, no `Footprint with
+more than one colon` error and fabrication outputs (copper, mask, drill,
+position, BOM) for both the legacy and the encoded fixture: KiBot does not
+refuse legacy markers, admission does. Dependencies are read
 only; the scratch directory must not already exist.
