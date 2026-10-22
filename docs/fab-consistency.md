@@ -8,7 +8,7 @@ the gate. The optional `model_libraries` parameter maps stock 3D-model variables
 to captured, pinned model libraries (see [Stock model libraries](#stock-model-libraries)). The gate never runs `kicad-cli` and never regenerates exports. It
 reads these sources only:
 
-- `work/EXPORT/fab/` and its `manifest.json` (`agent-ee.fab-manifest/1`).
+- `work/EXPORT/fab/` and its `manifest.json` (`agent-ee.fab-manifest/2`; `/1` is accepted as legacy only).
   The export result must list `work/EXPORT/fab/manifest.json` as evidence.
 - The export's sealed `kicad-cli` execution records, including its version
   run (`execution.json` with argv `["kicad-cli", "version"]` and `stdout.log`),
@@ -21,6 +21,19 @@ reads these sources only:
   footprint library IDs, sides, attributes, model paths and embedded files.
 - The captured stock-model receipt for each declared `model_libraries` variable,
   and the captured library files that it lists.
+
+Board-only mechanical admission is replayed from the captured board and sealed
+netlist: all three native exclusion attributes, no netlist path/component and
+no assigned pad net. `designators.mechanical` must equal the recomputed sorted references. It is
+required by `agent-ee.fab-manifest/2` (absent is `malformed`, `[]` when the board
+has no mechanical parts). `agent-ee.fab-manifest/1` is legacy-only: an absent list is
+accepted, admission is still replayed, and `details.legacy_manifest_schema` (also in
+the limitations) records an advisory that the declaration is not required for `/1`.
+Unknown versions (`/0`, `/3`, `/01`) are refused. Known limitation: a schema
+downgrade is not bound to an exporter run, so a `/1` manifest is visible through the
+advisory but not refused.
+Netlisted test pads with footprint exclusions use the existing declared
+`JLCPCB_Assembly=not_assembled` rule and exclusion replay.
 
 The manifest is a claim to verify, never an authority:
 
@@ -72,7 +85,7 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | Board parse differs from the sealed geometry; geometry checks disagree; a non-board-only footprint is not in the netlist; a netlist component has no footprint and is not excluded from the board; duplicate netlist references; netlist XML and its connectivity record disagree | `malformed`, `unknown` |
 | A board-only footprint that would be assembled (no DNP or BOM/position exclusion) | `unsupported`, `unknown` (a gap) |
 | Staging directory absent or empty although the export reported ok | `malformed`, `unknown` |
-| Manifest fields not exactly the fab-manifest/1 set; `headers` differing from the captured JLCPCB templates; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry; `exclusion_rule` is unknown or not the captured export rule; `excluded` is not the set re-derived from the sealed netlist and board, or the sources do not support it | `malformed`, `unknown` |
+| Manifest fields not exactly the fab-manifest/2 set (`designators.mechanical` required; absent is refused); `headers` differing from the captured JLCPCB templates; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry; `exclusion_rule` is unknown or not the captured export rule; `excluded` is not the set re-derived from the sealed netlist and board, or the sources do not support it | `malformed`, `unknown` |
 | A staged file not in the manifest, a manifest file not staged, a hash mismatch, an empty file, a symlink or other non-regular file; `bom.csv`, `cpl.csv`, `gerbers.zip` or `pcb_summary.json` absent | `malformed`, `unknown` |
 | Manifest copper count or enabled layers differ from the board. The enabled layers must be every board copper layer, `F.Mask`, `B.Mask` and `Edge.Cuts`, plus optional paste and silkscreen layers. | `malformed`, `unknown` |
 | Fewer Gerber plots than enabled fab layers; an enabled layer with no plot whose `FileFunction` names it; two plots for one layer | `malformed`, `unknown` |

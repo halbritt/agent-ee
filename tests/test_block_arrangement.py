@@ -83,6 +83,48 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual']['steps_used'])
         self.assertEqual(plan['policy'], self.policy)
 
+    def test_deferred_advisory_is_info_and_retains_exceeded_evidence(self):
+        for limit in (1, 100 * MM):
+            with self.subTest(limit=limit):
+                pol = copy.deepcopy(self.policy)
+                for obligation in pol['electrical_locality']['obligations']:
+                    if obligation['id'] == 'cross-C2':
+                        for role in ('supply', 'return'):
+                            obligation[role].pop('provenance')
+                            obligation[role]['max_distance_nm'] = limit
+                entries = [{'candidate': blocks.pack_block(
+                    self.board, self.inv, self.derivation, b['id'], pol)['candidate']}
+                    for b in self.derivation['blocks']]
+                plan = self.arrange(entries=entries, pol=pol)
+                self.assertEqual(plan['status'], 'planned', plan)
+                rows = plan['block_arrangement']['deferred_grading']
+                advisories = plan['locality_grading']['advisories']
+                self.assertEqual(len(rows), 2)
+                self.assertTrue(advisories)
+                for row in rows:
+                    self.assertEqual(row['status'], 'info' if limit == 1 else 'pass')
+                    self.assertEqual(row['advisories'], advisories)
+                    self.assertEqual({a['exceeded'] for a in row['advisories']}, {limit == 1})
+
+    def test_deferred_advisory_never_masks_unknown_or_defect(self):
+        admitted = {'Power': {'deferred': {'obligations': ['cross'], 'groups': []}}}
+        for category in ('unknown', 'defects'):
+            report = {'measured': [{'obligation': 'cross'}], 'defects': [], 'unknown': [],
+                      'advisories': [{'obligation': 'cross', 'exceeded': True}]}
+            report[category] = [{'obligation': 'cross', 'kind': 'unavailable' if category == 'unknown' else 'distance'}]
+            rows = arrangement._deferred_grading({'locality_grading': report}, admitted)
+            self.assertNotIn(rows[0]['status'], ('pass', 'info'))
+        report = {'measured': [], 'defects': [], 'unknown': [],
+                  'advisories': [{'obligation': 'cross', 'exceeded': True}]}
+        self.assertEqual(arrangement._deferred_grading({'locality_grading': report}, admitted)[0]['status'],
+                         'unknown')
+
+        report['measured'] = [{'obligation': 'cross'}]
+        report['advisories'][0]['obligation'] = 'other'
+        row = arrangement._deferred_grading({'locality_grading': report}, admitted)[0]
+        self.assertEqual(row['status'], 'pass')
+        self.assertNotIn('advisories', row)
+
     def test_deterministic_and_input_preserving(self):
         board, entries = copy.deepcopy(self.board), copy.deepcopy(self.entries)
         first = self.arrange()
@@ -415,6 +457,22 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         for rules, message in cases:
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 self.arrange(rules)
+
+    def test_unknown_block_ids_are_named_with_the_derived_ids(self):
+        """AGENTEE-372: the refusal names each unknown id and lists the derived block ids."""
+        derived = ', '.join(repr(b['id']) for b in self.derivation['blocks'])
+        self.assertEqual(derived, "'Power', 'Sensor'")
+        for rules, label in ((plan_policy(priority_blocks=['Sensor', 'Nope', 'Also']), 'priority blocks'),
+                             (plan_policy(no_block_over_fixed={'exempt_blocks': ['Nope', 'Power', 'Also'],
+                                                               'provenance': {'enforcement': 'advisory'}}),
+                              'exempt blocks')):
+            with self.subTest(label), self.assertRaises(ValueError) as caught:
+                self.arrange(rules)
+            self.assertEqual(str(caught.exception),
+                             f"{label} must be derived block ids: unknown 'Also', 'Nope'; derived {derived}")
+        with self.assertRaises(ValueError) as caught:
+            arrangement.validate_policy(plan_policy(priority_blocks=['Nope']), [], [])
+        self.assertEqual(str(caught.exception), "priority blocks must be derived block ids: unknown 'Nope'; derived none")
 
     def test_effective_policy_only_adds_board_obstacles(self):
         """Sol review H1: the effective policy may add board obstacles, never drop or relax one."""

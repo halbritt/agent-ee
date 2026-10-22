@@ -2,7 +2,7 @@
 
 `fab_consistency` (params `{export_check}`) never regenerates or runs exports. It
 reads the earlier export check's `work/EXPORT/fab/` staging tree and its
-`agent-ee.fab-manifest/1`, the export's sealed native XML netlist prerequisite,
+`agent-ee.fab-manifest/2`, the export's sealed native XML netlist prerequisite,
 every earlier sealed `geometry` probe of the captured board, and the captured
 board bytes (S-expression parse only). The manifest is a claim to verify, never
 authority: its kicad-cli identity must be the pinned binary and its sealed
@@ -41,7 +41,9 @@ from .fab_export import (ASSEMBLY_RULES, BOM_COLUMNS as BOM_HEADER, CPL_COLUMNS 
                          assembly_exclusions, header_records, verify_jlc_templates)
 from .storage import digest, read_json, write_json
 
-MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
+MANIFEST_SCHEMA = 'agent-ee.fab-manifest/2'
+LEGACY_MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
+MANIFEST_SCHEMAS = frozenset((MANIFEST_SCHEMA, LEGACY_MANIFEST_SCHEMA))
 MANIFEST_KEYS = frozenset(('schema', 'candidate_id', 'board_path', 'board_sha256', 'tool', 'files',
                            'headers', 'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
                            'generated_utc'))
@@ -344,8 +346,8 @@ def load_manifest(ctx, stage):
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         fail('manifest', f'manifest.json is not JSON ({exc})')
     if (not isinstance(data, dict) or not (MANIFEST_KEYS <= set(data) <= MANIFEST_KEYS | OPTIONAL_MANIFEST_KEYS)
-            or data['schema'] != MANIFEST_SCHEMA):
-        fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields')
+            or not isinstance(data['schema'], str) or data['schema'] not in MANIFEST_SCHEMAS):
+        fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields (or legacy {LEGACY_MANIFEST_SCHEMA})')
     board = ctx.scope.get('board')
     captured = ctx.manifest['files'].get(board)
     if data['candidate_id'] != ctx.manifest['candidate_id']:
@@ -391,7 +393,8 @@ def load_manifest(ctx, stage):
         fail('manifest', 'drill must name distinct pth and npth files')
     designators = data['designators']
     non_dnp = designators.get('board_non_dnp') if isinstance(designators, dict) else None
-    if (set(designators or {}) != {'board_non_dnp', 'excluded', 'exclusion_rule'} or
+    if (not ({'board_non_dnp', 'excluded', 'exclusion_rule'} <= set(designators or {})
+                 <= {'board_non_dnp', 'excluded', 'exclusion_rule', 'mechanical'}) or
             not isinstance(non_dnp, list) or
             any(not isinstance(r, str) or not r for r in non_dnp) or
             len(set(non_dnp)) != len(non_dnp)):
@@ -404,6 +407,13 @@ def load_manifest(ctx, stage):
                 e['designator'] not in non_dnp for e in excluded) or
             len({e['designator'] for e in excluded}) != len(excluded)):
         fail('manifest', 'designators.excluded must be unique board_non_dnp designators under exclusion_rule')
+    if data['schema'] == MANIFEST_SCHEMA and 'mechanical' not in designators:
+        fail('manifest', f'{MANIFEST_SCHEMA} requires designators.mechanical (an empty list when the board has none)')
+    mechanical = designators.get('mechanical', [])
+    if (not isinstance(mechanical, list) or
+            any(not isinstance(ref, str) or not ref for ref in mechanical) or
+            len(set(mechanical)) != len(mechanical)):
+        fail('manifest', 'designators.mechanical must hold unique references')
     return data
 
 
@@ -954,6 +964,23 @@ def gate(ctx, eid, export_spec, export_result, stage):
             raise CheckError('malformed', f'copper feature evidence unreadable: {exc}') from exc
         if copper_problems or binding_problems:
             raise CheckError('unsupported', '; '.join(copper_problems + binding_problems))
+    from .fab_export import mechanical_inventory
+    try:
+        mechanical, mechanical_problems = mechanical_inventory(
+            (ctx.inputs / ctx.scope['board']).read_bytes(), netlist)
+    except ValueError as exc:
+        raise CheckError('malformed', f'mechanical inventory unreadable: {exc}') from exc
+    if mechanical_problems:
+        raise CheckError('unsupported', '; '.join(mechanical_problems))
+    if ('mechanical' in manifest['designators'] and
+            manifest['designators']['mechanical'] != mechanical):
+        raise CheckError('malformed', 'stale: manifest mechanical differs from the captured board')
+    details['mechanical'] = mechanical
+    if manifest['schema'] == LEGACY_MANIFEST_SCHEMA:
+        details['legacy_manifest_schema'] = {
+            'severity': 'advisory', 'schema': LEGACY_MANIFEST_SCHEMA,
+            'detail': f'{LEGACY_MANIFEST_SCHEMA} manifests are accepted as legacy only; the mechanical '
+                      'declaration is not required for them, so a missing designators.mechanical is not refused'}
     details['copper_features'] = sorted(copper)
     rule = (export_spec.get('params') or {}).get('assembly_exclusion')
     if manifest['designators']['exclusion_rule'] != rule:
@@ -1043,6 +1070,8 @@ def gate(ctx, eid, export_spec, export_result, stage):
     write_json(ctx.work / 'fab-consistency.json', report)
     ctx.evidence('fab-consistency.json')
     details.update(defects=defects, coverage_gaps=gaps)
+    if 'legacy_manifest_schema' in details:
+        ctx.result['limitations'].append(details['legacy_manifest_schema']['detail'])
     ctx.result['limitations'] += [
         'CPL coordinates use the fab_export/1 native footprint anchor and absolute export origin; '
         'assembly centroid corrections and rotation policy belong to the rotation lane.',

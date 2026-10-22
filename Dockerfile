@@ -54,6 +54,7 @@ RUN set -eu; \
         "kicad=${KICAD_VERSION}" \
         "kicad-symbols=${KICAD_VERSION}" \
         "kicad-footprints=${KICAD_VERSION}" \
+        "kicad-packages3d=${KICAD_VERSION}" \
         "kicad-templates=${KICAD_VERSION}" \
         "ngspice=${NGSPICE_VERSION}" \
         "bubblewrap=${BUBBLEWRAP_VERSION}" \

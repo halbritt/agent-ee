@@ -13,7 +13,7 @@ fab lane interface contract v1 under `work/<check-id>/fab/`:
                       without the parts the declared exclusion rule omits
     gerbers.zip       gerbers/ + drill/, deterministic member order and metadata
     pcb_summary.json  native `kicad-cli pcb export stats` JSON
-    manifest.json     agent-ee.fab-manifest/1, written last and only on success
+    manifest.json     agent-ee.fab-manifest/2, written last and only on success
 
 Assembled means board non-DNP and not omitted by the optional declared
 `assembly_exclusion` rule (v1: `JLCPCB_Assembly=not_assembled`). The rule is a
@@ -57,7 +57,8 @@ from pathlib import Path
 
 from .storage import digest, read_json, write_json
 
-SCHEMA = 'agent-ee.fab-manifest/1'
+SCHEMA = 'agent-ee.fab-manifest/2'
+LEGACY_SCHEMAS = ('agent-ee.fab-manifest/1',)
 TEMPLATE_SCHEMA = 'agent-ee.jlc-templates/1'
 JLC_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / 'fixtures/fab-export'
 BOM_HEADER = 'Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,"LCSC Part #"'
@@ -551,6 +552,40 @@ def _lists(node, head):
     return [x for x in node[1:] if isinstance(x, list) and x and x[0] == head]
 
 
+def mechanical_inventory(data, components=None):
+    """Re-derive board-only mechanical references from captured native bytes.
+
+    No schematic path or assigned pad net is permitted. A net node other than
+    KiCad's explicit empty net is unqualified, including malformed net nodes.
+    """
+    from .symbol_library import parse_sexpr
+    root = parse_sexpr(data)
+    if root[0] != 'kicad_pcb':
+        raise ValueError('not a kicad_pcb file')
+    refs, problems = [], []
+    for fp in _lists(root, 'footprint'):
+        attrs = {a for node in _lists(fp, 'attr') for a in node[1:] if isinstance(a, str)}
+        if not {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'} <= attrs:
+            continue
+        names = [p[2] for p in _lists(fp, 'property') if len(p) > 2 and p[1] == 'Reference']
+        if len(names) != 1 or not isinstance(names[0], str):
+            problems.append('mechanical footprint needs exactly one reference')
+            continue
+        ref = names[0]
+        paths = _lists(fp, 'path')
+        if any(node != ['path', ''] for node in paths):
+            problems.append(f'mechanical footprint {ref} has a netlist path')
+        if components is not None and ref in components:
+            problems.append(f'mechanical footprint {ref} has a netlist component')
+        if any(net not in (['net', '0', ''], ['net', ''])
+               for pad in _lists(fp, 'pad') for net in _lists(pad, 'net')):
+            problems.append(f'mechanical footprint {ref} has a netted or unqualified pad')
+        refs.append(ref)
+    if len(set(refs)) != len(refs):
+        problems.append('duplicate mechanical footprint reference')
+    return sorted(set(refs), key=natural_key), problems
+
+
 def board_facts(data, probes=None, copper_features=()):
     """Layer table and footprint inventory of a captured board.
 
@@ -614,7 +649,10 @@ def board_facts(data, probes=None, copper_features=()):
         seen.add(ref)
         excluded = attrs & {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
         mechanical = excluded == {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
-        if excluded and not dnp and ref not in probe_refs and not mechanical and ref not in copper_features:
+        # Full rule/netlist agreement is checked by assembly_exclusions before export.
+        marked = any(dict(fields) == {name: value} for name, value in ASSEMBLY_RULES.values())
+        if (excluded and not dnp and ref not in probe_refs and not mechanical
+                and not marked and ref not in copper_features):
             unsupported.append(f'populated footprint {ref} carries {sorted(excluded)}; '
                                'v1 refuses non-DNP exclusions')
     populated = sorted((f['ref'] for f in footprints if not f['dnp']), key=natural_key)
@@ -1029,8 +1067,9 @@ def inventory(fab):
 
 def verify_manifest(fab, manifest):
     """Recompute the staging inventory; raise ValueError on any disagreement."""
-    if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
-        raise ValueError('not an agent-ee.fab-manifest/1')
+    if (not isinstance(manifest, dict) or not isinstance(manifest.get('schema'), str)
+            or manifest['schema'] not in (SCHEMA,) + LEGACY_SCHEMAS):
+        raise ValueError(f'not an {SCHEMA} (or legacy {LEGACY_SCHEMAS[0]})')
     if 'headers' in manifest and manifest['headers'] != header_records():
         raise ValueError('manifest headers do not match captured JLC templates')
     actual = inventory(fab)
@@ -1172,7 +1211,13 @@ def check_fab_export(ctx):
                                      'scope_sha256': ctx.manifest.get('scope_sha256'), 'excluded': excluded}
     parts, disagreements, assembly_problems = assembled_parts(
         components, facts['footprints'], {e['designator'] for e in excluded}, copper_refs)
-    unsupported += copper_problems + part_problems + exclusion_problems + assembly_problems
+    try:
+        mechanical, mechanical_problems = mechanical_inventory((ctx.inputs / board_rel).read_bytes(), components)
+    except ValueError as exc:
+        raise _error('malformed', f'mechanical inventory unreadable: {exc}') from exc
+    details['mechanical'] = mechanical
+    facts['mechanical'] = mechanical
+    unsupported += copper_problems + part_problems + exclusion_problems + assembly_problems + mechanical_problems
     try:
         rows, flagged = bom_rows(parts)
     except ValueError as exc:
@@ -1413,7 +1458,7 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
         'headers': headers,
         'copper_layers': facts['copper_layers'], 'enabled_fab_layers': layers,
         'drill': roles, 'designators': {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded,
-                                        'exclusion_rule': rule},
+                                        'exclusion_rule': rule, 'mechanical': facts['mechanical']},
         'generated_utc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
     if variant is not None:

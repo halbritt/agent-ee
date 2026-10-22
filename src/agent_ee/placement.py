@@ -460,7 +460,7 @@ def judge(capture, policy=None, overhangs=None):
     from .access_direction import grade as access_grade
     access, access_unknown = access_grade(capture)
     access_lanes = {row['ref']: row['lane_polygons_nm'] for row in access
-                    if 'overhang' in row and row['provenance']['enforcement'] == 'hard'}
+                    if 'overhang' in row and row['provenance']['enforcement'] == 'hard' and row['relaxes_outline']}
     failures, unknown, declared = _geometry(capture, overhangs, access_lanes)
     failures += [row for row in access if row['status'] == 'defect']
     unknown += access_unknown

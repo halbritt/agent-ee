@@ -145,6 +145,23 @@ class ForwardAnnotationTests(unittest.TestCase):
             edit(intent)
         return intent
 
+    def test_forward_annotation_preserves_board_only_mounting_holes(self):
+        from tests.test_fab_export import mounting_holes
+        project, xml = self.project(self.intent(), 'holes')
+        board = project / 'regulator.kicad_pcb'
+        board.write_text(board.read_text().rstrip()[:-1] + mounting_holes() + ')')
+        before = self.geometry(project, 'holes-before')
+        plan = fa.plan(board, xml, self.manifest, PROJECT, self.tmp / 'holes-plan')
+        self.assertEqual(plan['execution'], 'ok', plan['findings'])
+        self.assertEqual(plan['counts']['board_only'], 4)
+        result = fa.apply(plan, board, xml, self.manifest, PROJECT, board, self.tmp / 'holes-apply',
+                          backup_dir=self.tmp / 'holes-backup')
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        after = self.geometry(project, 'holes-after')
+        for ref in ('H1', 'H2', 'H3', 'H4'):
+            self.assertEqual(next(fp for fp in before['footprints'] if fp['ref'] == ref),
+                             next(fp for fp in after['footprints'] if fp['ref'] == ref))
+
     def test_native_custom_pad_library_indexes_and_annotates_through_cli(self):
         from tests.test_custom_pad_index import custom
         def add(intent):

@@ -22,6 +22,7 @@ from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .silk_artwork import SILK_CONFLICTS, relocate
 from .storage import digest, read_json, write_json
+from .models3d import copy_project_models, verify_project_models
 from .design_rule_provenance import (
     classify_finding, finding_sources, measured_actual, numeric_finding, require_evaluated_limits)
 
@@ -415,18 +416,24 @@ def _stamp_lineage(source, output, project_payloads, comparison, before, baselin
     """
     import copy
     import pcbnew
-    from .placement_defects import STAMP, STAMP_COMMENT, carry_digest, stamp
-    digests = stamp(output.read_bytes()) or []
+    from .placement_defects import STAMP, carry_digest, stamp, stamp_slot
+    data = output.read_bytes()
+    digests = stamp(data) or []
+    # User text in comment 9 keeps its slot; the stamp takes the highest free one (AGENTEE-412).
+    number = stamp_slot(data)
     board = pcbnew.LoadBoard(str(output))
     block = board.GetTitleBlock()
-    slot = int(STAMP_COMMENT) - 1
+    slot = int(number) - 1
     if block.GetComment(slot) and not digests:
-        raise ValueError(f'title block comment {STAMP_COMMENT} is occupied; placement lineage cannot be recorded')
+        raise ValueError(f'title block comment {number} is occupied; placement lineage cannot be recorded')
     value = carry_digest(comparison['open_defects'])
-    block.SetComment(slot, ' '.join([STAMP, *digests, *([value] if value not in digests else [])]))
+    recorded = [*digests, *([value] if value not in digests else [])]
+    block.SetComment(slot, ' '.join([STAMP, *recorded]))
     board.SetTitleBlock(block)
     if not pcbnew.SaveBoard(str(output), board):
         raise ValueError('native lineage stamp save failed')
+    if stamp(output.read_bytes()) != recorded:
+        raise ValueError('native lineage stamp did not save as recorded')
     for suffix, payload in project_payloads.items():
         target = output.with_suffix(suffix)
         if payload is None:
@@ -539,16 +546,8 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared electrical locality')
     if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
         raise ValueError('saved-board placement failed a hard block arrangement rule')
-    from .reserved_area import report as reserve_report, fabrication_outlines, alternatives
-    fabrication = fabrication_outlines(output)
-    reserve_policy = {**plan['policy'], 'obstacles': [*plan['policy']['obstacles'],
-        *plan.get('block_arrangement', {}).get('arrangement', {}).get('keepouts', [])]}
-    reserve = reserve_report(saved, reserve_policy, fabrication)
-    if reserve.get('sides'):
-        from .reserved_area_native import NativeAlternatives
-        alternatives(saved, plan['policy'], fabrication, reserve, plan,
-                     NativeAlternatives(output, output.parent / 'reserve-alternatives',
-                                        saved, plan['policy'], plan))
+    from .reserved_area import saved_report
+    reserve = saved_report(output, saved, plan)
     judgment['reserved_area'] = reserve
     write_json(output.parent / 'placement-judgment.json', judgment)
     from .silk_artwork import containment_witness
@@ -569,7 +568,7 @@ def _retain_failure(root, name, scratch, error):
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
              'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json',
-             'native-drc-restamp.json')
+             'native-drc-restamp.json', 'project-models.json')
     for name in names:
         path = scratch / name
         if path.is_file():
@@ -679,7 +678,10 @@ def place_candidate(source, netlist, destination, request):
                         plan_sha256=digest(scratch / 'placement-plan.json'),
                         reserved_area=report['reserved_area']))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
+                report['project_models'] = copy_project_models(source, scratch)
+                write_json(scratch / 'project-models.json', report['project_models'])
                 report['visuals'] = produce(output, scratch / 'visuals', skip=skip_visuals)
+                verify_project_models(source, scratch, report['project_models'])
                 for image in report['visuals']['images']:
                     image['path'] = 'visuals/' + image['path']
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:

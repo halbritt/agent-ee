@@ -67,7 +67,7 @@ def _scan_refusals(root):
         except (ValueError, UnicodeError):
             # Tests also author deliberately invalid receipt JSON.
             continue
-        if (isinstance(receipt, dict) and receipt.get('schema') == 'agent-ee.stage-receipt/1'
+        if (isinstance(receipt, dict) and receipt.get('schema') in ('agent-ee.stage-receipt/1', 'agent-ee.stage-receipt/2')
                 and receipt.get('status') == 'refused'):
             print(_refusal_message(path.parent, receipt), file=sys.stderr)
 

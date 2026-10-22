@@ -281,6 +281,18 @@ an empty box or an edited polygon therefore refuses. A record whose rings are no
 canonical comes from before AGENTEE-370 and refuses with `identity_version`; it is
 never re-hashed.
 
+Validation is structural, not board admission (AGENTEE-401). Every measured
+locality row requires `constraint_provenance` matching the declaration and an
+explicit `manufacturing_floor`. A known floor needs a nonnegative integer
+`floor_nm`, the captured PCB source and clearance, and the necessary-copper-floor
+kind; an unknown floor needs a nonempty reason. Missing or malformed records
+refuse instead of implying `below_floor: false`. Explicit unknown floors remain
+unknown records; geometry-unqualified floors can still accompany advisory grades.
+The floor value and its claimed geometry cannot be verified without the board.
+Consumers must use `admit` before trusting stored locality evidence; mapped
+arrangement inputs independently regrade the target board's own footprints and
+policy. `match` establishes member identity, not evidence admission.
+
 ### Pose-independent identity (AGENTEE-370)
 
 `pad_geometry_sha256` and `courtyard_sha256` hash the footprint at the origin,
@@ -372,6 +384,11 @@ locality `info` with no defects or unknowns and retain every advisory, including
 advisory status; admission independently re-grades native lands against the
 source-bound policy. Sourced distance violations, infeasibility and unknown
 coverage still refuse. Group grades and courtyard witnesses must pass.
+
+AGENTEE-402 ruling 402a: locality references to present source records with
+mismatched SHA-256 digests produce `source_record_integrity` unknown coverage.
+Packing and candidate validation refuse them, including forged advisory grades.
+Absent source records and malformed hashes retain advisory/unsourced behavior.
 
 ## Matching
 
@@ -510,7 +527,7 @@ block's bounding box is not reserved, so sparse blocks can interleave. On the
 pod, stage-A block boxes total 3590 mm² (F) and 3212 mm² (B) of a 5850 mm²
 side, so whole-block boxes did not fit.
 
-Blocks are ordered by `priority_blocks`. Then come blocks that constrain both
+Blocks are ordered by `priority_blocks`; an entry that is not a derived block id is refused, and the refusal names every unknown id and lists the derived ids (as does `no_block_over_fixed.exempt_blocks`, AGENTEE-372). Then come blocks that constrain both
 board sides: those with a drilled pad (a through-board reservation) or a
 hard-shadowed part. The rest follow. Within each group, the next block is the
 one that shares the most non-ground nets with the fixed parts and the blocks
@@ -600,7 +617,10 @@ steps. `block_arrangement` records:
 - `rules`: every block rule graded with its enforcement;
 - `deferred_grading`: every deferred obligation and group of every block, with
   its status on the complete plan. A deferred obligation that is not measured is
-  `unknown`, which fails the plan.
+  `unknown`, which fails the plan. Exceeded locality advisories produce `info` rows
+  with the original `advisories` (including `exceeded`); they do not reject the
+  plan. Unexceeded advisory rows retain `pass` and include their advisories.
+  Defects or unavailable measurements still reject it (AGENTEE-402).
 
 ### Runner request
 
@@ -641,6 +661,10 @@ written `placement-plan.json` bytes),
 `derivation_sha256`, `policy_sha256`, and `rules` (each block rule's
 enforcement and status on the saved board). `authority` is a fixed statement: the
 artifact is review input only, and an advisory block confers no acceptance.
+A scope that declares `block_provenance` carries the artifact whole in every
+initial reviewer's packet as `block_provenance.record`, so each reviewer sees
+every block's provenance `class` and `citation` (AGENTEE-421;
+`tests/test_block_provenance.py`).
 `placement-result.json` records the file's hash as `block_provenance_sha256`.
 The placement plan records the search's wall `elapsed_s`, so `plan_sha256`, and
 with it the artifact's bytes, differ between otherwise identical runs; every
@@ -924,6 +948,10 @@ It covers:
 - packing with internal and deferred obligations and groups;
 - advisory-only and mixed hard/advisory packing, truthful advisory records,
   and source-record preservation through JSON round trips and admission;
+- required floor/provenance records (AGENTEE-401), malformed and stale floor
+  provenance refusals, retained geometry-unknown advisory floors, manufacturer
+  record integrity refusal, and board admission refusing a structurally valid
+  but false unknown-floor claim;
 - frame rigidity under anchor rotation and determinism;
 - fail-closed locality, fixed-member and synthetic-plane cases;
 - every provenance class and the structural refusals;

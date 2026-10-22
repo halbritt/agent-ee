@@ -363,6 +363,68 @@ Limits:
   an earlier iteration is still an ordinary footprint transform, and fresh DRC
   grades the copper they leave behind.
 
+### Numeric token spellings (AGENTEE-372)
+
+pcbnew rewrites number spellings on save: a hand-edited courtyard endpoint
+`29.0` comes back as `29`, and `0.50` as `0.5`. The write-scope comparison
+therefore reads the identified numeric argument slots of footprint children as
+exact decimals, with no Decimal context: `29.0`, `29` and `2.9E+1` are equal;
+`29.001` and `1.000…0001` are not. A position is a tag under its known parent
+path from the footprint (`FOOTPRINT_NUMBERS`), never a tag name alone, and each
+graphic kind has its own children. A node holds numbers only with a supported
+count of plain arguments, and only at the listed slots:
+
+- `fp_line` and `fp_rect`: `start`, `end`; `fp_circle`: `center`, `end`;
+  `fp_arc`: `start`, `mid`, `end`; `fp_poly`: `pts/xy`. Each point has
+  exactly two numbers. All five: legacy `width` and `stroke/width`;
+- `property` and `fp_text`: `at` x, y and optional angle (two or three
+  arguments), `effects/font/size` (two), `effects/font/thickness`;
+- `pad`: `at` (two or three), `size` and `rect_delta` (two), a round
+  `drill` and `drill/offset`, the ratio, margin, clearance and thermal settings,
+  `die_length`;
+- `model`: `offset/xyz`, `scale/xyz`, `rotate/xyz` (three each);
+- an owned `zone`: the `hatch` pitch (the second of two arguments),
+  `min_thickness`, `connect_pads/clearance`, `fill/thermal_gap`,
+  `fill/thermal_bridge_width`, `fill/island_area_min`;
+- the footprint's own margin, clearance and thermal settings.
+
+A child that belongs to another graphic kind (`mid` under `fp_line`, `center`
+under `fp_rect`, `start` under `fp_circle` or `fp_poly`), the legacy arc
+`angle`, an `at` tail beyond x, y and angle (`(at 0 0 90 1)`), the hatch style
+(`edge`, or a numeric-looking `1`), an oval drill and any node with another
+argument count keep their whole subtree exact.
+
+This applies to keyed footprint children, unkeyed ones such as the 3D model,
+side-flipped graphics, texts and pads, and owned-zone settings. Only plain
+numeric tokens qualify (the same grammar as angles); `0.05x` or an overlong
+token stays an exact token.
+
+Every other token stays exact text. Everything outside footprints keeps exact
+comparison: board `setup` (including its `stackup`, so `(thickness 0.035)`
+respelled `0.0350` refuses), design rules and board graphics. An unknown child
+keeps its whole subtree exact even where it holds a known tag, for example
+`(width 1)` inside an unrecognised footprint, pad or setup child, or a `size`
+directly under `effects` rather than under `font`. The shared parser drops
+quoting, so a pad number, field value or net name keeps exact text comparison:
+`"1"` and `"1.0"` are different pad numbers. The source bytes, board digests,
+scope schemas and transform identities are unchanged.
+
+Under a side flip the comparison carries the same grammar context. Layers
+are swapped and points mirrored only at their known positions (a graphic's
+`layer` and own points, a text's `layer`, a pad's `layers`); an unknown
+subtree must be identical and must hold no point, `at` or layer tag, so
+`(unknown (xy 1 0))` refuses during a flip whether it is respelled `1.0`,
+mirrored, changed or left as it was. The mirror negates a coordinate exactly,
+without any Decimal context, so a y changed in any digit (`-1` to
+`-1.00000000000000000000000000000000000000001`, or `-1.01` under a two-digit
+context) refuses as changed beyond the footprint transform.
+
+A refused keyed child under a translation names its first differing token and
+both spellings, for example `fp_line a4 changed beyond the footprint transform
+(first differing token fp_line/end/1: "29.0" -> "29.001")`, where `end/1` is
+the first `end` argument. Under a turn or a flip the first difference may be a
+correctly transformed token, so no token is named there.
+
 ### Property font resave default (AGENTEE-147)
 
 For translations, quarter turns and qualified side flips (AGENTEE-313), an omitted

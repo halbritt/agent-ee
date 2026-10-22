@@ -316,6 +316,47 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
         self.assertEqual(bl.reproduce(entry, raw, capture, self.inv, self.names, self.sha, self.policy),
                          {'status': 'reproduced', 'problems': []})
 
+    def test_zones_are_unknown_instead_of_silently_omitted(self):
+        capture, _ = self.placed_board()
+        zone = ('(zone (net 7) (net_name "SW") (layer "F.Cu") '
+                '(polygon (pts (xy 19 17) (xy 21 17) (xy 21 19) (xy 19 19))))')
+        # Neither other-net zones nor footprint-local zones establish absence of copper.
+        for extra in (zone, zone.replace('(net 7)', '(net 0)'),
+                      '(footprint "Owned:local-zone" ' + zone + ')'):
+            with self.subTest(extra=extra):
+                raw = self.board_text(capture, extra).encode()
+                capture['board_sha256'] = hashlib.sha256(raw).hexdigest()
+                with self.assertRaisesRegex(bl.CopperUnknown, 'copper_unknown:.*zones'):
+                    self.region(capture=capture, raw=raw)
+
+    def test_region_copper_cannot_be_materialized_as_placement_only(self):
+        capture, raw = self.placed_region()
+        entry = self.region(capture=capture, raw=raw)
+        result = bl.materialize(entry, self.board, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual(result['problems'][0]['kind'], 'copper_unknown')
+
+    def test_empty_legacy_copper_does_not_prove_zone_absence(self):
+        capture, raw = self.placed_board()
+        entry = self.region(capture=capture, raw=raw)
+        self.assertEqual(entry['copper'], {'tracks': [], 'arcs': [], 'vias': []})
+        result = bl.materialize(entry, self.board, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual(result['problems'][0]['kind'], 'copper_unknown')
+
+    def test_region_defects_are_preserved_before_copper_unknown(self):
+        capture, raw = self.placed_region()
+        entry = self.region(capture=capture, raw=raw)
+        target = copy.deepcopy(self.board)
+        next(f for f in target['footprints'] if f['ref'] == 'L1')['locked'] = True
+        result = bl.materialize(entry, target, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'refused')
+        self.assertEqual([p['kind'] for p in result['problems']], ['admission'])
+        self.assertRegex(result['problems'][0]['reason'], 'locked footprints')
+        self.assertNotIn('candidate', result)
+
     def test_region_refusals(self):
         capture, raw = self.placed_board()
         with self.assertRaisesRegex(ValueError, 'differ from the placement probe'):
@@ -1190,6 +1231,39 @@ class CliTests(LibraryFixture, unittest.TestCase):
     def run_cli(self, *args):
         return subprocess.run([sys.executable, '-m', 'agent_ee.block_library', *map(str, args)], capture_output=True,
                               text=True, env={'PYTHONPATH': str(ROOT / 'src')}, timeout=120, cwd=ROOT)
+
+    def test_region_copper_refusals_write_no_output(self):
+        capture, raw = self.placed_region()
+        entry = self.region(capture=capture, raw=raw)
+        (self.dir / 'entry.json').write_text(json.dumps(entry))
+        (self.dir / 'probe.json').write_text(json.dumps(self.board))
+        (self.dir / 'design.xml').write_bytes(native_xml())
+        (self.dir / 'policy.json').write_text(json.dumps(self.policy))
+        common = ('--probe', self.dir / 'probe.json', '--netlist', self.dir / 'design.xml',
+                  '--policy', self.dir / 'policy.json')
+        done = self.run_cli('materialize', *common, '--entry', self.dir / 'entry.json',
+                            '--out', self.dir / 'candidate.json')
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        record = json.loads(done.stdout)
+        self.assertEqual((record['status'], record['problems'][0]['kind']), ('refused', 'copper_unknown'))
+        self.assertNotIn('candidate', record)
+        self.assertFalse((self.dir / 'candidate.json').exists())
+
+        # The import CLI exposes the typed zone refusal as well as its reason.
+        raw = self.board_text(capture, '(zone (net 7) (layer "F.Cu"))').encode()
+        capture['board_sha256'] = hashlib.sha256(raw).hexdigest()
+        (self.dir / 'probe.json').write_text(json.dumps(capture))
+        (self.dir / 'source.kicad_pcb').write_bytes(raw)
+        done = self.run_cli('import-board', *common, '--board', self.dir / 'source.kicad_pcb',
+                            '--references', ','.join(POWER), '--anchor', 'U1', '--class', 'search-derived',
+                            '--locator', 'Owned zone source', '--id', 'owned-zones', '--version', '1',
+                            '--part', 'OWNED-BUCK', '--citation', 'Owned EE403 zone',
+                            '--out', self.dir / 'zones.json')
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        record = json.loads(done.stdout)
+        self.assertEqual((record['status'], record['kind']), ('refused', 'copper_unknown'))
+        self.assertRegex(record['reason'], 'zones')
+        self.assertFalse((self.dir / 'zones.json').exists())
 
     def test_validate_lookup_import_add_materialize(self):
         done = self.run_cli('validate')

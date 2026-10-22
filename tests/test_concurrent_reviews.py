@@ -299,7 +299,6 @@ class ConcurrentReviewTests(unittest.TestCase):
         start = time.monotonic()
         with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
             reviews, records = initial_reviews(run, packet, start + 10, launch_context=self.context)
-        elapsed = time.monotonic() - start
         self.assertEqual([r["role"] for r in reviews], ["circuit", "physical"])
         self.assertEqual([r["execution"] for r in records], ["ok", "ok"])
         intervals = [(
@@ -307,7 +306,10 @@ class ConcurrentReviewTests(unittest.TestCase):
             read_json(run / f"review-work/{role}/experiments/finish.json")["time"])
             for role in ("circuit", "physical")]
         self.assertLess(max(s for s, _ in intervals), min(e for _, e in intervals))
-        self.assertLess(elapsed, 2.1, f"two 1.2s harnesses took {elapsed:.3f}s")
+        (c_start, c_end), (p_start, p_end) = (self.dispatch_intervals[r] for r in ("circuit", "physical"))
+        self.assertLess(max(c_start, p_start), min(c_end, p_end),
+            f"dispatch intervals did not overlap: {self.dispatch_intervals}")
+        self.assert_concurrent_initial_reviews(run)
         for record in records:
             self.assertEqual(read_json(run / f"review-executions/{record['role']}.json"), record)
 

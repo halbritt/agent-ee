@@ -41,14 +41,19 @@ def reference(value):
 
 
 def verified_reference(value, records):
-    """Verify retained source bytes and exact locator quote, never a bare label."""
+    """Return typed verification, distinguishing absent evidence from corruption."""
+    advisory = {'enforcement': 'advisory', 'reason': 'unsourced numeric locality bound'}
     if not reference(value):
-        return False
+        return advisory
     text = records.get(value['path'])
+    if not isinstance(text, str):
+        return advisory
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() != value['sha256']:
+        return {'enforcement': 'integrity', 'reason': 'source record sha256 mismatch'}
     quote = value.get('quote')
-    return (isinstance(text, str) and isinstance(quote, str) and bool(quote.strip())
-            and hashlib.sha256(text.encode('utf-8')).hexdigest() == value['sha256']
-            and quote in text)
+    if not isinstance(quote, str) or not quote.strip() or quote not in text:
+        return advisory
+    return {'enforcement': 'verified', 'reason': 'source record and quote verified'}
 
 
 def classify(pair, records=None):
@@ -66,13 +71,21 @@ def classify(pair, records=None):
                 'reason': 'Captured manufacturing minimum cannot establish an electrical maximum'}
     if result['class'] == 'owner':
         decision = provenance.get('decision_reference')
-        if (verified_reference(decision, records) and isinstance(decision.get('owner'), str)
+        verification = verified_reference(decision, records)
+        if verification['enforcement'] == 'integrity':
+            return {**result, **verification}
+        if (verification['enforcement'] == 'verified' and isinstance(decision.get('owner'), str)
                 and decision['owner'].strip() and not re.search(
                     r'\bagent(?:[- _]?\d+)?\b|design[-_ ]?owner', decision['owner'], re.I)):
             return {**result, 'enforcement': 'hard', 'reason': 'explicit owner decision reference'}
     if result['class'] == 'datasheet':
         derivation = provenance.get('derivation', {})
-        if not isinstance(derivation, dict) or not verified_reference(derivation.get('source'), records):
+        if not isinstance(derivation, dict):
+            return result
+        verification = verified_reference(derivation.get('source'), records)
+        if verification['enforcement'] == 'integrity':
+            return {**result, **verification}
+        if verification['enforcement'] != 'verified':
             return result
         if derivation.get('kind') == 'numeric':
             value = derivation.get('value_nm')

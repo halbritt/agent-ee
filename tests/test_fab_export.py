@@ -97,9 +97,65 @@ def copper_fixture(source, *, custom=False, graphics=False):
     board.write_text(text[:start] + block + text[end:])
 
 
+def mounting_holes(*, net='', path=''):
+    """Original 3.2 mm drill fixtures; no stock library bytes are copied."""
+    return ''.join(f'''(footprint "Owned:MountingHole_3.2mm_M3" (layer "F.Cu")
+        (at {105 + ((i - 1) % 2) * 10} {105 + ((i - 1) // 2) * 10})
+        (uuid "00000000-0000-4000-8000-00000000019{i}")
+        (property "Reference" "H{i}" (at 0 0) (layer "F.Fab"))
+        (attr board_only exclude_from_bom exclude_from_pos_files) {path}
+        (pad "" np_thru_hole circle (at 0 0) (size 3.2 3.2) (drill 3.2)
+            (layers "*.Cu" "*.Mask") (uuid "00000000-0000-4000-8000-00000000029{i}") {net}))''' for i in range(1, 5))
+
+
+def uart_testpad_fixture(source):
+    """Original single-pin UART pad, connected to the fixture's IN net."""
+    sch = source / 'fab.kicad_sch'
+    text = sch.read_text()
+    lib = '''(symbol "Owned:TestPoint" (pin_names (offset 0)) (in_bom yes) (on_board yes)
+        (property "Reference" "TP" (at 0 0 0) (effects (font (size 1 1))))
+        (property "Value" "UART_TX" (at 0 0 0) (effects (font (size 1 1))))
+        (symbol "TestPoint_1_1" (pin passive line (at 0 0 0) (length 0)
+            (name "1" (effects (font (size 1 1)))) (number "1" (effects (font (size 1 1)))))))'''
+    text = text.replace('(lib_symbols ', '(lib_symbols ' + lib, 1)
+    symbol = '''(symbol (lib_id "Owned:TestPoint") (at 40 50 0) (unit 1)
+        (in_bom yes) (on_board yes) (dnp no) (uuid "00000000-0000-4000-8000-000000000193")
+        (property "Reference" "TP1" (at 0 0 0) (effects (font (size 1 1))))
+        (property "Value" "UART_TX" (at 0 0 0) (effects (font (size 1 1))))
+        (property "Footprint" "Owned:TestPoint_Pad_D1.5mm" (at 0 0 0) (effects (font (size 1 1))))
+        (instances (project "fab" (path "/c615921c-aecd-5472-9b73-fec33366dc67"
+            (reference "TP1") (unit 1)))))'''
+    sch.write_text(mark_schematic(text.rstrip()[:-1] + symbol + ')', 'TP1', unbind=False))
+    board = source / 'fab.kicad_pcb'
+    fp = '''(footprint "Owned:TestPoint_Pad_D1.5mm" (layer "F.Cu") (at 112 108)
+        (property "Reference" "TP1" (at 0 0) (layer "F.Fab"))
+        (property "JLCPCB_Assembly" "not_assembled" (at 0 0) (layer "F.Fab"))
+        (path "/c615921c-aecd-5472-9b73-fec33366dc67/00000000-0000-4000-8000-000000000193")
+        (attr smd exclude_from_bom exclude_from_pos_files)
+        (pad "1" smd circle (at 0 0) (size 1.5 1.5) (layers "F.Cu" "F.Mask") (net "/IN")))'''
+    board.write_text(board.read_text().rstrip()[:-1] + fp + ')')
+
+
 def part(lcsc='C900001', value='1µF', footprint='lib:C', maker='Maker', number='PN-1'):
     return {'lcsc': lcsc, 'value': value, 'footprint': footprint, 'manufacturer': maker,
             'partnumber': number}
+
+
+class MechanicalInventoryTests(unittest.TestCase):
+    def test_only_unassigned_pad_nets_are_mechanical(self):
+        from agent_ee.fab_export import mechanical_inventory
+        for net in ('', '(net "")', '(net 0 "")', '(net "0")', '(net 1 "IN")',
+                    '(net "/IN")', '(net)', '(net 0 "IN")', '(net (name "IN"))'):
+            with self.subTest(net=net):
+                refs, problems = mechanical_inventory(
+                    BOARD.rstrip()[:-1] + mounting_holes(net=net).encode() + b')', {})
+                self.assertEqual(refs, ['H1', 'H2', 'H3', 'H4'])
+                self.assertEqual(bool(problems), net not in ('', '(net "")', '(net 0 "")'))
+
+    def test_native_component_cannot_be_mechanical_even_without_a_path(self):
+        from agent_ee.fab_export import mechanical_inventory
+        _, problems = mechanical_inventory(BOARD.rstrip()[:-1] + mounting_holes().encode() + b')', {'H1': {}})
+        self.assertEqual(problems, ['mechanical footprint H1 has a netlist component'])
 
 
 class BomTests(unittest.TestCase):
@@ -644,6 +700,13 @@ class PackagingTests(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ['a.gtl', 'b.gbl'])
                 self.assertEqual({i.date_time for i in archive.infolist()}, {(1980, 1, 1, 0, 0, 0)})
 
+    def test_manifest_non_string_schema_is_refused_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for value in ([], {}, None, 2, True):
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(ValueError, 'not an'):
+                        verify_manifest(Path(tmp), {'schema': value, 'files': {}})
+
     def test_manifest_inventory_mismatch_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
             fab = Path(tmp)
@@ -865,7 +928,8 @@ class NativeFabExportTests(unittest.TestCase):
         fab = run / 'work/fab/fab'
         manifest = read_json(fab / 'manifest.json')
         candidate = read_json(run / 'candidate.json')
-        self.assertEqual(manifest['schema'], 'agent-ee.fab-manifest/1')
+        self.assertEqual(manifest['schema'], 'agent-ee.fab-manifest/2')
+        self.assertEqual(manifest['designators']['mechanical'], [])
         self.assertEqual(set(manifest), {'schema', 'candidate_id', 'board_path', 'board_sha256', 'tool',
                                          'files', 'headers', 'copper_layers', 'enabled_fab_layers', 'drill',
                                          'designators', 'generated_utc'})
@@ -951,6 +1015,78 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
         problem = 'copper feature JP9 needs exactly one board footprint'
         self.assertEqual(result['summary'].count(problem), 1, result)
+
+    def add_consistency(self):
+        self.scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
+        self.scope['checks'].append({'id': 'consistency', 'kind': 'fab_consistency',
+                                     'params': {'export_check': 'fab'}})
+        self.scope['baseline']['requirements'][0]['checks'] += ['geometry', 'consistency']
+
+    def test_board_only_holes(self):
+        path = self.source / 'fab.kicad_pcb'
+        path.write_text(path.read_text().rstrip()[:-1] + mounting_holes() + ')')
+        self.add_consistency()
+        run, consistency = self.run_case()
+        self.assertEqual((consistency['execution'], consistency['outcome']), ('ok', 'pass'), consistency)
+        fab = run / 'work/fab/fab'
+        manifest = read_json(fab / 'manifest.json')
+        self.assertEqual(manifest['designators']['mechanical'], ['H1', 'H2', 'H3', 'H4'])
+        self.assertEqual(consistency['details']['mechanical'], ['H1', 'H2', 'H3', 'H4'])
+        for name in ('bom.csv', 'cpl.csv'):
+            refs = {ref for row in list(csv.reader(io.StringIO((fab / name).read_text())))[1:]
+                    for ref in row[0].split(',')}
+            self.assertTrue(refs.isdisjoint({'H1', 'H2', 'H3', 'H4'}))
+        drill = (fab / 'drill' / manifest['drill']['npth']).read_text()
+        self.assertIn('C3.200', drill)
+        self.assertEqual(len(re.findall(r'^X[-0-9.]+Y[-0-9.]+$', drill.split('T2\n')[1], re.M)), 4, drill)
+        from agent_ee.part_binding import validate_part_bindings
+        binding = validate_part_bindings((self.source / 'fab.kicad_sch').read_bytes(), path.read_bytes())
+        original_binding = validate_part_bindings((self.source / 'fab.kicad_sch').read_bytes(), BOARD)
+        self.assertEqual(binding['outcome'], original_binding['outcome'])
+        self.assertEqual(binding['missing_bindings'], original_binding['missing_bindings'])
+        self.assertEqual(binding['virtual_references'], ['H1', 'H2', 'H3', 'H4'])
+        self.assertFalse(set(binding['evaluated_references']) & {'H1', 'H2', 'H3', 'H4'})
+        results = [read_json(run / 'checks' / (spec['id'] + '.json')) for spec in self.scope['checks']]
+        freeze_evidence(run, results)
+        verify_evidence(run, results, required=True)
+
+    def test_board_only_with_net_refused(self):
+        path = self.source / 'fab.kicad_pcb'
+        original = path.read_text()
+        for net in ('(net "/IN")', '(net 1 "IN")'):
+            with self.subTest(net=net):
+                path.write_text(original.rstrip()[:-1] + mounting_holes(net=net) + ')')
+                run, result = self.run_case()
+                self.assert_incomplete(run, result, 'unsupported')
+                self.assertIn('mechanical footprint H1 has a netted or unqualified pad', result['summary'])
+
+    def test_board_only_with_netlist_path_refused(self):
+        path = self.source / 'fab.kicad_pcb'
+        path.write_text(path.read_text().rstrip()[:-1] + mounting_holes(path='(path "/symbol")') + ')')
+        run, result = self.run_case()
+        self.assert_incomplete(run, result, 'unsupported')
+        self.assertIn('mechanical footprint H1 has a netlist path', result['summary'])
+
+    def test_testpad_not_assembled(self):
+        uart_testpad_fixture(self.source)
+        self.scope['checks'][1]['params']['assembly_exclusion'] = RULE
+        self.add_consistency()
+        run, consistency = self.run_case()
+        self.assertEqual((consistency['execution'], consistency['outcome']), ('ok', 'pass'), consistency)
+        fab = run / 'work/fab/fab'
+        manifest = read_json(fab / 'manifest.json')
+        self.assertEqual(manifest['designators']['excluded'], [{'designator': 'TP1', 'rule': RULE}])
+        self.assertNotIn('TP1', (fab / 'bom.csv').read_text())
+        self.assertNotIn('TP1', (fab / 'cpl.csv').read_text())
+        graph = read_json(run / 'work/netlist/connectivity.json')
+        self.assertIn('TP1', graph['components'])
+        self.assertIn('TP1', json.dumps(graph['nets']))
+        self.scope['checks'][2]['params'].pop('assembly_exclusion')
+        self.scope['checks'] = self.scope['checks'][:3]
+        self.scope['baseline']['requirements'][0]['checks'].remove('consistency')
+        run, result = self.run_case()
+        self.assert_incomplete(run, result, 'unsupported')
+        self.assertIn('no matching assembly_exclusion', result['summary'])
 
     def test_board_only_holes_require_both_native_exclusions(self):
         path = self.source / 'fab.kicad_pcb'
@@ -1069,7 +1205,7 @@ class NativeFabExportTests(unittest.TestCase):
         manifest = read_json(fab / 'manifest.json')
         self.assertEqual(manifest['designators'], {
             'board_non_dnp': ['C1', 'C2', 'C10', 'J1', 'R1', 'R2'],
-            'excluded': [{'designator': 'J1', 'rule': RULE}], 'exclusion_rule': RULE})
+            'excluded': [{'designator': 'J1', 'rule': RULE}], 'exclusion_rule': RULE, 'mechanical': []})
         bom_refs = [ref for row in list(csv.reader(io.StringIO((fab / 'bom.csv').read_text())))[1:]
                     for ref in row[0].split(',')]
         cpl_refs = [row[0] for row in list(csv.reader(io.StringIO((fab / 'cpl.csv').read_text())))[1:]]

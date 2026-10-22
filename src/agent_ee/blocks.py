@@ -848,6 +848,32 @@ def _grade_usable(kind, record):
     return record.get('status') in (('pass', 'info') if kind == 'electrical_locality' else ('pass',))
 
 
+def _locality_floor(row):
+    """Require retained floor evidence; only admission can verify it against lands."""
+    floor = _keys(row.get('manufacturing_floor'), {'status'},
+                  {'reason', 'floor_nm', 'kind', 'source', 'assembly',
+                   'different_net_clearance_nm', 'limitation'}, label='locality manufacturing_floor')
+    if floor['status'] == 'unknown':
+        _keys(floor, {'status', 'reason'}, label='unknown locality manufacturing_floor')
+        _text(floor['reason'], 'unknown locality manufacturing_floor reason')
+    elif floor['status'] == 'known':
+        _keys(floor, {'status', 'floor_nm', 'kind', 'source', 'assembly',
+                      'different_net_clearance_nm', 'limitation'}, label='known locality manufacturing_floor')
+        _count(floor['floor_nm'], 'locality manufacturing_floor floor_nm')
+        captured = locality_provenance.manufacturing_record()
+        if (floor['kind'] != 'necessary_copper_floor' or floor['source'] != captured['sources']['pcb']
+                or type(floor['different_net_clearance_nm']) is not int
+                or floor['different_net_clearance_nm'] != captured['different_net_clearance_nm']):
+            raise ValueError('locality manufacturing_floor has stale provenance')
+        _text(floor['limitation'], 'locality manufacturing_floor limitation')
+        if (not isinstance(floor['assembly'], dict) or floor['assembly'].get('status') != 'unknown'):
+            raise ValueError('locality manufacturing_floor assembly remains unknown')
+        _text(floor['assembly'].get('reason'), 'locality manufacturing_floor assembly reason')
+    else:
+        raise ValueError('locality manufacturing_floor status must be known or unknown')
+    return floor
+
+
 def _grade(grade, sub, refs):
     _keys(grade, {'electrical_locality', 'groups'}, label='block grade')
     for key in ('electrical_locality', 'groups'):
@@ -872,12 +898,17 @@ def _grade(grade, sub, refs):
             seen.add(key)
             pair = pairs[key]
             authority = locality_provenance.classify(pair, document.get('source_records'))
+            if authority['enforcement'] == 'integrity':
+                raise ValueError(f'locality pair {key} has source record integrity failure')
             if row.get('constraint_provenance') != authority:
                 raise ValueError(f'locality pair {key} has stale provenance')
             exceeded = _squared(row, 'locality distance') > pair['max_distance_nm'] ** 2
             if authority['enforcement'] == 'hard' and exceeded:
                 raise ValueError(f'locality pair {key} exceeds its limit')
-            floor = row.get('manufacturing_floor', {})
+            floor = _locality_floor(row)
+            if (authority['enforcement'] == 'feasibility' and floor['status'] == 'unknown'
+                    and floor['reason'].startswith('captured JLCPCB numeric record')):
+                raise ValueError('manufacturer floor unavailable: ' + floor['reason'])
             below = floor.get('status') == 'known' and pair['max_distance_nm'] < floor['floor_nm']
             if authority['enforcement'] in ('hard', 'feasibility') and below:
                 raise ValueError(f'locality pair {key} is infeasible')
@@ -917,12 +948,14 @@ def _witness_record(witness, sub, refs, sides):
 
 
 def validate_candidate(document):
-    """The usable-candidate contract for stage B and the block library; raises ValueError.
+    """Structural candidate validation, not admission; raises ValueError.
 
     Every documented field is required and typed, every stored grade must be usable, and
     the outline and courtyard witness are recomputed from the members' own hashed
     courtyard records at their poses. Board-dependent evidence (lands, locality,
-    drilled pads, deferred obligations) is bound by ``admit``.
+    drilled pads, deferred obligations) is bound by ``admit``. Stored locality rows
+    require explicit floor and provenance records, but even structurally valid
+    records must not be trusted as board evidence before independent regrading.
     """
     try:
         return _validate_candidate(document)

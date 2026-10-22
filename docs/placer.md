@@ -473,7 +473,7 @@ The policy/capacity audit found these numeric constraints:
 | `min_courtyard_edge_mm` | Unknown/soft without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board proofs are unknown. |
 | `gap_nm` (including pod 0.25 mm) | Unknown/advisory without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board and region proofs are unknown (AGENTEE-338). |
 | Native rule areas and footprint keepouts | Captured board geometry, board/hard; no numeric padding is added | Structural polygon exclusion. |
-| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are advisory `info` (AGENTEE-361). Unused by capacity proofs. |
+| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are reported as advisory `info`, never `pass` and never a defect (AGENTEE-361). Unused by capacity proofs. |
 | Group region polygons and policy obstacles | Unknown/soft without a source; sourced geometry is hard | Advisory-dependent proofs are unknown and name the geometry in binding constraints (AGENTEE-361). |
 | Outline and fixed geometry | Envelope classes retained, otherwise unknown legacy hard geometry | Existing structural capacity verdicts remain. |
 | Step budget, search timeout and geometry work guards | Computational bounds, no engineering authority | Exhaustion/refusal is unknown, never a capacity defect. |
@@ -963,10 +963,12 @@ S for that copper, other blocks keep their candidate positions) and to targeted 
 or in keep-out`). A part whose copper lies in its courtyards caches nothing, and
 its candidates, steps and plan are those of the courtyard-only search.
 Rejections count against the existing step budget only; no wall-clock limit is
-added. Fixed parts are not regated, because their pose is the designer's.
+added. Fixed parts are not moved or regated by the search, because their pose is
+the designer's; their copper is checked once, up front, as an input
+([AGENTEE-371](#fixed-part-input-copper-agentee-371)).
 
 The pinned seeded differential `tests.test_placer_geometry_cost` (ac662ff plans)
-changes for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
+changed under AGENTEE-366 for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
 0.073 mm off the board (3, 23, 38) or into a board keep-out (0). The gated
 results remain `planned`. Likewise, in `tests.test_placer_clusters`
 `test_seeded_legacy_plans_preserve_verdict_placements_and_steps`, the frozen
@@ -980,15 +982,94 @@ outline and the board copper keep-outs.
 `IndependentCopperCheckTest` reproduces each superseded pin with the
 courtyard-only search and shows the check flags it.
 
-A failed copper-aligned pass is not reported in the result. Any added field,
-including one outside `search`, breaks the whole-result legacy-first identity
-pinned by `test_cluster_guard_is_unknown_and_cleans_up_partial_state` and
-`test_seeded_legacy_first_differential_preserves_whole_results` (cases 1:3 and
-1:5). The steps it spends are therefore not visible in the failure record.
+A failed copper-aligned pass is recorded as a diagnostic only
+(AGENTEE-371, 366b gap 4): `search.copper_aligned_attempt` holds its
+`status`, `outcome`, `reason`, `steps_used` and `prior_steps_used`. The rest of
+the earlier result, including `steps_used`, is unchanged, and the legacy-first
+identity (`without_joint_diagnostics` in `tests/test_placer_clusters.py`)
+removes this field as it removes `joint_cluster_attempt`.
 
-A fixed part's copper is taken as given. In seed 4, fixed `P0` has a land
-0.055 mm past the board edge in the input itself, and the plan reports it
-unchanged.
+A fixed part's copper is an input fact, checked before the search
+([AGENTEE-371](#fixed-part-input-copper-agentee-371)). In seed 4, fixed `P0`
+has a land 0.055 mm past the board edge in the input itself; the result is the
+typed `fixed_input_copper` refusal.
+
+### Fixed-part input copper (AGENTEE-371)
+
+A fixed footprint stands where the designer put it, and the placer never moves
+or re-poses it. Before AGENTEE-371 its copper was not checked: in seed 4 the
+fixed `P0` pad 2 land reaches y = 48165155/3 nm on a 16 mm board, and the plan
+was `planned` around it. Only the AGENTEE-331 publication witness caught the
+saved copper outside the outline, downstream.
+
+Coordinator ruling 371a: such copper is an input defect, reported up front.
+After the fixed courtyards are reserved (`fixed_conflict` keeps precedence), and
+before any locality, region or capacity proof or search, every native copper box
+of every fixed part (the same `_copper_box` bounds as the copper extent gate, at
+the fixed pose, on each of the pad's outer copper sides) must:
+
+- lie inside the board outline (`violation: outside_outline`);
+- stay at least the structural setback S (`max_error_nm` + 50 nm) from every
+  outline edge (`within_setback`, with the measured `outline_distance_nm`,
+  floored);
+- not enter, with positive area, a footprint-forbidding keep-out on its side:
+  a board rule area or another fixed part's rule area or access lane
+  (`in_keepout`, naming `rule area <uuid>` or `<ref> access lane`). An owner
+  stays exempt from its own;
+- not enter a rule area forbidding pads on one of its copper layers
+  (`in_pad_keepout`, AGENTEE-418,
+  [below](#peer-courtyards-and-pad-keep-outs-agentee-418)).
+
+Unlike the search gate, no courtyard discharges a box here. A declared
+courtyard overhang (`fixed_overhangs`) admits the courtyard across its edges,
+never copper beyond the outline, and seed fixed pairs carried under
+`carry_seed_fixed_pairs` (AGENTEE-376) cover spacing, never outline or keep-out
+copper.
+
+Coordinator ruling 371c: a declared `fixed_overhangs` exit edge (AGENTEE-212,
+for example an edge-launch SMA) waives S for that reference's own copper on
+that edge only. The copper may be flush with the declared edge, never past it
+(`outside_outline` still refuses). Keep-outs still bind, and every other edge,
+and every other reference's copper on the declared edge, still needs S. Each
+exempted box is a reported input fact in the planned result (and in a Stage-B
+arrangement record) under `fixed_overhang_copper`: `kind:
+fixed_overhang_copper`, `reference`, `pad`, `copper_bounds_nm`, `setback_nm`,
+`edge` (the declared edge name), `outline_distance_nm` (floored), and
+`declaration` (the reference, the declared edge and its envelope source). The
+key is absent when nothing was exempted.
+
+Any such box makes the result `status: fixed_input_copper`, `outcome: defect`,
+`steps_used: 0`, no placements, and `findings`: one row per box and violation,
+with `kind: fixed_input_copper`, `reference`, `pad`, `copper_bounds_nm` (the
+box rounded outward), `setback_nm` and the outline or keep-out it meets. With no
+determinate finding and no `max_error_nm` in the facts, any fixed copper box is
+unproven (ruling 366e). The result is then `unsupported_geometry`,
+`outcome: unknown`, with `violation: setback_unknown` rows. A box outside the
+outline itself stays a defect without S. Unsupported copper geometry is
+`unsupported_geometry`, `outcome: unknown`, as for movable parts.
+
+Stage-B block arrangement applies the same check to its fixed parts (not block
+members) and returns the same typed refusal. Its residual pass fixes the
+arranged members. Ruling 371d: `pack` checks every fixed part of the board it is
+given, whatever its `seed`. A seed reference that is missing, shifted by 1 nm or
+has a changed courtyard never waives the check, with seed-pair carry on or off.
+Carry (AGENTEE-376) affects only fixed-pair spacing. The one exclusion is a block
+member that arrangement passes internally (`placer._pack_gated`, `arranged`)
+together with the exact member footprint its copper extent gate admitted. That
+member is skipped only at that pose and with those courtyards. The public `pack`
+API cannot pass this exclusion. The
+AGENTEE-331 publication containment witness is unchanged and stays as defence in
+depth.
+
+The only pin this changes by ruling is seed 4 in
+`tests.test_placer_geometry_cost` (`FIXED_INPUT_COPPER`). Focused regression:
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_placer_copper_extent.FixedInputCopperTest \
+  tests.test_placer_copper_extent.FailedCopperAlignedPassTest \
+  tests.test_placer_copper_extent.BlockArrangementCopperTest -v
+```
 
 Boundaries. Missing copper extent is never "no constraint". Malformed
 `size_nm`, `copper_centroid_offset_nm`, `copper_land_offset_nm` or `layers`,
@@ -1008,10 +1089,12 @@ exactly one of centroid or reason per pad. A native record that keeps its
 `copper_centroid_reason` but is relabelled as a stock shape stays unknown
 (`test_placer_custom_pads.CustomPadPlacementTest.test_stock_pad_without_custom_evidence_still_plans`);
 the same record with the reason removed plans
-(`test_legacy_stock_pad_without_custom_evidence_still_plans`). Inner-layer-only keep-outs, rule areas
-forbidding only pads, and copper against peer courtyards are not packing
-constraints. The native DRC publication gate remains the authority for copper
-clearance.
+(`test_legacy_stock_pad_without_custom_evidence_still_plans`). Copper against
+peer courtyards and rule areas forbidding pads, inner layers included, are
+packing constraints since AGENTEE-418
+([below](#peer-courtyards-and-pad-keep-outs-agentee-418)); a footprint
+keep-out on inner layers only binds no footprint, as native DRC agrees. The
+native DRC publication gate remains the authority for copper clearance.
 
 Focused regression, including native writer runs at every quarter turn on both
 sides (offset custom pads, rounded chamfered lands and unequal-size circles,
@@ -1021,6 +1104,99 @@ native land vertex for each stock shape:
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_copper_extent -v
+```
+
+### Peer courtyards and pad keep-outs (AGENTEE-418)
+
+The AGENTEE-366 reviews left three rule-area and peer boundaries outside the
+packing gate. They are inside it now, in the packing search, Stage-B block
+arrangement (each member) and targeted plans, through `_copper_escapes`:
+
+- Copper outside a part's courtyards binds a peer as a courtyard does. On each
+  outer side, such a copper box may not meet, with positive area, a placed
+  peer's courtyard or a peer's own copper outside its courtyards, and a
+  candidate's courtyard may not meet a placed peer's such copper
+  (`peer_courtyard`; no gap is added). Fixed parts block it too. Between two
+  fixed parts it is a `fixed_conflict`, `outcome: unknown`, like overlapping
+  fixed courtyards. A targeted plan reports `target copper meets a peer
+  courtyard or peer copper`.
+- A rule area forbidding pads (`forbid.pads`, footprints allowed or not) binds
+  every land whose copper layers meet its layers, inner layers included: a
+  through-hole or `*.Cu` land meets an `In1.Cu` area, and a front land never
+  meets a `B.Cu` one. Board areas bind every part. A part's own areas bind every
+  other part's lands, in both placement orders. The courtyard may enter such an
+  area. Each land is its `_copper_box` (any shape the copper extent gate
+  qualifies); a hand-built land without native facts is bounded by the part's
+  courtyards. A pad without copper layers is not bound. A targeted plan reports
+  `target pad in a rule area forbidding pads`. Pad keep-out boxes add search
+  alignment axes as footprint keep-outs do.
+- A footprint keep-out whose layers are all inner layers binds no footprint.
+
+Native semantics (kicad-cli DRC, KiCad 10.0.7, `NativeRuleAreaSemanticsTest`):
+a footprint keep-out reports a footprint only on its own side's outer copper
+layer, never for an inner-layer-only area. A pad keep-out reports every pad
+whose layer set meets its layers, so a PTH pad is reported by an `In1.Cu`
+area and an SMD pad only on its own side. It also reports the owner's own pad
+in a footprint-owned area. The gate exempts the owner. Its own lands are rigid
+in its own area at every pose, and native DRC reports them on the baseline,
+where the publication comparison keeps them as baseline findings.
+
+Fixed parts: [`fixed_input_copper`](#fixed-part-input-copper-agentee-371) also
+checks each fixed land against board pad keep-outs and other fixed parts' pad
+keep-outs. A native land box there is `violation: in_pad_keepout`, naming the
+area in `keepout` (a defect). A hand-built land without native facts whose
+courtyard meets one is `pad_keepout_unproven`, `copper_bounds_nm: null`, and
+`outcome: unknown`.
+
+Every rule area must carry a boolean `forbid.pads` flag. Native extraction
+always records it. A missing flag is never read as permission (coordinator
+ruling 418b): packing, Stage-B arrangement and targeted plans stop as
+`unsupported_geometry`, `outcome: unknown` (`missing rule-area pad flag`; a
+targeted plan is `blocked` with `missing coverage: missing rule-area pad
+flag`), as a non-boolean flag does (`malformed rule-area pad flag`).
+Hand-built fixtures state `'pads': False` explicitly.
+
+A footprint-owned rule area moves with its owner. Stage B moves each arranged
+member's own areas, once and from the source pose, rotation included, into the
+member's admitted pose. Residual packing and its final land check then bind
+them there (ruling 418b). An owned area that cannot be moved refuses the
+arrangement as `unsupported_geometry`, `outcome: unknown`.
+
+The native publication gate does not back this up. Its DRC comparison blocks
+only `copper_outside_outline` and added hard collision, mask or numeric
+findings. An added `items_not_allowed` is none of these (in the owned fixture
+it is also graded advisory), so a courtyard-only plan with a land in a pad
+keep-out is published as `placed` (`NativePadKeepoutPublicationTest`, mutant
+control). The packing gate is the
+binding check for pad keep-outs.
+
+Stage-B copper alignment axes, from AGENTEE-366e, live in
+`block_arrangement._copper_axes`. A block whose members have copper outside
+their courtyards gets origins that put that copper exactly S from an outline
+vertex. The fixture's U1 copper is planned flush at S, and with no axes it is
+not.
+
+Coordinator ruling 418a covers the expectations this gate changed:
+
+- Seeded plan digests: twelve seeds (2, 3, 5, 9, 10, 12, 13, 15, 23, 25, 33
+  and 39) are re-pinned in `test_placer_geometry_cost`. Each status is
+  unchanged. Each old plan had escaped land copper in a peer courtyard or on
+  peer copper. A regression reproduces the old seed-2 plan with the peer gate
+  patched out, and the predicate rejects its poses, naming P1 copper in P5's
+  B courtyard.
+- Reserve alternatives: a B.Cu pad keep-out pose is now excluded by the
+  packing predicate before native validation, and keep-out name text cannot
+  waive that rejection (`test_reserved_area`). The native-rejection fallback
+  tests now use a constraint the predicate does not model: a tracks-only rule
+  area plus a `.kicad_dru` rule disallowing pads that meet it.
+- Ruling 418b applies the same native-only constraint to both the unrelated
+  baseline area and the added candidate area in
+  `test_unrelated_baseline_defect_is_unknown_not_pose_rejection`. Every
+  assertion is unchanged. The baseline defect still reports `unknown` with
+  retained native evidence, and the new area still rejects the pose.
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_packing_scope -v
 ```
 
 ### Through-hole reservations and native publication gate (AGENTEE-318)
@@ -1246,8 +1422,15 @@ The document may include `source_records`, mapping relative source paths to
 captured UTF-8 source text. Records are part of the same immutable locality
 capture; they are not files to open, a live fetch, or an owner evidence store.
 Each source reference contains `path`, the SHA-256 of that exact UTF-8 text,
-`locator`, and an exact `quote` present in that text. Hash, missing-text or quote
-failures leave the bound advisory. Source identity and applicability remain
+`locator`, and an exact `quote` present in that text. Absent records, malformed
+hashes and quote failures leave the bound advisory
+(known boundary). Under AGENTEE-402 ruling 402a, a well-formed source reference
+whose retained text hashes differently returns `enforcement: integrity` with
+reason `source record sha256 mismatch`. Grading reports `unknown` with kind
+`source_record_integrity`, even when the measured distance is within the bound.
+It grants no hard constraint or placement targets; packing and block admission
+refuse the unknown coverage. Independent hard defects retain priority. Source
+identity and applicability remain
 review obligations: a matching digest is not proof of vendor authenticity or
 owner authorship. Do not publish third-party source text without rights approval;
 original numeric transcription records can retain source identities instead.
@@ -1688,13 +1871,34 @@ protected, regrades the saved geometry, and runs native DRC under the captured
 project and custom-rule bytes. Baseline DRC is retained under the same rules.
 No artwork repair changes an alternative. Numeric limits without a source remain
 advisory only for native numeric constraint types; a rule-area or zone name
-cannot make a structural finding numeric. Courtyard findings always reject the
-pose, as do other native findings. Ignored placement checks,
+cannot make a structural finding numeric. New non-advisory findings reject the
+pose. The shared baseline DRC comparison and native item states distinguish
+unchanged findings on other parts from findings introduced or moved by this
+pose. When all blocking findings are unchanged baseline findings, legality stays
+`unknown`; the retained baseline defect is not blamed on the trial pose and is
+never certified legal. New findings still reject a pose alongside baseline
+findings, including courtyard findings. Ignored placement checks,
 missing reports and tool failures remain unknown. Ignored checks for track centering, tuning geometry, footprint filters and
 footprint component types are outside this placement diagnostic. Attempt
 witnesses include board, rule, DRC and write-scope digests. The report
-uses stable summaries and witness paths relative to the proposal directory; raw
-DRC hashes stay in `validation.json` because native DRC embeds execution dates.
+uses stable summaries and witness paths relative to the proposal directory.
+`drc_content_sha256` and `baseline_drc_content_sha256` bind the retained native
+reports into each completed native attempt, and therefore into both placement
+and block-provenance cost records (AGENTEE-420). To recompute either digest,
+parse its native JSON report, remove only top-level `date` and `source`, sort
+`violations`, `unconnected_items`, `ignored_checks` and `included_severities`
+by each entry's `json.dumps(entry, sort_keys=True)`, then SHA-256 the UTF-8 bytes
+of `json.dumps(report, sort_keys=True, separators=(',', ':'))`. Other content
+remains bound; changed findings change the digest. Raw DRC byte hashes remain
+in `validation.json`. Attempts without a completed native report remain
+unverified and cannot supply a report digest.
+
+Reserve measurement, validator initialization and alternative search have one
+advisory exception boundary. An ordinary exception discards partial costs and
+returns a board-bound `unknown` record with an error type and reason, empty
+`sides` and `findings`. Unexpected per-pose validation exceptions similarly
+retain an unknown witness. Hard placement, DRC and preservation gates still run
+outside the advisory boundary. Cancellation and process exits propagate.
 
 `native_validated` names the cheapest validated legal saving in this declared
 finite set. `native_attempts` retains rejected and unknown cheaper poses. If a
@@ -1735,3 +1939,10 @@ including carried silk defects. Requests can explicitly set `skip_visuals: true`
 for fixtures; rendering failures retain unavailable coverage and native logs.
 The writer rechecks the original board, netlist and project/rule bytes after
 imaging, immediately before publication.
+
+### Project-local 3D models
+
+Proposals carry enabled project-local model files before candidate imaging.
+`project-models.json` records copied file hashes and missing references; the
+placement result includes the same receipt. See [model closure](pcb-renders.md#proposal-project-model-closure-agentee-394)
+for resolution provenance, path safety and publication checks.

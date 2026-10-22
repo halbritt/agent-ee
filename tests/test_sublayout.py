@@ -285,6 +285,93 @@ class SublayoutReuseTests(unittest.TestCase):
         self.assertEqual(record['top_board']['sha256'], sha(TOP))
 
 
+class SublayoutProvenanceTests(unittest.TestCase):
+    """AGENTEE-399: the DRC delta reads the top project's rules and grades through their provenance.
+
+    The regulator's copper includes 0.25 mm tracks. Each case puts a 1 mm track-width
+    minimum beside a copy of the owned top board, once per authority, and judges reg-a.
+    """
+    LIMIT = 1.0
+
+    def setUp(self):
+        require_toolchain(native=True)
+
+    def project(self, files):
+        tmp = Path(tempfile.mkdtemp(prefix='agent-ee-sublayout-project-'))
+        _TEMPORARY.append(tmp)
+        board = tmp / 'top.kicad_pcb'
+        shutil.copyfile(TOP, board)
+        for suffix, data in files.items():
+            board.with_suffix(suffix).write_bytes(data)
+        return board
+
+    def reg_a(self, board):
+        record, out, _ = run(GROUPS[:1], board=board)
+        self.assertEqual(record['execution'], 'ok', record['findings'])
+        self.assertTrue(out.is_file())
+        return record, record['groups'][0]
+
+    def widths(self, group):
+        found = [v for v in group['drc']['new_violations'] if v['type'] == 'track_width']
+        self.assertTrue(found, group['drc'])
+        return found
+
+    @staticmethod
+    def minimum_project(spec=None):
+        from agent_ee import design_rule_provenance as drp
+        project = {'board': {'design_settings': {'rules': {'min_track_width': SublayoutProvenanceTests.LIMIT}}}}
+        if spec is not None:
+            raw = json.dumps({'schema': drp.SCHEMA, 'board_setup_rules': {'min_track_width': dict(
+                spec, value_mm=SublayoutProvenanceTests.LIMIT)}}).encode()
+            project, record = drp.import_constraints(project, raw, 'constraints/ee399.json',
+                                                     hashlib.sha256(raw).hexdigest())
+            drp.bind_project(project, record)
+        return json.dumps(project).encode()
+
+    def test_project_custom_rule_reaches_drc_and_grades_as_owner(self):
+        rules = b"(version 1)\n(rule ee399_wide\n\t(constraint track_width (min 1mm)))\n"
+        board = self.project({'.kicad_dru': rules})
+        record, group = self.reg_a(board)
+        for finding in self.widths(group):
+            provenance = finding['constraint_provenance']
+            self.assertEqual((provenance['class'], provenance['enforcement']), ('owner', 'hard'), provenance)
+            self.assertEqual(provenance['citation']['rule'], 'ee399_wide')
+            self.assertEqual(provenance['citation']['sha256'], hashlib.sha256(rules).hexdigest())
+        self.assertNotIn('advisory_findings', group['drc'])
+        self.assertEqual((group['outcome'], record['outcome']), ('defect', 'defect'))
+
+    def test_sourced_board_minimum_grades_as_its_class(self):
+        board = self.project({'.kicad_pro': self.minimum_project(
+            {'class': 'manufacturer', 'basis': 'ee399 fabricator minimum'})})
+        record, group = self.reg_a(board)
+        for finding in self.widths(group):
+            provenance = finding['constraint_provenance']
+            self.assertEqual((provenance['class'], provenance['enforcement']), ('manufacturer', 'hard'), provenance)
+            self.assertEqual(provenance['citation']['path'], 'constraints/ee399.json')
+        self.assertEqual((group['outcome'], record['outcome']), ('defect', 'defect'))
+
+    def test_unsourced_numeric_minimum_is_advisory_and_never_gates(self):
+        board = self.project({'.kicad_pro': self.minimum_project()})
+        record, group = self.reg_a(board)
+        widths = self.widths(group)
+        for finding in widths:
+            provenance = finding['constraint_provenance']
+            self.assertEqual((provenance['class'], provenance['citation'], provenance['enforcement']),
+                             ('default', None, 'advisory'), provenance)
+        self.assertEqual(group['drc']['advisory_findings'], [v for v in group['drc']['new_violations']
+                                                              if v['type'] == 'track_width'])
+        self.assertEqual(group['drc']['advisory_findings'], group['drc']['new_violations'], 'nothing else is new')
+        self.assertEqual((group['status'], group['outcome'], record['outcome']), ('populated', 'pass', 'pass'))
+
+    def test_unreadable_provenance_binding_is_unknown_not_pass(self):
+        project = json.loads(self.minimum_project())
+        project['agent_ee_constraint_provenance'] = 'not an object'
+        board = self.project({'.kicad_pro': json.dumps(project).encode()})
+        record, group = self.reg_a(board)
+        self.assertEqual(record['findings'][0]['code'], 'drc_unavailable', record['findings'])
+        self.assertEqual((group['drc'], group['outcome'], record['outcome']), ('not_evaluated', 'unknown', 'unknown'))
+
+
 class SublayoutPlanTests(unittest.TestCase):
     """Planning boundaries over native facts of the fixtures."""
 
