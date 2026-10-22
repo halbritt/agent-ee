@@ -112,7 +112,11 @@ def validate_campaign(scope):
 
 
 def adopted(root, state, number):
-    """Validated helper artifact bundle of this turn, or None if no helper ran."""
+    """Validated helper artifact bundle of this turn, or None if no helper ran.
+
+    Every receipt is read only through the coordinator's anchored stage-receipt
+    index (state['stage_receipts']); placer receipts also need placement_records.
+    """
     from .placement_adapter import STEP, qualify_receipt
     from .stage_done import _receipts
     from .stage_receipts import validate_receipt
@@ -806,8 +810,9 @@ def release_defects(run, check, manifest):
 
 
 def verify_projection(run, check, manifest):
-    """Reconstruct the projection verdict with the runtime policy (checks.grade_drc): raw DRC,
-    captured waivers, numeric provenance, retained structural containment and receipt-backed carry."""
+    """Reconstruct the projection verdict with the runtime policy (checks.grade_drc): raw DRC
+    admissibility (checks.drc_admissible), captured waivers, numeric provenance, retained
+    structural containment and receipt-backed carry."""
     defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
     details = check.get('details', {})
     if not defects and ('open_defects' in details or 'carried_findings' in details):
@@ -815,17 +820,22 @@ def verify_projection(run, check, manifest):
     if check['execution'] != 'ok' or details.get('reason') in ('stage_blocked', 'stage_not_reached'):
         return
     from .violation_waivers import replay_unwaived
+    from .checks import drc_admissible, drc_net_binding, grade_drc, require_later_full_drc
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
-    report = read_json(Path(run) / 'work' / check['id'] / 'drc.json')
+    inputs, work = Path(run) / 'inputs', Path(run) / 'work' / check['id']
+    # The runtime's unsupported and malformed refusals hold at replay too (AGENTEE-407):
+    # an ok verdict never seals over a report the runtime check could not grade.
+    require_later_full_drc(manifest['scope']['checks'], spec)
+    drc_net_binding(inputs, manifest['scope']['board'])
+    report = read_json(work / 'drc.json')
     if not isinstance(report, dict) or any(
             not isinstance(report.get(k), list) or any(not isinstance(v, dict) for v in report[k])
             for k in ('violations', 'unconnected_items', 'schematic_parity')):
         raise ValueError('placement projection native report is malformed')
-    unwaived = replay_unwaived(spec, manifest['scope'], manifest, Path(run) / 'inputs', report)
+    sources = drc_admissible(inputs, manifest['scope']['board'], report,
+                             (work / 'console.log').read_text(errors='replace'))[0]
+    unwaived = replay_unwaived(spec, manifest['scope'], manifest, inputs, report)
     carried = carried_silk(defects, unwaived) if defects else []
-    from .checks import grade_drc
-    from .design_rule_provenance import finding_sources
-    sources = finding_sources(Path(run) / 'inputs' / manifest['scope']['board'], report['violations'])
     failing = grade_drc(unwaived, sources, spec['params']['projection'], carried,
                         replay_containment(run, check, sources))[2]
     if check['outcome'] != ('defect' if failing else 'pass') or (

@@ -135,9 +135,33 @@ assert pcbnew.SaveBoard(path, board)
                           for p in self.source.rglob('*') if p.is_file()}, self.manifest['files'])
 
 
+def mapped_stores(test):
+    """Run test under a tmpfs root: it changes bytes through a shared writable mapping.
+
+    On a writeback filesystem (ext4 /tmp) any writeback of the mapped page, e.g. a
+    host-wide syncfs from another process, write-protects it again, so the next store
+    faults and moves mtime and ctime; the tests' unchanged-status precondition then
+    failed at random (AGENTEE-423). tmpfs has no writeback: once the first store has
+    mapped the page writable, later stores leave the file status unchanged."""
+    test.mapped_stores = True
+    return test
+
+
+def tmpfs_directory(path='/dev/shm'):
+    """path, refused unless its current mount is tmpfs."""
+    kinds = [rest.split()[0] for fields, _, rest in
+             (line.partition(' - ') for line in Path('/proc/self/mountinfo').read_text().splitlines())
+             if fields.split()[4] == path]
+    if not kinds or kinds[-1] != 'tmpfs':
+        raise AssertionError(f'mapped-store tests need a tmpfs at {path}; mounted: {kinds}')
+    return path
+
+
 class CampaignIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        # Fixture users in other modules instantiate this class without a test method.
+        mapped = getattr(getattr(self, self._testMethodName, None), 'mapped_stores', False)
+        self.tmp = tempfile.TemporaryDirectory(dir=tmpfs_directory() if mapped else None)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         source = self.root / "source"
@@ -238,6 +262,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             verify_campaign(self.root / "campaign")
 
     @toolchain_test
+    @mapped_stores
     def test_campaign_verification_hash_counts_for_a_fixed_candidate(self):
         # AGENTEE-250: one host observation per campaign verification, every candidate and
         # record digest a fresh read, and no reuse across calls.
@@ -335,7 +360,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 seen['after'] = storage._status(os.stat(target))
             return outcome
         with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
-            mapped[offset] = mapped[offset]  # an already dirty shared page takes later writes silently
+            mapped[offset] = mapped[offset]  # map the page writable; on tmpfs later stores are silent
             time.sleep(2.2)
             with patch('agent_ee.cli.' + hook, side_effect=then_change), \
                     self.assertRaises(ValueError) as caught:
@@ -344,6 +369,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         return str(caught.exception)
 
     @toolchain_test
+    @mapped_stores
     def test_in_place_change_within_one_verification_call_fails_closed(self):
         # AGENTEE-250, agent-469's within-scope probe on the acceptance path: a file hashed
         # earlier in the call changes without a status change; the later digest of it in the

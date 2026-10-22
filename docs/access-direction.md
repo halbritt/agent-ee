@@ -32,7 +32,9 @@ is `x+`, `x-`, `y+` or `y-`. Positive native quarter turns rotate `(x, y)` to
 there is no extra inferred mirror. Authors must transform a declaration when
 flipping a footprint to the other mounting side. Only quarter-turn poses and
 straight perpendicular outline edges qualify. The lane must touch its mouth
-and lie wholly forward of it. Polygon validation and bounds reuse the existing
+and lie wholly forward of it. An optional `travel_nm` declares the cited
+clearance travel; when present it must be a positive integer equal to the
+lane's maximum depth forward of the mouth, or the declaration is malformed. Polygon validation and bounds reuse the existing
 placement geometry qualification. Native property text is bounded to 8192 bytes.
 
 The mouth must lie on a proven outline edge, face outward perpendicular to that
@@ -45,12 +47,19 @@ occupy the lane. Footprint-owned packing exclusions also reserve sourced lanes
 against same-side peer courtyards, including external overhanging bodies.
 Curved peers prove obstruction only through their inner bound; an outer-only
 intersection remains unknown. A remote edge along a ray is insufficient: it would leave an
-inboard access lane. A cited lane also authorizes courtyard area outside the outline, solely inside
+inboard access lane. Every sourced class gates, but only a relaxing lane
+also authorizes courtyard area outside the outline (AGENTEE-419). A lane relaxes
+when it has a hard `manufacturer` or `datasheet` source and a declared
+`travel_nm`, so its depth is bound to the cited clearance travel. `fixture_author`,
+`board` and `arrangement_rule` lanes still refuse inboard and obstructed poses,
+but their courtyard area outside the outline remains an `outside_outline`
+defect, and their exit edge keeps the packing edge margin. The judge records
+`relaxes_outline` on each access row. A relaxing lane authorizes courtyard area outside the outline, solely inside
 that lane, for fixed, movable and block-member parts. This admits a slot mouth
 inside the footprint's courtyard margin without clipping or changing its native
 courtyard. An explicit captured envelope overhang maximum retains precedence;
-the access declaration cannot enlarge it. Only the exit edge is exempt from a
-packing edge margin; other edges retain that margin. Uncited lanes authorize no
+the access declaration cannot enlarge it. Only a relaxing lane's exit edge is exempt from a
+packing edge margin; other edges retain that margin. Uncited and non-relaxing lanes authorize no
 courtyard overhang. Existing fixed-overhang policy declarations remain captured,
 envelope-bound inputs; a caller cannot supply them as packing-policy authority.
 Native rule areas and courtyards are preserved, including a courtyard that
@@ -58,8 +67,11 @@ already includes the lane.
 
 Citations use the existing [constraint source qualification](placer.md#obstacle-and-group-sources-agentee-361).
 Manufacturer/datasheet sources must identify the drawing, revision and location
-that establishes both direction and clearance dimensions. An owner-recorded
-board decision may use the existing `board` class with its decision locator.
+that establishes both direction and clearance dimensions, including the
+declared `travel_nm`. An owner-recorded board decision may use the existing
+`board` class with its decision locator; it gates but does not relax
+containment, because no authenticated owner source class exists for this
+board-embedded field (AGENTEE-348).
 `fixture_author` is for original test requirements. The other existing geometry
 source classes retain their existing semantics. A citation locates declared
 evidence; this feature does not authenticate its authority (AGENTEE-348).
@@ -71,14 +83,15 @@ pass. A lane outside the board with no qualified exterior overhang band also
 remains unknown; lack of a sweep proof is not a proved inboard defect. An unsupported uncited rotation remains advisory.
 
 The flat placer adds mouth/lane edge-alignment coordinates only for sourced
-parts, then checks each candidate. Block stage A defers this board-bound
+parts, then checks each candidate. Area and window relaxations below apply only
+to relaxing lanes. Block stage A defers this board-bound
 obligation while packing its artificial local rectangle. Stage B recovers the
 declaration from the hash-bound captured board, constrains each rotated and
 translated member, and residual packing enforces it again for arranged members
 and movable residual parts. The declaration belongs to the target board even
 when importing a block library candidate. Search keeps existing ranking and
 step guards; it introduces no wall-clock default. Area proofs subtract only the court/lane
-intersection from a cited part's required onboard area. Whole-part width and
+intersection from a relaxing part's required onboard area. Whole-part width and
 diameter proofs cannot reject that part from its overhanging extent. Grown-area
 and fragmentation diagnostics omit movable overhang parts (listed explicitly),
 and region proofs omit them only where a region reaches outside the board.
@@ -100,7 +113,8 @@ Executable coverage is in `tests/test_access_direction.py`: a 600 mm² original
 lane example, both mounting sides and all four edges, sourced/advisory search
 parity, impossible lanes, concave obstruction, malformed input, stage-A/block
 stage-B/residual behavior and native placement publication with saved-board
-replay. These fixtures do not reproduce the historical fome-mc iteration-7 or
+replay. `LaneSourceTests` covers the AGENTEE-419 source classes, declared travel,
+and the reproduction of a 1000 mm lane with 98 mm² of courtyard overhang. These fixtures do not reproduce the historical fome-mc iteration-7 or
 8k run. That design's actual declaration and repack remain a pod qualification
 obligation. Internal owner-declared openings, arbitrary-angle access vectors,
 curved edges and arbitrary native rotations are not qualified here.

@@ -220,6 +220,27 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(result, json.loads((destination / 'placement-result.json').read_text()))
         self.assertEqual(result['reserved_area']['findings'][0]['reserve']['owner'], 'owner-access')
 
+    def test_advisory_failures_cannot_refuse_publication(self):
+        from unittest.mock import patch
+        from test_placer_native import NativePlacerTest
+        from agent_ee.placer_runner import place_candidate
+        for target, error in (
+                ('agent_ee.reserved_area.fabrication_outlines', ValueError('bad fabrication')),
+                ('agent_ee.reserved_area.report', OSError('measurement unavailable')),
+                ('agent_ee.reserved_area.alternatives', KeyError('unexpected search failure')),
+                ('agent_ee.reserved_area_native.NativeAlternatives', OSError('validator initialization failed'))):
+            with self.subTest(target=target):
+                fixture = NativePlacerTest(); fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                with patch(target, side_effect=error):
+                    result = place_candidate(fixture.source, fixture.netlist,
+                                             fixture.scratch / 'advisory-failure', fixture.config)
+                self.assertEqual(result['status'], 'placed', result)
+                self.assertEqual(result['reserved_area']['status'], 'unknown')
+                self.assertEqual(result['reserved_area']['sides'], {})
+                self.assertIn(str(error), result['reserved_area']['reason'])
+                self.assertEqual(result['reserved_area'], result['judgment']['reserved_area'])
+
 
 import test_block_provenance as provenance_tests
 
@@ -315,6 +336,85 @@ class NativeAlternativeTests(unittest.TestCase):
         again, _ = self.run_alternatives('native-again')
         self.assertEqual(again['alternative']['position_nm'], alternative['position_nm'])
         self.assertEqual(again['alternative']['rotation_deg'], alternative['rotation_deg'])
+
+    def test_unrelated_baseline_defect_is_unknown_not_pose_rejection(self):
+        import pcbnew as k
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        from agent_ee.storage import read_json
+        board = k.LoadBoard(str(self.source))
+        peer = k.FOOTPRINT(board); peer.SetReference('U9'); board.Add(peer)
+        peer.Reference().SetVisible(False); peer.Value().SetVisible(False)
+        peer.Flip(k.VECTOR2I(0, 0), False)
+        for layer in (k.B_CrtYd, k.B_Fab):
+            contour = rectangle(-1, -1, 2, 2)
+            for a, b in zip(contour, contour[1:]+contour[:1]):
+                shape = k.PCB_SHAPE(peer); shape.SetShape(k.SHAPE_T_SEGMENT)
+                shape.SetLayer(layer); shape.SetWidth(50000)
+                shape.SetStart(k.VECTOR2I(*a)); shape.SetEnd(k.VECTOR2I(*b)); peer.Add(shape)
+        pad = k.PAD(peer); pad.SetNumber('1'); pad.SetAttribute(k.PAD_ATTRIB_SMD)
+        pad.SetShape(k.PAD_SHAPE_RECT); pad.SetSize(k.VECTOR2I(MM, MM))
+        layers = k.LSET(); layers.AddLayer(k.B_Cu); pad.SetLayerSet(layers)
+        peer.Add(pad); peer.SetPosition(k.VECTOR2I(75*MM, 55*MM))
+        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('unrelated baseline pad exclusion')
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(74, 54, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        facts = extract(self.source)
+        validator = NativeAlternatives(self.source, self.root / 'baseline-defect', facts, self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'unknown', result)
+        self.assertIn('baseline', read_json(self.root / result['witness'])['reason'])
+        self.assertIn('items_not_allowed', result['blocking_types'])
+        self.assertTrue(any(v['type'] == 'items_not_allowed' for v in validator.baseline['violations']))
+        lane, _ = self.run_alternatives('baseline-search')
+        self.assert_unknown_search(lane['alternative'], 'baseline')
+
+        # The same retained defect cannot hide a new exclusion at the trial pose.
+        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('new candidate pad exclusion')
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        validator = NativeAlternatives(self.source, self.root / 'baseline-plus-new',
+                                       extract(self.source), self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'rejected', result)
+        self.assertIn('items_not_allowed', result['blocking_types'])
+
+    def test_cost_summary_binds_normalized_native_drc(self):
+        import hashlib
+        import json
+        from agent_ee.storage import read_json
+        lane, _ = self.run_alternatives('bound-drc')
+        validation = lane['alternative']['native_attempts'][-1]['validation']
+        for prefix, path in (('', self.root / validation['directory'] / 'native-drc.json'),
+                             ('baseline_', self.root / 'bound-drc/baseline/native-drc.json')):
+            report = read_json(path)
+            report.pop('date', None); report.pop('source', None)
+            for key in ('violations', 'unconnected_items', 'ignored_checks', 'included_severities'):
+                report[key] = sorted(report[key], key=lambda row: json.dumps(row, sort_keys=True))
+            canonical = json.dumps(report, sort_keys=True, separators=(',', ':')).encode()
+            self.assertEqual(validation[prefix + 'drc_content_sha256'], hashlib.sha256(canonical).hexdigest())
+            from agent_ee.reserved_area_native import drc_content_digest
+            report['date'] = 'different execution date'
+            report['source'] = 'another scratch path'
+            for key in ('violations', 'unconnected_items', 'ignored_checks', 'included_severities'):
+                report[key].reverse()
+            path.write_text(json.dumps(report))
+            self.assertEqual(drc_content_digest(path), validation[prefix + 'drc_content_sha256'])
+            report.pop('date'); report.pop('source')
+            report['violations'].append({'type': 'tamper'})
+            path.write_text(json.dumps(report))
+            self.assertNotEqual(validation[prefix + 'drc_content_sha256'], drc_content_digest(path))
+
+    def test_unexpected_validator_exception_is_retained_unknown(self):
+        from unittest.mock import patch
+        with patch('agent_ee.reserved_area_native.NativeAlternatives._validate',
+                   side_effect=KeyError('injected validator failure')):
+            lane, _ = self.run_alternatives('unexpected')
+        self.assert_unknown_search(lane['alternative'], 'injected validator failure')
 
     def native_only_pad_rule(self, name):
         """A tracks-only rule area plus a custom DRC rule disallowing pads that meet it.

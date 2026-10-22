@@ -14,6 +14,9 @@ from .placement import (AXES, area2, courtyard_bounds, edges, intersection_area,
 
 DECLARATION = 'agent_ee_access_direction'
 SCHEMA = 'agent-ee.access-direction/1'
+# Source classes whose cited lane may also relax outline containment (AGENTEE-419).
+# Every sourced class gates; board, arrangement_rule and fixture_author never relax.
+RELAXING_CLASSES = ('manufacturer', 'datasheet')
 
 
 def provenance(value):
@@ -34,7 +37,8 @@ def declaration(value):
             value = json.loads(value)
         except (ValueError, RecursionError) as exc:
             raise ValueError('invalid access declaration JSON') from exc
-    if (not isinstance(value, dict) or set(value) - {'schema', 'mouth_nm', 'outward', 'lane_polygons_nm', 'provenance'}
+    if (not isinstance(value, dict)
+            or set(value) - {'schema', 'mouth_nm', 'outward', 'lane_polygons_nm', 'travel_nm', 'provenance'}
             or value.get('schema') != SCHEMA):
         raise ValueError('unsupported access declaration')
     mouth = value.get('mouth_nm')
@@ -47,6 +51,10 @@ def declaration(value):
         raise ValueError('access lane extends behind its mouth')
     if not any(on_segment(a, b, mouth) for poly in polygons for a, b in edges(poly)):
         raise ValueError('access mouth must touch its lane boundary')
+    # The declared clearance travel binds the lane depth exactly, as value_nm binds a limit.
+    if 'travel_nm' in value and (type(value['travel_nm']) is not int or value['travel_nm'] <= 0 or value['travel_nm']
+            != max((x - mouth[0])*ux + (y - mouth[1])*uy for poly in polygons for x, y in poly)):
+        raise ValueError('access travel_nm must be a positive integer equal to the lane travel')
     provenance(value)
     return {**value, 'lane_polygons_nm': polygons}
 
@@ -82,9 +90,22 @@ def hard(fp):
     return provenance(value)['enforcement'] == 'hard'
 
 
+def relaxes(fp):
+    """Whether a hard lane may also hold courtyard area outside the outline.
+
+    Gating needs any sourced class. Relaxing containment needs a manufacturer or
+    datasheet source and a declared clearance travel bounding the lane depth."""
+    return 'access_direction' in fp and _relaxing(declaration(fp['access_direction']))
+
+
+def _relaxing(value):
+    return provenance(value)['enforcement'] == 'hard' and (
+        value['provenance']['class'] in RELAXING_CLASSES and 'travel_nm' in value)
+
+
 def overhangs_courtyard(fp):
-    """Whether a cited lane intersects courtyard area that can leave the board."""
-    if not hard(fp):
+    """Whether a relaxing lane intersects courtyard area that can leave the board."""
+    if not relaxes(fp):
         return False
     _, _, _, lane = geometry(fp)
     return any(intersection_area(p, q) > 0 for record in fp['courtyards'].values()
@@ -94,7 +115,7 @@ def overhangs_courtyard(fp):
 def minimum_inside_area(fp, polygons):
     """Rigid-invariant lower bound: only the declared lane may lie outside."""
     area = sum(Fraction(abs(area2(p)), 2) for p in polygons)
-    if not hard(fp):
+    if not relaxes(fp):
         return area
     _, _, _, lane = geometry(fp)
     return area - sum(intersection_area(p, q) for p in polygons for q in lane)
@@ -124,7 +145,7 @@ def evaluate(fp, outline):
     inboard = sum(intersection_area(p, outline) for p in polygons)
     row = {'kind': 'access_direction', 'ref': fp['ref'], 'mouth_nm': mouth, 'vector': vector,
            'lane_polygons_nm': polygons, 'inboard_area_mm2': float(inboard / 10**12),
-           'provenance': source, 'status': 'defect',
+           'provenance': source, 'relaxes_outline': _relaxing(value), 'status': 'defect',
            'reason': 'access mouth cannot reach an outward outline edge with its full lane outside'}
     reachable_edge = False
     if inboard == 0:

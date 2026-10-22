@@ -303,3 +303,28 @@ def alternatives(facts, policy, fabrication, costs, plan, native_validator=None)
                                    for pose in _poses(fp, outline, placer._edge_margin_nm(policy))]
                 row['alternative'] = _cheapest(row, trials[ref], native_validator)
     return costs
+
+
+def saved_report(output, facts, plan):
+    """Isolate all optional reserve diagnostics from the placement verdict.
+
+    Discard partial measurements on failure so no stale legal alternative or
+    apparent zero survives an unavailable advisory pipeline. Hard placement
+    checks run outside this boundary in the single writer.
+    """
+    try:
+        from .reserved_area_native import NativeAlternatives
+        fabrication = fabrication_outlines(output)
+        policy = {**plan['policy'], 'obstacles': [*plan['policy']['obstacles'],
+            *plan.get('block_arrangement', {}).get('arrangement', {}).get('keepouts', [])]}
+        costs = report(facts, policy, fabrication)
+        if costs.get('sides'):
+            alternatives(facts, plan['policy'], fabrication, costs, plan,
+                         NativeAlternatives(output, output.parent / 'reserve-alternatives',
+                                            facts, plan['policy'], plan))
+        return costs
+    except Exception as exc:
+        return {'schema': SCHEMA, 'board_sha256': facts['board_sha256'],
+                'authority': 'advisory; does not change packing, score or verdict',
+                'status': 'unknown', 'sides': {}, 'findings': [],
+                'reason': f'reserve diagnostics unavailable: {type(exc).__name__}: {exc}'}

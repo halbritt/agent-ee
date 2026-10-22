@@ -1408,8 +1408,15 @@ The document may include `source_records`, mapping relative source paths to
 captured UTF-8 source text. Records are part of the same immutable locality
 capture; they are not files to open, a live fetch, or an owner evidence store.
 Each source reference contains `path`, the SHA-256 of that exact UTF-8 text,
-`locator`, and an exact `quote` present in that text. Hash, missing-text or quote
-failures leave the bound advisory. Source identity and applicability remain
+`locator`, and an exact `quote` present in that text. Absent records, malformed
+hashes and quote failures leave the bound advisory
+(known boundary). Under AGENTEE-402 ruling 402a, a well-formed source reference
+whose retained text hashes differently returns `enforcement: integrity` with
+reason `source record sha256 mismatch`. Grading reports `unknown` with kind
+`source_record_integrity`, even when the measured distance is within the bound.
+It grants no hard constraint or placement targets; packing and block admission
+refuse the unknown coverage. Independent hard defects retain priority. Source
+identity and applicability remain
 review obligations: a matching digest is not proof of vendor authenticity or
 owner authorship. Do not publish third-party source text without rights approval;
 original numeric transcription records can retain source identities instead.
@@ -1850,13 +1857,34 @@ protected, regrades the saved geometry, and runs native DRC under the captured
 project and custom-rule bytes. Baseline DRC is retained under the same rules.
 No artwork repair changes an alternative. Numeric limits without a source remain
 advisory only for native numeric constraint types; a rule-area or zone name
-cannot make a structural finding numeric. Courtyard findings always reject the
-pose, as do other native findings. Ignored placement checks,
+cannot make a structural finding numeric. New non-advisory findings reject the
+pose. The shared baseline DRC comparison and native item states distinguish
+unchanged findings on other parts from findings introduced or moved by this
+pose. When all blocking findings are unchanged baseline findings, legality stays
+`unknown`; the retained baseline defect is not blamed on the trial pose and is
+never certified legal. New findings still reject a pose alongside baseline
+findings, including courtyard findings. Ignored placement checks,
 missing reports and tool failures remain unknown. Ignored checks for track centering, tuning geometry, footprint filters and
 footprint component types are outside this placement diagnostic. Attempt
 witnesses include board, rule, DRC and write-scope digests. The report
-uses stable summaries and witness paths relative to the proposal directory; raw
-DRC hashes stay in `validation.json` because native DRC embeds execution dates.
+uses stable summaries and witness paths relative to the proposal directory.
+`drc_content_sha256` and `baseline_drc_content_sha256` bind the retained native
+reports into each completed native attempt, and therefore into both placement
+and block-provenance cost records (AGENTEE-420). To recompute either digest,
+parse its native JSON report, remove only top-level `date` and `source`, sort
+`violations`, `unconnected_items`, `ignored_checks` and `included_severities`
+by each entry's `json.dumps(entry, sort_keys=True)`, then SHA-256 the UTF-8 bytes
+of `json.dumps(report, sort_keys=True, separators=(',', ':'))`. Other content
+remains bound; changed findings change the digest. Raw DRC byte hashes remain
+in `validation.json`. Attempts without a completed native report remain
+unverified and cannot supply a report digest.
+
+Reserve measurement, validator initialization and alternative search have one
+advisory exception boundary. An ordinary exception discards partial costs and
+returns a board-bound `unknown` record with an error type and reason, empty
+`sides` and `findings`. Unexpected per-pose validation exceptions similarly
+retain an unknown witness. Hard placement, DRC and preservation gates still run
+outside the advisory boundary. Cancellation and process exits propagate.
 
 `native_validated` names the cheapest validated legal saving in this declared
 finite set. `native_attempts` retains rejected and unknown cheaper poses. If a
@@ -1897,3 +1925,10 @@ including carried silk defects. Requests can explicitly set `skip_visuals: true`
 for fixtures; rendering failures retain unavailable coverage and native logs.
 The writer rechecks the original board, netlist and project/rule bytes after
 imaging, immediately before publication.
+
+### Project-local 3D models
+
+Proposals carry enabled project-local model files before candidate imaging.
+`project-models.json` records copied file hashes and missing references; the
+placement result includes the same receipt. See [model closure](pcb-renders.md#proposal-project-model-closure-agentee-394)
+for resolution provenance, path safety and publication checks.

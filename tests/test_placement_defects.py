@@ -112,6 +112,53 @@ class PlacementDefectContractTests(unittest.TestCase):
             write_json(work / 'receipt.json', {'spec': {'step': STEP}, 'status': 'completed'})
             self.assertIsNone(placement_defects.adopted(root, {}, 1))
 
+    def test_artwork_receipt_requires_the_coordinator_stage_receipt_anchor(self):
+        # AGENTEE-408 G4: the coordinator's anchored index is the artwork receipt anchor.
+        from agent_ee.routed_artwork import STEP
+        from agent_ee.placement_adapter import STEP as PLACER
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work = root / 'implementations/1'
+            receipt = work / f'receipts/1-{STEP}/receipt.json'
+            write_json(receipt, {'spec': {'step': STEP}, 'status': 'completed'})
+            index = work / 'stage-receipts.json'
+            write_json(index, {'receipts': [{'path': receipt.relative_to(work).as_posix(),
+                                             'sha256': digest(receipt)}]})
+            run = root / 'runs/1'
+            write_json(run / 'candidate.json', {'candidate_id': 'c1'})
+            state = {'history': [{'run': str(run)}], 'stage_receipts': {'1': digest(index)}}
+            # Control: an anchored artwork receipt proceeds to authentication.
+            with patch('agent_ee.stage_receipts.validate_receipt',
+                       side_effect=RuntimeError('authenticating')) as validate:
+                with self.assertRaisesRegex(RuntimeError, 'authenticating'):
+                    placement_defects.adopted(root, state, 1)
+            self.assertEqual(validate.call_args.kwargs['binding'],
+                             {'implementation': 1, 'source_candidate_id': 'c1', 'receipt_index': 1})
+            # A present index without its coordinator anchor, or with a different one, refuses.
+            for anchors in ({}, {'2': digest(index)}, {'1': '0' * 64}):
+                with self.subTest(anchors=anchors), self.assertRaisesRegex(
+                        ValueError, 'stage receipt index changed or missing'):
+                    placement_defects.adopted(root, {**state, 'stage_receipts': anchors}, 1)
+            # A receipt substituted after the coordinator indexed it refuses.
+            write_json(receipt, {'spec': {'step': STEP}, 'status': 'completed', 'forged': True})
+            with self.assertRaisesRegex(ValueError, 'stage receipt changed after indexing'):
+                placement_defects.adopted(root, state, 1)
+            # An artwork receipt appended to an anchored index refuses.
+            write_json(receipt, {'spec': {'step': STEP}, 'status': 'completed'})
+            extra = work / f'receipts/2-{STEP}/receipt.json'
+            write_json(extra, {'spec': {'step': STEP}, 'status': 'completed'})
+            links = read_json(index)['receipts']
+            write_json(index, {'receipts': [*links, {'path': extra.relative_to(work).as_posix(),
+                                                     'sha256': digest(extra)}]})
+            with self.assertRaisesRegex(ValueError, 'stage receipt index changed or missing'):
+                placement_defects.adopted(root, state, 1)
+            # An anchored placer receipt without its placement record is not carry.
+            write_json(receipt, {'spec': {'step': PLACER}, 'status': 'completed'})
+            write_json(index, {'receipts': [{'path': receipt.relative_to(work).as_posix(),
+                                             'sha256': digest(receipt)}]})
+            self.assertIsNone(placement_defects.adopted(
+                root, {**state, 'stage_receipts': {'1': digest(index)}}, 1))
+
     def test_graphic_text_style_damage_retains_known_defect(self):
         with tempfile.TemporaryDirectory() as directory:
             before, after = (Path(directory) / name for name in ('before.kicad_pcb', 'after.kicad_pcb'))
@@ -1257,13 +1304,15 @@ class NoLineageProjectionSealTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def design(self, name, *shapes):
+    def design(self, name, *shapes, rules=None):
         """Owned RC control plus (layer, start, end) segments; library comparison ignored only."""
         import pcbnew as k
         from agent_ee.candidate import capture
         root = self.root / name
         design = root / 'design'
         shutil.copytree(Path(__file__).resolve().parents[1] / 'fixtures/rc/control', design)
+        if rules is not None:
+            (design / 'rc_filter.kicad_dru').write_text(rules)
         path = design / 'rc_filter.kicad_pcb'
         board = k.LoadBoard(str(path))
         for layer, start, end in shapes:
@@ -1358,6 +1407,59 @@ class NoLineageProjectionSealTests(unittest.TestCase):
         verify_evidence(run, [projection, full], required=True)
         self.assert_forgeries_refused(run, manifest, projection, full,
                                       (('pass', dict(projection, outcome='pass')),))
+
+
+    def test_forged_ok_over_runtime_unknown_evaluation_refuses(self):
+        """AGENTEE-407: the seal replays the runtime admissibility of the native report, so a
+        retained ok verdict cannot seal where the runtime check could only be unknown."""
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        from agent_ee.outline_containment import sandboxed
+        # An owner rule (captured .kicad_dru) that disables a numeric clearance evaluation.
+        run, manifest = self.design('ignored', rules='(version 1)\n(rule quiet (constraint clearance '
+                                    '(min 0.1mm)) (severity ignore))\n')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual((projection['execution'], projection['outcome']), ('malformed', 'unknown'),
+                         projection['summary'])
+        self.assertIn('explicitly ignored by sourced rule quiet', projection['summary'])
+        self.assertIn('work/projection/drc.json', projection['evidence'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Genuine native containment of this same captured board, retained where a
+        # completed check keeps it: the only missing piece is the evaluation itself.
+        containment = run / 'work/projection/containment'
+        self.assertEqual(sandboxed(run / 'inputs', manifest['scope']['board'], containment), [])
+        evidence = projection['evidence'] + ['work/projection/containment/' + name for name in
+                                             ('copper-containment.json', 'execution.json', 'console.log')]
+        forged = dict(projection, execution='ok', outcome='pass', evidence=evidence)
+        for name, check in (('pass', forged),):
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/projection.json', check)
+                for seal in (lambda: placement_defects.verify_gate(run, check, manifest),
+                             lambda: freeze_evidence(run, [check, full]),
+                             lambda: verify_evidence(run, [check, full], required=True)):
+                    with self.assertRaisesRegex(ValueError, 'explicitly ignored by sourced rule quiet'):
+                        seal()
+        write_json(run / 'checks/projection.json', projection)
+        verify_evidence(run, [projection, full], required=True)
+
+    def test_seal_replays_the_runtime_parity_skip_refusal(self):
+        """AGENTEE-407: a console stating parity was not performed is unknown at runtime and at seal."""
+        from agent_ee.checks import run_checks
+        run, manifest = self.design('parity-console')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection['summary'])
+        placement_defects.verify_gate(run, projection, manifest)
+        console = run / 'work/projection/console.log'
+        retained = console.read_bytes()
+        console.write_bytes(retained + b'Failed to fetch schematic netlist for parity tests.\n')
+        with self.assertRaisesRegex(ValueError, 'schematic parity was not performed'):
+            placement_defects.verify_gate(run, projection, manifest)
+        console.unlink()
+        with self.assertRaises((OSError, ValueError)):
+            placement_defects.verify_gate(run, projection, manifest)
+        console.write_bytes(retained)
+        placement_defects.verify_gate(run, projection, manifest)
 
 
 class ContainedIdentities(dict):

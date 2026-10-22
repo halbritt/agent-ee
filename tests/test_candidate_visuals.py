@@ -271,6 +271,63 @@ class CandidateVisualTests(unittest.TestCase):
         for image in report['visuals']['images']:
             self.assertEqual(digest(work / 'proposal' / image['path']), image['sha256'])
 
+    def test_stock_defaults_and_project_models_survive_proposal_and_imaging(self):
+        import pcbnew
+        from agent_ee.placer_runner import place_candidate
+        fixture = self._placement_fixture()
+        # Original VRML cuboid; no third-party model is copied into the project.
+        model = fixture.source.parent / 'inputs/models/owned.wrl'
+        model.parent.mkdir(parents=True)
+        model.write_text('#VRML V2.0 utf8\nShape { geometry Box { size 1 2 3 } }\n')
+        board = pcbnew.LoadBoard(str(fixture.source))
+        footprint = next(iter(board.GetFootprints()))
+        for filename in ('${KIPRJMOD}/inputs/models/owned.wrl',
+                         '${KIPRJMOD}/inputs/models/missing.stp',
+                         '${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.step'):
+            shape = pcbnew.FP_3DMODEL()
+            shape.m_Filename = filename
+            footprint.Models().append(shape)
+        pcbnew.SaveBoard(str(fixture.source), board)
+        fixture.config['authorization']['source_sha256'] = digest(fixture.source)
+        destination = fixture.scratch / 'model-closure'
+        result = place_candidate(fixture.source, fixture.netlist, destination, fixture.config)
+        self.assertEqual(result['status'], 'placed')
+        self.assertEqual(result['visuals']['status'], 'available', result['visuals'])
+        self.assertEqual((destination / 'inputs/models/owned.wrl').read_bytes(), model.read_bytes())
+        self.assertEqual(result['project_models']['files']['inputs/models/owned.wrl']['sha256'], digest(model))
+        self.assertFalse((destination / 'inputs/models/missing.stp').exists())
+        models = [m for fp in result['visuals']['model_coverage']['footprints'] for m in fp['models']]
+        by_path = {m['path']: m for m in models}
+        stock = by_path['${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.step']
+        self.assertEqual((stock['status'], stock['resolution_source']), ('resolved', 'kicad-default'))
+        self.assertEqual(by_path['${KIPRJMOD}/inputs/models/owned.wrl']['sha256'], digest(model))
+        self.assertEqual(by_path['${KIPRJMOD}/inputs/models/missing.stp']['status'], 'missing')
+        self.assertEqual(json.loads((destination / 'project-models.json').read_text()), result['project_models'])
+
+    def test_project_model_drift_during_imaging_refuses_publication(self):
+        import pcbnew
+        from agent_ee.placer_runner import place_candidate
+        fixture = self._placement_fixture()
+        model = fixture.source.parent / 'owned.wrl'
+        model.write_text('#VRML V2.0 utf8\nShape { geometry Box { size 1 2 3 } }\n')
+        board = pcbnew.LoadBoard(str(fixture.source))
+        shape = pcbnew.FP_3DMODEL()
+        shape.m_Filename = '${KIPRJMOD}/owned.wrl'
+        next(iter(board.GetFootprints())).Models().append(shape)
+        pcbnew.SaveBoard(str(fixture.source), board)
+        fixture.config['authorization']['source_sha256'] = digest(fixture.source)
+        destination = fixture.scratch / 'model-drift'
+
+        def change_model(board, out, **kwargs):
+            report = produce(board, out, skip=True)
+            model.write_text('changed source bytes')
+            return report
+
+        with patch('agent_ee.candidate_visuals.produce', side_effect=change_model):
+            with self.assertRaisesRegex(ValueError, 'project model changed'):
+                place_candidate(fixture.source, fixture.netlist, destination, fixture.config)
+        self.assertFalse(destination.exists())
+
     def test_native_placement_skip_preserves_result_verdict(self):
         from agent_ee.placer_runner import place_candidate
         fixture = self._placement_fixture()

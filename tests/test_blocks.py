@@ -351,6 +351,117 @@ class PackingTests(Fixture, unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'every advisory'):
                 blocks.validate_candidate(forged)
 
+    def test_locality_floor_and_provenance_cannot_be_omitted(self):
+        # AGENTEE-401 / review G7: deleting a floor must not imply below_floor=False.
+        doc = obligations(limit=1)
+        doc.pop('source_records')
+        cand = json.loads(json.dumps(self.pack(electrical_locality=doc)['candidate']))
+        for field in ('manufacturing_floor', 'constraint_provenance'):
+            forged = copy.deepcopy(cand)
+            grade = forged['grade']['electrical_locality']
+            grade['measured'][0].pop(field)
+            grade['advisories'][0].pop(field)
+            grade['advisories'][0]['below_floor'] = False
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                blocks.validate_candidate(forged)
+            with self.subTest(field=field, via='match'), self.assertRaises(ValueError):
+                blocks.match(forged, self.board, self.inv)
+            with self.subTest(field=field, via='admit'), self.assertRaises(ValueError):
+                blocks.admit(forged, self.board, self.inv, self.derive(), policy(electrical_locality=doc))
+
+    def test_locality_floor_malformed_records_refuse(self):
+        cand = json.loads(json.dumps(self.pack()['candidate']))
+        original = cand['grade']['electrical_locality']['measured'][0]['manufacturing_floor']
+        self.assertEqual(original['status'], 'known')
+        cases = [None, {}, {'status': 'pass'}, {'status': 'unknown'},
+                 {'status': 'unknown', 'reason': ''},
+                 {'status': 'unknown', 'reason': 'unqualified', 'floor_nm': 0}]
+        for change in ({'floor_nm': True}, {'floor_nm': -1}, {'floor_nm': 1.5},
+                       {'source': {}}, {'kind': 'assembly_estimate'},
+                       {'different_net_clearance_nm': False}, {'assembly': {'status': 'known'}}):
+            cases.append({**original, **change})
+        for key in original:
+            floor = copy.deepcopy(original)
+            floor.pop(key)
+            cases.append(floor)
+        for floor in cases:
+            forged = copy.deepcopy(cand)
+            forged['grade']['electrical_locality']['measured'][0]['manufacturing_floor'] = floor
+            with self.subTest(floor=floor), self.assertRaises(ValueError):
+                blocks.validate_candidate(forged)
+
+    def test_structural_floor_is_not_board_admission(self):
+        cand = json.loads(json.dumps(self.pack()['candidate']))
+        # Explicit unknown is retained, never silently replaced with a known zero.
+        floor = {'status': 'unknown', 'reason': 'opposite-side assembly spacing not qualified'}
+        cand['grade']['electrical_locality']['measured'][0]['manufacturing_floor'] = floor
+        blocks.validate_candidate(cand)
+        self.assertEqual(cand['grade']['electrical_locality']['measured'][0]['manufacturing_floor'], floor)
+        # Structure cannot prove this claim: the board regrade must refuse it.
+        result = blocks.admit(cand, self.board, self.inv, self.derive(), policy())
+        self.assertEqual(result['status'], 'refused')
+        self.assertIn({'kind': 'stale_evidence', 'evidence': 'grade'}, result['problems'])
+
+    def test_geometry_unknown_floor_stays_advisory_and_admits(self):
+        fp = next(f for f in self.board['footprints'] if f['ref'] == 'C1')
+        fp['side'] = 'B'
+        fp['courtyards'] = {'B': fp['courtyards']['F']}
+        for pad in fp['pads']:
+            pad['layers'] = ['B.Cu']
+        doc = obligations()
+        doc.pop('source_records')
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        blocks.validate_candidate(cand)
+        grade = cand['grade']['electrical_locality']
+        floors = [r['manufacturing_floor'] for r in grade['measured'] if r['obligation'] == 'input-C1']
+        self.assertTrue(floors)
+        self.assertTrue(all(f == {'status': 'unknown', 'reason': 'opposite-side assembly spacing not qualified'}
+                                for f in floors))
+        self.assertEqual(grade['status'], 'info')
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derive(), policy(electrical_locality=doc)),
+                         {'status': 'admitted', 'problems': []})
+
+    def test_manufacturer_record_unknown_is_not_usable_evidence(self):
+        doc = obligations()
+        for obligation in doc['obligations']:
+            for role in electrical_locality.roles(obligation):
+                obligation[role]['provenance'] = {'class': 'manufacturer', 'basis': 'fixture manufacturing floor'}
+        cand = json.loads(json.dumps(self.pack(electrical_locality=doc)['candidate']))
+        grade = cand['grade']['electrical_locality']
+        for row in (grade['measured'][0], grade['advisories'][0]):
+            row['manufacturing_floor'] = {'status': 'unknown', 'reason': 'captured JLCPCB numeric record hash mismatch'}
+            row['below_floor'] = False
+        # Measured rows do not carry advisory flags.
+        grade['measured'][0].pop('below_floor')
+        with self.assertRaisesRegex(ValueError, 'manufacturer floor unavailable'):
+            blocks.validate_candidate(cand)
+
+    def test_tampered_source_refuses_packing_and_forged_advisory_candidate(self):
+        doc = copy.deepcopy(obligations())
+        # Clean hard policy remains admissible.
+        self.assertEqual(self.pack(electrical_locality=doc)['status'], 'packed')
+        doc['source_records'] = {path: 'changed' for path in doc['source_records']}
+        refused = self.pack(electrical_locality=doc)
+        self.assertNotEqual(refused['status'], 'packed', refused)
+        self.assertEqual(refused['outcome'], 'unknown', refused)
+        # Start from a genuinely advisory candidate and spoof its source authority.
+        missing = copy.deepcopy(doc)
+        missing['source_records'] = {}
+        candidate = self.pack(electrical_locality=missing)['candidate']
+        sub = candidate['block_policy']['electrical_locality']
+        sub['source_records'] = doc['source_records']
+        grade = candidate['grade']['electrical_locality']
+        grade['declaration'] = sub
+        for row in grade['measured'] + grade['advisories']:
+            row['constraint_provenance'] = {'class': 'owner', 'enforcement': 'integrity',
+                                          'reason': 'source record sha256 mismatch'}
+        with self.assertRaisesRegex(ValueError, 'source record integrity failure'):
+            blocks.validate_candidate(candidate)
+        with self.assertRaisesRegex(ValueError, 'source record integrity failure'):
+            blocks.admit(candidate, self.board, self.inv, self.derive(), policy(electrical_locality=doc))
+
     def test_isolated_block_capture_carries_the_board_copper_setback(self):
         # AGENTEE-366e/f: the isolated capture keeps the board's m_MaxError; an absent fact stays typed unknown.
         for fp in self.board['footprints']:

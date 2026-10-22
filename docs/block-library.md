@@ -202,7 +202,11 @@ framed on the anchor; a rotation that is not a quarter turn refuses. Copper is r
 the board file with the shared S-expression parser: segments, arcs and vias whose
 net (named, or numbered through the board net table) is a block net and whose
 points all lie inside the members' courtyard extent. They are framed like the
-poses and recorded by role. Zones are not captured.
+poses and recorded by role. A board-level or footprint-local zone refuses the
+import with `CopperUnknown` (`ValueError`, reason beginning `copper_unknown:`).
+Zone fill, holes and region intersections are not qualified, so even a zone on
+another net or outside the selected members refuses conservatively. No entry is
+produced for that import; omitted zones cannot be represented as absent copper.
 
 ### (b) Datasheet reference-layout figure
 
@@ -294,6 +298,21 @@ qualified fome-mc board region.
 
 ## Materialization
 
+AGENTEE-403 closes a false-success path: **board-region entries currently refuse
+materialization** with a `copper_unknown` problem and no candidate. The `/2`
+candidate and arrangement interfaces apply footprint poses only; stored tracks,
+arcs and vias have no applied-board evidence. An empty copper record also refuses,
+because older imports may have silently omitted zones. Existing identity,
+admission and grade failures are returned before this coverage refusal, preserving
+their defect evidence. Imports and receipt replay for zone-free source regions
+remain available as numeric provenance, not copper application evidence. The CLI
+exits 1 and writes no candidate on refusal.
+
+Actual board-region reuse still requires a board writer, mapped nets, transformed
+copper, and fresh native checks on the resulting board. This is an unmet part of
+AGENTEE-403. Cluster and figure entries continue to materialize as placement
+candidates through the contract below.
+
 `materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping, authority_raw, *, allocation_raw, block_id)`
 uses an entry on a board. A hard-class entry or any `authority_raw` raises
 `AuthorityUnavailable` before anything is built. `mapping` pairs every entry member with a distinct
@@ -381,6 +400,9 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=/home/halbritt/git/fome-m
   `add`);
 - the owner-ruling assertions on project clusters and on the committed pod entries;
 - board-region framing under anchor rotation, with copper selection by net and extent;
+- unsupported board and footprint zones refusing as `copper_unknown`, board-region
+  materialization refusing with no candidate (including empty legacy records),
+  and existing admission defects retained before copper coverage refusal;
 - figure scale verification at its inclusive boundary, axis flips, orientation
   and document-hash refusals, and figure-bound poses;
 - materialization of a second instance and each identity mismatch;

@@ -371,7 +371,7 @@ value or a
 malformed movable-field declaration refuses with `ValueError`, never an untyped
 error or a silent skip (AGENTEE-364). This conservative scope limit
 can refuse legitimate boards: the shared parser decodes escapes, so decoded
-token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
+token equality cannot establish the saved spelling KiCad renders. The refusal is pinned by `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
 open. The native DRC comparison has no saved geometry states; the scope proof,
@@ -381,7 +381,10 @@ unchanged, so unmeasured pre-existing collisions keep baseline treatment
 
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed
-board artifact. Carry adoption authenticates the entire tool snapshot against
+board artifact. Carry adoption reads artwork receipts only through the
+coordinator's anchored stage-receipt index (`stage_receipts` in campaign state):
+an unindexed receipt is ignored, and an unanchored, re-anchored or extended index
+or a receipt substituted after indexing refuses (AGENTEE-408). It authenticates the entire tool snapshot against
 the campaign package pin, verifies the exact launcher invocation and recomputes
 the proof from retained receipt inputs and output. The coordinator captures this
 bundle under `placement-evidence`, appending its ordered provenance link.
