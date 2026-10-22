@@ -205,6 +205,11 @@ from `pin_map`. They bind physical-pin voltage and connection/presence obligatio
 to the existing owned parts manifest. A rejected citation leaves its affected
 obligations unknown; the fact checker itself gains no electrical predicate.
 
+The opt-in [manual physical intent compiler](physical-intent.md) (AGENTEE-388 S1)
+also consumes `pin_map` evidence rather than repeating it. A proposed terminal
+function binds only when the run's verified fact and its matched `pin-map.json`
+comparison name the same pin. The native pad UUID and net must also agree.
+
 Historical `datasheet-capture/2` acquisitions are replayed with their pinned
 source-note dependency. Reports and check details include `acquisitions` keyed
 by part reference, preserving `acquisition_method: historical_import` and

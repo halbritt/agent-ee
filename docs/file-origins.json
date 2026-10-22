@@ -415,6 +415,16 @@
   "rules": [
     {
       "paths": [
+        "tests/test_physical_intent.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-388 S1 physical-intent compiler regressions. They edit the owned datasheet-pins fixture board in a temporary directory: an authored two-pad decoupling footprint, a lock and a duplicated pad. Owner-decision and layout-note texts are authored test records. No third-party design or library text is copied, and the TJA1051 PDF is referenced in place by the existing fixture scope."
+    },
+    {
+      "paths": [
         "tests/test_reserved_area.py"
       ],
       "kind": "owned-source",
