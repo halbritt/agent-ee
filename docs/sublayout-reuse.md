@@ -114,8 +114,8 @@ sha256, the DRC report hashes and counts, and one entry per group:
 
 | Group `status` | Meaning | Group `outcome` |
 | --- | --- | --- |
-| `populated` | Every item copied | `pass` with no new DRC violation, `defect` otherwise |
-| `partial` | Some copper withheld (`withheld`, `net_map`) | `unknown`, or `defect` with a new DRC violation |
+| `populated` | Every item copied | `pass` with no new graded DRC violation, `defect` otherwise |
+| `partial` | Some copper withheld (`withheld`, `net_map`) | `unknown`, or `defect` with a new graded DRC violation |
 | `refused` | A precondition failed (`not_new`, `member_coverage`, `footprint_mismatch`, `land_pattern_mismatch`, `orientation_unqualified`, `layer_stack`, `unsupported_item`, `no_outline`, `top_reference`, `uuid_collision`) | `unknown` |
 | `unknown` | The sub-board is missing (`sub_board_missing`), differs from the declared sha256 (`sub_board_changed`) or cannot be read (`sub_board_unreadable`) | `unknown` |
 
@@ -126,7 +126,9 @@ is absent) and any declared sha256. Populated groups also report `anchor`,
 `sub_offsets_nm` and `bbox_nm`. When DRC cannot run, every applied group is
 `drc: not_evaluated` and `unknown`. The overall `outcome` is `defect` if any
 group is a defect, `unknown` if any group is not `pass`, and `pass` only when
-every group is populated with no new violation inside its box. When no group
+every group is populated with no new graded violation inside its box. A new
+numeric finding whose limit has no captured source is advisory and is not
+graded (see below). When no group
 applies, no board is written.
 
 ## Evidence-model fit
@@ -172,3 +174,20 @@ still grade. The saved-board copper containment child contributes engineering
 witnesses for effective copper beyond the outline, including cutouts.
 Numeric delta identities include measured descriptions and absolute item geometry;
 a moved item cannot reuse its old UUID to hide a worsened edge or hole gap.
+
+AGENTEE-399 covers this path with `SublayoutProvenanceTests` in
+`tests/test_sublayout.py`. The tests put a 1 mm track-width minimum beside a copy
+of the owned top board, which the module's 0.25 mm tracks violate:
+
+- An owner rule in the project's `.kicad_dru` grades as `owner`/`hard`. The
+  finding cites the rule name and the rule file's sha256, and the group is a
+  `defect`.
+- A board minimum bound by a constraint declaration grades as that
+  declaration's class (`manufacturer`/`hard`), so the group is a `defect`.
+- The same minimum without a source is `default`/`advisory`. It appears in
+  `new_violations` and `advisory_findings`, and the group still passes.
+- A malformed provenance binding makes DRC `not_evaluated` with a
+  `drc_unavailable` finding, so the group is `unknown`, never `pass`.
+
+Before AGENTEE-331, the DRC delta ran on a bare board copy. The first three
+cases then reported no new violation, and the malformed binding went unnoticed.
