@@ -235,7 +235,9 @@ class TypedLiteralTest(unittest.TestCase):
     def test_exponent_and_signed_literals_never_qualify_their_suffix(self):
         for quote in ('Captured length: 1e-3 mm', 'Captured length: -3 mm', 'Captured length: \u22123 mm',
                       'Captured length: x-3 mm', 'Captured length: 1-3 mm', 'Captured length: 13 mm',
-                      'Captured length: 3.3 mm', 'Captured length: 1/3 mm'):
+                      'Captured length: 3.3 mm', 'Captured length: 1/3 mm', 'Captured length: 1\u20193 mm',
+                      "Captured length: 1'3 mm", 'Captured length: 1 3 mm', 'Captured length: 1\u20093 mm',
+                      'Captured length: 1,3 mm'):
             with self.subTest(quote=quote):
                 setting, rows = self.setting(quote)
                 self.assertEqual((setting['enforcement'], setting['unsourced_reason']),

@@ -136,9 +136,11 @@ def manufacturer_capture(citation, values_mm=()):
 
 
 # A quoted numeric literal (AGENTEE-348 round-2 H1-H3): the COMPLETE run of digits,
-# decimal point, sign, exponent and separator characters is one literal, never a suffix of
-# one. It may not start inside a word, another literal or after a sign or operator.
-LITERAL = re.compile(r'(?<![\w.,/+\-−±])[+\-−±]?[0-9][0-9.,/]*(?:[eE][+\-−]?[0-9]+)?')
+# decimal point, sign, exponent and grouping characters (apostrophes, '_', a space between
+# digits) is one literal, never a suffix of one. It may not start inside a word, another literal or after a sign or operator.
+LITERAL = re.compile("(?<![\\w.,/+\\-\u2212\u00b1'\u2019\u2018\u02bc])(?<![0-9][ \u00a0\u2009\u202f])"
+                     "[+\\-\u2212\u00b1]?[0-9](?:[0-9.,/'\u2019\u2018\u02bc_]|[ \u00a0\u2009\u202f](?=[0-9]))*"
+                     "(?:[eE][+\\-\u2212]?[0-9]+)?")
 DECIMAL = re.compile(r'[+\-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+\-]?[0-9]+)?')
 # Length units a quote may state; each converts exactly to millimetres.
 QUOTE_UNITS = {'mm': Fraction(1), 'nm': Fraction(1, 10 ** 6), 'um': Fraction(1, 1000),

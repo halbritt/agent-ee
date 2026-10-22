@@ -724,9 +724,12 @@ class PhysicalIntentTests(unittest.TestCase):
             bad = self.intent(self.local, records=records,
                               locality=self.locality(self.pair(self.noted(locator, value), limit=value)))
             with self.subTest(locator=locator):
-                # The inherited classifier still certifies it; the compiler seam must not.
+                # AGENTEE-348 round-2 H1 (was 'hard' for every line): the shared classifier now reads
+                # whole literals, so signed, grouped and fractional lines (N-1..N-4) no longer certify
+                # a suffix. N-5/N-6 state 3 mm as a whole literal; the compiler seam still refuses them.
                 self.assertEqual(locality_provenance.classify(bad['locality'][0]['supply'],
-                                                              {'datasheet-notes.md': DATASHEET_TEXT})['enforcement'], 'hard')
+                                                              {'datasheet-notes.md': DATASHEET_TEXT})['enforcement'],
+                                 'advisory' if locator in ('N-1', 'N-2', 'N-3', 'N-4') else 'hard')
                 self.refused(self.local, bad, f'numeric mismatch: record {locator} states .*{pattern}')
                 document = {'schema': electrical_locality.SCHEMA, 'obligations': bad['locality'],
                             'source_records': {'datasheet-notes.md': DATASHEET_TEXT}}

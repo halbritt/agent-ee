@@ -684,10 +684,15 @@ def _locality(intent, src, board):
             if declared == 'owner' and source_authority.owner_reference(
                     pair['provenance'].get('decision_reference'), src['records'])['enforcement'] != 'verified':
                 _refuse(f'{label}: owner authority not established by a captured, verified owner decision')
+            if declared == 'datasheet':
+                # Diagnose the captured record line first; the shared classifier's exact-literal
+                # model (AGENTEE-348) already withholds authority from the same malformed lines.
+                derivation = pair['provenance'].get('derivation')
+                source = derivation.get('source') if isinstance(derivation, dict) else None
+                if source_authority.verified_reference(source, src['records'])['enforcement'] == 'verified':
+                    _datasheet_value(pair, src['records'], label)
             if declared == 'datasheet' and authority['enforcement'] != 'hard':
                 _refuse(f'{label}: numeric mismatch: sourced derivation does not equal declared max_distance_nm')
-            if declared == 'datasheet':
-                _datasheet_value(pair, src['records'], label)
             entry = {'obligation': obligation['id'], 'role': role, 'class': authority['class'],
                      'enforcement': authority['enforcement'], 'reason': authority['reason']}
             if declared == 'owner':
