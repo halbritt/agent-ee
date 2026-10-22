@@ -1065,6 +1065,32 @@ Experiment evidence is never dropped and is never qualified.
   - for the runtime control, the production binding preflight was also
     observed to refuse.
 
+  This lane's third-HOLD root redesign (review round 3, H4) narrows that
+  further. Up to round 3 the classifier inferred a refusal from the absence of
+  success, so a wrong replay binding, invalid or missing receipt JSON, or a
+  campaign finalization error counted as refused. Now a required control is
+  refused only on a positive match of its contract, in
+  `k91_classify.CONTRACTS`. Each contract names:
+  - the raising origin (file and function);
+  - the reason pattern;
+  - the production path the root exception took;
+  - each consumer layer's outcome;
+  - the preconditions, such as a replayed `run_step` that succeeded and an
+    applied tamper.
+
+  `observe` records the full exception chain: each link's type, message,
+  origin frame and frames. Every link must be the contract refusal. The one
+  exception is the board tamper: campaign finalization (`bind_implementation`)
+  was observed to raise the same refusal again around it. Anything else is
+  incomplete: unrelated exceptions, replay or plumbing failures, other
+  finalization errors.
+
+  `scripts/k91_control_matrix.py` is the lane's regression gate. It runs the
+  positives, every intended control, each plumbing failure in each control
+  slot, and every round-1 to round-3 counterexample through the actual
+  consumer. `tests/test_k91_control_matrix.py` runs it, and
+  `tests/test_k91_reason_probe.py` is the round-3 reviewer's probe.
+
   Anything missing or malformed is incomplete. A skipped adoption is never a
   refusal. The bare `stage_receipts.adopt` runs on another design copy as a
   diagnostic (`direct_adopt`), and its result stays visible: it accepts a

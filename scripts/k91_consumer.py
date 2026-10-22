@@ -33,6 +33,7 @@ precedent). The production pin and defaults on disk are unchanged.
 import contextlib
 import hashlib
 import json
+import traceback
 from pathlib import Path
 from unittest.mock import patch
 
@@ -45,12 +46,38 @@ STEP_DIR = 'receipts/1-kicad-route-builtin'
 NOT_CALLED = 'not called by campaign.run_implementation_steps'
 
 
+def exception_chain(exc):
+    """The full exception context chain, outermost first: each exception's type, message and origin
+    frame (the frame that raised it), and its frames (file:function, outer to inner). The chain follows
+    __cause__, else __context__ (recorded even when suppressed), so a finalization error raised while
+    another exception was handled keeps that exception visible."""
+    chain, seen = [], set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        frames = traceback.extract_tb(exc.__traceback__)
+        origin = frames[-1] if frames else None
+        chain.append({'type': type(exc).__name__, 'message': str(exc),
+                      'origin': None if origin is None else {
+                          'file': Path(origin.filename).name, 'function': origin.name, 'line': origin.lineno},
+                      'frames': [f'{Path(f.filename).name}:{f.name}' for f in frames],
+                      'link': 'cause' if exc.__cause__ is not None else 'context' if exc.__context__ is not None
+                      else None})
+        exc = exc.__cause__ if exc.__cause__ is not None else exc.__context__
+    return chain
+
+
+def failure(exc):
+    """The refused-call record: the outermost error and the whole chain (never just accepted: false)."""
+    return {'attempted': True, 'accepted': False, 'error': f'{type(exc).__name__}: {exc}',
+            'exception': exception_chain(exc)}
+
+
 def observe(fn):
-    """An observed call: {'attempted': True, 'accepted': bool, 'value' | 'error'} (k91_classify schema)."""
+    """An observed call: {'attempted': True, 'accepted': True, 'value'} or failure(exc) (k91_classify schema)."""
     try:
         return {'attempted': True, 'accepted': True, 'value': fn()}
-    except Exception as exc:  # recorded verbatim; the caller decides nothing from the type
-        return {'attempted': True, 'accepted': False, 'error': f'{type(exc).__name__}: {exc}'}
+    except Exception as exc:  # recorded with its full chain; the classifier decides, never this
+        return failure(exc)
 
 
 def not_made(reason):
@@ -127,7 +154,7 @@ def observed_layers():
             try:
                 value = fn(*args, **kwargs)
             except Exception as exc:
-                calls[name].append({'attempted': True, 'accepted': False, 'error': f'{type(exc).__name__}: {exc}'})
+                calls[name].append(failure(exc))
                 raise
             calls[name].append({'attempted': True, 'accepted': True,
                                 'value': value if name != 'run_step' else (value or {}).get('receipt_id')})
@@ -269,7 +296,9 @@ def run_controls(out, positive_work, decl, bind, mismatch, make_design, board, *
             (tree / board).write_bytes((tree / board).read_bytes() + b'\n')
         record = consume(work, design, bind, deadline=deadline, replay=True, direct_design=direct)
         inputs = stage_receipts.file_tree(design)[0]
-        controls['c_stale_input'] = {**record, 'board_sha256': inputs[board], 'low_level': {
+        receipt = json.loads((work / STEP_DIR / 'receipt.json').read_text())
+        controls['c_stale_input'] = {**record, 'board_sha256': inputs[board],
+                                     'receipt_board_sha256': receipt['inputs'].get(board), 'low_level': {
             'verify': _low_level_verify(work, inputs), 'adopt': not_made('the low-level observation makes no consumer adoption'),
             'direct_adopt': record['direct_adopt']}}
     return controls

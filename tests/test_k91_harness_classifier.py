@@ -214,100 +214,7 @@ class ClassifierRulesTest(unittest.TestCase):
 DIGEST_A, DIGEST_B = 'a' * 64, 'b' * 64
 
 
-def consumer_refusal(**changes):
-    """A schema-valid production-consumer refusal record (the shape k91_consumer.consume writes)."""
-    record = {'consumer': raised('ValueError: refused at the boundary'), 'run_step': 'replayed',
-              'consumer_run_step': observed('receipt-id'),
-              'consumer_verify': raised('ValueError: retained routing artifacts differ'),
-              'consumer_adopt': {'attempted': False, 'reason': 'not called by campaign.run_implementation_steps'},
-              'consumer_design': '/w/design', 'direct_design': '/w/direct-design',
-              'design_before': DIGEST_A, 'design_after': DIGEST_A, 'direct_adopt': raised('ValueError: changed')}
-    record.update(changes)
-    return record
-
-
-class ConsumerRulesTest(unittest.TestCase):
-    """Revision 3 (ruling a01d6f91): refusal is observed at the production consumer; H2 schema rules hold."""
-
-    def test_an_observed_consumer_refusal_with_unchanged_design_is_a_refusal(self):
-        self.assertEqual(classify.consumer_state(consumer_refusal()), classify.REFUSED)
-        # The bare diagnostic stays visible whatever it returned; it neither makes nor unmakes the refusal.
-        for direct in (observed(), {'attempted': False, 'reason': 'no receipt was retained'}):
-            with self.subTest(direct=direct):
-                record = consumer_refusal(direct_adopt=direct)
-                self.assertEqual(classify.consumer_state(record), classify.REFUSED)
-                self.assertEqual(record['direct_adopt'], direct)
-
-    def test_a_skipped_consumer_adoption_is_not_an_adoption_refusal(self):
-        # The skipped layer stays recorded as not made; only the observed consumer refusal decides.
-        record = consumer_refusal()
-        self.assertFalse(record['consumer_adopt']['attempted'])
-        self.assertIsNone(classify.observed(record['consumer_adopt']))
-        self.assertTrue(classify.skipped(record['consumer_adopt']))
-        # Without an observed consumer refusal, the skipped adoption and a refusing bare adoption prove nothing.
-        for consumer in ({'attempted': False, 'reason': 'not run'}, None):
-            with self.subTest(consumer=consumer):
-                self.assertEqual(classify.consumer_state(consumer_refusal(consumer=consumer)), classify.INCOMPLETE)
-
-    def test_a_consumer_that_accepted_adopted_or_changed_the_design_is_not_refused(self):
-        cases = {'consumer returned': {'consumer': observed()},
-                 'consumer adopted': {'consumer_adopt': observed()},
-                 'design changed': {'design_after': DIGEST_B}}
-        for label, changes in cases.items():
-            with self.subTest(label):
-                self.assertEqual(classify.consumer_state(consumer_refusal(**changes)), classify.NOT_REFUSED)
-
-    def test_missing_or_malformed_consumer_observations_are_incomplete(self):
-        # H2: explicit keys, explicit booleans, explicit digests; nothing missing is read as a refusal.
-        edits = {'missing consumer': lambda r: r.pop('consumer'),
-                 'missing consumer_run_step': lambda r: r.pop('consumer_run_step'),
-                 'missing consumer_verify': lambda r: r.pop('consumer_verify'),
-                 'missing consumer_adopt': lambda r: r.pop('consumer_adopt'),
-                 'missing direct_adopt': lambda r: r.pop('direct_adopt'),
-                 'missing design_before': lambda r: r.pop('design_before'),
-                 'missing design_after': lambda r: r.pop('design_after'),
-                 'missing direct_design': lambda r: r.pop('direct_design'),
-                 'same design for both': lambda r: r.update(direct_design=r['consumer_design']),
-                 'design digest not hex': lambda r: r.update(design_before='Z' * 64, design_after='Z' * 64),
-                 'design digest null': lambda r: r.update(design_before=None, design_after=None),
-                 'consumer accepted not boolean': lambda r: r['consumer'].update(accepted=0),
-                 'consumer without error': lambda r: r['consumer'].pop('error'),
-                 'consumer empty error': lambda r: r['consumer'].update(error=''),
-                 'consumer without attempted': lambda r: r['consumer'].pop('attempted'),
-                 'two consumer adoptions': lambda r: r.update(consumer_adopt={'malformed': [raised(), raised()]}),
-                 'skip without reason': lambda r: r.update(consumer_adopt={'attempted': False}),
-                 'extra key': lambda r: r['consumer_verify'].update(value=None)}
-        for label, edit in edits.items():
-            with self.subTest(label):
-                record = consumer_refusal()
-                edit(record)
-                self.assertEqual(classify.consumer_state(record), classify.INCOMPLETE)
-                verdict = classify.v2_verdict({'positive': {}, 'controls': {
-                    'a_mismatched_runtime': {**record, 'host_binding': raised()},
-                    'b_tampered_candidate': record, 'c_stale_input': record}})
-                self.assertFalse(verdict['controls_refused'])
-
-    def test_the_runtime_control_needs_the_observed_binding_refusal(self):
-        self.assertEqual(classify.runtime_consumer_state(consumer_refusal(host_binding=raised())), classify.REFUSED)
-        self.assertEqual(classify.runtime_consumer_state(consumer_refusal()), classify.INCOMPLETE)
-        self.assertEqual(classify.runtime_consumer_state(consumer_refusal(
-            host_binding={'attempted': True, 'accepted': False})), classify.INCOMPLETE)
-        self.assertEqual(classify.runtime_consumer_state(consumer_refusal(host_binding=observed())),
-                         classify.NOT_REFUSED)
-
-    def test_required_controls_decide_and_the_sidecar_is_reported(self):
-        controls = {'a_mismatched_runtime': consumer_refusal(host_binding=raised()),
-                    'b_tampered_candidate': consumer_refusal(), 'c_stale_input': consumer_refusal(),
-                    'b_tampered_sidecar': consumer_refusal(direct_adopt=observed())}
-        verdict = classify.v2_verdict({'positive': {}, 'controls': controls})
-        self.assertTrue(verdict['controls_refused'])
-        self.assertEqual(verdict['controls']['b_tampered_sidecar'], classify.REFUSED)
-        self.assertTrue(controls['b_tampered_sidecar']['direct_adopt']['accepted'])
-        for name in classify.REQUIRED_V2:
-            with self.subTest(name):
-                self.assertFalse(classify.v2_verdict({'positive': {}, 'controls': {
-                    **controls, name: {'skipped': 'absent'}}})['controls_refused'])
-
+class PositiveRulesTest(unittest.TestCase):
     def test_the_positive_needs_the_consumer_to_verify_and_adopt_the_delivered_board(self):
         value = {'classification': 'complete', 'proposal': 'eligible', 'candidate_sha256': DIGEST_B,
                  'experiment': {'status': 'retained', 'qualified': False}}
@@ -440,7 +347,8 @@ class ProductionConsumerTest(unittest.TestCase):
         self.assertTrue(record['consumer_verify']['accepted'])
         self.assertTrue(record['consumer_adopt']['accepted'])
         self.assertNotEqual(record['design_before'], record['design_after'])
-        self.assertEqual(classify.consumer_state(record), classify.NOT_REFUSED)
+        for name in classify.CONTRACTS:
+            self.assertEqual(classify.consumer_state(record, name), classify.NOT_REFUSED)
         self.assertEqual(self.consumer.tree_sha256(self.work), self.kept)
 
     def test_the_positive_receipt_is_restored_after_the_replays(self):
@@ -455,7 +363,12 @@ class ProductionConsumerTest(unittest.TestCase):
                 with self.assertRaises(KeyError):
                     self.consumer.stage_receipts.adopt(1)
         self.assertEqual(calls['verify'], [{'attempted': True, 'accepted': True, 'value': 'summary'}])
-        self.assertEqual(calls['adopt'], [{'attempted': True, 'accepted': False, 'error': "KeyError: 'x'"}])
+        (adopt,) = calls['adopt']
+        self.assertEqual({k: adopt[k] for k in ('attempted', 'accepted', 'error')},
+                         {'attempted': True, 'accepted': False, 'error': "KeyError: 'x'"})
+        # The full chain: the raising frame is the origin; the record is schema-valid.
+        self.assertEqual([(link['type'], link['message']) for link in adopt['exception']], [('KeyError', "'x'")])
+        self.assertIsNotNone(classify.chain_of(adopt))
 
     def test_the_replay_only_returns_the_receipt_the_consumer_asked_for(self):
         replay = self.consumer.replayed_run_step(self.work)
@@ -469,8 +382,137 @@ class ProductionConsumerTest(unittest.TestCase):
             replay(receipt_dir, None, self.bind['spec'], {**expected, 'implementation': 2})
 
     def test_an_absent_candidate_board_is_incomplete(self):
-        self.assertEqual(classify.consumer_state({'skipped': 'routing/candidate absent', 'file': 'x'}),
-                         classify.INCOMPLETE)
+        self.assertEqual(classify.consumer_state({'skipped': 'routing/candidate absent', 'file': 'x'},
+                                                 'b_tampered_candidate'), classify.INCOMPLETE)
+
+
+class ContractRulesTest(unittest.TestCase):
+    """Revision 4: REFUSED only by a positive contract match, on the real intended records."""
+
+    @classmethod
+    def setUpClass(cls):
+        ProductionConsumerTest.setUpClass()
+        cls.controls = ProductionConsumerTest.controls
+        cls.addClassCleanup(ProductionConsumerTest.tearDownClass)
+
+    def record(self, name):
+        return copy.deepcopy(self.controls[name])
+
+    def test_the_contract_table_names_origin_reason_path_layers_and_preconditions(self):
+        self.assertEqual(set(classify.CONTRACTS), set(classify.CONTROLS_V2))
+        for name, contract in classify.CONTRACTS.items():
+            with self.subTest(name):
+                self.assertEqual(set(contract), {'origin', 'reason', 'path', 'layers', 'finalization', 'preconditions'})
+                self.assertEqual(classify.contract_match(name, self.controls[name]), [])
+                self.assertEqual(classify.consumer_state(self.controls[name], name), classify.REFUSED)
+
+    def test_a_record_refuses_only_under_its_own_contract(self):
+        for name in classify.CONTRACTS:
+            for other in classify.CONTRACTS:
+                if other != name:
+                    with self.subTest(record=name, contract=other):
+                        self.assertEqual(classify.consumer_state(self.controls[name], other), classify.INCOMPLETE)
+        self.assertEqual(classify.consumer_state(self.controls['c_stale_input'], None), classify.INCOMPLETE)
+
+    def test_any_change_to_the_root_refusal_is_incomplete(self):
+        edits = {'reason': lambda link: link.update(message='stage receipt identity mismatch'),
+                 'type': lambda link: link.update(type='RuntimeError'),
+                 'origin function': lambda link: link['origin'].update(function='build_index'),
+                 'origin file': lambda link: link['origin'].update(file='campaign.py'),
+                 'path': lambda link: link.update(frames=[f for f in link['frames'] if 'verify_campaign_receipt' not in f
+                                                         and 'validate_live_binding' not in f])}
+        for name in ('a_mismatched_runtime', 'b_tampered_candidate', 'b_tampered_sidecar'):
+            for label, edit in edits.items():
+                with self.subTest(name=name, edit=label):
+                    record = self.record(name)
+                    edit(record['consumer']['exception'][-1])
+                    if len(record['consumer']['exception']) == 1:
+                        first = record['consumer']['exception'][0]
+                        record['consumer']['error'] = f"{first['type']}: {first['message']}"
+                    self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+
+    def test_only_the_observed_finalization_re_raise_may_wrap_the_refusal(self):
+        board = self.record('b_tampered_candidate')
+        self.assertEqual(len(board['consumer']['exception']), 2)
+        outer = board['consumer']['exception'][0]
+        self.assertIn('stage_receipts.py:bind_implementation', outer['frames'])
+        # Another finalization error around the same refusal is not the contract.
+        other = self.record('b_tampered_candidate')
+        other['consumer']['exception'][0]['message'] = 'stage receipt identity mismatch'
+        other['consumer']['error'] = 'ValueError: stage receipt identity mismatch'
+        self.assertEqual(classify.consumer_state(other, 'b_tampered_candidate'), classify.INCOMPLETE)
+        # A finalization link is not allowed where it was never observed.
+        for name in ('a_mismatched_runtime', 'b_tampered_sidecar', 'c_stale_input'):
+            with self.subTest(name):
+                record = self.record(name)
+                record['consumer']['exception'].insert(0, copy.deepcopy(record['consumer']['exception'][0]))
+                self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+
+    def test_layers_and_preconditions_must_be_shown(self):
+        edits = {'b_tampered_candidate': {'run_step refused': lambda r: r.update(consumer_run_step=raised()),
+                                          'verify not called': lambda r: r.update(consumer_verify={
+                                              'attempted': False, 'reason': 'not called'}),
+                                          'not replayed': lambda r: r.update(run_step='executed'),
+                                          'tamper not applied': lambda r: r.update(sha256_after=r['sha256_before']),
+                                          'other file': lambda r: r.update(file='routing/attempt/result.json')},
+                 'b_tampered_sidecar': {'tamper not applied': lambda r: r.pop('sha256_before'),
+                                        'other file': lambda r: r.update(file='routing/candidate/project/rc.kicad_pcb')},
+                 'c_stale_input': {'input not stale': lambda r: r.update(board_sha256=r['receipt_board_sha256']),
+                                   'verify called': lambda r: r.update(consumer_verify=observed())},
+                 'a_mismatched_runtime': {'host accepted': lambda r: r.update(host_binding=observed()),
+                                          'host unrelated': lambda r: r['host_binding']['exception'][0].update(
+                                              message='something else'),
+                                          'run_step called': lambda r: r.update(consumer_run_step=observed('x'))}}
+        for name, cases in edits.items():
+            for label, edit in cases.items():
+                with self.subTest(name=name, edit=label):
+                    record = self.record(name)
+                    edit(record)
+                    self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+
+    def test_missing_or_malformed_observations_are_incomplete(self):
+        keys = ('consumer', 'consumer_run_step', 'consumer_verify', 'consumer_adopt', 'direct_adopt', 'design_before',
+                'design_after', 'consumer_design', 'direct_design')
+        for name in classify.CONTRACTS:
+            for key in keys:
+                with self.subTest(name=name, missing=key):
+                    record = self.record(name)
+                    record.pop(key)
+                    self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+            malformed = {'chain dropped': lambda r: r['consumer'].pop('exception'),
+                         'chain empty': lambda r: r['consumer'].update(exception=[]),
+                         'link key missing': lambda r: r['consumer']['exception'][0].pop('origin'),
+                         'error disagrees with chain': lambda r: r['consumer'].update(error='ValueError: other'),
+                         'accepted not boolean': lambda r: r['consumer'].update(accepted=0),
+                         'consumer skipped': lambda r: r.update(consumer={'attempted': False, 'reason': 'not run'}),
+                         'skip without reason': lambda r: r.update(consumer_adopt={'attempted': False})}
+            for label, edit in malformed.items():
+                with self.subTest(name=name, malformed=label):
+                    record = self.record(name)
+                    edit(record)
+                    self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+
+    def test_a_consumer_that_returned_adopted_or_changed_the_design_is_not_refused(self):
+        for name in classify.CONTRACTS:
+            for label, edit in {'returned': lambda r: r.update(consumer=observed()),
+                                'adopted': lambda r: r.update(consumer_adopt=observed()),
+                                'design changed': lambda r: r.update(design_after=DIGEST_B)}.items():
+                with self.subTest(name=name, edit=label):
+                    record = self.record(name)
+                    edit(record)
+                    self.assertEqual(classify.consumer_state(record, name), classify.NOT_REFUSED)
+
+    def test_required_controls_decide_and_the_sidecar_is_reported(self):
+        verdict = classify.v2_verdict({'controls': self.controls})
+        self.assertTrue(verdict['controls_refused'])
+        self.assertEqual(verdict['not_refused_because'], {})
+        self.assertTrue(self.controls['b_tampered_sidecar']['direct_adopt']['accepted'])
+        for name in classify.REQUIRED_V2:
+            with self.subTest(name):
+                altered = {**self.controls, name: {'skipped': 'absent'}}
+                self.assertFalse(classify.v2_verdict({'controls': altered})['controls_refused'])
+        altered = {**self.controls, 'b_tampered_sidecar': {'skipped': 'absent'}}
+        self.assertTrue(classify.v2_verdict({'controls': altered})['controls_refused'])
 
 
 class SuccessorCommandLineTest(unittest.TestCase):

@@ -29,7 +29,8 @@ production adapter shape. This version:
   disposable copy of the positive receipt replayed at its own path, (c) a
   stale input. The bare stage adoption is recorded apart, on another design
   copy;
-- judges them with scripts/k91_classify.py CLASSIFIER_V2 (revision 3).
+- judges them with scripts/k91_classify.py CLASSIFIER_V2 revision 4: each control is refused
+  only by a positive match of its contract (CONTRACTS: origin, reason, path, layers, preconditions).
 
 Exit 0 only for an accepted positive with every control refused; 3 for an
 identity stop; 1 otherwise. OUT/evidence-manifest.json is the record.
