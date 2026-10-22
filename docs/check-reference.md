@@ -1728,10 +1728,14 @@ with a migration message. A distinct `delegated_acceptance` record
 (`authority: delegated_engineering`) covers selection exceptions decided by an
 agent under a repository delegation. It binds a recorded JSON decision (`id`,
 source, sha256, line, quote) and an `AGENTS.md` delegation (`kind:
-repository_agents_md`, source, sha256, line, quote). The decision's subject and
-stated rated range must equal the record. Owner, withdrawn or non-autonomous
-decisions, non-grant delegation lines, `authority: owner`, unrecognized kinds
-and self-citing or temperature-file sources are refused. Ratings and thermal
+repository_agents_md`, repository, owner commit, source, sha256, line, quote).
+Authority comes only from grants pinned in agent-ee by owner commit and item
+hash (`OWNER_GRANTS`), and from decisions registered there by member hash with
+their reference, range and exact MPN and manufacturer (`DELEGATED_DECISIONS`).
+A captured grant or decision that differs from the pinned bytes, an
+unregistered decision or a different evaluated part is refused or unknown.
+Owner, withdrawn or non-autonomous decisions, `authority: owner`, unrecognized
+kinds and self-citing or temperature-file sources are refused. Ratings and thermal
 evidence are judged exactly as for owner acceptance
 ([details](assembly-readiness.md#delegated-engineering-acceptance)).
 Native KiCad files, legacy design files, library tables and mutable deviations

@@ -55,9 +55,14 @@ exceptions are the recorded D-PCB-9 and D-PCB-12 decisions in
 `AGENTS.md` delegation. Declare them as
 [`delegated_acceptance`](assembly-readiness.md#delegated-engineering-acceptance)
 records citing both files, with the decided ranges -40 to 85 and -25 to 85
-degC. Never add U3 or J3 lines to `operating-temperature-acceptances.txt`. They
-need the same DigiKey binding and thermal evidence. J3's rating is not yet
-captured, so it remains unknown until it is.
+degC. The delegation names `github.com/halbritt/fome-mc` and the owner's grant
+commit `3f959131abca2dd9d40400496f3f6ebac9d363f5`. The decisions authorize
+exactly u-blox NEO-M9N-00B and Hirose Electric Co Ltd DM3AT-SF-PEJM5. Never
+add U3 or J3 lines to `operating-temperature-acceptances.txt`. They need the
+same DigiKey binding and thermal evidence. Two obligations stay open. The pod
+has no captured thermal validation, so every accepted part stays unknown. J3's
+rating comes only from the LCSC listing and is not yet captured, so J3 stays
+unknown until a rating is captured.
 
 ## Explicit plan
 

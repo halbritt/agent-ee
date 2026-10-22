@@ -435,6 +435,8 @@ stays unknown. For the pod, alongside a board range of -20 to 105 degC:
       },
       "delegation": {
         "kind": "repository_agents_md",
+        "repository": "github.com/halbritt/fome-mc",
+        "commit": "3f959131abca2dd9d40400496f3f6ebac9d363f5",
         "source": "AGENTS.md",
         "sha256": "<64 hex>", "line": 19,
         "quote": "**Owner-reserved decisions are made autonomously, not parked.**"
@@ -443,6 +445,45 @@ stays unknown. For the pod, alongside a board range of -20 to 105 degC:
   }
 }
 ```
+
+#### Authority anchor
+
+The cited files never confer authority on their own: a deciding agent can
+write, copy and capture any file, and immutability after capture says nothing
+about who authorized it. Authority comes from two tables in
+`src/agent_ee/assembly_readiness.py`, which change only through a reviewed
+agent-ee commit:
+
+- `OWNER_GRANTS` pins each recognized owner grant by kind, repository and the
+  owner's commit, with the grant file path, the commit author and the SHA-256
+  of the exact `- ` list item (with its indented continuation lines) at that
+  commit. It also lists the scopes the grant covers.
+- `DELEGATED_DECISIONS` registers each decision made under a pinned grant by
+  repository and id. An entry holds the recording commit and path, the SHA-256
+  of the decision's JSON member (`"key": "text"` as unescaped UTF-8), the scope
+  (`operating_temperature_selection_exception`) and the single reference it
+  covers. It also holds the decision's subject text, the decided range, and
+  the exact authorized part: the MPN and the DigiKey manufacturer name.
+  `normalization` records any visible difference between the stated name and
+  the exact MPN.
+
+The pod entries are the fome-mc grant from owner commit
+`3f959131abca2dd9d40400496f3f6ebac9d363f5` (AGENTS.md lines 19-26) and the
+two decisions agent-509 request A names. D-PCB-9 was recorded at
+`40bb1374cd251c338a60f8602e1ae8c208042199` and authorizes U3 u-blox
+NEO-M9N-00B at -40 to 85 degC. The decision names the NEO-M9N product, and
+NEO-M9N-00B is its ordering code and the pod's schematic part number. D-PCB-12
+was recorded at `b6ba9a09e7b4f572a3d8e5ad109107fd30ccc5c5` and authorizes J3
+Hirose Electric Co Ltd DM3AT-SF-PEJM5 at -25 to 85 degC.
+`tests.test_assembly_readiness` traces every entry back to the fome-mc object
+store. It checks that the grant commit's author and committer are the owner,
+that `git blame` attributes every line of the item to that commit, that each
+decision member hashes as registered at its recording commit and at the pod
+commit, and that the grant commit precedes each decision. Adding a grant or
+decision needs that same trace, plus an authorization recorded outside the
+deciding agent's own files.
+
+#### Validation
 
 The declaration is refused (unsupported) unless all of the following hold:
 
@@ -455,9 +496,17 @@ The declaration is refused (unsupported) unless all of the following hold:
 - `decision.id` has the form `D-<AREA>-<n>`, and `delegation.kind` is a
   recognized kind. The only recognized kind is `repository_agents_md`, whose
   source must be named `AGENTS.md`.
+- `delegation` names a pinned owner grant by `kind`, `repository` and `commit`.
+  The repository's decision `id` is registered under that grant, its scope is
+  an operating-temperature selection exception, and it covers exactly this
+  reference.
+- The two sources are the registered decision path and the grant path, under
+  the same directory prefix.
 - The decision and delegation are different files. Neither may be a KiCad
   design file, a library table, the mutable deviations file or a dedicated
   owner, thermal or exemption temperature file.
+
+#### Evaluation
 
 At evaluation, each failure below makes the reference unknown:
 
@@ -470,32 +519,42 @@ At evaluation, each failure below makes the reference unknown:
     `not autonomous`.
   - The cited line must be exactly that one member, and the quote must lie
     inside the decision text.
-  - The text must begin with the reference followed by exactly one rated
-    range, such as `U3 u-blox NEO-M9N (-40..85 C)`. The quote must contain that
-    statement, and `min_c`/`max_c` must equal it.
+  - The member must hash to the registered `record_sha256`.
+  - The text must begin with the registered subject followed by exactly one
+    rated range, such as `U3 u-blox NEO-M9N (-40..85 C)`. The quote must
+    contain that statement, and `min_c`/`max_c` must equal both it and the
+    registered range.
 - **Delegation.** The source must be the pinned, captured bytes. The cited line
-  must be a top-level `- ` list item containing the quote. That item, with its
-  indented continuation lines, must grant decisions made `autonomously`.
+  must start a top-level `- ` list item, and that item with its indented
+  continuation lines must hash to the pinned owner item. The check does not
+  look for words such as "autonomously". A prohibition, an unrelated or
+  ambiguous statement, a new grant added to the same file, or the owner's item
+  with one word changed or one line dropped is not the grant.
+- **Part identity.** The DigiKey record's MPN must equal the registered MPN, and
+  its manufacturer must equal the registered manufacturer (case-insensitive).
+  The existing binding already ties the schematic part number and
+  manufacturer to that record, so a different part at the same reference and
+  range is never authorized by the decision.
 
 The captured DigiKey rating must then cover the decided range, or the result is
 an `operating_temperature_out_of_range` defect, and declared `thermal_evidence`
 is judged as for owner acceptance. Each delegated entry reports
-`authority: delegated_engineering`, `author: agent`, both citations, the
+`authority: delegated_engineering`, `author: agent`, both citations (the
+delegation with its repository and owner commit), `authorized_part`, the
 accepted range, the raw rating and thermal status. It is listed under
 `operating_temperature.delegated_acceptance`, a key that is present only when
 delegated records are declared, and also under `components`, never under
 `reduced_acceptance`. Owner entries keep their exact report shape. Both sources
 become immutable inputs.
 
-Provenance and limits: the check verifies hashes, locators, the decision's
-subject and range, and the delegation's grant. It cannot prove who wrote a file.
-The baseline that pins `AGENTS.md` and the decision record is what attributes
-them. A reviewer must confirm that the pinned `AGENTS.md` is the owner's
-committed repository file, never a file the deciding agent wrote. The pod
-inputs at fome-mc `7ab81564dd638ed68b664f3036a78187ce5760bd` are an example:
-`AGENTS.md` line 19 is from owner commit `3f959131`, and D-PCB-9 (U3) and
-D-PCB-12 (J3) are in `telemetry-pod/expansion/design-rules/constraints.json`.
-The tests read these from the fome-mc object store and check pinned hashes.
+#### Open pod obligations
+
+These records do not make the pod ready. The pod has no captured enclosure
+thermal validation, so U1, U2, U3, U4 and J3 all stay unknown with
+`pending thermal validation`. J3's -25 to 85 degC comes from the LCSC listing:
+no manufacturer or DigiKey rating has been captured for it, so J3 has no
+rating verdict until one is captured. The tests' DigiKey responses and thermal
+summaries are synthetic contract fixtures, not pod evidence.
 
 `package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
 against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`

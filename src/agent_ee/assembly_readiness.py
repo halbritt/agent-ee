@@ -7,6 +7,7 @@ of the captured schematic hierarchy, the same source the JLC BOM in
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import hashlib
 import json
 import math
 import os
@@ -995,6 +996,40 @@ DELEGATION_KINDS = {"repository_agents_md": "AGENTS.md"}
 DECISION_ID_RE = re.compile(r"D-[A-Z0-9]+-[1-9][0-9]*", re.ASCII)
 TEMPERATURE_FILES = frozenset({"operating-temperature-acceptances.txt", "operating-temperature-thermal.txt",
                                "operating-temperature-exemptions.txt"})
+TEMPERATURE_EXCEPTION_SCOPE = "operating_temperature_selection_exception"
+# Owner grants of delegated engineering authority (AGENTEE-310). A captured delegation is recognized only
+# when it names one of these by kind, repository and commit and its cited list item is byte-identical to the
+# item the owner committed there. Grants are pinned only by a reviewed agent-ee change that traced the item
+# to the owner's commit; text a deciding agent writes, copies or captures never extends this table.
+OWNER_GRANTS = {
+    ("repository_agents_md", "github.com/halbritt/fome-mc", "3f959131abca2dd9d40400496f3f6ebac9d363f5"): {
+        # AGENTS.md "Owner-reserved decisions are made autonomously, not parked." (owner direction 2026-10-20)
+        "path": "AGENTS.md", "author": "halbritt <halbritt@gmail.com>",
+        "item_sha256": "4087feebb9654f736f4eba5cc0401df9faa9cf7c819e2f4c83f039815033b569",
+        "scopes": (TEMPERATURE_EXCEPTION_SCOPE,)},
+}
+# Decisions recorded under a pinned owner grant, each with the exact part it authorizes. record_sha256 is the
+# SHA-256 of the decision's JSON member ("key": "text", unescaped UTF-8) at the recording commit. Registered
+# under agent-509 request A (2026-10-22), which names D-PCB-9 and D-PCB-12 as the pod use case.
+DELEGATED_DECISIONS = {
+    ("github.com/halbritt/fome-mc", "D-PCB-9"): {
+        "grant_commit": "3f959131abca2dd9d40400496f3f6ebac9d363f5",
+        "commit": "40bb1374cd251c338a60f8602e1ae8c208042199",
+        "path": "telemetry-pod/expansion/design-rules/constraints.json",
+        "record_sha256": "11a296670cb894ed882af826d0190f35a886ecdeb74cff12b8db172e1266dcde",
+        "scope": TEMPERATURE_EXCEPTION_SCOPE, "reference": "U3", "subject": "U3 u-blox NEO-M9N",
+        "min_c": Decimal("-40"), "max_c": Decimal("85"), "mpn": "NEO-M9N-00B", "manufacturer": "u-blox",
+        "normalization": "the decision names the NEO-M9N product; NEO-M9N-00B is its ordering code, the "
+                         "pod schematic part number"},
+    ("github.com/halbritt/fome-mc", "D-PCB-12"): {
+        "grant_commit": "3f959131abca2dd9d40400496f3f6ebac9d363f5",
+        "commit": "b6ba9a09e7b4f572a3d8e5ad109107fd30ccc5c5",
+        "path": "telemetry-pod/expansion/design-rules/constraints.json",
+        "record_sha256": "97c4530f63f0d0937314cb2086d990e05f54c494b046cd21ec7352d3d2262ebb",
+        "scope": TEMPERATURE_EXCEPTION_SCOPE, "reference": "J3", "subject": "J3 Hirose DM3AT-SF-PEJM5",
+        "min_c": Decimal("-25"), "max_c": Decimal("85"), "mpn": "DM3AT-SF-PEJM5",
+        "manufacturer": "Hirose Electric Co Ltd", "normalization": None},
+}
 
 
 def _design_source(source):
@@ -1023,7 +1058,7 @@ def _validate_delegated_acceptance(entry, ref, label, board_min):
         raise ValueError(f"{label} may only reduce the maximum; min_c is warmer than the board requirement")
     decision, delegation = entry["decision"], entry["delegation"]
     exact_keys(decision, "id source sha256 line quote")
-    exact_keys(delegation, "kind source sha256 line quote")
+    exact_keys(delegation, "kind repository commit source sha256 line quote")
     if not isinstance(decision["id"], str) or not DECISION_ID_RE.fullmatch(decision["id"]):
         raise ValueError(f"{label}.decision.id must be a recorded decision id such as D-PCB-9")
     if delegation["kind"] not in DELEGATION_KINDS:
@@ -1042,10 +1077,29 @@ def _validate_delegated_acceptance(entry, ref, label, board_min):
     if PurePosixPath(delegation["source"]).name != DELEGATION_KINDS[delegation["kind"]]:
         raise ValueError(f"{label}.delegation.source must be the repository's "
                          f"{DELEGATION_KINDS[delegation['kind']]}")
+    # Authority comes only from the pinned owner grant and its registered decision, never from the cited files.
+    grant = OWNER_GRANTS.get((delegation["kind"], delegation["repository"], delegation["commit"]))
+    if grant is None:
+        raise ValueError(f"{label}.delegation is not a pinned owner grant: {delegation['repository']!r} at "
+                         f"{delegation['commit']!r} is not a recorded owner commit")
+    registered = DELEGATED_DECISIONS.get((delegation["repository"], decision["id"]))
+    if registered is None or registered["grant_commit"] != delegation["commit"]:
+        raise ValueError(f"{label}.decision {decision['id']} is not a registered decision under that owner grant")
+    if registered["scope"] not in grant["scopes"] or registered["scope"] != TEMPERATURE_EXCEPTION_SCOPE:
+        raise ValueError(f"{label}: the owner grant does not cover an operating-temperature selection exception")
+    if registered["reference"] != ref:
+        raise ValueError(f"{label}: decision {decision['id']} authorizes {registered['reference']}, not {ref}")
+    # Both citations are files of the same repository checkout, at the paths the registration pinned.
+    root = delegation["source"][:len(delegation["source"]) - len(grant["path"])]
+    if root + grant["path"] != delegation["source"] or root not in {"", root.rstrip("/") + "/"} or \
+            decision["source"] != root + registered["path"]:
+        raise ValueError(f"{label}: decision and delegation must be {registered['path']!r} and {grant['path']!r} "
+                         "of one repository")
     if not _reference_token(ref).search(decision["quote"]):
         raise ValueError(f"{label}.decision.quote does not name {ref!r}")
     return {"authority": "delegated_engineering", "min_c": limits[0], "max_c": limits[1],
-            "decision": dict(decision), "delegation": dict(delegation)}
+            "decision": dict(decision), "delegation": dict(delegation), "registered": registered,
+            "grant": grant}
 
 
 def _temperature_sources(spec):
@@ -1147,7 +1201,6 @@ DECISION_NUMBER = r"[-+]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?"
 DECISION_WITHDRAWN_RE = re.compile(r"\b(?:retired|withdrawn|superseded|revoked|reversed)\b", re.I | re.ASCII)
 DECISION_OWNER_RE = re.compile(r"\bowner\b", re.I | re.ASCII)
 DECISION_AUTONOMOUS_RE = re.compile(r"\bDecided autonomously\b", re.ASCII)
-DELEGATION_GRANT_RE = re.compile(r"\bautonomously\b", re.I | re.ASCII)
 
 
 def _pinned_source(inputs_root, citation, label, captured_files):
@@ -1174,9 +1227,9 @@ def _cited_line(content, citation, label, rel):
     return lines, citation["line"] - 1
 
 
-def _verify_delegated_acceptance(inputs_root, ref, record, captured_files):
-    """Bind a delegated record to its recorded decision and repository delegation; return the decided range."""
-    decision, delegation = record["decision"], record["delegation"]
+def _verify_delegated_acceptance(inputs_root, ref, record, captured_files, evidence):
+    """Bind a delegated record to its registered decision, the pinned owner grant and the exact part."""
+    decision, delegation, registered = record["decision"], record["delegation"], record["registered"]
     rel, content = _pinned_source(inputs_root, decision, f"{ref} decision source", captured_files)
     try:
         doc = json.loads(content)
@@ -1201,15 +1254,20 @@ def _verify_delegated_acceptance(inputs_root, ref, record, captured_files):
                for ascii in (False, True)}
     if lines[index].strip().removesuffix(",") not in members or decision["quote"] not in text:
         raise ValueError(f"decision {decision['id']} is not the complete record on {rel!r} line {decision['line']}")
-    rated = re.compile(r"(?<![A-Za-z0-9_/-])" + re.escape(ref) + r"(?![A-Za-z0-9_/-])[^()\n]{0,80}\((" +
-                       DECISION_NUMBER + r")\s*\.\.\s*(" + DECISION_NUMBER + r")\s*(?:°\s*)?C\b", re.ASCII)
+    member = json.dumps(key, ensure_ascii=False) + ": " + json.dumps(text, ensure_ascii=False)
+    if hashlib.sha256(member.encode("utf-8")).hexdigest() != registered["record_sha256"]:
+        raise ValueError(f"decision {decision['id']} in {rel!r} is not the record registered from commit "
+                         f"{registered['commit']}")
+    rated = re.compile(re.escape(registered["subject"]) + r" \((" + DECISION_NUMBER + r")\s*\.\.\s*(" +
+                       DECISION_NUMBER + r")\s*(?:°\s*)?C\b", re.ASCII)
     matches = list(rated.finditer(text))
     if len(matches) != 1 or matches[0].start() != 0:
-        raise ValueError(f"decision {decision['id']} does not state {ref} as its subject with one rated range")
+        raise ValueError(f"decision {decision['id']} does not state {registered['subject']!r} as its subject "
+                         "with one rated range")
     if matches[0].group(0) not in decision["quote"]:
         raise ValueError(f"decision {decision['id']} quote does not cite {ref}'s rated range")
     low, high = (Decimal(matches[0].group(n)) for n in (1, 2))
-    if (low, high) != (record["min_c"], record["max_c"]):
+    if (low, high) != (record["min_c"], record["max_c"]) or (low, high) != (registered["min_c"], registered["max_c"]):
         raise ValueError(f"delegated range differs from decision {decision['id']} range {low} to {high} degC")
     rel, content = _pinned_source(inputs_root, delegation, f"{ref} delegation source", captured_files)
     lines, index = _cited_line(content, delegation, f"{ref} delegation", rel)
@@ -1220,8 +1278,15 @@ def _verify_delegated_acceptance(inputs_root, ref, record, captured_files):
         if not line.startswith(" ") or not line.strip():
             break
         unit.append(line)
-    if not DELEGATION_GRANT_RE.search(" ".join(unit)):
-        raise ValueError(f"{ref} delegation statement in {rel!r} grants no autonomous decisions")
+    # The grant is the owner's exact committed item, never a statement that merely mentions autonomy.
+    if hashlib.sha256("\n".join(unit).encode("utf-8")).hexdigest() != record["grant"]["item_sha256"]:
+        raise ValueError(f"{ref} delegation statement in {rel!r} is not the owner grant committed at "
+                         f"{delegation['repository']} {delegation['commit']}")
+    # The decision authorizes one exact part: the evaluated part must be it, by MPN and manufacturer.
+    if evidence["mpn"] != registered["mpn"] or evidence["manufacturer"].casefold() != \
+            registered["manufacturer"].casefold():
+        raise ValueError(f"decision {decision['id']} authorizes {registered['manufacturer']} {registered['mpn']}, "
+                         f"not {evidence['manufacturer']} {evidence['mpn']}")
     return low, high
 
 
@@ -1279,8 +1344,11 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
         delegated = spec["delegated_acceptance"].get(ref)
         if delegated is not None:
             # The agent authored the decision; the authority is the repository delegation, never the owner.
+            registered = delegated["registered"]
             entry.update({"authority": "delegated_engineering", "author": "agent",
                           "decision": delegated["decision"], "delegation": delegated["delegation"],
+                          "authorized_part": {"mpn": registered["mpn"], "manufacturer": registered["manufacturer"],
+                                              "normalization": registered["normalization"]},
                           "accepted_range": {k: str(delegated[k]) for k in ("min_c", "max_c")},
                           "rating": None, "thermal": {"status": "unknown", "reason": "pending thermal validation"}})
             report.setdefault("delegated_acceptance", []).append(entry)
@@ -1319,7 +1387,8 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
                     raise ValueError("owner citation range differs from declared reduced acceptance")
             if delegated is not None:
                 entry["rating"] = evidence["value"]
-                minimum, maximum = _verify_delegated_acceptance(inputs_root, ref, delegated, captured_files)
+                minimum, maximum = _verify_delegated_acceptance(inputs_root, ref, delegated, captured_files,
+                                                               evidence)
             entry["status"], entry["reason"] = ambient_verdict(evidence["value"], minimum, maximum)
             if acceptance is not None or delegated is not None:
                 thermal = spec["thermal_evidence"].get(ref)

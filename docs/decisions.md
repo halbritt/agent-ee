@@ -506,10 +506,22 @@ record binds the recorded decision and the repository delegation by hash and
 line locator. It must match the decision's subject and stated range, and it
 fails closed on owner, withdrawn or non-autonomous decisions and on
 unrecognized delegations. Like owner acceptance, it records a selection
-exception only: the actual rating and thermal evidence are still judged. The
-check cannot establish authorship, so attribution rests on the baseline that
-pins the owner's committed `AGENTS.md`. Direct-owner declarations are
-unchanged.
+exception only: the actual rating and thermal evidence are still judged.
+Direct-owner declarations are unchanged.
+
+Review of that first form (HOLD H1-H3) showed that captured files cannot carry
+authority. An agent could write its own grant and decisions and capture them,
+cite a different part under a genuine decision, or cite a prohibition that
+mentions "autonomously". Authority is now anchored in agent-ee itself.
+`OWNER_GRANTS` pins the owner's grant by repository, owner commit, path and
+the SHA-256 of the exact committed item. `DELEGATED_DECISIONS` registers each
+decision by recording commit and member hash, with its one reference, range
+and exact part (MPN and manufacturer). A captured grant or decision is accepted
+only when its bytes equal the pinned ones, and the evaluated part must be the
+registered part. Registering an entry is a reviewed agent-ee change that
+traces it to the owner's commit, and the tests repeat that trace against the
+fome-mc object store. See
+[the authority anchor](assembly-readiness.md#authority-anchor).
 
 
 ## Copper locality and captured policy binding (AGENTEE-328)
