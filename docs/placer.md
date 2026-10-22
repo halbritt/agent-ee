@@ -1169,7 +1169,13 @@ bind each affected item to the rule areas it actually contacts. Board and peer
 contacts include absolute item geometry and area geometry; moving a pad with the
 same UUID inside an already violated board area is a new finding. An owner's
 own contact uses unchanged footprint-local copper and area geometry, retaining
-its rigid baseline finding through translation and every quarter turn. A new
+its rigid baseline finding through translation and every quarter turn. A side
+flip mirrors the pad and its own area together, so a flipped footprint is
+compared at its front-side local geometry, with pad layers restricted to the
+board's enabled layers (KiCad drops absent inner layers from a flipped
+through-hole pad), and keeps the same baseline on either side and in either
+native flip direction (AGENTEE-426). A new peer or board contact, or an owned
+area reshaped under the same UUID, still blocks after the flip. A new
 peer contact cannot hide behind that owner baseline. Custom disallow rules
 also bind to saved native geometry, including rules that reference areas whose
 built-in pad flag is false and rules without an area. Footprint-only findings
@@ -1183,7 +1189,8 @@ land geometry and native Pad 1 of C1 finding in failed-candidate diagnostics
 (coordinator ruling 424a); the healthy publication control is unchanged.
 `tests.test_placer_pad_keepout` also covers moved baseline items, both peer
 movement directions, missing coverage and the owner's rigid baseline at
-0/90/180/270 degrees.
+0/90/180/270 degrees, unflipped and side-flipped from either side, through both
+`_drc_comparison` and the complete `_proposal_drc`.
 
 Stage-B copper alignment axes, from AGENTEE-366e, live in
 `block_arrangement._copper_axes`. A block whose members have copper outside

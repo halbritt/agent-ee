@@ -213,15 +213,29 @@ def _keepout_item_states(path, states):
                 # Use a separate native copy: normalization must not move the other contacts.
                 normalized = k.LoadBoard(str(path))
                 fp = next(f for f in normalized.GetFootprints() if f.m_Uuid.AsString() == owner)
+                if fp.IsFlipped():
+                    # A side flip mirrors the pad and its own area together; the rigid
+                    # witness is the front-side footprint-local geometry (AGENTEE-426).
+                    fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
                 fp.SetOrientationDegrees(0)
                 fp.SetPosition(k.VECTOR2I(0, 0))
                 area = next(z for z in fp.Zones() if z.m_Uuid.AsString() == area.m_Uuid.AsString())
+                # A pad flip keeps only the board's enabled layers; absent layers carry no copper.
+                enabled = normalized.GetEnabledLayers()
+                for pad in fp.Pads():
+                    layers = k.LSET()
+                    for layer in pad.GetLayerSet().Seq():
+                        if enabled.Contains(layer):
+                            layers.AddLayer(layer)
+                    pad.SetLayerSet(layers)
+                witness = (owner, json.dumps({'pads': _pad_inventory(normalized)[owner],
+                                              'graphics': _local_graphics(fp)}, sort_keys=True))
             record = rule_area(area, area_owner or 'board')
             if record['outline']['status'] != 'proven':
                 # A contact without complete geometry cannot inherit a baseline exemption.
                 contacts = None
                 break
-            contacts.append((states[uid][:2] if local else states[uid], record))
+            contacts.append((witness if local else states[uid], record))
         if contacts == []:
             # A native custom disallow may have no area at all. Its physical witness
             # is the absolute item plus the complete saved area environment.
@@ -232,6 +246,13 @@ def _keepout_item_states(path, states):
                 contacts = [(states[uid], sorted(environment, key=lambda a: a['uuid']))]
         result[uid] = None if contacts is None else tuple(sorted(map(_canonical, contacts)))
     return result
+
+
+def _local_graphics(fp):
+    """Graphic primitives of a footprint already normalized to the origin at 0 degrees."""
+    return sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
+                    'shape': primitive(item)} for item in fp.GraphicalItems()
+                   if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
 
 
 def _drc_item_states(path):
@@ -248,10 +269,7 @@ def _drc_item_states(path):
                 fp.GetOrientationDegrees(), int(fp.GetLayer()))
         fp.SetOrientationDegrees(0)
         fp.SetPosition(pcbnew.VECTOR2I(0, 0))
-        graphics = sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
-                            'shape': primitive(item)} for item in fp.GraphicalItems()
-                           if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
-        geometry = json.dumps({'pads': inventory[owner], 'graphics': graphics}, sort_keys=True)
+        geometry = json.dumps({'pads': inventory[owner], 'graphics': _local_graphics(fp)}, sort_keys=True)
         for item in [fp, *fp.Pads(), *fp.GraphicalItems(), *fp.GetFields()]:
             uuid = item.m_Uuid.AsString()
             if uuid in states and states[uuid][0] != owner:

@@ -44,6 +44,81 @@ class NativeKeepoutComparisonTest(unittest.TestCase):
                 self.assertEqual(published['blocking_findings'], [])
                 self.assertEqual(published['added_by_type'].get('items_not_allowed', 0), 0)
 
+    def flipped(self, source, rotation, direction):
+        import pcbnew as k
+        board = k.LoadBoard(str(source))
+        fp = next(iter(board.GetFootprints()))
+        fp.Flip(fp.GetPosition(), direction)
+        fp.SetPosition(k.VECTOR2I(11000000, 12000000))
+        fp.SetOrientationDegrees(rotation)
+        return board, fp
+
+    def test_owner_baseline_through_side_flip(self):
+        """AGENTEE-426: a legitimately flipped footprint keeps its own pad keep-out baseline."""
+        import pcbnew as k
+        directions = {'lr': k.FLIP_DIRECTION_LEFT_RIGHT, 'tb': k.FLIP_DIRECTION_TOP_BOTTOM}
+        cases = [(layers, through, back, rotation, flip)
+                 for layers, through in ((['F.Cu'], False), (['F.Cu', 'B.Cu'], False), (['F.Cu'], True),
+                                         ('*.Cu', True))
+                 for back in (False, True) for rotation in (0, 90, 180, 270) for flip in ('lr', 'tb')
+                 if (flip == 'lr' or (rotation in (0, 90) and not through))]
+        for layers, through, back, rotation, flip in cases:
+            if back and layers == ['F.Cu']:
+                layers = ['B.Cu']
+            name = f"flip-{'-'.join(layers) if layers != '*.Cu' else 'all'}-{through}-{back}-{rotation}-{flip}"
+            with self.subTest(layers=layers, through=through, back=back, rotation=rotation, flip=flip):
+                source, found = self.drc(['F.Cu'] if layers == '*.Cu' else layers, ('pads',), through=through,
+                                         back=back, owned=True, name=f'src-{name}')
+                self.assertTrue(found)
+                if layers == '*.Cu':
+                    # Every copper layer, including the 28 this 4-layer board does not enable.
+                    board = k.LoadBoard(str(source))
+                    next(iter(next(iter(board.GetFootprints())).Zones())).SetLayerSet(k.LSET.AllCuMask())
+                    k.SaveBoard(str(source), board)
+                board, fp = self.flipped(source, rotation, directions[flip])
+                self.assertNotEqual(fp.IsFlipped(), back)
+                args = self.reports(source, board, name)
+                self.assertTrue(any(v['type'] == 'items_not_allowed' for v in args[1]['violations']))
+                delta = _drc_comparison(*args)
+                self.assertEqual(delta['added_by_type'].get('items_not_allowed', 0), 0, delta)
+                self.assertEqual(delta['blocking_findings'], [])
+                # Exercise the complete publication comparison at the flipped side.
+                _, published = _proposal_drc(source, self.root / name / 'candidate.kicad_pcb')
+                self.assertEqual(published['blocking_findings'], [])
+                self.assertEqual(published['added_by_type'].get('items_not_allowed', 0), 0)
+
+    def test_flipped_owner_with_reshaped_area_or_new_peer_contact_is_new(self):
+        import pcbnew as k
+        for change in ('reshaped', 'board-area', 'peer-area'):
+            for rotation in (0, 90, 180, 270):
+                with self.subTest(change=change, rotation=rotation):
+                    name = f'flip-new-{change}-{rotation}'
+                    source, found = self.drc(['F.Cu', 'B.Cu'], ('pads',), owned=True, name=f'src-{name}')
+                    self.assertTrue(found)
+                    board, fp = self.flipped(source, rotation, k.FLIP_DIRECTION_LEFT_RIGHT)
+                    if change == 'reshaped':
+                        # Same area UUID, but the area no longer has the owner's saved shape.
+                        next(iter(fp.Zones())).Move(k.VECTOR2I(100000, 0))
+                    else:
+                        parent = board if change == 'board-area' else k.FOOTPRINT(board)
+                        if change == 'peer-area':
+                            parent.SetReference('U2')
+                            board.Add(parent)
+                        area = k.ZONE(parent)
+                        area.SetIsRuleArea(True)
+                        area.SetLayer(k.B_Cu)
+                        area.SetDoNotAllowPads(True)
+                        area.SetDoNotAllowFootprints(False)
+                        outline = area.Outline()
+                        outline.NewOutline()
+                        for x, y in ((10.5, 11.5), (11.5, 11.5), (11.5, 12.5), (10.5, 12.5)):
+                            outline.Append(int(x * fixture.MM), int(y * fixture.MM))
+                        parent.Add(area)
+                    args = self.reports(source, board, name)
+                    delta = _drc_comparison(*args)
+                    self.assertTrue(any(v['type'] == 'items_not_allowed' for v in delta['blocking_findings']),
+                                    delta)
+
     def test_moved_same_pad_in_board_area_is_new_but_unchanged_is_baseline(self):
         import pcbnew as k
         source, found = self.drc(['F.Cu'], ('pads',))
