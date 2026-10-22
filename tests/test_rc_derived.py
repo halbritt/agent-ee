@@ -166,26 +166,31 @@ class NativeDerivedFixtures(unittest.TestCase):
 
 
 class NativeRoutingInput(unittest.TestCase):
-    def test_placed_unrouted_is_a_runnable_krt_input(self):
+    def test_placed_unrouted_is_a_runnable_routing_input(self):
+        # The ticket's 'krt' backend is now the alias of canonical 'builtin' (AGENTEE-343): the
+        # default request and the legacy spelling both run the builtin engine and report it.
         require_toolchain(native=True)
         checkout = require_kicad_route()
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rc-derived-route-') as tmp:
-            root = Path(tmp)
-            (root / 'captured').mkdir()
-            candidate.capture(FIXTURES / 'placed-unrouted.scope.json', root / 'captured')
-            spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
-                schematic='rc_filter.kicad_sch', name='rc_filter', label='ee103', checkout=checkout, budget=60)
-            self.assertEqual(spec['argv'][spec['argv'].index('--backend') + 1], 'krt')
-            receipt_dir = root / 'receipt'
-            receipt = stage_receipts.run_step(receipt_dir, root / 'captured/inputs', spec,
-                                             {'implementation': 1, 'receipt_index': 1})
-            self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
-            summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
-            result = json.loads((receipt_dir / 'run/routing/attempt/result.json').read_text())
-            self.assertEqual(result['backend']['name'], 'krt')
-            self.assertIsInstance(summary['router_exit'], int)  # Recorded; exit 0 is not asserted.
-            self.assertIn('routing', result)
-            self.assertIn('validation', result)
+        for declared in (None, 'krt'):
+            with self.subTest(backend=declared), \
+                    tempfile.TemporaryDirectory(prefix='agent-ee-rc-derived-route-') as tmp:
+                root = Path(tmp)
+                (root / 'captured').mkdir()
+                candidate.capture(FIXTURES / 'placed-unrouted.scope.json', root / 'captured')
+                spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+                    schematic='rc_filter.kicad_sch', name='rc_filter', label='ee103', checkout=checkout,
+                    budget=60, **({'backend': declared} if declared else {}))
+                self.assertEqual(spec['argv'][spec['argv'].index('--backend') + 1], declared or 'builtin')
+                receipt_dir = root / 'receipt'
+                receipt = stage_receipts.run_step(receipt_dir, root / 'captured/inputs', spec,
+                                                 {'implementation': 1, 'receipt_index': 1})
+                self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
+                summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
+                result = json.loads((receipt_dir / 'run/routing/attempt/result.json').read_text())
+                self.assertEqual(result['backend']['name'], 'builtin')
+                self.assertIsInstance(summary['router_exit'], int)  # Recorded; exit 0 is not asserted.
+                self.assertIn('routing', result)
+                self.assertIn('validation', result)
 
 
 class PrerequisitePolicy(unittest.TestCase):

@@ -125,13 +125,17 @@ done
 
 The test regenerates every fixture byte and the generation receipt's sources
 and edits, checks the identity and geometry against the control, runs the six
-checks per variant with sealed evidence, and runs `kicad-route run --backend
-krt` on a read-only capture of placed-unrouted through `routing_adapter.step`.
+checks per variant with sealed evidence, and routes a read-only capture of
+placed-unrouted through `routing_adapter.step`. The ticket's historical `krt`
+backend name is now the alias of the canonical `builtin` backend (AGENTEE-343).
+The test runs both the default request and a request that declares `krt`, and
+both must report `builtin` in `result.json`.
 Router exit and `result.json` are required to exist; exit 0 is not asserted.
 Retained receipts: [generation](../fixtures/rc/derived/receipts/generation/),
 [checks-only](../fixtures/rc/derived/receipts/checks/) (each command exited 1, as
 checks-only requires) and [routing](../fixtures/rc/derived/receipts/routing/)
-(router exit 0, routing `COMPLETE`, validation `PASS` on the 5f1c072 pin; the
+(an earlier `krt` run, recorded before the alias rename: router exit 0, routing
+`COMPLETE`, validation `PASS` on the 5f1c072 pin; the
 routed board is not retained and routing grades no acceptance). Missing tools
 skip with `toolchain prerequisite: ...`, or fail under
 `AGENT_EE_REQUIRE_TOOLCHAIN=1`.
