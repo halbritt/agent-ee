@@ -527,13 +527,14 @@ must give `check_failed` with an `rc-step` defect (`vout_1ms=0.0951625` outside
 so any other verdict, a missing result or a different `rc-step` outcome exits 1.
 
 ```
-scripts/consumer_sample.py run seeded      # review into a new temp directory, verify, judge
+scripts/consumer_sample.py run seeded      # review into a NEW directory (an existing --out is refused), verify, judge
 scripts/consumer_sample.py run control
-scripts/consumer_sample.py judge seeded RUN_DIR [--verify]   # judge a retained run directory
+scripts/consumer_sample.py judge seeded RUN_DIR [--display-only]   # verify, then judge a retained run directory
 ```
 
 `run` needs the native toolchain: the container image, or a host with
-`kicad-cli` and `ngspice`. `judge` needs only the retained directory. The
+`kicad-cli` and `ngspice`. `judge` needs only the retained directory and always runs `agent-ee verify` first (a refusal
+exits 1); `--display-only` prints the projection without verifying and exits 2, never 0. The
 retained run directory stays local; it holds the captured stock libraries and no
 CC-BY-SA license document, so do not publish it. The local runner is tested in
 [test_action_gate.py](../tests/test_action_gate.py) with synthetic results; the

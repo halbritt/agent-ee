@@ -254,7 +254,20 @@ class ConsumerSampleLocalRunnerTests(unittest.TestCase):
 
     def judge(self, case, run):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return sample.judge(case, run)
+            return gate.main(sample.expectation(case, run))
+
+    def test_display_only_never_reports_acceptance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            defect = self.retained(tmp, "defect")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(sample.judge("seeded", defect, verify=False), 2)
+                self.assertEqual(sample.judge("control", defect, verify=False), 1)
+
+    def test_synthetic_unverifiable_result_is_refused_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            defect = self.retained(tmp, "defect")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(sample.judge("seeded", defect), 1)
 
     def test_no_hosted_sample_workflow_is_committed(self):
         root = SCRIPT.parents[1]
@@ -287,6 +300,61 @@ class ConsumerSampleLocalRunnerTests(unittest.TestCase):
             self.assertIn("owner-relayed", text, name)
             self.assertNotIn("consumer-sample.yml", text, name)
             self.assertIn("scripts/consumer_sample.py", text, name)
+
+
+class ConsumerSampleRetainedRunTests(unittest.TestCase):
+    """Real checks-only runs of the RC fixture: freshness and evidence verification."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.control = Path(cls.tmp.name) / "control"
+        cls.seeded = Path(cls.tmp.name) / "seeded"
+        cls.first = {}
+        for case, out in (("control", cls.control), ("seeded", cls.seeded)):
+            cls.first[case] = cls.quiet(sample.run, case, 900, out)
+
+    @staticmethod
+    def quiet(fn, *args, **kwargs):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return fn(*args, **kwargs)
+
+    def copy(self, source):
+        import shutil
+        target = Path(self.tmp.name) / f"copy-{len(list(Path(self.tmp.name).iterdir()))}"
+        shutil.copytree(source, target)
+        return target
+
+    def test_fresh_runs_give_the_expected_verdicts(self):
+        self.assertEqual(self.first, {"control": 0, "seeded": 0})
+
+    def test_retained_runs_are_judged_with_verification(self):
+        self.assertEqual(self.quiet(sample.judge, "control", self.control), 0)
+        self.assertEqual(self.quiet(sample.judge, "seeded", self.seeded), 0)
+        self.assertEqual(self.quiet(sample.judge, "seeded", self.control), 1)
+
+    def test_run_refuses_a_populated_valid_output(self):
+        self.assertEqual(self.quiet(sample.run, "control", 900, self.control), 2)
+        self.assertEqual(self.quiet(sample.run, "seeded", 900, self.seeded), 2)
+
+    def test_run_refuses_an_empty_existing_output(self):
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        self.assertEqual(self.quiet(sample.run, "control", 900, empty), 2)
+        self.assertEqual(list(empty.iterdir()), [])
+
+    def test_missing_captured_input_is_refused_by_default(self):
+        broken = self.copy(self.control)
+        (broken / "inputs" / "project" / "rc_filter.kicad_sch").unlink()
+        self.assertEqual(self.quiet(sample.judge, "control", broken), 1)
+        self.assertEqual(self.quiet(sample.judge, "control", broken, verify=False), 2)
+
+    def test_changed_captured_input_is_refused_by_default(self):
+        broken = self.copy(self.control)
+        schematic = broken / "inputs" / "project" / "rc_filter.kicad_sch"
+        schematic.write_text(schematic.read_text() + "\n")
+        self.assertEqual(self.quiet(sample.judge, "control", broken), 1)
 
 
 if __name__ == "__main__":
