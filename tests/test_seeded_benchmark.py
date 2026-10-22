@@ -77,6 +77,23 @@ class ReportTests(unittest.TestCase):
         self.assertNotEqual(canonical_check(record),canonical_check(other))
         self.assertNotEqual(canonical_check(record),canonical_check({**record,'location':'R2'}))
 
+    def test_embedded_run_directory_and_duration_are_volatile_but_other_text_is_not(self):
+        from agent_ee.benchmark_run import canonical_check
+        def failed(run, duration, exit_code=1, board='/candidate/b.kicad_pcb'):
+            reason = (f"native copper containment failed: {{'argv': ['python3', '{board}'], 'sandbox_argv': "
+                      f"['--ro-bind', '{run}/inputs', '/candidate'], 'exit_code': {exit_code}, 'duration_s': {duration}}}")
+            return {'id':'drc','limitations':['Copper containment unavailable: '+reason],
+                    'details':{'containment':{'reason':reason}}}
+        first = canonical_check(failed('/scratch/run1/runs/a',0.57),'/scratch/run1/runs/a')
+        self.assertEqual(first,canonical_check(failed('/scratch/run2/runs/a',0.64),'/scratch/run2/runs/a'))
+        self.assertIn("'duration_s': <volatile>",first['details']['containment']['reason'])
+        # Anything else in the embedded text stays significant.
+        for changed in (failed('/scratch/run2/runs/a',0.64,exit_code=2),
+                        failed('/scratch/run2/runs/a',0.64,board='/candidate/c.kicad_pcb'),
+                        failed('/scratch/other/runs/a',0.64)):
+            with self.subTest(changed=changed['details']['containment']['reason'][-80:]):
+                self.assertNotEqual(first,canonical_check(changed,'/scratch/run2/runs/a'))
+
 
 class WiringTests(unittest.TestCase):
     def schematic(self, wires):
@@ -650,6 +667,15 @@ class ControlJudgementTests(unittest.TestCase):
             partial = {**ledger,'judgements':ledger['judgements'][1:]}
             open_ = judged_false_alarms(fixed,judge_controls(manifest,tmp,partial))
             self.assertIsNone(open_[ledger['judgements'][0]['check_id']]['share'])
+            # A rerun may order native records differently; judgements follow the records.
+            path = Path(tmp)/'runs/owned-control/work/erc/erc.json'
+            erc_report = json.loads(path.read_text())
+            erc_report['sheets'][0]['violations'].reverse()
+            path.write_text(json.dumps(erc_report))
+            reordered = judge_controls(manifest,tmp,ledger)
+            self.assertEqual(reordered['per_kind'],judged['per_kind'])
+            self.assertNotEqual([r['raw_locator'] for r in reordered['records']],
+                                [r['raw_locator'] for r in judged['records']])
             # Changed evidence makes the judgement stale, never silently reused.
             schematic = Path(tmp)/'runs/owned-control/inputs/hw/owned.kicad_sch'
             schematic.write_text(self.schematic(flag=True))
@@ -664,7 +690,8 @@ class ControlJudgementTests(unittest.TestCase):
             rows = self.facts(tmp)
             manifest = {'boards':[{'id':'owned'}]}
             ledger = self.ledger(rows)
-            unknown = copy.deepcopy(ledger);unknown['judgements'][0]['raw_locator'] = '/sheets/0/violations/99'
+            unknown = copy.deepcopy(ledger);unknown['judgements'].append({**unknown['judgements'][0],
+                'raw_locator':'/sheets/0/violations/99','location_hash':'0'*64})
             with self.assertRaisesRegex(ValueError,'names no open control record'):
                 judge_controls(manifest,tmp,unknown)
             duplicate = copy.deepcopy(ledger);duplicate['judgements'].append(duplicate['judgements'][0])

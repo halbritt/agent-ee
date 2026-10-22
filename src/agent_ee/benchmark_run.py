@@ -461,9 +461,24 @@ def image_native_rerun(first, output, image, repeats=2):
     return read_json(output/'rerun'/'native-rerun.json')
 
 
-def canonical_check(check):
+# A failed sub-step's reason can embed its execution record as text: the run's
+# own directory and its duration are run identity and timing, nothing else.
+EMBEDDED_DURATION = re.compile(r"'duration_s': [0-9.eE+-]+")
+
+
+def canonical_text(value, run):
+    if isinstance(value,dict):
+        return {k:canonical_text(v,run) for k,v in value.items()}
+    if isinstance(value,list):
+        return [canonical_text(v,run) for v in value]
+    if isinstance(value,str):
+        return EMBEDDED_DURATION.sub("'duration_s': <volatile>",value.replace(str(run),'<run>'))
+    return value
+
+
+def canonical_check(check, run=None):
     """Drop only documented execution volatility; keep numerical/locator data."""
-    result = copy.deepcopy(check)
+    result = copy.deepcopy(check) if run is None else canonical_text(check,Path(run).absolute())
     for key in ('started_utc','finished_utc','duration_s','candidate_id','run_id'):
         result.pop(key,None)
     if isinstance(result.get('details',{}).get('tool'),dict):
@@ -512,7 +527,7 @@ def check_record(run, check):
             # actual violation geometry, item UUIDs, rule types and values.
             for key in ('date','kicad_version','source'):
                 raw.pop(key,None)
-    record = {'check':canonical_check(check),'native':canonical_native(raw)}
+    record = {'check':canonical_check(check,run),'native':canonical_native(raw)}
     if check['kind']=='drc':
         from .benchmark import parse, children, uid, values
         manifest = read_json(run/'candidate.json')
@@ -1282,9 +1297,9 @@ def open_control_facts(manifest, first):
 def apply_judgements(manifest_path, first, ledger):
     """A separate, judged layer over the fixed-rule adjudication.
 
-    Each ledger entry binds a verdict to one open record by its raw locator,
-    location hash and the SHA-256 of facts re-derived from the retained run. A
-    stale, unknown or duplicate entry is refused. The fixed-rule results are
+    Each ledger entry binds a verdict to one open record by its location hash
+    (item-less markers by their facts) and the SHA-256 of facts re-derived from
+    the retained run. A stale, unknown or duplicate entry is refused. The fixed-rule results are
     returned unchanged; records without an entry stay unadjudicated.
     """
     ledger = read_json(ledger) if not isinstance(ledger,dict) else ledger
@@ -1296,37 +1311,50 @@ def apply_judgements(manifest_path, first, ledger):
     return judge_controls(load_manifest(manifest_path),first,ledger)
 
 
+def judgement_key(row):
+    """Located records match by location hash, item-less markers by their facts: never by array position.
+
+    Native record order is incidental and differs between runs; the raw locator
+    is kept in the ledger only as a reference into the run it was judged from.
+    """
+    return (row['control'],row['check_id'],row['location_hash'] or 'item-less:'+row['facts_sha256'])
+
+
 def judge_controls(manifest, first, ledger):
     """apply_judgements after its manifest and image identity checks."""
-    entries = {}
+    entries, seen = {}, set()
     for entry in ledger['judgements']:
-        key = (entry['control'],entry['check_id'],entry['raw_locator'])
-        if key in entries:
-            raise ValueError('duplicate judgement: '+'/'.join(key))
+        reference = (entry['control'],entry['check_id'],entry['raw_locator'])
+        if reference in seen:
+            raise ValueError('duplicate judgement: '+'/'.join(reference))
+        seen.add(reference)
         if entry['verdict'] not in JUDGED_VERDICTS or entry['basis'] not in ledger['bases'] or not entry.get('reason'):
             raise ValueError('judgement needs a known verdict, a declared basis and a reason')
         if ledger['bases'][entry['basis']]['verdict']!=entry['verdict']:
             raise ValueError('judgement verdict contradicts its basis')
-        entries[key] = entry
+        # Identical native records share a key; each consumes one entry.
+        entries.setdefault(judgement_key(entry),[]).append(entry)
     per_kind, rows = {}, []
     for row in open_control_facts(manifest,first):
-        key = (row['control'],row['check_id'],row['raw_locator'])
-        entry = entries.pop(key,None)
+        key = judgement_key(row)
+        entry = entries[key].pop(0) if entries.get(key) else None
         tally = per_kind.setdefault(row['kind'],{'open_records':0,'genuine':0,'false_alarm':0,'unadjudicated':0,
                                                   'unjudged':0,'by_basis':{}})
         tally['open_records'] += 1
         if entry is None:
             tally['unjudged'] += 1;tally['unadjudicated'] += 1
             continue
-        for field in ('type','location_hash','facts_sha256'):
+        for field in ('type','facts_sha256'):
             if entry[field]!=row[field]:
-                raise ValueError(f'stale judgement ({field}): '+'/'.join(key))
+                raise ValueError(f'stale judgement ({field}): '+'/'.join(map(str,key)))
         tally[entry['verdict']] += 1
         tally['by_basis'][entry['basis']] = tally['by_basis'].get(entry['basis'],0)+1
         rows.append({**{k:row[k] for k in ('control','check_id','kind','raw_locator','type')},
                      'verdict':entry['verdict'],'basis':entry['basis']})
-    if entries:
-        raise ValueError('judgement names no open control record: '+'/'.join(next(iter(entries))))
+    left = [e for group in entries.values() for e in group]
+    if left:
+        raise ValueError('judgement names no open control record: '+'/'.join(
+            (left[0]['control'],left[0]['check_id'],left[0]['raw_locator'])))
     return {'adjudicator':ledger['adjudicator'],'provenance':ledger['provenance'],'per_kind':per_kind,'records':rows}
 
 
