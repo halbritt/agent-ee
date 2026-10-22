@@ -190,8 +190,9 @@ an all-layer run is not a D-PCB-7 result.
 
 ## 2. Routing target identity
 
-A comparison must hold every field below equal, except the declared experiment
-axis. Every field is already in the adapter report, the retained reports or the
+A comparison must hold every target-identity field below equal, except the
+declared experiment axis and the measured `result.runtime_s`, which is an
+observed outcome and never an input to hold equal. Every field is already in the adapter report, the retained reports or the
 stage receipt:
 
 | Identity | Where agent-ee captures it |
@@ -199,14 +200,14 @@ stage receipt:
 | Board, project, custom rules, schematic, library tables | `report.inputs.files` (sha256 of every input file) and `report.inputs.sha256` (canonical tree identity) |
 | Router input fingerprint | `result.input.fingerprint`, recomputed by `verify` from `snapshot.json` |
 | Rule files the router loaded | `result.input.rules_files` / `attempt.rules_files` (names: `project`, `custom_rules`, `not_loaded`); their digests are in the snapshot |
-| Effective per-net class values | retained `facts/reference-facts.json` `nets[].{netclass, track_width, clearance, via_diameter, via_drill}`, bound to the input board hash |
+| Effective per-net class values | retained `facts/reference-facts.json` `nets[net_name].{netclass, track_width, clearance, via_diameter, via_drill}`, bound to the input board hash |
 | Layer stack | retained reference facts `copper_layers`, `stackup` |
 | Layer policy | `report.request.layer_policy`; `result.settings.backend_args`, `pour_area_loss_pct`; derived record `layer_policy_records[N]` |
 | kicad-route code | `report.tool.commit` equal to `PIN`; `identity_before/after.code` for `bin/` and `src/`; `PINNED_CODE` inside the adapter bytes |
 | Engine and installed state | `identity_before/after.state` (`.venv-krt`), the state-manifest digest, `result.backend` (`version`, `build`, `commit`, `source_sha256`) |
 | Toolchain | `report.tool.{kicad_route, python, kicad_cli}.sha256`, KiCad template library tables |
 | Adapter and execution | receipt mount identities, `state.json.routing_binding.adapter_sha256`, exact sandbox argv and environment |
-| Budget | `request.budget_s`, `timeout_s`; `result.runtime_s` |
+| Budget | `request.budget_s`, `timeout_s` (the measured `result.runtime_s` is an outcome, not identity) |
 
 Gaps. None of these is captured today:
 
