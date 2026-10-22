@@ -1052,10 +1052,11 @@ class StagedOriginalTest(unittest.TestCase):
         (case.work / 'routing/agent-ee-original/project/rc.kicad_sch').write_text('edited after the attempt\n')
         with self.assertRaisesRegex(ValueError, 'staged original bytes differ from the adapter report'):
             case.verify()
-        # The bytes are not retained in a receipt: there the manifest binds the declared input.
+        # The staged tree is required replay evidence (review H1): its absence refuses.
         case = self.case('complete').run()
         shutil.rmtree(case.work / 'routing/agent-ee-original')
-        self.assertEqual(case.verify()['proposal'], 'eligible')
+        with self.assertRaisesRegex(ValueError, 'retained tree missing, sealed observed'):
+            case.verify()
 
     def test_a_staged_copy_that_differs_from_the_input_is_not_run(self):
         real = attempt.stage_original
@@ -1088,6 +1089,42 @@ class StagedOriginalTest(unittest.TestCase):
         self.assertIn('the staged original changed during the attempt', sem['reasons'])
         self.assertEqual(attempt.files_of(attempt.tree(case.candidate)), case.inputs)
         self.assertEqual(case.verify()['classification'], 'contradiction')
+
+    def test_a_staged_tree_gone_or_unreadable_after_the_run_is_sealed_as_such(self):
+        # Review H3: the post-run observation is explicit, never a pass, and the retained
+        # tree must still be what was observed.
+        for scenario, status in (('remove_input_root', 'missing'), ('link_input_root', 'unreadable')):
+            with self.subTest(scenario):
+                case = self.case(scenario).run()
+                sem = case.report['semantics']
+                self.assertEqual((sem['classification'], sem['proposal']), ('contradiction', 'none'))
+                self.assertIn('the staged original changed during the attempt', sem['reasons'])
+                self.assertEqual(case.report['inputs']['staged_after'],
+                                 {'status': status, 'files': None, 'sha256': None})
+                self.assertEqual(case.verify()['classification'], 'contradiction')
+                # Replacing the gone or unreadable tree afterwards is not what was observed.
+                root = case.work / 'routing' / attempt.ORIGINAL_STAGE
+                if root.is_symlink():
+                    root.unlink()
+                shutil.copytree(case.candidate, root)
+                with self.assertRaisesRegex(ValueError, f'retained tree observed, sealed {status}'):
+                    case.verify()
+
+    def test_a_resealed_post_run_observation_must_agree_with_the_classification(self):
+        for label, scenario, change in (
+                ('clean run claims a changed tree', 'complete',
+                 lambda r: r['inputs']['staged_after'].update(sha256='0' * 64)),
+                ('clean run claims a missing tree', 'complete',
+                 lambda r: r['inputs'].update(staged_after={'status': 'missing', 'files': None, 'sha256': None})),
+                ('no post-run observation', 'complete', lambda r: r['inputs'].update(staged_after=None)),
+                ('write contradiction claims an unchanged tree', 'touch_input',
+                 lambda r: r['inputs'].update(staged_after={'status': 'observed', 'files': r['inputs']['files'],
+                                                            'sha256': r['inputs']['sha256']}))):
+            with self.subTest(label):
+                case = self.case(scenario).run()
+                self.resealed(case, change)
+                with self.assertRaisesRegex(ValueError, 'post-run staged original'):
+                    case.verify()
 
     def test_preconditions_that_fail_stage_nothing(self):
         case = self.case('complete')

@@ -69,7 +69,7 @@ layer_policy=None)` returns:
 | `mounts` | adapter file at `/opt/agent-ee-routing/kicad_route_attempt.py`; checkout at `/opt/kicad-route`; a separate state directory, when there is one, at `/opt/kicad-route-state` |
 | `source` | `/opt/kicad-route/src` |
 | `writes` | `{"P/B": "routing/candidate/P/B"}`: the board is the only file the step can change |
-| `artifacts` | `routing/adapter-report.json`, the router's stdout/stderr, and `routing/attempt/{result.json, attempt.json, RESULT.md, snapshot.json, validate, facts, work}` |
+| `artifacts` | `routing/adapter-report.json`, the router's stdout/stderr, and `routing/attempt/{result.json, attempt.json, RESULT.md, snapshot.json, validate, facts, work}`, and the staged input tree `routing/agent-ee-original` |
 | `backend_report` | `routing/attempt/result.json`, key `backend` |
 | `adoptable_exits` | `[0, 2]` |
 | `timeout_s` | the attempt timeout plus 300 s for hashing and retention |
@@ -134,11 +134,44 @@ run candidate with a missing predecessor. So `/candidate/P` is never an original
 reads it as an original at depth 0. `report.inputs.staged` records the staged
 `path` and `root`, the per-file sha256 manifest (`files`) and the tree identity
 (`sha256`) of the copy. A copy that differs from the captured input is
-`not_run` and the router does not start. A staged tree that differs after the
-attempt is a contradiction. `verify` requires the record at the adapter's
-staging path, with a manifest and identity equal to the declared input (the
-receipt's `inputs`). It re-hashes the staged bytes where the run keeps them.
-Any mismatch refuses. Its
+`not_run` and the router does not start.
+
+After the router exits, the adapter observes the staged tree again. It seals that
+observation as `report.inputs.staged_after`. The status is `observed`, with the
+files and tree identity, or `missing`, or `unreadable`. Anything other than the
+unchanged copy makes the attempt a contradiction ("the staged original changed
+during the attempt"). Such an attempt is never adoptable.
+
+The staged tree is required replay evidence. It is a step artifact, so the stage
+receipt seals the digest of every staged file, and `adopt` refuses once
+`validate_receipt` sees a staged file deleted, added or changed. `verify`
+requires the following:
+- the staged record is at the adapter's staging path;
+- its manifest and identity equal the declared input (the receipt's `inputs`);
+- the retained tree is exactly the sealed post-run observation, for every
+  classification, contradictions included;
+- the receipt's staged-file digests are the report's.
+
+So a deleted tree, a deleted file, or a stale or edited tree refuses. A later
+edit to an honest write contradiction refuses too (review H1, H3).
+
+The input's owning context is judged before anything is copied (review H2).
+`stage_receipts.run_step` asks `routing_adapter.input_refusal` about the host
+`design/<project>`, using kicad-route's own rule (`cli.previous_step`,
+`experiment._origin`):
+- **Genuine predecessor.** The input is the candidate named by the
+  `attempt.json` `candidate_dir` two levels up.
+- **Missing predecessor.** The input's parent is named `candidate`, or a run
+  record lies beside it, without that owner.
+
+The adapter retains no predecessor receipts, and staging would restage the input
+at depth 0. So both cases are refused before any receipt directory exists. A
+genuine owner, or a run record beside the input, refuses every routing step. A
+parent that is only named `candidate`, with no run record, is kicad-route's
+missing predecessor only for its experiment origin. It therefore refuses only a
+step that declares `experiment_policy`, which is the one request whose evidence
+records origin. With a declared policy, only an input that kicad-route itself
+would read as an original is staged. Its
 environment is rebuilt from constants: `PATH`, `HOME`/`TMPDIR`/XDG under
 `/work/routing`, `LANG`, `PYTHONDONTWRITEBYTECODE`, `PYTHONPYCACHEPREFIX`,
 `PYTHONNOUSERSITE`, `KICAD_ROUTE_STATE` set to the read-only mount, and
@@ -663,9 +696,12 @@ For every outcome, `verify` refuses a report when:
 
 - a field is missing, unknown or malformed, or a retained hash differs;
 - the inputs differ from the captured pre-step candidate;
-- an attempt that ran has no `inputs.staged`, or the staged record is not at
-  the adapter's staging path, or its manifest or identity is not the inputs', or
-  the staged bytes the run kept differ from it (AGENTEE-442);
+- an attempt that ran has no `inputs.staged` or `inputs.staged_after`, or the
+  staged record is not at the adapter's staging path, or its manifest or
+  identity is not the inputs', or the post-run observation disagrees with the
+  classification, or the retained staged tree (absent, partial, stale or edited)
+  is not the sealed post-run observation, or the receipt's staged-file digests
+  are not the report's (AGENTEE-442);
 - the classification, proposal, coverage and adapter exit do not match;
 - the reported router exit differs from the observed process exit;
 - the claimed pin, adapter compatibility or `kicad-route` path is not the pin's;

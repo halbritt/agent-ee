@@ -1764,6 +1764,20 @@ def staged_record(request, layout, staged):
             'files': files_of(staged), 'sha256': canonical_identity(staged)}
 
 
+def staged_observation(layout):
+    """report.inputs.staged_after: the staged tree observed after the router ran, sealed so
+    that verify binds the retained tree to it even for a contradiction (review H3). A tree
+    that is gone is 'missing', one that cannot be read 'unreadable'; neither is a pass."""
+    root = staged_root(layout)
+    if not os.path.lexists(root):
+        return {'status': 'missing', 'files': None, 'sha256': None}
+    try:
+        entries = tree(root)
+    except (OSError, ValueError):
+        return {'status': 'unreadable', 'files': None, 'sha256': None}
+    return {'status': 'observed', 'files': files_of(entries), 'sha256': canonical_identity(entries)}
+
+
 def default_layout(request):
     checkout = Path(SANDBOX['checkout'])
     state = checkout if request['state'] == 'checkout' else Path(SANDBOX['state'])
@@ -2831,7 +2845,8 @@ def attempt(request, layout, cancel=None):
     except (OSError, ValueError) as exc:
         inputs_tree, problems = {}, [f'candidate inputs unreadable: {exc}']
     inputs = files_of(inputs_tree)
-    report['inputs'] = {'files': inputs, 'sha256': canonical_identity(inputs_tree), 'staged': None}
+    report['inputs'] = {'files': inputs, 'sha256': canonical_identity(inputs_tree), 'staged': None,
+                        'staged_after': None}
     if links_of(inputs_tree):
         problems.append('candidate inputs contain links or special files')
     project = request['project']
@@ -2930,11 +2945,9 @@ def attempt(request, layout, cancel=None):
         violations.append('tool code or state changed during the attempt')
     if after_inputs != inputs_tree:
         violations.append('candidate inputs changed during the attempt')
-    try:
-        after_staged = tree(staged_root(layout))
-    except (OSError, ValueError):
-        after_staged = None
-    if after_staged != inputs_tree:
+    report['inputs']['staged_after'] = staged_observation(layout)
+    if report['inputs']['staged_after'] != {'status': 'observed', 'files': inputs,
+                                            'sha256': canonical_identity(inputs_tree)}:
         violations.append('the staged original changed during the attempt')
     if 'experiment_policy' in request and (
             not policy_kept or policy_file.read_bytes() != canonical_json(request['experiment_policy']).encode()):

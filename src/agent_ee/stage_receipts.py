@@ -1163,6 +1163,11 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         if timeout <= 0:
             raise ValueError('stage step deadline exhausted before launch')
     _strict_tree(design)
+    # A routing input's owning context is lost once design is copied (AGENTEE-442 review H2).
+    from .routing_adapter import input_refusal
+    refusal = input_refusal(spec, design)
+    if refusal is not None:
+        raise ValueError(refusal)
     receipt_dir = Path(receipt_dir)
     receipt_dir.mkdir(parents=True, exist_ok=False)
     started_unix, start = time.time(), time.monotonic()

@@ -22,9 +22,10 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 from agent_ee import kicad_route_attempt as attempt
@@ -81,24 +82,30 @@ class ExperimentBoundaryTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.count = 0
 
-    def receipt(self, scenario, experiment_policy=None, design_files=None):
-        self.count += 1
-        root = Path(self.tmp.name) / str(self.count)
+    def routing_step(self, root, scenario, experiment_policy=None, project='project', board='rc.kicad_pcb',
+                     schematic='rc.kicad_sch', name='rc'):
+        """The adapter's step declaration over the fixture router, driven with its pin."""
         checkout, code = make_checkout(root / 'checkout', scenario)
         self.pin = {'pin': FAKE_PIN, 'code': code}
-        design = make_candidate(root / 'design')
-        for name, text in (design_files or {}).items():
-            (design / 'project' / name).write_text(text)
         driver = root / 'driver'
         driver.mkdir()
         (driver / 'layout.json').write_text(json.dumps(self.pin))
         (driver / 'run.py').write_text(DRIVER)
         with patch.object(attempt, 'PIN', FAKE_PIN), patch.object(attempt, 'PINNED_CODE', code):
-            spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                        name='rc', label='step-1', checkout=checkout, budget=5, timeout=30,
+            spec = routing_adapter.step(project=project, board=board, schematic=schematic,
+                                        name=name, label='step-1', checkout=checkout, budget=5, timeout=30,
                                         experiment_policy=experiment_policy)
         spec['argv'][3] = '/opt/driver/run.py'
         spec['mounts'].append({'source': str(driver), 'at': '/opt/driver'})
+        return spec
+
+    def receipt(self, scenario, experiment_policy=None, design_files=None):
+        self.count += 1
+        root = Path(self.tmp.name) / str(self.count)
+        design = make_candidate(root / 'design')
+        for name, text in (design_files or {}).items():
+            (design / 'project' / name).write_text(text)
+        spec = self.routing_step(root, scenario, experiment_policy)
         receipt_dir = root / 'receipts/1-kicad-route-krt'
         receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1, 'receipt_index': 1})
         self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
@@ -196,6 +203,88 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 record = json.loads((receipt_dir / 'run/routing/adapter-report.json').read_text())[
                     'semantics']['experiment']
                 self.assertEqual((record['comparison_eligible'], record['ineligible_reasons']), (False, [missing]))
+
+    def test_an_absent_or_stale_staged_replay_tree_refuses_verify_and_adopt(self):
+        # Review H1 (Sol, ee442d2): the staged tree is required, retained replay evidence.
+        # Deleting it, or one file of it, or replacing it with other bytes, after the
+        # receipt is sealed, refuses through the actual verify and adopt paths.
+        def stale_file(kept, run):
+            (kept / 'project/rc.kicad_pcb').write_bytes((run / 'routing/candidate/project/rc.kicad_pcb').read_bytes())
+
+        def stale_tree(kept, run):
+            shutil.rmtree(kept)
+            stale = make_candidate(kept)
+            (stale / 'project/rc.kicad_pcb').write_text('stale board bytes\n')
+
+        for label, mutate in (('whole staged tree deleted', lambda kept, run: shutil.rmtree(kept)),
+                              ('one staged file deleted', lambda kept, run: (kept / 'project/rc.kicad_sch').unlink()),
+                              ('one staged file replaced by stale bytes', stale_file),
+                              ('staged tree replaced by a stale tree', stale_tree)):
+            with self.subTest(label):
+                receipt, receipt_dir, design, report = self.receipt({'name': 'complete'}, CURRENT)
+                self.assertEqual(self.verify(receipt_dir, receipt)['proposal'], 'eligible')
+                before = attempt.files_of(attempt.tree(design))
+                mutate(receipt_dir / 'run/routing' / attempt.ORIGINAL_STAGE, receipt_dir / 'run')
+                with self.assertRaises(ValueError):
+                    self.verify(receipt_dir, receipt)
+                with self.assertRaises(ValueError):
+                    stage_receipts.adopt(receipt_dir, receipt, design)
+                self.assertEqual(attempt.files_of(attempt.tree(design)), before)
+
+    def test_every_file_of_the_staged_tree_is_bound(self):
+        # Review H1 (Sol, ee442d2): every staged file is bound (sibling library, custom
+        # rules, project, schematic) through verify and adopt.
+        def assets(path, stock=make_candidate):
+            design = stock(path)
+            (design / 'library').mkdir()
+            (design / 'library/asset.bin').write_bytes(b'owned sibling asset\x00')
+            (design / 'project/rc.kicad_dru').write_text('(version 1)\n')
+            return design
+
+        with patch.object(sys.modules[__name__], 'make_candidate', assets):
+            receipt, receipt_dir, design, report = self.receipt({'name': 'complete'}, CURRENT)
+        kept = receipt_dir / 'run/routing' / attempt.ORIGINAL_STAGE
+        self.assertEqual(attempt.files_of(attempt.tree(kept)), receipt['inputs'])
+        for rel in ('library/asset.bin', 'project/rc.kicad_dru', 'project/rc.kicad_pro', 'project/rc.kicad_sch'):
+            with self.subTest(rel):
+                path = kept / rel
+                old = path.read_bytes()
+                path.write_bytes(old + b'edited')
+                try:
+                    with self.assertRaisesRegex(ValueError, 'staged original bytes differ'):
+                        self.verify(receipt_dir, receipt)
+                    with self.assertRaises(ValueError):
+                        stage_receipts.adopt(receipt_dir, receipt, design)
+                finally:
+                    path.write_bytes(old)
+        self.assertEqual(self.verify(receipt_dir, receipt)['proposal'], 'eligible')
+        stage_receipts.adopt(receipt_dir, receipt, design)
+        self.assertEqual(receipt['spec']['writes'], {'project/rc.kicad_pcb': 'routing/candidate/project/rc.kicad_pcb'})
+
+    def test_a_router_input_write_seals_its_observed_post_run_tree(self):
+        # Review H3 (Sol, ee442d2): a router that wrote its input is an honest,
+        # non-adoptable contradiction whose observed post-run tree is sealed in the
+        # report; a later edit of the retained staged bytes is evidence corruption.
+        receipt, receipt_dir, design, report = self.receipt({'name': 'touch_input'}, CURRENT)
+        sem = report['semantics']
+        self.assertEqual((sem['classification'], sem['proposal']), ('contradiction', 'none'))
+        self.assertIn('the staged original changed during the attempt', sem['reasons'])
+        staged, after = report['inputs']['staged'], report['inputs']['staged_after']
+        kept = receipt_dir / 'run/routing' / attempt.ORIGINAL_STAGE
+        entries = attempt.tree(kept)
+        # The observed post-run tree is sealed, and it is not the staged input.
+        self.assertEqual(after, {'status': 'observed', 'files': attempt.files_of(entries),
+                                 'sha256': attempt.canonical_identity(entries)})
+        self.assertNotEqual(after['sha256'], staged['sha256'])
+        self.assertEqual(self.verify(receipt_dir, receipt)['classification'], 'contradiction')
+        with self.assertRaises(ValueError):
+            stage_receipts.adopt(receipt_dir, receipt, design)
+        board = kept / 'project/rc.kicad_pcb'
+        board.write_bytes(board.read_bytes() + b'POST-RECEIPT EDIT')
+        with self.assertRaisesRegex(ValueError, 'staged original bytes differ'):
+            self.verify(receipt_dir, receipt)
+        with self.assertRaises(ValueError):
+            stage_receipts.adopt(receipt_dir, receipt, design)
 
     def test_historical_and_current_policy_evidence_keep_distinct_identities(self):
         records = {}
@@ -992,6 +1081,7 @@ class RealReceiptReplayTest(unittest.TestCase):
     """
     setUp, receipt, verify, assert_refused = (ExperimentBoundaryTest.setUp, ExperimentBoundaryTest.receipt,
                                               ExperimentBoundaryTest.verify, ExperimentBoundaryTest.assert_refused)
+    routing_step = ExperimentBoundaryTest.routing_step
     HYBRID = ('tampered', 'attempt.json sha256 differs from the sidecar artifacts digest')
     MANIFEST = json.loads((REAL / 'receipts.json').read_text())
     FINAL = 'final-current'
@@ -1686,6 +1776,61 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                 self.assert_refused(record, 'run_mismatch', f'the prepared {name} is a link, neither absent nor a '
                                     'regular file', attempt_dir, observed, result=result)
                 self.assertEqual(observed[name], 'link')
+
+    def test_a_predecessor_candidate_input_is_refused_before_staging(self):
+        # Review H2 (Sol, ee442d2): the real owning run's candidate, given as the design,
+        # is a predecessor input (kicad-route cli.previous_step: its attempt.json
+        # candidate_dir is this input). Staging would erase that ancestry and restage it
+        # at depth 0, so step/run_step refuse it before anything runs or is staged; so
+        # are a candidate whose owner is missing or names another candidate. The same
+        # tree at a neutral path is an original and runs.
+        boundary = ExperimentBoundaryTest('setUp')
+        boundary.setUp()
+        self.addCleanup(boundary.doCleanups)
+        record = json.loads((self.run_copy / 'attempt.json').read_text())
+        project = PurePosixPath(record['candidate_dir']).name
+        self.assertEqual(PurePosixPath(record['candidate_dir']).parent.name, 'candidate')
+        genuine = self.root / 'owning-run'
+        shutil.copytree(self.run_copy, genuine, symlinks=True)
+        self.assertEqual((genuine / record['candidate_dir']).resolve(), (genuine / 'candidate' / project).resolve())
+        orphan = self.root / 'orphan/candidate'
+        shutil.copytree(genuine / 'candidate', orphan, symlinks=True)
+        other = self.root / 'other-owner'
+        shutil.copytree(self.run_copy, other, symlinks=True)
+        (other / 'attempt.json').write_text(json.dumps({**record, 'candidate_dir': 'candidate/elsewhere'}))
+        neutral = self.root / 'neutral/input'
+        shutil.copytree(genuine / 'candidate', neutral, symlinks=True)
+        request = dict(project=project, board=record['board'], schematic=record['schematic'], name=project)
+        for label, design, detail in (
+                ('genuine owning run', genuine / 'candidate', 'is the candidate of the kicad-route run'),
+                ('missing owner', orphan, 'without a readable owning run'),
+                ('mismatched owner', other / 'candidate', 'without a readable owning run')):
+            with self.subTest(label):
+                root = self.root / f'consumer-{label.replace(" ", "-")}'
+                spec = boundary.routing_step(root, {'name': 'complete'}, self.policy, **request)
+                receipt_dir = root / 'receipts/1-kicad-route-builtin'
+                with self.assertRaisesRegex(ValueError, detail):
+                    stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1, 'receipt_index': 1})
+                self.assertFalse(os.path.lexists(receipt_dir))
+        # Without a declared experiment policy no origin evidence is consumed: a run's own
+        # candidate or one beside a run record still refuses, a directory that is only
+        # named candidate does not.
+        for label, design, policy in (('genuine owning run, no policy', genuine / 'candidate', None),
+                                      ('mismatched owner, no policy', other / 'candidate', None)):
+            with self.subTest(label):
+                root = self.root / f'consumer-{label.replace(" ", "-").replace(",", "")}'
+                spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
+                with self.assertRaisesRegex(ValueError, 'predecessor'):
+                    stage_receipts.run_step(root / 'receipts/1-kicad-route-builtin', design, spec,
+                                            {'implementation': 1, 'receipt_index': 1})
+        for label, design, policy in (('neutral original', neutral, self.policy),
+                                      ('directory named candidate, no policy', orphan, None)):
+            with self.subTest(label):
+                root = self.root / f'consumer-{label.replace(" ", "-").replace(",", "")}'
+                spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
+                receipt = stage_receipts.run_step(root / 'receipts/1-kicad-route-builtin', design, spec,
+                                                  {'implementation': 1, 'receipt_index': 1})
+                self.assertIsNotNone(receipt['execution'])
 
     def test_the_real_receipt_as_an_adapter_execution_is_refused_and_not_adopted(self):
         # The same receipt delivered by a router the adapter ran is not that execution: its

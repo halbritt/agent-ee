@@ -147,6 +147,15 @@ if name in ('mutate_state', 'write_state_attempt'):
     write(run / 'validate/state-write.json', {'outcome': outcome})
 if name == 'touch_input':
     (src / board).write_text('changed during the attempt\n')
+# AGENTEE-442 review H3: a router that removes its staged input root, or replaces it with
+# a link, after reading it (the adapter stages a top-level project at <root>/<project>).
+if name in ('remove_input_root', 'link_input_root'):
+    snapshot = run / 'moved-input'
+    shutil.copytree(src, snapshot)
+    shutil.rmtree(src.parent)
+    if name == 'link_input_root':
+        src.parent.symlink_to(run)
+    src = snapshot
 process_ok = name != 'backend_failure'
 cand = run / 'candidate' / src.name
 if process_ok:

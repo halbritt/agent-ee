@@ -45,7 +45,7 @@ class StaleRoutingEvidence(ValueError):
 ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routing/kicad-route.stderr',
              'routing/attempt/result.json', 'routing/attempt/attempt.json', 'routing/attempt/RESULT.md',
              'routing/attempt/snapshot.json', 'routing/attempt/validate', 'routing/attempt/facts',
-             'routing/attempt/work')
+             'routing/attempt/work', 'routing/' + attempt.ORIGINAL_STAGE)
 
 
 def preflight(checkout, state=None, backend='builtin'):
@@ -538,15 +538,20 @@ def _tool_claims(report, request, layout, *, ran):
 
 def _staged(routing, report, request, layout, *, ran):
     """The staged original the router read as --dir (AGENTEE-442): at the adapter's
-    staging path, its per-file manifest and tree identity the declared input's, and,
-    where its bytes are still present (the attempt's own /work), those bytes."""
+    staging path, its per-file manifest and tree identity the declared input's, and the
+    retained staged tree exactly the one the attempt observed after the router ran
+    (inputs.staged_after), for every classification. The staged tree is required
+    replay evidence: an absent, partial or stale tree refuses (review H1, H3)."""
     inputs = report['inputs']
-    if not isinstance(inputs, dict) or set(inputs) != {'files', 'sha256', 'staged'}:
+    if not isinstance(inputs, dict) or set(inputs) != {'files', 'sha256', 'staged', 'staged_after'}:
         raise ValueError('routing attempt inputs have unknown or missing fields')
-    staged = inputs['staged']
+    staged, after = inputs['staged'], inputs['staged_after']
+    path = routing / attempt.ORIGINAL_STAGE
     if staged is None:
         if ran:
             raise ValueError('routing attempt ran without a staged original')
+        if after is not None or os.path.lexists(path):
+            raise ValueError('an attempt that staged nothing has a staged original')
         return
     if (not isinstance(staged, dict) or set(staged) != {'path', 'root', 'files', 'sha256'} or
             staged['path'] != str(attempt.staged_dir(request, layout)) or
@@ -557,16 +562,67 @@ def _staged(routing, report, request, layout, *, ran):
     if (staged['files'] == inputs['files'] and staged['sha256'] == inputs['sha256']) != ran:
         raise ValueError('the staged original differs from the declared input' if ran else
                          'a not-run attempt records a staged original equal to its input')
-    path = routing / attempt.ORIGINAL_STAGE
-    if os.path.lexists(path):
-        entries = attempt.tree(path)
+    if not ran:
+        if after is not None:
+            raise ValueError('a not-run attempt records a post-run staged original')
+        expected = {'status': 'observed', 'files': staged['files'], 'sha256': staged['sha256']}
+    else:
+        if (not isinstance(after, dict) or set(after) != {'status', 'files', 'sha256'} or
+                after['status'] not in ('observed', 'missing', 'unreadable') or
+                (after['status'] == 'observed') != (after['files'] is not None and after['sha256'] is not None)):
+            raise ValueError('routing attempt has no sealed post-run staged original')
+        expected = after
         sem = report['semantics']
-        # Only a contradiction that names the change may sit over changed staged bytes.
-        if ((attempt.files_of(entries) != staged['files'] or
-             attempt.canonical_identity(entries) != staged['sha256']) and
-                (sem['classification'] != 'contradiction' or
-                 'the staged original changed during the attempt' not in sem['reasons'])):
-            raise ValueError('staged original bytes differ from the adapter report')
+        changed = after != {'status': 'observed', 'files': staged['files'], 'sha256': staged['sha256']}
+        # A router that wrote its input is an honest contradiction, never adoptable.
+        if changed != (sem['classification'] == 'contradiction' and
+                       'the staged original changed during the attempt' in sem['reasons']):
+            raise ValueError('the post-run staged original and the classification disagree')
+    observed = attempt.staged_observation({'work': routing.parent})
+    if observed != expected:
+        raise ValueError(f'staged original bytes differ from the adapter report (retained tree '
+                         f'{observed["status"]}, sealed {expected["status"]})')
+
+
+def predecessor_input(design, project, experiment=True):
+    """Why the host input design/project is not an original project, or None (review H2).
+
+    The sandbox mounts a copy of design and the adapter stages it at a neutral path, which
+    kicad-route reads as an original at depth 0. So the input's owning context is judged
+    here, on the host path, before anything is copied, by kicad-route's own rule
+    (bd1e633 cli.previous_step and experiment._origin): an input that is the candidate
+    of the run whose attempt.json lies two levels up is a genuine predecessor, and one
+    laid out as a run candidate, or beside a run record, without that owner is a missing
+    predecessor. The adapter retains no predecessor receipts, so both are refused.
+
+    A genuine owner or a run record beside the input refuses every step. A parent that
+    is only named 'candidate', with no run record, is kicad-route's missing predecessor
+    only for its experiment origin, so it refuses only a step that declares an
+    experiment policy (experiment): no other step consumes origin evidence."""
+    src = (Path(design) / project).resolve()
+    prev = src.parent.parent
+    try:
+        owner = json.loads((prev / 'attempt.json').read_text())
+    except (OSError, ValueError):
+        owner = None
+    if (isinstance(owner, dict) and isinstance(owner.get('candidate_dir'), str) and
+            (prev / owner['candidate_dir']).resolve() == src):
+        return (f'routing input {src} is the candidate of the kicad-route run {prev}: a predecessor '
+                'input, whose ancestry staging would erase; predecessor chains are unsupported')
+    if (any(os.path.lexists(prev / n) for n in ('attempt.json', 'result.json')) or
+            (experiment and src.parent.name == 'candidate')):
+        return (f'routing input {src} is laid out as a kicad-route run candidate without a readable '
+                'owning run that owns it: a missing predecessor, not an original project')
+    return None
+
+
+def input_refusal(spec, design):
+    """stage_receipts.run_step calls this before it copies design: the refusal of a
+    kicad-route adapter step's input, or None for any other step."""
+    if spec.get('stage') != 'routing' or not str(spec.get('step', '')).startswith('kicad-route-'):
+        return None
+    argv = spec['argv']
+    return predecessor_input(design, argv[argv.index('--project') + 1], '--experiment-policy' in argv)
 
 
 def _attempt_dir(found, request):
@@ -645,6 +701,14 @@ def _receipt_agrees(receipt, report, request, routing, backend):
         raise ValueError('stage receipt output differs from the routed candidate')
     if receipt['artifacts'].get('routing/adapter-report.json') != digest(routing / 'adapter-report.json'):
         raise ValueError('stage receipt does not anchor this routing adapter report')
+    # The receipt seals the retained staged tree's files; they must be the report's.
+    prefix = f'routing/{attempt.ORIGINAL_STAGE}'
+    sealed = {k[len(prefix) + 1:]: v for k, v in receipt['artifacts'].items()
+              if k.startswith(prefix + '/') and v is not None}
+    after = report['inputs']['staged_after'] or (
+        {'files': report['inputs']['staged']['files']} if report['inputs']['staged'] else None)
+    if after is not None and after.get('files') is not None and sealed != after['files']:
+        raise ValueError('stage receipt staged-original artifacts differ from the routing adapter report')
     # The receipt's own strict parser reports what it read; a reported backend must be the same one.
     if backend['status'] == 'reported' and receipt['tool']['backend'] != backend:
         raise ValueError('stage receipt backend differs from the retained result.json')
