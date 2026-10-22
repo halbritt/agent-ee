@@ -205,7 +205,11 @@ source authority.
 It checks name pattern, contiguous numbering from 001, listed order, duplicates,
 unlisted parts on disk, regular-file status, size and SHA-256, then streams the
 parts into a private temporary file and requires a readable ZIP whose only
-member is the declared one. It reports counts and sizes, and never reads the
+member is the declared one. It then streams that member into a byte counter
+(bounded by `max_member_bytes`) to verify its local header, offsets within the
+archive body and CRC-32 (`archive_member_corrupt`, `archive_member_bounds`,
+`archive_member_oversized`); a valid manifest hash alone does not establish
+archive integrity. It reports counts and sizes, and never reads the
 member as a catalog. Every refusal is a `BouniRefusal` with a typed `reason`
 (`missing_part`, `reordered_parts`, `duplicate_part`, `checksum_mismatch`,
 `size_mismatch`, `archive_truncated`, `unlisted_part`, `manifest_malformed`, ...).

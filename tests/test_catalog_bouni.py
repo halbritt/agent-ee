@@ -77,6 +77,33 @@ class SplitTests(unittest.TestCase):
         self.manifest['parts'][2].update(size_bytes=len(short), sha256=hashlib.sha256(short).hexdigest())
         self.refuses('archive_truncated')
 
+    def repin(self, data):
+        for stale in self.root.iterdir():
+            stale.unlink()
+        (self.root / 'parts.db.zip.001').write_bytes(data)
+        self.manifest['parts'] = [{'path': 'parts.db.zip.001', 'size_bytes': len(data),
+                                   'sha256': hashlib.sha256(data).hexdigest()}]
+
+    def test_unreadable_archives_with_consistent_manifest(self):
+        original = b''.join(self.chunks)
+        corrupt = bytearray(original)
+        corrupt[38] ^= 1
+        bad_header = bytearray(original)
+        bad_header[:4] = b'BAD!'
+        cases = [('bad_crc', bytes(corrupt), 'archive_member_corrupt'),
+                 ('bad_local_header', bytes(bad_header), 'archive_member_corrupt'),
+                 ('truncated_prefix', original[original.index(b'PK\x01\x02'):], 'archive_truncated')]
+        for label, data, reason in cases:
+            with self.subTest(label=label):
+                self.repin(data)
+                self.refuses(reason)
+
+    def test_oversized_member(self):
+        with self.assertRaises(BouniRefusal) as ctx:
+            inspect_split(self.manifest, self.root, max_member_bytes=10239)
+        self.assertEqual(ctx.exception.reason, 'archive_member_oversized')
+        self.assertEqual(inspect_split(self.manifest, self.root, max_member_bytes=10240)['member_size_bytes'], 10240)
+
     def test_unlisted_part_on_disk(self):
         (self.root / 'parts.db.zip.004').write_bytes(b'extra')
         self.refuses('unlisted_part')

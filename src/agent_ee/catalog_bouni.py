@@ -11,19 +11,25 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import struct
 import tempfile
 import zipfile
+import zlib
 
 SCHEMA = 'agent-ee.catalog-bouni-split/1'
 MAX_PARTS = 999
 MAX_JOINED_BYTES = 8 * 1024**3
+MAX_MEMBER_BYTES = 8 * 1024**3
+MAX_MEMBERS = 1
+LOCAL_HEADER = struct.Struct('<4s5H3I2H')
 HASH_RE = re.compile(r'[0-9a-f]{64}')
 NAME_RE = re.compile(r'([A-Za-z0-9][A-Za-z0-9._-]*\.zip)\.([0-9]{3})')
 KNOWN_FAMILIES = ('resistor', 'capacitor', 'inductor')
 REASONS = ('manifest_malformed', 'no_parts', 'too_many_parts', 'bad_part_name', 'duplicate_part',
            'missing_part', 'reordered_parts', 'unlisted_part', 'part_not_file', 'size_mismatch',
            'checksum_mismatch', 'archive_name_mismatch', 'joined_size_mismatch', 'archive_truncated',
-           'archive_malformed', 'archive_member_mismatch', 'boundary_not_supplied',
+           'archive_malformed', 'archive_member_mismatch', 'archive_member_corrupt',
+           'archive_member_bounds', 'archive_member_oversized', 'boundary_not_supplied',
            'boundary_invalid', 'response_malformed', 'pdf_url_invalid')
 
 
@@ -83,11 +89,50 @@ def validate_manifest(manifest):
     return parts
 
 
-def inspect_split(manifest, root):
+def _verify_members(archive, joined, entries, max_member_bytes):
+    """Validate local headers, bounds, overlap and payload CRC of each member without keeping bytes."""
+    spans = []
+    for info in entries:
+        if info.file_size > max_member_bytes:
+            raise BouniRefusal('archive_member_oversized', info.filename)
+        joined.seek(info.header_offset)
+        raw = joined.read(LOCAL_HEADER.size)
+        if len(raw) != LOCAL_HEADER.size:
+            raise BouniRefusal('archive_member_bounds', f'{info.filename}: local header past end of archive')
+        fields = LOCAL_HEADER.unpack(raw)
+        if fields[0] != zipfile.stringFileHeader:
+            raise BouniRefusal('archive_member_corrupt', f'{info.filename}: bad local header signature')
+        start = info.header_offset + LOCAL_HEADER.size + fields[9] + fields[10]
+        end = start + info.compress_size
+        if info.header_offset < 0 or end > archive.start_dir:
+            raise BouniRefusal('archive_member_bounds', f'{info.filename}: data outside the archive body')
+        spans.append((info.header_offset, end, info.filename))
+    spans.sort()
+    for (_, end, _), (begin, _, name) in zip(spans, spans[1:]):
+        if begin < end:
+            raise BouniRefusal('archive_member_bounds', f'{name}: overlaps the previous member')
+    for info in entries:
+        counted = 0
+        try:
+            with archive.open(info) as member:
+                while block := member.read(min(1024**2, max_member_bytes + 1 - counted)):
+                    counted += len(block)
+                    if counted > max_member_bytes:
+                        raise BouniRefusal('archive_member_oversized', info.filename)
+        except (zipfile.BadZipFile, EOFError, ValueError, RuntimeError, NotImplementedError,
+                zlib.error) as exc:
+            raise BouniRefusal('archive_member_corrupt', f'{info.filename}: {exc}') from exc
+        if counted != info.file_size:
+            raise BouniRefusal('archive_member_corrupt', f'{info.filename}: size differs from directory')
+
+
+def inspect_split(manifest, root, max_member_bytes=MAX_MEMBER_BYTES):
     """Verify every part under ``root`` and the joined ZIP's directory; return a report.
 
     Parts present on disk but absent from the manifest are refused. The joined
-    archive is streamed into a private temporary file and discarded.
+    archive is streamed into a private temporary file and discarded. Every
+    member's local header, bounds and CRC-32 are verified by streaming it into a
+    byte counter (at most ``max_member_bytes``); the bytes are never interpreted.
     """
     parts = validate_manifest(manifest)
     root = Path(root).resolve(strict=True)
@@ -122,10 +167,16 @@ def inspect_split(manifest, root):
         try:
             with zipfile.ZipFile(joined) as archive:
                 entries = archive.infolist()
+                if len(entries) > MAX_MEMBERS:
+                    raise BouniRefusal('archive_member_mismatch', 'too many members')
+                if [e.filename for e in entries] != [manifest['member']]:
+                    raise BouniRefusal('archive_member_mismatch',
+                                       'joined ZIP must hold exactly the declared member')
+                _verify_members(archive, joined, entries, max_member_bytes)
         except (zipfile.BadZipFile, EOFError, OSError, ValueError) as exc:
+            if isinstance(exc, BouniRefusal):
+                raise
             raise BouniRefusal('archive_truncated', str(exc)) from exc
-    if [e.filename for e in entries] != [manifest['member']]:
-        raise BouniRefusal('archive_member_mismatch', 'joined ZIP must hold exactly the declared member')
     return {'archive': manifest['archive'], 'member': manifest['member'], 'part_count': len(parts),
             'parts': [p['path'] for p in parts], 'joined_size_bytes': total,
             'member_size_bytes': entries[0].file_size}
