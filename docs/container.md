@@ -545,7 +545,7 @@ scope comes from a trusted revision.
 
 A hosted GitHub Actions run of the sample is not used. The owner answered the
 question of running it on GitHub CI (owner decision #13), relayed by agent-519
-(class: owner-relayed, agent-drafted, unconfirmed), verbatim:
+(class: owner-relayed, agent-drafted, unconfirmed; Plane AGENTEE-16 comment cf9e4e48-3e00-46da-9b4d-1d6f7eaac858, 2026-10-22T19:26:16Z), verbatim:
 
 > I don't think we can use github CI for this, so c.
 
@@ -572,9 +572,10 @@ scripts/consumer_sample.py judge seeded RUN_DIR [--display-only]   # verify, the
 `kicad-cli` and `ngspice`. `judge` needs only the retained directory and always runs `agent-ee verify` first (a refusal
 exits 1); `--display-only` prints the projection without verifying and exits 2, never 0. The
 retained run directory stays local; it holds the captured stock libraries and no
-CC-BY-SA license document, so do not publish it. The local runner is tested in
-[test_action_gate.py](../tests/test_action_gate.py) with synthetic results; the
-native verdicts come from the checks' own tests.
+CC-BY-SA license document, so do not publish it. The local runner's unit tests in
+[test_action_gate.py](../tests/test_action_gate.py) use synthetic results; the
+independent AGENTEE-16 review (2026-10-22) also ran it on real retained seeded and
+control run directories. The native verdicts come from the checks' own tests.
 
 The action has not run on a hosted runner, and this design does not plan one.
 

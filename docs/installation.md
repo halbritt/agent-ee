@@ -142,7 +142,7 @@ malformed or refused by `agent-ee verify`. The expected exit 1 of a checks-only
 review is not a failure. No model review runs.
 
 A hosted sample run is not used. The owner answer (decision #13), owner-relayed
-by agent-519 (class: owner-relayed, agent-drafted, unconfirmed), reads verbatim:
+by agent-519 (class: owner-relayed, agent-drafted, unconfirmed; Plane AGENTEE-16 comment cf9e4e48-3e00-46da-9b4d-1d6f7eaac858, 2026-10-22T19:26:16Z), reads verbatim:
 "I don't think we can use github CI for this, so c." No sample workflow is
 committed. `scripts/consumer_sample.py run seeded` runs the RC fixture with the
 seeded resistor defect locally and expects the `check_failed` verdict with the
