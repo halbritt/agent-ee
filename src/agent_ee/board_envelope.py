@@ -109,9 +109,19 @@ OBLIGATION_CONTRACTS = {
                 # The statement above stays verbatim to the hash-bound source. J1 board thickness
                 # is no longer an open item: it is screened by the AGENTEE-448 component-side fit
                 # (tht_thickness_fit) against the envelope nominal (AGENTEE-446). A nominal outside
-                # the band makes 'thickness-tolerance' a required open item again.
+                # the band, or a declaration the AGENTEE-448 validator refuses, makes
+                # 'thickness-tolerance' a required open item again. 'screened_statement' is the
+                # current statement only while the screen passes; the source statement is kept.
+                'screened_statement': 'Place selected TE 1-776163-1 35-position harness connector at the board '
+                                      'edge using its captured K1 drawing and exact footprint. J1 component '
+                                      'board-thickness fit is screened against the envelope nominal thickness '
+                                      '(AGENTEE-448); this is not a TE compliance claim or retention evidence. '
+                                      'Panel cutout, mating plug, retention and harness clearance remain '
+                                      'unqualified.',
+                # Declaration in the tht-thickness-fit/1 part form (identity comes from 'fixed');
+                # 1.57 serialises to the exact JSON number the AGENTEE-448 validator reads.
                 'thickness_fit': {
-                    'recommended_mm': '1.57', 'recommended_source': {
+                    'recommended_mm': 1.57, 'recommended_source': {
                         'class': 'manufacturer',
                         'citation': 'TE Connectivity customer drawing 776163 rev K1, sheet 2: "RECOMMENDED '
                                     'P.C. BOARD LAYOUT FOR 1.57 THICK P.C. BOARD" (fome-mc telemetry-pod/'
@@ -567,18 +577,30 @@ def contract_witnesses(oid, expected, envelope, vertices):
 def contract_thickness_fit(expected, stackup):
     """The contracted fixed part's component-side thickness screen (AGENTEE-448), or None.
 
-    Judged by tht_thickness_fit against the envelope nominal only; the fab
-    finished-thickness tolerance is not component fit.
+    The declaration goes through tht_thickness_fit.declarations, the same validator as
+    captured declarations; a refused one (missing or blank citation, missing or
+    unsupported source class) is unknown, never a pass. Judged against the envelope
+    nominal only; the fab finished-thickness tolerance is not component fit.
     """
     if 'thickness_fit' not in expected:
         return None
     from . import tht_thickness_fit
-    declared, identity = expected['thickness_fit'], expected['fixed']['identity']
-    part = {'reference': expected['fixed']['reference'], 'part_number': identity['mpn'],
-            'footprint_id': identity['footprint'],
-            'recommended_nm': length(Decimal(declared['recommended_mm']), 'contract recommended_mm', positive=True),
-            'recommended_source': declared['recommended_source']}
-    return tht_thickness_fit.judge(part, tht_thickness_fit.board_nominal_nm({'stackup': stackup}))
+    reference, identity = expected['fixed']['reference'], expected['fixed']['identity']
+    item = {'reference': reference, 'part_number': identity['mpn'], 'footprint_id': identity['footprint']}
+    try:
+        declared = expected['thickness_fit']
+        if not isinstance(declared, dict) or declared.keys() & item.keys():
+            raise ValueError('contract thickness_fit must be an object without identity fields')
+        parts = tht_thickness_fit.declarations(json.dumps(
+            {'schema': tht_thickness_fit.SCHEMA, 'parts': [{**declared, **item}]}).encode())
+    except ValueError as exc:
+        return {**item, 'status': 'unknown', 'reason': f'thickness fit declaration refused: {exc}'}
+    return tht_thickness_fit.judge(parts[0], tht_thickness_fit.board_nominal_nm({'stackup': stackup}))
+
+
+def current_statement(expected, fit):
+    """The obligation's current statement: the screened text only while its thickness screen passes."""
+    return expected['screened_statement'] if fit is not None and fit['status'] == 'pass' else expected['statement']
 
 
 def obligation_contract(envelope, obligations, vertices, stackup):
@@ -611,13 +633,14 @@ def obligation_contract(envelope, obligations, vertices, stackup):
     outside = sorted(item['id'] for item in staged if item['id'] not in contract)
     if outside:
         raise ValueError(f'staged obligations outside source contract {cid}: {outside}')
-    required, screened = {}, {}
+    required, screened, statements = {}, {}, {}
     for item in staged:
         oid, expected, coverage = item['id'], contract[item['id']], item['coverage']
         must_open = dict(expected['open'])
         fit = contract_thickness_fit(expected, stackup)
         if fit is not None:
             screened[oid] = fit
+            statements[oid] = {'source': expected['statement'], 'current': current_statement(expected, fit)}
             if fit['status'] != 'pass':
                 must_open['thickness-tolerance'] = PHYSICAL
         opened = {e['id']: e['stage'] for e in coverage['open']}
@@ -634,7 +657,8 @@ def obligation_contract(envelope, obligations, vertices, stackup):
             raise ValueError(f'obligation {oid} coverage omits source contract {cid} generation witnesses: '
                              + ', '.join(missing))
         required[oid] = [[locator, criterion] for locator, criterion in witnesses]
-    return {'id': cid, 'required': required, **({'thickness_fit': screened} if screened else {})}
+    return {'id': cid, 'required': required,
+            **({'thickness_fit': screened, 'statements': statements} if screened else {})}
 
 
 def validate_obligations(items, envelope):
@@ -1284,6 +1308,8 @@ def derive(raw, *, source_path, profile=None, captured=None):
     markdown += ''.join(f"Unresolved: {u['predicate']}: {u['reason']}\n" for u in record['unresolved'])
     markdown += ''.join(f"Open for final qualification ({u['stage']}): {u['predicate']}: {u['reason']}\n"
                         for u in record.get('qualification_open', []))
+    markdown += ''.join(f"Current statement (obligation {oid}): {text['current']}\n"
+                        for oid, text in record.get('obligation_contract', {}).get('statements', {}).items())
     return {'envelope.json': raw, 'envelope-validation.json': canonical(record) + b'\n',
             'envelope-requirements.json': canonical(requirements) + b'\n',
             'requirements.md': markdown.encode('utf-8'),
@@ -1576,7 +1602,8 @@ def staged_coverage(entry, declared, by_locator, specs, record, files, inputs=No
         witnesses.append({'locator': locator, 'criterion': criterion, 'checks': checks,
                           'status': 'bound' if checks else 'absent'})
     result = {**entry, 'witnesses': witnesses, 'open': declared['coverage']['open'],
-              **({'thickness_fit': contract['thickness_fit'][declared['id']]}
+              **({'thickness_fit': contract['thickness_fit'][declared['id']],
+                  'statement': contract['statements'][declared['id']]}
                  if contract and declared['id'] in contract.get('thickness_fit', {}) else {})}
     if missing:
         return {**result, 'status': 'unknown', 'reason': 'staged generation witnesses missing: ' + '; '.join(missing)}

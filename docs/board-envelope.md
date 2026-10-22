@@ -454,16 +454,31 @@ LAYOUT FOR 1.57 THICK P.C. BOARD"). Part number and footprint come from the
 contracted J1 identity. When `harness-edge` is staged, the record grades it with
 the [through-hole thickness fit](#through-hole-thickness-fit) `judge` against
 the envelope nominal thickness. The fab finished-thickness tolerance is not
-read. The result is kept as `obligation_contract.thickness_fit.harness-edge`
-and on the staged coverage entry. At the pod's 1.6 mm nominal it is `pass`,
+read. Before judging, the contract declaration passes the same
+`tht-thickness-fit/1` declaration validator as a captured
+`tht-thickness-fit.json`. If that validator refuses it, the screen is `unknown`
+with reason `thickness fit declaration refused: ...`, never `pass`. Causes
+include a missing or blank citation, a missing or unsupported source class, or
+an unknown field. The result is kept as
+`obligation_contract.thickness_fit.harness-edge` and on the staged coverage
+entry. At the pod's 1.6 mm nominal it is `pass`,
 `screened (default +/-10% component fit)`, band 1.413-1.727 mm. If the screen
-does not pass (a nominal outside the band is advisory `unknown`), coverage
-must list `thickness-tolerance` as a `physical_qualification` open item, or
-staging is refused. The contract statement still reads "board thickness
-tolerance ... remain unqualified", because it must equal the hash-bound source
-envelope verbatim. A source change needs a reviewed contract update. Panel
-cutout, mating plug, retention and harness clearance stay open. This screen is
-not a TE compliance claim and not physical retention evidence.
+does not pass (refused, or a nominal outside the band, which is advisory
+`unknown`), coverage must list `thickness-tolerance` as a
+`physical_qualification` open item, or staging is refused.
+
+The source statement still says "board thickness tolerance ... remain
+unqualified", because the contract must match the hash-bound source envelope
+verbatim. A source change needs a reviewed contract update. The record therefore
+keeps two statements under `obligation_contract.statements.harness-edge` and on
+the staged coverage entry (`statement`). `source` is that verbatim text, and
+`current` is the accurate current statement. While the screen passes, `current`
+is the contract's `screened_statement`: J1 component board-thickness fit is
+screened, and panel cutout, mating plug, retention and harness clearance remain
+unqualified. Otherwise `current` equals `source`. `requirements.md` prints it as
+`Current statement (obligation harness-edge): ...`. Derived requirement
+statements and baseline mappings keep the source text. This screen is not a TE
+compliance claim and not physical retention evidence.
 
 J1 identity is not deferred into physical fit. It uses the existing parts
 enforcement, not a second identity checker. A `part-identity/1` witness is bound

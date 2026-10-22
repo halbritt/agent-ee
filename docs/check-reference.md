@@ -1361,8 +1361,11 @@ and footprint, with the complete manifest passing `qualify_manifest`. The
 `corner-holes` witnesses are the source holes H1–H4 by identity. J1 board
 thickness is not an open item. The contract screens J1 through the
 `tht-thickness-fit/1` judge (TE 1.57 mm, K1 sheet 2) against the envelope
-nominal, and requires `thickness-tolerance` open only when that screen does not
-pass ([J1 thickness](board-envelope.md#source-contracts)). The final
+nominal, after the declaration passes the `tht-thickness-fit/1` declaration
+validator. A refused declaration is `unknown`, never `pass`. The contract
+requires `thickness-tolerance` open whenever the screen does not pass, and keeps
+the source statement next to a current statement
+([J1 thickness](board-envelope.md#source-contracts)). The final
 guard verifies the candidate identity and baseline before it reads the scope's
 envelope declaration.
 
