@@ -761,7 +761,8 @@ Each entry carries `setting`, exact `value`, `consumers` (`router` and/or
 `zone_filler`), source `class` and `citation`, `enforcement: advisory`, and
 `native_enforcement: retained`. Consumers identify potential use, including
 unassigned classes and conditional rules; they do not claim a rule matched the
-current board. Only value-matched owner, manufacturer or datasheet sources omit
+current board. Only value-matched owner, manufacturer or datasheet sources with
+a nonempty citation omit
 an entry. Source-verified producer fab derivations count as manufacturer sources.
 Engineering-class limits stay inventoried here; their existing hard DRC grading
 does not change.
@@ -776,11 +777,31 @@ constraints are retained as parsed native forms, with positional setting locator
 so repeated names cannot collapse entries. Captured owner rules retain their
 immutable-file source and composition precedence.
 
+AGENTEE-437 also inventories generated forms whose names collide with owner
+rules. The binding's `shadowed_generated_rules` records their original source
+class and citation at the generated form's position in the composed file. These
+forms remain advisory in the geometry inventory; owner forms remain sourced.
+Name-based DRC authority and native last-rule precedence stay unchanged.
+
+At grading time `finding_sources` re-derives the inventory from the saved project,
+bound sources and same-stem native rule bytes. A missing inventory, edited row,
+changed preset or stale generated constraint refuses evaluation. The DRC check
+reports unavailable coverage (unknown), including for an otherwise empty native
+report. Projects without a provenance binding retain their existing behavior;
+bound projects must carry a matching inventory. This verifies consistency with
+captured inputs, not the authenticity or applicability of a citation.
+
+Integration limitation (AGENTEE-437): a native KiCad save can materialize new
+geometry defaults without refreshing the binding. Exact verification then
+refuses evaluation. Existing IMU placement regressions expose this conflict
+with verdict preservation; resolving that producer boundary requires a
+coordinator decision before this grading change is integrated.
+
 This is an inventory of emitted project/rule settings, not of KiCad or router
 implementation constants, nor of explicit pad, zone or footprint geometry.
 It does not certify citations' engineering applicability; verified reference
-authority remains the separate owner item G4. No router code or acceptance
-verdict changes.
+authority remains the separate owner item G4. No router code changes; valid
+inventories preserve existing acceptance verdicts.
 
 Thermal-spoke counts are dimensionless numeric limits. A native
 `starved_thermal` finding with an unsourced minimum remains advisory. KiCad's

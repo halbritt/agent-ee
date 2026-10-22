@@ -935,6 +935,13 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
                 # An adopted owner rule keeps its authority when its name also
                 # occurs in the generated prefix; native owner clauses stay last.
+                # Preserve positional sources for geometry disclosure separately
+                # from the existing name-based DRC authority.
+                constraint_record['shadowed_generated_rules'] = [
+                    dict(index=index, name=str(node[1]),
+                         **constraint_record['generated_rules'][str(node[1])])
+                    for index, node in enumerate(rule_forms(net_artifacts['rules']))
+                    if node[0] == 'rule' and str(node[1]) in owner_names]
                 for name in owner_names:
                     constraint_record['generated_rules'].pop(name, None)
                 owner_copy = str(PurePosixPath(pcb).with_suffix('.owner.kicad_dru'))

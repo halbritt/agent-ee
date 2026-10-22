@@ -206,13 +206,26 @@ def geometry_defaults(project, record, rules_raw=None):
                 leaves(value, 'net_settings.classes.' + cls['name'] + '.' + name,
                        both if name == 'clearance' else ('router',))
     if rules_raw is not None:
-        for index, node in enumerate(rule_forms(rules_raw, native=True)):
+        forms = rule_forms(rules_raw, native=True)
+        shadowed = {}
+        shadow_sources = record.get('shadowed_generated_rules', [])
+        if not isinstance(shadow_sources, list):
+            raise ValueError('geometry inventory shadowed generated rules must be a list')
+        for source in shadow_sources:
+            if not isinstance(source, dict):
+                raise ValueError('geometry inventory shadowed generated source must be an object')
+            index = source.get('index')
+            if (type(index) is not int or index < 0 or index >= len(forms)
+                    or forms[index][:2] != ['rule', source.get('name')] or index in shadowed):
+                raise ValueError('geometry inventory has invalid shadowed generated rule position')
+            shadowed[index] = source
+        for index, node in enumerate(forms):
             if not isinstance(node, list) or len(node) < 2 or node[0] != 'rule':
                 continue
             name = str(node[1])
             # Captured owner forms retain the existing owner-file authority;
             # only generated forms can be unsourced in this composition path.
-            source = record.get('generated_rules', {}).get(name)
+            source = shadowed.get(index, record.get('generated_rules', {}).get(name))
             if source is None:
                 continue
             for ordinal, constraint in enumerate(node[2:]):
@@ -316,6 +329,7 @@ def finding_sources(board, findings=()):
     rules, rule_constraints, ignored_rules = {}, {}, []
     native_rules = []
     path = board.with_suffix('.kicad_dru')
+    raw = None
     if path.is_file():
         raw = path.read_bytes()
         template_rules(raw, allow_generated=True)
@@ -335,6 +349,10 @@ def finding_sources(board, findings=()):
         for name, source in record.get('generated_rules', {}).items():
             if name in rules:
                 rules[name] = source
+    if record:
+        expected = geometry_defaults(project, record, raw)
+        if record.get('unsourced_geometry') != expected:
+            raise ValueError('constraint provenance geometry inventory differs from saved project/rules')
     spoke_settings, conditional_spokes = _spoke_rule_settings(native_rules, rules)
     settings.extend(spoke_settings)
     from .net_binding import board_item_nets, board_net_names, literal_project_classes
