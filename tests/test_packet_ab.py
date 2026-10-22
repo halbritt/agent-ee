@@ -266,6 +266,114 @@ class CallLedgerTests(unittest.TestCase):
         # Most damage breaks the record; the survivors are string or timestamp content that charges the same.
         self.assertGreater(refused, len(variants) // 2)
 
+    def test_restart_matrix_over_reservation_and_settle_lines_never_exceeds_the_cap(self):
+        """Restart property matrix; matrix seeded from the independent Sol review of ee12d, completion-sweep.py.
+
+        Targets: the unsettled eleventh reservation as the tail, the settlement of the eleventh as the
+        tail (each with and without its newline), and an interior reservation and its interior
+        settlement, each followed by later records. At every byte position of each target: all eight bit
+        flips and every byte in REPLACEMENTS. For both tails: every truncation offset. For both base
+        ledgers: appended garbage, with and without a newline. Each distinct damaged ledger then gets three
+        metered fake-provider calls, each attempt in a fresh interpreter (one interpreter serves every
+        ledger for that attempt, so each ledger crosses three real restarts).
+
+        Each case is either refused three times, with its bytes intact, or it survives as validated
+        records that keep their charge: the remaining budget launches, then refusals follow. Historical
+        real reservations plus launches never exceed the cap. Cutting the open reservation tail to zero
+        bytes is the one case with ten historical calls: no byte of the eleventh reservation reached
+        disk, so its provider never launched.
+        """
+        root = Path(self.tmp.name)
+        self.ledger_with_reservations(11, 10)
+        open_lines = self.path.read_bytes().split(b'\n')
+        self.path.unlink()
+        self.ledger_with_reservations(11, 11)
+        settled = self.path.read_bytes()
+        settled_lines = settled.split(b'\n')
+        interior = next(i for i, line in enumerate(settled_lines) if b'"cell": "cell-5"' in line)
+        tails = {'reserve': open_lines, 'settle': settled_lines}
+        targets = {f'{event}-tail': (b'\n'.join(lines[:-2]) + b'\n', lines[-2], None) for event, lines in tails.items()}
+        for event, index in (('reserve', interior), ('settle', interior + 1)):
+            targets[f'{event}-interior'] = (b'\n'.join(settled_lines[:index]) + b'\n', settled_lines[index],
+                                            b'\n'.join(settled_lines[index + 1:]))
+        variants = {}
+
+        def add(category, damaged, historical=11):
+            variants.setdefault(damaged, (category, historical))
+
+        for name, (head, line, rest) in targets.items():
+            self.assertEqual(json.loads(line)['event'], name.split('-')[0])
+            forms = ((True, False) if rest is None else (True,))
+            for terminated in forms:
+                target = line + (b'\n' if terminated else b'')
+                after = rest if rest is not None else b''
+                for position, byte in enumerate(target):
+                    for value in sorted(({byte ^ (1 << bit) for bit in range(8)} | set(REPLACEMENTS)) - {byte}):
+                        add(f'{name}-byte-{terminated}', head + target[:position] + bytes([value]) + target[position + 1:]
+                            + after)
+            if rest is None:
+                # Every prefix of the line and its newline, from nothing written to the intact tail.
+                for cut in range(len(line) + 2):
+                    add(f'{name}-truncation', head + (line + b'\n')[:cut],
+                        10 if name == 'reserve-tail' and cut == 0 else 11)
+        for lines, name in ((open_lines, 'open'), (settled_lines, 'settled')):
+            # Garbage includes a duplicate of the ledger's own last record: a reused seq or a double settle.
+            base = b'\n'.join(lines)
+            for garbage in (b'garbage', b'\xff', b'\n', b' ', b'{"event":"reserve"}', b'{}', b'\x00',
+                            b'{"event": "reserve"', lines[-2], b'\r'):
+                for newline in (b'', b'\n'):
+                    add(f'appended-garbage-{name}', base + garbage + newline)
+        paths = {}
+        for number, damaged in enumerate(variants):
+            path = root / 'matrix' / f'v{number}' / 'calls.jsonl'
+            path.parent.mkdir(parents=True)
+            path.write_bytes(damaged)
+            paths[str(path)] = damaged
+        outcomes = {name: [] for name in paths}
+        for attempt in range(3):
+            result = subprocess.run([sys.executable, '-c', SWEEP_CALL, str(attempt)], input='\n'.join(paths),
+                                    env=child_env(), capture_output=True, text=True, timeout=1800, check=True)
+            for row in result.stdout.splitlines():
+                name, outcome, launched = row.split()
+                outcomes[name].append((outcome, int(launched)))
+        tally = {}
+        for name, damaged in paths.items():
+            category, historical = variants[damaged]
+            seen = outcomes[name]
+            where = f'{category}: {damaged[-120:]!r}'
+            self.assertEqual(len(seen), 3, where)
+            self.assertLessEqual(historical + sum(n for _, n in seen), packet_ab.CAP, where)
+            path = Path(name)
+            if seen == [('refused', 0)] * 3:
+                tally.setdefault(category, [0, 0])[0] += 1
+                self.assertEqual(path.read_bytes(), damaged, where)
+                with self.assertRaises(packet_ab.LedgerRefused, msg=where):
+                    packet_ab.CallLedger(path).state()
+                self.assertEqual(path.read_bytes(), damaged, where)
+                continue
+            tally.setdefault(category, [0, 0])[1] += 1
+            spare = packet_ab.CAP - historical
+            self.assertEqual(seen, [('ok', 1)] * spare + [('not_run', 0)] * (3 - spare), where)
+            text = path.read_bytes()
+            self.assertTrue(text.startswith(damaged), where)
+            state = packet_ab.CallLedger(path).state()
+            self.assertEqual((state['real_calls'], state['refused']), (packet_ab.CAP, 3 - spare), where)
+            self.assertEqual(path.read_bytes(), text, where)
+        expected = [f'{name}-byte-{t}' for name in targets for t in ((True, False) if name.endswith('tail') else (True,))]
+        expected += [f'{name}-truncation' for name in targets if name.endswith('tail')]
+        for category in expected:
+            refused, survived = tally[category]
+            self.assertGreater(refused, 0, category)
+            self.assertGreater(survived, 0, category)
+        self.assertEqual(tally['appended-garbage-open'][1] + tally['appended-garbage-settled'][1], 0)
+        self.assertEqual(sorted(tally), sorted(expected + ['appended-garbage-open', 'appended-garbage-settled']))
+        for name, (head, line, rest) in targets.items():
+            for terminated in ((True, False) if rest is None else (True,)):
+                # Distinct positions give distinct ledgers, so every bit flip of every byte is present.
+                self.assertGreaterEqual(sum(tally[f'{name}-byte-{terminated}']), 8 * (len(line) + terminated))
+            if rest is None:
+                self.assertEqual(sum(tally[f'{name}-truncation']), len(line) + 2)
+
     def test_single_bit_flip_anywhere_in_a_full_ledger_never_frees_budget(self):
         """Every bit of a ledger holding every record type: refused, or the same count and history."""
         packet_ab.CallLedger(self.path, cap=3).reserve('fake', 'f', 'circuit', 'plan')

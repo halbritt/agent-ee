@@ -131,6 +131,21 @@ that.
   records. Each damaged ledger then gets three calls, each in a fresh
   interpreter. No ledger ever reaches a thirteenth real call: each one is
   either refused with its bytes intact, or still charges the same call.
+- a restart property matrix over reservation and settlement lines. The matrix
+  was seeded from the independent Sol review of ee12d (`completion-sweep.py`).
+  It covers four targets: the unsettled reservation tail and the settlement
+  tail, each with and without its newline, plus an interior reservation and an
+  interior settlement, each followed by later records. Every byte of each
+  target gets every bit flip and the 16 replacement bytes. Both tails are also
+  cut at every offset, and both base ledgers get ten kinds of garbage appended,
+  with and without a newline. That makes about 19,900 distinct ledgers. Each
+  ledger gets three metered calls, each attempt in a fresh interpreter. One
+  interpreter serves every ledger per attempt, so each ledger crosses three
+  real restarts. Historical real reservations plus launches never pass 12.
+  Each ledger is either refused with its bytes intact, or keeps its charge,
+  launches only the remaining budget and refuses after that. Cutting the open
+  reservation tail to zero bytes means the reservation never reached disk, so
+  it counts ten historical calls.
 - every single bit flip over a ledger holding every record type. Each one is
   refused or leaves the state unchanged.
 - the retained 9-call live ledger, which validates without a byte changing.
