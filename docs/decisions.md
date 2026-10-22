@@ -561,6 +561,17 @@ and datasheet sources omit value-matched settings from that inventory.
 G4 (verified reference authority) remains owner work; importing a class and
 citation does not validate their authority.
 
+AGENTEE-437 preserves name-based owner-rule DRC authority while disclosing
+shadowed generated geometry by position and its original source. Source-class
+exclusion requires a citation. Grading re-derives bound geometry inventories;
+stale, edited or missing inventories refuse evaluation as unknown. This is
+captured-input consistency, not the owner authority verification in G4 above.
+Coordinator ruling 437a binds a serialized emission witness and permits only
+materialized additions equal to a closed, cited KiCad 10.0.7 native default.
+The witness hash excludes itself to avoid a circular digest. Changed/removed
+settings and unknown/non-default additions remain stale; native saves preserve
+the existing IMU pass, defect and unsupported expectations.
+
 The coordinator's 2026-10-21 ruling preserves the group-copper campaign's
 initial structural findings: its unplaced copper fails both `drc-placement` and
 `outline`. Reusing the module must still pass fresh DRC and every later campaign

@@ -297,6 +297,9 @@ records design-rule classes and citations. Native DRC retains unsourced numeric
 findings as advisories while sourced limits and structural gates remain hard.
 Scaffold and board-build also bind an [inventory of retained unsourced geometry defaults](docs/scaffold.md#unsourced-geometry-inventory-agentee-425)
 with their potential router and zone-filler consumers (AGENTEE-425).
+Grading verifies that inventory against the saved project and native rules;
+stale or edited bindings leave coverage unknown (AGENTEE-437). Native-save
+additions are equivalent only at cited, pinned KiCad 10.0.7 default values.
 Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through

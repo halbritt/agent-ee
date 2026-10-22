@@ -2091,7 +2091,17 @@ to scaffold receipts and project bindings; board-build refreshes it on template
 merge. It lists retained unsourced settings and potential router/zone-filler
 consumers, including generated native constraints. Value-matched owner,
 manufacturer and datasheet settings are excluded. This disclosure changes no
-native value, check registration, schema version or DRC verdict.
+native value, check registration or schema version. AGENTEE-437 requires a
+nonempty citation for those exclusions and discloses shadowed generated forms
+by position without changing name-based owner DRC authority. Before grading,
+`finding_sources` re-derives and compares the bound inventory with the saved
+project and native rules. Missing, stale or edited inventory refuses DRC
+evaluation as unknown, even with no native violations. Valid inventories retain
+their existing verdicts. Under ruling 437a, a bound emission snapshot and its
+hash anchor the original inventory; native-save additions are equivalent only
+when their values match the closed, cited KiCad 10.0.7 table. Removed/changed
+settings and unknown or non-default additions remain stale. Projects without a
+provenance binding remain supported.
 
 The placement comparison retains classified baseline and candidate findings,
 including baseline silk/text, and derives added numeric blockers from those

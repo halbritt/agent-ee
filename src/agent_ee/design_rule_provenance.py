@@ -1,5 +1,6 @@
 """Import declared board limits without promoting template defaults to authority."""
 import copy
+import hashlib
 
 from .catalog import strict_json
 from .routing_rules import number
@@ -206,13 +207,26 @@ def geometry_defaults(project, record, rules_raw=None):
                 leaves(value, 'net_settings.classes.' + cls['name'] + '.' + name,
                        both if name == 'clearance' else ('router',))
     if rules_raw is not None:
-        for index, node in enumerate(rule_forms(rules_raw, native=True)):
+        forms = rule_forms(rules_raw, native=True)
+        shadowed = {}
+        shadow_sources = record.get('shadowed_generated_rules', [])
+        if not isinstance(shadow_sources, list):
+            raise ValueError('geometry inventory shadowed generated rules must be a list')
+        for source in shadow_sources:
+            if not isinstance(source, dict):
+                raise ValueError('geometry inventory shadowed generated source must be an object')
+            index = source.get('index')
+            if (type(index) is not int or index < 0 or index >= len(forms)
+                    or forms[index][:2] != ['rule', source.get('name')] or index in shadowed):
+                raise ValueError('geometry inventory has invalid shadowed generated rule position')
+            shadowed[index] = source
+        for index, node in enumerate(forms):
             if not isinstance(node, list) or len(node) < 2 or node[0] != 'rule':
                 continue
             name = str(node[1])
             # Captured owner forms retain the existing owner-file authority;
             # only generated forms can be unsourced in this composition path.
-            source = record.get('generated_rules', {}).get(name)
+            source = shadowed.get(index, record.get('generated_rules', {}).get(name))
             if source is None:
                 continue
             for ordinal, constraint in enumerate(node[2:]):
@@ -227,8 +241,60 @@ def geometry_defaults(project, record, rules_raw=None):
 
 def bind_project(project, record, rules_raw=None):
     """Bind emitted settings to their receipt without introducing a second schema."""
+    from .storage import json_bytes
+    from .native_geometry_defaults import VERSION
+    # Exclude only this witness from its own input, avoiding a self-referential
+    # hash. Retain the exact serialized emission, including the inventory and
+    # source metadata, before attaching the witness to the emitted envelope.
+    record.pop('geometry_emission', None)
     record['unsourced_geometry'] = geometry_defaults(project, record, rules_raw)
     project[PROJECT_KEY] = copy.deepcopy(record)
+    raw = json_bytes(project)
+    record['geometry_emission'] = {'project_bytes': raw.decode('utf-8'),
+                                  'sha256': hashlib.sha256(raw).hexdigest(),
+                                  'native_defaults_version': VERSION}
+    project[PROJECT_KEY] = copy.deepcopy(record)
+
+
+def _verify_geometry(project, record, rules_raw):
+    from .storage import json_bytes
+    from .native_geometry_defaults import DEFAULTS, VERSION
+
+    def refuse():
+        raise ValueError('constraint provenance geometry inventory differs from saved project/rules')
+
+    emission = record.get('geometry_emission')
+    if (not isinstance(emission, dict)
+            or set(emission) != {'project_bytes', 'sha256', 'native_defaults_version'}
+            or emission.get('native_defaults_version') != VERSION
+            or not isinstance(emission.get('project_bytes'), str)):
+        refuse()
+    raw = emission['project_bytes'].encode('utf-8')
+    if hashlib.sha256(raw).hexdigest() != emission.get('sha256'):
+        refuse()
+    emitted = strict_json(raw)
+    original = {k: v for k, v in record.items() if k != 'geometry_emission'}
+    if (not isinstance(emitted, dict) or json_bytes(emitted) != raw
+            or json_bytes(emitted.get(PROJECT_KEY)) != json_bytes(original)):
+        refuse()
+    bound = geometry_defaults(emitted, original, rules_raw)
+    if json_bytes(original.get('unsourced_geometry')) != json_bytes(bound):
+        refuse()
+    current = geometry_defaults(project, record, rules_raw)
+    by_name = {row['setting']: row for row in current}
+    for row in bound:
+        saved = by_name.pop(row['setting'], None)
+        if (saved != row or
+                isinstance(saved['value'], bool) != isinstance(row['value'], bool)):
+            refuse()
+    for name, row in by_name.items():
+        native = DEFAULTS.get(name)
+        # Numeric JSON encodings such as 0 and 0.0 denote the same value, but
+        # booleans cannot impersonate numbers (Python considers False == 0).
+        if (native is None or row['value'] != native[0]
+                or isinstance(row['value'], bool) != isinstance(native[0], bool)
+                or row['class'] != 'default' or row['citation'] is not None):
+            refuse()
 
 
 class OwnerRuleReclassification(ValueError):
@@ -298,7 +364,7 @@ def finding_sources(board, findings=()):
             if (setting['setting'] == derived['setting'] and setting['value'] == derived['value']
                     and setting['citation'] is None):
                 setting.update(copy.deepcopy(derived))
-    if record:
+    if PROJECT_KEY in project:
         bound = record.get('settings')
         if (not isinstance(bound, list) or any(not isinstance(s, dict) or
                 not isinstance(s.get('setting'), str) for s in bound)):
@@ -316,6 +382,7 @@ def finding_sources(board, findings=()):
     rules, rule_constraints, ignored_rules = {}, {}, []
     native_rules = []
     path = board.with_suffix('.kicad_dru')
+    raw = None
     if path.is_file():
         raw = path.read_bytes()
         template_rules(raw, allow_generated=True)
@@ -335,6 +402,8 @@ def finding_sources(board, findings=()):
         for name, source in record.get('generated_rules', {}).items():
             if name in rules:
                 rules[name] = source
+    if PROJECT_KEY in project:
+        _verify_geometry(project, record, raw)
     spoke_settings, conditional_spokes = _spoke_rule_settings(native_rules, rules)
     settings.extend(spoke_settings)
     from .net_binding import board_item_nets, board_net_names, literal_project_classes

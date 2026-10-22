@@ -935,6 +935,13 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
                 # An adopted owner rule keeps its authority when its name also
                 # occurs in the generated prefix; native owner clauses stay last.
+                # Preserve positional sources for geometry disclosure separately
+                # from the existing name-based DRC authority.
+                constraint_record['shadowed_generated_rules'] = [
+                    dict(index=index, name=str(node[1]),
+                         **constraint_record['generated_rules'][str(node[1])])
+                    for index, node in enumerate(rule_forms(net_artifacts['rules']))
+                    if node[0] == 'rule' and str(node[1]) in owner_names]
                 for name in owner_names:
                     constraint_record['generated_rules'].pop(name, None)
                 owner_copy = str(PurePosixPath(pcb).with_suffix('.owner.kicad_dru'))
@@ -962,7 +969,6 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
             owner_names = {str(n[1]) for n in rule_forms(read_captured(inputs, owner_rules), native=True)
                            if len(n) > 1 and n[0] == 'rule'}
             require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
-        bind_project(project, constraint_record, composed_rules)
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
@@ -972,6 +978,11 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
         seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
         root = str(uuid.uuid5(NAMESPACE, seed + ':root'))
         outputs = native_files(record, sch, project, root, seed, plans)
+        # Bind after the shared builder adds final filename and sheet metadata:
+        # the emission witness must describe emitted bytes, not the template.
+        project = strict_json(outputs[pro])
+        bind_project(project, constraint_record, composed_rules)
+        outputs[pro] = json_bytes(project)
         if net_artifacts:
             record_rel = str(PurePosixPath(pro).with_suffix('.net-constraints.record.json'))
             report = strict_json(net_artifacts['record'])

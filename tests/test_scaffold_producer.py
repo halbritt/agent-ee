@@ -15,7 +15,7 @@ import unittest
 
 from agent_ee.candidate import capture
 from agent_ee.scaffold import scaffold
-from agent_ee.storage import digest, read_json, write_json
+from agent_ee.storage import digest, json_bytes, read_json, write_json
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_scaffold import ROOT, ScaffoldFixture
 from toolchain import require_toolchain
@@ -459,6 +459,15 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         bindings = [before.pop(PROJECT_KEY), now.pop(PROJECT_KEY)]
         self.assertNotEqual(*bindings)
         for name, binding in zip(('a', 'b'), bindings):
+            # The emission witness intentionally binds sheet IDs and source
+            # hashes too. Verify its complete payload independently before
+            # comparing the DRC settings with source hashes removed below.
+            witness = binding.pop('geometry_emission')
+            emitted = read_json(self.root / name / 'inputs/project/design.kicad_pro')
+            emitted[PROJECT_KEY].pop('geometry_emission')
+            raw = json_bytes(emitted)
+            self.assertEqual(witness['project_bytes'].encode('utf-8'), raw)
+            self.assertEqual(witness['sha256'], hashlib.sha256(raw).hexdigest())
             for setting in binding['settings'] + binding['derived_settings']:
                 citation = setting['citation']
                 if citation is None:
