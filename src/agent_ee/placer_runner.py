@@ -342,6 +342,9 @@ def _drc_item_states(path):
     states.noncopper = set()
     for fp in board.GetFootprints():
         owner = fp.m_Uuid.AsString()
+        if owner in states.noncopper:
+            # Owner-local lookups select a footprint by KIID; a duplicate would be silently ambiguous.
+            raise ValueError('native collision item identities ambiguous')
         states.noncopper.add(owner)
         pose = (int(fp.GetPosition().x), int(fp.GetPosition().y),
                 fp.GetOrientationDegrees(), int(fp.GetLayer()))
