@@ -120,9 +120,9 @@ produce a pass. Candidates without carry retain their existing fab behavior,
 including uncarried baseline silk findings.
 
 The one exception is a `drc` declaring `projection: "placement-stage/1"` with a
-placement-stage or unstaged declaration (AGENTEE-346); a schematic, routing,
-verification, fab or release declaration is not exempt and still refuses. It
-grades instead of refusing. A native silk conflict that is exactly an open carried defect is
+placement-stage or unstaged declaration (AGENTEE-346). That check grades
+instead of refusing. A `drc` under a schematic, routing, verification, fab or
+release declaration is outside the exception and still refuses. A native silk conflict that is exactly an open carried defect is
 graded as carried, not as a violation, so the campaign advances to routing.
 There the full `drc` and later gates refuse until closure. See the
 [check reference](check-reference.md#carried-silk-in-the-placement-projection-agentee-346).
@@ -151,11 +151,14 @@ cutout, than the bounds can separate leaves the outline unqualified.
 Touching/crossing contours, nested cutouts, multiple board islands, open rings,
 curves below twice the tolerance and polygons with arcs establish no
 containment. Bounding boxes may neither cross nor touch a cutout bound, nor
-enclose an entire cutout. The 5 um tolerance is the maximum error of the
-circumscribed hole bound, not a uniform exclusion band: a mark tangent to a
-round hole, or near a polygon vertex of its bound, refuses even though it does
-not touch the true circle, while a mark between two bound vertices may qualify
-closer than 5 um, because it still lies outside the bound.
+enclose an entire cutout. The 5 um tolerance bounds how far each polygon
+(the circumscribed cutout bound and the inscribed outer-ring bound) may deviate
+from its true curve; it is not a clearance guarantee and not a uniform
+exclusion band. A mark is judged only against the bound polygon: a mark
+touching or crossing the bound refuses even where it does not touch the true
+circle (up to 5 um away), while a mark between two bound vertices may qualify
+with less than 5 um to the true circle, because it still lies outside the
+bound.
 
 Containment models only Edge.Cuts. Non-plated drills (for example an NPTH
 mounting-hole footprint) and plated or oval pad slots are not holes in this
@@ -223,7 +226,7 @@ read or parse the later board, the carried defect stays open.
 Carry in `placement-evidence` follows a campaign's candidate lineage. A delivered
 board copied into a new scope without that directory would lose it, so the board
 bytes name their own lineage. When a published result has open defects, the
-placement writer sets title block comment 9 to
+placement writer sets a title block comment to
 `agent-ee.placement-lineage/1 <digest>...`. Each digest is `carry_digest` of one
 result's open defects: the SHA-256 identity of their sorted native item UUID
 sets. A later result with open defects appends its digest; a result without open
@@ -241,7 +244,11 @@ not apply to it; moved copper is still a new collision. Any
 difference still refuses: the error names each changed comparison key with its
 added/removed counts and the changed finding types and item UUIDs, and
 `native-drc-restamp.json` (retained with a failed proposal) holds the full
-difference. It refuses as well when comment 9 holds other text. Placement write scope admits only a stamp that adds or extends this
+difference. The stamp goes in comment 9; when comment 9 holds user text, it
+goes in the highest free comment, and an existing stamp is extended in its own
+slot (AGENTEE-412). User text is never replaced. The writer refuses only when
+all nine comments hold user text, and it rereads the saved stamp before the
+DRC rerun. Placement write scope admits only a stamp that adds or extends this
 comment. Dropping or rewriting a digest, or editing any other title block field,
 is a violation. Campaign verification also refuses a successor candidate whose
 board drops or rewrites its predecessor's stamp, whichever step wrote it.
@@ -279,12 +286,19 @@ board. The stamp is a lineage record in the design file, not an owner evidence
 store. Owner-authenticated imported evidence awaits AGENTEE-348.
 
 The stamp is read only with the shared S-expression parser, so an escaped marker
-is still the stamp. Marker text outside title block comment 9 is user text.
+is still the stamp. Only a title block comment (1 to 9) whose text begins
+with the marker claims a stamp. The marker in the title, company, revision or
+date, later in a comment, or in board text is user text and leaves every verdict
+as it is. A claim must be well formed and unique: two claims, a claim whose
+comment number repeats, or malformed digests are unknown at the gated checks.
+Any comment holding a string that begins with the marker is a claim whatever its
+shape, so a missing or invalid comment number, an extra element or an extra list
+is a malformed claim and is unknown at admission and at seal verification
+(AGENTEE-412), never an unstamped board.
 KiCad 10.0.7 keeps board-level properties in the project's text variables:
 `pcbnew.SaveBoard` drops a `(property ...)` node from the saved `.kicad_pcb`.
-The board file therefore has no dedicated non-user field. The stamp stays in
-comment 9, and a placement result with open defects refuses publication when
-comment 9 holds other text.
+The board file therefore has no dedicated non-user field, so the stamp shares
+the title block comments with user text as described above.
 
 Release admission also covers boards whose stamp was stripped outside agent-ee
 and boards published before the stamp contract. `fab_package` captures a native
@@ -294,7 +308,10 @@ every board. A stamp and an imported index are both self-asserted until
 AGENTEE-348 authenticates them, so neither waives the witness: a fabricated
 stamp with a self-hashed imported closure still refuses a natively
 silk-conflicted board. Open carry refuses first with its own typed message.
-An empty imported index does not establish ancestry. Missing, changed or incomplete native evidence refuses as typed
+This holds out of campaign after an honest imported closure, too: once native
+DRC reproduces the closure and no carry stays open, a residual uncarried
+`silk_*` finding, even at warning or exclusion severity, refuses release
+(AGENTEE-412). An empty imported index does not establish ancestry. Missing, changed or incomplete native evidence refuses as typed
 unknown (`malformed`, or `interrupted` on deadline exhaustion). The package's
 sealed witness is rechecked by `verify_gate`, artifact extraction and campaign
 completion; a forged passing package cannot bypass it. The stamp therefore is
@@ -324,14 +341,16 @@ adoption, coordinator capture, successor binding and downstream refusal, plus
 missing/stale/tampered carry, side-flip closure boundaries and verdict isolation.
 The existing BOM-variant fab regression retains its original pass expectation.
 Its stamp tests cover native stamping on the DRC-checked bytes, the write-scope
-extension/drop boundary, escaped and misplaced marker text, and re-scoped release
+extension/drop boundary, escaped and misplaced marker text, a stamp relocated
+around user text in comment 9 (unit and native writer), a full title block, and re-scoped release
 with and without lineage. They also cover an unbound stamp and a campaign
 successor that drops the stamp. Further tests cover forged and honest imported
 closures at the check, seal and artifact boundaries, a missing or changed
 witness, and verification that is out of time or ignored by a custom rule.
 Release regressions cover stripped and legacy unstamped boards, clean native
 provenance, empty imported indexes, sealed-witness tampering and standalone
-fab-export verdict preservation.
+fab-export verdict preservation, and an honestly closed out-of-campaign carry
+whose board keeps a warning-severity `silk_edge_clearance` finding.
 
 
 ## Post-routing artwork producer (AGENTEE-350)
@@ -368,7 +387,7 @@ value or a
 malformed movable-field declaration refuses with `ValueError`, never an untyped
 error or a silent skip (AGENTEE-364). This conservative scope limit
 can refuse legitimate boards: the shared parser decodes escapes, so decoded
-token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
+token equality cannot establish the saved spelling KiCad renders. The refusal is pinned by `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
 open. The native DRC comparison has no saved geometry states; the scope proof,
@@ -378,7 +397,10 @@ unchanged, so unmeasured pre-existing collisions keep baseline treatment
 
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed
-board artifact. Carry adoption authenticates the entire tool snapshot against
+board artifact. Carry adoption reads artwork receipts only through the
+coordinator's anchored stage-receipt index (`stage_receipts` in campaign state):
+an unindexed receipt is ignored, and an unanchored, re-anchored or extended index
+or a receipt substituted after indexing refuses (AGENTEE-408). It authenticates the entire tool snapshot against
 the campaign package pin, verifies the exact launcher invocation and recomputes
 the proof from retained receipt inputs and output. The coordinator captures this
 bundle under `placement-evidence`, appending its ordered provenance link.

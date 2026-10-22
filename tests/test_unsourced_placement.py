@@ -166,7 +166,7 @@ class UnsourcedPlacementTest(unittest.TestCase):
     def test_native_keepout_stays_hard(self):
         board = capture([part('C1', 12, 12)], rectangle(0, 0, 20, 20))
         board['rule_areas'] = [{'uuid': 'original-keepout', 'owner': 'board', 'layers': ['F.Cu'],
-                              'forbid': {'footprints': True},
+                              'forbid': {'footprints': True, 'pads': False},
                               'outline': {'status': 'proven', 'polygons': [box(0, 0, 2, 2)]}}]
         report = pack(board, request(fixed_refs=[], gap_nm=0, groups=[region(size=2, sourced=True)]))
         self.assertEqual(report['outcome'], 'defect')

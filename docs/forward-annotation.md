@@ -294,3 +294,10 @@ refuses a board carrying literal slashes. `test_slash_global_net_builds_places_a
 `test_saved_pad_net_is_the_board_form_of_the_declared_native_net`
 (`tests/test_probe_features.py`) covers probe pads on global, local and
 no-connect names.
+
+Board-only mounting holes retain their native footprint and pad UUIDs, geometry
+and exclusion flags through forward annotation. The native
+`test_forward_annotation_preserves_board_only_mounting_holes` regression checks
+four original 3.2 mm holes with independent before/after geometry inventories.
+Fab admission separately checks their lack of netlist paths and assigned nets;
+see [mechanical export](fab-export.md).

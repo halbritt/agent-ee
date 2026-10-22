@@ -28,13 +28,15 @@ GATED_KINDS = frozenset({
     'jlc_cost_estimate', 'drc', 'part_binding', 'package_consistency', 'parts_subset',
     'land_pattern', 'catalog', 'part_selection',
 })
-# Board lineage stamp (AGENTEE-351): title block comment 9 names each carry digest of the
+# Board lineage stamp (AGENTEE-351): a title block comment names each carry digest of the
 # placement results that published open defects on this board's ancestry. It travels with
 # the board bytes, so a re-scoped copy cannot release without its placement evidence.
 # KiCad 10 keeps board-level properties in the project, not the saved board, so the
-# title block is the only persistent board field; an occupied comment 9 refuses.
+# title block is the only persistent board field. The writer prefers comment 9 and keeps
+# user text: an occupied slot moves the stamp to the highest free one (AGENTEE-412).
 STAMP = 'agent-ee.placement-lineage/1'
 STAMP_COMMENT = '9'
+STAMP_SLOTS = tuple(str(n) for n in range(9, 0, -1))
 # Gated admission recomputes native DRC on the captured board before any closure
 # (AGENTEE-351 H2): imported evidence cannot close carry by self-consistency.
 VERIFICATION = 'placement-lineage'
@@ -55,40 +57,81 @@ def _stamp_digests(value):
     return words[1:]
 
 
+def _claims(node):
+    """Whether any string in a parsed node, at any depth, begins with the stamp marker."""
+    return any(_claims(v) if isinstance(v, list) else isinstance(v, str) and v.startswith(STAMP)
+               for v in node)
+
+
 def unstamped(nodes):
     """Board-level nodes without the lineage stamp, and its digests (None when unstamped)."""
     kept, found = [], None
     for node in nodes:
         if isinstance(node, list) and node and node[0] == 'title_block':
-            comments = [c for c in node[1:] if isinstance(c, list) and c[:2] == ['comment', STAMP_COMMENT]]
-            if any(len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP) for c in comments):
-                if found is not None or len(comments) != 1:
+            comments = [c for c in node[1:] if isinstance(c, list) and c[:1] == ['comment']]
+            # A comment that claims the stamp in any other shape (missing or invalid slot,
+            # extra element or list) is a malformed claim, not user text (AGENTEE-412 H1).
+            claims = [c for c in comments if _claims(c[1:])]
+            if any(len(c) != 3 or not isinstance(c[2], str) or not c[2].startswith(STAMP) for c in claims):
+                raise ValueError('malformed placement lineage stamp claim')
+            if claims:
+                # One claim in one unambiguous comment slot; a repeated slot hides which one KiCad reads.
+                if (found is not None or len(claims) != 1 or claims[0][1] not in STAMP_SLOTS or
+                        sum(c[1:2] == claims[0][1:2] for c in comments) != 1):
                     raise ValueError('ambiguous placement lineage stamp')
-                found = _stamp_digests(comments[0][2])
-                node = [c for c in node if c is not comments[0]]
+                found = _stamp_digests(claims[0][2])
+                node = [c for c in node if c is not claims[0]]
                 if len(node) == 1:
                     continue
         kept.append(node)
     return kept, found
 
 
-def stamp(data):
-    """Lineage stamp digests of saved board bytes; None when the board carries no stamp.
-
-    Always parsed with the shared parser, so an escaped marker cannot evade a byte search.
-    Only title block comment 9 is the stamp; the marker text anywhere else is user text.
-    """
+def _root(data):
     from .symbol_library import parse_sexpr
     try:
         root = parse_sexpr(data)
     except ValueError:
-        root = None
-    if root is None or root[0] != 'kicad_pcb':
+        return None
+    return root if root and root[0] == 'kicad_pcb' else None
+
+
+def stamp(data):
+    """Lineage stamp digests of saved board bytes; None when the board carries no stamp.
+
+    Always parsed with the shared parser, so an escaped marker cannot evade a byte search.
+    Only a title block comment that begins with the marker is the stamp; the marker text
+    anywhere else (title, company, revision, a comment's later words, board text) is user text.
+    """
+    root = _root(data)
+    if root is None:
         # No title block can be read, so any marker, escaped or not, refuses.
         if STAMP.encode() in data.replace(b'\\', b''):
             raise ValueError('placement lineage stamp in a board the shared parser cannot read')
         return None
     return unstamped(root[1:])[1]
+
+
+def stamp_slot(data):
+    """Title block comment the writer records the stamp in: the stamp's own slot, else
+    comment 9, else the highest comment without user text. User text is never replaced."""
+    root = _root(data)
+    if root is None:
+        raise ValueError('placement lineage stamp target is not a board the shared parser can read')
+    stamp(data)
+    occupied = set()
+    for node in root[1:]:
+        if isinstance(node, list) and node and node[0] == 'title_block':
+            for c in node[1:]:
+                if isinstance(c, list) and c[:1] == ['comment'] and len(c) >= 2:
+                    if len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP):
+                        return c[1]
+                    if len(c) != 3 or c[2] != '':
+                        occupied.add(c[1])
+    for slot in STAMP_SLOTS:
+        if slot not in occupied:
+            return slot
+    raise ValueError('every title block comment holds user text; placement lineage cannot be recorded')
 
 
 def stamp_violations(before, after):
@@ -112,7 +155,11 @@ def validate_campaign(scope):
 
 
 def adopted(root, state, number):
-    """Validated helper artifact bundle of this turn, or None if no helper ran."""
+    """Validated helper artifact bundle of this turn, or None if no helper ran.
+
+    Every receipt is read only through the coordinator's anchored stage-receipt
+    index (state['stage_receipts']); placer receipts also need placement_records.
+    """
     from .placement_adapter import STEP, qualify_receipt
     from .stage_done import _receipts
     from .stage_receipts import validate_receipt
@@ -235,10 +282,11 @@ def _bundle(manifest, inputs, link):
         raise ValueError('malformed carried placement receipt link')
     path = _read(manifest, inputs, link['receipt'], link['sha256'])
     receipt = read_json(path)
-    from .stage_receipts import RECEIPT_SCHEMA
-    if (receipt.get('schema') != RECEIPT_SCHEMA or receipt.get('status') != 'completed' or
+    from .stage_receipts import RECEIPT_SCHEMAS, legacy_source_refusal
+    if (receipt.get('schema') not in RECEIPT_SCHEMAS or receipt.get('status') != 'completed' or
             receipt.get('identity') != identity({k: v for k, v in receipt.items() if k != 'identity'})):
         raise ValueError('carried placement receipt identity or status invalid')
+    legacy_source_refusal(receipt)
     prefix = str(Path(link['receipt']).parent)
     from . import routed_artwork
     artwork = receipt['spec']['step'] == routed_artwork.STEP
@@ -805,8 +853,9 @@ def release_defects(run, check, manifest):
 
 
 def verify_projection(run, check, manifest):
-    """Reconstruct the projection verdict with the runtime policy (checks.grade_drc): raw DRC,
-    captured waivers, numeric provenance, retained structural containment and receipt-backed carry."""
+    """Reconstruct the projection verdict with the runtime policy (checks.grade_drc): raw DRC
+    admissibility (checks.drc_admissible), captured waivers, numeric provenance, retained
+    structural containment and receipt-backed carry."""
     defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
     details = check.get('details', {})
     if not defects and ('open_defects' in details or 'carried_findings' in details):
@@ -814,17 +863,22 @@ def verify_projection(run, check, manifest):
     if check['execution'] != 'ok' or details.get('reason') in ('stage_blocked', 'stage_not_reached'):
         return
     from .violation_waivers import replay_unwaived
+    from .checks import drc_admissible, drc_net_binding, grade_drc, require_later_full_drc
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
-    report = read_json(Path(run) / 'work' / check['id'] / 'drc.json')
+    inputs, work = Path(run) / 'inputs', Path(run) / 'work' / check['id']
+    # The runtime's unsupported and malformed refusals hold at replay too (AGENTEE-407):
+    # an ok verdict never seals over a report the runtime check could not grade.
+    require_later_full_drc(manifest['scope']['checks'], spec)
+    drc_net_binding(inputs, manifest['scope']['board'])
+    report = read_json(work / 'drc.json')
     if not isinstance(report, dict) or any(
             not isinstance(report.get(k), list) or any(not isinstance(v, dict) for v in report[k])
             for k in ('violations', 'unconnected_items', 'schematic_parity')):
         raise ValueError('placement projection native report is malformed')
-    unwaived = replay_unwaived(spec, manifest['scope'], manifest, Path(run) / 'inputs', report)
+    sources = drc_admissible(inputs, manifest['scope']['board'], report,
+                             (work / 'console.log').read_text(errors='replace'))[0]
+    unwaived = replay_unwaived(spec, manifest['scope'], manifest, inputs, report)
     carried = carried_silk(defects, unwaived) if defects else []
-    from .checks import grade_drc
-    from .design_rule_provenance import finding_sources
-    sources = finding_sources(Path(run) / 'inputs' / manifest['scope']['board'], report['violations'])
     failing = grade_drc(unwaived, sources, spec['params']['projection'], carried,
                         replay_containment(run, check, sources))[2]
     if check['outcome'] != ('defect' if failing else 'pass') or (

@@ -3,7 +3,7 @@ import copy
 import hashlib
 import unittest
 
-from agent_ee import electrical_locality as locality
+from agent_ee import electrical_locality as locality, locality_provenance
 from agent_ee.placer import pack, transform
 from test_electrical_locality import board, declaration, MM
 from test_placer import request
@@ -154,8 +154,48 @@ class LocalityProvenanceTests(unittest.TestCase):
                 if mutation == 'missing_source': changed['source_records'].pop('requirements/owned-numeric.txt', None)
                 if mutation == 'quote': p['derivation']['source']['quote'] = 'unsupported 1 mm quote'
             result = locality.grade(facts, changed)
-            self.assertEqual(result['status'], 'info', (mutation, result))
-            self.assertTrue(all(a['kind'] == 'unsourced' for a in result['advisories']))
+            if mutation == 'bytes':  # Coordinator ruling 402a: fail closed on present corrupt evidence.
+                self.assertEqual(result['status'], 'unknown', (mutation, result))
+                self.assertEqual([u['kind'] for u in result['unknown']], ['source_record_integrity'] * 2)
+                self.assertEqual(result['advisories'], [])
+            else:
+                self.assertEqual(result['status'], 'info', (mutation, result))
+                self.assertTrue(all(a['kind'] == 'unsourced' for a in result['advisories']))
+
+    def test_integrity_is_typed_and_never_a_hard_constraint(self):
+        for kind in ('datasheet', 'owner'):
+            for limit in (MM, 100 * MM):
+                with self.subTest(kind=kind, limit=limit):
+                    facts, doc = board(), declaration(limit=limit)
+                    # Leave return clean: its determinate defect must survive supply unknown.
+                    pair = doc['obligations'][0]['supply']
+                    numeric(pair)
+                    if kind == 'owner':
+                        pair['provenance'] = {'class': 'owner', 'basis': 'original fixture decision',
+                            'decision_reference': {**source(), 'owner': 'fixture author'}}
+                    doc['source_records'] = {**doc['source_records'], source()['path']: 'changed'}
+                    expected = {'enforcement': 'integrity', 'reason': 'source record sha256 mismatch'}
+                    self.assertEqual(locality_provenance.verified_reference(source(), doc['source_records']), expected)
+                    self.assertEqual(locality_provenance.classify(pair, doc['source_records']),
+                                     {'class': kind, **expected})
+                    result = locality.grade(facts, doc)
+                    self.assertEqual(result['status'], 'defect' if limit == MM else 'unknown')
+                    self.assertEqual(len(result['unknown']), 1)
+                    self.assertEqual(result['unknown'][0]['kind'], 'source_record_integrity')
+                    self.assertEqual(result['unknown'][0]['reason'], expected['reason'])
+                    self.assertEqual(result['advisories'], [])
+                    supply_only = copy.deepcopy(doc)
+                    supply_only['obligations'][0]['return']['provenance'] = copy.deepcopy(pair['provenance'])
+                    self.assertFalse(locality.constraint(facts['footprints'], facts['footprints'][1], supply_only)[0])
+                    self.assertEqual(locality.targets(facts['footprints'][:1], facts['footprints'][1], supply_only), [])
+                    index = locality.PlacementIndex(supply_only)
+                    index.push(facts['footprints'][0])
+                    candidate = index.prepare(transform(facts['footprints'][1], [0, 0], 0))
+                    self.assertFalse(candidate.constraint([100 * MM, 100 * MM])[0])
+                    self.assertEqual(candidate.targets(), [])
+                    refusal = pack(facts, request(electrical_locality=supply_only))
+                    self.assertEqual((refusal['status'], refusal['outcome']),
+                                     ('electrical_locality_unavailable', 'unknown'))
 
     def test_scaled_layout_derivation_recomputes_distance(self):
         facts, doc = board(), declaration(limit=MM)

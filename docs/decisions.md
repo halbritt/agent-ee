@@ -81,7 +81,11 @@ retained so failures can be assessed rather than hidden.
 
 The default wall-clock work budget is 1,200 seconds; individual reviewer limits
 come from the explicit profile (300 seconds in small evaluation profiles, 900 in
-donor profiles). The run deadline further bounds every call. A run has a finite declared check/reviewer list, no
+donor profiles). The run deadline further bounds every check and reviewer call.
+Candidate inspection imaging has its own 180-second executor guard; its elapsed
+time is excluded from this budget so visual availability does not consume check
+or reviewer time. A campaign's `max_seconds` is not extended this way: it still
+pays for coordinator imaging time. Other admission/setup costs remain charged. A run has a finite declared check/reviewer list, no
 automatic provider fallback and no autonomous source repair. The later
 [bounded output decision](#bounded-resubmission-after-an-output-format-refusal-2026-10-17)
 permits one separately recorded schema resubmission per role in campaigns and

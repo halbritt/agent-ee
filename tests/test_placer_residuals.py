@@ -191,7 +191,7 @@ class CurvedCourtyardTest(unittest.TestCase):
         def keepout(x0):
             board = capture([probe_part('TP1', 10, 10)], rectangle(0, 0, 30, 30))
             board['rule_areas'] = [{'uuid': 'ko', 'name': 'ko', 'owner': 'board', 'layers': ['F.Cu'],
-                                    'forbid': {'footprints': True}, 'placement_area': False,
+                                    'forbid': {'footprints': True, 'pads': False}, 'placement_area': False,
                                     'outline': {'status': 'proven', 'polygons': [rectangle(x0, 0, 10, 30)]}}]
             return footprint_keepout(board, EMPTY_DRC)
         report = keepout(11.001)

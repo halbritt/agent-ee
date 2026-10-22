@@ -16,6 +16,9 @@ from agent_ee.models3d import (
     inspect_models,
     parse_stock_receipt,
     stock_reference,
+    copy_project_models,
+    verify_project_models,
+    _kicad_model_defaults,
 )
 
 
@@ -133,12 +136,148 @@ class ModelInventoryTests(unittest.TestCase):
 
     def test_real_board_inventory_has_exact_references_and_missing_variables(self):
         board = Path(__file__).parents[1] / "fixtures/rc/control/rc_filter.kicad_pcb"
-        inventory = inspect_models(board, {})
+        inventory = inspect_models(board, {}, kicad_defaults={})
         self.assertEqual({footprint["reference"] for footprint in inventory["footprints"]}, {"C1", "R1", "J1"})
         self.assertEqual(inventory["summary"]["models"], 3)
         self.assertEqual(inventory["summary"]["unresolved"], 3)
         for footprint in inventory["footprints"]:
             self.assertIn("${KICAD10_3DMODEL_DIR}/", footprint["models"][0]["path"])
+
+    def test_real_board_inventory_resolves_injected_stock_defaults(self):
+        board = Path(__file__).parents[1] / "fixtures/rc/control/rc_filter.kicad_pcb"
+        absent = inspect_models(board, {}, kicad_defaults={})
+        library = self.root / 'stock'
+        for footprint in absent['footprints']:
+            relative = footprint['models'][0]['path'].removeprefix('${KICAD10_3DMODEL_DIR}/')
+            model = library / relative
+            model.parent.mkdir(parents=True, exist_ok=True)
+            model.write_bytes(b'original inventory fixture for ' + relative.encode())
+        with patch('agent_ee.models3d._kicad_model_defaults',
+                   side_effect=AssertionError('injected defaults must bypass host discovery')):
+            inventory = inspect_models(board, {}, kicad_defaults={'KICAD10_3DMODEL_DIR': str(library)})
+            self.assertEqual(inspect_models(board, {}, kicad_defaults={}), absent)
+            overridden = inspect_models(board, {'KICAD10_3DMODEL_DIR': str(self.root / 'absent')},
+                                        kicad_defaults={'KICAD10_3DMODEL_DIR': str(library)})
+            self.assertEqual(overridden['summary']['missing'], 3)
+            for footprint in overridden['footprints']:
+                self.assertEqual(footprint['models'][0]['resolution_source'], 'env')
+                self.assertNotIn('sha256', footprint['models'][0])
+        self.assertIsNone(inventory['kicad_default'])
+        self.assertEqual(inventory['summary']['resolved'], 3)
+        self.assertEqual(inventory['summary']['unresolved'], 0)
+        self.assertEqual(inventory['summary']['missing'], 0)
+        for footprint in inventory['footprints']:
+            model = footprint['models'][0]
+            self.assertEqual(model['resolution_source'], 'kicad-default')
+            self.assertEqual(model['variable_sources'], {'KICAD10_3DMODEL_DIR': 'kicad-default'})
+            self.assertEqual(model['sha256'], hashlib.sha256(Path(model['resolved_path']).read_bytes()).hexdigest())
+
+
+class ModelClosureTests(unittest.TestCase):
+    setUp = ModelInventoryTests.setUp
+    write_board = ModelInventoryTests.write_board
+    def test_default_identity_unknown_version_and_absent_library(self):
+        from subprocess import CompletedProcess
+        with patch('agent_ee.models3d.shutil.which', return_value='/usr/bin/kicad-cli'), \
+                patch('agent_ee.models3d.subprocess.run', return_value=CompletedProcess([], 0, '10.0.7\n', '')):
+            defaults, identity = _kicad_model_defaults({})
+            self.assertEqual(identity['version'], '10.0.7')
+            self.assertEqual(identity['source'], 'kicad-default')
+            if Path(identity['directory']).is_dir():
+                self.assertEqual(defaults['KICAD10_3DMODEL_DIR'], identity['directory'])
+            with patch('agent_ee.models3d.Path.is_dir', return_value=False):
+                self.assertEqual(_kicad_model_defaults({})[0], {})
+        for version, code in (('9.0.7', 0), ('11.0.0', 0), ('10.0.7', 1), ('bad', 0)):
+            with self.subTest(version=version, code=code), \
+                    patch('agent_ee.models3d.shutil.which', return_value='/usr/bin/kicad-cli'), \
+                    patch('agent_ee.models3d.subprocess.run', return_value=CompletedProcess([], code, version, '')):
+                self.assertEqual(_kicad_model_defaults({}), ({}, None))
+
+    def test_default_sources_env_precedence_and_missing_default(self):
+        library = self.root / 'stock'
+        library.mkdir()
+        (library / 'body.step').write_bytes(b'owned model')
+        self.write_board('(footprint "Owned" (model "${KICAD10_3DMODEL_DIR}/body.step"))')
+        defaults = {'KICAD10_3DMODEL_DIR': str(library)}
+        with patch('agent_ee.models3d._kicad_model_defaults', return_value=(defaults, None)):
+            model = inspect_models(self.board, {})['footprints'][0]['models'][0]
+            self.assertEqual((model['status'], model['resolution_source']), ('resolved', 'kicad-default'))
+            self.assertEqual(model['sha256'], hashlib.sha256(b'owned model').hexdigest())
+            model = inspect_models(self.board, {'KICAD10_3DMODEL_DIR': str(self.root / 'absent')})['footprints'][0]['models'][0]
+            self.assertEqual((model['status'], model['resolution_source']), ('missing', 'env'))
+            self.assertNotIn('sha256', model)
+        with patch('agent_ee.models3d._kicad_model_defaults', return_value=({}, None)):
+            model = inspect_models(self.board, {})['footprints'][0]['models'][0]
+            self.assertEqual((model['status'], model['resolution_source']), ('unresolved', 'unresolved'))
+
+    def test_project_closure_hashes_aliases_duplicates_and_missing(self):
+        models = self.root / 'inputs/models'
+        models.mkdir(parents=True)
+        (models / 'owned.stp').write_bytes(b'owned STEP fixture')
+        self.board.with_suffix('.kicad_pro').write_text(json.dumps({'text_variables': {
+            'BODY': '${KIPRJMOD}/inputs/models/owned.stp'}}))
+        self.write_board('''(footprint "Owned" (property "Reference" "J1")
+            (model "${BODY}") (model "${KIPRJMOD}/inputs/models/owned.stp")
+            (model "${KIPRJMOD}/inputs/models/missing.stp")
+            (model "${KIPRJMOD}/inputs/models/disabled.stp" hide))''')
+        destination = self.root / 'proposal'
+        destination.mkdir()
+        closure = copy_project_models(self.board, destination)
+        self.assertEqual(list(closure['files']), ['inputs/models/owned.stp'])
+        target = destination / 'inputs/models/owned.stp'
+        self.assertEqual(closure['files']['inputs/models/owned.stp']['sha256'], hashlib.sha256(target.read_bytes()).hexdigest())
+        self.assertEqual([r['status'] for r in closure['references']], ['resolved', 'resolved', 'missing'])
+        self.assertFalse((destination / 'inputs/models/missing.stp').exists())
+        verify_project_models(self.board, destination, closure)
+        target.write_bytes(b'changed proposal')
+        with self.assertRaisesRegex(ValueError, 'project model changed'):
+            verify_project_models(self.board, destination, closure)
+        target.write_bytes(b'owned STEP fixture')
+        (models / 'missing.stp').write_bytes(b'appeared')
+        with self.assertRaisesRegex(ValueError, 'missing.*appeared'):
+            verify_project_models(self.board, destination, closure)
+
+    def test_project_closure_escape_symlink_and_collision_refuse(self):
+        destination = self.root / 'proposal'
+        destination.mkdir()
+        outside = self.root / 'outside.step'
+        outside.write_bytes(b'owned outside fixture')
+        project = self.root / 'project'
+        project.mkdir()
+        self.board = project / 'board.kicad_pcb'
+        for path in ('${KIPRJMOD}/../outside.step', 'body.step'):
+            if path == 'body.step':
+                (project / path).symlink_to(outside)
+            self.write_board(f'(footprint "Owned" (model "{path}"))')
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'escapes source project'):
+                copy_project_models(self.board, destination)
+        (project / 'part.step').write_bytes(b'owned')
+        (destination / 'part.step').write_bytes(b'protected proposal')
+        self.write_board('(footprint "Owned" (model "${KIPRJMOD}/part.step"))')
+        with self.assertRaisesRegex(ValueError, 'collides'):
+            copy_project_models(self.board, destination)
+        self.assertEqual((destination / 'part.step').read_bytes(), b'protected proposal')
+
+        # Even a missing source must not resolve to an unrelated proposal artifact.
+        (project / 'part.step').unlink()
+        with self.assertRaisesRegex(ValueError, 'collides'):
+            copy_project_models(self.board, destination)
+
+    def test_project_closure_preserves_internal_symlink_spelling(self):
+        model = self.root / 'body.step'
+        model.write_bytes(b'owned')
+        (self.root / 'alias.step').symlink_to(model)
+        self.write_board('(footprint "Owned" (model "${KIPRJMOD}/alias.step"))')
+        destination = self.root / 'proposal'
+        destination.mkdir()
+        closure = copy_project_models(self.board, destination)
+        self.assertEqual(list(closure['files']), ['alias.step'])
+        self.assertFalse((destination / 'alias.step').is_symlink())
+        verify_project_models(self.board, destination, closure)
+        (destination / 'alias.step').unlink()
+        (destination / 'alias.step').symlink_to(model)
+        with self.assertRaisesRegex(ValueError, 'became a symlink'):
+            verify_project_models(self.board, destination, closure)
 
 
 class StockModelFetchTests(unittest.TestCase):

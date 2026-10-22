@@ -214,7 +214,8 @@ b.Add(t); assert k.SaveBoard(sys.argv[1], b)
             work = self.root / ('keepout-fixed' if fixed else 'keepout-moving')
             execution = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placer_runner',
                 '/candidate/board.kicad_pcb', '/candidate/netlist.xml', '--request', '/candidate/request.json',
-                '--destination', '/work/proposal', '--result', '/work/result.json'], timeout=120)
+                '--destination', '/work/proposal', '--result', '/work/result.json',
+                '--skip-visuals'], timeout=120)
             self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
             result = json.loads((work / 'result.json').read_text())
             self.assertEqual((result['status'], result['write_scope']['status']), ('placed', 'allowed'))
@@ -379,7 +380,8 @@ b.Add(t); assert k.SaveBoard(sys.argv[1], b)
         work = self.root / 'sandbox-work'
         execution = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placer_runner',
             '/candidate/board.kicad_pcb', '/candidate/netlist.xml', '--request', '/candidate/request.json',
-            '--destination', '/work/proposal', '--result', '/work/result.json'], timeout=60)
+            '--destination', '/work/proposal', '--result', '/work/result.json',
+            '--skip-visuals'], timeout=60)
         self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
         report = json.loads((work / 'result.json').read_text())
         self.assertEqual(report['status'], 'placed')

@@ -39,7 +39,7 @@ class PlacerTest(unittest.TestCase):
         board = capture([part('U1', 2, 2), part('C1', 2, 2)])
         board['rule_areas'] = [{'uuid': 'owned-zone', 'owner': next(
             fp['uuid'] for fp in board['footprints'] if fp['ref'] == owner),
-            'layers': list(layers), 'forbid': {'footprints': True},
+            'layers': list(layers), 'forbid': {'footprints': True, 'pads': False},
             'outline': {'status': 'proven', 'polygons': [shape or rectangle(0, 0, 7, 5)]}}]
         return board
 

@@ -15,6 +15,10 @@ from unittest.mock import Mock, patch
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.render3d import RenderError, _png_info, render_board
 from agent_ee.storage import digest
+from toolchain import enable_visuals_for_module
+
+
+setUpModule = enable_visuals_for_module
 
 
 def png_bytes(width=2, height=2, scanlines=None):

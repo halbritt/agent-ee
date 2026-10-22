@@ -891,6 +891,25 @@ class LocalityIndexTests(unittest.TestCase):
         shared['items'].clear()
         self.assertEqual(snapshot[0]['items'], [None, True, 1, 1.5, 'text'])
 
+    def test_dag_shaped_document_hits_node_budget_without_exponential_walk(self):
+        node = []
+        for _ in range(40):  # 2**40 unfolded leaves from 40 shared lists.
+            node = [node, node]
+        facts, doc = bound_output_loop()
+        doc['obligations'][0]['supply']['citation'] = node
+        for operation in (locality._plain_json, locality.PlacementIndex, locality.validate,
+                          lambda d: locality.grade(facts, d)):
+            target = node if operation is locality._plain_json else doc
+            with self.subTest(operation=operation), self.assertRaisesRegex(
+                    ValueError, f'^{locality.NODE_ERROR}$'):
+                operation(target)
+
+    def test_document_just_under_node_budget_is_copied(self):
+        document = [0] * (locality.MAX_DOCUMENT_NODES - 1)
+        self.assertEqual(locality._plain_json(document), document)
+        with self.assertRaisesRegex(ValueError, f'^{locality.NODE_ERROR}$'):
+            locality._plain_json(document + [0])
+
     def test_hostile_string_cannot_bypass_net_disjointness(self):
         class Net(str):
             __hash__ = object.__hash__
@@ -1260,7 +1279,9 @@ class LocalityIndexTests(unittest.TestCase):
             fp.update(ref='P'+str(i), uuid='P'+str(i))
             for pad in fp['pads']:
                 pad['uuid'] = fp['ref'] + pad['number']
-            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+            # Ruling 371b: pad 1 sits on the courtyard's top edge; 0.1 mm keeps row 0's
+            # fixed copper the setback S inside the outline.
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM + MM//10], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
         b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
@@ -1355,7 +1376,9 @@ class LocalityIndexTests(unittest.TestCase):
             fp.update(ref='P'+str(i), uuid='P'+str(i))
             for pad in fp['pads']:
                 pad['uuid'] = fp['ref'] + pad['number']
-            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+            # Ruling 371b: pad 1 sits on the courtyard's top edge; 0.1 mm keeps row 0's
+            # fixed copper the setback S inside the outline.
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM + MM//10], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
         b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits

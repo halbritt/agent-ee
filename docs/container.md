@@ -321,6 +321,12 @@ library files. This repository is public, and the owner has not yet resolved
 whether that material may be republished, so run outputs stay on the ephemeral
 runner and only the gate summary reaches the job page.
 
+The shared test harness defaults incidental candidate imaging off with
+`AGENT_EE_SKIP_VISUALS=1`. The candidate-visual and 3D-render modules explicitly
+restore imaging for their tests, including native image/hash checks. This test
+setting does not change production defaults or skip any unittest. See
+[candidate inspection images](pcb-renders.md#candidate-inspection-images-agentee-382).
+
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` is the strict-toolchain contract: toolchain tests
 must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user
 namespace, the installed kicad-happy or the pinned kicad-route is missing. CI also refuses any skip on its own, so a skip cannot pass
@@ -521,3 +527,12 @@ semantics against the image built on the demonstrated host. It replaced
 - The copied run directory, hidden files included, matched the original.
 
 The action has not yet run on a hosted runner.
+
+## Stock 3D models
+
+The KiCad apt install includes `kicad-packages3d=${KICAD_VERSION}` alongside
+symbols, footprints and templates. The exact package pin uses the existing
+signed package source and fails the build if unavailable. The library adds
+approximately 280 MB of downloads and 3.3 GB unpacked (package estimates).
+[Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
+records the actual referenced model file hashes; runtime rendering is offline.

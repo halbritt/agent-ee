@@ -76,7 +76,7 @@ class AreaTests(unittest.TestCase):
     def test_cheaper_pose_cannot_leave_a_sourced_region(self):
         facts = capture([part('J3', 8, 8, 'B')])
         facts['rule_areas'] = [{'uuid': 'lane', 'name': 'card', 'owner': 'J3',
-            'layers': ['B.Cu'], 'forbid': {'footprints': True},
+            'layers': ['B.Cu'], 'forbid': {'footprints': True, 'pads': False},
             'outline': proven([rectangle(-22, 8, 30, 2)])}]
         fab = {'J3': {'B': proven([rectangle(8, 8, 2, 2)])}}
         policy = request(fixed_refs=[], gap_nm=0, groups=[{
@@ -220,6 +220,27 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(result, json.loads((destination / 'placement-result.json').read_text()))
         self.assertEqual(result['reserved_area']['findings'][0]['reserve']['owner'], 'owner-access')
 
+    def test_advisory_failures_cannot_refuse_publication(self):
+        from unittest.mock import patch
+        from test_placer_native import NativePlacerTest
+        from agent_ee.placer_runner import place_candidate
+        for target, error in (
+                ('agent_ee.reserved_area.fabrication_outlines', ValueError('bad fabrication')),
+                ('agent_ee.reserved_area.report', OSError('measurement unavailable')),
+                ('agent_ee.reserved_area.alternatives', KeyError('unexpected search failure')),
+                ('agent_ee.reserved_area_native.NativeAlternatives', OSError('validator initialization failed'))):
+            with self.subTest(target=target):
+                fixture = NativePlacerTest(); fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                with patch(target, side_effect=error):
+                    result = place_candidate(fixture.source, fixture.netlist,
+                                             fixture.scratch / 'advisory-failure', fixture.config)
+                self.assertEqual(result['status'], 'placed', result)
+                self.assertEqual(result['reserved_area']['status'], 'unknown')
+                self.assertEqual(result['reserved_area']['sides'], {})
+                self.assertIn(str(error), result['reserved_area']['reason'])
+                self.assertEqual(result['reserved_area'], result['judgment']['reserved_area'])
+
 
 import test_block_provenance as provenance_tests
 
@@ -316,14 +337,125 @@ class NativeAlternativeTests(unittest.TestCase):
         self.assertEqual(again['alternative']['position_nm'], alternative['position_nm'])
         self.assertEqual(again['alternative']['rotation_deg'], alternative['rotation_deg'])
 
-    def test_cheapest_geometry_fails_native_then_next_legal_pose_is_reported(self):
+    def test_unrelated_baseline_defect_is_unknown_not_pose_rejection(self):
         import pcbnew as k
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        from agent_ee.storage import read_json
         board = k.LoadBoard(str(self.source))
-        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
-        zone.SetLayer(k.B_Cu); zone.SetZoneName('native-only pad exclusion')
+        peer = k.FOOTPRINT(board); peer.SetReference('U9'); board.Add(peer)
+        peer.Reference().SetVisible(False); peer.Value().SetVisible(False)
+        peer.Flip(k.VECTOR2I(0, 0), False)
+        for layer in (k.B_CrtYd, k.B_Fab):
+            contour = rectangle(-1, -1, 2, 2)
+            for a, b in zip(contour, contour[1:]+contour[:1]):
+                shape = k.PCB_SHAPE(peer); shape.SetShape(k.SHAPE_T_SEGMENT)
+                shape.SetLayer(layer); shape.SetWidth(50000)
+                shape.SetStart(k.VECTOR2I(*a)); shape.SetEnd(k.VECTOR2I(*b)); peer.Add(shape)
+        pad = k.PAD(peer); pad.SetNumber('1'); pad.SetAttribute(k.PAD_ATTRIB_SMD)
+        pad.SetShape(k.PAD_SHAPE_RECT); pad.SetSize(k.VECTOR2I(MM, MM))
+        layers = k.LSET(); layers.AddLayer(k.B_Cu); pad.SetLayerSet(layers)
+        peer.Add(pad); peer.SetPosition(k.VECTOR2I(75*MM, 55*MM))
+        zone = k.ZONE(board); zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowTracks(True); zone.SetDoNotAllowPads(False)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('unrelated baseline pad exclusion')
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(74, 54, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        # Ruling 418b: a native-only pad rule, so the pack keeps the pose and native DRC attributes it.
+        self.source.with_suffix('.kicad_dru').write_text(
+            '(version 1)\n(rule "unrelated baseline pad exclusion"\n  (constraint disallow pad)\n'
+            '  (condition "A.intersectsArea(\'unrelated baseline pad exclusion\')"))\n')
+        facts = extract(self.source)
+        validator = NativeAlternatives(self.source, self.root / 'baseline-defect', facts, self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'unknown', result)
+        self.assertIn('baseline', read_json(self.root / result['witness'])['reason'])
+        self.assertIn('items_not_allowed', result['blocking_types'])
+        self.assertTrue(any(v['type'] == 'items_not_allowed' for v in validator.baseline['violations']))
+        lane, _ = self.run_alternatives('baseline-search')
+        self.assert_unknown_search(lane['alternative'], 'baseline')
+
+        # The same retained defect cannot hide a new exclusion at the trial pose.
+        zone = k.ZONE(board); zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowTracks(True); zone.SetDoNotAllowPads(False)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('new candidate pad exclusion')
         polygon = zone.Outline(); polygon.NewOutline()
         for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
         board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        with self.source.with_suffix('.kicad_dru').open('a') as rules:
+            rules.write('(rule "new candidate pad exclusion"\n  (constraint disallow pad)\n'
+                        '  (condition "A.intersectsArea(\'new candidate pad exclusion\')"))\n')
+        validator = NativeAlternatives(self.source, self.root / 'baseline-plus-new',
+                                       extract(self.source), self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'rejected', result)
+        self.assertIn('items_not_allowed', result['blocking_types'])
+
+    def test_cost_summary_binds_normalized_native_drc(self):
+        import hashlib
+        import json
+        from agent_ee.storage import read_json
+        lane, _ = self.run_alternatives('bound-drc')
+        validation = lane['alternative']['native_attempts'][-1]['validation']
+        for prefix, path in (('', self.root / validation['directory'] / 'native-drc.json'),
+                             ('baseline_', self.root / 'bound-drc/baseline/native-drc.json')):
+            report = read_json(path)
+            report.pop('date', None); report.pop('source', None)
+            for key in ('violations', 'unconnected_items', 'ignored_checks', 'included_severities'):
+                report[key] = sorted(report[key], key=lambda row: json.dumps(row, sort_keys=True))
+            canonical = json.dumps(report, sort_keys=True, separators=(',', ':')).encode()
+            self.assertEqual(validation[prefix + 'drc_content_sha256'], hashlib.sha256(canonical).hexdigest())
+            from agent_ee.reserved_area_native import drc_content_digest
+            report['date'] = 'different execution date'
+            report['source'] = 'another scratch path'
+            for key in ('violations', 'unconnected_items', 'ignored_checks', 'included_severities'):
+                report[key].reverse()
+            path.write_text(json.dumps(report))
+            self.assertEqual(drc_content_digest(path), validation[prefix + 'drc_content_sha256'])
+            report.pop('date'); report.pop('source')
+            report['violations'].append({'type': 'tamper'})
+            path.write_text(json.dumps(report))
+            self.assertNotEqual(validation[prefix + 'drc_content_sha256'], drc_content_digest(path))
+
+    def test_unexpected_validator_exception_is_retained_unknown(self):
+        from unittest.mock import patch
+        with patch('agent_ee.reserved_area_native.NativeAlternatives._validate',
+                   side_effect=KeyError('injected validator failure')):
+            lane, _ = self.run_alternatives('unexpected')
+        self.assert_unknown_search(lane['alternative'], 'injected validator failure')
+
+    def native_only_pad_rule(self, name):
+        """A tracks-only rule area plus a custom DRC rule disallowing pads that meet it.
+
+        Ruling 418a: the packing predicate binds rule areas forbidding pads or
+        footprints (AGENTEE-418), not custom .kicad_dru constraints, so the pose
+        over this area passes the predicates and only native DRC rejects it.
+        """
+        import pcbnew as k
+        board = k.LoadBoard(str(self.source))
+        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowTracks(True)
+        zone.SetDoNotAllowPads(False); zone.SetDoNotAllowFootprints(False)
+        zone.SetDoNotAllowVias(False); zone.SetDoNotAllowZoneFills(False)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName(name)
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        self.source.with_suffix('.kicad_dru').write_text(
+            f'(version 1)\n(rule "{name}"\n  (constraint disallow pad)\n'
+            f'  (condition "A.intersectsArea(\'{name}\')"))\n')
+
+    def pad_keepout(self, name):
+        import pcbnew as k
+        board = k.LoadBoard(str(self.source))
+        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName(name)
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+
+    def test_cheapest_geometry_fails_native_then_next_legal_pose_is_reported(self):
+        self.native_only_pad_rule('native-only pad exclusion')
         lane, _ = self.run_alternatives('blocked-cheapest')
         alternative = lane['alternative']
         self.assertEqual(alternative['status'], 'native_validated', alternative)
@@ -340,12 +472,7 @@ class NativeAlternativeTests(unittest.TestCase):
         from agent_ee.placement_probe import extract
         from agent_ee.reserved_area_native import NativeAlternatives
         from agent_ee.storage import read_json
-        board = k.LoadBoard(str(self.source))
-        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
-        zone.SetLayer(k.B_Cu); zone.SetZoneName('keepout 1 mm; actual 0.5 mm')
-        polygon = zone.Outline(); polygon.NewOutline()
-        for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
-        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        self.native_only_pad_rule('keepout 1 mm; actual 0.5 mm')
         validator = NativeAlternatives(self.source, self.root / 'injected-name',
                                        extract(self.source), self.policy, {})
         result = validator('J3', (0, 32*MM), 180)
@@ -355,6 +482,34 @@ class NativeAlternativeTests(unittest.TestCase):
         self.assertEqual(result['status'], 'rejected', result)
         self.assertEqual(result['blocking_types'], ['items_not_allowed'])
         self.assertNotIn('items_not_allowed', result['advisory_types'])
+
+    def test_pad_keepout_pose_is_excluded_by_the_packing_predicate_before_native_validation(self):
+        # AGENTEE-418: the B.Cu pad keep-out binds J3's land in the packing predicate,
+        # so [0, 32 mm] is never offered to native DRC and the next legal pose is reported.
+        from agent_ee.placement_probe import extract
+        self.pad_keepout('pad exclusion')
+        facts = extract(self.source)
+        original = next(fp for fp in facts['footprints'] if fp['ref'] == 'J3')
+        self.assertIsNone(reserve._candidate_cost(facts, self.policy, reserve.fabrication_outlines(self.source),
+                                                  {}, original, ((0, 32*MM), 180)))
+        lane, _ = self.run_alternatives('predicate-excluded')
+        alternative = lane['alternative']
+        self.assertEqual(alternative['status'], 'native_validated', alternative)
+        attempts = alternative['native_attempts']
+        self.assertNotIn([0, 32*MM], [a['position_nm'] for a in attempts])
+        self.assertEqual(attempts[-1]['validation']['status'], 'validated')
+
+    def test_numeric_text_in_keepout_name_cannot_waive_predicate_rejection(self):
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        self.pad_keepout('keepout 1 mm; actual 0.5 mm')
+        validator = NativeAlternatives(self.source, self.root / 'injected-name',
+                                       extract(self.source), self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual((result['status'], result['qualification'], result['reason']),
+                         ('rejected', 'not legal', 'saved pose failed placement predicates'), result)
+        self.assertNotIn('advisory_types', result)
+        self.assertFalse((self.root / result['directory'] / 'native-drc.json').exists())
 
     def test_every_alternative_drc_failure_keeps_search_unknown(self):
         from unittest.mock import patch
