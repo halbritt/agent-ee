@@ -351,6 +351,30 @@ class PackingTests(Fixture, unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'every advisory'):
                 blocks.validate_candidate(forged)
 
+    def test_tampered_source_refuses_packing_and_forged_advisory_candidate(self):
+        doc = copy.deepcopy(obligations())
+        # Clean hard policy remains admissible.
+        self.assertEqual(self.pack(electrical_locality=doc)['status'], 'packed')
+        doc['source_records'] = {path: 'changed' for path in doc['source_records']}
+        refused = self.pack(electrical_locality=doc)
+        self.assertNotEqual(refused['status'], 'packed', refused)
+        self.assertEqual(refused['outcome'], 'unknown', refused)
+        # Start from a genuinely advisory candidate and spoof its source authority.
+        missing = copy.deepcopy(doc)
+        missing['source_records'] = {}
+        candidate = self.pack(electrical_locality=missing)['candidate']
+        sub = candidate['block_policy']['electrical_locality']
+        sub['source_records'] = doc['source_records']
+        grade = candidate['grade']['electrical_locality']
+        grade['declaration'] = sub
+        for row in grade['measured'] + grade['advisories']:
+            row['constraint_provenance'] = {'class': 'owner', 'enforcement': 'integrity',
+                                          'reason': 'source record sha256 mismatch'}
+        with self.assertRaisesRegex(ValueError, 'source record integrity failure'):
+            blocks.validate_candidate(candidate)
+        with self.assertRaisesRegex(ValueError, 'source record integrity failure'):
+            blocks.admit(candidate, self.board, self.inv, self.derive(), policy(electrical_locality=doc))
+
     def test_isolated_block_capture_carries_the_board_copper_setback(self):
         # AGENTEE-366e/f: the isolated capture keeps the board's m_MaxError; an absent fact stays typed unknown.
         for fp in self.board['footprints']:

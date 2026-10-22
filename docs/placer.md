@@ -1246,8 +1246,15 @@ The document may include `source_records`, mapping relative source paths to
 captured UTF-8 source text. Records are part of the same immutable locality
 capture; they are not files to open, a live fetch, or an owner evidence store.
 Each source reference contains `path`, the SHA-256 of that exact UTF-8 text,
-`locator`, and an exact `quote` present in that text. Hash, missing-text or quote
-failures leave the bound advisory. Source identity and applicability remain
+`locator`, and an exact `quote` present in that text. Absent records, malformed
+hashes and quote failures leave the bound advisory
+(known boundary). Under AGENTEE-402 ruling 402a, a well-formed source reference
+whose retained text hashes differently returns `enforcement: integrity` with
+reason `source record sha256 mismatch`. Grading reports `unknown` with kind
+`source_record_integrity`, even when the measured distance is within the bound.
+It grants no hard constraint or placement targets; packing and block admission
+refuse the unknown coverage. Independent hard defects retain priority. Source
+identity and applicability remain
 review obligations: a matching digest is not proof of vendor authenticity or
 owner authorship. Do not publish third-party source text without rights approval;
 original numeric transcription records can retain source identities instead.

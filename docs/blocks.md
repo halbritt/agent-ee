@@ -373,6 +373,11 @@ advisory status; admission independently re-grades native lands against the
 source-bound policy. Sourced distance violations, infeasibility and unknown
 coverage still refuse. Group grades and courtyard witnesses must pass.
 
+AGENTEE-402 ruling 402a: locality references to present source records with
+mismatched SHA-256 digests produce `source_record_integrity` unknown coverage.
+Packing and candidate validation refuse them, including forged advisory grades.
+Absent source records and malformed hashes retain advisory/unsourced behavior.
+
 ## Matching
 
 `match(candidate, probe, inventory, mapping)` decides whether a target instance
