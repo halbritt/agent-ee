@@ -11,9 +11,12 @@ without a mark are not recommended."
 The saved board is measured natively (pcbnew, in the networkless sandbox) and
 graded here against module-frame geometry from the hash-pinned module datasheet
 (Figure 11-1 dimensions, Figure 10-1 feed-point side) and the captured KiCad
-footprint. Every criterion is exact polygon arithmetic on saved geometry; the
-only threshold is the module's own sourced width, used to classify Fig. 24/25
-corner positions. No clearance is derived from the guidelines and the Figure
+footprint. Every criterion is exact polygon arithmetic on saved geometry.
+Espressif prints no corner distance for the Fig. 24/25 positions, so
+manufacturer corner compliance is always unknown; the feed-side corner is
+graded only under a declared, agent-derived class-default policy (CORNER_POLICY)
+and every verdict that depends on it carries that authority class, never the
+manufacturer's. No clearance is derived from the guidelines and the Figure
 11-1 pin label 15 is never a clearance (AGENTEE-211). A missing vendor source,
 footprint or edge declaration is unknown, never pass. Housing pocket, nearby
 metal, mechanical support and installed RF performance stay physical/bench
@@ -41,8 +44,9 @@ SCOPE = ('Bare-board fabrication gate for the declared ESP32-S3-WROOM-1 outside-
          'not installed, enclosure or RF qualification.')
 LIMITATIONS = (SCOPE + ' Housing pocket and the guidelines\' separate 15 mm in-housing clearance, nearby metal, '
                'mechanical support and installed throughput/range testing remain open physical and bench '
-               'obligations. Corner classification uses the module body width as the Fig. 24/25 position '
-               'slot; it is not a clearance.')
+               'obligations. Espressif prints no corner distance: manufacturer corner compliance is unknown, '
+               'and the feed-side corner is graded only by the declared agent-derived class-default slot '
+               '(module body width), which is neither an Espressif acceptance distance nor a clearance.')
 # The guidelines snapshot locates the whole case; quotes are Espressif's text, verified by page.
 GUIDANCE = dict(
     section='1.4.7 General Principles of PCB Layout for Modules (Positioning a Module on a Base Board)',
@@ -63,6 +67,20 @@ FEED_POINT = dict(side='+x', meaning='right in top view, pin 40 side', sources=[
                  'the right end of the 6 mm antenna area'),
     dict(document='guidance', page=33, printed_page=30,
          locator='Fig. 24 (antenna feed point on the right): same antenna drawing, "Feed Point" label')])
+# Agent-derived class default (AGENTEE-453 review H1): the 18 mm slot is the module body width from
+# datasheet Figure 11-1, chosen by the agent to separate corner from mid-edge positions. Fig. 24/25
+# dimension no corner gap, so this is not manufacturer authority and cannot yield a manufacturer verdict.
+CORNER_POLICY = dict(
+    id='agent-ee.esp32-outside-board-corner-slot/1', authority='agent-derived-class-default',
+    slot='module body width (datasheet Figure 11-1, 18 mm)',
+    rule=('pass when the feed-side gap along the crossed edge is below the slot and no larger than the other '
+          'side; defect when it is at least the slot'),
+    basis=('Agent-derived from the module width. Espressif Fig. 24/25 mark corner positions but print no corner '
+           'distance; this is not a manufacturer acceptance distance.'))
+MANUFACTURER = 'manufacturer-sourced'
+CLASS_DEFAULT = CORNER_POLICY['authority']
+# Authority of each section's verdict. Geometry sections grade sourced figures and captured files.
+AUTHORITY = {name: MANUFACTURER for name in SECTIONS}
 OBLIGATIONS = {'housing-pocket': 'physical', 'housing-clearance': 'physical', 'nearby-metal': 'physical',
                'support': 'physical', 'rf-performance': 'bench'}
 
@@ -101,7 +119,7 @@ def module_geometry():
 def parse_declaration(raw):
     """Exact declaration; the policy must be the reviewed outside-board snapshot."""
     doc = strict_json(raw)
-    exact_fields(doc, ('schema', 'reference', 'policy', 'module_datasheet', 'footprint', 'edge'))
+    exact_fields(doc, ('schema', 'reference', 'policy', 'module_datasheet', 'footprint', 'edge', 'corner_policy'))
     if doc['schema'] != DECLARATION_SCHEMA:
         raise ValueError('antenna placement declaration schema required')
     nonempty(doc['reference'])
@@ -130,6 +148,8 @@ def parse_declaration(raw):
         nm = [[_nm(v) for v in p] for p in points]
         if nm[0] == nm[1]:
             raise ValueError('edge endpoints must differ')
+    if doc['corner_policy'] is not None and doc['corner_policy'] != CORNER_POLICY:
+        raise ValueError('corner_policy must be null or exactly the agent-derived class-default corner slot')
     paths = [path, doc['module_datasheet']['path'], doc['footprint']['path']]
     if len(set(paths)) != 3:
         raise ValueError('declared sources must be distinct files')
@@ -137,7 +157,16 @@ def parse_declaration(raw):
 
 
 def predicates(doc):
-    return [f"antenna-placement:{doc['reference']}:{name.replace('_', '-')}" for name in SECTIONS]
+    """Decidable predicates; the corner one exists only under the declared class default and says so."""
+    names = []
+    for name in SECTIONS:
+        label = f"antenna-placement:{doc['reference']}:{name.replace('_', '-')}"
+        if name == 'feed_side_corner':
+            if doc['corner_policy'] is None:
+                continue
+            label += ':' + CLASS_DEFAULT
+        names.append(label)
+    return names
 
 
 def capability(params, scope, files, inputs):
@@ -212,11 +241,43 @@ def _area(pcbnew, a, b, op):
     return 0 if result.IsEmpty() else int(round(result.Area()))
 
 
-def _pads(fp):
+def _pad_key(pad):
     import pcbnew
-    return sorted([p.GetNumber(), [int(p.GetPosition().x), int(p.GetPosition().y)],
-                   [int(p.GetSize().x), int(p.GetSize().y)], int(p.GetShape()),
-                   sorted(pcbnew.LayerName(layer) for layer in p.GetLayerSet().Seq())] for p in fp.Pads())
+    return [pad.GetNumber(), [int(pad.GetPosition().x), int(pad.GetPosition().y)],
+            [int(pad.GetSize().x), int(pad.GetSize().y)], int(pad.GetShape()),
+            sorted(pcbnew.LayerName(layer) for layer in pad.GetLayerSet().Seq())]
+
+
+def _pads(fp):
+    return sorted(_pad_key(p) for p in fp.Pads())
+
+
+def pad_geometry_mismatches(fp, expected, layers, max_error):
+    """Pads whose native copper polygon differs from the captured footprint's at the same pose.
+
+    The canonical pad record omits orientation and shape detail, so each pad's copper is compared
+    natively on every enabled copper layer it occupies (AGENTEE-453 review H3).
+    """
+    import pcbnew
+    actual, captured = (sorted(f.Pads(), key=lambda p: json.dumps(_pad_key(p))) for f in (fp, expected))
+    if len(actual) != len(captured):
+        return ['pad count']
+    found = []
+    for a, b in zip(actual, captured):
+        for layer in layers:
+            on = (a.IsOnLayer(layer), b.IsOnLayer(layer))
+            if on == (False, False):
+                continue
+            polys = []
+            for pad in (a, b):
+                poly = pcbnew.SHAPE_POLY_SET()
+                if pad.IsOnLayer(layer):
+                    pad.TransformShapeToPolygon(poly, layer, 0, max_error, pcbnew.ERROR_OUTSIDE)
+                polys.append(poly)
+            if _area(pcbnew, polys[0], polys[1], 'BooleanSubtract') or _area(
+                    pcbnew, polys[1], polys[0], 'BooleanSubtract') or polys[0].IsEmpty() != polys[1].IsEmpty():
+                found.append(dict(pad=a.GetNumber(), layer=pcbnew.LayerName(layer)))
+    return found
 
 
 def extract(board_path, request):
@@ -266,7 +327,10 @@ def extract(board_path, request):
     for area in expected_zones:
         # KiCad saves a library all-copper zone onto the enabled board layers only.
         area['layers'] = sorted(set(area['layers']) & set(enabled))
-    out['identity'] = dict(pads_equal=_pads(fp) == _pads(expected), actual_zones=zones(fp),
+    copper = list(board.GetEnabledLayers().CuStack())
+    geometry_mismatches = pad_geometry_mismatches(fp, expected, copper, int(board.GetDesignSettings().m_MaxError))
+    out['identity'] = dict(pads_equal=_pads(fp) == _pads(expected) and not geometry_mismatches,
+                           pad_geometry_mismatches=geometry_mismatches, actual_zones=zones(fp),
                            expected_zones=expected_zones)
     if pose['flipped'] or turns is None:
         return out
@@ -381,10 +445,10 @@ def evaluate(doc, native, present, geometry):
         sections['footprint'] = _section('unknown', 'only front-side quarter-turn poses are graded', pose=pose)
     elif not identity['pads_equal']:
         sections['footprint'] = _section('defect', 'saved pads differ from the captured footprint at this pose',
-                                         pose=pose)
+                                         pose=pose, pad_geometry_mismatches=identity['pad_geometry_mismatches'])
     else:
-        sections['footprint'] = _section('pass', 'saved pads equal the captured footprint at the saved pose',
-                                         pose=pose)
+        sections['footprint'] = _section('pass', 'saved pads and their native copper equal the captured footprint '
+                                         'at the saved pose', pose=pose)
     if identity is not None and sections['footprint']['status'] != 'unknown':
         sections['keepout_retained'] = _retained(identity, native['copper_layers'])
     if sections['footprint']['status'] != 'pass':
@@ -442,16 +506,24 @@ def evaluate(doc, native, present, geometry):
         return _overall(sections)
     width = geometry['width_nm']
     feed_gap, other_gap = x1 - ax1, ax0 - x0  # FEED_POINT side is +x in the module frame
-    measured = dict(feed_side_gap_nm=feed_gap, other_side_gap_nm=other_gap, slot_nm=width)
+    measured = dict(feed_side_gap_nm=feed_gap, other_side_gap_nm=other_gap)
+    if doc['corner_policy'] is None:
+        sections['feed_side_corner'] = _section(
+            'unknown', 'Espressif prints no corner distance for Fig. 24/25; manufacturer corner compliance is '
+                       'unknown and no class-default corner policy is declared', **measured)
+        return _overall(sections)
+    graded = dict(authority=CLASS_DEFAULT, policy=CORNER_POLICY['id'], slot_nm=width, **measured)
     if feed_gap < width and feed_gap <= other_gap:
-        sections['feed_side_corner'] = _section('pass', 'feed point at the feed-side corner slot (Fig. 24/25 '
-                                                'marked position)', **measured)
+        sections['feed_side_corner'] = _section('pass', 'feed-side gap below the agent-derived class-default slot '
+                                                '(module body width) and no larger than the other side; not an '
+                                                'Espressif-printed distance', **graded)
     elif feed_gap >= width:
-        sections['feed_side_corner'] = _section('defect', 'feed point faces away from the nearest corner or the '
-                                                'module sits mid-edge (Fig. 24/25 unmarked position)', **measured)
+        sections['feed_side_corner'] = _section('defect', 'feed-side gap at or beyond the agent-derived '
+                                                'class-default slot (module body width); not an Espressif-printed '
+                                                'distance', **graded)
     else:
-        sections['feed_side_corner'] = _section('unknown', 'both corners within one module width and the '
-                                                'non-feed corner is nearer', **measured)
+        sections['feed_side_corner'] = _section('unknown', 'both corners within the class-default slot and the '
+                                                'non-feed corner is nearer', **graded)
     return _overall(sections)
 
 
@@ -470,15 +542,56 @@ def _retained(identity, copper_layers):
     return _section('pass', 'saved module keepout equals the captured rule area on every copper layer')
 
 
+def _status(statuses):
+    return 'defect' if 'defect' in statuses else 'unknown' if 'unknown' in statuses else 'pass'
+
+
 def _overall(sections):
-    statuses = [s['status'] for s in sections.values()]
-    status = 'defect' if 'defect' in statuses else 'unknown' if 'unknown' in statuses else 'pass'
-    return dict(status=status, sections=sections)
+    """Overall status and its authority: a verdict that a class-default section decides is not manufacturer's."""
+    status = _status([s['status'] for s in sections.values()])
+    sourced = _status([s['status'] if s.get('authority', MANUFACTURER) == MANUFACTURER else 'unknown'
+                       for s in sections.values()])
+    authorities = {name: s.get('authority', AUTHORITY[name]) for name, s in sections.items()}
+    return dict(status=status, verdict_authority=MANUFACTURER if sourced == status else CLASS_DEFAULT,
+                authorities=authorities, manufacturer_corner_compliance='unknown', sections=sections)
 
 
 def gate_findings(doc, evaluation):
     return [(f"{doc['reference']}:{name.replace('_', '-')}", f"antenna-placement/{name.replace('_', '-')}")
             for name, section in evaluation['sections'].items() if section['status'] == 'defect']
+
+
+def _context(descriptor, inputs):
+    doc = descriptor['declaration']
+    if not descriptor['present']['guidance']:
+        return None
+    rel = doc['policy']['source']['path']
+    return antenna_placement_context(doc['policy'], {rel: (Path(inputs) / rel).read_bytes()})
+
+
+def build_report(manifest, params, descriptor, context, native):
+    """The candidate-bound report, a pure function of the captured declaration/sources and the native record."""
+    doc, present = descriptor['declaration'], descriptor['present']
+    board_sha = manifest['files'][manifest['scope']['board']]
+    geometry = module_geometry()
+    if native is not None and native.get('board_sha256') != board_sha:
+        raise ValueError('native antenna measurement does not bind the candidate board')
+    evaluation = (evaluate(doc, native, present, geometry) if native is not None else
+                  _overall({**{n: _section('unknown', 'captured footprint missing') for n in SECTIONS},
+                            'sources': _section('unknown', 'source not captured: footprint',
+                                                missing=[n for n, p in present.items() if not p])}))
+    if not present['guidance'] or not present['module_datasheet']:
+        # Without the guidance and the feed-point source no section can pass.
+        for section in evaluation['sections'].values():
+            if section['status'] == 'pass':
+                section.update(status='unknown', reason='source not captured; measured: ' + section['reason'])
+        evaluation = _overall(evaluation['sections'])
+    return dict(schema=RESULT_SCHEMA, candidate_id=manifest['candidate_id'], board_sha256=board_sha,
+                declaration_sha256=manifest['files'][params['declaration']],
+                reference=doc['reference'], placement_case='outside_board', scope=SCOPE,
+                guidance=dict(source=doc['policy']['source'], **GUIDANCE), context=context,
+                feed_point=FEED_POINT, module_datasheet=doc['module_datasheet'], footprint=doc['footprint'],
+                corner_policy=doc['corner_policy'], geometry=geometry, obligations=OBLIGATIONS, **evaluation)
 
 
 def check_antenna_placement(ctx):
@@ -488,13 +601,10 @@ def check_antenna_placement(ctx):
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
     doc, present = descriptor['declaration'], descriptor['present']
-    context = None
-    if present['guidance']:
-        rel = doc['policy']['source']['path']
-        try:
-            context = antenna_placement_context(doc['policy'], {rel: (ctx.inputs / rel).read_bytes()})
-        except FootprintError as exc:
-            raise CheckError('malformed', str(exc)) from exc
+    try:
+        context = _context(descriptor, ctx.inputs)
+    except FootprintError as exc:
+        raise CheckError('malformed', str(exc)) from exc
     geometry = module_geometry()
     board = ctx.candidate_path(ctx.scope['board'])
     if present['footprint']:
@@ -509,78 +619,77 @@ def check_antenna_placement(ctx):
     else:
         native = None
     try:
-        if native is not None and native.get('board_sha256') != ctx.manifest['files'][ctx.scope['board']]:
-            raise ValueError('native antenna measurement does not bind the candidate board')
-        evaluation = (evaluate(doc, native, present, geometry) if native is not None else
-                      _overall({**{n: _section('unknown', 'captured footprint missing') for n in SECTIONS},
-                                'sources': _section('unknown', 'source not captured: footprint',
-                                                    missing=[n for n, p in present.items() if not p])}))
+        report = build_report(ctx.manifest, ctx.params, descriptor, context, native)
     except (ValueError, TypeError, KeyError) as exc:
         raise CheckError('malformed', str(exc)) from exc
-    if not present['guidance'] or not present['module_datasheet']:
-        # Without the guidance and the feed-point source no section can pass.
-        for section in evaluation['sections'].values():
-            if section['status'] == 'pass':
-                section.update(status='unknown', reason='source not captured; measured: ' + section['reason'])
-        evaluation = _overall(evaluation['sections'])
-    report = dict(schema=RESULT_SCHEMA, candidate_id=ctx.manifest['candidate_id'],
-                  board_sha256=ctx.manifest['files'][ctx.scope['board']],
-                  declaration_sha256=ctx.manifest['files'][ctx.params['declaration']],
-                  reference=doc['reference'], placement_case='outside_board', scope=SCOPE,
-                  guidance=dict(source=doc['policy']['source'], **GUIDANCE), context=context,
-                  feed_point=FEED_POINT, module_datasheet=doc['module_datasheet'], footprint=doc['footprint'],
-                  geometry=geometry, obligations=OBLIGATIONS, **evaluation)
     write_json(ctx.work / 'antenna-placement.json', report)
     ctx.evidence('antenna-placement.json')
     ctx.result['details'].update(report)
     ctx.result['limitations'].append(LIMITATIONS)
     ctx.result['details']['gate_findings'] = [dict(check_id=ctx.cid, entity=e, kind=k)
-                                              for e, k in gate_findings(doc, evaluation)]
-    counts = {s: sum(1 for v in evaluation['sections'].values() if v['status'] == s)
+                                              for e, k in gate_findings(doc, report)]
+    counts = {s: sum(1 for v in report['sections'].values() if v['status'] == s)
               for s in ('defect', 'unknown', 'pass')}
-    ctx.result.update(execution='unsupported' if evaluation['status'] == 'unknown' else 'ok',
-                      outcome=evaluation['status'],
-                      summary=f"ESP32 outside-board antenna placement {evaluation['status']}: "
-                              f"{counts['defect']} defect, {counts['unknown']} unknown, {counts['pass']} pass")
+    ctx.result.update(execution='unsupported' if report['status'] == 'unknown' else 'ok',
+                      outcome=report['status'],
+                      summary=f"ESP32 outside-board antenna placement {report['status']}: "
+                              f"{counts['defect']} defect, {counts['unknown']} unknown, {counts['pass']} pass "
+                              f"(verdict authority {report['verdict_authority']})")
 
 
-def bare_board_claim(run_dir, result):
+def bare_board_claim(run_dir, checks, check_id):
     """Composition point for a board-fab attestation (AGENTEE-449).
 
-    Re-reads the frozen candidate and the sealed report, refuses a result from
-    another candidate, board or declaration, and returns only the bare-board
-    placement claim with its open physical/bench obligations. A pass here never
-    closes installed or product qualification.
+    ``checks`` is the complete retained check set of the run. The claim needs an
+    unchanged candidate snapshot (every captured source re-hashed against the
+    manifest and candidate identity), the immutable baseline, and a required
+    evidence seal matching every retained result and artifact. The sealed report
+    must equal the report re-derived from the sealed native measurement and the
+    captured declaration and sources, including the full obligation ledger. It
+    returns only the bare-board placement claim with its authority class and
+    open physical/bench obligations; a pass here never closes installed or
+    product qualification, and never states manufacturer corner compliance.
     """
+    from .baseline import load_baseline, verify_evidence
+    from .candidate import verify_snapshot
     run_dir = Path(run_dir)
-    manifest = json.loads((run_dir / 'candidate.json').read_text())
+    manifest = verify_snapshot(run_dir)
+    if load_baseline(run_dir) is None:
+        raise ValueError('antenna placement claim requires an immutable baseline')
+    if not (run_dir / 'work/verification/evidence.json').is_file():
+        raise ValueError('antenna placement claim requires a sealed evidence record')
+    verify_evidence(run_dir, checks, required=True)
+    matches = [c for c in checks if c.get('id') == check_id]
+    if len(matches) != 1:
+        raise ValueError(f'antenna placement check {check_id!r} is not in the retained check set')
+    result = matches[0]
     if result.get('kind') != 'antenna_placement' or result.get('candidate_id') != manifest['candidate_id']:
         raise ValueError('antenna placement result is not bound to this candidate')
     if result.get('execution') != 'ok' or result.get('outcome') != 'pass':
-        raise ValueError(f"antenna placement {result.get('id')!r} did not pass")
-    rel = f"work/{result['id']}/antenna-placement.json"
-    if rel not in result.get('evidence', []):
-        raise ValueError('antenna placement report is not sealed evidence')
-    report = json.loads((run_dir / rel).read_text())
+        raise ValueError(f'antenna placement {check_id!r} did not pass')
     scope = manifest['scope']
-    spec = [c for c in scope.get('checks', []) if c.get('id') == result['id']]
+    spec = [c for c in scope.get('checks', []) if c.get('id') == check_id]
     if len(spec) != 1 or spec[0].get('kind') != 'antenna_placement':
         raise ValueError('antenna placement check is not declared by this scope')
-    declaration = spec[0]['params']['declaration']
-    if (report.get('schema') != RESULT_SCHEMA or report['candidate_id'] != manifest['candidate_id']
-            or report['board_sha256'] != manifest['files'].get(scope['board'])
-            or report['declaration_sha256'] != manifest['files'].get(declaration)
-            or report['status'] != 'pass' or any(report[k] != v for k, v in result['details'].items()
-                                                 if k in report)):
-        raise ValueError('antenna placement report differs from the candidate or its check result')
-    for key in ('board', 'declaration'):
-        rel_path = scope['board'] if key == 'board' else declaration
-        if digest(run_dir / 'inputs' / rel_path) != manifest['files'][rel_path]:
-            raise ValueError(f'captured {key} changed after the antenna placement check')
+    evidence = {e['path'] if isinstance(e, dict) else e for e in result.get('evidence', [])}
+    rel, native_rel = (f'work/{check_id}/{name}' for name in ('antenna-placement.json', 'antenna-native.json'))
+    if not {rel, native_rel} <= evidence:
+        raise ValueError('antenna placement report or native measurement is not sealed evidence')
+    params = spec[0]['params']
+    descriptor = capability(params, scope, manifest['files'], run_dir / 'inputs')
+    native = json.loads((run_dir / native_rel).read_text())
+    expected = build_report(manifest, params, descriptor, _context(descriptor, run_dir / 'inputs'), native)
+    report = json.loads((run_dir / rel).read_text())
+    if report != expected or any(result['details'].get(k) != v for k, v in expected.items()):
+        raise ValueError('antenna placement report differs from its re-derived candidate evaluation')
+    if report['status'] != 'pass' or report['obligations'] != OBLIGATIONS:
+        raise ValueError('antenna placement report does not carry a pass with the full obligation ledger')
     return dict(claim='bare-board-antenna-placement', reference=report['reference'],
                 placement_case=report['placement_case'], board_sha256=report['board_sha256'],
                 guidance_sha256=report['guidance']['source']['sha256'], scope=report['scope'],
-                open_obligations=dict(report['obligations']))
+                authority_class=report['verdict_authority'], authorities=dict(report['authorities']),
+                class_default_policy=(report['corner_policy'] or {}).get('id'),
+                manufacturer_corner_compliance='unknown', open_obligations=dict(OBLIGATIONS))
 
 
 def main(argv=None):

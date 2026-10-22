@@ -739,8 +739,9 @@ manufacturer's antenna placement policy. Scaffold callers receive the same
 explicit unresolved error rather than an invented replacement polygon.
 `keepouts/1` stays unknown for this declaration. The outside-board case itself
 is graded by the separate [antenna placement check](antenna-placement.md)
-(AGENTEE-453): saved pose, crossed edge, feed-point corner and retained module
-keepout, as a bare-board gate. The envelope's `antenna` contract and its open
+(AGENTEE-453): saved pose, crossed edge, feed-point corner (an agent-derived
+class default, not manufacturer authority) and retained module keepout, as a
+bare-board gate. The envelope's `antenna` contract and its open
 obligations are unchanged by that check.
 
 Launch preflight requires the recorded `pcbnew` runtime. The coordinator runs

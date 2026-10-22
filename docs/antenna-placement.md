@@ -8,6 +8,14 @@ and placement rule area. Every criterion is exact polygon arithmetic on saved
 pcbnew geometry against hash-pinned sources. If an input is missing, the result
 is `unknown`, never `pass`.
 
+Sourced geometry and agent policy are kept apart. The antenna and body
+rectangles, the feed-point side, the outside-board case and the footprint come
+from the pinned sources below. The feed-side corner position does not:
+Espressif marks corner positions in Fig. 24/25 but prints no corner distance.
+Manufacturer corner compliance is therefore always `unknown`. The corner is
+graded only under an explicitly declared agent-derived class default (see
+[Authority](#authority)).
+
 It is not installed, enclosure or RF qualification. These stay open physical or
 bench obligations in every report (`obligations`), and a pass here never
 closes them:
@@ -76,7 +84,9 @@ The declaration is an exact `agent-ee.antenna-placement-declaration/1` record:
                        "sha256": "27d71971da07c280c6068d08c74720d1a25b8f20cf8494dc1765bdd28d40d435"},
   "footprint": {"path": "project/cad/RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod",
                 "sha256": "d0cfbb31fef0c47396c0d061ec5a3bff60f0567d8d4ea8dd4769c84f52bd656f"},
-  "edge": {"start_mm": [0, 0], "end_mm": [90, 0]}
+  "edge": {"start_mm": [0, 0], "end_mm": [90, 0]},
+  "corner_policy": {"id": "agent-ee.esp32-outside-board-corner-slot/1",
+                    "authority": "agent-derived-class-default", "slot": "...", "rule": "...", "basis": "..."}
 }
 ```
 
@@ -87,7 +97,10 @@ differ from the pin, capture is refused, for example a lookalike PDF. A source
 that is declared but not captured is allowed, and every section that depends
 on it becomes `unknown`. `edge` names the straight board-outline segment the
 antenna must cross, in board millimetres. If it is `null`, the corner section
-is `unknown`. The declaration and the captured sources are immutable inputs.
+is `unknown`. `corner_policy` is `null` or exactly
+`agent_ee.antenna_placement.CORNER_POLICY`; any other value, including one that
+claims manufacturer authority or another slot, refuses capture. If it is
+`null`, the corner section is `unknown` and no corner predicate is advertised. The declaration and the captured sources are immutable inputs.
 Launch preflight requires `pcbnew`.
 
 ## Native measurement
@@ -103,7 +116,12 @@ The probe never writes the board. It records the board SHA-256 and enabled
 copper layers. It records the outer outline from `GetBoardPolygonOutlines`. For
 the declared reference it records the pose (FPID, anchor, orientation, side).
 It loads the captured footprint separately at the same pose and records its
-pads and rule areas next to the saved ones. It first checks that its pure
+pads and rule areas next to the saved ones. Pads are compared both as a
+canonical record (number, centre, size, shape, layers) and natively: each
+saved pad's copper polygon on every enabled copper layer must equal the
+captured pad's polygon at the same pose (`pad_geometry_mismatches`), so a pad
+rotated in place is a footprint defect while a whole-module rotation is not.
+It first checks that its pure
 module-frame transform reproduces pcbnew's own pad placement. Then it measures,
 with pcbnew polygon booleans:
 
@@ -125,13 +143,10 @@ grades each section in pure Python:
 | `footprint` | exactly one reference, FPID `RF_Module:ESP32-S3-WROOM-1`, saved pads equal to the captured footprint at the pose | reference absent or duplicated, other FPID, differing pads | back side or non-quarter-turn orientation |
 | `antenna_outside_board` | zero antenna area on board material | any overlap, including an antenna turned into the board | no single closed outline |
 | `feed_point_edge` | body fully on board, so the antenna/body boundary (and the feed point) lies on one straight outline segment | — | body beyond the edge: `feed_point_offset_nm` is reported, but the guidance gives no bound for "close" |
-| `feed_side_corner` | the declared edge is the crossed edge and the feed-side gap along it is below one module width and no larger than the other side | another existing outline edge is crossed; the feed-side gap is at least one module width (Fig. 24 positions 1 and 2) | no declared edge, declared edge not in the outline, or both corners within one module width with the non-feed one nearer |
+| `feed_side_corner` (class default) | under the declared `corner_policy`: the declared edge is the crossed edge and the feed-side gap along it is below the slot and no larger than the other side | another existing outline edge is crossed; under the policy, the feed-side gap is at least the slot | no `corner_policy`, no declared edge, declared edge not in the outline, or both corners within the slot with the non-feed one nearer |
 | `keepout_retained` | the saved module rule area equals the captured one (layers projected onto the enabled layers), on every copper layer, forbidding footprints, pads, tracks, vias and fills, and covering the antenna area | removed, altered or not covering | captured footprint without one straight rule area |
 | `keepout_clear` | no saved copper inside the captured keepout | listed `items` | captured keepout absent |
 
-The only threshold is the module's own sourced 18 mm body width. It is used as
-the width of a position slot along the edge, to tell Fig. 24/25 corner
-positions from mid-edge and opposite-corner ones. It is not a clearance.
 Without the guidance or the datasheet capture, no section can pass. A section
 whose measurement passed is reported as `unknown`, with the measured reason
 kept.
@@ -145,19 +160,50 @@ The overall outcome is `defect` if any section is a defect, otherwise
 `declaration_sha256`, the guidance record and its sealed
 `antenna_placement_context`, `feed_point`, `geometry` and `obligations`.
 
+## Authority
+
+Each report carries `authorities` (section to authority class),
+`verdict_authority` and `manufacturer_corner_compliance` (always `unknown`).
+Every section except `feed_side_corner` is `manufacturer-sourced`: it grades
+sourced figures and captured files. The corner slot is
+`agent-derived-class-default` (`CORNER_POLICY`): the 18 mm module body width
+from datasheet Figure 11-1, chosen by the agent to separate corner from
+mid-edge positions. It is neither an Espressif acceptance distance nor a
+clearance. `verdict_authority` is `manufacturer-sourced` only when the overall
+status is unchanged with the class-default section treated as `unknown`.
+Otherwise it is `agent-derived-class-default`. Every overall pass and every
+defect decided only by the corner slot therefore carries the class-default
+authority. A reviewed sourced basis for a corner distance is needed before
+manufacturer corner compliance can be anything but `unknown`.
+
 ## Board-fab composition
 
-`agent_ee.antenna_placement.bare_board_claim(run_dir, result)` is the
-composition point for the board-fab attestation (AGENTEE-449). It accepts only
-a passing `antenna_placement` result of the same candidate. It re-reads the
-sealed `antenna-placement.json` and checks it against the candidate manifest
-(board and declaration SHA-256) and against the check result. It also re-hashes
-the captured board and declaration. It then returns
-`{claim: bare-board-antenna-placement, ..., open_obligations}`. A tampered
-report, or a result replayed from another candidate, is refused. The returned
-obligations are open by construction: the attestation must carry them forward
-and must not mark installed or product qualification complete. Baseline
-freezing and `verify_evidence` seal the same report like any other evidence.
+`agent_ee.antenna_placement.bare_board_claim(run_dir, checks, check_id)` is the
+composition point for the board-fab attestation (AGENTEE-449). `checks` is the
+complete retained check set of the run. The claim refuses unless:
+
+- the candidate snapshot is unchanged (`candidate.verify_snapshot`: every
+  captured input, including each source PDF and the footprint, re-hashed
+  against the manifest and the candidate identity) and the immutable baseline
+  exists and is unchanged;
+- the evidence seal exists and `verify_evidence(required=True)` accepts the
+  complete check set, so every retained result and artifact equals its sealed
+  digest;
+- the named result is a passing `antenna_placement` result of this candidate,
+  declared by its scope, with the report and the native measurement in its
+  sealed evidence;
+- the sealed report equals the report re-derived from the sealed
+  `antenna-native.json`, the captured declaration and the captured sources,
+  and the result details carry the same values. A coherently re-sealed report
+  or result that relabels a verdict or drops obligations is refused here;
+- the report is a pass carrying the full obligation ledger.
+
+It returns `{claim: bare-board-antenna-placement, ..., authority_class,
+authorities, class_default_policy, manufacturer_corner_compliance: unknown,
+open_obligations}`. A pass is a class-default authority claim, never a
+manufacturer one. The returned obligations are open by construction: the
+attestation must carry them forward and must not mark installed or product
+qualification complete.
 
 ## Pod status
 
@@ -167,5 +213,8 @@ bytes, the check reports `unknown` with one open section, `feed_point_edge`.
 The module body overhangs the top edge by 0.25 mm (`feed_point_offset_nm`
 250000), so the feed point sits off the edge. Every other section passes,
 including `feed_side_corner` with an 8.5 mm feed-side gap. The same board with
-U1 at y = 6.75 mm passes all seven sections. The placement choice belongs to
+U1 at y = 6.75 mm passes all seven sections. These measurements were taken
+before the AGENTEE-453 review corrections; under the current check the corner
+pass needs the declared class-default `corner_policy` and carries that
+authority. The placement choice belongs to
 the pod lane and its production capture.

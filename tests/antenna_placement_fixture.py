@@ -2,8 +2,8 @@
 
 A plain four-layer rectangular board with the stock KiCad 10.0.7
 ESP32-S3-WROOM-1 footprint captured at runtime (pinned sha256, never
-committed). Options move, rotate or flip U1, drop or loosen its module-owned
-keepout, or add copper inside it. The vendor PDFs are not available to the
+committed). Options move, rotate or flip U1, rotate one of its pads, drop or loosen its
+module-owned keepout, or add copper inside it. The vendor PDFs are not available to the
 tests: synthetic stand-in bytes are pinned by patching the reviewed hashes,
 so the guidance and datasheet *contents* are not exercised here.
 """
@@ -27,7 +27,7 @@ def _mm(value):
 
 def make_board(path, footprint_dir, *, anchor=GOOD['anchor'], rotation=GOOD['rotation'], flipped=False,
                drop_zone=False, loosen_zone=False, intrusion=False, reference='U1', outline=(WIDTH, HEIGHT),
-               split_top=None):
+               split_top=None, rotate_pad=None):
     import pcbnew as k
     board = k.BOARD()
     board.SetCopperLayerCount(4)
@@ -51,6 +51,10 @@ def make_board(path, footprint_dir, *, anchor=GOOD['anchor'], rotation=GOOD['rot
     fp.SetOrientationDegrees(rotation)
     if flipped:
         fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+    if rotate_pad:
+        # One pad turned 90 degrees in place: same canonical record, different copper.
+        pad = next(p for p in fp.Pads() if p.GetNumber() == rotate_pad)
+        pad.SetOrientationDegrees(pad.GetOrientationDegrees() + 90)
     for zone in list(fp.Zones()):
         if drop_zone:
             fp.Remove(zone)
@@ -67,9 +71,11 @@ def make_board(path, footprint_dir, *, anchor=GOOD['anchor'], rotation=GOOD['rot
     board.Save(str(path))
 
 
-def declaration(*, edge=TOP, guidance=GUIDANCE, policy_case='outside_board', reference='U1'):
+def declaration(*, edge=TOP, guidance=GUIDANCE, policy_case='outside_board', reference='U1', corner_policy=True):
     from agent_ee import footprint_library as fl
+    from agent_ee.antenna_placement import CORNER_POLICY
     return dict(schema='agent-ee.antenna-placement-declaration/1', reference=reference,
                 policy=fl.esp32_s3_wroom_1_placement_policy(policy_case, pdf_path=guidance),
                 module_datasheet=dict(path=DATASHEET, sha256=fl.ESP32_DATASHEET_SHA256),
-                footprint=dict(path=FOOTPRINT, sha256=fl.ESP32_FOOTPRINT_SHA256), edge=edge)
+                footprint=dict(path=FOOTPRINT, sha256=fl.ESP32_FOOTPRINT_SHA256), edge=edge,
+                corner_policy=dict(CORNER_POLICY) if corner_policy else None)

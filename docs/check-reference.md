@@ -642,12 +642,21 @@ board the check grades seven sections: sources, footprint identity and pose,
 antenna area outside board material, feed point on the board edge, feed-side
 corner on the declared edge, retained module keepout, and copper inside that
 keepout. Missing evidence, a back-side or off-axis pose, and a body overhang
-beyond the edge are `unknown`. Overlap, a wrong edge or corner, a removed or
-altered rule area, and keepout copper are defects. No clearance is derived:
-the Figure 11-1 pin label is not a clearance. The 18 mm module width is used
-only as a position slot. This is a bare-board gate. Housing pocket, in-housing
-clearance, nearby metal, support and installed RF performance stay open
-obligations, carried by `bare_board_claim`, the AGENTEE-449 composition point.
+beyond the edge are `unknown`. Overlap, a wrong edge, a removed or altered rule
+area, keepout copper and a pad whose native copper differs from the captured
+footprint (for example one pad rotated in place) are defects. No clearance is
+derived: the Figure 11-1 pin label is not a clearance. Espressif prints no
+corner distance, so `manufacturer_corner_compliance` is always `unknown`. The
+feed-side corner is graded only when the declaration carries the exact
+agent-derived class-default `corner_policy` (an 18 mm slot taken from the
+module width). That section, and any verdict it decides, has
+`verdict_authority: agent-derived-class-default`, never
+`manufacturer-sourced`. Without the policy the corner is `unknown`. This is a
+bare-board gate. Housing pocket, in-housing clearance, nearby metal, support and
+installed RF performance stay open obligations, carried by `bare_board_claim`,
+the AGENTEE-449 composition point. The claim requires the unchanged candidate
+snapshot, the immutable baseline, the complete sealed check set and a report
+equal to its re-derivation from the sealed native measurement.
 
 ## Native netlist
 

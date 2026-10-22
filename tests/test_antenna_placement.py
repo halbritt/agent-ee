@@ -41,6 +41,11 @@ class DeclarationTests(unittest.TestCase):
         doc = self.parse(fx.declaration())
         self.assertEqual(ap.predicates(doc)[0], 'antenna-placement:U1:sources')
         self.assertEqual(len(ap.predicates(doc)), len(ap.SECTIONS))
+        self.assertIn('antenna-placement:U1:feed-side-corner:agent-derived-class-default', ap.predicates(doc))
+        # Without the class default the corner has no decidable basis, so no corner predicate is advertised.
+        bare = self.parse(fx.declaration(corner_policy=False))
+        self.assertEqual(len(ap.predicates(bare)), len(ap.SECTIONS) - 1)
+        self.assertFalse([p for p in ap.predicates(bare) if 'corner' in p])
 
     def test_only_the_reviewed_outside_board_snapshot_is_accepted(self):
         mutations = {
@@ -57,6 +62,9 @@ class DeclarationTests(unittest.TestCase):
             'point-edge': lambda d: d.update(edge=dict(start_mm=[0, 0], end_mm=[0, 0])),
             'clearance-field': lambda d: d.update(clearance_mm=15),
             'schema': lambda d: d.update(schema='agent-ee.antenna-placement-declaration/0'),
+            'corner-policy-absent': lambda d: d.pop('corner_policy'),
+            'corner-policy-as-manufacturer': lambda d: d['corner_policy'].update(authority='manufacturer-sourced'),
+            'corner-policy-other-slot': lambda d: d['corner_policy'].update(slot='15 mm'),
         }
         self.parse(fx.declaration())
         for name, mutate in mutations.items():
@@ -70,6 +78,24 @@ class DeclarationTests(unittest.TestCase):
         self.assertEqual(geometry['antenna'], [-9_000_000, -12_750_000, 9_000_000, -6_750_000])
         self.assertEqual(geometry['body'], [-9_000_000, -6_750_000, 9_000_000, 12_750_000])
         self.assertNotIn('esp32_s3_wroom_1_keepout_clearance_mm', geometry['facts'])
+
+    def test_class_default_section_never_yields_a_manufacturer_verdict(self):
+        def sections(corner, other='pass', authority=ap.CLASS_DEFAULT):
+            out = {name: ap._section(other if name == 'antenna_outside_board' else 'pass', 'x')
+                   for name in ap.SECTIONS}
+            out['feed_side_corner'] = ap._section(corner, 'x', authority=authority)
+            return out
+        cases = {('pass', 'pass'): ('pass', ap.CLASS_DEFAULT), ('defect', 'pass'): ('defect', ap.CLASS_DEFAULT),
+                 ('unknown', 'pass'): ('unknown', ap.MANUFACTURER),
+                 ('pass', 'defect'): ('defect', ap.MANUFACTURER), ('defect', 'defect'): ('defect', ap.MANUFACTURER)}
+        for (corner, other), expected in cases.items():
+            with self.subTest(corner=corner, other=other):
+                overall = ap._overall(sections(corner, other))
+                self.assertEqual((overall['status'], overall['verdict_authority']), expected)
+                self.assertEqual(overall['authorities']['feed_side_corner'], ap.CLASS_DEFAULT)
+                self.assertEqual(overall['manufacturer_corner_compliance'], 'unknown')
+        self.assertEqual(ap.CORNER_POLICY['authority'], ap.CLASS_DEFAULT)
+        self.assertNotEqual(ap.CLASS_DEFAULT, ap.MANUFACTURER)
 
     def test_frame_transform_round_trips_all_quarter_turns(self):
         for turns in range(4):
@@ -152,6 +178,10 @@ class NativeAntennaPlacementTests(unittest.TestCase):
         self.assertEqual(report['context']['source']['page'], 33)
         self.assertIsNone(report['context']['source_derived_minimum'])
         self.assertEqual(report['sections']['feed_side_corner']['feed_side_gap_nm'], 2_000_000)
+        self.assertEqual(report['sections']['feed_side_corner']['authority'], ap.CLASS_DEFAULT)
+        self.assertEqual(report['verdict_authority'], ap.CLASS_DEFAULT)
+        self.assertEqual(report['manufacturer_corner_compliance'], 'unknown')
+        self.assertNotIn('Fig. 24/25 marked', report['sections']['feed_side_corner']['reason'])
         self.assertEqual(report['sections']['feed_point_edge']['feed_point_offset_nm'], 0)
         self.assertEqual(set(report['obligations']),
                          {'housing-pocket', 'housing-clearance', 'nearby-metal', 'support', 'rf-performance'})
@@ -159,14 +189,37 @@ class NativeAntennaPlacementTests(unittest.TestCase):
         self.assertEqual(result['details']['gate_findings'], [])
         freeze_evidence(run, [result])
         verify_evidence(run, [result], required=True)
-        claim = ap.bare_board_claim(run, result)
+        claim = ap.bare_board_claim(run, [result], 'antenna')
         self.assertEqual(claim['claim'], 'bare-board-antenna-placement')
-        self.assertEqual(claim['open_obligations']['rf-performance'], 'bench')
+        self.assertEqual(claim['open_obligations'], ap.OBLIGATIONS)
+        self.assertEqual(claim['authority_class'], ap.CLASS_DEFAULT)
+        self.assertEqual(claim['class_default_policy'], ap.CORNER_POLICY['id'])
+        self.assertEqual(claim['manufacturer_corner_compliance'], 'unknown')
 
     def test_rotated_module_on_the_declared_right_edge_passes(self):
         # -90 degrees points the antenna at +x; the feed side (+x local) faces the bottom-right corner.
         _, result = self.run_board(self.declaration(edge=fx.RIGHT), anchor=(53.25, 29.0), rotation=-90)
         self.assert_only(result, 'pass', [])
+
+    def test_without_the_class_default_the_corner_is_unknown(self):
+        _, result = self.run_board(self.declaration(corner_policy=False))
+        self.assert_only(result, 'unknown', ['feed_side_corner'])
+        corner = result['details']['sections']['feed_side_corner']
+        self.assertEqual(corner['feed_side_gap_nm'], 2_000_000)
+        self.assertNotIn('authority', corner)
+        self.assertEqual(result['details']['verdict_authority'], ap.MANUFACTURER)
+        self.assertEqual(result['details']['manufacturer_corner_compliance'], 'unknown')
+
+    def test_corner_slot_boundary_is_graded_by_class_default_authority(self):
+        # U1 at x=33 leaves exactly one module width (18 mm) to the feed-side corner.
+        for name, x, outcome in (('below', 33.000001, 'pass'), ('exact', 33.0, 'defect')):
+            with self.subTest(name):
+                _, result = self.run_board(self.declaration(), anchor=(x, 6.75))
+                self.assert_only(result, outcome, [] if outcome == 'pass' else ['feed_side_corner'])
+                corner = result['details']['sections']['feed_side_corner']
+                self.assertEqual((corner['authority'], corner['policy']), (ap.CLASS_DEFAULT, ap.CORNER_POLICY['id']))
+                self.assertEqual(result['details']['verdict_authority'], ap.CLASS_DEFAULT)
+                self.assertIn('agent-derived class-default', corner['reason'])
 
     def test_antenna_on_a_different_edge_than_declared_is_a_defect(self):
         run, result = self.run_board(self.declaration(edge=fx.TOP), anchor=(53.25, 29.0), rotation=-90)
@@ -184,6 +237,7 @@ class NativeAntennaPlacementTests(unittest.TestCase):
         _, result = self.run_board(self.declaration(), rotation=180)
         self.assertEqual(result['outcome'], 'defect')
         self.assertEqual(self.sections(result)['antenna_outside_board'], 'defect')
+        self.assertEqual(result['details']['verdict_authority'], ap.MANUFACTURER)
 
     def test_feed_point_away_from_the_corner_is_a_defect(self):
         for name, x in (('opposite-corner', 11.0), ('mid-edge', 30.0)):
@@ -229,7 +283,7 @@ class NativeAntennaPlacementTests(unittest.TestCase):
                     validate_witnesses(run, [{'requirement_id': 'R-ant', 'check_id': 'antenna'}],
                                        [{'path': 'checks/antenna.json', 'locator': 'outcome'}])
                 with self.assertRaisesRegex(ValueError, 'did not pass'):
-                    ap.bare_board_claim(run, result)
+                    ap.bare_board_claim(run, [result], 'antenna')
 
     def test_missing_footprint_capture_is_unknown(self):
         _, result = self.run_board(self.declaration(), footprint=False)
@@ -242,6 +296,14 @@ class NativeAntennaPlacementTests(unittest.TestCase):
         _, result = self.run_board(self.declaration(), flipped=True)
         self.assertEqual(result['outcome'], 'unknown')
         self.assertEqual(self.sections(result)['footprint'], 'unknown')
+
+    def test_single_rotated_pad_is_a_footprint_defect(self):
+        # Pad 1 (1.5 x 0.9 mm) turned 90 degrees keeps number, centre, size, shape and layers.
+        _, result = self.run_board(self.declaration(), rotate_pad='1')
+        self.assertEqual(result['outcome'], 'defect')
+        footprint = result['details']['sections']['footprint']
+        self.assertEqual(footprint['status'], 'defect')
+        self.assertEqual({m['pad'] for m in footprint['pad_geometry_mismatches']}, {'1'})
 
     def test_absent_reference_is_a_defect(self):
         _, result = self.run_board(self.declaration(), reference='U9')
@@ -258,12 +320,14 @@ class NativeAntennaPlacementTests(unittest.TestCase):
         other_run, other = self.run_board(self.declaration(), anchor=(48.0, 6.75))
         self.assertEqual(other['outcome'], 'pass')
         self.assertNotEqual(other['candidate_id'], result['candidate_id'])
-        with self.assertRaisesRegex(ValueError, 'not bound to this candidate'):
-            ap.bare_board_claim(other_run, result)
+        freeze_evidence(other_run, [other])
+        with self.assertRaises(ValueError):
+            ap.bare_board_claim(other_run, [result], 'antenna')
         forged = copy.deepcopy(result)
         forged['candidate_id'] = other['candidate_id']
-        with self.assertRaisesRegex(ValueError, 'differs from the candidate'):
-            ap.bare_board_claim(other_run, dict(forged, details=other['details'] | {'board_sha256': 'f' * 64}))
+        with self.assertRaises(ValueError):
+            ap.bare_board_claim(other_run, [dict(forged, details=other['details'] | {'board_sha256': 'f' * 64})],
+                                'antenna')
         path = run / 'work/antenna/antenna-placement.json'
         report = json.loads(path.read_text())
         report['sections']['keepout_clear']['status'] = 'pass'
@@ -271,9 +335,75 @@ class NativeAntennaPlacementTests(unittest.TestCase):
         path.write_text(json.dumps(report))
         with self.assertRaises(ValueError):
             verify_evidence(run, [result], required=True)
-        with self.assertRaisesRegex(ValueError, 'differs from the candidate'):
-            ap.bare_board_claim(run, result)
+        with self.assertRaisesRegex(ValueError, 'evidence seal'):
+            ap.bare_board_claim(run, [result], 'antenna')
 
+    def tamper(self, run, result, change):
+        """Apply ``change`` coherently to the retained report, the retained result and its in-memory copy."""
+        path = run / 'work/antenna/antenna-placement.json'
+        report = json.loads(path.read_text())
+        change(report)
+        write_json(path, report)
+        result = copy.deepcopy(result)
+        change(result)
+        write_json(run / 'checks/antenna.json', result)
+        return result
+
+    def test_claim_requires_the_complete_sealed_unchanged_evidence(self):
+        run, result = self.run_board(self.declaration())
+        seal = run / 'work/verification/evidence.json'
+        with self.subTest('missing seal'), self.assertRaisesRegex(ValueError, 'sealed evidence record'):
+            ap.bare_board_claim(run, [result], 'antenna')
+        freeze_evidence(run, [result])
+        ap.bare_board_claim(run, [result], 'antenna')
+        with self.subTest('incomplete check set'), self.assertRaisesRegex(ValueError, 'omits baseline checks'):
+            ap.bare_board_claim(run, [], 'antenna')
+        sealed = {rel: (run / rel).read_bytes() for rel in
+                  ('work/antenna/antenna-placement.json', 'checks/antenna.json', str(seal.relative_to(run)))}
+
+        def restore():
+            for rel, data in sealed.items():
+                (run / rel).write_bytes(data)
+            ap.bare_board_claim(run, [result], 'antenna')
+
+        def drop(data):
+            data.update(obligations={}) if 'obligations' in data else data['details'].update(obligations={})
+        for name, reseal in (('dropped obligations, unsealed', False), ('dropped obligations, resealed', True)):
+            with self.subTest(name):
+                changed = self.tamper(run, result, drop)
+                if reseal:
+                    freeze_evidence(run, [changed])
+                    verify_evidence(run, [changed], required=True)
+                with self.assertRaisesRegex(ValueError, 'evidence seal' if not reseal else 're-derived'):
+                    ap.bare_board_claim(run, [changed], 'antenna')
+                restore()
+        with self.subTest('source-only change'):
+            guidance = run / 'inputs' / self.declaration()['policy']['source']['path']
+            original = guidance.read_bytes()
+            guidance.write_bytes(original + b'%')
+            with self.assertRaisesRegex(ValueError, 'snapshot changed'):
+                ap.bare_board_claim(run, [result], 'antenna')
+            guidance.write_bytes(original)
+            restore()
+
+    def test_coherently_resealed_defect_relabelled_pass_is_refused(self):
+        run, result = self.run_board(self.declaration(), intrusion=True)
+        self.assertEqual(result['outcome'], 'defect')
+
+        def relabel(data):
+            details = data.get('details', data)
+            if 'details' in data:
+                data.update(outcome='pass', execution='ok')
+            details['sections']['keepout_clear'].update(status='pass', reason='forged')
+            details['status'] = 'pass'
+            details['verdict_authority'] = ap.MANUFACTURER
+            if 'gate_findings' in details:
+                details['gate_findings'] = []
+        changed = self.tamper(run, result, relabel)
+        freeze_evidence(run, [changed])
+        verify_evidence(run, [changed], required=True)
+        with self.assertRaisesRegex(ValueError, 're-derived'):
+            ap.bare_board_claim(run, [changed], 'antenna')
 
 if __name__ == '__main__':
     unittest.main()
