@@ -70,3 +70,28 @@ Do not label diagnostic or unrouted output as a release. Missing models remain
 visible limitations. Rendering does not substitute for native DRC or engineering
 review. This first gallery publishes 3D images and the interactive viewer; layer
 plots remain in their native review packets.
+
+## Annotated diagnostic supplements
+
+Use `supplement` for an annotated 2D PNG, rather than manufacturing a native
+three-view render manifest. Supplements have a separate listing and never change
+`Latest` or any existing render bundle. Keep historical/unrouted status and
+unadopted proposals explicit in the label and stage.
+
+```sh
+PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.render_gallery \
+  --root "$HOME/.local/share/agent-ee-render-gallery/artifacts" supplement \
+  --image /durable/analysis/annotated.png --packet /durable/analysis/INDEX.md \
+  --board /durable/candidate.kicad_pcb --board-sha256 ACTUAL_BOARD_SHA256 \
+  --label 'Historical bottom-view free-space analysis' \
+  --stage 'Unrouted diagnostic; proposed ADC move NOT adopted'
+```
+
+The command verifies the supplied board digest, validates the PNG, and binds the
+copied image and source packet hashes in a publication manifest. This establishes
+byte identity, not correctness of the analysis or adoption of a proposal. Only
+the PNG and manifest are served; the source board and packet stay private. SVG
+is not accepted. Open `/diagnostics/RETURNED_ID/index.html` for a permanent page
+or `/diagnostics/RETURNED_ID/image.png` for the exact full-size image. The main
+gallery links its separate diagnostic section. Publications are serialized by
+the same lock as render imports, and the diagnostic listing is replaced atomically.

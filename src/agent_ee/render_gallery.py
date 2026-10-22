@@ -155,7 +155,58 @@ def publish(root, renders, *, label, stage, viewer=None, candidate=None):
     return bundle
 
 
-def page(index):
+
+def publish_supplement(root, image, packet, board, *, board_sha256, label, stage):
+    """Publish a verified annotated PNG separately from native render milestones."""
+    if not re.fullmatch(r"[a-f0-9]{64}", board_sha256):
+        raise ValueError("invalid board hash")
+    image_hash, packet_hash = digest(image), digest(packet)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "diagnostics").mkdir(exist_ok=True)
+    with (root / ".publish.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with tempfile.TemporaryDirectory(prefix=".diagnostic-", dir=root) as temporary:
+            pending = Path(temporary)
+            _copy(board.parent, board.name, pending / "source-board", board_sha256)
+            _copy(packet.parent, packet.name, pending / "source-packet", packet_hash)
+            _copy(image.parent, image.name, pending / "image.png", image_hash)
+            info = _png_info(pending / "image.png")
+            record = {"schema": "agent-ee.gallery-diagnostic/1", "kind": "annotated-2d-diagnostic",
+                      "label": redact(label), "stage": redact(stage), "board_sha256": board_sha256,
+                      "published_at": datetime.now(timezone.utc).isoformat(),
+                      "source_packet": {"name": packet.name, "sha256": packet_hash},
+                      "source_image": {"name": image.name, "sha256": image_hash},
+                      "image": {"path": "image.png", **info},
+                      "limitation": "Publisher verifies input bytes, not the analysis or adoption of any proposed change."}
+            # Retain identities, not source files or host paths, in the HTTP publication.
+            (pending / "source-board").unlink()
+            (pending / "source-packet").unlink()
+            _write(pending / "manifest.json", record)
+            identifier = board_sha256[:12] + "-" + digest(pending / "manifest.json")[:12]
+            os.rename(pending, root / "diagnostics" / identifier)
+        index_path = root / "diagnostics.json"
+        index = _json(index_path) if index_path.exists() else []
+        index.insert(0, {"id": identifier, **record})
+        temporary_index = root / ".diagnostics.next"
+        _write(temporary_index, index)
+        os.replace(temporary_index, index_path)
+    return identifier
+
+
+def diagnostic_cards(supplements):
+    cards = []
+    for item in supplements:
+        base = "/diagnostics/" + item["id"] + "/"
+        cards.append(f'<section id="diagnostic-{item["id"]}"><h2>{html.escape(item["label"])}</h2>'
+                     f'<p><strong>Annotated 2D diagnostic supplement</strong></p><p>{html.escape(item["stage"])}</p>'
+                     f'<p class="hash">Historical board SHA-256: {item["board_sha256"]}</p>'
+                     f'<p>Published {html.escape(item["published_at"])}</p>'
+                     f'<a href="{base}image.png"><img src="{base}image.png" alt="Annotated 2D diagnostic; open full-size image"></a>'
+                     f'<p>{html.escape(item["limitation"])}</p><a href="{base}index.html">Open diagnostic</a> · <a href="{base}manifest.json">Diagnostic provenance</a></section>')
+    return ''.join(cards)
+
+
+def page(index, supplements=(), *, diagnostic_only=False):
     escape = html.escape
     cards = []
     for position, item in enumerate(index):
@@ -175,7 +226,7 @@ def page(index):
         coverage_text = (f'Models: {summary.get("resolved", "unknown")} resolved; {summary.get("missing", "unknown")} missing; {summary.get("unresolved", "unknown")} unresolved; {summary.get("disabled", "unknown")} disabled; {summary.get("no_model", "unknown")} footprints without a model.')
         warnings = "".join('<li>' + escape(str(w)) + '</li>' for w in item["warnings"])
         cards.append(f'<section><h2>{"Latest: " if position == 0 else ""}{escape(item["label"])}</h2><p>{escape(item["stage"])} · Rendered {escape(str(item["rendered_at"]))}</p><p class="hash">Board SHA-256: {item["board_sha256"]}</p>{badge}<p class="coverage">{escape(coverage_text)}</p>{viewer}<div class="images">{pictures}</div><details><summary>Model warnings ({len(item["warnings"])})</summary><ul>{warnings}</ul></details><a href="{base}manifest.json">Publication manifest</a></section>')
-    return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PCB render gallery</title><style>body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;color:#fff}.complete{background:#1e5a3a;color:#fff}.button{display:inline-block;padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section{padding:16px}.images{grid-template-columns:1fr}}</style><h1>PCB render gallery</h1><p>Native KiCad images · Latest candidate and retained history</p><p>Visual inspection only. Missing component models can make geometry incomplete; these images do not approve electrical or fabrication readiness.</p>' + (''.join(cards) or '<p>No completed render bundles have been published yet.</p>') + '</html>').encode()
+    return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PCB render gallery</title><style>body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;color:#fff}.complete{background:#1e5a3a;color:#fff}.button{display:inline-block;padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section{padding:16px}.images{grid-template-columns:1fr}}</style>' + ('<h1>PCB diagnostic supplement</h1><p><a href="/">Back to render gallery</a></p>' if diagnostic_only else '<h1>PCB render gallery</h1><p>Native KiCad images · Latest candidate and retained history</p>') + '<p>Visual inspection only. Missing component models can make geometry incomplete; these images do not approve electrical or fabrication readiness.</p>' + ('<p><a href="#diagnostics">Diagnostic supplements</a></p>' if supplements else '') + (''.join(cards) or ('' if diagnostic_only else '<p>No completed render bundles have been published yet.</p>')) + ('<div id="diagnostics"><h2>Diagnostic supplements</h2>' + diagnostic_cards(supplements) + '</div>' if supplements else '') + '</html>').encode()
 
 
 class GalleryHandler(SimpleHTTPRequestHandler):
@@ -183,7 +234,8 @@ class GalleryHandler(SimpleHTTPRequestHandler):
         root = Path(self.directory)
         relative = unquote(urlsplit(self.path).path).lstrip("/")
         if not relative:
-            data = page(_json(root / "index.json") if (root / "index.json").exists() else [])
+            data = page(_json(root / "index.json") if (root / "index.json").exists() else [],
+                        _json(root / "diagnostics.json") if (root / "diagnostics.json").exists() else [])
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
@@ -194,10 +246,24 @@ class GalleryHandler(SimpleHTTPRequestHandler):
         if len(parts) >= 3 and parts[0] == "bundles" and re.fullmatch(r"[a-f0-9]{12}-[a-f0-9]{12}", parts[1]):
             suffix = "/".join(parts[2:])
             allowed = suffix in {"manifest.json", "top.png", "bottom.png", "isometric.png", "viewer/index.html", "viewer/viewer.json", "viewer/board.glb", "viewer/viewer.css", "viewer/viewer.js"} or (suffix.startswith("viewer/vendor/") and ( _ASSETS / suffix.removeprefix("viewer/")).is_file())
+        diagnostic_page = (len(parts) == 3 and parts[0] == "diagnostics"
+                           and re.fullmatch(r"[a-f0-9]{12}-[a-f0-9]{12}", parts[1])
+                           and parts[2] == "index.html")
+        if len(parts) == 3 and parts[0] == "diagnostics" and re.fullmatch(r"[a-f0-9]{12}-[a-f0-9]{12}", parts[1]):
+            allowed = parts[2] in {"manifest.json", "image.png", "index.html"}
         path = root / relative
+        if diagnostic_page:
+            path = path.with_name("manifest.json")
         if (not allowed or ".." in parts or not path.resolve().is_relative_to(root.resolve()) or not path.is_file() or any(p.is_symlink() for p in (path, *path.parents))):
             self.send_error(404)
             return None
+        if diagnostic_page:
+            data = page([], [{"id": parts[1], **redact(_json(path))}], diagnostic_only=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return BytesIO(data)
         if parts[-1] in ("manifest.json", "viewer.json"):
             # Bundles published before path redaction are immutable; redact on the way out.
             data = (json.dumps(redact(_json(path)), indent=2) + "\n").encode()
@@ -231,6 +297,13 @@ def main():
     add.add_argument("--candidate", type=Path, help="retained run directory the render was taken from")
     add.add_argument("--label", required=True)
     add.add_argument("--stage", required=True)
+    supplement = commands.add_parser("supplement", help="publish annotated PNG without changing Latest")
+    supplement.add_argument("--image", type=Path, required=True)
+    supplement.add_argument("--packet", type=Path, required=True)
+    supplement.add_argument("--board", type=Path, required=True)
+    supplement.add_argument("--board-sha256", required=True)
+    supplement.add_argument("--label", required=True)
+    supplement.add_argument("--stage", required=True)
     server = commands.add_parser("serve")
     server.add_argument("--bind", default="127.0.0.1")
     server.add_argument("--port", type=int, default=18510)
@@ -238,6 +311,9 @@ def main():
     if args.command == "publish":
         print(publish(args.root, args.renders, label=args.label, stage=args.stage, viewer=args.viewer,
                       candidate=args.candidate))
+    elif args.command == "supplement":
+        print(publish_supplement(args.root, args.image, args.packet, args.board,
+                                board_sha256=args.board_sha256, label=args.label, stage=args.stage))
     else:
         with serve(args.root, args.bind, args.port) as httpd:
             httpd.serve_forever()
