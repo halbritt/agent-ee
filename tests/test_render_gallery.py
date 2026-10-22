@@ -192,20 +192,42 @@ def ula_addresses(body):
     return sorted(set(found))
 
 
+URI_CANDIDATE = re.compile(r'(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s"\'<>]*')
+BARE_HOST = re.compile(r'[a-z0-9.\-]+')
+
+
+def authority_leaks(candidate):
+    """True when the URI-shaped candidate names a credential, a file, a private host or a ULA address, or when its
+    authority cannot be validated (non-numeric or out-of-range port, missing host, broken bracket): fail closed."""
+    try:
+        parts = urllib.parse.urlsplit(candidate)
+        parts.port  # raises ValueError for a non-numeric or out-of-range port
+        host = urllib.parse.unquote(parts.hostname or '').lower()
+    except ValueError:
+        return True
+    if parts.scheme.lower() == 'file' or '@' in parts.netloc or not host:
+        return True
+    return any(m in host for m in HOST_MARKERS) or bool(ula_addresses(host))
+
+
 def uri_leaks(body):
-    """URI and host tokens of body that name a file, a credential, a private host or a ULA address, parsed with urllib."""
+    """URI and host tokens of body that name a file, a credential, a private host or a ULA address, parsed with urllib.
+    Whole URI candidates are cut at whitespace and quotes only, so userinfo such as "bob;secret@" keeps its delimiters;
+    hosts are percent-decoded and lowercased; a malformed URI-shaped candidate fails closed."""
     found = []
+    for candidate in URI_CANDIDATE.findall(body):
+        if authority_leaks(candidate):
+            found.append(candidate)
     for token in URI_TOKEN.findall(body):
+        if URI_CANDIDATE.search(token):
+            continue
+        decoded = urllib.parse.unquote(token).lower()
         try:
-            parts = urllib.parse.urlsplit(token)
-            host = (parts.hostname or '').lower()
-            user = parts.username
+            scheme = urllib.parse.urlsplit(token).scheme.lower()
         except ValueError:
             found.append(token)  # an unparsable URI-shaped token fails closed
             continue
-        if parts.scheme.lower() == 'file' or user or any(m in host for m in HOST_MARKERS):
-            found.append(token)
-        elif host and ula_addresses(host):
+        if scheme == 'file' or (BARE_HOST.fullmatch(decoded) and any(m in decoded for m in HOST_MARKERS)):
             found.append(token)
     return found
 
@@ -214,7 +236,7 @@ def assert_no_uri_leak(test, body, where):
     for leak in LEAKS:
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
     test.assertEqual(uri_leaks(body), [], where)
-    test.assertEqual(ula_addresses(body), [], where)
+    test.assertEqual(ula_addresses(urllib.parse.unquote(body)), [], where)
 
 
 class LeakScanTests(unittest.TestCase):
@@ -238,6 +260,32 @@ class LeakScanTests(unittest.TestCase):
                                ('<http://LocalHost:80/x>', ['http://LocalHost:80/x']),
                                ('http://[fd00::1]/x', ['http://[fd00::1]/x']), ('https://example.org/x', [])):
             self.assertEqual(uri_leaks(body), expected, body)
+
+    def test_userinfo_with_semicolons_or_commas_is_detected(self):
+        for body in ('https://bob;secret@example.org/x', 'https://bob,secret@example.org/x',
+                     '{"u": "https://bob;secret@example.org/x"}', 'see (https://a,b:c;d@example.org/x), ok'):
+            self.assertTrue(uri_leaks(body), body)
+            with self.assertRaises(AssertionError, msg=body):
+                assert_no_uri_leak(self, body, body)
+
+    def test_encoded_and_uppercase_hosts_are_detected(self):
+        for body in ('http://%6cocalhost/x', 'http://%68idden/x', 'http://%66%64%30%30%3a%3a1/', '%6c%6f%63%61%6c%68%6f%73%74',
+                     'LOCALHOST', 'FD00::1', 'HIDDEN', 'http://%6C%6F%63%61%6C%68%6F%73%74:80/'):
+            self.assertTrue(uri_leaks(body) or ula_addresses(urllib.parse.unquote(body)), body)
+            with self.assertRaises(AssertionError, msg=body):
+                assert_no_uri_leak(self, body, body)
+
+    def test_malformed_authority_fails_closed(self):
+        for body in ('http://example.org:bad/', 'http://example.org:65536/', 'http://', 'https:///x', 'http://[broken/',
+                     'http://example.org:-1/'):
+            self.assertTrue(uri_leaks(body), body)
+            with self.assertRaises(AssertionError, msg=body):
+                assert_no_uri_leak(self, body, body)
+
+    def test_ordinary_uris_and_prose_still_pass(self):
+        for body in ('', '{}', 'https://example.org/x', 'https://example.org:8443/a;b,c', 'a1fd00b2c3d4e5f6 plain prose',
+                     '{"rendered": "ok", "n": 3}'):
+            assert_no_uri_leak(self, body, body)
 
     def test_ula_tokenizer_survives_adjacent_delimiters(self):
         for body in ('host:fd00::1', 'fd00::1:', ':fd00::1:'):
