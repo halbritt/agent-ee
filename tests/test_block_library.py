@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from agent_ee import block_library as bl, blocks, placer
-from test_blocks import Fixture, MM, PARTS, SHEETS, board, captured_at, native_xml, policy
+from test_blocks import Fixture, MM, PARTS, SHEETS, board, captured_at, native_capture, native_xml, policy
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = 'https://example.invalid/owned/ee342'
@@ -622,6 +622,54 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
                     self.assertNotIn('candidate', refused)
                     self.assertEqual([(p['kind'], p['reference']) for p in refused['problems']],
                                      [('courtyard', 'C3')])
+
+    def test_native_back_member_materializes_at_every_quarter_turn(self):
+        """AGENTEE-429: a member flipped and turned by pcbnew, not synthetically, keeps identity and admission."""
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+
+        def native_back(capture, ref, turns, directory):
+            """capture with `ref` replaced by the native B-side flip of the owned custom-pad part at `turns`."""
+            capture = copy.deepcopy(capture)
+            for i, fp in enumerate(capture['footprints']):
+                if fp['ref'] != ref:
+                    continue
+                at = [v / MM for v in fp['position_nm']]
+                native = native_capture(directory, 'L', 'B', turns, at)
+                self.assertEqual(native['side'], 'B')
+                nets = {p['number']: p['net'] for p in fp['pads']}
+                native.update(ref=ref, fpid=fp['fpid'], uuid=fp.get('uuid'), locked=fp.get('locked', False))
+                for pad in native['pads']:
+                    pad['net'] = nets[pad['number']]
+                capture['footprints'][i] = {k: v for k, v in native.items() if k in fp or k in ('pads', 'courtyards')}
+            return capture
+
+        target, inventory, names, sha = self.second_instance()
+        with tempfile.TemporaryDirectory(prefix='agent-ee-native-back-') as tmp:
+            sources = {t: native_back(self.board, 'C3', t, tmp) for t in range(4)}
+            targets = {t: native_back(target, 'C13', t, tmp) for t in range(4)}
+            for source_turns in range(4):
+                entry = self.cluster(capture=sources[source_turns])
+                self.assertEqual(next(m for m in entry['layout']['members'] if m['reference'] == 'C3')['side'], 'B')
+                for target_turns in range(4):
+                    with self.subTest(source=source_turns, target=target_turns):
+                        result = bl.materialize(entry, targets[target_turns], inventory, names, sha, self.policy,
+                                                self.MAPPING)
+                        self.assertEqual(result['status'], 'materialized', result['problems'])
+                        candidate = blocks.validate_candidate(result['candidate'])
+                        self.assertEqual({m['reference']: m['side'] for m in candidate['members']}['C13'], 'B')
+                        self.assertEqual(blocks.match(candidate, targets[target_turns], inventory),
+                                         {'status': 'match', 'mismatches': []})
+                        # The same part left on the front is another identity and must refuse.
+                        front = copy.deepcopy(targets[target_turns])
+                        for fp in front['footprints']:
+                            if fp['ref'] == 'C13':
+                                fp['side'] = 'F'
+                        refused = bl.materialize(entry, front, inventory, names, sha, self.policy, self.MAPPING)
+                        self.assertEqual(refused['status'], 'refused')
+                        self.assertNotIn('candidate', refused)
+                        self.assertEqual([(p['kind'], p['reference']) for p in refused['problems']],
+                                         [('side', 'C3'), ('pad_geometry', 'C3'), ('courtyard', 'C3')])
 
     def test_retired_pose_dependent_entries_validate_but_refuse_use(self):
         """An entry/1 identity was hashed in captured vertex order (AGENTEE-370): it still validates

@@ -1947,6 +1947,9 @@ on both sides at all quarter turns, contour start/winding relabeling, and all 16
 B-side source/target [library materializations](block-library.md#materialization).
 Moved copper vertices and changed courtyards retain their identity refusals.
 These add coverage without changing any registered check or verdict.
+AGENTEE-429 adds an achiral native fixture so F/B identity separation is asserted
+by side alone, `canonical_ring` cases beyond relabeling, and a native B-side flip
+in the materialization matrix; verdicts are unchanged.
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.

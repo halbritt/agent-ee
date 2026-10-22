@@ -313,6 +313,14 @@ geometry. Every cyclic start and winding of the extracted copper contour keeps
 its pad identity; moving a copper vertex by 1 nm changes it. Opposite sides
 retain distinct identities.
 
+AGENTEE-429 asserts the side directly rather than through chirality: a native
+mirror-symmetric custom pad (a cross) on F and B has the same merged copper, and
+once its layers, courtyard key and mirrored incidental drawing are matched the side
+alone still separates both identities. A synthetic part with only `side` changed
+does the same, `canonical_ring` is tested for empty, single, repeated, collinear,
+pinched and reflected rings, and removing `side` from the hashed documents fails
+those tests.
+
 `admit(candidate, probe, inventory, derivation, policy)` admits a candidate onto
 the board it was packed from. Stage B must call it before using a candidate. It
 returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
