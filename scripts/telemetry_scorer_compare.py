@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One sequential telemetry-pod Python/Rust runner pair; measurement driver.
+"""One sequential telemetry-pod Python/Rust or Python/PyPy runner pair.
 
 Native workload admission is external to this driver. Raw evidence is retained.
 Comparison normalizes documented timing/path/date fields and clearance finding
@@ -65,7 +65,8 @@ def cpu_delta(before, after):
 
 def input_identity(config):
     board = Path(config['board'])
-    paths = {key: Path(config[key]) for key in ('board', 'netlist', 'request', 'library')}
+    paths = {key: Path(config[key]) for key in ('board', 'netlist', 'request', 'library', 'pypy')
+             if key in config}
     paths.update(project=board.with_suffix('.kicad_pro'), rules=board.with_suffix('.kicad_dru'))
     return {key: {'path': str(path), 'sha256': sha(path.read_bytes()) if path.is_file() else None}
             for key, path in paths.items()}
@@ -143,7 +144,7 @@ def record_first_native_call(native, evidence):
 
 def worker(config_path):
     verified_source = source_identity()  # The worker checks the same pinned files before importing them.
-    from agent_ee import placement_scoring
+    from agent_ee import placement_runtime, placement_scoring
     from agent_ee.placer_runner import place_candidate
 
     config = json.loads(config_path.read_bytes())
@@ -156,20 +157,27 @@ def worker(config_path):
     before_environment = environment()
     report, failure, events = None, None, []
     first_native_invocation = {}
+    planning_calls = []
     started = time.perf_counter_ns()
     try:
-        context = (placement_scoring.experimental(config['library'])
-                   if config['backend'] == 'rust' else nullcontext(None))
+        if config['backend'] == 'pypy':
+            context = placement_runtime.experimental(config['pypy'])
+        elif config['backend'] == 'rust':
+            context = placement_scoring.experimental(config['library'])
+        else:
+            context = nullcontext(None)
         with context as session:
             restore_probe = (record_first_native_call(session.native, first_native_invocation)
-                             if session is not None and session.native is not None else None)
+                             if config['backend'] == 'rust' and session.native is not None else None)
             try:
                 report = place_candidate(config['board'], config['netlist'], arm / 'proposal', request)
             finally:
                 if restore_probe is not None:
                     restore_probe()
-                if session is not None:
+                if config['backend'] == 'rust':
                     events = list(session.events)
+                elif config['backend'] == 'pypy':
+                    planning_calls = list(session.calls)
     except Exception as exc:
         failure = {'type': type(exc).__name__, 'message': str(exc)}
         error_traceback = traceback.format_exc()
@@ -187,6 +195,7 @@ def worker(config_path):
                 'environment_before': before_environment, 'environment_after': environment(),
                 'scorer_events': events, 'exception': failure, 'verified_source': verified_source,
                 'first_native_invocation': first_native_invocation or None,
+                'pypy_planning_calls': planning_calls,
                 'invocation_probe': ('first native call only; both hooks removed before dispatch; '
                                      'setup and one-call recording overhead included; no oracle'
                                      if config['backend'] == 'rust' else None),
@@ -330,11 +339,25 @@ def comparison_artifacts(arm):
 
 
 def compare(root, records):
+    backends = [record['backend'] for record in records]
+    if len(backends) != 2 or backends.count('python') != 1:
+        raise ValueError('comparison requires one Python baseline and one candidate backend')
+    candidate = next(backend for backend in backends if backend != 'python')
+    if candidate not in ('rust', 'pypy'):
+        raise ValueError('unsupported candidate backend')
     if any(record['exit_code'] not in (0, 2) or record.get('worker', {}).get('scorer_events')
            for record in records):
         return {'status': 'not-comparable', 'reason': 'an arm failed, timed out or fell back; raw evidence retained'}
+    if candidate == 'pypy':
+        candidate_worker = next(record.get('worker', {}) for record in records if record['backend'] == 'pypy')
+        calls = candidate_worker.get('pypy_planning_calls', [])
+        score_observed = any((call.get('first_wire_cost') or {}).get('returned') is True for call in calls)
+        if not calls or any(call.get('status') != 'ok' or call.get('runtime', {}).get('implementation') != 'PyPy'
+                            for call in calls) or (candidate_worker.get('status') == 'placed' and not score_observed):
+            return {'status': 'not-comparable',
+                    'reason': 'missing successful PyPy planning/scorer invocation evidence; raw evidence retained'}
     expected, expected_removed, expected_links = comparison_artifacts(root / 'python')
-    actual, actual_removed, actual_links = comparison_artifacts(root / 'rust')
+    actual, actual_removed, actual_links = comparison_artifacts(root / candidate)
     missing = sorted(set(expected) ^ set(actual))
     changed = [name for name in sorted(set(expected) & set(actual)) if expected[name] != actual[name]]
     same_normalization_fields = set(expected_removed) == set(actual_removed)
@@ -344,29 +367,36 @@ def compare(root, records):
     summary = {'status': 'equal' if equal else 'different', 'both_placed': placed,
                'candidate_board_bytes_equal': board_equal, 'file_set_difference': missing, 'changed_files': changed,
                'same_normalization_fields': same_normalization_fields,
-               'normalizations': {'python': expected_removed, 'rust': actual_removed},
-               'verified_links': {'python': expected_links, 'rust': actual_links},
+               'normalizations': {'python': expected_removed, candidate: actual_removed},
+               'verified_links': {'python': expected_links, candidate: actual_links},
                'comparison_sha256': {backend: {name: sha(raw) for name, raw in artifacts.items()}
-                                     for backend, artifacts in (('python', expected), ('rust', actual))},
+                                     for backend, artifacts in (('python', expected), (candidate, actual))},
                'scope': 'comparison copies only; all raw hash-bound evidence remains unchanged'}
     if equal and placed:
         wall_by_backend = {record['backend']: record['worker']['runner_wall_ns'] for record in records}
-        summary['single_pair_runner_speedup'] = wall_by_backend['python'] / wall_by_backend['rust']
+        summary['single_pair_runner_speedup'] = wall_by_backend['python'] / wall_by_backend[candidate]
     return summary
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    for name in ('board', 'netlist', 'request', 'library', 'out'):
+    for name in ('board', 'netlist', 'request', 'out'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--rust-first', action='store_true', help='run Rust before Python for a counterbalanced pair')
+    parser.add_argument('--candidate-backend', choices=('rust', 'pypy'), default='rust')
+    parser.add_argument('--library', type=Path, help='required for the Rust candidate')
+    parser.add_argument('--pypy', type=Path, help='required for the PyPy candidate; native KiCad stays in CPython')
+    parser.add_argument('--candidate-first', '--rust-first', dest='candidate_first', action='store_true',
+                        help='run the candidate before Python for a counterbalanced pair')
     args = parser.parse_args()
+    required_runtime = 'library' if args.candidate_backend == 'rust' else 'pypy'
+    if getattr(args, required_runtime) is None:
+        parser.error(f'--{required_runtime} is required for {args.candidate_backend}')
     if shutil.which('timeout') is None:
         parser.error('GNU timeout is required')
     root = args.out.resolve()
     root.mkdir(parents=True, exist_ok=False)
-    config = {name: str(getattr(args, name).resolve()) for name in ('board', 'netlist', 'request', 'library')}
-    order = ['rust', 'python'] if args.rust_first else ['python', 'rust']
+    config = {name: str(getattr(args, name).resolve()) for name in ('board', 'netlist', 'request', required_runtime)}
+    order = [args.candidate_backend, 'python'] if args.candidate_first else ['python', args.candidate_backend]
     manifest = {'schema': 'agent-ee.telemetry-scorer-pair/1', 'status': 'running',
                 'order': order, 'pairs': 1, 'timeout_s_per_arm': TIMEOUT_SECONDS,
                 'environment_before': environment(), 'arms': [],
@@ -374,7 +404,7 @@ def main():
                 'scope': 'full placer_runner including block arrangement, save, native DRC and receipts; visuals explicitly skipped',
                 'interpretation': 'one ordered pair; no statistical performance conclusion or default-backend change'}
     try:
-        for name in ('board', 'netlist', 'request', 'library'):
+        for name in config:
             if not Path(config[name]).is_file():
                 raise FileNotFoundError(config[name])
         if Path(config['board']).is_relative_to(root):

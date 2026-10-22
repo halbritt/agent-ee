@@ -885,6 +885,15 @@ def _heartbeat(record):
 
 
 def _plan(facts, request, policy=None, netlist=None):
+    from .placement_runtime import active
+    runtime = active()
+    if runtime is not None:
+        return runtime.plan(facts, request, policy, netlist, heartbeat=_heartbeat)
+    return _plan_local(facts, request, policy, netlist)
+
+
+def _plan_local(facts, request, policy=None, netlist=None, *, heartbeat=None):
+    heartbeat = _heartbeat if heartbeat is None else heartbeat
     policy = _effective_policy(request) if policy is None else policy
     if sum(key in request for key in ('targeted', 'targeted_plans', 'blocks')) > 1:
         raise ValueError('targeted, targeted_plans and blocks cannot be combined')
@@ -894,14 +903,14 @@ def _plan(facts, request, policy=None, netlist=None):
         from .block_arrangement import plan_from_request
         if netlist is None:
             raise ValueError('block arrangement needs the captured native netlist')
-        return plan_from_request(facts, request['blocks'], _effective_policy(request), policy, netlist, _heartbeat)
+        return plan_from_request(facts, request['blocks'], _effective_policy(request), policy, netlist, heartbeat)
     if 'targeted' in request:
         from .placement_plans import plan
         return plan(facts, policy, request['targeted'])
     if 'targeted_plans' in request:
         from .placement_plans import select
         return select(facts, policy, request['targeted_plans'])
-    return pack(facts, policy, heartbeat=_heartbeat)
+    return pack(facts, policy, heartbeat=heartbeat)
 
 
 def place_candidate(source, netlist, destination, request):
