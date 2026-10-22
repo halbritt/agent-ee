@@ -27,6 +27,49 @@ def strings(values):
         raise ValueError('duplicate text identity')
 
 
+QUALIFICATIONS = ('unqualified-carryover', 'sourced')
+
+
+def citation_requirements(citation):
+    """Normalized rows; a legacy bare ID is fail-closed unqualified carry-over."""
+    rows = []
+    for entry in citation['requirements']:
+        if isinstance(entry, str):
+            rows.append({'id': entry, 'qualification': 'unqualified-carryover'})
+        else:
+            rows.append(entry)
+    return rows
+
+
+def validate_requirement_entry(entry):
+    if isinstance(entry, str):
+        text(entry)
+        return entry
+    if not isinstance(entry, dict) or entry.get('qualification') not in QUALIFICATIONS:
+        raise ValueError('io_map requirement qualification must be one of ' + ', '.join(QUALIFICATIONS))
+    if entry['qualification'] == 'sourced':
+        exact_keys(entry, 'id qualification source')
+        source = entry['source']
+        exact_keys(source, 'path sha256 locator')
+        safe_relative(source['path'])
+        text(source['locator'])
+        if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
+            raise ValueError('invalid sourced requirement sha256')
+    else:
+        exact_keys(entry, 'id qualification')
+    return text(entry['id'])
+
+
+def requirement_authority(contract):
+    """Split cited requirement IDs; an ID is sourced only when every citation of it is sourced."""
+    status = {}
+    for invariant in contract['invariants']:
+        for row in citation_requirements(invariant['io_map']) if 'io_map' in invariant else []:
+            status[row['id']] = status.get(row['id'], True) and row['qualification'] == 'sourced'
+    return {'sourced': sorted(r for r, ok in status.items() if ok),
+            'unqualified-carryover': sorted(r for r, ok in status.items() if not ok)}
+
+
 PATH_DIRECTIONS = ('toward_mcu', 'toward_connector', 'bidirectional')
 PATH_DISCLAIMER = ('Declared indirect MCU paths prove topology only: each conductor segment, intermediate '
                    'identity and pin role/type on the native schematic. No transceiver, amplifier, divider or ADC '
@@ -134,9 +177,14 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
                 raise ValueError('invalid io_map row')
             for field in ('connector_pin', 'signal', 'external_destination'):
                 text(citation[field])
-            if citation['requirements']:
-                strings(citation['requirements'])
-            elif citation['requirements'] != []:
+            reqs = citation['requirements']
+            if reqs:
+                if not isinstance(reqs, list):
+                    raise ValueError('io_map requirements must be a list')
+                cited = [validate_requirement_entry(e) for e in reqs]
+                if len(set(cited)) != len(cited):
+                    raise ValueError('duplicate text identity')
+            elif reqs != []:
                 raise ValueError('io_map requirements must be a list')
         iid = text(invariant['id'])
         if iid in ids:
@@ -242,7 +290,14 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
             if path not in files or digest(Path(inputs) / path) != citation['sha256']:
                 raise ValueError('io_map CSV must be captured with matching sha256')
             immutable.add(path)
+            for row in citation_requirements(citation):
+                if row['qualification'] == 'sourced':
+                    src = row['source']
+                    if src['path'] not in files or digest(Path(inputs) / src['path']) != src['sha256']:
+                        raise ValueError('sourced requirement must be captured with matching sha256')
+                    immutable.add(src['path'])
     return {'contract': contract, 'immutable_inputs': sorted(immutable),
+            'requirement_authority': requirement_authority(contract),
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 
@@ -808,6 +863,11 @@ def check_hardware_interface(ctx):
     ctx.result['location'] = ', '.join(violations)
     ctx.result['limitations'].append('Only declared schematic identities and direct conductors are protected; '
         'undeclared topology, PCB routing, physical access and electrical transfer are outside coverage.')
+    authority = descriptor['requirement_authority']
+    ctx.result['details']['requirement_qualification'] = authority
+    if authority['unqualified-carryover']:
+        ctx.result['limitations'].append('Unqualified carry-over requirement citations are reported, never graded '
+            'as harness or electrical authority: ' + ', '.join(authority['unqualified-carryover']))
     if any(i['kind'] == 'indirect_path' for i in descriptor['contract']['invariants']):
         ctx.result['limitations'].append(PATH_DISCLAIMER)
     ctx.result.update(execution='ok' if complete else 'unsupported',

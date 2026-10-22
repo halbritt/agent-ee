@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
-from agent_ee.hardware_interface import capability, evaluate, validate_contract
+from agent_ee.hardware_interface import capability, evaluate, requirement_authority, validate_contract
 from agent_ee.io_map import REQUIRED, compile_io_map, main
 from agent_ee.storage import read_json, write_json
 from tests.test_hardware_interface import FIXTURE, generator
@@ -427,6 +427,7 @@ class NativeIoMapTests(unittest.TestCase):
     def test_hardware_interface_pass_and_can_swap(self):
         result = self.run_probe()
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['requirement_qualification'], {'sourced': [], 'unqualified-carryover': []})
         result = self.run_probe(swapped=True)
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
         self.assertTrue({'J1-1:net', 'J1-2:net'} <= set(result['details']['violations']))
@@ -763,3 +764,107 @@ class NativeIndirectPathTests(unittest.TestCase):
                 self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
                 self.assertEqual(set(result['details']['violations']), failed)
                 self.assertEqual(records['J1-2:mcu-path:ain-dout']['status'], 'satisfied')
+
+
+class RequirementQualificationTests(unittest.TestCase):
+    """Requirement citations carry an enforced qualification; unqualified ones are never authority."""
+    FIELDS = (*REQUIRED, 'MCU_Path', 'Notes')
+    ROWS = [('J1-1', 'CAN_H', '/CAN+', 'R1', '1', 'Harness CAN high', 'direct', 'POD-IF-A; POD-IF-B'),
+            ('J1-2', 'CAN_L', '/CAN-', 'R1', '2', 'Harness CAN low', 'direct', 'POD-IF-A'),
+            ('PROBE-1', 'NO_CONNECT', 'N/C', 'N/A', 'N/A', 'Plugged cavity', 'N/A', 'plain')]
+    REQ = b'requirements\n'
+    SRC = dict(path='item4.md', sha256=hashlib.sha256(REQ).hexdigest(), locator='item 4')
+
+    def build(self, **kwargs):
+        return compile_(csv_bytes(self.ROWS, fields=self.FIELDS), bindings=probe_bindings(), **kwargs)
+
+    def cited(self, contract):
+        return [i['io_map']['requirements'] for i in contract['invariants'] if 'io_map' in i]
+
+    def test_legacy_bare_ids_are_unqualified_and_unchanged(self):
+        contract = self.build()
+        self.assertIn(['POD-IF-A', 'POD-IF-B'], self.cited(contract))
+        self.assertEqual(requirement_authority(contract),
+                         {'sourced': [], 'unqualified-carryover': ['POD-IF-A', 'POD-IF-B']})
+        self.assertEqual(validate_contract(contract), contract)
+
+    def test_explicit_qualification_emits_status_per_citation(self):
+        contract = self.build(qualifications={'POD-IF-A': self.SRC})
+        self.assertIn([dict(id='POD-IF-A', qualification='sourced', source=self.SRC),
+                       dict(id='POD-IF-B', qualification='unqualified-carryover')], self.cited(contract))
+        self.assertEqual(requirement_authority(contract),
+                         {'sourced': ['POD-IF-A'], 'unqualified-carryover': ['POD-IF-B']})
+        self.assertEqual(requirement_authority(self.build(qualifications={}))['sourced'], [])
+
+    def test_sourced_without_source_or_with_bad_source_is_refused(self):
+        for bad in (None, {}, dict(path='requirements.md', locator='x'), {**self.SRC, 'sha256': 'abc'},
+                    {**self.SRC, 'path': '../x'}, {**self.SRC, 'extra': 1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.build(qualifications={'POD-IF-A': bad})
+        with self.assertRaisesRegex(ValueError, 'uncited'):
+            self.build(qualifications={'POD-IF-Z': self.SRC})
+
+    def test_stripping_or_upgrading_status_is_refused(self):
+        original = self.build(qualifications={'POD-IF-A': self.SRC})
+
+        def entries(contract, rid):
+            found = {id(r): r for i in contract['invariants'] if 'io_map' in i
+                     for r in i['io_map']['requirements'] if isinstance(r, dict) and r['id'] == rid}
+            return list(found.values())
+        mutations = {
+            'strip status': lambda c: [e.pop('qualification') for e in entries(c, 'POD-IF-A')],
+            'upgrade without source': lambda c: [e.update(qualification='sourced') for e in entries(c, 'POD-IF-B')],
+            'sourced loses source': lambda c: [e.pop('source') for e in entries(c, 'POD-IF-A')],
+            'unqualified gains source': lambda c: [e.update(source=self.SRC) for e in entries(c, 'POD-IF-B')],
+            'unknown status': lambda c: [e.update(qualification='verified') for e in entries(c, 'POD-IF-B')],
+        }
+        for name, mutate in mutations.items():
+            contract = copy.deepcopy(original)
+            mutate(contract)
+            with self.subTest(name), self.assertRaises(ValueError):
+                validate_contract(contract)
+
+    def test_downgrade_is_visible_and_one_unqualified_citation_taints_the_id(self):
+        contract = self.build(qualifications={'POD-IF-A': self.SRC})
+        for i in contract['invariants']:
+            for k, r in enumerate(i.get('io_map', {}).get('requirements', [])):
+                if r == dict(id='POD-IF-A', qualification='sourced', source=self.SRC) and i['id'] == 'J1-2:net':
+                    i['io_map']['requirements'][k] = 'POD-IF-A'
+        self.assertEqual(requirement_authority(validate_contract(contract))['sourced'], [])
+
+    def test_capability_requires_captured_matching_source_and_reports_authority(self):
+        contract = self.build(qualifications={'POD-IF-A': self.SRC})
+        raw = csv_bytes(self.ROWS, fields=self.FIELDS)
+        scope = dict(baseline=dict(requirements=[dict(id='interface', source=SOURCE, checks=['interface'])]))
+        params = dict(contract='contract.json', netlist_check='netlist')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_json(root / 'contract.json', contract)
+            (root / 'io-map.csv').write_bytes(raw)
+            (root / 'item4.md').write_bytes(self.REQ)
+            (root / 'requirements.md').write_bytes(b'x')
+            files = {'contract.json', 'io-map.csv', 'requirements.md', 'item4.md'}
+            result = capability(params, scope, files, root, 'interface')
+            self.assertEqual(result['requirement_authority'],
+                             {'sourced': ['POD-IF-A'], 'unqualified-carryover': ['POD-IF-B']})
+            with self.assertRaisesRegex(ValueError, 'sourced requirement'):
+                capability(params, scope, files - {'item4.md'}, root, 'interface')
+            (root / 'item4.md').write_bytes(self.REQ + b'x')
+            with self.assertRaisesRegex(ValueError, 'sourced requirement'):
+                capability(params, scope, files, root, 'interface')
+
+    def test_cli_qualifications_and_unqualified_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'in.csv').write_bytes(csv_bytes(self.ROWS, fields=self.FIELDS))
+            (root / 'requirements.md').write_bytes(self.REQ)
+            write_json(root / 'q.json', {'POD-IF-A': self.SRC})
+            write_json(root / 'b.json', probe_bindings())
+            stdout = io.StringIO()
+            with contextlib.chdir(root), contextlib.redirect_stdout(stdout):
+                main(['in.csv', '--csv-path', 'io-map.csv', '--requirement', 'interface', '--source',
+                      'requirements.md', '--locator', 'item 4', '--bindings', 'b.json',
+                      '--qualifications', 'q.json', '--out', 'out.json'])
+            self.assertIn('unqualified carry-over requirements (reported, never authority): POD-IF-B',
+                          stdout.getvalue())
+            self.assertEqual(requirement_authority(read_json(root / 'out.json'))['sourced'], ['POD-IF-A'])

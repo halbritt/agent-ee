@@ -57,6 +57,30 @@ every hashed local source must have an entry. File bytes are never decoded or
 newline-normalized for hashing. These options do not change pinned-external
 citations, which retain their separate source contract.
 
+## Requirement qualification
+
+Each `io_map.requirements` entry is either a bare ID string (legacy) or an
+object with an enforced `qualification`: `unqualified-carryover` (`id`,
+`qualification`) or `sourced` (`id`, `qualification`, `source` = `path`,
+`sha256`, `locator`). A bare ID is read as `unqualified-carryover`, never as
+sourced, so existing contracts and the pod fixture validate unchanged. A
+`sourced` entry without a complete source, a missing or unknown status, or an
+`unqualified-carryover` entry carrying a source is refused by
+`validate_contract`. `capability` also requires every sourced source to be a
+captured input with the declared `sha256`, and makes it immutable.
+
+`--qualifications FILE` (API `qualifications=`) maps requirement IDs to source
+references; when given, every cited ID is emitted explicitly, `sourced` for
+mapped IDs and `unqualified-carryover` for the rest. A mapping for an ID that
+no row cites is refused. The CLI prints the unqualified carry-over IDs. An ID is
+reported sourced only if all its citations are sourced.
+
+Unqualified citations are traceability only: the hardware_interface check
+records `details.requirement_qualification` and a limitation naming them, and
+no verdict is graded from them. Adding the status is a new optional shape under
+`agent-ee.interface/1`; migrate by leaving bare IDs (fail-closed) or supplying
+sources per ID.
+
 ## CSV and bindings
 
 Required headers are `Connector_Pin, Signal_Name, Net, MCU_Ref, MCU_Pin,
