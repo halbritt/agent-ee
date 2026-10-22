@@ -1534,6 +1534,9 @@ class NoLineageProjectionSealTests(unittest.TestCase):
         project['board']['design_settings']['rule_severities'] = {
             'lib_footprint_issues': 'ignore', 'lib_footprint_mismatch': 'ignore'}
         write_json(design / 'rc_filter.kicad_pro', project)
+        if rules is not None:
+            from owner_fixture import bind_owner_rules
+            bind_owner_rules(path)  # AGENTEE-348 H1 migration: the owner rules are declared and cited
         requirement = root / 'requirements.md'
         requirement.write_text('Native structural containment must block retained projection passes.\n')
         scope = {'schema': 'agent-ee.scope/2', 'name': name, 'board': 'project/rc_filter.kicad_pcb',

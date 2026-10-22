@@ -109,6 +109,8 @@ class GateHardeningTest(unittest.TestCase):
             '(version 1)\n(rule "large owned gap" '
             '(condition "A.NetName == \'U1\' && B.NetName == \'C1\'") '
             '(constraint clearance (min 4mm)))\n')
+        from owner_fixture import bind_owner_rules
+        bind_owner_rules(source)  # AGENTEE-348 H1 migration: the owner rules are declared and cited
         work = self.root / 'custom-rule'
         work.mkdir()
         output = work / 'candidate.kicad_pcb'

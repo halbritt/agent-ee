@@ -352,7 +352,10 @@ class PhysicalIntentTests(unittest.TestCase):
 
     def test_sourced_locality_compiles_unchanged_without_guessed_semantics(self):
         records = ('layout-notes.md', 'owner-decisions.md')
-        manufacturer = {'class': 'manufacturer', 'basis': 'captured JLCPCB record'}
+        # AGENTEE-348 H4 migration: a manufacturer bound is a feasibility limit only when cited.
+        manufacturer = {'class': 'manufacturer', 'basis': 'captured JLCPCB record', 'citation': {
+            'kind': 'manufacturer_source', 'manufacturer': 'Original fixture fabricator', 'path': 'layout-notes.md',
+            'sha256': sha(LAYOUT_TEXT), 'locator': 'L-2', 'quote': 'within 3 mm'}}
         for provenance, expected in ((self.datasheet(), 'hard'), (None, 'advisory'), (manufacturer, 'feasibility')):
             with self.subTest(provenance=provenance and provenance['class']):
                 authored = self.locality(self.pair(provenance))

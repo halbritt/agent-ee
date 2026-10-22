@@ -363,7 +363,10 @@ pcbnew.SaveBoard(sys.argv[1], b)
         return run_dir, checks.run_checks(run_dir, time.monotonic() + 300)
 
     def test_drc_and_copper_width_flag_track_below_netclass_minimum(self):
-        run_dir, (drc, width) = self.review(self.project())
+        from owner_fixture import bind_owner_rules
+        source = self.project()
+        bind_owner_rules(source / 'rc_filter.kicad_pcb')  # AGENTEE-348 H1 migration: the owner rules are declared and cited
+        run_dir, (drc, width) = self.review(source)
         report = json.loads((run_dir / 'work/drc/drc.json').read_text())
         flagged = [v for v in report['violations'] if v['type'] == 'track_width']
         self.assertEqual(len(report['violations']), 1, report['violations'])
