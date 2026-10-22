@@ -289,6 +289,32 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         self.assertIn(bounded['reason'], ('deterministic backjump budget exhausted',
                                           'deterministic arrangement candidate budget exhausted'))
 
+    def test_advisory_regions_follow_arranged_poses_and_never_prune(self):
+        # AGENTEE-436: an advisory L1 shadow reports J1 under it; the arrangement is unchanged.
+        back = copy.deepcopy(self.board)
+        j1 = next(f for f in back['footprints'] if f['ref'] == 'J1')
+        j1['side'] = 'B'
+        j1['courtyards'] = {'B': j1['courtyards']['F']}
+        for pad in j1['pads']:
+            pad['layers'] = ['B.Cu']
+        shadow = {'id': 'L1-shadow', 'proximity_nm': 0, 'shadow_of': {'reference': 'L1', 'margin_nm': 20 * MM},
+                  'source': {'class': 'agent-advisory', 'reason': 'Original fixture: unsourced shadow.'}}
+        regions = policy(advisory_regions=[shadow])
+        entries = [{'candidate': blocks.pack_block(back, self.inv, self.derive(capture=back), b['id'], regions)
+                    ['candidate']} for b in self.derivation['blocks']]
+        plain = self.arrange(capture=back, entries=[{'candidate': blocks.pack_block(
+            back, self.inv, self.derive(capture=back), b['id'], self.policy)['candidate']}
+            for b in self.derivation['blocks']], derivation=self.derive(capture=back))
+        plan = self.arrange(capture=back, entries=entries, pol=regions, derivation=self.derive(capture=back))
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        self.assertEqual(plan['placements'], plain['placements'])
+        self.assertEqual(plan['block_arrangement']['residual']['obstacles'],
+                         plain['block_arrangement']['residual']['obstacles'])
+        row, = plan['advisory_regions']['regions']
+        poses = self.placements(plan)
+        self.assertEqual(row['subject']['position_nm'], poses['L1']['position_nm'])
+        self.assertEqual(row['intruders'], [{'reference': 'J1', 'fixed': False}])
+
     def test_shadows_and_fixed_parts_across_the_board(self):
         # J1 is a residual part on the back; L1 casts a hard shadow through the board.
         back = copy.deepcopy(self.board)

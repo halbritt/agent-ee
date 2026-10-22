@@ -25,7 +25,7 @@ from fractions import Fraction
 import math
 import time
 
-from . import access_direction, electrical_locality, placement_groups, placement_provenance
+from . import access_direction, advisory_regions, electrical_locality, placement_groups, placement_provenance
 from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
                         on_segment, overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
@@ -218,6 +218,9 @@ def _validate_policy(policy, refs):
         electrical_locality.validate(policy['electrical_locality'])
     if 'groups' in policy:
         placement_groups.validate(policy['groups'], refs)
+    if 'advisory_regions' in policy:
+        # Reported on the complete placement only; search never reads them (AGENTEE-436).
+        advisory_regions.validate(policy['advisory_regions'], refs)
     if 'constraint_provenance' in policy:
         _validate_provenance(policy['constraint_provenance'])
         for name, actual in (('gap_nm', policy['gap_nm']),
@@ -2331,6 +2334,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
         extra['locality_grading'] = electrical_locality.grade(proposed_capture, locality)
         if extra['locality_grading']['status'] not in ('pass', 'info'):
             return {**stopped('judge_rejected', 'complete proposal failed pad locality'), **extra}
+    if 'advisory_regions' in policy:
+        extra['advisory_regions'] = advisory_regions.grade(proposed_capture, policy['advisory_regions'], fixed)
     custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]
     if custom_pads:

@@ -534,6 +534,104 @@ groups, a plan or saved board is accepted only when no advisory is exceeded
 (`placement_groups.satisfied`). These source records follow the existing caller qualification contract;
 authenticating declared citations remains AGENTEE-348.
 
+A caller who wants unsourced geometry reported but not searched declares it as
+an advisory region instead of an obstacle (next section).
+
+### Advisory regions and pose-bound shadows (AGENTEE-436)
+
+A packing policy may declare `advisory_regions`. Search, region and board
+capacity proofs and the judge never read them, so a region never prunes a
+candidate pose and never refuses a fixed part. The planned result, the block
+arrangement's complete plan and the saved-board judgment
+(`placement-judgment.json`) each carry an `agent-ee.advisory-regions/1` report.
+For every region it lists `intruders` (positive-area courtyard overlap on the
+region's side) and `near` parts (exact courtyard edge distance at most
+`proximity_nm`, floored to whole nanometres). Each entry is marked `fixed` or
+not. Status is `info` when anything is listed and `pass` otherwise. A finding is
+review input: it never passes a physical requirement and is never a defect.
+
+Every grading path (planned result, arranged plan, saved board and the CLI)
+goes through one qualification, `advisory_regions.qualified`, and refuses what
+it cannot qualify instead of grading it clear: the capture schema and board
+hash, unique reference and UUID identities (`placement.validate_capture`), a
+mounting side and a courtyard there on every part, and every declared courtyard
+`proven` (a curved courtyard by its conservative outer bound). A part with no
+courtyard on the region's side, and a qualified one on its mounting side, is a
+legitimate opposite-side exclusion.
+
+```json
+{"advisory_regions": [
+ {"id": "imu-u2-back-box", "side": "B", "subject": "U2", "proximity_nm": 2000000,
+  "polygons": [[[7000000, 5000000], [17000000, 5000000], [17000000, 15000000], [7000000, 15000000]]],
+  "concern": "tall or heavy parts away from the IMU; rigid mounting",
+  "source": {"class": "agent-advisory", "reason": "iteration-2 agent rule; no sourced distance"}},
+ {"id": "L1-shadow", "proximity_nm": 1000000,
+  "shadow_of": {"reference": "L1", "margin_nm": 500000},
+  "source": {"class": "agent-advisory", "reason": "no parts under the buck inductor; unsourced"}}]}
+```
+
+- **Absolute regions** (`side`, `polygons`) use the obstacle polygon validator.
+  An optional `subject` binds the protected part's identity and pose into the
+  report and leaves it out of the findings.
+- **Shadow regions** (`shadow_of`) are derived on every grading from the
+  owner's actual pose: its mounting-side courtyard box, grown by `margin_nm`, on
+  the opposite side. This is the same geometry as the block-arrangement
+  `no_stacking` shadow. The report binds the owner's reference, UUID, FPID,
+  side, position, rotation and courtyard box, so a shadow follows its owner
+  through arrangement, residual packing and native save. It cannot go stale the
+  way a copied obstacle polygon did: the pod's iteration-5 L1/L2 shadows, policy
+  obstacles 5 and 6, stayed in the packing policy after the arrangement moved
+  both inductors.
+- **`source.class`** is one of `owner`, `datasheet`, `manufacturer`
+  (each needs a `citation`) or `agent-advisory` (needs a `reason`). It is a
+  declared, unauthenticated label (AGENTEE-348) and never makes a region hard.
+  Sourced keep-outs still reach the board as native rule areas
+  (`board`/`hard`, AGENTEE-365), and sourced obstacles keep their AGENTEE-361
+  record.
+
+`python3 -m agent_ee.advisory_regions --probe placement-probe.json --policy
+policy.json [--heights heights.json] [--sourced-heights parts.json] --out
+report.json` grades a saved board's capture. `--heights` takes a native
+`agent-ee.component-height-probe/1` result for the same board. It attaches each
+intruding or nearby part's installed height (`native-step-bounds`) or
+`unknown`. `--sourced-heights` takes an `agent-ee.sourced-heights/1` document
+that binds board references to heights from their sources:
+
+```json
+{"schema": "agent-ee.sourced-heights/1", "parts": [
+ {"reference": "L1", "part": "SRP7050TA-150M", "height_mm": "4.8", "tolerance_mm": "0.2",
+  "source": {"class": "datasheet", "citation": "captured SRP7050TA datasheet, dimensions",
+             "sha256": "<sha256 of the captured PDF>"}}]}
+```
+
+Heights and tolerances are decimal strings in mm. The source class is
+`datasheet` or `manufacturer` (each with a `citation` and the captured
+document's `sha256`) or `owner` (a `citation`). Every reference must be a
+unique board reference. A sourced height is the body's height
+(`status: sourced`) whatever the probe says: a probe `unknown` is kept beside it
+as `model_probe` and never replaces it, and a measured model outside the sourced
+tolerance makes the body a `conflict` with both values reported. A part with
+neither a source nor a measurement stays `unknown`. `tall_heavy_risk` stays
+`unresolved` for physical review in every case, because no sourced height or
+mass threshold exists to turn a height into a verdict. For the pod, agent-509
+bound L1 (SRP7050TA-150M) at 4.8 ± 0.2 mm and L2 (SRP7050WA-6R8M) at
+5.2 ± 0.2 mm from the captured datasheets; mass, centre of gravity and coupling
+remain unknown. A `near` entry's `distance_nm` is the part's courtyard distance
+to the region polygon (for the IMU ring, to the ring, not to U2's body); it is
+neither a body clearance nor a proven violation.
+
+Unchanged by this section: native footprint keep-outs and rule areas, sourced
+copper, drill, edge and access constraints (AGENTEE-366 copper extent,
+AGENTEE-379 access lanes, AGENTEE-418 owned keep-outs moving with arranged
+members), fixed parts, and every obstacle that stays in `obstacles`. An
+unsourced obstacle is still searched exactly as before; moving one into
+`advisory_regions` is a caller's policy decision. The decision record for the
+pod (agent-509, relayed by agent-449) moves the IMU box and ring (obstacles 0 to
+4) and the stale L1/L2 shadows (5 and 6) there. The L1/L2 shadow regions
+deliberately duplicate the arrangement's advisory `no_stacking` findings, so
+they also cover flat placement and the saved board. J3 under L1 is reported
+as an advisory shadow intrusion with `fixed: true`, not a defect.
+
 ### Board capacity (AGENTEE-249)
 
 After the fixed reservations and region proofs, the engine bounds board-wide
