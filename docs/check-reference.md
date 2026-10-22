@@ -1897,6 +1897,9 @@ A sourced bound below the necessary copper floor is `locality_infeasible`.
 Block candidates preserve source records and accept truthful advisory `info`
 through production, validation and independent admission regrading; hard defects
 and unknown coverage still refuse. See [blocks](blocks.md).
+AGENTEE-401 requires explicit floor and provenance records in every stored block
+locality measurement. Structural validation refuses missing or malformed records;
+board admission still independently regrades locality before consumers trust it.
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.

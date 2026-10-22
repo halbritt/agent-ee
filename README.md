@@ -177,6 +177,8 @@ temporary anchor-proximity group, then grades on the unchanged policy.
 Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
+Structural validation requires explicit locality floor and provenance records;
+consumers must still admit candidates before trusting their board evidence.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
 so they do not depend on the captured board rotation (AGENTEE-370).

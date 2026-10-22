@@ -281,6 +281,18 @@ an empty box or an edited polygon therefore refuses. A record whose rings are no
 canonical comes from before AGENTEE-370 and refuses with `identity_version`; it is
 never re-hashed.
 
+Validation is structural, not board admission (AGENTEE-401). Every measured
+locality row requires `constraint_provenance` matching the declaration and an
+explicit `manufacturing_floor`. A known floor needs a nonnegative integer
+`floor_nm`, the captured PCB source and clearance, and the necessary-copper-floor
+kind; an unknown floor needs a nonempty reason. Missing or malformed records
+refuse instead of implying `below_floor: false`. Explicit unknown floors remain
+unknown records; geometry-unqualified floors can still accompany advisory grades.
+The floor value and its claimed geometry cannot be verified without the board.
+Consumers must use `admit` before trusting stored locality evidence; mapped
+arrangement inputs independently regrade the target board's own footprints and
+policy. `match` establishes member identity, not evidence admission.
+
 ### Pose-independent identity (AGENTEE-370)
 
 `pad_geometry_sha256` and `courtyard_sha256` hash the footprint at the origin,
@@ -924,6 +936,10 @@ It covers:
 - packing with internal and deferred obligations and groups;
 - advisory-only and mixed hard/advisory packing, truthful advisory records,
   and source-record preservation through JSON round trips and admission;
+- required floor/provenance records (AGENTEE-401), malformed and stale floor
+  provenance refusals, retained geometry-unknown advisory floors, manufacturer
+  record integrity refusal, and board admission refusing a structurally valid
+  but false unknown-floor claim;
 - frame rigidity under anchor rotation and determinism;
 - fail-closed locality, fixed-member and synthetic-plane cases;
 - every provenance class and the structural refusals;
