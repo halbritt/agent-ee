@@ -107,7 +107,7 @@ class AccessTests(unittest.TestCase):
 
     def test_lane_overhang_allowance_applies_only_to_the_mounting_side(self):
         fp = part('J3', 0, 0, 'B')
-        fp['access_direction'] = declaration()
+        fp['access_direction'] = reviewer_relaxing(declaration())
         fp['access_direction']['mouth_nm'] = [1500000, MM]
         fp['access_direction']['lane_polygons_nm'] = [rectangle(1.5, 0, 30, 2)]
         fp['courtyards']['F'] = {'status': 'proven', 'polygons': [rectangle(0, 0, 4, 2)]}
