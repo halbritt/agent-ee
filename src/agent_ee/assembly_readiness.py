@@ -1478,6 +1478,9 @@ def _validate_hand_fit_policy(raw, deviations):
                                      "selection must name the exact MPN and LCSC")
     if len({(i["mpn"], i["lcsc"]) for i in identities}) != len(identities):
         raise ValueError("duplicate hand_fit_policy identity")
+    if selection is not None and [(i["mpn"], i["lcsc"]) for i in identities] != [
+            (selection["mpn"], selection["lcsc"])]:
+        raise ValueError("hand_fit_policy.identities must be exactly the one identity the selection sentence names")
     return {key: raw[key] for key in ("source", "sha256", "line", "quote")} | {
         "identities": [dict(i) for i in identities]} | ({"selection": selection} if selection is not None else {})
 
@@ -1520,6 +1523,7 @@ def _validate_hand_fit_selection(raw, policy, deviations):
         raise ValueError(f"{label}.quote must be text from one source line")
     if not names_identity(raw["category"], raw["quote"]):
         raise ValueError(f"{label}.quote does not name the category {raw['category']!r}")
+    sentence = _selection_sentence(raw["quote"], raw["category"])
     records = raw["records"]
     if not isinstance(records, list) or not records:
         raise ValueError(f"{label}.records must name at least one captured identity record")
@@ -1530,8 +1534,76 @@ def _validate_hand_fit_selection(raw, policy, deviations):
             raise ValueError(f"{label}.records[{index}].pointer must be a JSON pointer")
     if len({(r["source"], r["pointer"]) for r in records}) != len(records):
         raise ValueError(f"duplicate {label} record")
-    return {key: raw[key] for key in ("category", "source", "sha256", "line", "quote")} | {
+    if len(records) < 2:
+        raise ValueError(f"{label}.records must pin both the manifest entry and the part record it names")
+    return {key: raw[key] for key in ("category", "source", "sha256", "line", "quote")} | sentence | {
         "records": [dict(r) for r in records]}
+
+
+# The one recognised affirmative selection form (AGENTEE-207), the form of the pod's captured D-PCB-10:
+# "J1 is the 35-position RIGHT-ANGLE TE AMPSEAL 1-776163-1 (LCSC C596198; footprint PodConnector:AMPSEAL_35_1-776163-1)".
+# Anything else -- negated, conditional, hedged or merely different wording -- is unsupported, never inferred.
+SELECTION_SENTENCE_RE = re.compile(
+    r"(?P<reference>[A-Z]+[0-9]+) is the (?P<description>[A-Za-z0-9][A-Za-z0-9 -]*[A-Za-z0-9]) "
+    r"(?P<mpn>[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]) \(LCSC (?P<lcsc>C[0-9]+); "
+    r"footprint (?P<footprint>[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+)\)", re.ASCII)
+UNAFFIRMED_SELECTION_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_])(?:not|never|no|nor|neither|none|cannot|without|instead|rather|but|however|reject|"
+    r"rejected|rejects|rejection|replace|replaced|replacing|supersede|superseded|withdraw|withdrawn|revoke|revoked|"
+    r"rescind|rescinded|void|former|formerly|previous|previously|alternative|alternate|proposed|tentative|"
+    r"tentatively|pending|maybe|perhaps|possibly|might|may|could|would|tbd|tbc)(?![A-Za-z0-9_])|n't)", re.I)
+SELECTION_PREFIX_RE = re.compile(r'\s*(?:[-*+]\s+)?|\s*"(?P<key>[^"\\]*)"\s*:\s*"')
+SENTENCE_END_RE = re.compile(r'[.!?](?=\s|"|$)')
+
+
+def _unaffirmed(text):
+    """The first negating, revoking, hedging or conditional word in text, or None."""
+    match = UNAFFIRMED_SELECTION_RE.search(text) or CONDITIONAL_RE.search(text)
+    return match.group(0) if match else None
+
+
+def _selection_sentence(quote, category):
+    """Parse the cited selection quote; only the recognised affirmative form binds a category to an identity."""
+    from .part_decisions import names_identity
+    label = "hand_fit_policy.selection.quote"
+    match = SELECTION_SENTENCE_RE.fullmatch(quote)
+    if match is None:
+        raise ValueError(f"{label} is not the recognised affirmative selection form 'REF is the <category "
+                         "description> MPN (LCSC Cnnn; footprint Library:Footprint)'; other wording is unsupported")
+    word = _unaffirmed(match["description"])
+    if word is not None:
+        raise ValueError(f"{label} description is not an affirmative selection ({word!r})")
+    if not names_identity(category, match["description"]):
+        raise ValueError(f"{label} does not describe the selected part as the category {category!r}")
+    return {key: match[key] for key in ("reference", "mpn", "lcsc", "footprint")}
+
+
+def _selection_context(content, selection):
+    """The cited quote must be a whole affirmative statement and the decision's only mention of the identity."""
+    lines = content.splitlines()
+    line = lines[selection["line"] - 1]
+    if line.count(selection["quote"]) != 1:
+        raise ValueError("the selection quote must occur exactly once on its line")
+    position = line.index(selection["quote"])
+    prefix = SELECTION_PREFIX_RE.fullmatch(line[:position])
+    if prefix is None:
+        raise ValueError(f"the selection quote does not open its statement (preceded by {line[:position].strip()!r})")
+    word = _unaffirmed(prefix["key"] or "")
+    if word is not None:
+        raise ValueError(f"the selection statement's label is not an affirmative selection ({word!r})")
+    rest = line[position + len(selection["quote"]):]
+    end = SENTENCE_END_RE.search(rest)
+    if end is None:
+        raise ValueError("the selection sentence does not end on its cited line")
+    word = _unaffirmed(rest[:end.start()])
+    if word is not None:
+        raise ValueError(f"the selection sentence continues with a non-affirmative qualifier ({word!r})")
+    for key in ("mpn", "lcsc", "footprint"):
+        pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(selection[key]) + r"(?![A-Za-z0-9_/-])"
+        count = len(re.findall(pattern, content))
+        if count != 1:
+            raise ValueError(f"the selection decision names {selection[key]!r} {count} times; the selection "
+                             "sentence must be its only mention")
 
 
 def _json_pointer(doc, pointer):
@@ -1681,7 +1753,8 @@ def _verify_hand_fit_policy(inputs, policy):
 
 
 def _verify_hand_fit_selection(inputs, policy):
-    """Every chain link is the pinned captured bytes; the records carry exactly the policy identities."""
+    """The complete chain is mandatory: an affirmative pinned decision, a manifest entry pinning the decision's
+    footprint, and the part record that entry names. Every link is pinned bytes carrying the one identity."""
     selection, identities = policy["selection"], policy["identities"]
 
     def pinned(citation, label):
@@ -1700,6 +1773,11 @@ def _verify_hand_fit_selection(inputs, policy):
     if selection["line"] > len(lines) or selection["quote"] not in lines[selection["line"] - 1]:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy selection quote is absent from {rel!r} line {selection['line']}")
+    try:
+        _selection_context(content, selection)
+    except ValueError as exc:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", f"hand_fit_policy selection {rel!r} line {selection['line']}: {exc}") from exc
     wanted = {(i["mpn"], i["lcsc"]) for i in identities}
     hashes, matched, links, footprints = {r["source"]: r["sha256"] for r in selection["records"]}, set(), [], {}
     for record in selection["records"]:
@@ -1732,11 +1810,33 @@ def _verify_hand_fit_selection(inputs, policy):
                     "failed", f"hand_fit_policy selection record {rel!r} names part record "
                               f"{named.get('part_record')!r} {named.get('part_record_sha256')!r}, which is not a "
                               "pinned record of the chain")
+            if "lcsc" in named and named["lcsc"] != found[1]:
+                raise AssemblyReadinessExecutionError(
+                    "failed", f"hand_fit_policy selection record {rel!r} selects {named['lcsc']!r}, not {found[1]!r}")
+            if not isinstance(obj.get("footprint"), str):
+                raise AssemblyReadinessExecutionError(
+                    "unsupported", f"hand_fit_policy selection manifest entry {rel!r} at {record['pointer']!r} "
+                                   "pins no footprint; the chain's CAD provenance is unknown")
             links.append({"record": rel, "pointer": record["pointer"], "part_record": named["part_record"],
                           "part_record_sha256": named["part_record_sha256"]})
     if matched != wanted:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy selection records do not carry every policy identity: {sorted(wanted - matched)}")
+    # Mandatory complete chain: no manifest entry, or a record no entry names, leaves the custody unknown.
+    if not links:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", "hand_fit_policy selection records hold no manifest entry naming a pinned part record; "
+                           "the complete source chain (decision, manifest entry, part record) is mandatory")
+    unlinked = sorted(set(hashes) - {link["record"] for link in links} - {link["part_record"] for link in links})
+    if unlinked:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", f"hand_fit_policy selection records {unlinked} are neither a manifest entry nor the "
+                           "part record one names")
+    identity = (selection["mpn"], selection["lcsc"])
+    if footprints.get(identity) != selection["footprint"]:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", f"hand_fit_policy selection decision pins footprint {selection['footprint']!r} but the "
+                           f"chain's records pin {footprints.get(identity)!r}")
     return selection | {"association": "category_selection", "part_record_links": links,
                         "footprints": [{"mpn": mpn, "lcsc": lcsc, "footprint": footprints[(mpn, lcsc)]}
                                        for mpn, lcsc in sorted(footprints)]}
@@ -1877,6 +1977,9 @@ def _owner_hand_fit(citation, cfg, catalog, identity, matches):
                          'the deviations file cannot assert it')
     if identity not in citation['identities']:
         raise ValueError(f'identity {identity} is not named by the owner hand-fit policy')
+    if 'selection' in citation and sorted({c['reference'] for c in matches}) != [citation['selection']['reference']]:
+        raise ValueError(f"design references {sorted({c['reference'] for c in matches})} differ from the hand-fit "
+                         f"selection decision's {citation['selection']['reference']!r}")
     for pinned in citation.get('selection', {}).get('footprints', []):
         if (pinned['mpn'], pinned['lcsc']) == (identity['mpn'], identity['lcsc']):
             placed = sorted({_lookup_single_property(c['properties'], 'Footprint') or '' for c in matches})

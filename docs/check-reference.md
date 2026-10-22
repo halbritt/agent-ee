@@ -1380,9 +1380,13 @@ every conditional clause. A conditional or ambiguous statement, such as
 NEO-M9N "if unstocked", refuses the run. The identity still needs a fresh,
 known-stock catalog row. When the owner text names only a part category ("the
 AMPSEAL header"), an optional `selection` chain binds it to the exact identity
-through pinned captured sources: a decision line naming the category, MPN and
-LCSC, plus JSON identity records whose part-record links and footprints must
-agree. A broken link refuses the run. This is an assembly disposition only; it
+through a mandatory, complete chain of pinned captured sources: a decision
+line in the one recognised affirmative form (`REF is the <category description>
+MPN (LCSC Cnnn; footprint Library:Footprint)`), a parts-manifest entry pinning
+that footprint, and the part record the entry names. Negated, conditional,
+hedged or unrecognised wording, a missing manifest entry or unknown CAD is
+`unsupported`; a broken link refuses the run; a placed footprint or reference
+other than the decision's is a defect. This is an assembly disposition only; it
 grants no mechanical-fit or purchase approval. See the
 [hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations),
 [owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy) and

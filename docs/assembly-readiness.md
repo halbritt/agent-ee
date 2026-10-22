@@ -237,7 +237,7 @@ replaces or edits the owner quote, which stays the only hand-fit authority:
     "selection": {
       "category": "AMPSEAL",
       "source": "design-rules/constraints.json", "sha256": "<decision source>", "line": 175,
-      "quote": "<exact decision text naming the category, the MPN and the LCSC>",
+      "quote": "J1 is the 35-position RIGHT-ANGLE TE AMPSEAL 1-776163-1 (LCSC C596198; footprint PodConnector:AMPSEAL_35_1-776163-1)",
       "records": [
         {"source": "parts/C596198.json", "sha256": "<part record>", "pointer": ""},
         {"source": "parts.json", "sha256": "<manifest>", "pointer": "/parts/303"}
@@ -247,31 +247,53 @@ replaces or edits the owner quote, which stays the only hand-fit authority:
 }
 ```
 
-With `selection`, the identities need not appear in the owner quote. Instead:
+With `selection`, the identities need not appear in the owner quote. The
+complete chain is mandatory: an affirmative decision, a manifest entry and the
+part record it names. Instead:
 
 - `category` is a whole token in the owner quote. The owner unit is checked
   as above with the category in place of the MPN: an affirmative hand-fit,
   named exactly once, outside every conditional span;
 - `selection.source` is a captured input other than the owner source, the
   deviations file and any KiCad design file. Its bytes equal `sha256` and its
-  `quote` is on line `line`. The quote names the category and every identity's
-  MPN and LCSC as whole tokens (an identity without an LCSC cannot use a
-  selection);
+  `quote` is on line `line`;
+- the `quote` must be exactly the one recognised affirmative selection form,
+  the form of the pod's D-PCB-10:
+  `REF is the <description> MPN (LCSC Cnnn; footprint Library:Footprint)`.
+  The description names the category as a whole token. `identities` must be
+  exactly that one MPN/LCSC. No other wording is interpreted; there is no
+  natural-language parser;
+- the quote must open its statement on the cited line: only whitespace, a list
+  bullet or a JSON member label (`"label": "`) may precede it. The label and the
+  rest of the sentence up to its terminator (on the same line) must not contain
+  a negating, revoking, hedging or conditional word (for example *not*,
+  *rejected*, *superseded*, *withdrawn*, *proposed*, *if*, *only*, *unless*).
+  The MPN, LCSC and footprint must each appear exactly once in the whole
+  decision file, inside the quote, so a later statement cannot revise them.
+  A negated, conditional, hedged, ambiguous or unrecognised selection is
+  `unsupported`; it is never read as a selection;
 - every record is a captured JSON file, pinned by `sha256`, whose object at
-  `pointer` (RFC 6901) carries `mpn` and `lcsc` equal to one listed identity.
-  Every identity is carried by at least one record;
-- a record whose object has `selection.part_record` and
-  `selection.part_record_sha256` (a parts-manifest entry) must name a record of
-  the same chain with exactly that path and hash;
-- a record whose object carries a `footprint` pins the identity's CAD
-  footprint. All records that pin one must agree (otherwise `failed`), and every
-  placed component with that identity must carry exactly that `Footprint`. A
-  different placed footprint is an `invalid_assembly_deviation` defect.
+  `pointer` (RFC 6901) carries `mpn` and `lcsc` equal to the identity;
+- at least two records are required: a parts-manifest entry (an object with
+  `selection.part_record` and `selection.part_record_sha256`) and the part
+  record it names, with exactly that path and hash. A manifest entry whose
+  `selection.lcsc` differs refuses. Every record must be a manifest entry or a
+  part record one names. A chain with no manifest entry or with an unlinked
+  record is `unsupported`;
+- the manifest entry must carry a `footprint` (CAD provenance), and it must
+  equal the decision's footprint. Any other record that carries one must agree
+  (otherwise `failed`). An absent or disagreeing footprint is `unsupported`;
+  unknown CAD never passes;
+- every placed component with that identity must carry exactly that
+  `Footprint`, and the placed references must be exactly the decision's `REF`.
+  A different placed footprint or reference is an
+  `invalid_assembly_deviation` defect.
 
-Every chain source becomes an immutable input. A malformed chain is
-`unsupported`; changed bytes, a missing quote, an unresolved pointer, another
-identity or a broken part-record link refuse the run (`failed`). Accepted
-entries also report `policy_selection` (the verified chain,
+Every chain source becomes an immutable input. A malformed or incomplete chain
+is `unsupported`; changed bytes, a missing file or quote, an unresolved
+pointer, another identity or a broken part-record link refuse the run
+(`failed`). Accepted entries also report `policy_selection` (the verified
+chain with the parsed `reference`, `mpn`, `lcsc` and `footprint`,
 `association: category_selection`, the verified `part_record_links` and the
 pinned `footprints`).
 This is an assembly disposition only. A hand-fit approval, with or without a
@@ -284,8 +306,10 @@ names "the AMPSEAL header"; constraints.json D-PCB-10 names AMPSEAL,
 1-776163-1, C596198 and its footprint; the C596198 part record and the
 complete-parts-manifest `connector/J1` entry carry that identity, and the
 manifest entry links the part record by hash.
-`test_pod_j1_category_selection_chain_on_the_actual_source_bytes` checks this
-against the owner's fome-mc store, without copying the files.
+`test_pod_j1_category_selection_chain_on_the_actual_source_bytes`,
+`test_pod_j1_chain_is_mandatory_and_complete` and
+`test_pod_d_pcb_10_is_the_recognised_affirmative_selection` check this against
+the owner's fome-mc store, without copying the files.
 
 ## Fabrication exclusion
 
