@@ -673,6 +673,13 @@ net-class values and uncited local overrides cannot restore advisory floors.
 Physical copper/drill exclusions and native owner custom rules still apply.
 Unbound standalone packing probes preserve their previous reservations.
 
+#### Native DRC match tolerance: known limit (AGENTEE-400)
+
+The 0.00005 mm (50 nm) comparison tolerance below is a documented known limit,
+recorded in `design_rule_provenance.MATCH_TOLERANCE_MM`. A sourced-limit
+violation under 50 nm grades as not violated, because KiCad's four-decimal
+report cannot establish it. No grading behaviour changes.
+
 Native DRC reports retain every finding. Numeric findings resolve against the
 reported rule name and the inventory's applicable settings. The measured actual
 value is compared against every applicable sourced minimum, even when KiCad
