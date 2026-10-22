@@ -27,6 +27,8 @@ CHUNK = 1024**2
 UNSUPPORTED_FLAGS = 0x1 | 0x8 | 0x40
 HASH_RE = re.compile(r'[0-9a-f]{64}')
 NAME_RE = re.compile(r'([A-Za-z0-9][A-Za-z0-9._-]*\.zip)\.([0-9]{3})')
+# Families whose identity part_selection establishes from captured value, tolerance,
+# package and ratings (part_selection.VALUE_ATTRIBUTES); see docs/decisions.md.
 KNOWN_FAMILIES = ('resistor', 'capacitor', 'inductor')
 REASONS = ('manifest_malformed', 'no_parts', 'too_many_parts', 'bad_part_name', 'duplicate_part',
            'missing_part', 'reordered_parts', 'unlisted_part', 'part_not_file', 'size_mismatch',
@@ -317,11 +319,12 @@ def lcsc_pdf_url(raw, lcsc):
 def passive_boundary(families=None):
     """Validate the explicit family set treated as passive. There is no default.
 
-    Pending owner confirmation: the existing identity index excludes only
-    resistor, capacitor and inductor, and this input is how a decision is supplied.
+    The boundary may only name families that ``part_selection`` resolves by
+    nominal value with tolerance (``KNOWN_FAMILIES``); every other family keeps
+    its identity rows. ``catalog_identity`` calls this at capture and at load.
     """
     if families is None:
-        raise BouniRefusal('boundary_not_supplied', 'the R/C/L boundary is an owner decision')
+        raise BouniRefusal('boundary_not_supplied', 'the passive family set must be explicit')
     if (isinstance(families, str) or not isinstance(families, (list, tuple, set, frozenset))
             or not families or any(f not in KNOWN_FAMILIES for f in families)
             or len(set(families)) != len(families)):

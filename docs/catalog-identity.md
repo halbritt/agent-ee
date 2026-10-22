@@ -45,7 +45,11 @@ The profile keeps every row except:
 - **Generic passives.** These are rows whose upstream category or subcategory
   maps to `resistor`, `capacitor` or `inductor` in the stocked importer's
   category map. They are resolved parametrically from `agent-ee.catalog/1` and
-  are counted in `pruned_rows.generic`.
+  are counted in `pruned_rows.generic`. A row is kept anyway when its
+  subcategory names a part whose identity is not its nominal value, tolerance
+  and package (ferrite bead, common-mode filter, transformer, potentiometer,
+  variable or trimmer part, thermistor, varistor, fuse, network or array,
+  crystal, resonator). See [the passive boundary](#passive-boundary-agentee-253).
 - **Stale rows.** These are rows whose UTC `fetched_at` date is before
   `stale_before`. They are counted in `pruned_rows.stale`.
 
@@ -231,11 +235,25 @@ response bytes for the exact `result.productCode`. It returns the stripped
 string, or None when absent, null, blank or for another part; a non-string value
 or a malformed response is refused. The URL is recorded and never fetched.
 
-`catalog_bouni.passive_boundary(families)` is the explicit input for the family
-set treated as passive (subset of resistor, capacitor, inductor). It has no
-default and refuses a missing or invalid value. The current identity index still
-excludes exactly R/C/L; whether that boundary is intended is **pending owner
-confirmation**.
+## Passive boundary (AGENTEE-253)
+
+`catalog_bouni.passive_boundary(families)` validates the family set treated as
+passive. It has no default; a missing value is `boundary_not_supplied`, and a
+string, empty, duplicated or out-of-set value is `boundary_invalid`. The allowed
+set `KNOWN_FAMILIES` is resistor, capacitor and inductor, exactly the families
+`part_selection` resolves by nominal value with tolerance (`VALUE_ATTRIBUTES`).
+A test keeps the three in agreement.
+
+`catalog_identity` is the production caller. `capture_identity` validates
+`GENERIC_FAMILIES` before reading any volume, and `load_identity_index`
+validates the manifest's `generic_families_excluded` before any row is read.
+A widened boundary (for example adding `diode`, `led` or `ferrite_bead`) is
+refused at both points, and a narrowed one is refused at load as an unsupported
+profile. Diodes, LEDs, connectors, regulators and every unmapped family
+(crystals, fuses, ferrite beads in their own category, ICs) stay in the index
+and resolve by MPN. Within R/C/L categories, the subcategory words listed in
+`NON_GENERIC_SUBCATEGORY_WORDS` keep a row in the index. The reasoning is in
+[decisions](decisions.md#catalog-identity-passive-boundary-agentee-253).
 
 ## Limits
 
@@ -245,7 +263,10 @@ confirmation**.
 - The bouni/kicad-jlcpcb-tools format is inspected offline against an
   owner-authored layout and synthetic archives only (see below). No importer
   exists for it; only the pinned jlcparts `source-db-v2` layout is accepted.
-- The R/C/L boundary is pending owner confirmation.
+- The subcategory words are matched against owned synthetic labels only. Real
+  jlcparts category and subcategory strings are unqualified until a full-feed
+  capture exists; an unlisted non-value-interchangeable subcategory inside an
+  R/C/L category is still pruned.
 - A full-feed capture and its size, runtime and row counts have not been
   qualified. The 1 GiB derived-database limit of the catalog importer applies.
   Committed tests use owned synthetic multi-category archives only.

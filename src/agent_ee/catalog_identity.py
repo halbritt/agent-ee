@@ -25,6 +25,7 @@ import sqlite3
 import sys
 import tempfile
 
+from .catalog_bouni import passive_boundary
 from .catalog import (MAX_TOTAL_BYTES, MAX_VOLUME_BYTES, exact_fields, iso_date, nonempty,
                       publish_directory, rows_sha256, safe_path, strict_json)
 from .catalog_jlcparts import (CATEGORY_MAP, COMPONENT_COLUMNS, check_table, extract_database,
@@ -37,8 +38,15 @@ FORMAT = 'jlcparts-v2-identity-split-zip'
 RESOLUTION_SCHEMA = 'agent-ee.catalog-identity-resolution/1'
 NARROWING_SCHEMA = 'agent-ee.catalog-identity-narrowing/1'
 DECISIONS_SCHEMA = 'agent-ee.part-decisions/1'
-# Passive families are resolved parametrically from the verified generic tables.
+# Passive families are resolved parametrically from the verified generic tables;
+# validated by catalog_bouni.passive_boundary (decision in docs/decisions.md).
 GENERIC_FAMILIES = ('resistor', 'capacitor', 'inductor')
+# Subcategories inside a passive category whose identity is not established by
+# nominal value, tolerance and package (impedance, B-value, taper, turns ratio,
+# pin configuration). Such rows keep their identity rows: fail closed.
+NON_GENERIC_SUBCATEGORY_WORDS = ('ferrite', 'bead', 'common mode', 'transformer', 'potentiometer',
+                                 'variable', 'trimmer', 'thermistor', 'varistor', 'fuse', 'network',
+                                 'array', 'crystal', 'resonator')
 TIERS = ('Basic', 'Preferred', 'Extended')
 COLUMNS = ('lcsc', 'mpn', 'mpn_key', 'mfr', 'package', 'category', 'subcategory', 'library_tier',
            'stock', 'present', 'last_seen', 'datasheet_url', 'provenance')
@@ -58,8 +66,11 @@ def mpn_key(mpn):
     return mpn.strip().upper()
 
 
-def generic(category, subcategory):
-    return (CATEGORY_MAP.get(category) or CATEGORY_MAP.get(subcategory)) in GENERIC_FAMILIES
+def generic(category, subcategory, boundary):
+    """True only for a mapped family inside the validated passive boundary."""
+    if any(word in subcategory.lower() for word in NON_GENERIC_SUBCATEGORY_WORDS):
+        return False
+    return (CATEGORY_MAP.get(category) or CATEGORY_MAP.get(subcategory)) in boundary
 
 
 def validate_source(manifest):
@@ -93,7 +104,7 @@ def _text(native, key):
     return native[key]
 
 
-def native_rows(path, manifest, pruned):
+def native_rows(path, manifest, pruned, boundary):
     """Yield identity rows in LCSC order; count generic and stale exclusions."""
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro&immutable=1', uri=True)) as connection:
         connection.execute('PRAGMA trusted_schema=OFF')
@@ -111,7 +122,7 @@ def native_rows(path, manifest, pruned):
                 if type(native[key]) is not int:
                     raise ValueError(f'invalid native {key}')
             category, subcategory = _text(native, 'category'), _text(native, 'subcategory')
-            if generic(category, subcategory):
+            if generic(category, subcategory, boundary):
                 pruned['generic'] += 1
                 continue
             if native['lcsc'] < 1 or native['present'] not in (0, 1) or native['preferred'] not in (0, 1):
@@ -154,6 +165,7 @@ def write_database(path, rows):
 def capture_identity(source_manifest, source_root, destination):
     """Verify every pinned volume, derive the index privately, publish once."""
     validate_source(source_manifest)
+    boundary = passive_boundary(GENERIC_FAMILIES)
     destination = Path(destination)
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
@@ -165,7 +177,7 @@ def capture_identity(source_manifest, source_root, destination):
             reassemble(source_manifest['volumes'], root, native / 'joined.zip', FORMAT)
             extract_database(native / 'joined.zip', native / 'cache.sqlite3')
             pruned = {'generic': 0, 'stale': 0}
-            rows = list(native_rows(native / 'cache.sqlite3', source_manifest, pruned))
+            rows = list(native_rows(native / 'cache.sqlite3', source_manifest, pruned, boundary))
         if not rows:
             raise ValueError('identity index has no retained rows')
         if len({row['lcsc'] for row in rows}) != len(rows):
@@ -187,7 +199,7 @@ def capture_identity(source_manifest, source_root, destination):
             shutil.rmtree(stage)
 
 
-def _stored_row(cells, manifest):
+def _stored_row(cells, manifest, boundary):
     row = dict(zip(COLUMNS, cells))
     for key in ('lcsc', 'mpn', 'mpn_key', 'mfr', 'package', 'category', 'subcategory',
                 'library_tier', 'last_seen', 'provenance'):
@@ -197,7 +209,7 @@ def _stored_row(cells, manifest):
         raise ValueError('identity row LCSC or MPN key mismatch')
     if row['mfr'] != row['mfr'].strip() or row['package'] != row['package'].strip():
         raise ValueError('identity text is not trimmed')
-    if row['library_tier'] not in TIERS or generic(row['category'], row['subcategory']):
+    if row['library_tier'] not in TIERS or generic(row['category'], row['subcategory'], boundary):
         raise ValueError('identity row tier or category outside profile')
     if type(row['stock']) is not int or row['stock'] < 0 or type(row['present']) is not int or row['present'] not in (0, 1):
         raise ValueError('identity stock/presence must be integers')
@@ -221,8 +233,9 @@ def _stored_row(cells, manifest):
 class IdentityIndex:
     """A verified in-memory copy; queries run on exactly the hashed bytes."""
 
-    def __init__(self, manifest, manifest_sha256, connection):
+    def __init__(self, manifest, manifest_sha256, connection, boundary):
         self.manifest = manifest
+        self.boundary = boundary
         self.manifest_sha256 = manifest_sha256
         self.connection = connection
 
@@ -236,7 +249,7 @@ class IdentityIndex:
         self.close()
 
     def _rows(self, where, args, limit=-1):
-        return [_stored_row(cells, self.manifest) for cells in self.connection.execute(
+        return [_stored_row(cells, self.manifest, self.boundary) for cells in self.connection.execute(
             'SELECT ' + ','.join(COLUMNS) + ' FROM identity WHERE ' + where + ' ORDER BY mpn_key, lcsc LIMIT ?',
             (*args, limit))]
 
@@ -268,6 +281,7 @@ def load_identity_index(directory, expected_manifest_sha256):
     exact_fields(manifest, ('schema', 'snapshot_date', 'source_url', 'source_commit', 'stale_before', 'volumes',
                             'generic_families_excluded', 'database', 'row_count', 'rows_sha256',
                             'pruned_rows', 'sqlite_version'))
+    boundary = passive_boundary(manifest['generic_families_excluded'])
     if manifest['schema'] != SCHEMA or manifest['generic_families_excluded'] != list(GENERIC_FAMILIES):
         raise ValueError('unsupported identity index schema or profile')
     validate_source({'schema': SOURCE_SCHEMA, **{k: manifest[k] for k in (
@@ -301,7 +315,7 @@ def load_identity_index(directory, expected_manifest_sha256):
             raise ValueError('unsupported identity tables or schema')
         hashed, count, sources, previous = hashlib.sha256(b'['), 0, set(), 0
         for cells in connection.execute('SELECT ' + ','.join(COLUMNS) + ' FROM identity ORDER BY CAST(substr(lcsc,2) AS INTEGER)'):
-            row = _stored_row(cells, manifest)
+            row = _stored_row(cells, manifest, boundary)
             number = int(row['lcsc'][1:])
             if number <= previous or row['provenance']['row'] in sources:
                 raise ValueError('duplicate identity LCSC or source record')
@@ -315,7 +329,7 @@ def load_identity_index(directory, expected_manifest_sha256):
     except BaseException:
         connection.close()
         raise
-    return IdentityIndex(manifest, expected_manifest_sha256, connection)
+    return IdentityIndex(manifest, expected_manifest_sha256, connection, boundary)
 
 
 def _candidate(row):

@@ -653,3 +653,21 @@ its reservations, and native saved-board checks retain their authority.
 The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
 remaining numeric limits and their effects; gap-source authentication remains
 AGENTEE-348.
+
+## Catalog identity passive boundary (AGENTEE-253)
+
+Agent reasoning (agent-449 burndown worker, AGENTEE-253); not owner-stated. The
+identity index keeps excluding exactly resistor, capacitor and inductor rows.
+Those are the only families `part_selection` resolves by captured nominal value
+with tolerance, package and rating intervals, so a declared MPN is not needed
+to choose them. Diodes, LEDs, connectors and regulators exist in
+`agent-ee.catalog/1`, but forward voltage, colour, pinout or output setting is
+not captured as an interchangeable value, so they stay in the index. Unmapped
+families, such as crystals, fuses and ferrite beads, stay in the index too. The
+boundary fails closed: a family joins it only when its identity can be
+established from captured fields, and `catalog_bouni.passive_boundary` refuses
+anything outside the value-resolved set at capture and at load. Rows in an
+R/C/L category whose subcategory names a non-value identity (ferrite bead,
+common-mode filter, transformer, potentiometer, thermistor, varistor, fuse,
+network or array, crystal) are kept. Pruning yields unknown resolution, never a
+pass. See [the passive boundary](catalog-identity.md#passive-boundary-agentee-253).
