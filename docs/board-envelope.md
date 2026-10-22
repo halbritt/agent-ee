@@ -737,6 +737,11 @@ geometry only. It cannot make this dynamic predicate pass. Explicit polygon
 checks still grade fidelity to an authored declaration; they do not qualify a
 manufacturer's antenna placement policy. Scaffold callers receive the same
 explicit unresolved error rather than an invented replacement polygon.
+`keepouts/1` stays unknown for this declaration. The outside-board case itself
+is graded by the separate [antenna placement check](antenna-placement.md)
+(AGENTEE-453): saved pose, crossed edge, feed-point corner and retained module
+keepout, as a bare-board gate. The envelope's `antenna` contract and its open
+obligations are unchanged by that check.
 
 Launch preflight requires the recorded `pcbnew` runtime. The coordinator runs
 `agent_ee.envelope_probe` in the networkless tool sandbox,

@@ -311,7 +311,10 @@ The separate 15 mm housing recommendation is retained with its own scope; it is
 never converted into board copper clearance. No vendor PDF is committed.
 
 Both context records return `outcome: unknown`, `coverage: missing` and
-`source_derived_minimum: null`. They expose no polygon and grant no new check or
-acceptance capability. Module pose, feed-point side, board/cutout/housing geometry
-and final RF testing still need qualification. This is a source/provenance repair,
-not a general antenna placement solver.
+`source_derived_minimum: null`. They expose no polygon and by themselves grant
+no acceptance capability. This is a source/provenance repair, not a general
+antenna placement solver. For the `outside_board` case only, the separate
+[antenna placement check](antenna-placement.md) (AGENTEE-453) embeds this context
+and grades module pose, crossed board edge, feed-point side and corner, and the
+retained keepout on the saved board as a bare-board gate. The cutout case,
+housing geometry and final RF testing still need qualification.

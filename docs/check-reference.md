@@ -248,6 +248,7 @@ registered check kind.
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
 | `rf_geometry` | `/usr/bin/python3 -B -m agent_ee.rf_geometry BOARD --request /work/rf-request.json --out /work/rf-native.json`, then a coordinator evaluation against the captured declaration; see [RF geometry](rf-geometry.md) | 600 s |
+| `antenna_placement` | `/usr/bin/python3 -B -m agent_ee.antenna_placement BOARD --request /work/antenna-request.json --out /work/antenna-native.json` when the footprint is captured, then a coordinator evaluation against the captured declaration and pinned sources; see [ESP32 antenna placement](antenna-placement.md) | 300 s |
 | `placement_congestion` | `/usr/bin/python3 -B -m agent_ee.placement_probe BOARD --out /work/placement-probe.json`, then an offline coordinator analysis of the captured probe ([details](placement-congestion.md)) | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -627,6 +628,26 @@ A missing coplanar ground or reference is a defect stated as an absent
 structure, never graded as microstrip. A `null` bound, an unfilled zone or an
 unrouted branch is unknown, with execution `unsupported`. The check is not RF
 qualification, and the guard is a geometric guard result only.
+
+## ESP32 outside-board antenna placement
+
+The [antenna placement check](antenna-placement.md) (AGENTEE-453) takes exactly
+`params.declaration`, a captured `agent-ee.antenna-placement-declaration/1`
+record. It binds the reviewed `outside_board` policy for the Espressif
+guidelines snapshot (section 1.4.7, page 33, Fig. 24/25), the module datasheet
+and the stock footprint, each to its reviewed SHA-256 pin. It also names the
+board edge the antenna must cross. If a source is captured with other bytes,
+capture is refused. A source that is not captured is `unknown`. On the saved
+board the check grades seven sections: sources, footprint identity and pose,
+antenna area outside board material, feed point on the board edge, feed-side
+corner on the declared edge, retained module keepout, and copper inside that
+keepout. Missing evidence, a back-side or off-axis pose, and a body overhang
+beyond the edge are `unknown`. Overlap, a wrong edge or corner, a removed or
+altered rule area, and keepout copper are defects. No clearance is derived:
+the Figure 11-1 pin label is not a clearance. The 18 mm module width is used
+only as a position slot. This is a bare-board gate. Housing pocket, in-housing
+clearance, nearby metal, support and installed RF performance stay open
+obligations, carried by `bare_board_claim`, the AGENTEE-449 composition point.
 
 ## Native netlist
 
