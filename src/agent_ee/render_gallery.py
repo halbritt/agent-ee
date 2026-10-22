@@ -25,25 +25,27 @@ from .symbol_library import LibraryError, children, parse_sexpr
 from .viewer import _ASSETS, _source_board, _stage_board, _validate_glb
 
 _VIEWS = ("top", "bottom", "isometric")
-# URLs other than file:// (scheme matched case-insensitively, RFC 3986) are not
-# host paths. A file URI is parsed structurally: the scheme and the authority
-# (file://host) are consumed first, atomically, and only the path after them can
-# give a basename; with an empty or root path the whole URI becomes <redacted>.
-# Everything else that starts at a
-# POSIX root, a drive letter (either slash) or a UNC prefix is. A path runs to the
-# end of the text or a quote, so directory names containing spaces are removed too,
-# but stops before whitespace that starts another file URI or UNC host, whose
-# authority must not become the earlier path's basename.
-# The host of a UNC path (\\host or //host) is never a basename either.
-# Already redacted text is left alone, so serving a redacted bundle is idempotent.
-_URL = re.compile(r"(?<![\w.+-])(?!(?i:file):)[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]*")
-_PATH = r"(?=[^\s'\"<>])(?:(?!\s+(?:(?i:file):|[\\/]{2}))[^'\"<>\r\n])*"
-_ABSOLUTE = re.compile(
-    r"(?<![\w.}\])/\\])(?<!<redacted>)"
-    r"(?:(?>(?i:file)://[^/\\\s'\"<>]*)(?P<tail>[/\\](?:" + _PATH + r")?)?"
-    r"|(?i:file):[/\\]+(?=$|[\s'\"<>])"
-    r"|(?:(?i:file):)?(?P<path>(?:/|\\\\|[A-Za-z]:[\\/])" + _PATH + r"))")
-_UNC_HOST = re.compile(r"^[\\/]{2}[^\\/]*")
+# Host paths are found by a structural left-to-right scan, not a backtracking
+# regex. Tokens are:
+# - a file URI: a case-insensitive "file:" at ANY position followed by a slash or a
+#   drive. "file:" plus two slashes is followed by an authority (host), which is
+#   always removed and never kept as a basename; the path after it gives the
+#   basename, and an authority-only, empty or root path leaves just <redacted>;
+# - another URL (scheme://..., kept as is) and KiCad variables (${VAR}/..., kept);
+# - an absolute path: a POSIX root, a drive letter (either slash) or a UNC prefix,
+#   whose host (\\host or //host) is never a basename either.
+# A host ends at a slash, whitespace or delimiter. A path runs through spaces,
+# commas and brackets (directory names contain them); a URL ends at whitespace.
+# Both stop at a quote, < > | or a newline, at any "file:" URI, and at a component
+# boundary: whitespace, ",", ";", ")" or "]" followed by another URI, UNC host or
+# drive path (after "," or ";" also any absolute path). So a later URI's
+# authority never becomes an earlier path's basename. Already redacted text is
+# left alone, so serving a redacted bundle is idempotent.
+_STOP = frozenset("'\"<>|\r\n")
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
+_MARK = "<redacted>"
+_SPACE = re.compile(r"\s*")
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
 _ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -57,24 +59,111 @@ _ADOPTION = {"not-adopted": "Proposed change NOT adopted (publisher statement)",
              "no-proposal": "No change proposed (publisher statement)"}
 
 
-def _redacted_path(match):
-    path = match.group("tail") if match.group("path") is None else match.group("path")
-    parts = [p for p in re.split(r"[\\/]", _UNC_HOST.sub("", (path or "").rstrip("/\\ \t"))) if p]
-    return "<redacted>/" + parts[-1] if parts else "<redacted>"
+def _file_at(text, i):
+    """True when a file URI starts at i: "file:" (any case) then a slash or a drive."""
+    return (text[i:i + 5].lower() == "file:" and i + 5 < len(text)
+            and (text[i + 5] in "/\\" or _DRIVE.match(text, i + 5) is not None))
+
+
+def _double(text, i):
+    return len(text) > i + 1 and text[i] in "/\\" and text[i + 1] in "/\\"
+
+
+def _token_at(text, i, single):
+    """True when another URI, UNC host or drive path (or, if single, any root) starts at i."""
+    return i < len(text) and (_file_at(text, i) or _SCHEME.match(text, i) is not None or _double(text, i)
+                              or _DRIVE.match(text, i) is not None or (single and text[i] in "/\\"))
+
+
+def _scan(text, i, url=False):
+    """Index where a path (or, with url, a URL) starting at i ends. Linear in the text."""
+    while i < len(text):
+        char = text[i]
+        if char in _STOP or _file_at(text, i) or (url and char.isspace()):
+            return i
+        if char.isspace() or char in ",;)]":
+            j = _SPACE.match(text, i + 1).end()
+            if _token_at(text, j, char in ",;"):
+                return i
+            i = j
+        else:
+            i += 1
+    return i
+
+
+def _path(text, root):
+    """Return (end, replacement) for the path whose root (a slash or drive) ends at index root.
+
+    A path whose first component would start with whitespace, a delimiter or a
+    stop is just its root (file://host/ and FILE://host/, both stay <redacted>).
+    """
+    end = root
+    if end < len(text) and not text[end].isspace() and text[end] not in ",;)]":
+        end = _scan(text, end)
+    parts = [p for p in re.split(r"[\\/]", text[:end].rstrip("/\\ \t")[root - 1:]) if p]
+    if parts and _DRIVE.match(parts[0] + "/") and len(parts[0]) == 2:
+        parts = parts[1:]
+    return end, _MARK + "/" + parts[-1] if parts else _MARK
+
+
+def _host(text, i):
+    """Return (end, replacement) for a host (file URI authority or UNC host) starting at i.
+
+    The host is removed and never becomes a basename; only a path after it can.
+    Another double slash right after a host starts a further host.
+    """
+    while True:
+        while i < len(text) and text[i] not in "/\\,;)]" and text[i] not in _STOP \
+                and not text[i].isspace() and not _file_at(text, i):
+            i += 1
+        if not _double(text, i):
+            break
+        i += 2
+    if i < len(text) and text[i] in "/\\":
+        return _path(text, i + 1)
+    return i, _MARK
+
+
+def _token(text, i):
+    """Return (end, replacement) for a file URI or absolute path at i, or None."""
+    if _file_at(text, i):
+        i += 5
+        if _double(text, i):
+            return _host(text, i + 2)
+        return _path(text, i + (3 if _DRIVE.match(text, i) else 1))
+    if i and (text[i - 1].isalnum() or text[i - 1] in "_.}/\\") or text.endswith(_MARK, 0, i):
+        return None  # ${VAR}/x, and/or, v1.2/3: not host paths; already redacted text
+    if _double(text, i):
+        return _host(text, i + 2)
+    if text[i] == "/":
+        return _path(text, i + 1)
+    if _DRIVE.match(text, i):
+        return _path(text, i + 3)
+    return None
 
 
 def _redact_text(text):
-    return _ABSOLUTE.sub(_redacted_path, text)
+    out, kept, i = [], 0, 0
+    while i < len(text):
+        if not (i and (text[i - 1].isalnum() or text[i - 1] in "_.+-")) \
+                and _SCHEME.match(text, i) and not _file_at(text, i):
+            # Kept as is up to whitespace or a stop; a "file:" inside the scheme
+            # (x-file:///...) still starts a file URI.
+            i = _scan(text, i + 1, url=True)
+            continue
+        token = _token(text, i)
+        if token is None:
+            i += 1
+            continue
+        out += [text[kept:i], token[1]]
+        kept = i = token[0]
+    return "".join(out) + text[kept:]
 
 
 def redact(value):
     """Replace absolute host paths in any JSON value (keys included) with <redacted>/basename."""
     if isinstance(value, str):
-        kept, parts = 0, []
-        for url in _URL.finditer(value):
-            parts += [_redact_text(value[kept:url.start()]), url.group()]
-            kept = url.end()
-        return "".join(parts) + _redact_text(value[kept:])
+        return _redact_text(value)
     if isinstance(value, list):
         return [redact(v) for v in value]
     if isinstance(value, dict):

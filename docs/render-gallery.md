@@ -70,15 +70,19 @@ only checked against the manifest's own hashes.
 Absolute host paths in model coverage, warnings and `viewer.json` (every string
 and key) are replaced by `<redacted>/basename` at publication: POSIX paths,
 Windows drive paths with either slash, UNC paths and `file:` URIs, including
-directory names with spaces (a path runs to the end of the text or a quote).
-The `file:` scheme is matched case-insensitively (`FILE:///...`,
-`File:///C:/...`), and a file URI's authority (`file://host/share/...`) is
-removed together with its path: the scheme and authority are parsed first and
-only a real path component can be kept as the basename. A file URI with an
-empty or root path (`file://host`, `FILE://host/`, `file:/`), or a bare UNC
-host (`\\host`), becomes a bare `<redacted>`. A path stops before whitespace
-that starts another file URI or UNC host, so a later authority never becomes an
-earlier path's basename. Redaction is idempotent.
+directory names with spaces, commas or brackets. Redaction is a structural
+left-to-right scan, not a regular expression. A case-insensitive `file:`
+followed by a slash or drive starts a file URI at any position (`FILE:///...`,
+`File:///C:/...`, even `x-file:///...`); its authority (`file://host/...`), like
+the host of a UNC path (`\\host\share`), is parsed on its own and removed, and
+only a real path component of the same URI can be kept as the basename. An
+authority-only, empty or root path (`file://host`, `FILE://host/`, `file:/`,
+`\\host`) becomes a bare `<redacted>`. A path stops at a quote, `<`, `>`, `|`
+or a newline, at any `file:` URI, and at whitespace, `,`, `;`, `)` or `]`
+followed by another URI, UNC host or drive path (after `,` or `;`, any absolute
+path), so a later URI's authority never becomes an earlier path's basename:
+`FILE:///home/a/m.step,FILE://host/` gives `<redacted>/m.step,<redacted>`.
+Redaction is idempotent.
 Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
 server applies the same redaction to `manifest.json`, `viewer.json` and page
 warnings of older bundles on the way out.

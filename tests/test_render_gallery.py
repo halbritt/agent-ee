@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import random
 import shutil
 import struct
 import tempfile
@@ -32,6 +33,38 @@ def glb_bytes():
     body = json.dumps({'asset': {'version': '2.0'}, 'meshes': [{}]}).encode()
     body += b' ' * (-len(body) % 4)
     return struct.pack('<4sIIII', b'glTF', 2, 20 + len(body), len(body), 0x4E4F534A) + body
+
+
+# Property-style URI boundary regression: every casing x separator x URI form.
+# Each host, share and directory carries "hidden"; only the basenames may survive.
+CASINGS = ('file', 'FILE', 'File', 'fIlE')
+URI_FORMS = {'local': ('{}:///home/alice-hidden/dir-hidden/local.step', '<redacted>/local.step'),
+             'drive': ('{}:///C:/Users/alice-hidden/drive.step', '<redacted>/drive.step'),
+             'authority': ('{}://host-hidden/share-hidden/auth.step', '<redacted>/auth.step'),
+             'unc': ('{}:\\\\unc-host-hidden\\unc-share-hidden\\unc.step', '<redacted>/unc.step'),
+             'root': ('{}://root-host-hidden/', '<redacted>'),
+             'empty': ('{}://empty-host-hidden', '<redacted>')}
+PLAIN_FORMS = {'posix': ('/home/alice-hidden/dir hidden/plain.step', '<redacted>/plain.step'),
+               'windows': ('C:\\Users\\alice-hidden\\win.step', '<redacted>/win.step'),
+               'bare-unc': ('\\\\bare-host-hidden', '<redacted>')}
+SEPARATORS = ('', ',', ';', ', ', '; ', ' ', '\t', '"', "'", ')', ']', '>', '|', ' and ', '),(')
+
+
+def uri_combinations():
+    """Yield (text, expected) for a first path or URI followed by a later file URI."""
+    for n, casing in enumerate(CASINGS):
+        later = CASINGS[(n + 1) % len(CASINGS)]
+        firsts = [(t.format(casing), e) for t, e in URI_FORMS.values()] + list(PLAIN_FORMS.values())
+        for first, first_expected in firsts:
+            for second, second_expected in URI_FORMS.values():
+                for separator in SEPARATORS:
+                    yield (first + separator + second.format(later),
+                           first_expected + separator + second_expected)
+
+
+def assert_no_uri_leak(test, body, where):
+    for leak in ('hidden', 'file:', 'C:'):
+        test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
 
 
 def publish_in_process(root, renders, label):
@@ -538,7 +571,9 @@ class GalleryTests(unittest.TestCase):
                      'fIlE://srv/share/m.step': '<redacted>/m.step', 'file://srv/share/m.step': '<redacted>/m.step',
                      'FILE://localhost/C:/Users/A/m.step': '<redacted>/m.step', 'file:/home/a/m.step': '<redacted>/m.step',
                      'FILE:\\\\srv\\share\\m.step': '<redacted>/m.step', 'x="File:///home/a b/m.step" y': 'x="<redacted>/m.step" y',
-                     'HTTPS://X.org/a/b http://x.org/c x-file:///a/b': 'HTTPS://X.org/a/b http://x.org/c x-file:///a/b',
+                     'HTTPS://X.org/a/b http://x.org/c': 'HTTPS://X.org/a/b http://x.org/c',
+                     # "file:" starts a file URI at any position, even inside another scheme name.
+                     'x-file:///a/b': 'x-<redacted>/b',
                      'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step FILE:///home/a/m.step':
                          'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step <redacted>/m.step'}
         for text, expected in uri_cases.items():
@@ -553,10 +588,92 @@ class GalleryTests(unittest.TestCase):
                            'missing file: m.step': 'missing file: m.step',
                            '/home/a b/m.step file://private-server/': '<redacted>/m.step <redacted>',
                            'C:\\Users\\A B\\m.step \\\\private-server': '<redacted>/m.step <redacted>',
-                           'HTTP://private-server/ ${KIPRJMOD}/m.step': 'HTTP://private-server/ ${KIPRJMOD}/m.step'}
+                           'HTTP://private-server/ ${KIPRJMOD}/m.step': 'HTTP://private-server/ ${KIPRJMOD}/m.step',
+                           # Review 433f H1: a later URI after a comma or semicolon.
+                           'FILE:///home/alice/m.step,FILE://private-server/': '<redacted>/m.step,<redacted>',
+                           'FILE:///home/alice/m.step;fIlE://private-server': '<redacted>/m.step;<redacted>',
+                           '/home/alice/m.step,FILE://private-server/': '<redacted>/m.step,<redacted>',
+                           'm.stepfile://private-server': 'm.step<redacted>',
+                           '(file://private-server)': '(<redacted>)',
+                           'https://x.org/a,/home/alice/m.step': 'https://x.org/a,<redacted>/m.step',
+                           'https://x.org/a /home/alice/m.step': 'https://x.org/a <redacted>/m.step',
+                           'https://x.org/a;FILE://private-server': 'https://x.org/a;<redacted>',
+                           # Directory names with commas and brackets are removed whole.
+                           '/home/Smith, Alice/m.step': '<redacted>/m.step',
+                           '/home/Alice (work)/m.step': '<redacted>/m.step',
+                           '[/home/a/b.step, /home/c/d.step]': '[<redacted>/b.step, <redacted>/d.step]',
+                           'File:///C:/': '<redacted>', 'file:C:/Users/A/m.step': '<redacted>/m.step',
+                           # A host never spans whitespace, a second host is a host too,
+                           # and a path after a closing bracket is still a path.
+                           '\\\\private-server and m.step': '<redacted> and m.step',
+                           'file://private-server//share-host/': '<redacted>',
+                           'R1 (missing)/home/alice/m.step': 'R1 (missing)<redacted>/m.step',
+                           'x[0]\\\\private-server\\share\\m.step': 'x[0]<redacted>/m.step'}
         for text, expected in authority_cases.items():
             self.assertEqual(redact(text), expected, text)
             self.assertEqual(redact(expected), expected, expected)
+
+    def test_uri_combinations_keep_only_real_basenames(self):
+        combinations = list(uri_combinations())
+        self.assertEqual(len(combinations), len(CASINGS) * 9 * 6 * len(SEPARATORS))
+        for text, expected in combinations:
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
+            assert_no_uri_leak(self, redact(text), text)
+        # Seeded random sequences of the same forms between boundary characters.
+        rng, forms = random.Random(433), [t for t, _ in URI_FORMS.values()]
+        plain = [t for t, _ in PLAIN_FORMS.values()]
+        separators = SEPARATORS + ('<', '(', '[', '=', ':', ' ; ', '\n')
+        boundaries = (' ', '\t', '\n', ',', ';', ', ', '"', "'", ')', ']', '>', '<', '|')
+        for _ in range(20000):
+            parts = []
+            for _ in range(rng.randint(1, 5)):
+                if rng.random() < .7:
+                    parts += [rng.choice(separators), rng.choice(forms).format(rng.choice(CASINGS))]
+                else:  # a plain path or UNC host is a new token only after a boundary
+                    parts += [rng.choice(boundaries), rng.choice(plain)]
+            text = ''.join(parts + [rng.choice(separators)])
+            assert_no_uri_leak(self, redact(text), text)
+            self.assertEqual(redact(redact(text)), redact(text), text)
+        for kept in ('HTTP://example.org/a', 'https://example.org/b,c', '${KIPRJMOD}/m.step',
+                     'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step'):
+            self.assertEqual(redact(kept), kept)
+
+    def test_uri_combinations_are_redacted_on_every_core_surface(self):
+        combinations = list(uri_combinations())
+        texts, expected = [t for t, _ in combinations], [e for _, e in combinations]
+        self.manifest['model_coverage']['board']['path'] = texts[0]
+        self.manifest['model_coverage']['extra'] = dict(combinations)
+        self.manifest['warnings'] = texts
+        self.save()
+        viewer = self.make_viewer(private_location=texts[1], warnings=texts)
+        bundle = publish(self.root, self.renders, label=' '.join(texts[:50]), stage=texts[2], viewer=viewer)
+        names = ('manifest.json', 'viewer/viewer.json')
+        stored = [(self.root / 'bundles' / bundle / n).read_text() for n in names] + [(self.root / 'index.json').read_text()]
+        with self.serving() as url:
+            served = [urlopen(url + '/bundles/' + bundle + '/' + n).read().decode() for n in names]
+            served.append(urlopen(url).read().decode())
+            # Legacy records written before publication redaction are redacted when served.
+            for n in names:
+                path = self.root / 'bundles' / bundle / n
+                record = json.loads(path.read_text())
+                record['warnings'] = texts
+                path.write_text(json.dumps(record))
+            listing = json.loads((self.root / 'index.json').read_text())
+            listing[0].update(warnings=texts, label=texts[3], stage=texts[4])
+            (self.root / 'index.json').write_text(json.dumps(listing))
+            legacy = [urlopen(url + '/bundles/' + bundle + '/' + n).read().decode() for n in names]
+            legacy.append(urlopen(url).read().decode())
+        for where, body in zip(('stored manifest', 'stored viewer', 'stored index', 'served manifest',
+                                'served viewer', 'served html', 'legacy manifest', 'legacy viewer', 'legacy html'),
+                               stored + served + legacy):
+            assert_no_uri_leak(self, body, where)
+        record = json.loads(served[0])
+        self.assertEqual(record['warnings'], expected)
+        self.assertEqual(record['model_coverage']['extra'], dict(zip(expected, expected)))
+        self.assertEqual(json.loads(served[1])['warnings'], expected)
+        self.assertEqual(json.loads(legacy[0])['warnings'], expected)
+        self.assertEqual(json.loads(legacy[1])['warnings'], expected)
 
     def test_malformed_counts_or_coverage_are_never_complete(self):
         good = dict(resolved=3, missing=0, unresolved=0, disabled=0, no_model=0)
@@ -937,3 +1054,29 @@ class DiagnosticSupplementTests(unittest.TestCase):
         record = json.loads(bodies[4])
         self.assertEqual(record['source_packet']['name'], '<redacted>/d.step')
         self.assertEqual(record['label'], '<redacted>/b.step')
+
+    def test_uri_combinations_are_redacted_on_every_supplement_surface(self):
+        combinations = list(uri_combinations())
+        texts = [t for t, _ in combinations]
+        joined, expected = '|'.join(texts), '|'.join(e for _, e in combinations)
+        identifier = self.add(label=joined, stage=' '.join(texts[::7]))
+        stored = [(self.root/'diagnostics'/identifier/'manifest.json').read_text(),
+                  (self.root/'diagnostics.json').read_text()]
+        base = self.serving()
+        listing = json.loads((self.root/'diagnostics.json').read_text())
+        legacy_id = 'c' * 12 + '-' + 'd' * 12
+        legacy = dict(listing[0], id=legacy_id, label=joined, stage=texts[5],
+                      source_packet={'name': joined, 'sha256': 'c' * 64})
+        (self.root/'diagnostics'/legacy_id).mkdir()
+        (self.root/'diagnostics'/legacy_id/'manifest.json').write_text(json.dumps(legacy))
+        (self.root/'diagnostics.json').write_text(json.dumps([legacy, *listing]))
+        served = []
+        for ident in (identifier, legacy_id):
+            served += [self.get(base + '/diagnostics/' + ident + suffix) for suffix in ('/index.html', '/manifest.json')]
+        served.append(self.get(base))
+        for where, body in zip(('stored manifest', 'stored listing', 'html', 'manifest', 'legacy html',
+                                'legacy manifest', 'listing'), stored + served):
+            assert_no_uri_leak(self, body, where)
+        self.assertEqual(json.loads(served[1])['label'], expected)
+        record = json.loads(served[3])
+        self.assertEqual((record['label'], record['source_packet']['name']), (expected, expected))
