@@ -677,7 +677,11 @@ with it the artifact's bytes, differ between otherwise identical runs; every
 other field is deterministic.
 The `arrange` CLI writes the same artifact for a planned result with
 `--provenance FILE`; its `board_sha256` is the plan's source board and its
-`plan_sha256` the hash of the `--out` file.
+`plan_sha256` the hash of the `--out` file. Its `reserved_area` is a typed
+unknown (`limitation: offline_unsaved_plan`): no board is saved offline.
+`--runner-section FILE` writes the runner's `blocks` request section from the
+same files, so `placer_runner` saves, judges and measures the board
+(AGENTEE-384).
 
 The producer refuses an incomplete roster: the plan's provenance records
 (`block_arrangement.blocks`) and arranged poses (`block_arrangement.arranged`)

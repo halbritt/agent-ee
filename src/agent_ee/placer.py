@@ -244,12 +244,18 @@ def _validate_provenance(value):
                                       gap.get('value_nm', 0) if isinstance(gap, dict) else 0)
     entries = ([value['outline']] if 'outline' in value else []) + list(value.get('fixed', {}).values())
     for entry in entries:
-        if (not isinstance(entry, dict) or entry.get('class') not in PROVENANCE_CLASSES
-                or entry.get('enforcement') not in ('hard', 'soft')
-                or (entry['enforcement'] == 'soft') != isinstance(entry.get('soft_reason'), str)
-                or (entry['class'] == 'assumed' and entry['enforcement'] != 'soft')
-                or (entry['class'] == 'unknown' and entry['enforcement'] != 'hard')):
-            raise ValueError('constraint_provenance entries need a class, a hard/soft enforcement and a soft reason')
+        provenance_entry(entry)
+
+
+def provenance_entry(entry):
+    """One outline or fixed-part provenance entry's class, enforcement and soft reason."""
+    if (not isinstance(entry, dict) or not isinstance(entry.get('class'), str)
+            or entry['class'] not in PROVENANCE_CLASSES
+            or not isinstance(entry.get('enforcement'), str) or entry['enforcement'] not in ('hard', 'soft')
+            or (entry['enforcement'] == 'soft') != isinstance(entry.get('soft_reason'), str)
+            or (entry['class'] == 'assumed' and entry['enforcement'] != 'soft')
+            or (entry['class'] == 'unknown' and entry['enforcement'] != 'hard')):
+        raise ValueError('constraint_provenance entries need a class, a hard/soft enforcement and a soft reason')
 
 
 def _binding_constraints(policy, margin_nm, blocked_by=()):

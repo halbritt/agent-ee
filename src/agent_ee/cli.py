@@ -410,7 +410,7 @@ def validate_scope(scope):
             safe_relative(rel)
     if ("block_provenance" in scope) != ("block_plan" in scope):
         raise ValueError("block_provenance and its block_plan are declared together")
-    for field in ("block_provenance", "block_plan"):
+    for field in ("block_provenance", "block_plan", "reserved_area"):
         if field in scope:
             if not isinstance(scope[field], str) or not scope[field]:
                 raise ValueError(f"{field} must be a captured input-relative path")

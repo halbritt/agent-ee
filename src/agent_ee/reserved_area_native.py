@@ -1,4 +1,4 @@
-"""Native witnesses for advisory single-owner reserve alternatives."""
+"""Native witnesses for advisory reserve alternatives: one owner or one whole rigid block."""
 import hashlib
 import json
 from pathlib import Path
@@ -43,8 +43,12 @@ class NativeAlternatives:
                       if self.source.with_suffix(suffix).is_file() else None
                       for suffix in ('.kicad_pro', '.kicad_dru')}
 
-    def __call__(self, ref, position, angle):
-        key = (ref, tuple(position), angle)
+    def __call__(self, moves, position=None, angle=None):
+        """Validate {reference: (position, rotation)}, or one reference at one pose."""
+        if not isinstance(moves, dict):
+            moves = {moves: (position, angle)}
+        moves = {ref: (tuple(pose[0]), pose[1]) for ref, pose in sorted(moves.items())}
+        key = tuple((ref, pose) for ref, pose in moves.items())
         if key in self.cache:
             return self.cache[key]
         directory = self.root / f'pose-{len(self.cache):04d}'
@@ -53,16 +57,18 @@ class NativeAlternatives:
         evidence = {'status': 'unknown', 'source_sha256': hashlib.sha256(self.board_bytes).hexdigest(),
                     'rules': {k: hashlib.sha256(v).hexdigest() if v is not None else None
                               for k, v in self.rules.items()},
-                    'directory': str(directory.relative_to(self.root.parent))}
+                    'directory': str(directory.relative_to(self.root.parent)),
+                    'moves': [{'reference': ref, 'position_nm': list(pose[0]), 'rotation_deg': pose[1]}
+                              for ref, pose in moves.items()]}
         try:
-            self._validate(ref, position, angle, output, evidence)
+            self._validate(moves, output, evidence)
         except Exception as exc:
             evidence.update(status='unknown', reason=f'{type(exc).__name__}: {exc}')
         write_json(directory / 'validation.json', evidence)
         # Native DRC embeds its execution date. Keep raw-file digests in the
         # witness, not the deterministic advisory cost report.
         summary = {k: v for k, v in evidence.items() if k not in
-                   ('drc_sha256', 'baseline_drc_sha256')}
+                   ('drc_sha256', 'baseline_drc_sha256', 'write_scope')}
         summary['qualification'] = {'validated': 'legal under captured rules',
                                     'unknown': 'hypothetical, unverified',
                                     'rejected': 'not legal'}[summary['status']]
@@ -72,7 +78,7 @@ class NativeAlternatives:
         self.cache[key] = summary
         return summary
 
-    def _validate(self, ref, position, angle, output, evidence):
+    def _validate(self, moves, output, evidence):
         import pcbnew
         from .placer_runner import (_apply_plan, _native_drc, _pad_inventory, DRC_COURTYARDS,
                                    _drc_comparison, _drc_item_states)
@@ -87,9 +93,10 @@ class NativeAlternatives:
             raise ValueError('reserve source changed or differs from captured facts')
         board = pcbnew.LoadBoard(str(self.source))
         pads = _pad_inventory(board)
-        placements = [{'uuid': fp['uuid'], 'ref': fp['ref'], 'fixed': fp['ref'] != ref,
-                       'position_nm': list(position) if fp['ref'] == ref else fp['position_nm'],
-                       'rotation_deg': angle if fp['ref'] == ref else fp['rotation_deg']}
+        # Only the moved owners (one part, or every member of one rigid block) are unprotected.
+        placements = [{'uuid': fp['uuid'], 'ref': fp['ref'], 'fixed': fp['ref'] not in moves,
+                       'position_nm': list(moves[fp['ref']][0]) if fp['ref'] in moves else fp['position_nm'],
+                       'rotation_deg': moves[fp['ref']][1] if fp['ref'] in moves else fp['rotation_deg']}
                       for fp in self.facts['footprints']]
         _apply_plan(board, {'placements': placements}, output)
         for suffix, payload in self.rules.items():
@@ -106,21 +113,21 @@ class NativeAlternatives:
         scope = write_scope(self.board_bytes, output.read_bytes(), protected)
         write_json(output.parent / 'placement-write-scope.json', scope)
         if scope['status'] != 'allowed':
-            evidence.update(status='rejected', reason='write-scope preservation refused', write_scope=scope)
+            # The scope report stays in the retained witness; the summary binds it by digest.
+            evidence.update(status='rejected', reason='write-scope preservation refused', write_scope=scope,
+                            write_scope_sha256=digest(output.parent / 'placement-write-scope.json'))
             return
         saved = extract(output)
-        actual = next(fp for fp in saved['footprints'] if fp['ref'] == ref)
-        if actual['position_nm'] != list(position) or (actual['rotation_deg'] - angle) % 360:
-            raise ValueError('native reserve saved pose differs from requested pose')
+        for actual in saved['footprints']:
+            if actual['ref'] in moves and (actual['position_nm'] != list(moves[actual['ref']][0]) or
+                                           (actual['rotation_deg'] - moves[actual['ref']][1]) % 360):
+                raise ValueError('native reserve saved pose differs from requested pose')
         # Regrade the saved geometry, including the same hard group/block rules.
-        measured = _candidate_cost(saved, self.policy, fabrication_outlines(output), self.plan,
-                                   actual, (position, angle))
+        measured = _candidate_cost(saved, self.policy, fabrication_outlines(output), self.plan, moves)
         if measured is None:
             evidence.update(status='rejected', reason='saved pose failed placement predicates')
             return
-        original = next(fp for fp in self.facts['footprints'] if fp['ref'] == ref)
-        expected = _candidate_cost(self.facts, self.policy, self.fabrication, self.plan,
-                                   original, (position, angle))
+        expected = _candidate_cost(self.facts, self.policy, self.fabrication, self.plan, moves)
         if measured != expected:
             raise ValueError('saved reserve measurement differs from geometric prediction')
         if self.baseline is None:

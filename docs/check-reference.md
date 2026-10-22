@@ -2307,7 +2307,45 @@ attempts remain visible; if no attempt validates and any attempt is unknown,
 the alternative stays unknown with an incomplete search. Numeric-looking zone
 names never waive structural native findings. Standalone geometric poses stay
 hypothetical and unverified. The optimum is limited to the declared finite pose
-set. Fixed and rigid-block alternatives remain unsearched.
+set. A cheaper pose for an owner-fixed part is a `decision_required` record
+naming the fixed declaration's source, the candidate pose and the saving; the
+fixed part stays in place on the proposal. Rigid blocks are moved only whole,
+with member relative poses kept, and validated natively the same way
+(AGENTEE-384). A scope's optional `reserved_area` key carries the saved-board
+record to reviewers without block provenance; the offline arrangement CLI
+records a typed unknown instead of a measurement. Both packet ingress paths
+validate the record first: the exact advisory authority, a known status, exact
+non-negative ratios, and `measured` only when both sides and all their owners
+are measured. Every record kind (the record, its threshold, sides, owners,
+findings, alternatives, owner decisions, fixed sources, rigid blocks, moves,
+native attempts and their validation witnesses) has a closed, per-status
+allow-list of required and optional fields, each typed. An extra or missing
+field, a wrong type, or a qualification incompatible with the status refuses the
+record before any status rule runs (AGENTEE-384). Copied declarations are
+checked against their own closed schemas at ingress: a fixed source's
+`overhang_envelope` against the courtyard-overhang declaration schema the packer
+uses (reference, source and typed edges, for the owner's own reference) and its
+provenance against the placer's provenance entry rules (or the exact undeclared
+default). A native witness carries no embedded write-scope report; a refused scope
+is bound by `write_scope_sha256` to the retained `placement-write-scope.json`. `already_zero`, `not_searched`,
+`no_cheaper_contained_pose`, `none_found` and `unknown` alternatives never carry
+a selected pose, a measurement, a saving or a legal qualification; `unknown` is
+qualified `hypothetical, unverified`. `legal under captured rules` is accepted
+only on a `native_validated` alternative (or decision) whose selected pose is a
+successful native attempt. Every finding's `reserve` must be
+a valid measured owner equal to its side's owner row (side, owner, kind, id and
+all fields); every alternative and owner decision with a saving needs exact
+measurements with a positive saving equal to the owner area less the alternative
+area, and the qualification of its status. `native_validated` needs its selected
+pose to be the one `validated` native attempt, and `search_complete` is false
+exactly when an attempt was unknown; unknown-only attempts are never published
+as validated. A witness's `moves` name each reference once; a rigid block's
+native attempts must carry them, and a `native_validated` rigid alternative's
+selected `moves` must equal its validated witness's moves member by member, in
+any order. A `decision_required` record must be unapplied and agree with its
+alternative's pose, saving and qualification. The scope `board` must be captured and the record's
+`board_sha256` must equal its digest; a malformed or unbound record refuses the
+packet.
 
 AGENTEE-420 retains unchanged blocking baseline findings as unknown pose
 legality, using the shared native DRC comparison and saved item states. New or

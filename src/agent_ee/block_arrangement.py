@@ -1379,9 +1379,8 @@ def validate_provenance(document):
     if not isinstance(document['blocks'], list) or not document['blocks']:
         raise ValueError('block provenance names no placed block')
     if 'reserved_area' in document:
-        reserve = document['reserved_area']
-        if (not isinstance(reserve, dict) or reserve.get('schema') != 'agent-ee.reserved-area/1'
-                or reserve.get('board_sha256') != document['board_sha256']):
+        from .reserved_area import validate as validate_reserve
+        if validate_reserve(document['reserved_area'])['board_sha256'] != document['board_sha256']:
             raise ValueError('reserved area must name the provenance saved board')
     seen, references = set(), set()
     for row in document['blocks']:
@@ -1488,6 +1487,10 @@ def plan_from_request(facts, section, policy, effective, netlist, heartbeat=None
                    section['candidates'], heartbeat=heartbeat, effective_policy=effective)
 
 
+OFFLINE_RESERVE = ('offline arrangement writes no native board and has no fabrication inventory; '
+                   'run placer_runner with the --runner-section blocks request to measure the saved board')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--probe', required=True, type=Path, help='native placement-probe.json')
@@ -1498,6 +1501,8 @@ def main(argv=None):
     parser.add_argument('--candidate', required=True, type=Path, action='append', help='admitted block candidate')
     parser.add_argument('--out', required=True, type=Path, help='new output JSON file')
     parser.add_argument('--provenance', type=Path, help=f'new {PROVENANCE_ARTIFACT} file, written when planned')
+    parser.add_argument('--runner-section', type=Path,
+                        help='new placer_runner "blocks" request section from the same files, written when planned')
     args = parser.parse_args(argv)
     try:
         capture, inventory, derivation = blocks._load(args)
@@ -1506,8 +1511,14 @@ def main(argv=None):
                          heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
         blocks._write(args.out, result)
         if args.provenance is not None and result['status'] == 'planned':
+            # No saved board or fabrication inventory exists offline; the reserve stays a
+            # typed unknown. placer_runner with --runner-section measures the saved board.
+            from .reserved_area import unmeasured
             blocks._write(args.provenance, provenance_artifact(
-                result, plan_sha256=hashlib.sha256(args.out.read_bytes()).hexdigest()))
+                result, plan_sha256=hashlib.sha256(args.out.read_bytes()).hexdigest(),
+                reserved_area=unmeasured(result['board_sha256'], 'offline_unsaved_plan', OFFLINE_RESERVE)))
+        if args.runner_section is not None and result['status'] == 'planned':
+            blocks._write(args.runner_section, request_section(args.allocation, args.arrangement, args.candidate))
     except (OSError, ValueError) as exc:
         print(json.dumps({'status': 'refused', 'reason': str(exc)}))
         return 1
