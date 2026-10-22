@@ -136,6 +136,11 @@ class ReportTests(unittest.TestCase):
                 return a, canonical_check(b,two)
             self.assertEqual(*pair(('--ro-bind','<executed>/lib','/lib')))
             self.assertNotEqual(*pair(('--ro-bind','<executed>-backup/lib','/lib')))
+            # Environment values are not path fields, even when they begin with the run directory.
+            label = ('--setenv','DESCRIPTION','<executed>/ is the literal label printed on R1')
+            self.assertNotEqual(*pair(label))
+            # Unsupported option layouts stay unnormalized (exact comparison).
+            self.assertNotEqual(*pair(('--unknown-option','<executed>/x')))
             # Without a sealed record nothing is masked.
             self.assertNotEqual(canonical_check(reference),canonical_check(self.failed(two,0.64)))
 

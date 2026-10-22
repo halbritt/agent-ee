@@ -494,13 +494,49 @@ def execution_identity(record, run, check_id):
     return str(identity)
 
 
+# Operand counts of the bwrap options executor.sandbox_argv emits. Anything else
+# is an unsupported layout and is left unnormalized.
+SANDBOX_FLAGS = {'--die-with-parent','--new-session','--unshare-pid','--unshare-ipc','--unshare-uts',
+                 '--unshare-net','--clearenv'}
+SANDBOX_ONE = {'--proc','--dev','--tmpfs','--dir','--chdir'}
+SANDBOX_TWO = {'--ro-bind','--bind','--symlink','--setenv'}
+
+
+def sandbox_path_operands(argv):
+    """Indexes of the execution-path operands: the sources of validated --ro-bind/--bind options.
+
+    Parses the option layout through its '--' delimiter; None when the layout is
+    not exactly understood. Environment values, other options and the command stay verbatim.
+    """
+    if not argv or argv[0]!='bwrap' or '--' not in argv:
+        return None
+    end = argv.index('--')
+    found, i = [], 1
+    while i<end:
+        option = argv[i]
+        if option in SANDBOX_FLAGS:
+            i += 1
+        elif option in SANDBOX_ONE and i+1<end:
+            i += 2
+        elif option in SANDBOX_TWO and i+2<end:
+            if option in ('--ro-bind','--bind'):
+                found.append(i+1)
+            i += 3
+        else:
+            return None
+    return found if i==end else None
+
+
 def canonical_execution(record, identity):
-    """The sealed record with its duration and its own run-directory prefix masked."""
+    """The sealed record with its duration and its own run-directory bind sources masked."""
     result = dict(record)
     result['duration_s'] = '<volatile>'
-    # Path-component boundary: a sibling such as <identity>-backup stays exact.
-    result['sandbox_argv'] = ['<run>'+a[len(identity):] if a==identity or a.startswith(identity+'/') else a
-                              for a in record['sandbox_argv']]
+    argv = list(record['sandbox_argv'])
+    for i in sandbox_path_operands(argv) or ():
+        # Path-component boundary: a sibling such as <identity>-backup stays exact.
+        if argv[i]==identity or argv[i].startswith(identity+'/'):
+            argv[i] = '<run>'+argv[i][len(identity):]
+    result['sandbox_argv'] = argv
     return result
 
 
