@@ -20,6 +20,7 @@ UNRESOLVED = 'unresolved-owner-decision-required'
 PROPOSED = 'proposed-mit-pending-owner-approval'
 CONFIRMED = 'owner-confirmed'
 DERIVED = 'derived'
+UPSTREAM_CONFIRMED = 'owner-confirmed-upstream-license'
 
 
 def origin(status, **extra):
@@ -167,9 +168,14 @@ class RepositoryInventoryTests(unittest.TestCase):
         for item in self.files.values():
             if item['permission_status'] == PROPOSED:
                 self.assertLessEqual(set(item['origins']), origins.OWNED, item['path'])
-        # 2026-10-22 MIT decision (AE, AE-RUN, T1, T2) and the 2026-10-18 fixture decision (T16); nothing else.
+        # 2026-10-22 MIT decision (AE, AE-RUN, T1, T2), the 2026-10-18 fixture decision (T16) and the
+        # 2026-10-22 KICAD-HAPPY-219 publication decision (AGENTEE-219 Plane comment
+        # 91bc4b33-e29a-480c-9f8f-2a4599f6d3a7, owner-relayed); nothing else. KICAD-HAPPY-219 is confirmed
+        # under its upstream MIT license (license_basis upstream), never under agent-ee's MIT grant.
         confirmed = {key for key, value in REAL['origins'].items() if value['permission_status'] == CONFIRMED}
-        self.assertEqual(confirmed, {'AE', 'AE-RUN', 'T1', 'T2', 'T16'})
+        self.assertEqual(confirmed, {'AE', 'AE-RUN', 'T1', 'T2', 'T16', 'KICAD-HAPPY-219'})
+        upstream = {key for key, value in REAL['origins'].items() if 'license_basis' in value}
+        self.assertEqual(upstream, {'KICAD-HAPPY-219'})
         for key, value in REAL['origins'].items():
             if key not in confirmed:
                 self.assertEqual(value['permission_status'], UNRESOLVED, key)
@@ -182,6 +188,32 @@ class RepositoryInventoryTests(unittest.TestCase):
                 self.assertLessEqual(set(item['origins']), mit, item['path'])
         self.assertFalse([p for p, item in self.files.items()
                           if 'T16' in item['origins'] and item['permission_status'] == CONFIRMED])
+        # Files under an upstream-license confirmation report their own status, never owner-confirmed.
+        vendored = {p for p, item in self.files.items() if item['permission_status'] == UPSTREAM_CONFIRMED}
+        self.assertEqual(vendored, {'fixtures/kicad-happy/ac4-false-positives/correction.patch',
+                                    'fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt'})
+        for path in vendored:
+            self.assertEqual(self.files[path]['origins'], ['KICAD-HAPPY-219'], path)
+
+    def test_kicad_happy_publication_decision_is_recorded_as_a_verbatim_relay(self):
+        # AGENTEE-219 Plane comment 91bc4b33-e29a-480c-9f8f-2a4599f6d3a7 (owner-relayed, agent-transcribed).
+        quote = ('Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: vendor the kicad-happy '
+                 'MIT correction patch (origin KICAD-HAPPY-219) into the public agent-ee repo with its MIT notice, '
+                 'AND send the fix upstream; move the pin when upstream lands. The held 51f7bcf chain may be '
+                 'integrated.')
+        kicad = REAL['origins']['KICAD-HAPPY-219']
+        record = kicad['owner_record']
+        self.assertEqual((kicad['permission_status'], kicad['license_basis']), (CONFIRMED, 'upstream'))
+        self.assertEqual((record['date'], record['decision'], record['class']), ('2026-10-22', quote, 'owner-relayed'))
+        self.assertIn('91bc4b33-e29a-480c-9f8f-2a4599f6d3a7', record['where'])
+        for token in ('51f7bcf4a785edb14b790306400eaca3088c5188', '2026-10-19', 'not owner-authorized',
+                      'applies from 2026-10-22'):
+            self.assertIn(token, record['caveat'])
+        self.assertIn('Not done', record['open_follow_ups'])
+        row = next(line for line in (ROOT / 'docs/third-party-origins.md').read_text().splitlines()
+                   if line.startswith('| KICAD-HAPPY-219 |'))
+        for token in ('MIT', '91bc4b33-e29a-480c-9f8f-2a4599f6d3a7', 'owner-relayed', '2026-10-19', 'open'):
+            self.assertIn(token, row)
 
     def test_fome_mc_psu_capture_reports_its_unresolved_upstream(self):
         # Owner decision of 2026-10-18: T16 files fold to derived with upstream origin ids and licences named.
@@ -372,6 +404,50 @@ class InventoryBoundaryTests(unittest.TestCase):
                                        ('T1', 'origin T2: embedded_origins must be a list')):
                 data['origins']['T2']['embedded_origins'] = embedded
                 self.assertEqual(tree.check(data)[0], [expected])
+
+    def test_upstream_license_confirmation_needs_a_full_record_and_never_reports_mit(self):
+        complete = {'date': '2026-10-22', 'decision': 'relayed text', 'where': 'AGENTEE-219 comment',
+                    'class': 'owner-relayed', 'applies': 'the vendored patch'}
+        files = {'vendor/a.patch': 'x', 'vendor/b.json': 'y'}
+        rules = [rule(['vendor/a.patch'], ['T3'], 'third-party-source'),
+                 rule(['vendor/b.json'], ['AE', 'T3'], 'owned-metadata')]
+        with SyntheticTree(files) as tree:
+            # Without a recorded decision the third-party origin stays unresolved, exactly as before.
+            errors, summary = tree.check(inventory(rules, T3=origin(UNRESOLVED, license_basis='upstream')))
+            self.assertEqual((errors, [f['permission_status'] for f in summary['inventory']]),
+                             ([], [UNRESOLVED, UNRESOLVED]))
+            # It cannot be confirmed without a record, with a free-text record, or with a partial record.
+            for record, expected in (
+                    (None, ['origin T3: owner-confirmed requires owner_record']),
+                    ('2026-10-22 approved', ['origin T3: owner-confirmed under its upstream license requires '
+                                             'a structured owner_record'])):
+                with self.subTest(record=record):
+                    extra = {} if record is None else {'owner_record': record}
+                    data = inventory(rules, T3=origin(CONFIRMED, license_basis='upstream', **extra))
+                    self.assertEqual(sorted(tree.check(data)[0]), sorted(expected))
+            for field in ('class', 'applies'):
+                with self.subTest(field=field):
+                    record = {key: value for key, value in complete.items() if key != field}
+                    data = inventory(rules, T3=origin(CONFIRMED, license_basis='upstream', owner_record=record))
+                    self.assertEqual(tree.check(data)[0], [f'origin T3: owner_record needs {field}'])
+            # A complete record confirms publication under the upstream license, not agent-ee's MIT.
+            data = inventory(rules, T3=origin(CONFIRMED, license_basis='upstream', owner_record=complete))
+            errors, summary = tree.check(data)
+            self.assertEqual((errors, [f['permission_status'] for f in summary['inventory']]),
+                             ([], [UPSTREAM_CONFIRMED, UPSTREAM_CONFIRMED]))
+            # The same record without license_basis keeps today's owner-confirmed meaning.
+            errors, summary = tree.check(inventory(rules, T3=origin(CONFIRMED, owner_record=complete)))
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [CONFIRMED, CONFIRMED])
+            # Embedding an upstream-licensed origin carries its status to the embedding confirmed origin's files.
+            data = inventory([rule(['vendor/'], ['T1'], 'copied-design')], T1=origin(
+                CONFIRMED, owner_record=complete, embedded_origins=['T3']),
+                T3=origin(CONFIRMED, license_basis='upstream', owner_record=complete))
+            self.assertEqual({f['permission_status'] for f in tree.check(data)[1]['inventory']}, {UPSTREAM_CONFIRMED})
+            # The basis is closed, and agent-ee material cannot carry one.
+            data = inventory(rules, T3=origin(UNRESOLVED, license_basis='mit'))
+            self.assertEqual(tree.check(data)[0], ["origin T3: unknown license_basis 'mit'"])
+            data = inventory(rules, AE=origin(PROPOSED, license_basis='upstream'))
+            self.assertEqual(tree.check(data)[0], ['origin AE: agent-ee material cannot have a license_basis'])
 
     def test_confirmed_origin_mixed_with_agent_ee_is_not_proposed_for_mit(self):
         with SyntheticTree({'fixture/a.json': 'x', 'fixture/b.json': 'y', 'fixture/c.json': 'z'}) as tree:

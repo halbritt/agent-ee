@@ -43,9 +43,15 @@ PROPOSED = 'proposed-mit-pending-owner-approval'
 UNRESOLVED = 'unresolved-owner-decision-required'
 CONFIRMED = 'owner-confirmed'
 DERIVED = 'derived'
+UPSTREAM_CONFIRMED = 'owner-confirmed-upstream-license'
 STATUSES = (PROPOSED, UNRESOLVED, CONFIRMED)
 # A structured owner_record names when, what (verbatim relay) and where the decision was given.
 RECORD_FIELDS = ('date', 'decision', 'where')
+# license_basis "upstream": third-party material whose owner decision approves publishing it under its
+# own upstream_license. The confirmation is a publication decision, never coverage by agent-ee's MIT
+# grant, so it needs a structured record that also names the relay class and the decision's scope.
+UPSTREAM_BASIS = 'upstream'
+UPSTREAM_RECORD_FIELDS = RECORD_FIELDS + ('class', 'applies')
 
 # Mirrors .gitignore for checkouts without .git (for example the container image).
 IGNORED_DIRS = {'.git', '__pycache__', '.venv', 'build', '.pytest_cache'}
@@ -109,11 +115,19 @@ def validate(inventory):
         if status not in STATUSES:
             errors.append(f'origin {key}: unknown permission_status {status!r}')
         record = origin.get('owner_record')
+        basis = origin.get('license_basis')
+        if 'license_basis' in origin and basis != UPSTREAM_BASIS:
+            errors.append(f'origin {key}: unknown license_basis {basis!r}')
+        if basis is not None and key in OWNED:
+            errors.append(f'origin {key}: agent-ee material cannot have a license_basis')
         if status == CONFIRMED and isinstance(record, dict):
-            errors.extend(f'origin {key}: owner_record needs {field}' for field in RECORD_FIELDS
+            fields = UPSTREAM_RECORD_FIELDS if basis == UPSTREAM_BASIS else RECORD_FIELDS
+            errors.extend(f'origin {key}: owner_record needs {field}' for field in fields
                           if not isinstance(record.get(field), str) or not record[field].strip())
         elif status == CONFIRMED and not str(record or '').strip():
             errors.append(f'origin {key}: owner-confirmed requires owner_record')
+        elif status == CONFIRMED and basis == UPSTREAM_BASIS:
+            errors.append(f'origin {key}: owner-confirmed under its upstream license requires a structured owner_record')
         if key not in OWNED and status == PROPOSED:
             errors.append(f'origin {key}: third-party origin cannot be proposed under MIT')
         for field in ('name', 'upstream_license', 'owner_decision'):
@@ -212,14 +226,21 @@ def with_embedded(inventory, ids):
 
 
 def status(inventory, ids):
-    """Unresolved if any declared origin is; derived if an embedded upstream is unresolved; else confirmed or proposed."""
+    """Unresolved if any declared origin is; derived if an embedded upstream is unresolved; else confirmed or proposed.
+
+    A confirmed file holding material confirmed under its upstream license (license_basis "upstream")
+    reports owner-confirmed-upstream-license, so owner-confirmed stays the agent-ee MIT status.
+    """
     statuses = {inventory['origins'][key]['permission_status'] for key in ids}
     if UNRESOLVED in statuses:
         return UNRESOLVED
-    embedded = {inventory['origins'][item['id']]['permission_status']
-                for item in with_embedded(inventory, ids)}
-    if UNRESOLVED in embedded:
+    embedded = with_embedded(inventory, ids)
+    if UNRESOLVED in {inventory['origins'][item['id']]['permission_status'] for item in embedded}:
         return DERIVED
+    if any(inventory['origins'][key].get('license_basis') == UPSTREAM_BASIS
+           for key in [*ids, *(item['id'] for item in embedded)]):
+        return UPSTREAM_CONFIRMED
+    embedded = {inventory['origins'][item['id']]['permission_status'] for item in embedded}
     return CONFIRMED if CONFIRMED in (statuses | embedded) else PROPOSED
 
 
