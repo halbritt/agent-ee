@@ -1217,6 +1217,13 @@ def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run
             not all(isinstance(v, str) and SHA256.match(v) for v in files.values())):
         return 'malformed', 'snapshot.json files is not a non-empty map of file names to sha256 digests'
     board = record['board']
+    # Review H1 (ee442j): the attempt record's board is untrusted. kicad-route grades a
+    # board by a plain file name in the input directory; an empty, dot or separated name
+    # ('.', '..', '/', 'sub/b', 'b/') is not that input, and is refused before any name
+    # is derived from it (PurePosixPath('.').with_suffix raises).
+    if board in ('.', '..') or PurePosixPath(board).name != board:
+        return 'run_mismatch', (f'attempt.json board {board!r} is not a plain file name: kicad-route '
+                                'refuses such an input')
     # The named input files (review H1, ee442g; agent-510 R1): kicad-route names the
     # board's own project file and custom rules file, digests from the reference copy,
     # which snapshot.json records. Which rules file is loaded, and which siblings are

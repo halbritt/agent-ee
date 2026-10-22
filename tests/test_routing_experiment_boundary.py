@@ -800,6 +800,22 @@ class ExperimentBoundaryTest(unittest.TestCase):
         self.assert_refused({'name': 'complete', 'remove': ['snapshot.json']}, 'missing',
                             'no regular snapshot.json was retained')
 
+    def test_an_attempt_board_that_is_not_a_plain_name_is_a_typed_refusal_not_a_crash(self):
+        # Review H1 (ee442j): attempt.board '.' or '/' raised ValueError in the rules
+        # inventory's suffix derivation (exit 70, no report). Every name that is not a
+        # plain file name is refused before any name is derived from it, the sidecar
+        # sealing the record as written; assert_refused replays it after OUT removal.
+        for board in ('.', '/', '..', 'sub/rc.kicad_pcb', 'rc.kicad_pcb/', './rc.kicad_pcb'):
+            with self.subTest(board=board):
+                receipt_dir = self.assert_refused({'name': 'complete', 'attempt_board': board}, 'run_mismatch',
+                                                  f'attempt.json board {board!r} is not a plain file name')
+                attempt_dir = receipt_dir / 'run/routing/attempt'
+                body = json.loads((attempt_dir / attempt.EXPERIMENT_SIDECAR).read_text())
+                self.assertEqual(json.loads((attempt_dir / 'attempt.json').read_text())['board'], board)
+                self.assertEqual(body['artifacts']['attempt.json'], sha256(attempt_dir / 'attempt.json'))
+                self.assertEqual(body['identity_sha256'], attempt._sha256_of(body['identity']))
+                self.assertIsNone(attempt._sidecar_shape_refusal(body))
+
     def test_host_paths_aliases_and_link_loops_are_typed_refusals(self):
         # Coordinator H2 (ee442h): an absolute path that exists on the verifier host, a
         # host link to the design, and link loops inside and outside the run. The path is

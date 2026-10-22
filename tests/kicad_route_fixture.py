@@ -261,6 +261,10 @@ if experiment is not None and experiment != 'omit':
                               'not_loaded': sorted(n for n in files if Path(n).suffix in ('.kicad_pro', '.kicad_dru')
                                                    and Path(n).stem != stem),
                               **scenario.get('rules_files', {})}
+    # scenario['attempt_board'] names another board in the attempt record (review H1,
+    # ee442j: '.', '/' and other names that are not a plain file name); the sidecar
+    # seals the record as written.
+    attempt['board'] = scenario.get('attempt_board', attempt['board'])
     write(run / 'attempt.json', attempt)
     prepared = run / 'work/input' / src.name
     prepared.mkdir(parents=True, exist_ok=True)

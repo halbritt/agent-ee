@@ -850,7 +850,10 @@ Experiment evidence is never dropped and is never qualified.
         fingerprint of the retained `snapshot.json` files, and the snapshot
         files, input board name and digest must match those files;
       - the ORIGINAL input and its named files (review H1, ee442g; agent-510
-        R1): the snapshot must hold the board's own `<stem>.kicad_pro` (kicad-route
+        R1): `attempt.json` `board` must be a plain file name, so an empty or
+        dot name (`.`, `..`), a separator (`/`, `sub/b`) or a trailing separator
+        is refused before any name is derived from it (review H1, ee442j); the
+        snapshot must hold the board's own `<stem>.kicad_pro` (kicad-route
         refuses an input without it), and `identity.input.project` must be that
         file with its snapshot digest. The rules inventory is derived from the
         snapshot as kicad-route `a0ed434` `cli.rules_files` derives it: the custom
