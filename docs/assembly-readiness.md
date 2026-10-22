@@ -100,7 +100,7 @@ Live JLCPCB stock reaches it only through an owner-run
 | `as_of` | `str \| None` | catalog `snapshot_date` for legacy snapshots | Evaluation date or ISO-8601 timestamp. For JLCPCB captures the coordinator overrides this with the generation receipt completion time (campaign) or review time (standalone); direct evaluation API calls require it. |
 | `stock_floor` | `int >= 0` | `0` | Minimum stock per LCSC ID: `threshold = max(quantity_per_board * boards, stock_floor)`. |
 | `deviations` | `str \| None` | `None` | Captured mutable `agent-ee.part-deviations/1` file shared with `part_decisions`. |
-| `hand_fit_policy` | `object \| None` | `None` | Citation of a captured owner decision: `source`, `sha256`, `line`, `quote` and exact `identities`. See [owner hand-fit policy](#owner-hand-fit-policy). |
+| `hand_fit_policy` | `object \| None` | `None` | Citation of a captured owner decision: `source`, `sha256`, `line`, `quote` and exact `identities`, plus an optional category `selection` chain. See [owner hand-fit policy](#owner-hand-fit-policy). |
 | `rating_provenance` | `object \| None` | `None` | Receipted binding-fill provenance: `receipt` (captured stage receipt of the `binding-fill` step), `receipt_sha256` (coordinator pin) and `report` (captured `binding-fill.json`). See [receipt-bound rating provenance](#receipt-bound-rating-provenance). |
 | `operating_temperature` | `object \| None` | `None` | Declared ambient `min_c`/`max_c` (finite degC) and a captured DigiKey record per reference: `capture`, `capture_sha256` (pin) and `parts` (`{reference: key}`), plus optional `package_map` (`{path, sha256}`) and `exemptions` (`{reference: {source, sha256, line, quote}}`). See [DigiKey operating temperature](#digikey-operating-temperature). |
 
@@ -220,6 +220,72 @@ connector if unstocked)". The header is admitted as a policy identity. Listing
 NEO-M9N or SMA in `hand_fit_policy.identities`, with the full quote or a
 shortened one, refuses the run. They stay stock-unavailable declarations.
 Pod adoption belongs to the pod lane.
+
+### Category selection chain
+
+Some owner statements name a part category ("the AMPSEAL header"), not the
+exact MPN that was later selected. The optional `selection` object binds that
+category to the exact identity through pinned captured sources. It never
+replaces or edits the owner quote, which stays the only hand-fit authority:
+
+```json
+{
+  "hand_fit_policy": {
+    "source": "requirements/spec.md", "sha256": "<owner source>", "line": 139,
+    "quote": "<exact owner text naming the category>",
+    "identities": [{"mpn": "1-776163-1", "lcsc": "C596198"}],
+    "selection": {
+      "category": "AMPSEAL",
+      "source": "design-rules/constraints.json", "sha256": "<decision source>", "line": 175,
+      "quote": "<exact decision text naming the category, the MPN and the LCSC>",
+      "records": [
+        {"source": "parts/C596198.json", "sha256": "<part record>", "pointer": ""},
+        {"source": "parts.json", "sha256": "<manifest>", "pointer": "/parts/303"}
+      ]
+    }
+  }
+}
+```
+
+With `selection`, the identities need not appear in the owner quote. Instead:
+
+- `category` is a whole token in the owner quote. The owner unit is checked
+  as above with the category in place of the MPN: an affirmative hand-fit,
+  named exactly once, outside every conditional span;
+- `selection.source` is a captured input other than the owner source, the
+  deviations file and any KiCad design file. Its bytes equal `sha256` and its
+  `quote` is on line `line`. The quote names the category and every identity's
+  MPN and LCSC as whole tokens (an identity without an LCSC cannot use a
+  selection);
+- every record is a captured JSON file, pinned by `sha256`, whose object at
+  `pointer` (RFC 6901) carries `mpn` and `lcsc` equal to one listed identity.
+  Every identity is carried by at least one record;
+- a record whose object has `selection.part_record` and
+  `selection.part_record_sha256` (a parts-manifest entry) must name a record of
+  the same chain with exactly that path and hash;
+- a record whose object carries a `footprint` pins the identity's CAD
+  footprint. All records that pin one must agree (otherwise `failed`), and every
+  placed component with that identity must carry exactly that `Footprint`. A
+  different placed footprint is an `invalid_assembly_deviation` defect.
+
+Every chain source becomes an immutable input. A malformed chain is
+`unsupported`; changed bytes, a missing quote, an unresolved pointer, another
+identity or a broken part-record link refuse the run (`failed`). Accepted
+entries also report `policy_selection` (the verified chain,
+`association: category_selection`, the verified `part_record_links` and the
+pinned `footprints`).
+This is an assembly disposition only. A hand-fit approval, with or without a
+selection chain, does not confer mechanical-fit (mating, enclosure) approval or
+purchase approval, authorizes no substitution, and leaves stock freshness rules
+unchanged.
+
+The telemetry pod's J1 is the worked case: REQUIREMENTS.md line 139 (AC5)
+names "the AMPSEAL header"; constraints.json D-PCB-10 names AMPSEAL,
+1-776163-1, C596198 and its footprint; the C596198 part record and the
+complete-parts-manifest `connector/J1` entry carry that identity, and the
+manifest entry links the part record by hash.
+`test_pod_j1_category_selection_chain_on_the_actual_source_bytes` checks this
+against the owner's fome-mc store, without copying the files.
 
 ## Fabrication exclusion
 
