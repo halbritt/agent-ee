@@ -148,7 +148,8 @@ def plan(capture, policy, spec):
     proposed = copy.deepcopy(capture)
     try:
         outline = _qualified(proposed)
-        keepouts = _keepouts(proposed)
+        pad_keepouts = []
+        keepouts = _keepouts(proposed, None, pad_keepouts)
         obstacles = keepouts + policy['obstacles']
     except ValueError as exc:
         record['reasons'].append('missing coverage: ' + str(exc))
@@ -180,9 +181,13 @@ def plan(capture, policy, spec):
             if (_near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, peers, obstacles)
                     or any(_hole_conflict(fp, peer) for peer in peers)):
                 reasons.append(f'{ref}: target conflicts with obstacle or gap')
-            escaped = _copper_escapes(fp, outline, keepouts, peers)
+            escaped = _copper_escapes(fp, outline, keepouts, peers, pad_keepouts)
             if escaped is not None and escaped[0] == 'setback_unknown':
                 reasons.append(f'missing coverage: {ref}: copper setback unknown (no board max_error_nm)')
+            elif escaped is not None and escaped[0] == 'peer_courtyard':
+                reasons.append(f'{ref}: target copper meets a peer courtyard or peer copper')
+            elif escaped is not None and escaped[0] == 'pad_rule_area':
+                reasons.append(f'{ref}: target pad in a rule area forbidding pads')
             elif escaped is not None:
                 reasons.append(f'{ref}: target copper outside outline or in keep-out')
     for escape in record.get('escape_targets', []):

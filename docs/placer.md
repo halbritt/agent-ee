@@ -1015,7 +1015,10 @@ the fixed pose, on each of the pad's outer copper sides) must:
 - not enter, with positive area, a footprint-forbidding keep-out on its side:
   a board rule area or another fixed part's rule area or access lane
   (`in_keepout`, naming `rule area <uuid>` or `<ref> access lane`). An owner
-  stays exempt from its own.
+  stays exempt from its own;
+- not enter a rule area forbidding pads on one of its copper layers
+  (`in_pad_keepout`, AGENTEE-418,
+  [below](#peer-courtyards-and-pad-keep-outs-agentee-418)).
 
 Unlike the search gate, no courtyard discharges a box here. A declared
 courtyard overhang (`fixed_overhangs`) admits the courtyard across its edges,
@@ -1086,10 +1089,12 @@ exactly one of centroid or reason per pad. A native record that keeps its
 `copper_centroid_reason` but is relabelled as a stock shape stays unknown
 (`test_placer_custom_pads.CustomPadPlacementTest.test_stock_pad_without_custom_evidence_still_plans`);
 the same record with the reason removed plans
-(`test_legacy_stock_pad_without_custom_evidence_still_plans`). Inner-layer-only keep-outs, rule areas
-forbidding only pads, and copper against peer courtyards are not packing
-constraints. The native DRC publication gate remains the authority for copper
-clearance.
+(`test_legacy_stock_pad_without_custom_evidence_still_plans`). Copper against
+peer courtyards and rule areas forbidding pads, inner layers included, are
+packing constraints since AGENTEE-418
+([below](#peer-courtyards-and-pad-keep-outs-agentee-418)); a footprint
+keep-out on inner layers only binds no footprint, as native DRC agrees. The
+native DRC publication gate remains the authority for copper clearance.
 
 Focused regression, including native writer runs at every quarter turn on both
 sides (offset custom pads, rounded chamfered lands and unequal-size circles,
@@ -1099,6 +1104,99 @@ native land vertex for each stock shape:
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_copper_extent -v
+```
+
+### Peer courtyards and pad keep-outs (AGENTEE-418)
+
+The AGENTEE-366 reviews left three rule-area and peer boundaries outside the
+packing gate. They are inside it now, in the packing search, Stage-B block
+arrangement (each member) and targeted plans, through `_copper_escapes`:
+
+- Copper outside a part's courtyards binds a peer as a courtyard does. On each
+  outer side, such a copper box may not meet, with positive area, a placed
+  peer's courtyard or a peer's own copper outside its courtyards, and a
+  candidate's courtyard may not meet a placed peer's such copper
+  (`peer_courtyard`; no gap is added). Fixed parts block it too. Between two
+  fixed parts it is a `fixed_conflict`, `outcome: unknown`, like overlapping
+  fixed courtyards. A targeted plan reports `target copper meets a peer
+  courtyard or peer copper`.
+- A rule area forbidding pads (`forbid.pads`, footprints allowed or not) binds
+  every land whose copper layers meet its layers, inner layers included: a
+  through-hole or `*.Cu` land meets an `In1.Cu` area, and a front land never
+  meets a `B.Cu` one. Board areas bind every part. A part's own areas bind every
+  other part's lands, in both placement orders. The courtyard may enter such an
+  area. Each land is its `_copper_box` (any shape the copper extent gate
+  qualifies); a hand-built land without native facts is bounded by the part's
+  courtyards. A pad without copper layers is not bound. A targeted plan reports
+  `target pad in a rule area forbidding pads`. Pad keep-out boxes add search
+  alignment axes as footprint keep-outs do.
+- A footprint keep-out whose layers are all inner layers binds no footprint.
+
+Native semantics (kicad-cli DRC, KiCad 10.0.7, `NativeRuleAreaSemanticsTest`):
+a footprint keep-out reports a footprint only on its own side's outer copper
+layer, never for an inner-layer-only area. A pad keep-out reports every pad
+whose layer set meets its layers, so a PTH pad is reported by an `In1.Cu`
+area and an SMD pad only on its own side. It also reports the owner's own pad
+in a footprint-owned area. The gate exempts the owner. Its own lands are rigid
+in its own area at every pose, and native DRC reports them on the baseline,
+where the publication comparison keeps them as baseline findings.
+
+Fixed parts: [`fixed_input_copper`](#fixed-part-input-copper-agentee-371) also
+checks each fixed land against board pad keep-outs and other fixed parts' pad
+keep-outs. A native land box there is `violation: in_pad_keepout`, naming the
+area in `keepout` (a defect). A hand-built land without native facts whose
+courtyard meets one is `pad_keepout_unproven`, `copper_bounds_nm: null`, and
+`outcome: unknown`.
+
+Every rule area must carry a boolean `forbid.pads` flag. Native extraction
+always records it. A missing flag is never read as permission (coordinator
+ruling 418b): packing, Stage-B arrangement and targeted plans stop as
+`unsupported_geometry`, `outcome: unknown` (`missing rule-area pad flag`; a
+targeted plan is `blocked` with `missing coverage: missing rule-area pad
+flag`), as a non-boolean flag does (`malformed rule-area pad flag`).
+Hand-built fixtures state `'pads': False` explicitly.
+
+A footprint-owned rule area moves with its owner. Stage B moves each arranged
+member's own areas, once and from the source pose, rotation included, into the
+member's admitted pose. Residual packing and its final land check then bind
+them there (ruling 418b). An owned area that cannot be moved refuses the
+arrangement as `unsupported_geometry`, `outcome: unknown`.
+
+The native publication gate does not back this up. Its DRC comparison blocks
+only `copper_outside_outline` and added hard collision, mask or numeric
+findings. An added `items_not_allowed` is none of these (in the owned fixture
+it is also graded advisory), so a courtyard-only plan with a land in a pad
+keep-out is published as `placed` (`NativePadKeepoutPublicationTest`, mutant
+control). The packing gate is the
+binding check for pad keep-outs.
+
+Stage-B copper alignment axes, from AGENTEE-366e, live in
+`block_arrangement._copper_axes`. A block whose members have copper outside
+their courtyards gets origins that put that copper exactly S from an outline
+vertex. The fixture's U1 copper is planned flush at S, and with no axes it is
+not.
+
+Coordinator ruling 418a covers the expectations this gate changed:
+
+- Seeded plan digests: twelve seeds (2, 3, 5, 9, 10, 12, 13, 15, 23, 25, 33
+  and 39) are re-pinned in `test_placer_geometry_cost`. Each status is
+  unchanged. Each old plan had escaped land copper in a peer courtyard or on
+  peer copper. A regression reproduces the old seed-2 plan with the peer gate
+  patched out, and the predicate rejects its poses, naming P1 copper in P5's
+  B courtyard.
+- Reserve alternatives: a B.Cu pad keep-out pose is now excluded by the
+  packing predicate before native validation, and keep-out name text cannot
+  waive that rejection (`test_reserved_area`). The native-rejection fallback
+  tests now use a constraint the predicate does not model: a tracks-only rule
+  area plus a `.kicad_dru` rule disallowing pads that meet it.
+- Ruling 418b applies the same native-only constraint to both the unrelated
+  baseline area and the added candidate area in
+  `test_unrelated_baseline_defect_is_unknown_not_pose_rejection`. Every
+  assertion is unchanged. The baseline defect still reports `unknown` with
+  retained native evidence, and the new area still rejects the pose.
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_packing_scope -v
 ```
 
 ### Through-hole reservations and native publication gate (AGENTEE-318)

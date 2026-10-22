@@ -206,7 +206,7 @@ class CopperExtentTest(unittest.TestCase):
             with self.subTest(side=side):
                 capture_ = board([offset_part(side)], rectangle(0, 0, 20, 20))
                 capture_['rule_areas'] = [{'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'],
-                                           'forbid': {'footprints': True},
+                                           'forbid': {'footprints': True, 'pads': False},
                                            'outline': {'status': 'proven', 'polygons': [rectangle(0, 0, 3, 20)]}}]
                 plan = self.pack(capture_, request(fixed_refs=[]))
                 self.assertEqual(plan['status'], 'planned', plan)
@@ -222,7 +222,7 @@ class CopperExtentTest(unittest.TestCase):
         u1 = part('U1', 1, 1, shape=rectangle(0, 0, 3, 20))
         capture_ = board([u1, offset_part()], rectangle(0, 0, 20, 20))
         capture_['rule_areas'] = [{'uuid': 'owned', 'owner': 'U1', 'layers': ['F.Cu'],
-                                   'forbid': {'footprints': True},
+                                   'forbid': {'footprints': True, 'pads': False},
                                    'outline': {'status': 'proven', 'polygons': [rectangle(4, 0, 4, 20)]}}]
         plan = self.pack(capture_, request(fixed_refs=['U1'], gap_nm=0))
         self.assertEqual(plan['status'], 'planned', plan)
@@ -237,7 +237,8 @@ class CopperExtentTest(unittest.TestCase):
         p['pads'] = [custom_pad(bbox=[500_000, 500_000, 5 * MM, 1_500_000])]
         u1 = part('U1', 0, 0, shape=rectangle(-2, -1, 4, 2))
         capture_ = board([u1, p], rectangle(0, 0, 20, 2))
-        capture_['rule_areas'] = [{'uuid': name, 'owner': 'U1', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+        capture_['rule_areas'] = [{'uuid': name, 'owner': 'U1', 'layers': ['F.Cu'],
+                                   'forbid': {'footprints': True, 'pads': False},
                                    'outline': {'status': 'proven', 'polygons': [rectangle(x, -1, 3, 2)]}}
                                   for name, x in (('left', -5), ('right', 2))]
         policy = request(fixed_refs=['P'], gap_nm=0)
@@ -637,7 +638,7 @@ class FixedInputCopperTest(unittest.TestCase):
                     self.assertIn('C1 pad 1', plan['reason'])
 
     def test_copper_in_a_keepout_is_named_on_its_side_only(self):
-        area = {'uuid': 'strip', 'owner': 'board', 'forbid': {'footprints': True},
+        area = {'uuid': 'strip', 'owner': 'board', 'forbid': {'footprints': True, 'pads': False},
                 'outline': {'status': 'proven', 'polygons': [rectangle(-6, -6, 3, 12)]}}
         outline = rectangle(-6, -6, 12, 12)
         for layers, refused in ((['F.Cu'], True), (['B.Cu'], False), (['*.Cu'], True)):
@@ -656,7 +657,7 @@ class FixedInputCopperTest(unittest.TestCase):
     def test_peer_keepouts_refuse_and_an_owner_is_exempt_from_its_own(self):
         # Fixed U1 owns a front keep-out over C1's copper, which C1's courtyard does not reach.
         u1 = part('U1', 7, 7, shape=rectangle(6, 6, 2, 2))
-        keepout = {'uuid': 'owned', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+        keepout = {'uuid': 'owned', 'layers': ['F.Cu'], 'forbid': {'footprints': True, 'pads': False},
                    'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1.5, 2)]}}
         for owner, refused in (('U1', True), ('C1', False)):
             with self.subTest(owner=owner):
@@ -748,7 +749,7 @@ class FixedInputCopperTest(unittest.TestCase):
         self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
                                                          outline_distance_nm=SETBACK - 1)])
         # Keep-outs still bind on the declared edge.
-        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True, 'pads': False},
                  'outline': {'status': 'proven', 'polygons': [self.nm_rectangle(flush, -far, -3 * MM, far)]}}
         plan = self.fixed(self.nm_rectangle(flush, -far, far, far), [strip], fixed_overhangs=left(flush))
         self.assertEqual(plan['findings'], [self.finding('in_keepout', side='F', keepout='rule area strip')])
@@ -762,7 +763,7 @@ class FixedInputCopperTest(unittest.TestCase):
     def test_a_changed_or_missing_seed_never_waives_fixed_copper(self):
         # Coordinator ruling 371d: every fixed part's copper is validated whatever the seed,
         # with seed-pair carry on or off; a seed mismatch is no arrangement copper proof.
-        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True, 'pads': False},
                  'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1, 2)]}}
         cases = (('outline', rectangle(-3, -6, 9, 12), (), MAX_ERROR, ('fixed_input_copper', 'defect'),
                   self.finding('outside_outline', outline='board outline')),
@@ -847,7 +848,7 @@ class FixedInputCopperTest(unittest.TestCase):
                           None if kind == 'unknown_S' else MAX_ERROR)
                 if kind == 'keepout':
                     b['rule_areas'] = [{'uuid': 'review-strip', 'owner': 'board', 'layers': ['F.Cu'],
-                                        'forbid': {'footprints': True},
+                                        'forbid': {'footprints': True, 'pads': False},
                                         'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1, 2)]}}]
                 b['footprints'].append(part('U1', 0, 0, shape=rectangle(-3, -6, 8, 12) if kind == 'outline'
                                             else rectangle(-6, -6, 11, 12)))

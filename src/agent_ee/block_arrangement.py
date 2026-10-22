@@ -345,6 +345,9 @@ def _shift(fp, dx, dy):
                           for side, c in fp['courtyards'].items()},
            'packing_keepouts': [{'side': k['side'], 'polygons': [move(poly) for poly in k['polygons']]}
                                 for k in fp.get('packing_keepouts', [])], 'pads': []}
+    if 'packing_pad_keepouts' in fp:
+        out['packing_pad_keepouts'] = [{**k, 'polygons': [move(poly) for poly in k['polygons']]}
+                                       for k in fp['packing_pad_keepouts']]
     if 'access_direction' in fp:
         out['access_direction'] = fp['access_direction']
     for key in ('_packing_holes', '_packing_targets'):
@@ -356,9 +359,29 @@ def _shift(fp, dx, dy):
             out[key + '_box'] = None if box is None else (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
     if '_packing_copper' in fp:
         out['_packing_copper'] = placer._shift_copper(fp['_packing_copper'], dx, dy)
+    if '_packing_lands' in fp:
+        out['_packing_lands'] = placer._shift_lands(fp['_packing_lands'], dx, dy)
     if '_packing_copper_setback' in fp:
         out['_packing_copper_setback'] = fp['_packing_copper_setback']
     return out
+
+
+def _copper_axes(members, outline, bbox, window):
+    """Stage-B origins that put member copper outside its courtyards the setback S from an outline vertex.
+
+    Member copper aligns to the outline as a courtyard does, held off it by the
+    structural setback (AGENTEE-366e); a block without such copper adds none.
+    Only origins keeping the block box in the necessary window are kept.
+    """
+    bx0, by0, bx1, by1 = bbox
+    lo_x, lo_y, hi_x, hi_y = window
+    copper = [(fp['_packing_copper_setback'], placer._box([poly])) for fp in members
+              for poly in fp.get('_packing_copper', {}).get('outline', ())]
+    xs = {x for s, (c0, _, c1, _) in copper for p in outline
+          for x in (p[0] + s - c0, p[0] - s - c1) if lo_x <= bx0 + x and bx1 + x <= hi_x}
+    ys = {y for s, (_, c0, _, c1) in copper for p in outline
+          for y in (p[1] + s - c0, p[1] - s - c1) if lo_y <= by0 + y and by1 + y <= hi_y}
+    return xs, ys
 
 
 def _reach(fp):
@@ -543,9 +566,10 @@ class _Stopped(Exception):
 class _Arrangement:
     """Ranked macro candidates over the current partial arrangement."""
 
-    def __init__(self, work, policy, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat):
+    def __init__(self, work, policy, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat,
+                 pad_keepouts=()):
         self.policy, self.arrangement, self.heartbeat = policy, arrangement, heartbeat
-        self.outline, self.keepouts = outline, keepouts
+        self.outline, self.keepouts, self.pad_keepouts = outline, keepouts, list(pad_keepouts)
         self.margin = placer._edge_margin_nm(policy)
         self.gap, self.grounds = policy['gap_nm'], set(policy['ground_nets'])
         self.budget, self.steps = arrangement['step_budget'], 0
@@ -780,15 +804,8 @@ class _Arrangement:
             touch = {a[2] + self.gap - m[0] for side, m in left for other, a in anchors if other == side}
             touch |= {a[0] - self.gap - m[2] for side, m in right for other, a in anchors if other == side}
             xs = sorted(set(xs) | {x for x in touch if lo_x <= bx0 + x and bx1 + x <= hi_x})
-            # Member copper outside its courtyards aligns to the outline, held off it by the
-            # structural setback (AGENTEE-366e); a block without such copper keeps its axes.
-            copper = [(fp['_packing_copper_setback'], placer._box([poly])) for fp in members
-                      for poly in fp.get('_packing_copper', {}).get('outline', ())]
-            if copper:
-                xs = sorted(set(xs) | {x for s, (c0, _, c1, _) in copper for p in self.outline
-                                       for x in (p[0] + s - c0, p[0] - s - c1) if lo_x <= bx0 + x and bx1 + x <= hi_x})
-                ys = sorted(set(ys) | {y for s, (_, c0, _, c1) in copper for p in self.outline
-                                       for y in (p[1] + s - c0, p[1] - s - c1) if lo_y <= by0 + y and by1 + y <= hi_y})
+            cx, cy = _copper_axes(members, self.outline, own['bbox'], window['box'])
+            xs, ys = sorted(set(xs) | cx), sorted(set(ys) | cy)
             entries = own['entries'] + [e for placed in self.placed_blocks for e in self.entries(
                 bid, rotation, placed['block'])]
             # One term per net shared with placed parts: the block's pad centroid on that net.
@@ -855,9 +872,10 @@ class _Arrangement:
                 or placer._in_keepouts(fp, proposed.get('packing_keepouts', []))}
         if hits:
             return 'rule_area', hits - {None}
-        # Member copper outside its courtyards (AGENTEE-366); the macro carries no pads.
+        # Member copper outside its courtyards (AGENTEE-366), against peer courtyards and member
+        # lands against pad keep-outs (AGENTEE-418); the macro carries no pads.
         for fp in members:
-            escaped = placer._copper_escapes(fp, self.outline, self.keepouts, self.placed_fps)
+            escaped = placer._copper_escapes(fp, self.outline, self.keepouts, self.placed_fps, self.pad_keepouts)
             if escaped is not None:
                 return escaped[0], {self.owner.get(r) for r in escaped[1]} - {None, bid}
         hits = {owner for owner, entry in self.shadow_exact if placer._near(proposed, [entry], self.gap)}
@@ -1087,8 +1105,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         for fp in work['footprints']:
             if placer.access_direction.hard(fp):
                 placer.access_direction.geometry(fp)
-        labels = {}
-        keepouts = placer._keepouts(work, labels)
+        labels, pad_keepouts = {}, []
+        keepouts = placer._keepouts(work, labels, pad_keepouts)
         bands = overhang_bands(effective.get('fixed_overhangs', []), outline)
     except ValueError as exc:
         return failure('unsupported_geometry', str(exc))
@@ -1134,7 +1152,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     placed = [fp for fp in placed if fp['ref'] not in members]
     # A fixed part's copper off the board or in a keep-out is an input defect (AGENTEE-371).
     exempt = []
-    refusal = placer.fixed_input_copper(placed, outline, keepouts, labels, effective.get('fixed_overhangs', []), exempt)
+    refusal = placer.fixed_input_copper(placed, outline, keepouts, labels, effective.get('fixed_overhangs', []), exempt,
+                                        pad_keepouts)
     if refusal is not None:
         status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
         return {**failure(status, refusal['reason']), 'outcome': refusal['outcome'], 'findings': refusal['findings']}
@@ -1144,7 +1163,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     missing = placer.copper_setback_missing(fp for fp in work['footprints'] if fp['ref'] not in fixed)
     if missing:
         return failure('unsupported_geometry', missing)
-    search = _Arrangement(work, effective, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat)
+    search = _Arrangement(work, effective, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat,
+                          pad_keepouts)
     # Blocks with drilled pads or a hard opposite-side shadow constrain both sides: place them first.
     through = {bid for bid, entry in admitted.items() if any(
         any(by_ref[r].get('_packing_holes', ())) or r in search.stacking for r in entry['poses'])}
@@ -1212,6 +1232,20 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     residual_capture['footprints'] = [
         _strip(placer.transform(fp, poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg']))
         if fp['ref'] in poses else fp for fp in residual_capture['footprints']]
+    # An arranged member's own rule areas move with it, exactly once from the source pose,
+    # so residual packing and its final land check bind them where the member stands (ruling 418b).
+    sources = {fp['uuid']: fp for fp in capture['footprints'] if fp['ref'] in poses}
+    try:
+        for area in residual_capture.get('rule_areas', []):
+            if area.get('owner') in sources:
+                fp = sources[area['owner']]
+                pose = poses[fp['ref']]
+                area['outline'] = placer.transform(
+                    {'position_nm': fp['position_nm'], 'rotation_deg': fp['rotation_deg'], 'pads': [],
+                     'courtyards': {'zone': area['outline']}},
+                    list(pose['position_nm']), pose['rotation_deg'])['courtyards']['zone']
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return failure('unsupported_geometry', 'an arranged member rule area cannot be moved to its pose')
     residual_policy = {**copy.deepcopy(effective), 'obstacles': obstacles + [
         _obstacle(stacking, _shadow(poses[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
         for r in (stacking['references'] if _hard(stacking) else ()) if r in poses]}

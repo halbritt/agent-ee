@@ -1837,6 +1837,12 @@ arrangement and targeted plans. That copper is also held a structural setback
 of the board `m_MaxError` plus 50 nm inside the outline, so it composes with the
 AGENTEE-331 publication gate. The setback is typed unknown when the facts lack
 `max_error_nm`, for in-courtyard copper as well. With the fact present, parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
+AGENTEE-418 adds [peer courtyards and pad keep-outs](placer.md#peer-courtyards-and-pad-keep-outs-agentee-418)
+to that gate. Copper outside a courtyard may not meet a peer's courtyard or
+such copper. Lands may not enter a rule area forbidding pads on one of their
+copper layers, inner layers included. A fixed land in one is an input defect
+(`in_pad_keepout`). A footprint keep-out on inner layers only binds no
+footprint, matching native DRC. This adds no registered check either.
 
 AGENTEE-371 reports [fixed parts' copper](placer.md#fixed-part-input-copper-agentee-371)
 outside the outline, within the setback of it, or in a keep-out as a typed
