@@ -176,6 +176,22 @@ board_sha = sha(cand / board) if process_ok else None
 validation = {'status': 'PASS', 'reasons': [], 'delivered_board_sha256': board_sha,
               'validated_board_sha256': board_sha, 'candidate_board_sha256': board_sha,
               'refill_modified_board': False, 'restored_project_files': []}
+# The pin's native terminal preservation (KICADROUTE-98), from native partitions.
+deficit = 0 if routing_status == 'COMPLETE' else 2
+validation['net_completion'] = {'status': 'PASS', 'nets_connected_in_input': 0, 'nets_lost': [],
+                                'split_components': []}
+validation['native_terminal_evidence'] = {
+    'reference': os.path.relpath(run / 'validate/reference-terminal-components.json'),
+    'candidate': os.path.relpath(run / 'validate/candidate-terminal-components.json'),
+    'metrics': {'reference': {'terminal_nets': 2, 'incomplete_nets': 2, 'component_deficit': 4},
+                'candidate': {'terminal_nets': 2, 'incomplete_nets': 1 if deficit else 0,
+                              'component_deficit': deficit}}}
+if name == 'terminal_split':
+    validation['net_completion']['split_components'] = [{'net': '/IN', 'pads': ['u1', 'u2']}]
+if name == 'terminal_missing':
+    del validation['net_completion']
+if name == 'terminal_complete_split':
+    validation['native_terminal_evidence']['metrics']['candidate'].update(incomplete_nets=1, component_deficit=1)
 if name == 'refill_modified':
     validation.update(delivered_board_sha256='1' * 64, refill_modified_board=True)
 if name == 'validation_failed':
@@ -209,6 +225,53 @@ result = {'schema': 'kicad-route/route/1', 'measurement': False, 'evidence': {},
           'finished_utc': '2026-10-17T00:00:00+00:00', 'exit_code': code, 'ledger': {}}
 if paired:
     result.update(schema='kicad-route/route/2', pairs=[{**p, 'routed': True} for p in plans])
+# The pin's nested additions: measurement qualification on every process record, and the
+# runtime an owned-engine result executed (the selected router generation, else legacy).
+result['process']['measurement_qualification'] = {
+    'measurement': False, 'build_reproducible': None, 'reasons': ['no repeat evidence for this build']}
+if opts['--backend'] == 'builtin':
+    try:
+        generation = json.loads((state / 'manifest.json').read_text())['krt']['generation']
+    except (OSError, ValueError, KeyError, TypeError):
+        generation = None
+    result['backend']['runtime'] = (
+        {'source': str(state / generation / 'router'), 'venv': str(state / generation / 'venv'),
+         'generation': str(state / generation)} if generation else
+        {'source': str(ROOT / 'src/kicad_route/router'), 'venv': str(state / '.venv-krt'), 'generation': None})
+    if name == 'runtime_elsewhere':
+        result['backend']['runtime'] = {'source': '/elsewhere/router', 'venv': '/elsewhere/venv',
+                                        'generation': '/elsewhere'}
+    if name == 'runtime_extra_key':
+        result['backend']['runtime']['python'] = '/usr/bin/python3'
+# A backend without an owned engine never writes backend.runtime, whatever its value.
+FOREIGN_RUNTIME = {'foreign_runtime_wellformed': {'source': '/opt/router', 'venv': '/opt/venv', 'generation': None},
+                   'foreign_runtime_null': None, 'foreign_runtime_empty': {},
+                   'foreign_runtime_malformed': {'unexpected': 'not-a-runtime'}}
+if name in FOREIGN_RUNTIME and opts['--backend'] != 'builtin':
+    result['backend']['runtime'] = FOREIGN_RUNTIME[name]
+REPRODUCIBLE = {'reproducible_one': 1, 'reproducible_zero': 0, 'reproducible_float': 0.0, 'reproducible_true': True,
+                'reproducible_false': False}
+if name in REPRODUCIBLE:
+    result['process']['measurement_qualification']['build_reproducible'] = REPRODUCIBLE[name]
+if name == 'measurement_missing':
+    del result['process']['measurement_qualification']
+if name == 'measurement_disagrees':
+    result['process']['measurement_qualification']['measurement'] = True
+# The pin adds copper custody to a builtin attempt whose process passed (AGENTEE-450).
+if opts['--backend'] == 'builtin' and process_ok and name != 'custody_missing':
+    if name == 'custody_unavailable':
+        result['copper_ownership'] = {'status': 'unavailable', 'reasons': ['fixture custody unavailable'],
+                                      'replay_authority': False}
+    else:
+        write(run / 'validate/copper-ownership.json', {'schema': 'kicad-route/copper-ownership/1',
+                                                       'replay_authority': False, 'board_sha256': board_sha})
+        custody = sha(run / 'validate/copper-ownership.json')
+        result['copper_ownership'] = {'status': 'bound', 'record': 'validate/copper-ownership.json',
+                                      'sha256': '0' * 64 if name == 'custody_forged' else custody,
+                                      'coverage': 'current_run_only_input_fixed', 'replay_authority': False}
+        result['evidence'] = {'records': {'validate/copper-ownership.json': custody}}
+        if name == 'custody_authority':
+            result['copper_ownership']['replay_authority'] = True
 if name == 'result_exit_mismatch':
     result['exit_code'] = 2
 if name == 'unknown_result_version':

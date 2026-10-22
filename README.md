@@ -225,7 +225,8 @@ A second corpus seeds 16 review-derived defect classes into scratch copies of th
 hierarchical fome-mc board; its expectations and reports live in a private
 Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository. The public corpus records a
-verified dependency closure, deterministic control false-alarm bounds and native
+verified dependency closure, deterministic control false-alarm bounds, a
+separate agent-drafted judgement of the remaining control records and native
 rerun comparisons. The closure audit exits 1 whenever tool or font licence
 evidence is unverified; owner review and any publication remain outstanding.
 
@@ -237,8 +238,9 @@ Authenticated summaries verify that digest and replay retained sealed evidence
 before scoring; recorded failed generation never passes. Unanchored summaries
 remain diagnostic local consistency checks.
 Unsafe writer outputs remain failed attempts with unknown checks.
-Its original native fixture qualifies the
-harness; importing the ten unlicensed upstream prompts remains blocked.
+Its committed original prompt series qualifies the
+harness and, by a relayed owner decision, substitutes for the ten unlicensed
+upstream prompts, which stay private and uncommitted.
 
 The [false-positive calibration](docs/fp-calibration.md) measures the reviewers
 themselves. It shows each profile reviewer pairs made from a design and its seeded
@@ -456,8 +458,10 @@ ensembles for one unloaded first-order topology. A separate
 pin bindings and declared transient/AC/DC-sweep measurements, with
 [role-keyed templates](docs/spice-templates.md) that derive regulator,
 amplifier and filter testbenches from captured targets without defaults. Its
-committed control models are synthetic; vendor-model qualification and publication rights are separate
-evidence obligations.
+committed control models are synthetic. A [hash-bound qualification
+harness](docs/active-spice.md#vendor-model-qualification) runs a captured vendor
+op-amp model through the same check without tracking its bytes; no vendor model
+is recorded as qualified yet, and publication rights remain a separate gate.
 Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
@@ -627,7 +631,7 @@ The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
 The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
-`5f1c072` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+`b577449` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 with read-only state, retains hashed attempt diagnostics, and verifies routing
 semantics before adopting a proposal. Fresh checks determine acceptance.
 Its optional [per-net layer policy](docs/routing-adapter.md#per-net-signal-layers-agentee-258)
@@ -705,8 +709,8 @@ record that `verify` recomputes against the same agent-ee commit and each
 review's retained source inputs, independently of later design adoptions.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
-are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap
-threshold, so that acceptance example remains unresolved pending an owner decision.
+are qualified. The actual C11702/0402 pair is a `low_accuracy` defect at IoU about
+0.67 against the 0.98 threshold, as amended by a coordinator ruling.
 
 [Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
 URLs before offline checks, with byte limits, deadlines and per-part missing

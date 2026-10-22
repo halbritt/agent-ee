@@ -38,8 +38,9 @@ and a combined generation result. AGENTEE-285 adds a series freeze requiring
 external task pins and retained executor evidence. Aggregate can authenticate
 reports, seals and task metadata against an independently retained series digest;
 unanchored summaries remain diagnostic. See the feature page's custody boundary.
-An original series-resistor task qualifies the harness; the requested ten
-unlicensed prompts still require owner permission before import.
+The committed original prompt series (a series-resistor task) qualifies the
+harness and is the accepted substitute for the ten unlicensed prompts, which stay
+private (owner-relayed decision; see the feature page).
 
 Each rung is one end-to-end run, from requirements to fab package, recorded as
 evidence (AGENTEE-96 to AGENTEE-99).
@@ -347,7 +348,7 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `5f1c072`. At that commit agent-ee relies on the following from
+kicad-route `b577449` (AGENTEE-450). At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;

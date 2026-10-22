@@ -63,7 +63,11 @@ thickness using exact rational arithmetic, including the tolerance endpoints.
 An out-of-range sum or nominal below the captured applicability is refused.
 Missing source evidence stays unknown. The validator's `stackup.thickness_mm`
 is the nominal value for existing native/fab consumers; its additional fields
-retain the physical total, citations and source paths. Version 1 keeps the
+retain the physical total, citations and source paths.
+The finished-thickness tolerance is the fabricator's tolerance on the board.
+It is not a component-side fit tolerance. The
+[through-hole thickness fit](#through-hole-thickness-fit) reads only the
+nominal value. Version 1 keeps the
 exact shape and sum in the table above and refuses version 2 fields.
 
 Version 2 also requires `obligations`, a list of `{id, requirement_ids,
@@ -73,6 +77,8 @@ acceptance requirement with its envelope field hash and remains unresolved;
 there is no caller-supplied pass/bound flag. Baseline capture recognizes both
 versions, freezes verified stackup sources and refuses missing check coverage.
 Existing native outline and layer criteria do not cover these obligations.
+An entry may add a `coverage` record that stages it for candidate generation
+(see [staged obligations](#staged-obligations)); without one it stays unresolved.
 
 A fixed footprint's anchor is its KiCad footprint origin. The anchor is
 `position_mm` along the named edge, measured from the edge's `start`, then
@@ -293,9 +299,175 @@ unbound. It refuses:
   derive;
 - a validation record and requirements document for different envelope bytes.
 
-`require_obligations(scope, requirements, record, files)` then refuses anything
-not `bound`, listing every such obligation. It also refuses requirements derived
+`require_obligations(scope, requirements, record, files, inputs)` then refuses anything
+not `bound`, `soft` or `staged`, listing every such obligation. It also refuses requirements derived
 while predicates were unresolved. An obligation is refused rather than dropped.
+
+## Staged obligations
+
+A version 2 `/obligations/<n>` entry states a generator decision, so no check
+binds it. Its optional `coverage` record separates candidate-generation
+admission from final physical qualification:
+
+```json
+{"coverage": {
+  "generation": [{"locator": "/fixed_footprints/0"},
+                 {"locator": "/fixed_footprints/0", "criterion": "outline-containment/1"}],
+  "open": [{"id": "panel-cutout", "stage": "physical_qualification",
+            "statement": "Panel cutout fit is not yet qualified."}]
+}}
+```
+
+- `generation` lists the witnesses, which may be none. A witness without a
+  criterion is a declared `/mounting_holes/<i>`, `/keepouts/<i>` or
+  `/fixed_footprints/<i>` of the same envelope. Its own derived obligation
+  must be `bound`; a soft (informational) or unmapped one does not witness.
+  `criterion: "outline-containment/1"` is allowed only for a fixed footprint
+  with `courtyard_overhangs`. It needs a `placement` check with that criterion
+  over these exact captured envelope bytes. `criterion: "part-identity/1"` on a
+  fixed footprint needs the contracted part identity (see
+  [source contracts](#source-contracts)). No other field witnesses, so
+  `/max_component_height_mm` and `component-height/1` cannot cover a staged
+  obligation.
+- `open` lists the qualification evidence still required, one or more
+  `{id, stage, statement}` items. `stage` is `candidate_assessment` (needs a
+  generated candidate, for example a placement assessment) or
+  `physical_qualification` (enclosure, fabrication or bench evidence). An empty
+  list, a status field or any other key is refused, so the envelope never
+  claims qualification.
+
+The record holds locators and text only, so it cannot add a numeric limit. A
+bound, drill or position keeps the provenance of the concrete field it points
+at. Validation moves a staged entry's predicates from `unresolved` to
+`qualification_open`, one per open item. The outcome stays `unknown`, and the
+derived requirement's statement names the witnesses and open items.
+`obligation_coverage` reports the entry as `staged`, with each witness's
+requirement, checks and status, and the open items. A missing or unbound witness
+makes it `unknown`. Soft provenance on the generic obligation itself does not
+change this: it stays `staged` with its open items. A baseline requirement that maps a staged obligation to a
+check, or changes its statement, is refused: no check qualifies it.
+
+`require_obligations` admits `staged` entries, so capture, scaffold and
+candidate generation can proceed. `require_qualified(coverage)` is the final
+physical-qualification gate. It refuses while any staged obligation has open
+items, naming each one, and refuses any obligation that is not bound. Nothing in
+the envelope or scope can close an open item. Closing one requires
+AGENTEE-177/179 evidence that adds a real binding.
+
+### Final acceptance guard
+
+`final_qualification(run, candidate_id)` is the one shared final guard. It
+reads the coverage in the run's captured, re-verified `baseline.json`
+(`load_baseline`), never the current envelope file, a scope field or a stored
+result. It returns `agent-ee.final-qualification/1` with the `baseline_id` and
+a `blocking` list, or `None` for a verified capture without an envelope.
+`candidate_id` is the identity the consumer's own retained evidence was
+produced for: the review result, or the done check's result. The guard first
+checks `candidate.json` against its `candidate_id`, then requires that identity
+to equal the consumer's, and only then verifies the baseline and reads the
+scope's envelope declaration. It never infers "no envelope" from a missing
+record. A removed or edited declaration, a missing, empty, null or
+envelope-free `baseline.json`, and a re-identified scope therefore refuse: the
+identity differs; or it belongs to another candidate than the consumer's
+evidence; or the recompiled baseline differs from the retained one, or refuses
+the envelope the scope still consumes. `None` means either a verified scope/2
+or scope/3 baseline without envelope coverage, or a scope/1 candidate, which
+compiles no baseline and must retain no `baseline.json`. `verify` passes in the
+baseline it has just verified, so the guard compiles it no second time
+(AGENTEE-250).
+Each blocker is
+`{id, status, open}`: a `staged` obligation with its open item IDs, an
+obligation that is not `bound` or `soft`, a derived obligation missing from the
+coverage, or unresolved requirements. An empty `unresolved` list is not
+readiness: a staged obligation has none and still blocks. `require_final(run, candidate_id)`
+raises while anything blocks. Its consumers:
+
+- the review outcome. `review` records the guard in `result.json` as
+  `final_qualification` and adds a limitation naming every blocker. A result
+  that checks and reviewers would otherwise accept is `incomplete`, not a design
+  defect; `defects_or_unresolved` and other verdicts do not change. `verify`
+  recomputes the record from the baseline and refuses a removed, emptied or
+  stale one.
+- the `fab_package` done gate. The fab export and consistency gate still run,
+  so the exports stay available as diagnostics. A package that would pass is
+  `unsupported`/`unknown` (`fab package done gate held: ...`), and
+  `artifact_record` refuses to seal the release. `artifact_record` applies
+  the guard last, after the placement release lineage and the package checks,
+  bound to the done check's `candidate_id`, which the retained fab export
+  manifest must also carry.
+- campaign acceptance and replay. A campaign that reaches `criteria_satisfied`
+  re-applies the guard before it publishes `fab_artifacts` or `stage_done`;
+  while anything blocks it ends `incomplete` with the blockers in `error`.
+  `verify-campaign` applies the guard to the final run of an accepted state, so
+  a stale or manually altered acceptance is refused. A declared fab step is
+  generation, so open qualification does not stop it being scheduled; the done
+  gate then holds its release.
+
+Staged generation keeps `require_obligations`: capture, scaffold and candidate
+generation proceed. The guard adds no physical closure: today's open items stay
+blocking for final acceptance.
+
+### Source contracts
+
+A coverage list is written by whoever composes the envelope, so it cannot set
+its own minimum. `board_envelope.OBLIGATION_CONTRACTS` holds the reviewed,
+source-bound minimum (AGENTEE-197 review H1/H2). Only an obligation whose `id`,
+`requirement_ids`, `owner_items` and `statement` equal a contract entry verbatim
+may be staged. A coverage record on any other obligation is refused. A changed
+source statement refuses staging until a reviewed commit updates the entry.
+While anything is staged, every contracted obligation must be present, so one
+cannot be dropped. The contract's `envelope_ids` name source envelopes that must
+carry every contracted obligation verbatim even before staging.
+
+For each staged entry the contract, not the coverage list, fixes the generation
+witnesses and the open items. Coverage may add witnesses or items and may use
+any order, but it cannot omit or restage what the contract lists. The
+validation record keeps the resolved minimum as `obligation_contract`, and
+`staged_coverage` checks it again. The contract carries roles, references and
+identities only, so it adds no numeric limit.
+
+`telemetry-pod-expanded/1` is reviewed from the production capture
+`composition/envelope.json` (envelope `expanded-pod-microsd-production`):
+
+| Obligation | Required generation witnesses | Open items that must stay listed |
+|---|---|---|
+| `corner-holes` | the source holes `H1`, `H2`, `H3` and `H4`, each uniquely nearest a distinct outline corner | `hole-authority`, `fabricated-holes` |
+| `height` | none | `candidate-heights` (candidate), `cowl-fit`, `underside-fit`, `connector-fit`, `mating-plug-fit`, `harness-fit` |
+| `harness-edge` | J1 fixed (`connector-edge/1`), J1 `outline-containment/1`, J1 `part-identity/1` | `panel-cutout`, `mating-plug`, `retention`, `thickness-tolerance`, `harness-clearance` |
+| `antenna` | U1 fixed, U1 `outline-containment/1`, the U1 antenna keepout | `feed-point-side`, `housing-pocket`, `nearby-metal`, `support`, `rf-performance` |
+| `imu-separation` | none (assessment only) | `placement-assessment` (candidate), `vibration-coupling` |
+
+Items are `physical_qualification` unless marked candidate. The corner witnesses
+are bound by source identity: the envelope must declare exactly holes `H1`–`H4`,
+matched by `id` in any order. Each is a required witness at its own locator. A
+missing, renamed or extra hole is refused, including an extra hole at the same
+coordinates as a source hole or tied between corners. Adding a hole role needs a
+reviewed contract change. Corner assignment is a one-to-one nearest-vertex
+comparison with ties refused. It is not a hole position limit.
+Drill, inset and coordinates stay generator-selected and keep the provenance of
+the hole fields. `hole-authority` stays open for them.
+
+J1 identity is not deferred into physical fit. It uses the existing parts
+enforcement, not a second identity checker. A `part-identity/1` witness is bound
+only when every `parts_subset` check in the scope (the scaffold's native
+membership check) reads a captured `agent-ee.parts/1` manifest. That manifest
+must declare one required purchased root-sheet part for J1 with manufacturer
+`TE Connectivity`, MPN `1-776163-1` and footprint
+`PodConnector:AMPSEAL_35_1-776163-1`. The footprint must be an exact member of
+the manifest's captured CAD closure, and that member is the one the scaffold
+loads. The complete manifest must then pass the authoritative
+`parts_manifest.qualify_manifest`: the canonical part record or catalog row is
+replayed, the native CAD assignment coverage is complete, and J1's datasheet
+provenance is captured. Declared strings alone do not bind. A missing check, an
+uncaptured manifest or member, a missing or optional part, or another MPN,
+manufacturer or footprint leaves the witness `absent`, so capture refuses. The
+same applies to a self-consistent substitution behind the contracted strings,
+such as another part's record or a re-sealed footprint with changed pads. At run time the `parts_subset` check compares the native J1
+with that declaration. DRC schematic parity and `connector-edge/1` bind the
+board footprint of the same reference. Pose alone is not identity: a
+`connector-edge/1` pass proves neither identity nor mating-plug or enclosure fit.
+At preparation time the same part is bound by `binding_fill.fill` and
+`parts_manifest.qualify_manifest`.
 
 ## Stage-one requirements
 
@@ -349,13 +521,15 @@ A scope containing outline, layers, a source-bound stackup, the referenced
 profile and separately selected fixed connectors can now capture with all
 obligations listed as bound in `baseline.json`. Declared holes and keepouts also
 bind through their id-selected checks. Unresolved generator mechanics still
-have no binding. Capture refuses those obligations by name and writes no baseline or candidate record. Using an envelope only as
+have no binding. Capture refuses those obligations by name and writes no baseline or candidate record,
+unless a [coverage record](#staged-obligations) stages them. Using an envelope only as
 `connector-edge/1` data still requires declaring it and covering every obligation.
 The complete pod fixture retains its AGENTEE-177/179 mechanical obligations;
 a scoped contract fixture does not establish acceptance of the complete pod.
 
-Some integration tests stand in for outline, layer-count and stackup bindings
-only inside a test block. They do not establish production acceptance. A separate
+Some integration tests on owned synthetic profiles stand in for outline,
+layer-count and stackup bindings only inside a test block. They do not establish
+production acceptance. The recorded JLCPCB profile path below uses no stand-in. A separate
 test uses real bindings and confirms that only stackup blocks the sourced RC
 scope. The fixed footprint and the profile keep their real
 bindings. A native test then runs the declared RC envelope through capture, a
@@ -383,30 +557,63 @@ records the URLs, UTC times and response hashes of the host capture on
 2026-10-19. The raw responses stayed in the worker's scratch directory.
 
 With the captured sources, the variant validates with `outcome: pass`: both
-layer count and board size are supported. JLCPCB publishes 1 oz (35 µm) outer
-copper and a single FR-4 dielectric for 2-layer boards, but no dielectric
-thickness. Its stackup page and impedance calculator hold 4- and 6-layer
-templates only. The profile therefore declares **no** `stackup`. Deriving the
-core as nominal minus copper would treat the physical thickness as equal to the
-nominal one, which the fabricator does not state. The RC's 0.035/1.53/0.035 mm
-split stays an owned assumption, and stackup authority stays unknown.
+layer count and board size are supported. JLCPCB publishes the 1.6 mm nominal
+thickness, 1 oz (35 µm) outer copper and a single FR-4 dielectric for 2-layer
+boards, but no dielectric thickness. Its stackup page and impedance calculator
+hold 4- and 6-layer templates only. The profile therefore declares a partial
+`stackup` (`jlc-2layer-fr4-1oz-1.6mm`), citing one recorded quote. It gives the
+1.6 mm nominal and two 1 oz, 0.035 mm copper layers. The `core` thickness and the
+physical total are `null`, meaning unpublished; see
+[profile stackup authority](fab-profile.md#stackup-authority). Nothing derives
+the core as nominal minus copper, because that would treat the physical thickness
+as the nominal one, which the fabricator does not state. The RC's 1.53 mm core
+stays an owned assumption ([decision](decisions.md#rc-2-layer-stackup-authority-agentee-85-2026-10-22)).
+
+The copper-weight authority is enough to bind `stackup/1`, so the RC scope
+captures with every obligation bound. Running the check:
+
+- compares the nominal thickness, layer names and kinds, copper weights and
+  copper thicknesses against the profile; a mismatch is a defect;
+- reports the envelope's and the saved board's core thickness as unknown,
+  because no published value bounds them. Without a proven defect, the verdict
+  is unknown, never pass;
+- reports the RC board itself as unknown, because it saves no stackup section.
 
 `tests.test_board_envelope` covers this:
 
-- `RcJlcProfileTests` compiles the profile, checks the recorded source hashes,
-  refuses a four-layer variant and derives byte-identical, field-citing
-  requirements;
-- with real bindings only, outline, layer count, J1 and the profile bind, and
-  capture is refused naming only `R-envelope-rc-filter-stackup`;
+- `RcJlcProfileTests` compiles the profile and its partial stackup, and checks
+  the recorded source hashes. It refuses a four-layer variant, and refuses a null
+  thickness on copper, on an envelope layer or beside a numeric physical total.
+  It also derives byte-identical, field-citing requirements;
+- with the profile minus its `stackup` (its bytes before this change), outline,
+  layer count, J1 and the profile bind, and capture is refused naming only
+  `R-envelope-rc-filter-stackup`. With the recorded profile, every obligation
+  binds and capture freezes the profile and its source;
 - the native coordinator-path test uses real `outline/1`, `layers/1`,
-  `connector-edge/1` and `fab_profile` checks, with a stand-in for stackup
-  alone. The saved, routed RC board meets all eight minima. Moving J1 3 mm on an
-  unrouted candidate is a defect naming `left` and 3.0 mm, and its DRC-backed
-  minima stay unknown without a rule-loading witness. Once the stand-in is
-  removed, the retained run fails verification on stackup.
+  `stackup/1`, `connector-edge/1` and `fab_profile` checks, with no stand-in
+  (AGENTEE-92 criterion 3). The saved, routed RC board meets all eight minima.
+  Moving J1 3 mm on an unrouted candidate is a defect naming `left` and 3.0 mm.
+  Its DRC-backed minima stay unknown without a rule-loading witness. `stackup/1` is
+  unknown with `missing or duplicate saved stackup`, and the retained run stays a
+  valid baseline.
 
-Production capture of the RC envelope needs a fabricator-stated 2-layer
-dielectric thickness. That needs a new source or an owner decision.
+`tests.test_envelope_check.PublishedCopperWeightAuthorityTests` grades the
+partial authority on an owned board that saves the RC stackup. The unpublished
+core is unknown. A 2 oz envelope layer, a saved 0.036 mm copper layer and a
+1.0 mm nominal are each defects.
+
+The shared `rc.envelope.json` and the placement fixture copy keep `fab_profile:
+null`. They are the unselected-profile case, and these existing tests assert it:
+
+- `test_rc_envelope_validates_structurally_with_profile_unresolved`;
+- `test_profile_reference_is_hash_bound_and_malformed_profiles_are_refused`;
+- `test_every_requirement_cites_a_resolving_envelope_field`;
+- `test_unresolved_profile_is_refused_even_when_every_obligation_binds`;
+- `tests.test_scaffold` `test_uncovered_binding_is_refused_instead_of_weakening_scope`.
+
+Pointing them at the profile changes those tests' expected refusals and makes
+every scope that copies the file declare and capture the profile and its source.
+Production RC scopes use `rc-jlc-2layer.envelope.json` instead.
 
 ## Native envelope check
 
@@ -433,6 +640,7 @@ above and complete obligation coverage; missing manufacturing authority stays un
 | `mounting-holes/1` | `envelope:mounting-holes/1:<id>` | Exactly one footprint with reference `id`, origin within the declared Euclidean tolerance, one round drilled pad whose centre is within the same tolerance, of the declared diameter and PTH/NPTH attribute, and its whole circle inside the native outline |
 | `keepouts/1` | `envelope:keepouts/1:<id>` | At least one saved rule area covers every edge of the declared polygon, all declared copper layers and at least the declared forbid set |
 | `component-height/1` | `envelope:component-height/1` | Every native footprint has a verified applicable installed maximum height or qualified resolved STEP bounds at most `max_component_height_mm` |
+| `tht-thickness-fit/1` | `envelope:tht-thickness-fit/1` | Every declared through-hole part, bound to one installed PTH footprint of the declared part, fits the envelope nominal thickness under its explicit hard limits, documented fit range or the default +/-10% screening band. It binds no envelope obligation |
 
 ### Component height
 
@@ -595,6 +803,95 @@ hole/keepout refusals. Run it on the host with the strict toolchain gate:
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_envelope_check -v
 ```
 
+### Through-hole thickness fit
+
+A soldered through-hole part fits a board within a range around the PCB
+thickness its manufacturer recommends (AGENTEE-448). This component-side
+tolerance is separate from the fabricator's finished-thickness tolerance
+(`finished_thickness_tolerance`, for example the JLCPCB +/-10% source). The
+check never reads that tolerance, the physical stackup total or any other fab
+tolerance as component fit. The board side is the envelope's nominal
+`stackup.thickness_mm` (`nominal_thickness_mm` in envelope/2), and the native
+board thickness must equal it.
+
+The check selects the captured immutable declaration with `thickness_fit`:
+
+```json
+{"id": "j1-fit", "kind": "board_envelope", "params": {
+  "criterion": "tht-thickness-fit/1", "envelope": "envelope.json",
+  "thickness_fit": "tht-thickness-fit.json"}}
+```
+
+```json
+{"schema": "agent-ee.tht-thickness-fit/1", "parts": [
+  {"reference": "J1", "part_number": "1-776163-1",
+   "footprint_id": "PodConnector:AMPSEAL_35_1-776163-1",
+   "recommended_mm": 1.57,
+   "recommended_source": {"class": "manufacturer",
+     "citation": "TE Connectivity 1-776163-1 customer drawing: recommended PCB thickness 1.57 mm"}}]}
+```
+
+Each part may also declare `hard_limits: {min_mm?, max_mm?, source}`, the
+manufacturer's explicit limits with at least one bound, and
+`fit_range: {min_mm, max_mm, source}`, a documented fit range. Every
+`source` is `{class, citation}`. The class is `manufacturer` or `datasheet`,
+and the citation is a nonempty string. A missing or blank citation, an unknown
+field, a duplicate reference, a bound that excludes the recommended nominal, or
+a value that is not exact to 1 nm is refused at capture, and the check reports
+it as malformed. The citation names its source. Authenticating that source is
+outside this check.
+
+Each side of the band (minimum and maximum) is graded on its own, with exact
+rational arithmetic and inclusive bounds:
+
+| Governing bound for that side | Board nominal inside | Board nominal outside |
+| --- | --- | --- |
+| Explicit `hard_limits` bound | pass | **defect** |
+| Otherwise the `fit_range` bound, where it is wider than the default band | pass | unknown: needs feature geometry or evidence |
+| Otherwise the default band, recommended x 0.9 or x 1.1 | pass, `screened (default +/-10% component fit)` | unknown: needs feature geometry or evidence |
+
+A documented fit range only widens the default band, one side at a time: the
+minimum is the lower of `fit_range.min_mm` and recommended x 0.9, and the
+maximum is the higher of `fit_range.max_mm` and recommended x 1.1. A range
+inside the band, such as 1.55-1.60 mm for J1, leaves the band at
+1.413-1.727 mm, so a 1.65 mm board is still screened. Only an explicit
+`hard_limits` bound can narrow the pass region. When one part is a defect and
+another is unknown, the check reports unknown and keeps the defect in
+`defects`.
+
+The +/-10% default implements an owner assumption, owner-relayed (agent-509,
+Cairn 9561cd0c, 2026-10-22) and quoted verbatim from the AGENTEE-448 ticket: "a
+soldered THROUGH-HOLE component fits boards within +/-10% (or more) of its
+recommended nominal PCB thickness". The rest of this section is agent wording.
+Agent reading: the band is a screening default, not a universal hard ceiling,
+so a board outside it is never rejected. Only an explicit manufacturer limit
+makes a defect. Each declared part must bind to exactly one native footprint with that reference and the declared
+`footprint_id`. That footprint needs at least one plated through-hole pad, and
+its saved part number (or value) must equal `part_number`. Anything else is
+unknown, never a pass. Parts without a declaration are not graded, so every
+existing check keeps its verdict. The criterion covers no envelope field.
+Baseline binding refuses it for any envelope obligation, so it is mapped only
+by a requirement that names component thickness fit.
+
+For J1, TE 1-776163-1 recommends 1.57 mm. The default band is 1.413-1.727 mm,
+and the 1.6 mm pod board is about 1.9% above the recommendation, so it is
+screened. The J1 declaration is part data for the consuming design. In
+fome-mc it is a captured `tht-thickness-fit.json` holding the J1 entry above,
+plus one `board_envelope` `tht-thickness-fit/1` check over the pod envelope.
+agent-ee carries only the contract and original test fixtures.
+
+`tests.test_tht_thickness_fit` covers J1 at 1.6 mm, the exact 1.413 and
+1.727 mm boundaries and 1 nm outside them, 1.40 mm as advisory, explicit-limit
+pass and fail, documented ranges that are wider, narrower or one-sided wider
+than the band, hard limits narrowing a documented range, mixed defect and
+unknown parts (the summary names the defect), refused citations, unbound parts, and
+proof that the fab tolerance does not change the verdict. Its native tests run
+the registered check over original pcbnew boards:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_tht_thickness_fit -v
+```
+
 ## Consumed envelopes
 
 Envelope authority comes only from what a scope declares or consumes, never from
@@ -692,8 +989,9 @@ The record states obligations; acceptance requires their registered checks.
 Arcs, cutouts, slots, multiple outlines and oblique connector edges are not
 supported by this envelope format. The diagnostic round trip does not replace
 the native hole, keepout or component-height predicates.
-Stackup acceptance needs captured manufacturing authority; JLCPCB publishes
-no 2-layer dielectric thickness, so the RC stackup has none yet. Several fixed
+Stackup acceptance needs captured manufacturing authority. JLCPCB publishes
+2-layer copper weight and nominal thickness but no dielectric thickness, so the
+RC stackup binds yet stays unknown on its core. Several fixed
 footprints need separate reference selectors. Capture reads only
 consumed paths for envelope authority, so an envelope a scope never cites stays
 unenforced. To make an envelope binding, declare it. Profile support means only that the typed, source-quoted minimum

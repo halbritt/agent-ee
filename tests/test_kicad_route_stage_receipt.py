@@ -44,7 +44,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
                                         name='rc', label='step-1', checkout=checkout, budget=5, timeout=30)
         spec['argv'][3] = '/opt/driver/run.py'
         spec['mounts'].append({'source': str(driver), 'at': '/opt/driver'})
-        receipt_dir = root / 'receipts/1-kicad-route-krt'
+        receipt_dir = root / 'receipts/1-kicad-route-builtin'
         receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1, 'receipt_index': 1})
         self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
         return receipt, receipt_dir, design
@@ -54,7 +54,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
         self.assertEqual((receipt['exit_code'], receipt['status'], receipt['violations']), (0, 'completed', []))
         self.assertEqual(receipt['changed'], ['project/rc.kicad_pcb'])
         self.assertEqual(receipt['tool']['reported_version']['status'], 'unknown')
-        self.assertEqual(receipt['tool']['backend']['value']['name'], 'krt')
+        self.assertEqual(receipt['tool']['backend']['value']['name'], 'builtin')
         summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)
         self.assertEqual(summary['candidate_sha256'], receipt['outputs']['project/rc.kicad_pcb'])
         self.assertEqual(summary['backend'], receipt['tool']['backend'])

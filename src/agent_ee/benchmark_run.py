@@ -461,9 +461,131 @@ def image_native_rerun(first, output, image, repeats=2):
     return read_json(output/'rerun'/'native-rerun.json')
 
 
-def canonical_check(check):
-    """Drop only documented execution volatility; keep numerical/locator data."""
+# A failed DRC copper-containment sub-step embeds its sandbox execution record,
+# as Python text, in three identified check fields. The record is also sealed as
+# check evidence. Only when the text reproduces that sealed record exactly is it
+# compared as a record: its duration is timing, and the run directory the record
+# itself binds (validated below) is run identity. Every other string stays exact.
+CONTAINMENT_FAILURE = 'native copper containment failed: '
+CONTAINMENT_PREFIXES = {'reason':'','summary':'DRC copper containment: ','limitations':'Copper containment unavailable: '}
+
+
+def execution_identity(record, run, check_id):
+    """The directory the sealed containment record ran in, from its own sandbox binds.
+
+    It must bind exactly one ``<dir>/inputs`` at /candidate and ``<dir>/work/<check>/containment``
+    at /work, with ``<dir>`` named like the retained run; otherwise None.
+    """
+    argv = record.get('sandbox_argv') if isinstance(record,dict) else None
+    if not isinstance(argv,list) or not all(isinstance(a,str) for a in argv):
+        return None
+    binds = {}
+    for i in range(len(argv)-2):
+        if argv[i] in ('--ro-bind','--bind') and argv[i+2] in ('/candidate','/work'):
+            binds.setdefault(argv[i+2],[]).append(argv[i+1])
+    if sorted(binds)!=['/candidate','/work'] or any(len(v)!=1 for v in binds.values()):
+        return None
+    from pathlib import PurePosixPath
+    inputs, work = PurePosixPath(binds['/candidate'][0]), PurePosixPath(binds['/work'][0])
+    identity = inputs.parent
+    if (not inputs.is_absolute() or inputs.name!='inputs' or '..' in inputs.parts
+            or identity.name!=Path(run).name or work!=identity/'work'/check_id/'containment'):
+        return None
+    return str(identity)
+
+
+# Operand counts of the bwrap options executor.sandbox_argv emits. Anything else
+# is an unsupported layout and is left unnormalized.
+SANDBOX_FLAGS = {'--die-with-parent','--new-session','--unshare-pid','--unshare-ipc','--unshare-uts',
+                 '--unshare-net','--clearenv'}
+SANDBOX_ONE = {'--proc','--dev','--tmpfs','--dir','--chdir'}
+SANDBOX_TWO = {'--ro-bind','--bind','--symlink','--setenv'}
+
+
+def sandbox_path_operands(argv):
+    """Indexes of the execution-path operands: the sources of validated --ro-bind/--bind options.
+
+    Parses the option layout through its '--' delimiter; None when the layout is
+    not exactly understood. Environment values, other options and the command stay verbatim.
+    """
+    if not argv or argv[0]!='bwrap' or '--' not in argv:
+        return None
+    end = argv.index('--')
+    found, i = [], 1
+    while i<end:
+        option = argv[i]
+        if option in SANDBOX_FLAGS:
+            i += 1
+        elif option in SANDBOX_ONE and i+1<end:
+            i += 2
+        elif option in SANDBOX_TWO and i+2<end:
+            if option in ('--ro-bind','--bind'):
+                found.append(i+1)
+            i += 3
+        else:
+            return None
+    return found if i==end else None
+
+
+def canonical_execution(record, identity):
+    """The sealed record with its duration and its own run-directory bind sources masked."""
+    result = dict(record)
+    result['duration_s'] = '<volatile>'
+    argv = list(record['sandbox_argv'])
+    for i in sandbox_path_operands(argv) or ():
+        # Path-component boundary: a sibling such as <identity>-backup stays exact.
+        if argv[i]==identity or argv[i].startswith(identity+'/'):
+            argv[i] = '<run>'+argv[i][len(identity):]
+    result['sandbox_argv'] = argv
+    return result
+
+
+def canonical_containment(text, field, sealed, identity):
+    prefix = CONTAINMENT_PREFIXES[field]+CONTAINMENT_FAILURE
+    if not isinstance(text,str) or not text.startswith(prefix):
+        return text
+    import ast
+    try:
+        embedded = ast.literal_eval(text[len(prefix):])
+    except (ValueError,SyntaxError,MemoryError,RecursionError):
+        return text
+    if embedded!=sealed:
+        return text
+    return {'containment_failure':CONTAINMENT_PREFIXES[field],'execution':canonical_execution(sealed,identity)}
+
+
+def containment_volatility(check, run):
+    """Mask run identity/timing in the identified fields that embed the sealed record."""
+    path = Path(run)/'work'/check.get('id','')/'containment'/'execution.json'
+    if check.get('kind')!='drc' or not path.is_file():
+        return check
+    try:
+        sealed = read_json(path)
+    except ValueError:
+        return check
+    identity = execution_identity(sealed,run,check['id'])
+    if identity is None or not isinstance(sealed.get('duration_s'),(int,float)):
+        return check
+    details = check.get('details')
+    containment = details.get('containment') if isinstance(details,dict) else None
+    if isinstance(containment,dict) and 'reason' in containment:
+        containment['reason'] = canonical_containment(containment['reason'],'reason',sealed,identity)
+    if 'summary' in check:
+        check['summary'] = canonical_containment(check['summary'],'summary',sealed,identity)
+    if isinstance(check.get('limitations'),list):
+        check['limitations'] = [canonical_containment(t,'limitations',sealed,identity) for t in check['limitations']]
+    return check
+
+
+def canonical_check(check, run=None):
+    """Drop only documented execution volatility; keep numerical/locator data.
+
+    ``run`` is the retained run's storage directory, which may differ from the
+    directory it executed in; it only locates the sealed containment record.
+    """
     result = copy.deepcopy(check)
+    if run is not None:
+        result = containment_volatility(result,run)
     for key in ('started_utc','finished_utc','duration_s','candidate_id','run_id'):
         result.pop(key,None)
     if isinstance(result.get('details',{}).get('tool'),dict):
@@ -512,7 +634,7 @@ def check_record(run, check):
             # actual violation geometry, item UUIDs, rule types and values.
             for key in ('date','kicad_version','source'):
                 raw.pop(key,None)
-    record = {'check':canonical_check(check),'native':canonical_native(raw)}
+    record = {'check':canonical_check(check,run),'native':canonical_native(raw)}
     if check['kind']=='drc':
         from .benchmark import parse, children, uid, values
         manifest = read_json(run/'candidate.json')
@@ -840,7 +962,7 @@ def native_delta(observed, control):
     return delta
 
 
-def report(manifest_path, first, second=None):
+def report(manifest_path, first, second=None, judgements=None):
     manifest = load_manifest(manifest_path)
     first = Path(first);request = read_json(first/'request.json')
     if request['manifest_sha256']!=digest(manifest_path) or request['image_id']!=manifest['image_id']:
@@ -930,17 +1052,26 @@ def report(manifest_path, first, second=None):
             'native_witness_differences':witness_differences,
             'same_check_assessments':not assessment_differences,'different_check_assessments':assessment_differences,
             'same_seed_classifications':not classification_differences,'different_seed_classifications':classification_differences,
-            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; preserve exact details/locators/numerical values.',
+            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; '
+                            'in DRC containment reason, summary and limitation text that reproduces the sealed containment '
+                            'record, mask only its duration and the run directory its own binds name; preserve exact '
+                            'details/locators/numerical values.',
             'semantic_basis':'Only DRC unconnected_items witnesses may match semantically: on byte-identical captured boards, '
                              'both runs must name the same native copper islands per net, each as one spanning tree; '
                              'every other field must be exactly equal.'}
-    return {'schema':'agent-ee.benchmark-report/1','synthetic':True,'model_pass':False,
+    result = {'schema':'agent-ee.benchmark-report/1','synthetic':True,'model_pass':False,
         'expectation_commit':request['expectation_commit'],'image_id':request['image_id'],
         'per_kind':counts,'cases':cases,'controls':controls,
         'seeded_detection':{'detected':detected,'all_seeds':len(cases),'evaluated_seeds':evaluated,
             'all_seed_fraction':detected/len(cases),'evaluated_fraction':detected/evaluated if evaluated else None},
         'false_alarms':false_alarms(adjudication,unresolved,counts),'control_adjudication':adjudication,
         'native_visibility':visibility(cases),'rerun':comparison,'limitations':manifest['limitations']}
+    if judgements is not None:
+        # A separate layer: the fixed-rule results above are never changed by it.
+        judged = apply_judgements(manifest_path,first,judgements)
+        result['judged_control_adjudication'] = judged
+        result['judged_false_alarms'] = judged_false_alarms(adjudication,judged)
+    return result
 
 
 # Native library-resolution messages that describe the review sandbox's library
@@ -1055,6 +1186,298 @@ def adjudicate_controls(manifest, first):
     return {'rules':ADJUDICATION_RULES,'per_kind':per_kind,'controls':controls,
         'status':'Deterministic rules only. Unadjudicated records are neither false alarms nor genuine defects; '
                  'a native share bound spans every possible decision of them.'}
+
+
+# Native pin types that drive a net for ERC pin_not_driven (KiCad's driver set);
+# power_pin_not_driven needs a power output (a PWR_FLAG is one).
+DRIVING_PINS = frozenset({'output','power_out','bidirectional','tri_state','passive','open_collector','open_emitter'})
+NATIVE_PIN = re.compile(r'Symbol (\S+) (?:Hidden pin|Pin) (\S+) \[')
+NATIVE_THRESHOLD = re.compile(r'(?:clearance|width|size|height|thickness) ([0-9.]+) mm; actual ([0-9.]+) mm\)')
+NATIVE_NET = re.compile(r'\[([^\]]*)\]')
+
+
+def project_settings(project):
+    """Every scalar setting of a KiCad project file, by dotted path."""
+    flat = {}
+    def walk(node, prefix):
+        if isinstance(node, dict):
+            for key, child in node.items():
+                walk(child, f'{prefix}.{key}' if prefix else key)
+        elif isinstance(node, list):
+            for child in node:
+                if isinstance(child, dict) and isinstance(child.get('name'), str):
+                    walk(child, f'{prefix}.{child["name"]}')
+        else:
+            flat[prefix] = node
+    walk(project, '')
+    return flat
+
+
+def schematic_pins(root):
+    """(reference, pin) -> native electrical type for every placed single-sheet symbol pin."""
+    from .benchmark import children as nodes, one, properties, value, values
+    library = {values(n)[0]: n for n in nodes(one(root, 'lib_symbols'), 'symbol')}
+    types = {}
+    for symbol in nodes(root, 'symbol'):
+        unit = int(value(symbol, 'unit'))
+        for sub in nodes(library[value(symbol, 'lib_id')], 'symbol'):
+            if int(values(sub)[0].rsplit('_', 2)[1]) in (0, unit):
+                for pin in nodes(sub, 'pin'):
+                    types[(properties(symbol)['Reference'], value(pin, 'number'))] = values(pin)[0]
+    return types
+
+
+def control_record_facts(run, check, record):
+    """Facts about one retained native control record, re-derived from its captured inputs.
+
+    Nothing here decides a verdict: it records what the native design files say
+    about the stated condition, the project rule behind it and the review
+    environment, so a judgement ledger can be bound to evidence and re-checked.
+    """
+    from .benchmark import children as nodes, conductor_groups, one, parse, terminals, values, wire_points, xy
+    run = Path(run);kind = check['kind']
+    candidate = read_json(run/'candidate.json')['scope']
+    subject = run/'inputs'/candidate['schematic' if kind=='erc' else 'board']
+    projects = sorted(subject.parent.glob('*.kicad_pro'))
+    if len(projects)!=1:
+        raise ValueError('control record facts need exactly one captured project file')
+    project = json.loads(projects[0].read_text())
+    settings = project_settings(project)
+    severities = (project['erc'] if kind=='erc' else project['board']['design_settings']).get('rule_severities',{})
+    text = subject.read_text()
+    facts = {'type':record['type'],'severity':record['severity'],'project_severity':severities.get(record['type']),
+             'excluded':record.get('excluded') is True,
+             'items':[{'description':i['description'],'in_native_file':'"'+i['uuid']+'"' in text} for i in record['items']]}
+    if not record['items']:
+        # A native marker without items: KiCad restores the project's stored
+        # exclusions. Record whether any stored exclusion of this type still
+        # names an item of the design.
+        stored = (project['erc'].get('erc_exclusions',[]) if kind=='erc' else
+                  project['board']['design_settings'].get('drc_exclusions',[]))
+        # Stored form: type|x|y|item uuid|item uuid|sheet path|sheet path|
+        facts['stored_exclusions'] = [{'items_in_native_file':['"'+u+'"' in text for u in e.split('|')[3:5]
+                                                               if u.strip('0-')]}
+            for e in stored if e.split('|',1)[0]==record['type']]
+    elif kind=='erc':
+        root = parse(text)
+        if record['type'] in ('power_pin_not_driven','pin_not_driven','pin_not_connected'):
+            groups = conductor_groups(root);types = schematic_pins(root)
+            pin = NATIVE_PIN.match(record['items'][0]['description'])
+            key = (pin.group(1),pin.group(2))
+            members = sorted(groups[key]);others = [m for m in members if m!=key]
+            no_connect = {xy(one(n,'at')) for n in nodes(root,'no_connect')}
+            facts['pin'] = {'reference':key[0],'number':key[1],'type':types[key],
+                            'no_connect_flag':terminals(root)[0][key] in no_connect}
+            facts['conductor'] = [{'reference':r,'number':n,'type':types[(r,n)]} for r,n in others]
+            facts['condition_holds'] = {
+                'power_pin_not_driven': not any(types[m]=='power_out' for m in others),
+                'pin_not_driven': not any(types[m] in DRIVING_PINS for m in others),
+                'pin_not_connected': not others and not facts['pin']['no_connect_flag']}[record['type']]
+        elif record['type']=='endpoint_off_grid':
+            grid = round(settings.get('schematic.connection_grid_size',50.0)*0.0254,6)
+            pins = terminals(root)[0];wires = {}
+            for wire in nodes(root,'wire'):
+                wires[values(one(wire,'uuid'))[0]] = wire_points(wire)
+            def off(p):
+                return any(abs(v/grid-round(v/grid))>1e-6 for v in p)
+            # Each item is a pin (its connection point) or a wire (either end).
+            endpoints = []
+            for item in record['items']:
+                pin = NATIVE_PIN.match(item['description'])
+                points = ([pins[(pin.group(1),pin.group(2))]] if pin else list(wires.get(item['uuid'],())))
+                endpoints.append([list(p) for p in points])
+            facts['grid_mm'] = grid
+            facts['native_endpoints'] = endpoints
+            facts['condition_holds'] = all(points and any(off(p) for p in points) for points in endpoints)
+    else:
+        threshold = NATIVE_THRESHOLD.search(record['description'])
+        if threshold and record['items']:
+            required = float(threshold.group(1))
+            facts['required_mm'], facts['actual_mm'] = required, float(threshold.group(2))
+            facts['required_from_project'] = sorted(k for k,v in settings.items()
+                if RULE_SETTINGS.get(record['type'],re.compile('$^')).fullmatch(k)
+                and isinstance(v,(int,float)) and not isinstance(v,bool) and abs(v-required)<5e-5)
+        facts['item_nets'] = [m.group(1) for i in record['items'] for m in [NATIVE_NET.search(i['description'])] if m]
+        faces = set()
+        for item in record['items']:
+            at = text.find('"'+item['uuid']+'"')
+            if at>=0:
+                start = max(text.rfind('\n\t(',0,at),text.rfind('\n\t\t(',0,at))
+                faces |= set(re.findall(r'\(face "([^"]+)"\)',text[start:text.find('\n\t)',at)]))
+        substituted = font_substitutions(run,check['id'])
+        facts['font_faces'] = sorted(faces)
+        facts['font_substituted'] = sorted(f for f in faces if f in substituted)
+        facts.update(board_record_facts(record,parse(text),run/'inputs'/candidate['schematic']))
+    return facts
+
+
+# Project settings that can supply a native DRC threshold, by rule type.
+RULE_SETTINGS = {
+    'clearance':re.compile(r'board\.design_settings\.rules\.min_clearance|net_settings\.classes\.[^.]+\.clearance'),
+    'copper_edge_clearance':re.compile(r'board\.design_settings\.rules\.min_copper_edge_clearance'),
+    'hole_clearance':re.compile(r'board\.design_settings\.rules\.min_hole_clearance'),
+    'hole_to_hole':re.compile(r'board\.design_settings\.rules\.min_hole_to_hole'),
+}
+
+
+def board_record_facts(record, board, schematic):
+    """Direct native-file facts for DRC record types whose condition is a plain attribute."""
+    from .benchmark import children as nodes, one, parse, properties, values
+    def find(node, uuid, chain=()):
+        if isinstance(node.items,list):
+            for child in node.items:
+                if isinstance(child.items,list) and child.items and values(child)[:1]==[uuid] and \
+                        child.items[0].items=='uuid':
+                    return chain+(node,)
+                found = find(child,uuid,chain+(node,))
+                if found:
+                    return found
+        return None
+    facts = {}
+    kind = record['type']
+    if kind in ('footprint_symbol_mismatch','extra_footprint'):
+        chain = find(board,record['items'][0]['uuid'])
+        footprint = chain[-1]
+        reference = properties(footprint)['Reference']
+        symbols = [n for n in nodes(parse(schematic.read_text()),'symbol')
+                   if properties(n).get('Reference')==reference]
+        facts['footprint'] = {'reference':reference,
+            'attr':values(one(footprint,'attr')) if nodes(footprint,'attr') else []}
+        facts['symbols'] = [{f:values(one(n,f))[0] for f in ('in_bom','on_board','dnp') if nodes(n,f)} for n in symbols]
+        if kind=='extra_footprint':
+            facts['condition_holds'] = not symbols and 'board_only' not in facts['footprint']['attr']
+        elif 'bill of materials' in record['description']:
+            facts['condition_holds'] = len(symbols)==1 and \
+                (facts['symbols'][0].get('in_bom')=='yes')==('exclude_from_bom' in facts['footprint']['attr'])
+    elif kind=='mirrored_text_on_front_layer':
+        chain = find(board,record['items'][0]['uuid'])
+        text = chain[-1]
+        justify = [values(j) for e in nodes(text,'effects') for j in nodes(e,'justify')]
+        facts['text_layer'] = values(one(text,'layer'))[0]
+        facts['mirrored'] = any('mirror' in j for j in justify)
+        facts['condition_holds'] = facts['text_layer'].startswith('F.') and facts['mirrored']
+    elif kind=='invalid_outline':
+        # Edge.Cuts line ends that meet no other line end and no rectangle corner.
+        def corners(node):
+            return tuple(float(v) for v in values(one(node,'start'))), tuple(float(v) for v in values(one(node,'end')))
+        edge = [n for n in nodes(board,'gr_line')+nodes(board,'gr_rect') if values(one(n,'layer'))[0]=='Edge.Cuts']
+        ends, fixed = [], []
+        for node in edge:
+            a, b = corners(node)
+            if node.items[0].items=='gr_line':
+                ends += [a,b]
+            else:
+                fixed += [a,b,(a[0],b[1]),(b[0],a[1])]
+        def same(p, q):
+            return abs(p[0]-q[0])<1e-6 and abs(p[1]-q[1])<1e-6
+        loose = sorted({e for e in ends if sum(same(e,o) for o in ends)==1 and not any(same(e,c) for c in fixed)})
+        facts['open_outline_ends'] = [list(e) for e in loose]
+        facts['condition_holds'] = bool(loose)
+    return facts
+
+
+JUDGEMENT_SCHEMA = 'agent-ee.benchmark-control-judgements/1'
+JUDGED_VERDICTS = ('genuine','false_alarm','unadjudicated')
+
+
+def open_control_facts(manifest, first):
+    """Facts for every control record the fixed rules leave unadjudicated."""
+    if not isinstance(manifest,dict):
+        manifest = load_manifest(manifest)
+    first = Path(first)
+    adjudication = adjudicate_controls(manifest,first)
+    rows = []
+    for control in adjudication['controls']:
+        run = first/'runs'/control['id'];result = read_json(run/'result.json')
+        checks = {c['id']:c for c in result['checks']}
+        records = {}
+        for row in control['records']:
+            if row['verdict']!='unadjudicated':
+                continue
+            check = checks[row['check_id']]
+            if check['id'] not in records:
+                records[check['id']] = {locator:record for _,locator,record,_ in native_control_rows(run,check)[1]}
+            facts = control_record_facts(run,check,records[check['id']][row['raw_locator']])
+            rows.append({'control':control['id'],'check_id':row['check_id'],'kind':row['kind'],
+                'raw_locator':row['raw_locator'],'type':row['type'],'location_hash':row['location_hash'],
+                'facts':facts,'facts_sha256':identity(facts)})
+    return rows
+
+
+def apply_judgements(manifest_path, first, ledger):
+    """A separate, judged layer over the fixed-rule adjudication.
+
+    Each ledger entry binds a verdict to one open record by its location hash
+    (item-less markers by their facts) and the SHA-256 of facts re-derived from
+    the retained run. A stale, unknown or duplicate entry is refused. The fixed-rule results are
+    returned unchanged; records without an entry stay unadjudicated.
+    """
+    ledger = read_json(ledger) if not isinstance(ledger,dict) else ledger
+    if ledger.get('schema')!=JUDGEMENT_SCHEMA:
+        raise ValueError('expected a control judgement ledger')
+    request = read_json(Path(first)/'request.json')
+    if ledger['manifest_sha256']!=digest(manifest_path) or ledger['image_id']!=request['image_id']:
+        raise ValueError('judgement ledger names another manifest or image')
+    return judge_controls(load_manifest(manifest_path),first,ledger)
+
+
+def judgement_key(row):
+    """Located records match by location hash, item-less markers by their facts: never by array position.
+
+    Native record order is incidental and differs between runs; the raw locator
+    is kept in the ledger only as a reference into the run it was judged from.
+    """
+    return (row['control'],row['check_id'],row['location_hash'] or 'item-less:'+row['facts_sha256'])
+
+
+def judge_controls(manifest, first, ledger):
+    """apply_judgements after its manifest and image identity checks."""
+    entries, seen = {}, set()
+    for entry in ledger['judgements']:
+        reference = (entry['control'],entry['check_id'],entry['raw_locator'])
+        if reference in seen:
+            raise ValueError('duplicate judgement: '+'/'.join(reference))
+        seen.add(reference)
+        if entry['verdict'] not in JUDGED_VERDICTS or entry['basis'] not in ledger['bases'] or not entry.get('reason'):
+            raise ValueError('judgement needs a known verdict, a declared basis and a reason')
+        if ledger['bases'][entry['basis']]['verdict']!=entry['verdict']:
+            raise ValueError('judgement verdict contradicts its basis')
+        # Identical native records share a key; each consumes one entry.
+        entries.setdefault(judgement_key(entry),[]).append(entry)
+    per_kind, rows = {}, []
+    for row in open_control_facts(manifest,first):
+        key = judgement_key(row)
+        entry = entries[key].pop(0) if entries.get(key) else None
+        tally = per_kind.setdefault(row['kind'],{'open_records':0,'genuine':0,'false_alarm':0,'unadjudicated':0,
+                                                  'unjudged':0,'by_basis':{}})
+        tally['open_records'] += 1
+        if entry is None:
+            tally['unjudged'] += 1;tally['unadjudicated'] += 1
+            continue
+        for field in ('type','facts_sha256'):
+            if entry[field]!=row[field]:
+                raise ValueError(f'stale judgement ({field}): '+'/'.join(map(str,key)))
+        tally[entry['verdict']] += 1
+        tally['by_basis'][entry['basis']] = tally['by_basis'].get(entry['basis'],0)+1
+        rows.append({**{k:row[k] for k in ('control','check_id','kind','raw_locator','type')},
+                     'verdict':entry['verdict'],'basis':entry['basis']})
+    left = [e for group in entries.values() for e in group]
+    if left:
+        raise ValueError('judgement names no open control record: '+'/'.join(
+            (left[0]['control'],left[0]['check_id'],left[0]['raw_locator'])))
+    return {'adjudicator':ledger['adjudicator'],'provenance':ledger['provenance'],'per_kind':per_kind,'records':rows}
+
+
+def judged_false_alarms(adjudication, judged):
+    """Native false-alarm shares after the judged layer, kept beside the fixed-rule bounds."""
+    rows = {}
+    for kind,tally in judged['per_kind'].items():
+        fixed = adjudication['per_kind'][kind]
+        n = fixed['records'];fa = fixed['false_alarm']+tally['false_alarm'];open_ = tally['unadjudicated']
+        rows[kind] = {'records':n,'false_alarm':fa,'fixed_rule_false_alarm':fixed['false_alarm'],
+            'judged_false_alarm':tally['false_alarm'],'judged_genuine':tally['genuine'],'unadjudicated':open_,
+            'share':fa/n if n and not open_ else None,'share_bounds':[fa/n,(fa+open_)/n] if n else None}
+    return rows
 
 
 def visibility(cases):

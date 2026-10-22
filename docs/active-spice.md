@@ -170,6 +170,78 @@ or redistribution rights. Third-party models/designs must remain outside the
 repository until the owner authorizes publication. The committed synthetic model
 does not satisfy vendor-model acceptance by itself.
 
+## Vendor model qualification
+
+`scripts/qualify_vendor_spice.py` qualifies one captured vendor op-amp model
+against the owned control circuit without bringing the vendor bytes into the
+repository. A manifest (`agent-ee.vendor-spice-manifest/1`) names the vendor,
+part and source, maps every model file's relative path to its SHA-256, and
+declares the subcircuit, the explicit map from the owned symbol pins (3 IN+,
+2 IN-, 7 V+, 4 V-, 6 OUT) to header formals, the supplies (default +/-15 V) and
+the dialect. Pin order is never inferred.
+
+```sh
+PYTHONPATH=src python3 scripts/qualify_vendor_spice.py MANIFEST MODEL_DIR --out NEW_PRIVATE_DIR
+```
+
+`MODEL_DIR` is resolved once and read exactly once. Before any file is copied,
+every component of the resolved `MODEL_DIR` is opened from `/`, each relative to
+its already-open parent with `O_PATH | O_DIRECTORY | O_NOFOLLOW`, and those
+root and ancestor descriptors stay open for the whole closure. Each declared
+file is then opened relative to the pinned root descriptor (never by pathname),
+every component of its relative path with `O_NOFOLLOW`, so a link anywhere on
+the path refuses instead of being followed. The file is read once into a
+private read-only `snapshot/` under the output directory, then every component
+name is looked up again in its pinned parent and must still be the same
+unlinked directory or file, and the hash of exactly the copied bytes is
+compared with the manifest. The root and its ancestors are checked against
+their original device and inode before and after every file and once more
+before the closure is accepted, so a model root renamed and replaced between
+copies, by a link or by a lookalike directory with identical bytes, refuses. A
+missing, linked, non-regular or changed file
+(including one whose inode, size or modification time moves while it is
+copied), or an ancestor directory renamed, replaced or linked while the closure is
+read, refuses; the partial snapshot is removed and no receipt is written. The parse and every scenario are
+derived from that verified snapshot only; each scenario source rechecks the
+snapshot bytes, so a later change to the live directory cannot reach a run. The
+closure is parsed with the same `capture_models` policy as the check; a refused
+closure (unsupported dialect, non-ASCII text, unsafe directive) or a pin map
+whose formals differ from the actual header is recorded as unqualified with the
+reason, and no scenario runs. Otherwise six real active_spice runs go through
+capture, the native netlist, sandboxed ngspice and the evidence seal:
+
+| Scenario | Mutation | Required status |
+| --- | --- | --- |
+| `control` | none: follower of the owned 10 kohm / 100 nF low-pass | `ok/pass` against the owned bounds around the analytic response (63.2 mV at 1 ms, 0.847 V/V at 100 Hz) |
+| `seeded` | 10 kohm changed to 100 kohm | `ok/defect` |
+| `missing_model` | a second populated part without a model | `unsupported/unknown` |
+| `invalid_formal` | pin 3 mapped to a nonexistent formal | `unsupported/unknown` |
+| `unsafe_directive` | `.control` block appended to a copy of each root model | `unsupported/unknown`, before any ngspice invocation |
+| `solver_failure` | a second, conflicting supply source | `failed/unknown` |
+
+After each run the candidate snapshot is reverified and its captured
+`design/vendor/` hashes are compared with the verified hashes and recorded as
+the scenario's `model_binding`. The `unsafe_directive` roots must equal the
+verified bytes plus exactly the declared appended `.control` block (its hash and
+the mutated roots are recorded); every other file and scenario must equal the
+verified bytes. The model is qualified only if every scenario returns exactly
+its required status and binds the verified bytes; an unbound capture is never
+credited, even when its status matches. The receipt
+(`agent-ee.vendor-spice-receipt/1`) records the manifest and model hashes,
+header locator, metrics, deck hashes, ngspice hash, each scenario's model
+binding and evidence-seal hash; it contains no model text. The private output
+directory does keep copies of the model in `snapshot/` and inside each run and is never a
+publication artifact. Qualification covers only these declared conditions at
+the declared supplies and 25 C; it says nothing about the model's accuracy
+elsewhere; the bounds exercise a unity-gain follower at low frequency only.
+
+[`fixtures/active-spice/vendor-qualifications.json`](../fixtures/active-spice/vendor-qualifications.json)
+is the tracked record: hashes and receipt hashes only. A `qualified` entry needs
+model file hashes and a receipt hash; an `unqualified` entry needs a reason. The
+TI OPA197 capture behind the AGENTEE-19 scenario report is recorded as
+unqualified: its bytes, hashes and receipts were not retained, so the report
+cannot be rerun or bound. Publication of vendor files stays behind AGENTEE-118.
+
 ## Scope/3 coverage
 
 The executable-coverage audit validates the active-SPICE declaration and its

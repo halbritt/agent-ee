@@ -1085,6 +1085,48 @@ def captured_board(capture, ref, turns):
     return turned
 
 
+NATIVE_PARTS = {
+    # Original copper only: no arcs or rounded anchors, so native tessellation cannot differ by pose.
+    # 'L' is chiral (its mirror image is a different shape); 'plus' is achiral (mirror symmetric both ways).
+    'L': ((-1, -1), (2, -1), (2, 0), (0, 0), (0, 1), (-1, 1)),
+    'plus': ((-1, -0.25), (-0.25, -0.25), (-0.25, -1), (0.25, -1), (0.25, -0.25), (1, -0.25), (1, 0.25),
+             (0.25, 0.25), (0.25, 1), (-0.25, 1), (-0.25, 0.25), (-1, 0.25)),
+}
+
+
+def native_custom_board(shape):
+    """A saved board text with one footprint carrying custom copper pad 1, one rect pad 2 and a courtyard."""
+    pts = ' '.join(f'(xy {x} {y})' for x, y in NATIVE_PARTS[shape])
+    return f'''(kicad_pcb (version 20260206) (generator "pcbnew")
+      (general (thickness 1.6))
+      (layers (0 "F.Cu" signal) (2 "B.Cu" signal)
+        (31 "F.CrtYd" user "F.Courtyard") (29 "B.CrtYd" user "B.Courtyard"))
+      (setup (pad_to_mask_clearance 0))
+      (footprint "Owned:Custom" (layer "F.Cu") (at 10 10)
+        (property "Reference" "U1" (at 0 -2) (layer "F.Cu"))
+        (fp_rect (start -3 -2) (end 3 2) (stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd"))
+        (pad "1" smd custom (at 0 0) (size 0.2 0.2) (layers "F.Cu")
+          (zone_connect 2) (options (clearance outline) (anchor rect))
+          (primitives (gr_poly (pts {pts}) (width 0) (fill yes))))
+        (pad "2" smd rect (at 0 1.5) (size 0.4 0.4) (layers "F.Cu"))))'''
+
+
+def native_capture(directory, shape, side, turns, position_mm=(10, 20)):
+    """The footprint of native_custom_board as pcbnew flips (B), turns and saves it, then extracts it."""
+    import pcbnew as k
+    from agent_ee.placement_probe import extract
+    path = Path(directory) / f'{shape}-{side}-{turns}.kicad_pcb'
+    path.write_text(native_custom_board(shape))
+    native = k.LoadBoard(str(path))
+    fp = next(iter(native.GetFootprints()))
+    if side == 'B':
+        fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+    fp.SetOrientationDegrees(90 * turns)
+    fp.SetPosition(k.VECTOR2I(int(position_mm[0] * MM), int(position_mm[1] * MM)))
+    k.SaveBoard(str(path), native)
+    return extract(path)['footprints'][0]
+
+
 class CanonicalIdentityTests(unittest.TestCase):
     """AGENTEE-370: land-pattern and courtyard identity do not depend on the captured pose."""
 
@@ -1133,6 +1175,82 @@ class CanonicalIdentityTests(unittest.TestCase):
         self.assertEqual(self.identity(copper)[1], courtyard)
         side = asymmetric('B')
         self.assertNotEqual(self.identity(side), (pads, courtyard))
+
+    def test_canonical_ring_beyond_relabeling(self):
+        """AGENTEE-429: the canonicaliser only relabels; it never merges, drops, sorts or shifts a vertex."""
+        # An empty ring and a single vertex are left as they are.
+        self.assertEqual(blocks.canonical_ring([]), [])
+        self.assertEqual(blocks.canonical_ring([[5, 5]]), [[5, 5]])
+        # Repeated vertices and collinear vertices are geometry, not noise: each survives, the ring is only relabeled.
+        repeated = [[0, 0], [2, 0], [2, 0], [2, 2], [0, 2]]
+        collinear = [[0, 0], [1, 0], [2, 0], [2, 2], [0, 2]]
+        for ring in (repeated, collinear):
+            relabeled = {json.dumps(blocks.canonical_ring(run[i:] + run[:i]))
+                         for run in (ring, ring[::-1]) for i in range(len(ring))}
+            self.assertEqual(len(relabeled), 1, relabeled)
+            self.assertEqual(sorted(json.loads(next(iter(relabeled)))), sorted(ring))
+        self.assertNotEqual(blocks.canonical_ring(repeated), blocks.canonical_ring([[0, 0], [2, 0], [2, 2], [0, 2]]))
+        self.assertNotEqual(blocks.canonical_ring(collinear), blocks.canonical_ring([[0, 0], [2, 0], [2, 2], [0, 2]]))
+        # Negative coordinates, and a ring whose smallest vertex appears twice (a pinched ring), still pick one start.
+        pinched = [[-3, -3], [0, 0], [-3, -3], [0, 4], [-4, 4]]
+        starts = {json.dumps(blocks.canonical_ring(run[i:] + run[:i]))
+                  for run in (pinched, pinched[::-1]) for i in range(len(pinched))}
+        self.assertEqual(len(starts), 1, starts)
+        # Reflection is not a relabeling: a mirrored ring stays a different ring.
+        ring = [[0, 0], [4, 0], [4, 1], [1, 1], [1, 3], [0, 3]]
+        mirror = [[-x, y] for x, y in ring]
+        self.assertNotEqual(json.dumps(blocks.canonical_ring(ring)), json.dumps(blocks.canonical_ring(mirror)))
+        # A ring set is a set: its order is not geometry, and a duplicated ring is.
+        rings = [ring, [[10, 10], [11, 10], [11, 11]]]
+        self.assertEqual(blocks._rings(rings), blocks._rings(rings[::-1]))
+        self.assertNotEqual(blocks._rings(rings), blocks._rings(rings + [rings[0]]))
+
+    def test_side_alone_separates_the_identity_of_an_achiral_part(self):
+        """AGENTEE-429: the side is part of both identities; no chirality is needed to see it."""
+        fp = footprint('U1', 10, 10, 'Owned:Square', {'1': 'A', '2': 'B'})
+        fp['courtyards'] = {'F': {'status': 'proven', 'polygons': [[[9 * MM, 9 * MM], [11 * MM, 9 * MM],
+                                                                   [11 * MM, 11 * MM], [9 * MM, 11 * MM]]]}}
+        flipped = copy.deepcopy(fp)
+        flipped['side'] = 'B'  # layers and courtyard keys stay exactly as they were: only the side differs
+        self.assertNotEqual(blocks.pad_geometry_sha256(fp), blocks.pad_geometry_sha256(flipped))
+        self.assertNotEqual(blocks.courtyard_sha256(fp), blocks.courtyard_sha256(flipped))
+        self.assertEqual(blocks._local(fp)[0]['side'], 'F')
+        self.assertEqual(blocks._local(flipped)[1]['side'], 'B')
+
+    def test_native_achiral_part_is_separated_by_side_alone(self):
+        """AGENTEE-429: a mirror-symmetric native custom pad on F and B differs only by side."""
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        with tempfile.TemporaryDirectory(prefix='agent-ee-achiral-identity-') as tmp:
+            front = {t: native_capture(tmp, 'plus', 'F', t) for t in range(4)}
+            back = {t: native_capture(tmp, 'plus', 'B', t) for t in range(4)}
+            ident = lambda fp: (blocks.pad_geometry_sha256(fp), blocks.courtyard_sha256(fp))
+            for t in range(4):
+                self.assertEqual((front[t]['side'], back[t]['side']), ('F', 'B'))
+                self.assertEqual(ident(front[t]), ident(front[0]))
+                self.assertEqual(ident(back[t]), ident(back[0]))
+            # The cross is achiral: its merged copper ring is the same set of vertices on both sides.
+            ring = lambda fp: blocks.canonical_ring(fp['pads'][0]['custom_geometry']['merged_polygons_nm'][0])
+            local = lambda fp: blocks.canonical_ring(
+                [[x - fp['pads'][0]['position_nm'][0], y - fp['pads'][0]['position_nm'][1]] for x, y in ring(fp)])
+            self.assertEqual(local(front[0]), local(back[0]))
+            self.assertNotEqual(ident(front[0])[0], ident(back[0])[0])
+            self.assertNotEqual(ident(front[0])[1], ident(back[0])[1])
+            # Give the back part the front part's layers, courtyard key, pad 2 position and drawn primitives
+            # (the flip mirrors those, which is chirality of the incidental pad, not of the cross). Its merged
+            # copper is already the front's, so the side is the only thing left to tell the two apart.
+            same = copy.deepcopy(back[0])
+            for p, f in zip(same['pads'], front[0]['pads']):
+                p.update(layers=list(f['layers']), position_nm=list(f['position_nm']))
+            same['pads'][0]['custom_geometry']['primitives'] = front[0]['pads'][0]['custom_geometry']['primitives']
+            same['courtyards'] = copy.deepcopy(front[0]['courtyards'])
+            self.assertNotEqual(blocks.pad_geometry_sha256(same), blocks.pad_geometry_sha256(front[0]))
+            same['side'] = 'F'
+            self.assertEqual(blocks.pad_geometry_sha256(same), blocks.pad_geometry_sha256(front[0]))
+            self.assertEqual(blocks.courtyard_sha256(same), blocks.courtyard_sha256(front[0]))
+            same['side'] = 'B'
+            self.assertNotEqual(blocks.pad_geometry_sha256(same), blocks.pad_geometry_sha256(front[0]))
+            self.assertNotEqual(blocks.courtyard_sha256(same), blocks.courtyard_sha256(front[0]))
 
 
 class MatchingTests(Fixture, unittest.TestCase):

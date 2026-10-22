@@ -478,7 +478,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`5f1c072` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+`b577449` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -993,12 +993,22 @@ PCB, cross-analysis and EMC analyzers offline in the sandbox. It requires a
 scope/2 or scope/3 baseline and exactly `installation`, `installation_sha256`
 and `dispositions` parameters. The installation pin follows the existing
 `kicad_happy` inventory. `dispositions` is a captured immutable requirement file
-using `agent-ee.happy-dispositions/1`; every warning finding ID requires its own
+using `agent-ee.happy-dispositions/1`; every warning or assumption-bearing finding ID requires its own
 record with `disposition: accepted_risk|false_positive`, `rationale` and
 `recorded_by`. No disposition can waive an error.
 
-Any error or warning without an exact-ID disposition is `ok/defect`. Valid
-reports with no errors and every warning dispositioned are `ok/pass`; unknown,
+The AC4 false-positive regression reconstructs its proposed analyzer from a
+retained MIT patch against the verified pinned installation and verifies the
+resulting identity; it requires no host-only correction checkout or Git objects.
+The installed v2.3.1 limitations remain blocking; see the
+[limitation record](happy-severity-gate.md#known-analyzer-limitations-pinned-231).
+
+Every error is `ok/defect`. A warning, or any severity with nonempty native
+`assumptions` or `source_path: assumed`, is also a defect without an exact-ID
+disposition. Assumption-bearing info accepts dispositions; plain info does not
+and its dispositions stay unused. `undispositioned_warning_ids` includes both
+warnings and assumptions. Valid reports with no errors and every warning and
+assumption dispositioned are `ok/pass`; unknown,
 missing or malformed analyzer output stays unknown. The exact disposition bytes,
 raw reports and normalized native/disposition pointers are cited and sealed;
 preflight and public `verify` recheck the installed pin. Scope/3 predicates are
@@ -1006,7 +1016,9 @@ preflight and public `verify` recheck the installed pin. Scope/3 predicates are
 See the [schema, failure boundaries and original fixtures](happy-severity-gate.md).
 Thermal and SPICE are excluded from this kind. Existing `kicad_happy` stages and
 policy are unchanged. This is a severity policy over emitted findings, not
-complete analyzer rule coverage or electrical/EMC certification.
+complete analyzer rule coverage or electrical/EMC certification. Pinned 2.3.1
+PP-001 and PR-001 have [known false positives](happy-severity-gate.md#known-analyzer-limitations-pinned-231)
+that stay blocking errors until a requalified pin replaces them.
 
 ## Hardware interface invariants
 
@@ -1155,9 +1167,10 @@ raw EasyEDA geometry and KiCad library members. The check retains native
 extraction and bounded overlap evidence through the coordinator seal; missing
 or unsupported geometry cannot pass. See the [contract and qualification](land-pattern.md)
 for exact parameters, pin-number comparisons and coverage limits. The actual
-C11702/0402 comparison does not meet the requested 0.98 threshold. The absolute
-threshold is the only acceptance rule. Any other acceptance criterion for that
-pair is an owner decision.
+C11702/0402 comparison is a `low_accuracy` defect at IoU about 0.67. A
+coordinator ruling (2026-10-22) amended the ticket's acceptance example to
+match; see the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).
+The absolute threshold is the only acceptance rule.
 
 ## Footprint and catalog package names
 
@@ -1309,6 +1322,8 @@ check is acceptance evidence for it until the owner confirms the limit.
 matches the envelope reference and contains a source-verified stackup declaration.
 Saved layer thicknesses use the profile's explicit exact matching tolerance;
 nominal copper weights come from the cited declaration, with no oz-to-mm conversion.
+A profile dielectric recorded as unpublished (`null`) binds the check, but its
+envelope and saved thicknesses are unknown unless another field proves a defect.
 Missing or unverified authority stays unknown and capture refuses it. Each
 `placement` `connector-edge/1` check selects a fixed `reference` and supplies
 `placement:connector-edge/1:<reference>`; a single fixed footprint may omit the
@@ -1330,6 +1345,24 @@ saved-declaration semantics. See the [native envelope contract](board-envelope.m
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.
+An obligation's `coverage` record can [stage](board-envelope.md#staged-obligations)
+it for candidate generation. The record cites bound hole, keepout and
+connector-edge witnesses, plus `outline-containment/1` for declared overhangs.
+Its open qualification items keep `require_qualified` refusing final acceptance.
+The shared [final guard](board-envelope.md#final-acceptance-guard)
+`final_qualification` reads the captured baseline's coverage. While an item is
+open, a review that would satisfy its criteria is `incomplete`, a `fab_package`
+that would pass is `unsupported`/`unknown` with its exports kept as diagnostics,
+and a campaign cannot accept or replay as done. A `connector-edge/1` pass proves
+pose only, not part identity or mating and enclosure fit. Staging is admitted
+only under a reviewed [source contract](board-envelope.md#source-contracts).
+The contract fixes the minimum witnesses and open items, so coverage cannot
+drop them. It also requires the telemetry pod's J1 `part-identity/1` witness,
+taken from the scope's `parts_subset` check over the captured parts manifest
+and footprint, with the complete manifest passing `qualify_manifest`. The
+`corner-holes` witnesses are the source holes H1–H4 by identity. The final
+guard verifies the candidate identity and baseline before it reads the scope's
+envelope declaration.
 
 `component-height/1` binds the optional envelope `max_component_height_mm` field
 and supplies `envelope:component-height/1`. It grades every native footprint from
@@ -1344,6 +1377,27 @@ An optional `package_map` (AGENTEE-274) makes a DigiKey package that differs
 from the footprint a defect, and an unmapped one unknown. See
 [component height](board-envelope.md#component-height) for parameter contracts,
 source applicability, model transform qualification and AGENTEE-209.
+
+`tht-thickness-fit/1` (AGENTEE-448) adds a captured immutable `thickness_fit`
+declaration and supplies `envelope:tht-thickness-fit/1`. It grades each declared
+through-hole part against the envelope's NOMINAL board thickness. Each part
+cites the manufacturer's recommended nominal thickness, and may add explicit hard
+limits or a wider documented fit range. Two tolerances are involved and are
+never conflated. The fabricator's finished-thickness tolerance
+(`finished_thickness_tolerance`) bounds the board the fab delivers and is never
+read as component fit. The component-side fit band uses, per side, the explicit
+hard limit if there is one. Otherwise it uses the default +/-10% screening band
+around the recommendation (inclusive, exact), widened on that side by a
+documented fit range that reaches further. A documented range never narrows the
+band; only an explicit hard limit can. Inside passes; the default band
+reports `screened (default +/-10% component fit)`. Outside an explicit hard
+limit is a defect. Outside the widened screening band is
+advisory: unknown, needing feature geometry or evidence, never a rejection. A
+mix of defects and unknowns reports unknown, keeps every defect in
+`defects` and names each defect in the summary before the unknown reasons. An uncited declaration is refused. A part not bound to one installed PTH footprint
+of the declared part number is unknown. Undeclared parts and every other
+criterion are unchanged. See
+[through-hole thickness fit](board-envelope.md#through-hole-thickness-fit).
 
 ## Assembly and test access
 
@@ -1398,9 +1452,19 @@ admitted regardless of stock only for an exact identity listed in the scope's
 exact quote. The whole cited Markdown unit must name that identity outside
 every conditional clause. A conditional or ambiguous statement, such as
 NEO-M9N "if unstocked", refuses the run. The identity still needs a fresh,
-known-stock catalog row. See the
-[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations) and
-[owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy).
+known-stock catalog row. When the owner text names only a part category ("the
+AMPSEAL header"), an optional `selection` chain binds it to the exact identity
+through a mandatory, complete chain of pinned captured sources: a reviewed
+decision (its document hash, line, quote and category equal an entry of the
+closed `REVIEWED_HAND_FIT_SELECTIONS` profile; today only the pod's D-PCB-10), a
+parts-manifest entry pinning that footprint, and the part record the entry
+names. No decision wording is interpreted: any other decision or revised
+decision document, a missing manifest entry or unknown CAD is `unsupported`; a broken link refuses the run; a placed footprint or reference
+other than the decision's is a defect. This is an assembly disposition only; it
+grants no mechanical-fit or purchase approval. See the
+[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations),
+[owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy) and
+[category selection chain](assembly-readiness.md#category-selection-chain).
 
 ## Schematic readability lint
 
@@ -1998,6 +2062,9 @@ on both sides at all quarter turns, contour start/winding relabeling, and all 16
 B-side source/target [library materializations](block-library.md#materialization).
 Moved copper vertices and changed courtyards retain their identity refusals.
 These add coverage without changing any registered check or verdict.
+AGENTEE-429 adds an achiral native fixture so F/B identity separation is asserted
+by side alone, `canonical_ring` cases beyond relabeling, and a native B-side flip
+in the materialization matrix; verdicts are unchanged.
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.

@@ -58,6 +58,8 @@ BARE = re.compile(r'[^\s()";]+')
 XY_WRAP = 99  # Native point-list wrap column (tabs count one), fitted to KiCad 10.0.7 output.
 INSTANCE_FLAGS = (('exclude_from_sim', 'no'), ('in_bom', 'yes'), ('on_board', 'yes'),
                   ('in_pos_files', 'yes'))
+# AGENTEE-444: KiCad's ordinal standard fields; a missing one is written in its slot.
+STANDARD_FIELDS = ('Reference', 'Value', 'Footprint', 'Datasheet')
 # Top-level symbol nodes copied verbatim. Anything else is refused, not dropped.
 SYMBOL_KEYS = frozenset(('power', 'pin_numbers', 'pin_names', 'exclude_from_sim', 'in_bom', 'on_board',
                          'in_pos_files', 'duplicate_pin_numbers_are_jumpers', 'jumper_pin_groups',
@@ -675,17 +677,29 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets,
     instance += [['dnp', 'no'], ['uuid', Q(_uuid(namespace, 'symbol', *key, unit))]]
     values = {**comp.get('part_binding', {}), 'Reference': comp['reference'],
               'Value': comp['value'], 'Footprint': comp['footprint']}
-    written = set()
+    fields, written = [], set()
     for prop in item['properties']:
         if prop[1].startswith('ki_'):
             continue
-        instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation'],
-                                  item.get('fields', {}).get(prop[1])))
+        fields.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation'],
+                                item.get('fields', {}).get(prop[1])))
         written.add(prop[1])
-    for name, value in sorted({**comp.get('part_binding', {}), 'Footprint': comp['footprint']}.items()):
+    missing = {**comp.get('part_binding', {}), 'Footprint': comp['footprint']}
+    # A missing standard field takes its KiCad slot, after the standard fields
+    # the library does carry: ordinal readers (KiBot) take the third field as
+    # the footprint and the fourth as the datasheet, whatever their names.
+    for name in STANDARD_FIELDS[2:]:
+        if name in missing and name not in written:
+            slot = max((i for i, f in enumerate(fields)
+                        if f[1] in STANDARD_FIELDS[:STANDARD_FIELDS.index(name)]), default=-1) + 1
+            fields.insert(slot, _property(['property', Q(name), Q(missing[name]), ['hide', 'yes']],
+                                          missing[name], anchor, item['matrix'], item['rotation']))
+            written.add(name)
+    for name, value in sorted(missing.items()):
         if name not in written:
-            instance.append(_property(['property', Q(name), Q(value), ['hide', 'yes']],
-                                      value, anchor, item['matrix'], item['rotation']))
+            fields.append(_property(['property', Q(name), Q(value), ['hide', 'yes']],
+                                    value, anchor, item['matrix'], item['rotation']))
+    instance += fields
     instance += [['pin', Q(n), ['uuid', Q(_uuid(namespace, 'pin', *key, unit, n))]] for n in item['pin_numbers']]
     instance.append(['instances', ['project', Q(project), ['path', Q(path), ['reference', Q(comp['reference'])],
                                                            ['unit', str(unit)]]]])

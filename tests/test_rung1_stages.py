@@ -350,7 +350,7 @@ class GenerationTest(unittest.TestCase):
             self.assertIsNotNone(stage['review'])
             self.assertIn(stage['graded_design']['applicability'], ('applicable', 'supplied'))
         expected = {'schematic': ['emit-schematic', 'forward-annotate'], 'placement': ['agent-ee-placer'],
-                    'routing': ['kicad-route-krt']}
+                    'routing': ['kicad-route-builtin']}
         for stage in stages[2:stop + 1]:
             if stage['stage'] in expected:
                 self.assertEqual([r['step'] for r in stage['receipts']], expected[stage['stage']])

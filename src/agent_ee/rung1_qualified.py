@@ -62,7 +62,7 @@ OWNED = {
     'schematic': ('schematic_emitter', 'AGENTEE-40'),
     'board_population': ('forward_annotation', 'AGENTEE-52'),
     'placement': ('placement_adapter + placer_runner (agent-ee.placer/1)', 'AGENTEE-91, AGENTEE-54'),
-    'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route 5f1c072)', 'AGENTEE-93'),
+    'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route b577449)', 'AGENTEE-93'),
     'parity': ('netlist_parity check (intent, topology, exactly); fixtures/rc/control as recorded reference',
                'AGENTEE-41, AGENTEE-102'),
     'placement_checks': ('placement check kind (courtyard-overlap/1, outline-containment/1)', 'AGENTEE-92'),
@@ -1087,7 +1087,7 @@ def main(argv=None):
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
     parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
-                        help='kicad-route checkout at the adapter pin 5f1c072 with the owned engine and .venv-krt '
+                        help='kicad-route checkout at the adapter pin b577449 with the owned engine and .venv-krt '
                              '(default: $AGENT_EE_KICAD_ROUTE_CHECKOUT, else /opt/kicad-route)')
     parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',

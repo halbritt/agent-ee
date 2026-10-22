@@ -142,6 +142,13 @@ KiCad 10.0):
   Malformed properties and private mandatory fields (`Reference`, `Value`,
   `Footprint`, `Datasheet`, `Description`), including child overrides, are
   refused with `unsupported_symbol_node`.
+  Instance fields follow the library's property order. A standard field the
+  library symbol lacks (`Footprint`, or a bound `Datasheet`) is written hidden
+  in its KiCad slot, after the library's `Reference`, `Value` and `Footprint`
+  that precede it; other new fields follow in name order. Ordinal readers such
+  as KiBot take the third field as the footprint and the fourth as the
+  datasheet whatever their names, so a custom binding that sorts first (such as
+  `AGENT_EE_Probe`) must not take either slot (AGENTEE-444).
   Missing parents, cycles and replacement graphics/pins fail resolution before
   any output is built. Captured library bytes and source locators stay unchanged.
 - Every connected pin endpoint gets a net label at the exact transformed pin

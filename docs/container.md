@@ -33,7 +33,7 @@ hosted run exposed an AppArmor user-namespace requirement, handled below.
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
-| kicad-route with KRT 0.23.1 | kicad-route `5f1c072b86e0caee82c7656226c4d0e3ec580a58`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
+| kicad-route with KRT 0.23.1 | kicad-route `b5774496d8466b67ffa0362b6665fee2108155a3`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -154,7 +154,7 @@ hash-locked [wheel list](../docker/kicad-route/krt-requirements.txt):
 
 | Input | Pin | Enforcement |
 | --- | --- | --- |
-| kicad-route | Commit `5f1c072b86e0caee82c7656226c4d0e3ec580a58` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
+| kicad-route | Commit `b5774496d8466b67ffa0362b6665fee2108155a3` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
 | Owned routing engine | `src/kicad_route/router/`, including `rust_router/Cargo.lock` and `UPSTREAM.json` | Ships inside the pin; no external KRT acquisition or prebuilt routing module |
 | Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | Existing CPython 3.12 manylinux x86-64 wheel lock, installed with `--require-hashes --only-binary=:all: --no-deps`; exact four distributions verified |
 | Rust toolchain | `rust:1.99.1-slim-bookworm` at the digest in Dockerfile | Digest-pinned image copied into the build stage; exact `rustc` and `cargo` version banners required |
@@ -170,7 +170,7 @@ and forbidden-layer weld fixes tracked in
 [upstream #1291](https://github.com/drandyhaas/KiCadRoutingTools/issues/1291) and
 [upstream #1292](https://github.com/drandyhaas/KiCadRoutingTools/issues/1292).
 `UPSTREAM.json` retains the exact lineage and MIT notices. kicad-route now owns
-this source; `--backend krt` remains the command spelling.
+this source; agent-ee passes the canonical `--backend builtin` (AGENTEE-450).
 
 The final build runs `install.sh verify` without network. It checks the source
 commit and clean tree, existing kicad-route state-manifest schema and drift,
@@ -297,12 +297,16 @@ repository. One job:
    runner: an anonymous clone of the public fome-mc repository at the
    pinned commit, verified before use, and the J1 manufacturer drawing, checked
    against its pinned SHA-256. A mismatch or failed download fails the job.
-4. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
+4. Runs every test module in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
-   a time, with both inputs mounted read-only. This is the required full gate: it fails if any test fails, errors or
-   is skipped, or if any module produces no valid result. Its job summary gives
-   the module and test counts and names every test that did not execute because a
-   [required external input](#required-external-inputs) is absent.
+   a time, with both inputs mounted read-only. Native 3D board render tests run
+   when renderer-related files or the pinned KiCad image inputs changed.
+   GitHub's preceding push commit is the
+   comparison base; manual dispatch, an unknown base, or a dirty checkout runs
+   them. Every selected test must pass without a skip, and every module must
+   produce a valid result. The job summary gives the module and test counts,
+   names render tests omitted by change selection, and names tests that did not
+   execute because a [required external input](#required-external-inputs) is absent.
 5. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
    check and step 6 also run after a failed suite step, so that their own results
    are reported. Any failed step still fails the job.
@@ -323,9 +327,17 @@ runner and only the gate summary reaches the job page.
 
 The shared test harness defaults incidental candidate imaging off with
 `AGENT_EE_SKIP_VISUALS=1`. The candidate-visual and 3D-render modules explicitly
-restore imaging for their tests, including native image/hash checks. This test
-setting does not change production defaults or skip any unittest. See
+restore imaging for their tests, including native image/hash checks. Native 3D
+render tests have explicit markers; the strict runner excludes them before
+execution only when the change selector returns `omit`. This test setting does
+not change production defaults or turn any selected unittest into a skip. See
 [candidate inspection images](pcb-renders.md#candidate-inspection-images-agentee-382).
+
+For an explicit full render regression run, use
+`scripts/strict_suite.py --render-mode run` with the same strict toolchain and external inputs. A local
+change-selected run can use `--render-change-base origin/main`; a missing base
+runs the render tests. Candidate-bound milestone gallery rendering remains a
+separate workflow and is not selected by this regression-test gate.
 
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` is the strict-toolchain contract: toolchain tests
 must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user

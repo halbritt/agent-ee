@@ -36,45 +36,56 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = '5f1c072b86e0caee82c7656226c4d0e3ec580a58'
+PIN = 'b5774496d8466b67ffa0362b6665fee2108155a3'
 # SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
 PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
  'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
+ 'src/kicad_route/__main__.py': 'ae74743797f08c890cf668ae24c08125c899e4b0940873f64352552a2c94351e',
+ 'src/kicad_route/backend_names.py': '584e705ee74e2a1f60066ef5f91ecc6add08b0a9b83ddfc120694a4fe3b967c4',
  'src/kicad_route/barrier.py': 'de34c57c391248c4fdb02fdd9f71d6736edbc15621350be1ff188bc8b217df6c',
+ 'src/kicad_route/baselinecache.py': '3a36d87ddcdc19fdae6c330e51202ca091bf59e4b1ee583a9c8b4ff9c8eb202f',
  'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
- 'src/kicad_route/campaign.py': '5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6',
- 'src/kicad_route/canary.py': '38e56e7bd96f01025f9ca8a3c57d4f902f939723f55f50f214395561c3cbbf1c',
- 'src/kicad_route/cli.py': '5cff5eb1b1e78b1c7ef6917f827cf598542886bf83a24f964dbb67c4929358ab',
- 'src/kicad_route/common.py': 'a42c0258052acc83004e921c139881bd0aa0ac4daa26f268348b04ee8dd2f923',
- 'src/kicad_route/contract.py': '306516b16cc6a55ce62d1915f354c298297bc944f4ae5eccc24a0d49bb83b2b6',
- 'src/kicad_route/corpus.py': 'f63cedc1ec87b37b06c1a717f2eb02ec57af34a659b8f7e9e330eff5736bda14',
+ 'src/kicad_route/campaign.py': 'c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9',
+ 'src/kicad_route/canary.py': '0384d1722889e207fcc544e9df65164920aa3cc153df5228349b42cd690a7243',
+ 'src/kicad_route/cli.py': 'd43569e4d81a4355712d356efec35ec40167f3318c9155c8172792164dcd01b1',
+ 'src/kicad_route/common.py': '4fd09eef7547c947700067975a54e08c8e6b3ed8d3c5ac94cf8ae77e4a593038',
+ 'src/kicad_route/configuration_evidence.py': '08f81a88c9d911d474c45515cad1303bbf7eb6f15438f6c7c278d69c6e075d59',
+ 'src/kicad_route/contract.py': '5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698',
+ 'src/kicad_route/copper_ownership.py': 'bd1e0dd79c62ca654d7133b3f1693e1ac8e1b27c1646ebe6227c71b4bf532b07',
+ 'src/kicad_route/corpus.py': '7ec0dfdd8cd3baf33fc3536f36539af0706a0f21f469ddf8efee4fff100be41d',
  'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
- 'src/kicad_route/determinism.py': '653d6c37b4e69d50cd701223e23c6feb2e8afd5b240b5bdd5a5f4c1146af5778',
- 'src/kicad_route/diff_pairs.py': 'f1d1070ed0acc459d28cbe7397ae7c22b196f5dbb869e751af24e93a3c1b1092',
- 'src/kicad_route/engine.py': '5e2ecaae2ad0b2b4119a2787283e4c319581d154b59d5617b74f205db9914bdb',
- 'src/kicad_route/evidence.py': 'd2f1acb31df60b1874b565c341378b25962570b6c12689d6b029f7e348b96f8b',
+ 'src/kicad_route/determinism.py': 'c05ab76de1e24be3f9eeb66807e1f739ed722025e55b65481d877c56dd683abc',
+ 'src/kicad_route/diff_pairs.py': '6a9025e0d547eb22fe645cb3da5b6887ae650f884238992ca6c568c5477fb708',
+ 'src/kicad_route/engine.py': '4f4451f6356a9b5ba63b01d4e1d97f7490b80deb0a1518e28b29e9ae13c9d1c1',
+ 'src/kicad_route/evidence.py': 'ae818865ecdd317abe9c82129782217817df4ae75548d4b9d85b08cda3b99881',
+ 'src/kicad_route/experiment_policy.py': '575e7aef8a2ba825ef05211603b16e00c05ebf4439e2976ef0a7884bd330265d',
  'src/kicad_route/floor.py': '2f954a2d1142c4f68d7e2904781f4470c0976af925a0a91c31c8de26d4f31ae6',
+ 'src/kicad_route/installation.py': 'f3aa9698bd2c5b63e8e3933f300c17b8cb59dedca41ee21031f1690eda5e88b7',
  'src/kicad_route/kicad/barrier.py': 'ffeab974f15db240d55c1d3e8a19450d885be7ab33b7f595fdf79c5f6e2409e4',
  'src/kicad_route/kicad/decoupling.py': '498624e3f38485519865bb871a01e3f62fc3a41c9bde80d2966ae3c05f7e88b5',
- 'src/kicad_route/kicad/facts.py': 'cbc90a12bfbbfcb5f9ff4637396992faff128a35a9d13ff494184a5d6e57b316',
+ 'src/kicad_route/kicad/facts.py': 'd47a3fd2eb40518b7beba5457b679b901150c64e3988f86537d67f373bef8c52',
  'src/kicad_route/kicad/locks.py': '5b15d4ddfbec9b7e32a841a16f9c1dd383b043c240a293251737e9cba218800a',
+ 'src/kicad_route/kicad/native_components.py': '071b5624884586e9a8ea83b7b253c292267b352623f58c3291ddd1ae7ec14fb6',
  'src/kicad_route/kicad/pairs.py': '44763bfd3b25871cf9c5b5636d97f4534157920ac83ca755c3d57628638552f9',
  'src/kicad_route/kicad/planes.py': '8498b1566edda7d29631210435669737a22d990df7fbd3c487c92a6827f5f07d',
  'src/kicad_route/kicad/pour.py': 'a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14',
+ 'src/kicad_route/kicad/remove_owned.py': '361c2520af37ee6c7a6d39b66054d2e14ee6e77381defe4d62c5fa93d4ae2dfe',
  'src/kicad_route/kicad/rename_nets.py': 'a51c1767c0ce1d0edf180700a026d695678228d56ece4bab688d9bfd3d23d2a8',
  'src/kicad_route/kicad/specctra.py': '0cd5031726ab48c7b3c2bf1dd3978837574d7452d7a79dda154123acb1aeb9d1',
  'src/kicad_route/kicad/spokes.py': 'c419ea1123a6de2588358aa58d0dfaabd4d5f55d50d559023ce48d2271f12bd9',
- 'src/kicad_route/ledger.py': '37f140a1b6ccbf6c6ffa6724ea8acdf97e404eabd5ddb8c8c264a19cc1e6f752',
+ 'src/kicad_route/ledger.py': '267c90f9c8c54b18cfad68ed00ebe0013018742dac353a43f8e657dfd5eb366d',
+ 'src/kicad_route/native_components.py': 'fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0',
  'src/kicad_route/netnames.py': '731bcf61a909ef2720fd90b074f6cfb991a1c6ea6bea7fecf5ba3cb7fc47304f',
  'src/kicad_route/plane_plan.py': 'fab213cc155347af3c36bda5694b7aa871058c6f8b77eaf52ebd2b209bfb2d80',
- 'src/kicad_route/planes.py': '2adaab4efe91f380723efdf3af913e90dba90453b6db5792f5506b93956d3563',
- 'src/kicad_route/pour.py': '630b957fddeab33d108d634fb0f229f3c1471f80953e971effad27ca33beb2e9',
+ 'src/kicad_route/planes.py': 'ad1e35f16ae34e3efe9accb7dc6505ada6e35431e30dfcca4111ad2df661df61',
+ 'src/kicad_route/pour.py': '1583883ee1682bf0f72d709b1e146384d37b481a423584de9bd564ac18f1b6b7',
  'src/kicad_route/procgroup.py': 'd843c9b334874d0334c5ea0e9a58d83d22581648e915d40f13a6d8c8b595a3d5',
- 'src/kicad_route/provenance.py': 'cf82fd9940086584a8056787ae0ca4fd58ced78ed5737f85b4e5713501add49f',
+ 'src/kicad_route/provenance.py': '0873c67d36c14a71eb9428658bd76d9c073282134eda4f2db0d00b17a161282e',
+ 'src/kicad_route/publication.py': '5affc73aef8c78df071c5a9fbce6184be357b0ab8617dcf171f33e28dd5669fd',
  'src/kicad_route/router/.claude/skills/diagnose-routing-failures/SKILL.md': '0abb55757415b58f1c45aae2b0c9c09368541cb5611c2621e362ef15f5349b14',
  'src/kicad_route/router/.claude/skills/review-routed-board/SKILL.md': '29e7c0e3a11ead24f35e17abf1a1acbca30f8d33d00ba06aca41d4a92c4c0f20',
  'src/kicad_route/router/LICENSE': '6df0be9100e852f1749d2e88df423b0f71cab5bff7af35f749e10cf644911390',
- 'src/kicad_route/router/UPSTREAM.json': 'ce4c0c19523c84c080bb7c6219ec5616910fad95888cc70d5ac10cb5fce36f08',
+ 'src/kicad_route/router/UPSTREAM.json': '073bbeea8dd8b20b396347647949375f6439daa6333f5d1b8567ec268a2d6db9',
  'src/kicad_route/router/VERSION': 'e14c67c5f4dd36234ef4bc5ba5ef48d5d79e27bad4038c9bc8a64714566aa06a',
  'src/kicad_route/router/__init__.py': 'ade21c465d05d47c6c4362de7216e025520a4574f69141d0a70fa5798a0ab551',
  'src/kicad_route/router/build_router.py': 'f462c2c94e93effe0ffe82bb2394822277317f2847a416daf968fd966c465fdb',
@@ -138,7 +149,8 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/bga_fanout/tracks.py': '7f02d835c8e7769c4e24d10775f402d2e8a3a3659a2b2ebd62101582bcd4a0d3',
  'src/kicad_route/router/py_router/bga_fanout/types.py': '812f7cecd8899804b2dad7a97c9ae33e8ac010120faa64da3ffad8a408ed0338',
  'src/kicad_route/router/py_router/bga_fanout/underpad.py': 'a9d98952a04726aebfdb6a561610ec735ee34df33512aa412100c4dce984d540',
- 'src/kicad_route/router/py_router/blocking_analysis.py': '83daa554a378cc337cd92cba8569659f1f00ff9ead65ee61ebac444c3aee3db5',
+ 'src/kicad_route/router/py_router/blocker_resources.py': 'b3846b9a197bf980e8afc10c6ae2e248efd426c941cc3df7631284d239459b3d',
+ 'src/kicad_route/router/py_router/blocking_analysis.py': '654d626e140a29759dfdd061578c918c127319795aeba798bdce98c661044a2c',
  'src/kicad_route/router/py_router/bresenham_utils.py': '0da8a0d9d58a36aa6d5137ba7109ba19ff9dc6fd2e269d154d00663399c9dfd7',
  'src/kicad_route/router/py_router/bus_corridor.py': '951f22a3e22b4304f05335e350ff4af8173202a887ffdd0aff49f98e2613333a',
  'src/kicad_route/router/py_router/bus_detection.py': 'ada6f88d665c00ee4e6935e12f84810e37a1710e6e35194ede205220ba2f069d',
@@ -160,10 +172,12 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/design_rules.py': 'e3e9260afde28bd4d5e8ac42f489826c708be2b28a143ca254360c2e9b0031ff',
  'src/kicad_route/router/py_router/diff_pair_custody.py': 'f07e2cec713bfeda971b68fbbdba2a6630244f5e1e54bf01df3529257835b173',
  'src/kicad_route/router/py_router/diff_pair_loop.py': '636f07595a727b3e81ec882762094ea90b6bc86b80c5ebad4b017abac3494a4f',
- 'src/kicad_route/router/py_router/diff_pair_multipoint.py': '5468ddcedf1fdc3355d7451adaba08f4e982ddde074facef0c54aba54ad7871d',
+ 'src/kicad_route/router/py_router/diff_pair_multipoint.py': '22aae608463906465d714ca94ddf4b7aff565814ab7ff7590c6207ff00d905f7',
  'src/kicad_route/router/py_router/diff_pair_routing.py': 'aa355c8a1a10fbb672000a78dfa7974bb7ab95fc9c079eca716639586d6726a0',
  'src/kicad_route/router/py_router/diff_xnet.py': '204665ebc1494103a7e6960aa43bfd0eada9d17c70d31dc6cda8be63e5909f24',
  'src/kicad_route/router/py_router/dup_trap.py': 'f3a3cc3b91d7318b46a091d14586ce31469c3101ddcd61b325bbda90e63fa1ee',
+ 'src/kicad_route/router/py_router/effective_config_evidence.py': 'fe9254c32d895f936e97f03f34f9a6edbb16fcad086179f62325cf0eeeb1722e',
+ 'src/kicad_route/router/py_router/effective_config_fields.json': '9aefa28f407fdcf30ea56be8378ad4bb2a481a91c93f0fbb00cff147813356fb',
  'src/kicad_route/router/py_router/env_knobs.py': '7b9c9fc08f0bad191aba5a5c1e8e7c058e2457c9c83b43c8b090a27b52fbc382',
  'src/kicad_route/router/py_router/fab_notes.py': '0683295464406c4a6ac992b48a78da47322bfcd1f830607c85b4b06f281cda14',
  'src/kicad_route/router/py_router/fab_tiers.py': '66e7156a4ee1507c575dd9b11c75c1d1c62b7cc1a518e8259965c888f0a8b39b',
@@ -183,10 +197,10 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/kicad_iso_render.py': 'cbbdb7ad575742ede223b5f1a2fd508210fe6486a076718170ff5a3f4417235c',
  'src/kicad_route/router/py_router/kicad_locate.py': '0fd5de7ea5024691f3e75947b1d70ea80048e77ee8c24cd78ebd3d46befb0f26',
  'src/kicad_route/router/py_router/kicad_oracle.py': '35c96fd9d9656b7a27ff0f04bb7758161bbc97f44a53e7a27802f03f47c64663',
- 'src/kicad_route/router/py_router/kicad_parser.py': 'f85b1b8f2bc85f418dea0ba1aac6c35a7c89863026c3e91953214f7d15b83ade',
- 'src/kicad_route/router/py_router/kicad_writer.py': 'ffce00f68e84b4a37f393a21c995036f9301f43778e0b78728106bb7644425c5',
- 'src/kicad_route/router/py_router/layer_swap_fallback.py': '4fa52734ddd7879ff71a5b0f43819750e4b4fb56f2295b72bd40fee477715b5f',
- 'src/kicad_route/router/py_router/layer_swap_optimization.py': 'fa1f6f93960a4d87f17d7acb348d55183bb60688ab6ba0700bb0f3c32df460bc',
+ 'src/kicad_route/router/py_router/kicad_parser.py': 'ffb7274af0b09fbacc8a070de86c50c3cb41c5aae0afd07702ac8a5e16e40370',
+ 'src/kicad_route/router/py_router/kicad_writer.py': '9cf41aa5fcc7f5332938e733933b4f3688dc71ed9c7dd73fda2c8d7c8c372718',
+ 'src/kicad_route/router/py_router/layer_swap_fallback.py': '3aefa517c4d401679b40c1b100a11f4721b6d78828699a11bdd9a2eb0bfd5ece',
+ 'src/kicad_route/router/py_router/layer_swap_optimization.py': '119b61cba4c0f2d0f1bb5421514ac1bedb0ba6dd4c7b58c28641871ab6c7ab71',
  'src/kicad_route/router/py_router/ledger_score.py': 'ce31d6080f0eceb3dc134ba0010f620ad1799cb01f8db93726e99d7fc85a881d',
  'src/kicad_route/router/py_router/leg_rip.py': '24c3fc9b503f2c7e0c2c0ef43e0c6b489b40e825f2d0abd69546f9f104c6022c',
  'src/kicad_route/router/py_router/length_matching.py': '4ece75938d0bd922e6de5a324be98115198e13b1dbf8a3f3af685c77a8270a87',
@@ -199,28 +213,28 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/movie_placement.py': '12c22f1668add5daa8a1df911f25e0463823430d5faae65f24f45beb58deacf2',
  'src/kicad_route/router/py_router/mps_layer_swap.py': 'e744f54c365b8260a79885bb8faf24965384e0719c637885bba48b645bf3b432',
  'src/kicad_route/router/py_router/net_cost.py': '5d4964c0e296fbab73182fed2b091d6005080062d5a663ebb85f90b9e2ad9c66',
- 'src/kicad_route/router/py_router/net_ordering.py': 'bec77b33cf11177d8fc276ad0d47a531110b9854004e764d1dfa331464f40aa0',
+ 'src/kicad_route/router/py_router/net_ordering.py': 'd6dab7157f9a42bfcee9f5c88505712b3da1f24bde4ac22269d1646cf2a08c87',
  'src/kicad_route/router/py_router/net_queries.py': '6b47c762cfe67ca0b0f432a4b47f149d52f82a10c2f5d8a1781d26b652275cd9',
- 'src/kicad_route/router/py_router/net_rescue.py': '38fca12fce416c441c80823809390be9a3a10bf591aae25525ef34544e9514be',
+ 'src/kicad_route/router/py_router/net_rescue.py': '05345a1e780b44b18461f5040ce16ae8d8834f970441086cd8df3f9000a92f51',
  'src/kicad_route/router/py_router/net_story.py': 'a54ca5aff45e80d8a27b8b15fa4f4576a2bda803a8ce2ab4b7613e94101674ac',
- 'src/kicad_route/router/py_router/obstacle_cache.py': 'dea6d6315a9fdd69413fbaefabafb73b79979e5bac50826c44e80830f3b6c6d3',
+ 'src/kicad_route/router/py_router/obstacle_cache.py': 'bb14bb37aa30d951b8d5b642119b43fe521933c2b33aa5f0fef86be1a66e42eb',
  'src/kicad_route/router/py_router/obstacle_costs.py': '66afaf065eeafe21af70b361cc2f0cf64c9a6efb7da1b418b0379167093358ec',
- 'src/kicad_route/router/py_router/obstacle_map.py': '4fa8ab6598268267cc286047f05be90bc2b355cd33d87a083b6db8f1e0ff4757',
- 'src/kicad_route/router/py_router/output_writer.py': '617d58a2125558419a380557c8628ad8fba3cf8d0f31efe0872ed4f2fa4bdaaf',
+ 'src/kicad_route/router/py_router/obstacle_map.py': '24001dcd5ff72eeee3e485b38f429669f7382ad5193f9435d181df37f6d45fd9',
+ 'src/kicad_route/router/py_router/output_writer.py': 'c67c2267390b07fe0513e66561643d046ae92dfffc4234b7bb488f8ed504cd07',
  'src/kicad_route/router/py_router/pack_river.py': '34d54fb0f9ae956ab0507fa818cf604fdc8816a0b54508f23db9c742e7c31dc0',
  'src/kicad_route/router/py_router/paste_apertures.py': '0c7a864b934ae7ec812f0fb091d16385f442b8472fa34885b85f20219e7e6031',
  'src/kicad_route/router/py_router/pcb_io_utils.py': 'a128f2dc42e869dc46ac240d739e6523eb31a75ffec85798c396784ab7606892',
  'src/kicad_route/router/py_router/pcb_modification.py': '3c8da17cd58610d263a77a8703ff09df27974ff86d19e9162876089c00212a20',
- 'src/kicad_route/router/py_router/phase3_routing.py': 'fa208fc1ffe6d446e8a5eccd54c56c1836ddf3345564093a253f749577e134e4',
+ 'src/kicad_route/router/py_router/phase3_routing.py': 'a98915bd729750687ff251a07118e04e510bd4366fa3ac8700cf10455c4ed8f3',
  'src/kicad_route/router/py_router/place_motion.py': '9fa0574956f290e947a1c842f0d6ffe38a7e8ff42b881ecf7b94780e78d00f09',
  'src/kicad_route/router/py_router/plane_blocker_detection.py': 'c439b516ff466034902153e29a52969d16002891506ada7d6b61d5f7ca1931d1',
  'src/kicad_route/router/py_router/plane_component_oracle.py': '845aee20a9d3080b1047f48023bb93fb9cebfb072962bca64e6a0a2f208ebf96',
  'src/kicad_route/router/py_router/plane_corridor_ghosts.py': 'dd2e5cc64a7946af47cdf98b6da9a5ac530eff2a64619c4774c2c81ce208a2e1',
  'src/kicad_route/router/py_router/plane_fill_model.py': '001778d66ca3b4b01309c3bb979fcba6a989d07495dcad1c7662b74fee00777a',
  'src/kicad_route/router/py_router/plane_fragility.py': 'c5d4fe82872c8767abb07c2a439dbf76701b0b426402469e2b7e01d4b081cd60',
- 'src/kicad_route/router/py_router/plane_io.py': '0155a404aaf856d9256282d1115a257b923eeff7ad87620b19efe95d942b9169',
+ 'src/kicad_route/router/py_router/plane_io.py': '4bd72c508a5be0eef831f1788c6e655b001bcc24b533341829cbc6e9cd4ca5e3',
  'src/kicad_route/router/py_router/plane_lattice.py': 'c96af256f7f1827cf7b5d2a1ec472eda1a841f61bfa817307cb762765015c353',
- 'src/kicad_route/router/py_router/plane_obstacle_builder.py': 'cbc959ff99e9c666913037e7c40c456f166feba549220e166b9f0a64b67dbdd7',
+ 'src/kicad_route/router/py_router/plane_obstacle_builder.py': '687a46abb8424777b89aaf6e36b9fca806698f829f43a601a4b570fab3a02805',
  'src/kicad_route/router/py_router/plane_pad_tap.py': '53fd384f7def41f3461c41cfcb53e09f48c25f4ceee791e8f9443b0b88ddf04f',
  'src/kicad_route/router/py_router/plane_region_connector.py': 'ef9aab2d3fa40191fa7e0978348ccfeab8981d96e2c47744921f8aedc1c73b34',
  'src/kicad_route/router/py_router/plane_resistance.py': '13ac213ca844508852f397853234815a3b5d5675afcad593206933130322005a',
@@ -236,19 +250,19 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/render_panels.py': '44c6e4e391e111b67395f636495c951a33dccb28e14891f19aa9ced79d06b780',
  'src/kicad_route/router/py_router/render_plan.py': '8972d1277db570ac91e33022d4ee8488f8b0c066f964ea1ccd6c42ee6f0b0dff',
  'src/kicad_route/router/py_router/render_theme.py': 'cb661cb989717f1c0ce6d0f1afad2485763527014b7cfd2364e7661f70b9ddf3',
- 'src/kicad_route/router/py_router/repair_planes.py': '5a5fdd7906ef5ad3acbbf6a0b72a08dd64fe3c4a4fee107e20a117d9432d0fbc',
+ 'src/kicad_route/router/py_router/repair_planes.py': 'e75fa4921ed5b1c518c4215117105cbcf0e262d0dff9d04f5406b1937f395c69',
  'src/kicad_route/router/py_router/reroute_loop.py': '7b5002ba9c5b412784372f3cd8c789bdec370180ba17c370506def89581bf2cd',
  'src/kicad_route/router/py_router/rip_defer.py': 'c965f8b2cdf65d10254735049b5eebafe72c4229d9d9efbedd10bd0dd06dfdb6',
  'src/kicad_route/router/py_router/rip_restore.py': '9a5a68cf13050035de319d8158807cea3104b79241ef15523a729edf42ae544b',
  'src/kicad_route/router/py_router/rip_up_reroute.py': 'e438891f67059b0376eae91c4bff82bb26f2dec9e702aee454927abc29cc5149',
- 'src/kicad_route/router/py_router/route.py': 'a5b387a0cc562fbe2899efd25bac563a0abf1df02896d5b2bbe42044930cff1e',
- 'src/kicad_route/router/py_router/route_diff.py': '3da7ecc9a60de4a7521d7dd5f598b80a5e768e669f80c46e9c582af9c8826ff8',
- 'src/kicad_route/router/py_router/route_planes.py': '468d17b55a84161bc70ad8594dfc5142e2416addda501f8b8cd6aa6b25940cb3',
+ 'src/kicad_route/router/py_router/route.py': '73fcddf34b99667dc0df4759457968e614bbd8047c50077a1a6b5ac65ab58c3c',
+ 'src/kicad_route/router/py_router/route_diff.py': '7eda4eea111d2a9b17706fa90bec282eacc2bc8572cc2e9f720f3a0804f3729a',
+ 'src/kicad_route/router/py_router/route_planes.py': '05cde89b474e1a48a2746dfdee7d819f2796009f9f6a2a55a602f32e6b940fcf',
  'src/kicad_route/router/py_router/route_render.py': '5fca0a39fbca4d58e0a77f503867e0fb48bed766ede31b9664a5a0b6c9f7131f',
  'src/kicad_route/router/py_router/route_summary.py': '3c8575595d90ca286dc06e36df2905aea583a10e986d13633fd36b5e8d026410',
  'src/kicad_route/router/py_router/route_trace.py': '4511cbacf524a9b72739ed06e4d1b1ff28cf035fef5aa634939cfba3f0c73e3b',
  'src/kicad_route/router/py_router/routing_common.py': 'a698bbb0c09d6be2bb9e87e741e4cb23bb563e0fe9a7ebe6ed29356a00166311',
- 'src/kicad_route/router/py_router/routing_config.py': '3165f32065b639825515b00a7df6716228faef7c72c94f6c14cd88bf3b322719',
+ 'src/kicad_route/router/py_router/routing_config.py': '001b54db7e0d92296add49a18665b625dfcae1ebc9951796de26037041a75a8f',
  'src/kicad_route/router/py_router/routing_constants.py': '5bd4f2aa4d42b5b8f581111bd2ef534a5a1aa53af81b7757fbecfff529c2f718',
  'src/kicad_route/router/py_router/routing_context.py': '2285fa2acee5d0cd1893dd0d95f100b54abd35a7fc625849ab69b4d050911f0e',
  'src/kicad_route/router/py_router/routing_defaults.py': '814cb2693c8029539b9a37726fa84c8b93ed76edbd32da31ac6722a80e75ddf9',
@@ -258,8 +272,9 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/routing_utils.py': 'a7d25f7423f4fcddc5be3ebbfedc31f3c70ae895963c23740679489ebd75e536',
  'src/kicad_route/router/py_router/rust_alloc.py': '838d142cd07a85f8f78b49b8a237f783525c1a548f545195aaa3008331a7655e',
  'src/kicad_route/router/py_router/schematic_updater.py': '3dc6cccbadd5e61ee99b08c11557566cb030d6cadf9916352357df6bf52582d8',
- 'src/kicad_route/router/py_router/single_ended_loop.py': '7e8dc8d72175fb067781434e6c2c673fcda6482b7a0465f1ed3fc7fedb7bc4c5',
- 'src/kicad_route/router/py_router/single_ended_routing.py': 'a0f5cf37746f694a693e5fba39530eacd09a257385953443a195a570d889a9a5',
+ 'src/kicad_route/router/py_router/sexpr.py': '35568aef68b724b4e256cc427b9dd7f522d4297d399e3c4c918b212ea4a2d84b',
+ 'src/kicad_route/router/py_router/single_ended_loop.py': '11b1ab861d0d9a1ca6327a4bf97e813a507ec95e366bc59449d919f11b9d4d40',
+ 'src/kicad_route/router/py_router/single_ended_routing.py': '22a82aa1bc987c360a5faabde144827079981a7668fa997adbf0f8216286dc38',
  'src/kicad_route/router/py_router/stage3d/__init__.py': '161f136b3da4952b101ecd563d9bd3037acfa100d74339683eb0e197bd888970',
  'src/kicad_route/router/py_router/stage3d/blender_scene.py': 'd99c8de1bbccb507d5f4088fcf9eb99df42034c1632efc76b4c78aa6bbf551a2',
  'src/kicad_route/router/py_router/stage3d/film.py': 'fe6e00044a30326121b7d5cfb7fe7035f108eb9409207ee8a5b46ca5eb6cff6c',
@@ -279,7 +294,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/stage3d/vendor/three/examples/jsm/utils/BufferGeometryUtils.js': '9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797',
  'src/kicad_route/router/py_router/stage3d/vendor/three/examples/jsm/utils/SkeletonUtils.js': 'b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f',
  'src/kicad_route/router/py_router/startup_checks.py': '2721cee806e90d48e9d1086a86876b615d2205c40b35420d6ee000fbfcb76bd3',
- 'src/kicad_route/router/py_router/stub_layer_switching.py': '42b46236da915cbe1f3c3468c1fba09134cc02b87ee02af48f38c87579e7df5d',
+ 'src/kicad_route/router/py_router/stub_layer_switching.py': 'cd4d5871d6c7af15dc111f73f873c66d2e22e9f168abc76275780d791d04d5ff',
  'src/kicad_route/router/py_router/swig_compat.py': '6c3d48c24a439231901b84d08467d8c59817a8993730a499cbcdfe071d46925f',
  'src/kicad_route/router/py_router/tap_relocation.py': 'c516170f8f4c6b7b5ebb880722032386baa4a2b852bd2d5cabb7ada225d990f1',
  'src/kicad_route/router/py_router/target_swap.py': '01bc14831d34493d1b7ea5903815a79ab6e8b55e62170b8fd52b8f3b48c6e00b',
@@ -301,19 +316,37 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/rust_router/src/dubins.rs': '578db6b9034dcea6a90849323843e47792b3c0921427d2951d325bfdb6147730',
  'src/kicad_route/router/rust_router/src/lane_search.rs': '2e63ecb7c53943ce6188725600400be5dd9e0625fd5c36137948fb3f290c1ce9',
  'src/kicad_route/router/rust_router/src/lib.rs': '3bb11f80ee27862414a32b9774f19d087749994d8f4a163af73546452120e44e',
- 'src/kicad_route/router/rust_router/src/obstacle_map.rs': 'f5abe681accc32a7870101c6b776058ece72f5b90deaca5180dba688db7ce471',
+ 'src/kicad_route/router/rust_router/src/obstacle_map.rs': '87b163ec610b24ce3048573addcf902252a0463d0fdc1a0d3abb6df5258edd5e',
  'src/kicad_route/router/rust_router/src/pair_search.rs': 'f384c7331e677f6821176da6d36d3e51a00fd4bb9f06151e7520963b463c5204',
  'src/kicad_route/router/rust_router/src/pose_router.rs': 'a4df246ef8a886d1cd3df989734bfd4a15ddc72e551905b046fbbe056c240a4c',
- 'src/kicad_route/router/rust_router/src/router.rs': 'd3cb9ac9cfa5d25180f29d92f4c55a9082393ac67c9c81d9968ab26177d0681d',
+ 'src/kicad_route/router/rust_router/src/router.rs': '0b91bd986e9a5f09004d8e97a8d3978a34d6e42ceef3f9141fa5b1b517b13eb3',
  'src/kicad_route/router/rust_router/src/types.rs': '70058395d6c08ccefbe7b26596025adb60724767565182d8eca2db42ebccbfe4',
+ 'src/kicad_route/router/tests/native_lifecycle_support.py': '389281a829ad74f984a7639b65f6c622776e4de1e786dfc7028d64d79edbfce9',
+ 'src/kicad_route/router/tests/regression_utils.py': '04c419bc0c20318c9b4b851c74f7dc59a971f1b92471cb19a5d09f62450060dd',
+ 'src/kicad_route/router/tests/stub_swap_fixtures.py': '6b1ad57117f95143f0389049b314ff7073e13277a7983e07857cbd5dc46b786e',
+ 'src/kicad_route/router/tests/synth.py': '8a5e34c6c904eadb0ed90dfaba395f150ecfbc650511528ccf4ba80b6ba45177',
+ 'src/kicad_route/router/tests/test_blocker_resources.py': 'a50793b26e351c275cc27eb00e6f40e4412575ae26f902f0825f44ae1b473b7e',
+ 'src/kicad_route/router/tests/test_diff_keepout_member_clearance.py': '02e9827d719ee1eee7f136f613f4e8e5dafbc7566a7b1fb7046df28002b662ea',
+ 'src/kicad_route/router/tests/test_kernel.py': '0dee4f21f4f6b33fedbc0546bad952718ad7f29d4e1240dc91483dd79f4adade',
  'src/kicad_route/router/tests/test_krt64_tap_grid.py': '65e10213bd0429937972ed976d67667ab3b63b79714fa0ee170c547adeaf0c1c',
+ 'src/kicad_route/router/tests/test_no_stub_swap_reaches_config.py': 'b721f346a41811d4da00979e40093958f8eba12162bfb7a1d5f63906d41e9297',
+ 'src/kicad_route/router/tests/test_obstacle_addremove_parity.py': 'af04343976986e529a4d39eec6e2443788331d70c448061120b2ea0cee28c85d',
+ 'src/kicad_route/router/tests/test_obstacle_lifecycle.py': 'e15624c1914319b803bd3751a9ed6fdaabdf50c493a6ffec0d22e3f73d69f517',
+ 'src/kicad_route/router/tests/test_parser_cache.py': '1ba66204abcaa32a31242d058e3ff3fbabc362a9419b553cd25cc6cd8a4ab47e',
+ 'src/kicad_route/router/tests/test_parser_legacy_tokens.py': 'e7218781732cd73c1f65fd75d3f7dff6dfdbeba0a790f85638d608b9fa21a033',
+ 'src/kicad_route/router/tests/test_pass_rule_floors.py': '6407e91ca4cec60c45d8d2f730c931b9830c61e17cb3a2142b8a6aa5d636e902',
  'src/kicad_route/router/tests/test_pour_launch_forbidden_layer_welds.py': 'be2c95e968234c53a85c07c1fea626a868dbb28211cf4b88d91335c00e728a2b',
- 'src/kicad_route/sandbox.py': '5668f18e1b25d81d96f1568ee2e9fe8508a0abbaa63c28b8573dc3ebfa27edc6',
- 'src/kicad_route/skills.py': 'b261fcb7596db3921c089af549a77d5803ba6c0e7590132026e9fdb85106cee8',
+ 'src/kicad_route/router/tests/test_rescue_custody.py': 'ff760f15c2e66b9998c91cce0bb7783bc4935286e78973a0054feec86081600d',
+ 'src/kicad_route/router/tests/test_routable_layers.py': 'ba0c95ddadd2411dcc051f0f83d99e93a5fbc394515b389e186e9270cf08660c',
+ 'src/kicad_route/router/tests/test_stub_swap_via_hole_to_hole.py': '8b9e1d29d762ada6e5b74480daf05f7c6f40ba4679481966920230200f9b2114',
+ 'src/kicad_route/router/tests/test_writer_quotes.py': '95822e7e080513f51aa2e9df1edd61d1fdbf536194bef84abc52bdb68c6f98c0',
+ 'src/kicad_route/router/tests/test_writer_removal_identity.py': 'aded55348599d148a698b502a14d029addcb7558be7223b41d517a6b36b17a25',
+ 'src/kicad_route/sandbox.py': '344bfb3313c48947bbff262a6fb6b7b0661712687663925901027fe877b182a3',
+ 'src/kicad_route/skills.py': '5bb0cf561e9869082e8d8f4f3a971778a912b491f54e9dfd4c348e814bb6f703',
  'src/kicad_route/snapshot.py': '7c51203f4a439cc99a575e6bc5433f3ab78dda7735dcd03c940f6169fe7fb9a4',
  'src/kicad_route/spokes.py': 'fc5b3f90c31cbcc9a9944628bfe6b9bc93dc31de21c893f8e476160f21033506',
  'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
- 'src/kicad_route/statemanifest.py': '1a9903902e7f0fb1771d2730f986076c692db9579bfcbc42a9c0b576e5777ae2'}
+ 'src/kicad_route/statemanifest.py': '40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322'}
 RESULT_SCHEMA = 'kicad-route/route/1'
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
@@ -329,13 +362,13 @@ SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-r
            'state': '/opt/kicad-route-state'}
 PYTHON = '/usr/bin/python3'
 # KICADROUTE-82: 'builtin' is the canonical name of the owned backend and 'krt' its deprecated
-# alias. A request or retained record keeps the name it was written with (receipts that say
-# 'krt' keep their bytes); names are normalized only to compare or look up.
+# alias. agent-ee emits only 'builtin' (AGENTEE-450). 'krt' is read-only legacy: a request or
+# retained record keeps the name it was written with (receipts that say 'krt' keep their
+# bytes), and names are normalized only to compare or look up.
 BACKEND_ALIASES = {'krt': 'builtin'}
 BACKENDS = ('builtin', 'krt', 'freerouting')
-# What the pinned cli.py accepts for --backend. 5f1c072 predates the rename, so both names of
-# the owned backend are emitted as 'krt' until the pin moves; then this maps builtin to itself.
-PIN_BACKEND_NAMES = {'builtin': 'krt', 'krt': 'krt', 'freerouting': 'freerouting'}
+# What the pinned cli.py is given for --backend: the canonical name, whatever the request spelled.
+PIN_BACKEND_NAMES = {'builtin': 'builtin', 'krt': 'builtin', 'freerouting': 'freerouting'}
 
 
 def canonical_backend(name):
@@ -343,10 +376,70 @@ def canonical_backend(name):
     return BACKEND_ALIASES.get(name, name) if isinstance(name, str) else name
 
 
-# Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE.
+# Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE, in the
+# legacy layout (no router generation selected; the image's install.sh builds this).
 STATE_COMPONENTS = {'krt': ('.venv-krt',), 'builtin': ('.venv-krt',), 'freerouting': ('vendor/freerouting',)}
 STATE_REQUIRED = {'krt': ('.venv-krt/bin/python',), 'builtin': ('.venv-krt/bin/python',),
                   'freerouting': ('vendor/freerouting',)}
+# A router generation (`kicad-route update` at the pin) is one directory under the state
+# that holds the copied engine source and its venv; the manifest's krt.generation selects
+# it. These are the files the pin's common.router_generation requires before selecting it.
+GENERATION = re.compile(r'\.router-generations/[0-9a-f]{32}\Z')
+GENERATION_REQUIRED = ('installation.json', 'router/VERSION', 'router/UPSTREAM.json', 'venv/bin/python')
+
+
+def state_generation(state):
+    """The router generation the state manifest at `state` selects, or None (legacy layout).
+
+    Returns (generation, problems). An absent or unreadable manifest selects nothing
+    here; verify_state reports it. A selection the pin would not resolve, or one
+    outside STATE/.router-generations, is a problem, never a fallback to .venv-krt."""
+    try:
+        manifest = json.loads((Path(state) / 'manifest.json').read_bytes())
+    except (OSError, ValueError):
+        return None, []
+    krt = manifest.get('krt') if isinstance(manifest, dict) else None
+    generation = krt.get('generation') if isinstance(krt, dict) else None
+    if generation is None:
+        return None, []
+    if not isinstance(generation, str) or not GENERATION.match(generation):
+        return None, [f'state manifest selects an invalid router generation {generation!r}']
+    return generation, []
+
+
+def state_components(backend, generation=None):
+    """Installed state directories the backend reads: the selected generation, or the legacy ones."""
+    if canonical_backend(backend) == 'builtin' and generation is not None:
+        return (generation,)
+    return STATE_COMPONENTS[backend]
+
+
+def state_required(backend, generation=None):
+    """Installed files the backend cannot start without, for the state's layout."""
+    if canonical_backend(backend) == 'builtin' and generation is not None:
+        return tuple(f'{generation}/{rel}' for rel in GENERATION_REQUIRED)
+    return STATE_REQUIRED[backend]
+
+
+def generation_of_components(backend, components):
+    """Recover the layout a report's state identities were taken in; ValueError if none matches."""
+    components = tuple(components)
+    if components == STATE_COMPONENTS[backend]:
+        return None
+    if (canonical_backend(backend) == 'builtin' and len(components) == 1 and
+            isinstance(components[0], str) and GENERATION.match(components[0])):
+        return components[0]
+    raise ValueError('state identities name neither the legacy nor a router-generation layout')
+
+
+def runtime_paths(layout, generation):
+    """backend.runtime as the pin reports it when it runs the engine verified in this layout."""
+    checkout, state = Path(layout['checkout']), Path(layout['state'])
+    if generation is None:
+        return {'source': str(checkout / 'src/kicad_route/router'), 'venv': str(state / '.venv-krt'),
+                'generation': None}
+    return {'source': str(state / generation / 'router'), 'venv': str(state / generation / 'venv'),
+            'generation': str(state / generation)}
 SAFE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 STAMP = re.compile(r'\d{8}T\d{6}\.\d{6}Z\Z')
 # Every top-level result.json/attempt.json key cli.run_attempt writes at PIN
@@ -355,6 +448,16 @@ RESULT_KEYS = {'schema', 'measurement', 'evidence', 'tool_identity', 'sandbox', 
                'input', 'settings', 'scope', 'unsupported', 'floor', 'process',
                'routing', 'validation', 'candidate', 'run_dir', 'runtime_s', 'tool_versions',
                'finished_utc', 'exit_code', 'ledger'}
+# Added by the pin only for a builtin attempt whose process passed (KICADROUTE copper custody).
+# It is provenance with replay_authority false; agent-ee binds its bytes and never grades from it.
+COPPER_OWNERSHIP_RECORD = 'validate/copper-ownership.json'
+COPPER_OWNERSHIP_BOUND = {'status', 'record', 'sha256', 'coverage', 'replay_authority'}
+COPPER_OWNERSHIP_UNAVAILABLE = {'status', 'reasons', 'replay_authority'}
+# Nested keys the pin adds (KICADROUTE generations and measurement qualification): every
+# result.json's process carries measurement_qualification, and an owned-engine result's
+# backend carries the runtime it executed, which must be the engine verified before the run.
+MEASUREMENT_QUALIFICATION = {'measurement', 'build_reproducible', 'reasons'}
+RUNTIME_KEYS = {'source', 'venv', 'generation'}
 ATTEMPT_KEYS = {'schema', 'backend', 'project', 'board', 'schematic', 'input_fingerprint', 'source',
                 'reference_dir', 'candidate_dir', 'reference_facts', 'baseline', 'scope',
                 'settings', 'floor', 'rules_files'}
@@ -1451,51 +1554,100 @@ def verify_code(checkout, pinned=None):
     return problems
 
 
-def verify_state(checkout, state, backend='krt', pinned=None):
+def verify_state(checkout, state, backend='builtin', pinned=None, mounted_at=None):
     """Verify the owned engine using the qualified tool's state-manifest reader.
 
     Called only after verify_code succeeds. Synthetic adapter-policy fixtures
     supply their own code map without an engine; production PINNED_CODE always
     includes it. No routing, installation or network is performed here.
+
+    The pinned tool binds a state manifest to the directory it describes
+    (`state_dir`) and refuses to start anywhere else. mounted_at is where the
+    routing sandbox presents this state (SANDBOX['checkout'] by default): a
+    manifest recorded for any other directory would only fail inside the
+    sandbox, so it is refused here first. The remaining checks read the files
+    at `state`, wherever the caller sees them.
+
+    Both layouts the pin installs qualify, and only when built from the pinned
+    source: the legacy one (no generation; engine in the checkout, venv at
+    .venv-krt, as the image's install.sh builds it) and a router generation
+    (`kicad-route update`; STATE/.router-generations/<hex>/ holds a copy of the
+    source and its venv). A generation's digest is compared with the checkout's
+    SOURCE_ROOT, never with itself, so a stale generation is refused.
     """
     pinned = PINNED_CODE if pinned is None else pinned
     if canonical_backend(backend) != 'builtin' or 'src/kicad_route/engine.py' not in pinned:
         return []
+    mounted_at = SANDBOX['checkout'] if mounted_at is None else str(mounted_at)
     script = r'''
-import json, sys
+import json, re, sys
 from pathlib import Path
-checkout, state = map(Path, sys.argv[1:])
+checkout, state, mounted_at = map(Path, sys.argv[1:4])
+GENERATION = re.compile(sys.argv[4])
 sys.path.insert(0, str(checkout / 'src'))
-from kicad_route import engine, statemanifest
-m = statemanifest.read(state)
-if m is None:
+from kicad_route import common, engine, statemanifest
+# statemanifest.read() also requires state_dir to equal the path this process
+# sees, which differs between the host and the sandbox; mounted_at is checked instead.
+m = common.load_json(statemanifest.manifest_path(state))
+if not isinstance(m, dict):
     raise ValueError('missing or unreadable state manifest')
 problems = statemanifest.schema_problems(m)
+if m.get('state_dir') != str(mounted_at):
+    problems.append(f"state manifest describes {m.get('state_dir')!r}, not the sandbox state "
+                    f"{str(mounted_at)!r}; record it with `kicad-route state-manifest` where "
+                    f"KICAD_ROUTE_STATE is {str(mounted_at)!r}")
 k = m.get('krt') or {}
-if k.get('source_sha256') != engine.source_sha256():
-    problems.append('owned engine source digest differs')
+# The installed engine must be built from the pinned source in the verified checkout.
+# Under a router generation both the manifest and the pin's engine.ROOT describe the
+# generation's own copy, so the reference is always the checkout's SOURCE_ROOT: a
+# generation built from any other commit (kicad-route doctor still passes it) differs.
+pinned_source = engine.source_sha256(engine.SOURCE_ROOT)
+generation = k.get('generation')
+if generation is not None and not (isinstance(generation, str) and GENERATION.match(generation)):
+    problems.append(f'state manifest selects an invalid router generation {generation!r}')
+    generation = venv_path = None
+else:
+    venv_path = f'{generation}/venv' if generation else '.venv-krt'
+if k.get('source_sha256') != pinned_source:
+    problems.append('owned engine source digest differs' + (
+        f'; router generation {generation} was built from commit {k.get("commit")}, not the pinned '
+        f'source {pinned_source}: rerun `kicad-route update` at the pin' if generation else ''))
 module = (k.get('extension_module') or {}).get('path')
-venv = state / '.venv-krt'
-installed = statemanifest.extension_module(venv)
-if (not module or installed is None or
-        not (state / module).resolve().is_relative_to(venv.resolve()) or
-        (state / module).resolve() != installed.resolve()):
-    problems.append('manifest must identify the installed .venv-krt grid_router extension')
+if venv_path is not None:
+    venv = state / venv_path
+    installed = statemanifest.extension_module(venv)
+    if (not module or installed is None or
+            not (state / module).resolve().is_relative_to(venv.resolve()) or
+            (state / module).resolve() != installed.resolve()):
+        problems.append(f'manifest must identify the installed {venv_path} grid_router extension')
 if not (k.get('extension_module') or {}).get('sha256'):
     problems.append('missing installed engine digest')
-if (k.get('venv') or {}).get('path') != '.venv-krt':
+if venv_path is not None and (k.get('venv') or {}).get('path') != venv_path:
     problems.append('unexpected routing environment path')
-# The manifest was installed on the host. The immutable source is mounted at a
-# different absolute path inside the sandbox; verify its recorded hash there.
-if k:
-    k['requirements']['path'] = str(engine.ROOT / 'requirements.txt')
+if generation:
+    # The generation runs its own copy of the source: its recorded paths stay, so the
+    # drift check below hashes that copy against the digest just bound to the pin.
+    if (k.get('source_path') != f'{generation}/router' or
+            (k.get('requirements') or {}).get('path') != f'{generation}/router/requirements.txt'):
+        problems.append('router generation source or requirements path is not the generation copy')
+    record = common.load_json(state / generation / 'installation.json')
+    if (not isinstance(record, dict) or not isinstance(record.get('source'), dict) or
+            record['source'].get('source_sha256') != pinned_source or
+            record.get('extension_sha256') != (k.get('extension_module') or {}).get('sha256')):
+        problems.append('router generation installation record differs from the pinned source or module')
+elif k:
+    # The manifest was installed on the host. The immutable source is mounted at a
+    # different absolute path inside the sandbox, and a separate state holds no
+    # source at all; verify the recorded source hashes on the mounted checkout.
+    k['requirements']['path'] = str(engine.SOURCE_ROOT / 'requirements.txt')
+    k['source_path'] = str(engine.SOURCE_ROOT)
 problems += [f"state manifest drift: {d['item']}" for d in statemanifest.verify(m, state)]
 print(json.dumps(problems))
 '''
     try:
         # -B still reads caches. /dev/null cannot hold ignored bytecode.
         result = subprocess.run([PYTHON, '-I', '-B', '-X', 'pycache_prefix=/dev/null',
-                                 '-c', script, str(checkout), str(state)],
+                                 '-c', script, str(checkout), str(state), mounted_at, GENERATION.pattern],
                                 capture_output=True, text=True, timeout=60,
                                 env={'PATH': '/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'})
         if result.returncode:
@@ -1546,7 +1698,7 @@ def parse_request(argv):
         'label': _safe(raw['--label'], 'label'),
         'budget_s': _bounded(raw['--budget'], 'budget', 1, 86400),
         'timeout_s': _bounded(raw['--timeout'], 'timeout', 1, 86400),
-        'backend': raw.get('--backend', 'krt'),
+        'backend': raw.get('--backend', 'builtin'),
         'state': raw.get('--state', 'checkout'),
     }
     if request['backend'] not in BACKENDS:
@@ -1723,10 +1875,22 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     version = 2 if paired else 1
     if isinstance(result, dict) and result.get('schema') != f'kicad-route/route/{version}':
         return 'contradiction', ['unknown result schema version']
+    custody = (canonical_backend(request['backend']) == 'builtin' and isinstance(result, dict) and
+               isinstance(result.get('process'), dict) and result['process'].get('status') == 'PASS')
     # A K91 experiment reference is optional; experiment_grade retains or refuses it.
     if (not isinstance(result, dict) or
-            set(result) - {'experiment'} != RESULT_KEYS | ({'pairs'} if paired else set())):
+            set(result) - {'experiment'} !=
+            RESULT_KEYS | ({'pairs'} if paired else set()) | ({'copper_ownership'} if custody else set())):
         return 'contradiction', ['result.json shape differs from the pinned tool']
+    if custody and not copper_ownership_shape(result['copper_ownership']):
+        return 'contradiction', ['copper_ownership differs from the pinned tool']
+    if not measurement_shape(result):
+        return 'contradiction', ['process.measurement_qualification differs from the pinned tool']
+    if canonical_backend(request['backend']) == 'builtin' and not runtime_shape(result.get('backend')):
+        return 'contradiction', ['backend.runtime differs from the pinned tool']
+    if (canonical_backend(request['backend']) != 'builtin' and isinstance(result.get('backend'), dict) and
+            'runtime' in result['backend']):
+        return 'contradiction', ['backend.runtime is reported by a backend that has none']
     if result['kind'] != 'route' or not _is_int(result['exit_code']) or result['exit_code'] != exit_code:
         return 'contradiction', ['result.json kind or exit_code contradicts the process exit']
     statuses = [(result.get(k), k, allowed) for k, allowed in
@@ -1779,6 +1943,74 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     if routing == 'INCOMPLETE':
         return 'incomplete', [f"{result['routing'].get('unconnected_in_scope')} unconnected in scope"]
     return 'contradiction', ['validation PASS with routing NOT_RUN']
+
+
+def terminal_problems(result):
+    """An eligible attempt must carry the pin's native terminal preservation (KICADROUTE-98).
+
+    Every originally joined pad group, including subsets of incomplete nets, must stay
+    joined; the pin reports that as validation.net_completion from native terminal
+    partitions, not from the capped DRC list. Missing or failing evidence, a split group,
+    or a COMPLETE route whose native terminals are still split is never eligible."""
+    validation = result.get('validation') if isinstance(result, dict) else None
+    completion = validation.get('net_completion') if isinstance(validation, dict) else None
+    native = validation.get('native_terminal_evidence') if isinstance(validation, dict) else None
+    if (not isinstance(completion, dict) or completion.get('status') != 'PASS' or
+            completion.get('split_components') != [] or completion.get('nets_lost') != []):
+        return ['native terminal preservation (net_completion) is missing or did not pass']
+    metrics = native.get('metrics') if isinstance(native, dict) else None
+    candidate = metrics.get('candidate') if isinstance(metrics, dict) else None
+    if (not isinstance(candidate, dict) or not isinstance(metrics.get('reference'), dict) or
+            any(not _is_int(candidate.get(k)) or candidate[k] < 0
+                for k in ('terminal_nets', 'incomplete_nets', 'component_deficit')) or
+            any(not isinstance(native.get(k), str) or not native[k] for k in ('reference', 'candidate'))):
+        return ['native terminal evidence is missing or malformed']
+    if result['routing'].get('status') == 'COMPLETE' and (candidate['incomplete_nets'] or candidate['component_deficit']):
+        return ['routing COMPLETE while native terminals remain split']
+    return []
+
+
+def measurement_shape(result):
+    """process.measurement_qualification as the pin writes it, agreeing with the top-level measurement."""
+    process = result.get('process')
+    value = process.get('measurement_qualification') if isinstance(process, dict) else None
+    return (isinstance(value, dict) and set(value) == MEASUREMENT_QUALIFICATION and
+            isinstance(value['measurement'], bool) and value['measurement'] is result.get('measurement') and
+            (value['build_reproducible'] is None or type(value['build_reproducible']) is bool) and isinstance(value['reasons'], list) and
+            all(isinstance(r, str) and r for r in value['reasons']))
+
+
+def runtime_shape(backend):
+    """backend.runtime of an owned-engine result: exactly source, venv and generation paths."""
+    runtime = backend.get('runtime') if isinstance(backend, dict) else None
+    return (isinstance(runtime, dict) and set(runtime) == RUNTIME_KEYS and
+            all(isinstance(runtime[k], str) and runtime[k].startswith('/') for k in ('source', 'venv')) and
+            (runtime['generation'] is None or
+             (isinstance(runtime['generation'], str) and runtime['generation'].startswith('/'))))
+
+
+def runtime_problems(request, layout, generation, result):
+    """The engine an owned-engine attempt reports it ran must be the one verified before it ran."""
+    if canonical_backend(request['backend']) != 'builtin' or not isinstance(result, dict):
+        return []
+    runtime = (result.get('backend') or {}).get('runtime') if isinstance(result.get('backend'), dict) else None
+    if runtime != runtime_paths(layout, generation):
+        return ['the router ran an engine other than the verified '
+                + (f'router generation {generation}' if generation else 'checkout engine')]
+    return []
+
+
+def copper_ownership_shape(value):
+    """The pin's copper-custody pointer: bound to one retained record, or unavailable with reasons."""
+    if not isinstance(value, dict) or value.get('replay_authority') is not False:
+        return False
+    if value.get('status') == 'bound':
+        return (set(value) == COPPER_OWNERSHIP_BOUND and value['record'] == COPPER_OWNERSHIP_RECORD and
+                isinstance(value['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', value['sha256']) is not None and
+                value['coverage'] == 'current_run_only_input_fixed')
+    return (value.get('status') == 'unavailable' and set(value) == COPPER_OWNERSHIP_UNAVAILABLE and
+            isinstance(value['reasons'], list) and bool(value['reasons']) and
+            all(isinstance(r, str) and r for r in value['reasons']))
 
 
 def pair_binding(plans, record, result):
@@ -2359,6 +2591,14 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     validation = result['validation']
     if sha is None or not validated_candidate(validation, sha) or validation.get('restored_project_files') != []:
         problems.append('candidate board is not the board the router validated')
+    problems += terminal_problems(result)
+    custody = result.get('copper_ownership')
+    if isinstance(custody, dict) and custody.get('status') == 'bound':
+        record = run_dir / COPPER_OWNERSHIP_RECORD
+        records = result['evidence'].get('records') if isinstance(result.get('evidence'), dict) else None
+        if (record.is_symlink() or not record.is_file() or digest(record) != custody['sha256'] or
+                not isinstance(records, dict) or records.get(COPPER_OWNERSHIP_RECORD) != custody['sha256']):
+            problems.append('copper ownership record differs from its result pointer')
     return problems, sha, report_state, inventory
 
 
@@ -2419,13 +2659,14 @@ def _executable(path):
     return {'path': str(path), 'resolved': str(real), 'sha256': digest(real) if real.is_file() else None}
 
 
-def _identities(request, layout):
+def _identities(request, layout, generation=None):
     def identity_of(root):
         return tree_identity(root) if root.is_dir() and not root.is_symlink() else None
 
     checkout, state = Path(layout['checkout']), Path(layout['state'])
     identities = {'code': {top: identity_of(checkout / top) for top in ('bin', 'src')},
-                  'state': {comp: identity_of(state / comp) for comp in STATE_COMPONENTS[request['backend']]}}
+                  'state': {comp: identity_of(state / comp)
+                            for comp in state_components(request['backend'], generation)}}
     manifest = state / 'manifest.json'
     identities['state_manifest'] = digest(manifest) if manifest.is_file() else None
     return identities
@@ -2556,17 +2797,19 @@ def attempt(request, layout, cancel=None):
     code_problems = verify_code(checkout, layout['code'])
     problems += code_problems
     if not code_problems:
-        problems += verify_state(checkout, state, request['backend'], layout['code'])
-    for rel in STATE_REQUIRED[request['backend']]:
+        problems += verify_state(checkout, state, request['backend'], layout['code'], mounted_at=state)
+    generation, selection = state_generation(state)
+    problems += selection
+    for rel in state_required(request['backend'], generation):
         if not os.path.lexists(state / rel):
             problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
     targets = layout['probe'] if layout['probe'] is not None else (
-        [state] + [state / c for c in STATE_COMPONENTS[request['backend']] if (state / c).is_dir()] +
+        [state] + [state / c for c in state_components(request['backend'], generation) if (state / c).is_dir()] +
         ([checkout] if checkout != state else []))
     report['state_write_probe'] = write_probe(targets)
     if not all(p['refused'] for p in report['state_write_probe']):
         problems.append('the tool state or checkout is writable from the sandbox')
-    report['identity_before'] = _identities(request, layout)
+    report['identity_before'] = _identities(request, layout, generation)
     if problems:
         report['semantics'] = {'classification': 'not_run', 'reasons': problems, 'exit_code': None}
         experiment = experiment_grade(request, None, routing / 'attempt')
@@ -2580,7 +2823,7 @@ def attempt(request, layout, cancel=None):
         (routing / 'attempt' / EXPERIMENT_POLICY_FILE).write_text(canonical_json(request['experiment_policy']))
     report['process'] = run_tool(argv, env, routing, routing / 'kicad-route.stdout', routing / 'kicad-route.stderr',
                                  request['timeout_s'], cancel)
-    report['identity_after'] = _identities(request, layout)
+    report['identity_after'] = _identities(request, layout, generation)
     after_inputs = tree(candidate_root)
     run_dir, found = discover(routing / 'out', request)
     report['discovery'] = {'attempt_dir': run_dir.relative_to(routing).as_posix() if run_dir else None,
@@ -2615,6 +2858,7 @@ def attempt(request, layout, cancel=None):
         classification, reasons = semantics(process['exit_code'], result, attempt_record, refused_line,
                                             run_dir is not None, request)
     violations = found + load + [f'link or special file in attempt diagnostics: {n}' for n in links]
+    violations += runtime_problems(request, layout, generation, result)
     if report['identity_after'] != report['identity_before']:
         violations.append('tool code or state changed during the attempt')
     if after_inputs != inputs_tree:

@@ -23,7 +23,7 @@ from agent_ee import render_gallery as gallery
 from agent_ee.render_gallery import page, publish, serve
 from agent_ee.storage import digest
 from agent_ee.viewer import _ASSETS, build_viewer
-from toolchain import require_toolchain
+from toolchain import native_board_render_test, require_toolchain
 
 HOST = '/home/someone/secret-project'
 SIDES = {'top': ['--side', 'top'], 'bottom': ['--side', 'bottom'], 'isometric': ['--side', 'top', '--rotate', '315,0,45']}
@@ -856,6 +856,7 @@ class GalleryTests(unittest.TestCase):
             self.assertIn('Model coverage unknown', visible, coverage)
             self.assertNotIn('All declared 3D models resolved', visible, coverage)
 
+    @native_board_render_test
     def test_native_render_binding_refuses_snapshot_and_permutation_tampering(self):
         require_toolchain(native=True)
         source = Path(self.tmp.name) / 'native-source'

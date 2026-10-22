@@ -474,6 +474,19 @@ execution or task metadata. The external freeze assumes trusted records at the
 time of freezing; it does not create an owner evidence store or repair already
 forged history. See [the freeze contract](generation-benchmark.md#authenticated-series-freeze).
 
+## Generation benchmark prompt substitute (AGENTEE-69)
+
+Relayed decision (owner-relayed, agent-drafted record; AGENTEE-69 Plane comment,
+2026-10-22), verbatim:
+
+> "Owner decision (2026-10-22, owner via agent-519 decision quiz): KEEP PRIVATE: the ten unlicensed tscircuit prompts are not committed. Accept the committed original prompt series as the substitute and amend criterion 2 accordingly."
+
+Criterion 2 now requires the committed original prompt series, instead of the
+ten tscircuit prompts, to give every acceptance criterion at least one check ID
+or be refused by scope/3. Harness behavior and verdicts are unchanged. The
+wording of this entry is agent-drafted. See
+[the feature page](generation-benchmark.md).
+
 ## Historical datasheet acquisition is separate from live capture (AGENTEE-306)
 
 Retained PDFs can have a hash-bound URL and capture time without any recorded
@@ -653,3 +666,68 @@ its reservations, and native saved-board checks retain their authority.
 The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
 remaining numeric limits and their effects; gap-source authentication remains
 AGENTEE-348.
+
+## Decisions relayed 2026-10-22 (agent-519 quiz answers and agent-509 relays)
+
+This is an agent-written summary (agent-449), not owner wording, and the owner has not reviewed it. The authoritative
+records are the relayed messages: agent-519's quiz answers (Cairn notice of 2026-10-22, also posted as "Owner decision
+(2026-10-22, owner via agent-519 decision quiz)" comments on each Plane item) and agent-509's relays (Cairn d162e001,
+b706da93, 9561cd0c for the pod mechanics and through-hole fit items). Where this summary and a relayed record differ,
+the relayed record wins. The fome-mc J1 record quoting the 509 relays verbatim is
+`telemetry-pod/expansion/connector-candidate/mating-interface/sources/owner-decision-2026-10-22-board-thickness.txt`
+(class owner-relayed, agent-drafted).
+
+- **Reviewer capacity.** Use codex-3 for held cross-class reviews (no top-up, no other arrangement).
+- **Release gate host.** Retry the Spot `agent-ee-gate-c4` in us-central1-a; if it stocks out again, leave it off and gate on peecee-wsl.
+- **AGENTEE-348 signing is dropped.** Deliberate agent forgery of owner or manufacturer records is outside the threat model. Owner authority is a citation to a committed owner decision (pinned commit plus hash, as `OWNER_GRANTS` does). Checks guard against accidental mislabeling of unsourced values, not forgery, and reviewers do not raise holds on "an agent could write its own grant" hypotheticals. AGENTEE-348 keeps only its G4/G5 scope.
+- **AGENTEE-20 repository size.** The target is amended: retained run evidence lives in the private Garage bucket and only test-needed bytes stay in the tree. No history rewrite.
+- **AGENTEE-441.** Accepted as partial; the OPA197 vendor SPICE model stays recorded as unqualified.
+- **AGENTEE-219.** Vendoring the kicad-happy MIT patch (KICAD-HAPPY-219) with its notice is approved, and it is also sent upstream.
+- **AGENTEE-14.** MIT licensing is approved for agent-ee material and for T1/T2 (the FOME-MC RC fixture and eda.py-derived logic). T3-T13 stay excluded.
+- **AGENTEE-21 / AGENTEE-12.** The network re-fetch of the five redistributable boards and a capped live reviewer A/B run (at most 12 subscription calls) are approved, with evidence kept in the private Garage store.
+- **AGENTEE-108** stays private and closes against the private store. **AGENTEE-69** keeps the tscircuit prompts uncommitted, accepts the committed original series and amends criterion 2.
+- **Autonomous pod decisions** since 2026-10-20 (D-PCB-1, -8, -9, -11, -12, -14) are acknowledged as they stand; the thermal-evidence release gate (AGENTEE-447) still applies.
+- **Telemetry pod mechanics.** The ECU and pod are built from the ground up: the enclosure, panel and harness are team design deliverables, not blockers for bare-board placement, routing or fabrication readiness, and the seat cowl is the only existing external constraint. The standard JLCPCB four-layer 1.6 mm board with its published finished tolerance is accepted.
+- **Through-hole board-thickness fit (AGENTEE-448).** At least +/-10% of a part's recommended nominal board thickness is the inclusive component-side fit-screening default, independent of the fabricator's finished-thickness tolerance. Explicit manufacturer limits override, and outside the band alone is advisory. For J1, TE's 1.57 mm gives 1.413-1.727 mm, so the 1.6 mm board fits.
+
+## Supplier land-pattern threshold (AGENTEE-31, 2026-10-22)
+
+Coordinator ruling (agent-449, AGENTEE-31 worker assignment; not an owner
+statement): keep the 0.98 copper/hole IoU threshold. The actual C11702 pattern
+against `R_0402_1005Metric` is evaluated by exact IoU and reported as
+`low_accuracy` at IoU about 0.67. It is never passed by a relaxed or relative
+rule. Reasons: 0.98 is the ticket's own rule, the supplier pad geometry really
+differs from the IPC-nominal KiCad pads, and an earlier `nearest_variant`
+acceptance rule was rejected on review. The supplier bytes stay unpublished. See
+the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).
+
+## RC 2-layer stackup authority (AGENTEE-85, 2026-10-22)
+
+Provenance: a coordinator ruling in the agent-449 AGENTEE-85 assignment
+(2026-10-22) made this agent-decidable. It is not an owner decision. The
+reasoning below is agent-drafted and unconfirmed.
+
+The earlier comment asked the owner to choose between (a) a declared nominal
+stackup, (b) another citable source and (c) unknown. The decision is (b) for
+every field JLCPCB publishes, and (c) for the field it does not:
+
+- the recorded [JLCPCB 2-layer profile](../fixtures/board-envelope/jlc-2layer/fab-profile.json)
+  declares a partial stackup. It cites the 1.6 mm nominal thickness and two 1 oz
+  (35 µm) copper layers from the source recorded on 2026-10-19. The `core`
+  thickness and the physical total are `null`, meaning unpublished;
+- that copper-weight authority binds `board_envelope` `stackup/1`. The RC
+  scope captures with every obligation bound, and the AGENTEE-92 criterion-3
+  connector test runs the coordinator path without a stand-in;
+- the RC's 1.53 mm core stays an owned assumption. `stackup/1` reports it
+  unknown, so stackup acceptance stays unknown and never passes. It is never
+  derived as nominal minus copper, because JLCPCB publishes a ±10% finished
+  tolerance, not a physical layer sum;
+- option (a) was not taken. A declared nominal stackup would be an agent label
+  standing as a value. The constraint-provenance rule refuses that.
+
+The shared `rc.envelope.json` fixtures keep `fab_profile: null`, which is the
+unselected-profile case that existing tests assert. Production RC scopes use
+`rc-jlc-2layer.envelope.json`. See
+[RC envelope on the recorded JLCPCB 2-layer profile](board-envelope.md#rc-envelope-on-the-recorded-jlcpcb-2-layer-profile).
+This decision concerns board stackup only. The component-side ±10% THT fit
+(AGENTEE-448) is separate.

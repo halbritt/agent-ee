@@ -25,7 +25,9 @@ adoption, and repeats those checks in `verify-campaign`.
 ## Pinned compatibility
 
 The adapter supports kicad-route commit
-`5f1c072b86e0caee82c7656226c4d0e3ec580a58` only (AGENTEE-277).
+`b5774496d8466b67ffa0362b6665fee2108155a3` only (AGENTEE-450; see the
+[pin qualification record](#pin-qualification-record-agentee-450-2026-10-22)).
+Routing evidence from any other pin is refused as `StaleRoutingEvidence`.
 It requires `result.json` schema `kicad-route/route/1` and the exact top-level
 result and attempt keys written by this pin. Unknown or absent result schema
 versions are contradictions, even when the statuses and exit look successful.
@@ -58,12 +60,12 @@ does not.
 ## The step
 
 `routing_adapter.step(project=, board=, schematic=, name=, label=, checkout=,
-state=None, budget=300, timeout=None, backend='krt', diff_pairs=None,
+state=None, budget=300, timeout=None, backend='builtin', diff_pairs=None,
 layer_policy=None)` returns:
 
 | Field | Value |
 | --- | --- |
-| `argv` | `/usr/bin/python3 -I -B /opt/agent-ee-routing/kicad_route_attempt.py --project P --board B --schematic S --name N --label L --budget T --timeout U --backend krt --state checkout` |
+| `argv` | `/usr/bin/python3 -I -B /opt/agent-ee-routing/kicad_route_attempt.py --project P --board B --schematic S --name N --label L --budget T --timeout U --backend builtin --state checkout` |
 | `mounts` | adapter file at `/opt/agent-ee-routing/kicad_route_attempt.py`; checkout at `/opt/kicad-route`; a separate state directory, when there is one, at `/opt/kicad-route-state` |
 | `source` | `/opt/kicad-route/src` |
 | `writes` | `{"P/B": "routing/candidate/P/B"}`: the board is the only file the step can change |
@@ -113,7 +115,7 @@ exit 2 would read as a partial route. It then runs:
 
 ```text
 /usr/bin/python3 -B -X pycache_prefix=/work/routing/pycache /opt/kicad-route/bin/kicad-route
-  run --out /work/routing/out --json --backend krt --dir /candidate/P --board B --schematic S
+  run --out /work/routing/out --json --backend builtin --dir /candidate/P --board B --schematic S
   --name N --label L --protect existing --budget T
 ```
 
@@ -502,9 +504,14 @@ The attempt is `not_run` (exit 64), and the router does not start, when:
 - the candidate lacks the board or schematic, or contains a link;
 - the checkout is not the pin or its code differs;
 - an installed backend input is missing. The report names the exact path, for
-  example `KICAD_ROUTE_STATE/.venv-krt/bin/python`;
+  example `KICAD_ROUTE_STATE/.venv-krt/bin/python`, or, when the state manifest
+  selects a router generation, `KICAD_ROUTE_STATE/.router-generations/<hex>/venv/bin/python`
+  (also its `installation.json`, `router/VERSION` and `router/UPSTREAM.json`);
+- the state manifest selects a router generation outside
+  `.router-generations/<32 hex>`;
 - a write probe succeeds. The script tries to create a file in the state
-  directory, in each backend component (`.venv-krt` for KRT,
+  directory, in each backend component (`.venv-krt`, or the selected
+  `.router-generations/<hex>` directory, for the owned engine;
   `vendor/freerouting` for Freerouting), and in the checkout when it is separate.
   Every probe must be
   refused by the OS. A probe file that was created is removed and reported.
@@ -994,8 +1001,10 @@ Experiment evidence is never dropped and is never qualified.
   `human` and `existing` are not counted as distinct evidence: the receipt is
   `locked`, and `protection.mode` is only compared with the attempt's own
   `protect` setting.
-- **Pin.** The pinned `5f1c072` `cli.py` has no `--experiment-policy`, and its
-  `main` turns every usage error into a refusal (exit 4). A declared policy at
+- **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
+  `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
+  not its ancestors), and its `main` turns every usage error into a refusal
+  (exit 4). A declared policy at
   this pin is therefore a `refused` attempt with an `absent` record, or a
   contradiction if the refusal output is not the known machine form; it never
   delivers a board. This was read from the pinned source, not run. Consuming real K91 evidence needs the re-pin in the
@@ -1150,7 +1159,7 @@ Independent pin review remains the coordinator's responsibility.
 
 ## Owned routing engine (AGENTEE-277)
 
-The current pin `5f1c072b86e0caee82c7656226c4d0e3ec580a58` includes the routing engine under
+The pin since AGENTEE-277 includes the routing engine under
 `src/kicad_route/router/`; `vendor/krt` is no longer an installed dependency.
 The engine retains MIT notices and `UPSTREAM.json`, tracing the owner's fork
 `0494a05e` and its tap-grid and forbidden-layer weld fixes
@@ -1163,11 +1172,13 @@ The historical backend name `krt` now selects that owned implementation.
 campaign declarations and parsed `result.json`/`attempt.json`, via
 `kicad_route_attempt.canonical_backend`; any other name is refused. A request and its
 retained receipts keep the spelling they were written with, so historical `krt`
-receipts verify with their recorded bytes; the names are normalized only to compare
-and look up. The pinned tool (`5f1c072`) predates the rename and accepts only `krt` and
-`freerouting`, so the adapter, `generate.py` and campaign declarations still emit
-`--backend krt` for either spelling of the owned backend (`PIN_BACKEND_NAMES`). The emit
-switch waits for the pin move (timed with KICADROUTE-91).
+receipts keep their recorded bytes; the names are normalized only to compare
+and look up. Since the `b577449` pin (AGENTEE-450) agent-ee emits only `builtin`: it is
+the default of `parse_request`, `routing_adapter.step`, `preflight` and
+`validate_declaration`, the router is given `--backend builtin` for either spelling
+(`PIN_BACKEND_NAMES`), and `generate.py` and the rung-1 `route.sh` step pass `builtin`.
+`krt` is read-only legacy: it is still parsed so older records can be read, and the
+default step name is now `kicad-route-builtin`.
 
 Installation requires Rust and builds the included locked crate. The
 [container build](container.md#pinned-routing-tool) pins Rust 1.99.1 in its build
@@ -1178,7 +1189,8 @@ when invoking upstream install/update, to contain generated skill links.
 Both host preflight and the sandbox adapter use the qualified tool's existing
 state-manifest reader to verify the source digest and installed extension,
 requirements, package and KiCad hashes. Missing manifests or extension digests,
-source drift and modules outside `.venv-krt` refuse routing. Manifest verification
+source drift and modules outside the layout's venv (`.venv-krt`, or the selected
+generation's `venv`) refuse routing. Manifest verification
 sets Python's cache prefix to `/dev/null` with bytecode writes disabled, so an
 ignored `__pycache__` file cannot replace verified tool source. The source path is
 rebased in memory for the sandbox mount before checking its recorded requirements
@@ -1218,3 +1230,89 @@ native routing from missing, preserved, rejected or single-ended geometry.
 Replay rederives it; it never changes routing adoption or grants acceptance.
 See the [CAN native probe](pod-can-routing.md) for captured class/gap settings,
 independent native length/skew checks and the controlled five-millimetre negative.
+
+## Pin qualification record (AGENTEE-450, 2026-10-22)
+
+The previous pin was `5f1c072b86e0caee82c7656226c4d0e3ec580a58`. The new pin is
+kicad-route main `b5774496d8466b67ffa0362b6665fee2108155a3`, 81 commits later, carrying
+KICADROUTE-90 (campaign selection publishes only native-safe incumbents) and
+KICADROUTE-98 (native terminal preservation). It is not the KICADROUTE-91 release;
+that re-pin belongs to the AGENTEE-442 integration.
+
+`PINNED_CODE` was regenerated from every tracked `bin/` and `src/` blob at the new
+commit: 309 files (276 before), including new modules such as `copper_ownership.py`,
+`native_components.py`, `backend_names.py` and `installation.py`. The image installer
+fetches the same commit; the engine is still the owned `grid_router` 0.23.1 built from
+the included locked crate, now with changed `rust_router` sources, so its extension
+hash differs from the old pin's.
+
+What changed at the adapter boundary, and what agent-ee does about it:
+
+- **Location-bound state.** The pin's `common.state_manifest` refuses a manifest whose
+  `state_dir` is not the directory it is read from, and `engine.py` reads it at import.
+  The sandbox mounts a checkout state at `/opt/kicad-route` and a separate state at
+  `/opt/kicad-route-state`, so the state manifest must be recorded there.
+  `verify_state(..., mounted_at=)` refuses any other `state_dir` with a typed problem
+  (`state manifest describes ..., not the sandbox state ...`), on the host at preflight
+  and again inside the sandbox; the remaining checks read the files wherever the caller
+  sees them. The image records `/opt/kicad-route`
+  natively. A host checkout records it by running `kicad-route state-manifest` in a
+  bwrap view with the checkout bound writable at `/opt/kicad-route` and
+  `KICAD_ROUTE_STATE=/opt/kicad-route`.
+- **Copper custody.** A `builtin` result whose process passed adds the top-level
+  `copper_ownership` pointer (`bound` to `validate/copper-ownership.json`, or
+  `unavailable` with reasons; `replay_authority: false`). Its exact shape is required
+  on exactly those results and refused elsewhere; a bound pointer must hash the
+  retained record and appear in `result.evidence.records`. agent-ee never grades from it.
+- **Native terminal preservation.** An eligible attempt must carry
+  `validation.net_completion` with status `PASS`, no `split_components` and no
+  `nets_lost`, and `validation.native_terminal_evidence` with its two component
+  records and metrics; a `COMPLETE` route whose candidate terminals are still split is
+  refused. The pin already reports a capped raw DRC list as routing `NOT_RUN`, which
+  the adapter classifies as a contradiction without a board.
+- **Stale evidence.** `routing_adapter.verify` refuses a report whose
+  `adapter.compatibility` names another pin with `StaleRoutingEvidence` (a
+  `ValueError` carrying `.pin` and `.expected`) before any other check;
+  `validate_binding` does the same for a frozen campaign binding. Historical receipts,
+  such as the `08179cd` fixture under `fixtures/rc/stages/receipts/`, are never
+  rewritten. Via-budget pilots and campaigns that froze the adapter hash refuse the new
+  adapter until recaptured, as before.
+
+- **Router generations.** The pin installs the owned engine in one of two layouts, and
+  both qualify only when built from the pinned source. Legacy (manifest
+  `krt.generation` null): the engine runs from the checkout's `src/kicad_route/router`
+  with `STATE/.venv-krt`; the image's `docker/kicad-route/install.sh` builds this.
+  Router generation (`kicad-route update`): `krt.generation` selects
+  `STATE/.router-generations/<32 hex>/`, which holds a copy of the source (`router/`),
+  its own `venv/` and `installation.json`. For a generation, the manifest's source,
+  requirements, venv and extension paths must all lie inside it; the recorded source
+  digest must equal `engine.source_sha256(engine.SOURCE_ROOT)` of the verified checkout
+  (not the generation's own `engine.ROOT`, which would make the check compare the
+  generation with itself); `installation.json` must record the same source digest and
+  extension hash; and the pin's drift check hashes the generation's copy. A generation
+  built from another commit is self-consistent, so `kicad-route doctor` passes it;
+  agent-ee refuses it (`owned engine source digest differs; router generation ... was
+  built from commit ...`). State components, required files and write-probe targets
+  follow the layout (`state_generation`, `state_components`, `state_required`), and
+  `routing_adapter.verify` recovers the layout from the report's state identities.
+- **Nested result keys.** Every `result.json` carries `process.measurement_qualification`
+  with exactly `measurement`, `build_reproducible` and `reasons`, and its `measurement`
+  must equal the top-level one. An owned-engine result's `backend` carries `runtime` with
+  exactly `source`, `venv` and `generation`; it must name the engine verified before the
+  run (the checkout's `src/kicad_route/router` and `STATE/.venv-krt` with generation
+  null, or the selected generation's `router` and `venv`). Freerouting results carry no
+  `runtime`. Any other shape, or a runtime other than the verified engine, is a
+  contradiction without a board. Covered by `tests.test_kicad_route_generations`.
+
+Settings, refusal classes, retained files and the attempt key set are unchanged. No
+routing constraint was relaxed: the fixed argv, settings, `--protect existing`, layer
+policy, net classes and preservation checks are as before.
+
+Qualify with `AGENT_EE_KICAD_ROUTE_CHECKOUT` set to the pinned checkout:
+`tests.test_kicad_route_repin` (policy and native cases, including a partially joined
+net and a 511-net capped raw report), `tests.test_kicad_route_generations` (both
+installed layouts, stale-generation refusal, nested result keys, and a native run from a
+generation layout), `test_kicad_route_native`,
+`test_kicad_route_adapter`, `test_owned_router_pin` and the other modules listed in the
+[routing policy contract](routing-policy-contract.md).
+

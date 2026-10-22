@@ -182,7 +182,8 @@ elsewhere never hides another reference's outcome.
 
 The owned `schematic_emitter` writes string-valued `part_binding` fields from
 resolved intent. A field replaces the matching library default, or becomes a
-new hidden native property. Reference, Value, Footprint and population flags
+new hidden native property after the standard fields
+([emitter field order](schematic-emitter.md)). Reference, Value, Footprint and population flags
 cannot be overridden by binding data. Unsupported names or non-string values
 refuse emission. Forward annotation carries exported fields onto footprints;
 this check still grades the resulting parity. The [Rung-1 adapter](rung1-parts.md)

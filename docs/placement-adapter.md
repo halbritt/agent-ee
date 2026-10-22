@@ -643,6 +643,8 @@ board and the envelope declared mutable assert exactly that refusal.
 AGENTEE-161 permits stackup binding when the
 declared profile supplies [source-verified authority](fab-profile.md#stackup-authority).
 The RC tests neither supply that authority nor replace it with test bindings.
+The [recorded JLCPCB 2-layer variant](board-envelope.md#rc-envelope-on-the-recorded-jlcpcb-2-layer-profile)
+does supply it; this campaign fixture keeps the profile-free envelope.
 
 A campaign whose run captured no candidate records that run's own `result.json`
 error (`run N captured no candidate: ...`), not a missing-manifest error.
