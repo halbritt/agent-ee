@@ -371,7 +371,7 @@ value or a
 malformed movable-field declaration refuses with `ValueError`, never an untyped
 error or a silent skip (AGENTEE-364). This conservative scope limit
 can refuse legitimate boards: the shared parser decodes escapes, so decoded
-token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
+token equality cannot establish the saved spelling KiCad renders. The refusal is pinned by `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
 open. The native DRC comparison has no saved geometry states; the scope proof,
