@@ -373,6 +373,33 @@ def save_result(run, result):
     render(run, result)
 
 
+def _recovered_execution(path, expected):
+    """Read a review-execution record; a record cut off before it named its role or status is kept, not dropped.
+
+    review-executions/<role>.json is written per role, so a record without ``role`` takes it from the file
+    name, but only when that name is one of the scope's expected reviewer roles (``expected`` is None without a
+    captured scope). A record whose file name or role is not expected is returned as ``(None, unexpected)`` so
+    it is reported beside the executions and never satisfies a role. A record without ``execution`` is
+    cancelled evidence, not a pass. The reconstruction mark is returned beside the record, not inside it, so
+    the archived execution projection stays exactly what the executor wrote.
+    """
+    record = read_json(path)
+    if "role" in record:
+        recognized = record["role"] == path.stem if expected is None else record["role"] == path.stem in expected
+    else:
+        recognized = expected is not None and path.stem in expected
+    if not recognized:
+        return None, {"file": path.name, "role": record.get("role"),
+                      "error": "review execution record does not belong to an expected reviewer role"}
+    reconstructed = "role" not in record
+    if reconstructed:
+        record["role"] = path.stem
+    if "execution" not in record:
+        record["execution"] = "interrupted"
+        record.setdefault("error", "run stopped before this review execution record was completed")
+    return record, path.stem if reconstructed else None
+
+
 def recover_records(run, result):
     """Project completed durable work after an exception or operator interrupt."""
     from .findings import collect_findings
@@ -380,9 +407,21 @@ def recover_records(run, result):
     previous = {f["id"]: f for f in result.get("findings", [])}
     result["checks"] = [read_json(p) for p in sorted((run / "checks").glob("*.json"))]
     result["reviews"] = [read_json(p) for p in sorted((run / "reviews").glob("*.json"))]
-    result["review_executions"] = [read_json(p) for p in sorted((run / "review-executions").glob("*.json"))]
-    if result.get("candidate_id"):
-        scope = read_json(run / "candidate.json")["scope"]
+    scope = read_json(run / "candidate.json")["scope"] if result.get("candidate_id") else None
+    expected = ({r["role"] for r in scope.get("review_profile", {}).get("reviewers", [{"role": "circuit"}, {"role": "physical"}])}
+                if scope else None)
+    result["review_executions"] = []
+    result["recovered_review_roles"] = []
+    result["unexpected_review_executions"] = []
+    for p in sorted((run / "review-executions").glob("*.json")):
+        record, note = _recovered_execution(p, expected)
+        if record is None:
+            result["unexpected_review_executions"].append(note)
+            continue
+        result["review_executions"].append(record)
+        if note:
+            result["recovered_review_roles"].append(note)
+    if scope:
         done = {c["id"] for c in result["checks"]}
         for spec in scope["checks"]:
             if spec["id"] in done:
