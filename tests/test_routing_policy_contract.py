@@ -56,6 +56,48 @@ class ContractSummaryTests(unittest.TestCase):
                             (version == 1) != paired)
                 self.assertEqual('unknown result schema version' not in reasons, expected)
 
+    def test_consumes_entries_match_adapter_behaviour(self):
+        consumes = self.adapter['consumes']
+        # version_2_only_with is "<request key> <value>"; it must be the request key the adapter
+        # turns into the version-2 expectation and the router flag.
+        key, value = consumes['version_2_only_with'].split()
+        self.assertEqual((key, value), ('diff_pairs', 'auto'))
+        declaration = self.contract['request_example']['declaration']
+        self.assertEqual(routing_adapter.validate_declaration({**declaration, key: value})[key], value)
+        with self.assertRaises(ValueError):
+            routing_adapter.validate_declaration({**declaration, key: 'other'})
+        request = {'project': 'p', 'board': 'b.kicad_pcb', 'name': 'n', 'backend': 'krt', 'budget_s': 10}
+        versions = {}
+        for paired in (False, True):
+            asked = {**request, **({key: value} if paired else {})}
+            result = dict.fromkeys(attempt.RESULT_KEYS)
+            result.update(kind='route', exit_code=0, backend={'name': 'krt'},
+                          input={'board': 'b.kicad_pcb', 'project': 'n'},
+                          settings=attempt.expected_settings(asked, None, [] if paired else None),
+                          process={'status': 'PASS'}, routing={'status': 'COMPLETE'},
+                          validation={'status': 'PASS'}, **({'pairs': []} if paired else {}))
+            keys = attempt.ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set())
+            for version in (1, 2, 3):
+                # A record reaches the attempt-schema check only if its result schema was accepted.
+                record = dict.fromkeys(keys, None)
+                record['schema'] = f'kicad-route/attempt/{version}'
+                outcome = attempt.semantics(0, {**result, 'schema': f'kicad-route/route/{version}'}, record,
+                                            False, True, asked)
+                accepted = 'unknown attempt schema version' not in outcome[1] and \
+                    'unknown result schema version' not in outcome[1]
+                if accepted:
+                    versions.setdefault(paired, set()).add(version)
+        self.assertEqual(versions, {False: {1}, True: {2}})
+        self.assertEqual(sorted(f'kicad-route/attempt/{v}' for v in (1, 2)), sorted(consumes['attempt']))
+        self.assertEqual(sorted(f'kicad-route/route/{v}' for v in (1, 2)), sorted(consumes['result']))
+        # The refusal schema is exactly one version; neighbours are not read as refusals.
+        self.assertEqual(consumes['refusal'], ['kicad-route/refusal/1'])
+        for version in (0, 1, 2, 3):
+            with self.subTest(refusal=version):
+                self.assertEqual(
+                    bool(attempt.refused_output(refusal('usage', {'schema': f'kicad-route/refusal/{version}'}))),
+                    f'kicad-route/refusal/{version}' in consumes['refusal'])
+
     def test_refusal_reason_classes(self):
         classes = self.adapter['refusal_reason_classes']
         for reason in classes:
