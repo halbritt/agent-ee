@@ -43,7 +43,10 @@ The trace is an observer, and a failure to assemble or write it never replaces t
 placement outcome:
 
 - When placement raised, its own exception is re-raised. The trace error is
-  attached as `placement_trace_error`, plus a note that names the path.
+  attached as `placement_trace_error`, plus a note that names the path. This
+  holds when the write itself is interrupted (`KeyboardInterrupt` or another
+  `BaseException`): the interruption is the attached trace error, and the
+  placement exception still propagates.
 - When placement returned, `traced_place_candidate` raises
   `TracePersistenceError`. Its `report` is the placement report, and `__cause__`
   is the trace error. A placed candidate can already be published at its
@@ -149,7 +152,8 @@ scan: pads, peers, poses and the expected bounds and costs. This is the G1 repla
 contract. Before it returns anything, it checks the evidence and raises
 `ValueError` on any of these:
 
-- an invalid envelope;
+- an invalid envelope, including a duration whose `parent` is not a duration
+  name or null, or whose `within` is not a list of duration names;
 - an unsupported contract. The consumer must be `agent-ee.placement/1`, the
   objective `agent-ee.placer.wire-cost/1` and the generation scheme
   `agent-ee.placer.search-stack/1`. An `unknown` objective or generation is never

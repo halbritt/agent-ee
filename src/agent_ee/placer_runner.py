@@ -854,7 +854,8 @@ def traced_place_candidate(source, netlist, destination, request, trace_path, *,
     unchanged.
 
     A trace that cannot be written never replaces the placement outcome. When placement
-    raised, its own exception is re-raised, carrying the trace error as
+    raised, its own exception is re-raised, carrying the trace error, or the interruption
+    (KeyboardInterrupt or another BaseException) that stopped the write, as
     ``placement_trace_error`` and a note. When placement returned, ``TracePersistenceError``
     carries the report: the candidate may exist although its trace does not.
     """
@@ -872,7 +873,12 @@ def traced_place_candidate(source, netlist, destination, request, trace_path, *,
     except BaseException as exc:
         state = {'status': 'failed' if isinstance(exc, Exception) else 'interrupted',
                  'reason': f'{exc.__class__.__name__}: {exc}'}
-        failure = None if recorder is None else persist(recorder, report=report, state=state)
+        failure = None
+        if recorder is not None:
+            try:
+                failure = persist(recorder, report=report, state=state)
+            except BaseException as interruption:
+                failure = interruption  # Even an interrupted write never displaces the primary exception.
         if failure is not None:
             exc.placement_trace_error = failure
             exc.add_note(f'placement trace not written to {trace_path}: {failure.__class__.__name__}: {failure}')
