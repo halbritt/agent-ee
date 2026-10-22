@@ -530,6 +530,174 @@ class ControlAdjudicationTests(unittest.TestCase):
         self.assertEqual(result['per_kind']['hardware_interface']['rate'],0.0)
 
 
+class ControlJudgementTests(unittest.TestCase):
+    """Judged layer: facts re-derived from captured inputs bind each verdict to one open record."""
+    PIN = '00000000-0000-0000-0000-0000000000a1'
+    WIRE = '00000000-0000-0000-0000-0000000000b1'
+    STALE = '00000000-0000-0000-0000-0000000000c1'
+    EDGE = '00000000-0000-0000-0000-0000000000d1'
+
+    def schematic(self, flag=False):
+        lib = ('(lib_symbols (symbol "power:VCC" (power) (symbol "VCC_1_1" (pin power_in line (at 0 0 90) (length 0) (name "VCC") (number "1"))))'
+               ' (symbol "power:PWR_FLAG" (power) (symbol "PWR_FLAG_1_1" (pin power_out line (at 0 0 90) (length 0) (name "pwr") (number "1"))))'
+               ' (symbol "Device:R" (symbol "R_1_1" (pin passive line (at 0 3.81 270) (length 1.27) (name "~") (number "1"))'
+               ' (pin passive line (at 0 -3.81 90) (length 1.27) (name "~") (number "2")))))')
+        def symbol(lib_id, at, ref, value, uuid):
+            return (f'(symbol (lib_id "{lib_id}") (at {at} 0) (unit 1) (uuid "{uuid}") (property "Reference" "{ref}")'
+                    f' (property "Value" "{value}") (pin "1" (uuid "{self.PIN if ref=="#PWR01" else uuid[:-2]+"ff"}")))')
+        parts = [lib, symbol('power:VCC','25.4 25.4','#PWR01','VCC','00000000-0000-0000-0000-000000000001'),
+                 symbol('Device:R','25.4 29.21','R1','10k','00000000-0000-0000-0000-000000000002'),
+                 f'(wire (pts (xy 25.4 33.02) (xy 26.035 33.02)) (uuid "{self.WIRE}"))']
+        if flag:
+            parts.append(symbol('power:PWR_FLAG','25.4 25.4','#FLG01','PWR_FLAG','00000000-0000-0000-0000-000000000003'))
+        return '(kicad_sch '+' '.join(parts)+')'
+
+    def control(self, root, flag=False):
+        import json
+        from pathlib import Path
+        manifest = ControlAdjudicationTests().control(root)
+        run = Path(root)/'runs'/'owned-control'
+        (run/'inputs/hw/owned.kicad_sch').write_text(self.schematic(flag))
+        (run/'inputs/hw/owned.kicad_pcb').write_text(
+            '(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer "Edge.Cuts") (uuid "r1"))'
+            f' (gr_line (start 10 5) (end 12 5) (layer "Edge.Cuts") (uuid "{self.EDGE}")))')
+        (run/'inputs/hw/owned.kicad_pro').write_text(json.dumps({
+            'erc':{'rule_severities':{'endpoint_off_grid':'warning'},
+                   'erc_exclusions':[f'power_pin_not_driven|1|2|{self.STALE}|00000000-0000-0000-0000-000000000000|/r|/r|']},
+            'board':{'design_settings':{'rule_severities':{},'rules':{'min_copper_edge_clearance':0.5}}},
+            'schematic':{'connection_grid_size':50.0}}))
+        erc = json.loads((run/'work/erc/erc.json').read_text())
+        erc['sheets'][0]['violations'] += [
+            {'type':'power_pin_not_driven','severity':'error','description':'Input Power pin not driven by any Output Power pins',
+             'items':[{'description':'Symbol #PWR01 Pin 1 [Power input, Line]','pos':{'x':25.4,'y':25.4},'uuid':self.PIN}]},
+            {'type':'endpoint_off_grid','severity':'warning','description':'Symbol pin or wire end off connection grid',
+             'items':[{'description':'Horizontal Wire, length 0.635 mm','pos':{'x':25.4,'y':33.02},'uuid':self.WIRE}]}]
+        erc['sheets'][0]['violations'][5]['excluded'] = True
+        (run/'work/erc/erc.json').write_text(json.dumps(erc))
+        drc = json.loads((run/'work/drc/drc.json').read_text())
+        drc['violations'] += [
+            {'type':'copper_edge_clearance','severity':'error','items':[
+                {'description':'Segment on Edge.Cuts','pos':{'x':10.0,'y':5.0},'uuid':self.EDGE}],
+             'description':'Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.3000 mm)'},
+            {'type':'invalid_outline','severity':'error','description':'Board has malformed outline (not a closed shape)',
+             'items':[{'description':'Segment on Edge.Cuts','pos':{'x':10.0,'y':5.0},'uuid':self.EDGE}]}]
+        (run/'work/drc/drc.json').write_text(json.dumps(drc))
+        (Path(root)/'request.json').write_text(json.dumps({'image_id':'sha256:'+'0'*64}))
+        return manifest
+
+    def facts(self, root, flag=False):
+        from agent_ee.benchmark_run import open_control_facts
+        rows = open_control_facts(self.control(root,flag),root)
+        return {(r['check_id'],r['type'],r['raw_locator']):r for r in rows}
+
+    def test_facts_rederive_the_stated_condition_from_captured_inputs(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp)
+        power = rows[('erc','power_pin_not_driven','/sheets/0/violations/6')]['facts']
+        self.assertEqual((power['pin']['type'],power['conductor'],power['condition_holds']),
+                         ('power_in',[{'reference':'R1','number':'1','type':'passive'}],True))
+        grid = rows[('erc','endpoint_off_grid','/sheets/0/violations/7')]['facts']
+        self.assertEqual((grid['grid_mm'],grid['condition_holds'],grid['project_severity']),(1.27,True,'warning'))
+        # The item-less excluded marker names a stored exclusion whose item is not in the design.
+        stale = rows[('erc','power_pin_not_driven','/sheets/0/violations/5')]['facts']
+        self.assertEqual((stale['excluded'],stale['stored_exclusions']),(True,[{'items_in_native_file':[False]}]))
+        edge = rows[('drc','copper_edge_clearance','/violations/2')]['facts']
+        self.assertEqual((edge['required_mm'],edge['actual_mm'],edge['required_from_project']),
+                         (0.5,0.3,['board.design_settings.rules.min_copper_edge_clearance']))
+        outline = rows[('drc','invalid_outline','/violations/3')]['facts']
+        # A line end on a rectangle side, not at a corner, does not close the outline either.
+        self.assertEqual((outline['open_outline_ends'],outline['condition_holds']),([[10.0,5.0],[12.0,5.0]],True))
+
+    def test_a_power_output_on_the_conductor_falsifies_the_condition(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp,flag=True)
+        power = rows[('erc','power_pin_not_driven','/sheets/0/violations/6')]['facts']
+        self.assertIn({'reference':'#FLG01','number':'1','type':'power_out'},power['conductor'])
+        self.assertFalse(power['condition_holds'])
+
+    def ledger(self, rows, **override):
+        bases = {'verified':{'verdict':'genuine'},'stale':{'verdict':'false_alarm'},'open':{'verdict':'unadjudicated'}}
+        entries = []
+        for row in rows.values():
+            basis = 'stale' if row['raw_locator']=='/sheets/0/violations/5' else 'verified'
+            entries.append({**{k:row[k] for k in ('control','check_id','raw_locator','type','location_hash','facts_sha256')},
+                            'verdict':bases[basis]['verdict'],'basis':basis,'reason':'test'})
+        return {'schema':'agent-ee.benchmark-control-judgements/1','adjudicator':'test','provenance':'test',
+                'bases':bases,'judgements':entries,**override}
+
+    def test_judged_layer_is_separate_and_bound_to_current_facts(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import adjudicate_controls, judge_controls, judged_false_alarms
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp)
+            manifest = {'boards':[{'id':'owned'}]}
+            fixed = adjudicate_controls(manifest,tmp)
+            before = json.dumps(fixed,sort_keys=True)
+            ledger = self.ledger(rows)
+            judged = judge_controls(manifest,tmp,ledger)
+            self.assertEqual(json.dumps(adjudicate_controls(manifest,tmp),sort_keys=True),before)
+            erc = judged['per_kind']['erc']
+            # Two library-table records are decided by the fixed rules; the other six are open.
+            self.assertEqual((erc['open_records'],erc['false_alarm'],erc['genuine'],erc['unjudged']),(6,1,5,0))
+            shares = judged_false_alarms(fixed,judged)['erc']
+            self.assertEqual((shares['records'],shares['false_alarm'],shares['fixed_rule_false_alarm']),(8,3,2))
+            self.assertEqual(shares['share'],3/8)
+            # An entry left out stays unadjudicated and keeps the share a bound.
+            partial = {**ledger,'judgements':ledger['judgements'][1:]}
+            open_ = judged_false_alarms(fixed,judge_controls(manifest,tmp,partial))
+            self.assertIsNone(open_[ledger['judgements'][0]['check_id']]['share'])
+            # Changed evidence makes the judgement stale, never silently reused.
+            schematic = Path(tmp)/'runs/owned-control/inputs/hw/owned.kicad_sch'
+            schematic.write_text(self.schematic(flag=True))
+            with self.assertRaisesRegex(ValueError,'stale judgement'):
+                judge_controls(manifest,tmp,ledger)
+
+    def test_unknown_duplicate_and_contradictory_entries_are_refused(self):
+        import copy
+        import tempfile
+        from agent_ee.benchmark_run import apply_judgements, judge_controls
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = self.facts(tmp)
+            manifest = {'boards':[{'id':'owned'}]}
+            ledger = self.ledger(rows)
+            unknown = copy.deepcopy(ledger);unknown['judgements'][0]['raw_locator'] = '/sheets/0/violations/99'
+            with self.assertRaisesRegex(ValueError,'names no open control record'):
+                judge_controls(manifest,tmp,unknown)
+            duplicate = copy.deepcopy(ledger);duplicate['judgements'].append(duplicate['judgements'][0])
+            with self.assertRaisesRegex(ValueError,'duplicate judgement'):
+                judge_controls(manifest,tmp,duplicate)
+            contradiction = copy.deepcopy(ledger);contradiction['judgements'][0]['verdict'] = 'false_alarm'
+            with self.assertRaisesRegex(ValueError,'contradicts its basis'):
+                judge_controls(manifest,tmp,contradiction)
+            undeclared = copy.deepcopy(ledger);undeclared['judgements'][0]['basis'] = 'guess'
+            with self.assertRaisesRegex(ValueError,'declared basis'):
+                judge_controls(manifest,tmp,undeclared)
+            with self.assertRaisesRegex(ValueError,'expected a control judgement ledger'):
+                apply_judgements(tmp,tmp,{**ledger,'schema':'other'})
+            other = {**ledger,'manifest_sha256':'0'*64,'image_id':'sha256:'+'0'*64}
+            from pathlib import Path
+            (Path(tmp)/'m.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'another manifest or image'):
+                apply_judgements(Path(tmp)/'m.json',tmp,other)
+
+    def test_committed_ledger_covers_each_open_record_once_with_declared_bases(self):
+        import json
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        ledger = json.loads((root/'benchmarks/seeded/control-judgements.json').read_text())
+        keys = [(j['control'],j['check_id'],j['raw_locator']) for j in ledger['judgements']]
+        self.assertEqual(len(keys),len(set(keys)))
+        kinds = [j['check_id'].split('-')[-1] for j in ledger['judgements']]
+        self.assertEqual((kinds.count('erc'),kinds.count('drc')),(149,50))
+        self.assertTrue(all(ledger['bases'][j['basis']]['verdict']==j['verdict'] and j['reason']
+                            for j in ledger['judgements']))
+        self.assertIn('not owner-stated',ledger['provenance'])
+
+
 class DependencyClosureTests(unittest.TestCase):
     SCHEMATIC = ('(kicad_sch (lib_symbols (symbol "Device:R") (symbol "Custom:Part") (symbol "Local"))'
                  '(symbol (lib_id "Device:R") (uuid "s1")) (symbol (lib_id "Custom:Part") (uuid "s2"))'
