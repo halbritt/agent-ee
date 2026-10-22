@@ -56,35 +56,87 @@ provider. It appends a `settle` line with the execution state afterwards.
 - Every resubmission or retry is its own reservation.
 - At the cap (12) a `refused` line is written. The dispatch then returns
   `not_run` and launches nothing.
-- A line that does not parse counts as a real call.
-- A crash can leave the last line without its newline. The next open validates
-  the header, then terminates that line in place and appends a
-  `tail_terminated` record before anything else. A complete reservation in the
-  tail stays a reservation; a partial one stays a malformed line and is
-  charged. The tail is never removed or rewritten, and the next reservation is
-  always written as a separate line. `state()` reports `tails_terminated`.
-  The ledger is decoded as strict UTF-8: any undecodable byte, even inside an
-  otherwise complete JSON line, makes reading raise `ValueError`, so no
-  reservation or launch happens and the bytes are left untouched.
-- A ledger whose first line is not a valid header is refused without writing.
+
+**Invariant: every ledger line is either a validated known record or is counted
+against the cap.** `LEDGER_RECORDS` in `src/agent_ee/packet_ab.py` is the strict
+schema. It lists the required and optional fields of each event, with their
+types and allowed values. Every other field, and every other event, is invalid.
+
+| event | required fields | optional |
+|---|---|---|
+| `header` | `schema` = `agent-ee.call-ledger/1`, `cap` int 1..12, `created_utc` | |
+| `reserve` | `seq` int, `kind` `real`/`fake`, `cell`, `label`, `plan_id` (non-empty strings), `at_utc`, `real_calls_after` int | |
+| `settle` | `seq` int, `at_utc`, `execution` (non-empty string or null) | `duration_s` (finite, non-negative or null), `error` (non-empty string) |
+| `refused` | `kind` = `real`, `cell`, `label`, `plan_id`, `at_utc`, `real_calls` int | |
+| `tail_terminated` | `line` int, `at_utc` | |
+
+Timestamps are ISO 8601 with an offset. Before anything is counted, written,
+recovered or launched, every line is checked in order, along with its context:
+
+- it is ASCII JSON in canonical form, exactly as `json.dumps(record,
+  sort_keys=True)` writes it;
+- the header is the first line, and only there;
+- a reservation's `seq` is its own line index, and its `real_calls_after` is
+  the running real count, never above the cap;
+- a settlement names an earlier, still unsettled reservation;
+- a refusal records the count at the cap;
+- `tail_terminated.line` is its own line index.
+
+The rule for a line that fails any check is uniform. Unknown or missing
+events, invalid or missing kinds, missing, extra or mistyped fields,
+undecodable or non-ASCII bytes, non-canonical spacing, broken sequence and a
+torn tail are all treated the same way: the line is charged as the whole
+remaining budget. Reading raises `LedgerRefused` (a `ValueError`), so nothing is
+reserved, settled or launched, and the file is left byte for byte as it is. No
+line is ever skipped, repaired, rewritten or removed. The rule is refusal, not
+charging one call: a single damaged byte can fuse two lines into one, so a
+one-call charge could hide a reservation. The writer validates each record
+before appending it, and `settle` refuses a sequence number that is not an
+unsettled reservation, so the code never writes a line it would then refuse.
+
+- A crash can leave the last line without its newline. If that tail is a
+  complete, valid record, the next open terminates it in place and appends a
+  `tail_terminated` record before anything else. A kept reservation stays
+  charged, and the next record cannot fuse with it. `state()` reports
+  `tails_terminated`. A torn, invalid tail is refused like any other invalid
+  line.
 - A ledger whose header cap differs from the request is refused.
 - Live mode refuses a ledger under `/tmp`.
+
+Recovering a refused ledger takes an operator decision outside this tool. The
+tool never makes that decision itself.
 
 The ledger lives in the repository, so the count survives restarts and fresh
 clones. Deleting or reverting the file would reset it, and nothing here detects
 that.
 
-`tests/test_packet_ab.py` covers the refusal of the 13th call across restarts, a
-refused reservation never launching, the reservation being on disk before the
-provider runs, retries counting, torn lines, and the volatile-ledger refusal.
-Two regressions write a ledger with ten settled calls and a crashed eleventh
-reservation, once as complete JSON without its newline and once as partial JSON.
-Each then runs three calls, each in a new Python process. One launches and
-settles; the next two are refused. The tests check that the damaged tail is
-kept byte for byte and that no reservation is lost. A torn header is refused
-and the file is left untouched. It
-also covers `historical_packet`, the scoring boundaries and a native dry run of
-the full plan with the fake provider.
+`tests/test_packet_ab.py` covers:
+
+- the refusal of the 13th call across restarts, a refused reservation never
+  launching, the reservation being on disk before the provider runs, retries
+  counting, and the volatile-ledger refusal;
+- a complete eleventh reservation left without its newline. Of three calls,
+  each in a new Python process, one launches and the next two are refused.
+- refusal, in process and in restarted processes, for each of the following,
+  with the bytes kept: partial JSON (terminated and not), invalid UTF-8 in any
+  field, valid-UTF-8 damage to `kind`, `event` or their keys, and wrong `seq`,
+  `real_calls_after`, types or fields;
+- unknown events, non-objects, blank or `\r` lines, a double settlement, a
+  settlement of an unknown `seq`, an early refusal, a misplaced
+  `tail_terminated` or header, a bad timestamp and non-canonical spacing;
+- a property sweep. Every bit flip, plus 16 replacement bytes, is applied at
+  every byte position of a reservation line, about 11,800 ledgers in all. The
+  line is placed three ways: as the unsettled tail with its newline, as the
+  tail without it, and as an interior line followed by its settlement and later
+  records. Each damaged ledger then gets three calls, each in a fresh
+  interpreter. No ledger ever reaches a thirteenth real call: each one is
+  either refused with its bytes intact, or still charges the same call.
+- every single bit flip over a ledger holding every record type. Each one is
+  refused or leaves the state unchanged.
+- the retained 9-call live ledger, which validates without a byte changing.
+
+It also covers `historical_packet`, the scoring boundaries and a native dry run
+of the full plan with the fake provider.
 
 ```sh
 PYTHONPATH=src python3 scripts/packet_index_ab.py plan

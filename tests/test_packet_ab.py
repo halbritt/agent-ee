@@ -25,6 +25,32 @@ record, _ = packet_ab.metered(packet_ab.CallLedger(ledger), 'live', 'plan', prov
     ledger.parent / cell, 'circuit', {'harness': 'fake', 'model': 'fake'}, 'p', {}, 1)
 print(record['execution'], len(launched))
 '''
+# The sweep's restarted call: one fresh interpreter makes one metered call against each listed ledger.
+SWEEP_CALL = '''
+import sys
+from pathlib import Path
+from agent_ee import packet_ab
+launched = []
+def provider(*args, **kwargs):
+    launched.append(1)
+    return {'execution': 'ok', 'duration_s': 0.0}, {}
+for name in sys.stdin.read().split():
+    ledger = Path(name)
+    before = len(launched)
+    try:
+        record, _ = packet_ab.metered(packet_ab.CallLedger(ledger), 'live', 'plan', provider)(
+            ledger.parent / ('after-' + sys.argv[1]), 'circuit', {'harness': 'fake', 'model': 'fake'}, 'p', {}, 1)
+        outcome = record['execution']
+    except packet_ab.LedgerRefused:
+        outcome = 'refused'
+    print(name, outcome, len(launched) - before)
+'''
+REPLACEMENTS = (0x00, 0x09, 0x0a, 0x0d, 0x20, 0x22, 0x2c, 0x30, 0x39, 0x3a, 0x5c, 0x61, 0x7b, 0x7d, 0x80, 0xff)
+
+
+def child_env():
+    return dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
+        str(Path(packet_ab.__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')])))
 
 
 class CallLedgerTests(unittest.TestCase):
@@ -54,38 +80,45 @@ class CallLedgerTests(unittest.TestCase):
         self.assertEqual(ledger.state()['real_calls'], 0)
         self.assertEqual(ledger.remaining(), packet_ab.CAP)
 
-    def test_torn_line_counts_as_a_call_and_cap_cannot_be_raised(self):
+    def test_torn_line_refuses_the_ledger_and_cap_cannot_be_raised(self):
         ledger = packet_ab.CallLedger(self.path)
         ledger.reserve('real', 'a', 'circuit', 'plan')
         with self.path.open('a') as handle:
             handle.write('{"event": "reserve", "kind": "re')
-        self.assertEqual(ledger.state()['real_calls'], 2)
+        damaged = self.path.read_bytes()
+        with self.assertRaises(packet_ab.LedgerRefused):
+            ledger.state()
         with self.assertRaises(ValueError):
             packet_ab.CallLedger(self.path, cap=5).state()
         with self.assertRaises(ValueError):
             packet_ab.CallLedger(self.path, cap=packet_ab.CAP + 1)
+        self.assertEqual(self.path.read_bytes(), damaged)
 
     def restarted_call(self, cell):
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
-            str(Path(packet_ab.__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')])))
-        result = subprocess.run([sys.executable, '-c', RESTARTED_CALL, str(self.path), cell], env=env,
+        result = subprocess.run([sys.executable, '-c', RESTARTED_CALL, str(self.path), cell], env=child_env(),
                                 capture_output=True, text=True, timeout=60, check=True)
         execution, launched = result.stdout.split()
         return execution, int(launched)
 
-    def assert_damaged_tail_keeps_its_charge(self, tail):
-        """Ten settled real calls, then a crash while writing the eleventh reservation."""
-        for n in range(10):
+    def ledger_with_reservations(self, count=11, settled=10):
+        for n in range(count):
             seq = packet_ab.CallLedger(self.path).reserve('real', f'cell-{n}', 'circuit', 'plan')
-            packet_ab.CallLedger(self.path).settle(seq, {'execution': 'ok'})
+            if n < settled:
+                packet_ab.CallLedger(self.path).settle(seq, {'execution': 'ok', 'duration_s': 1.5})
+
+    def test_unterminated_complete_reservation_is_kept_and_cannot_absorb_the_next(self):
+        """Ten settled real calls, then a crash before the eleventh reservation's newline."""
+        self.ledger_with_reservations(10, 10)
+        tail = json.dumps({'event': 'reserve', 'seq': 21, 'kind': 'real', 'cell': 'cell-10', 'label': 'circuit',
+                           'plan_id': 'plan', 'at_utc': packet_ab._now(), 'real_calls_after': 11}, sort_keys=True)
         with self.path.open('a') as handle:
             handle.write(tail)
         damaged = self.path.read_text()
         outcomes = [self.restarted_call(f'after-{n}') for n in range(3)]
-        # The damaged tail is the eleventh call, so exactly one more launches; the thirteenth is refused.
+        # The kept tail is the eleventh call, so exactly one more launches; the thirteenth is refused.
         self.assertEqual(outcomes, [('ok', 1), ('not_run', 0), ('not_run', 0)])
         text = self.path.read_text()
-        self.assertTrue(text.startswith(damaged + '\n'), 'damaged tail must be kept, not rewritten')
+        self.assertTrue(text.startswith(damaged + '\n'), 'the tail must be kept, not rewritten')
         self.assertTrue(text.endswith('\n'))
         records = [json.loads(line) for line in text[len(damaged) + 1:].splitlines()]
         self.assertEqual([r['event'] for r in records], ['tail_terminated', 'reserve', 'settle', 'refused', 'refused'])
@@ -93,44 +126,41 @@ class CallLedgerTests(unittest.TestCase):
         self.assertEqual(records[2]['seq'], records[1]['seq'])
         state = packet_ab.CallLedger(self.path).state()
         self.assertEqual((state['real_calls'], state['refused'], state['tails_terminated']), (12, 2, 1))
-        self.assertEqual(self.path.read_text(), text, 'a terminated ledger is not repaired again')
-        return state
-
-    def test_unterminated_complete_reservation_is_kept_and_cannot_absorb_the_next(self):
-        tail = json.dumps({'event': 'reserve', 'seq': 21, 'kind': 'real', 'cell': 'cell-10', 'label': 'circuit',
-                           'plan_id': 'plan', 'at_utc': 'x', 'real_calls_after': 11}, sort_keys=True)
-        state = self.assert_damaged_tail_keeps_its_charge(tail)
-        self.assertEqual(state['malformed_lines'], 0)
         self.assertEqual(state['unsettled'], [21])
+        self.assertEqual(self.path.read_text(), text, 'a terminated ledger is not repaired again')
 
-    def test_partial_reservation_is_charged_and_cannot_absorb_the_next(self):
-        state = self.assert_damaged_tail_keeps_its_charge('{"event": "reserve", "kind": "re')
-        self.assertEqual((state['malformed_lines'], state['unsettled']), (1, []))
-
-    def assert_invalid_utf8_refuses_launch_and_keeps_bytes(self, damage, terminated):
-        for n in range(11):
-            seq = packet_ab.CallLedger(self.path).reserve('real', f'cell-{n}', 'circuit', 'plan')
-            if n < 10:
-                packet_ab.CallLedger(self.path).settle(seq, {'execution': 'ok'})
-        raw = self.path.read_bytes()
-        prefix, last = raw.rstrip(b'\n').rsplit(b'\n', 1)
-        old, new = damage
-        self.assertIn(old, last)
-        damaged = prefix + b'\n' + last.replace(old, new) + (b'\n' if terminated else b'')
+    def assert_refused_everywhere_and_bytes_kept(self, damaged):
+        """No in-process or restarted call may launch, count or write against a damaged ledger."""
         self.path.write_bytes(damaged)
         for _ in range(2):
-            with self.assertRaises(ValueError):
+            with self.assertRaises(packet_ab.LedgerRefused):
                 packet_ab.CallLedger(self.path).state()
-            with self.assertRaises(ValueError):
+            with self.assertRaises(packet_ab.LedgerRefused):
                 packet_ab.CallLedger(self.path).reserve('real', 'after', 'circuit', 'plan')
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
-            str(Path(packet_ab.__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')])))
+            with self.assertRaises(packet_ab.LedgerRefused):
+                packet_ab.CallLedger(self.path).settle(21, {'execution': 'ok'})
         for n in range(2):
-            result = subprocess.run([sys.executable, '-c', RESTARTED_CALL, str(self.path), f'r-{n}'], env=env,
+            result = subprocess.run([sys.executable, '-c', RESTARTED_CALL, str(self.path), f'r-{n}'], env=child_env(),
                                     capture_output=True, text=True, timeout=60)
             self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(result.stdout, '', 'no provider may launch against an undecodable ledger')
+            self.assertIn('LedgerRefused', result.stderr)
+            self.assertEqual(result.stdout, '', 'no provider may launch against a refused ledger')
         self.assertEqual(self.path.read_bytes(), damaged, 'ledger bytes are never rewritten or discarded')
+
+    def test_partial_reservation_tail_refuses_the_ledger(self):
+        """Ten settled real calls, then a crash part way through the eleventh reservation."""
+        self.ledger_with_reservations(10, 10)
+        clean = self.path.read_bytes()
+        for terminated in (False, True):
+            with self.subTest(terminated=terminated):
+                tail = b'{"event": "reserve", "kind": "re' + (b'\n' if terminated else b'')
+                self.assert_refused_everywhere_and_bytes_kept(clean + tail)
+
+    def damaged_eleventh(self, old, new, terminated):
+        self.ledger_with_reservations()
+        prefix, last = self.path.read_bytes().rstrip(b'\n').rsplit(b'\n', 1)
+        self.assertIn(old, last)
+        return prefix + b'\n' + last.replace(old, new) + (b'\n' if terminated else b'')
 
     def test_invalid_utf8_in_complete_json_refuses_launch_in_every_field(self):
         for old, new in ((b'"kind": "real"', b'"kind": "rea\xff"'), (b'"event": "reserve"', b'"event": "reser\xff"'),
@@ -139,7 +169,138 @@ class CallLedgerTests(unittest.TestCase):
                 with self.subTest(field=old, terminated=terminated):
                     self.tearDown()
                     self.setUp()
-                    self.assert_invalid_utf8_refuses_launch_and_keeps_bytes((old, new), terminated)
+                    self.assert_refused_everywhere_and_bytes_kept(self.damaged_eleventh(old, new, terminated))
+
+    def test_unknown_event_or_kind_in_valid_json_refuses_launch(self):
+        """H1 of the ee12c review: one valid-UTF-8 bit flip in kind or event used to drop a reservation."""
+        cases = ((b'"kind": "real"', b'"kind": "reaL"'), (b'"event": "reserve"', b'"event": "reserVe"'),
+                 (b'"kind": ', b'"kinD": '), (b'"event": ', b'"evenT": '), (b'"seq": 21', b'"seq": 23'),
+                 (b'"real_calls_after": 11', b'"real_calls_after": 10'), (b'"label": "circuit"', b'"label": 7'),
+                 (b'"kind": "real"', b'"kind": "real", "note": "x"'), (b'"kind": "real", ', b''))
+        for old, new in cases:
+            for terminated in (True, False):
+                with self.subTest(old=old, new=new, terminated=terminated):
+                    self.tearDown()
+                    self.setUp()
+                    self.assert_refused_everywhere_and_bytes_kept(self.damaged_eleventh(old, new, terminated))
+
+    def test_unknown_record_types_and_context_breaks_refuse(self):
+        self.ledger_with_reservations(2, 2)
+        base = self.path.read_bytes()
+        now = packet_ab._now()
+        records = ({'event': 'note', 'at_utc': now}, {'at_utc': now}, {'event': ['reserve']}, [1], 'x', None,
+                   {'event': 'settle', 'seq': 1, 'at_utc': now, 'execution': 'ok'},
+                   {'event': 'settle', 'seq': 9, 'at_utc': now, 'execution': 'ok'},
+                   {'event': 'refused', 'kind': 'real', 'cell': 'c', 'label': 'l', 'plan_id': 'p', 'at_utc': now,
+                    'real_calls': 2},
+                   {'event': 'tail_terminated', 'line': 2, 'at_utc': now},
+                   {'event': 'header', 'schema': packet_ab.LEDGER_SCHEMA, 'cap': 12, 'created_utc': now},
+                   {'event': 'settle', 'seq': 1, 'at_utc': 'yesterday', 'execution': 'ok'})
+        for record in records:
+            with self.subTest(record=record):
+                self.assert_refused_everywhere_and_bytes_kept(base + json.dumps(record, sort_keys=True).encode() + b'\n')
+        for line in (b'', b' ', json.dumps({'event': 'note'}).encode() + b'\r', b'[' * 100000):
+            with self.subTest(line=line):
+                self.assert_refused_everywhere_and_bytes_kept(base + line + b'\n')
+        noncanonical = base.rstrip(b'\n').rsplit(b'\n', 1)
+        self.assert_refused_everywhere_and_bytes_kept(noncanonical[0] + b'\n' + noncanonical[1].replace(b', ', b',  ', 1)
+                                                      + b'\n')
+
+    def test_single_byte_damage_to_a_reservation_never_exceeds_the_cap_across_restarts(self):
+        """Property sweep: every bit flip and a set of byte replacements at every byte position of a
+        reservation line, as the unsettled tail (with and without its newline) and as an interior line
+        followed by its settlement and later records; each damaged ledger then gets three calls, each in
+        a fresh interpreter. Either the ledger is refused and kept byte for byte, or the damaged line is
+        still a validated record charging the same call; at most twelve real calls ever exist."""
+        root = Path(self.tmp.name)
+        placements = {}
+        self.ledger_with_reservations(11, 10)
+        tail = self.path.read_bytes()
+        prefix, last = tail.rstrip(b'\n').rsplit(b'\n', 1)
+        placements['tail-terminated'] = (prefix + b'\n', last + b'\n', b'')
+        placements['tail-unterminated'] = (prefix + b'\n', last, b'')
+        self.path.unlink()
+        self.ledger_with_reservations(11, 11)
+        lines = self.path.read_bytes().split(b'\n')
+        interior = next(i for i, line in enumerate(lines) if b'"cell": "cell-5"' in line)
+        placements['interior'] = (b'\n'.join(lines[:interior]) + b'\n', lines[interior] + b'\n',
+                                  b'\n'.join(lines[interior + 1:]))
+        variants = []
+        for name, (head, target, rest) in placements.items():
+            self.assertEqual(json.loads(target)['event'], 'reserve')
+            for position, byte in enumerate(target):
+                values = {byte ^ (1 << bit) for bit in range(8)} | set(REPLACEMENTS)
+                for value in sorted(values - {byte}):
+                    damaged = head + target[:position] + bytes([value]) + target[position + 1:] + rest
+                    path = root / 'sweep' / f'v{len(variants)}' / 'calls.jsonl'
+                    path.parent.mkdir(parents=True)
+                    path.write_bytes(damaged)
+                    variants.append((name, position, value, path, damaged))
+        self.assertGreater(len(variants), 3 * 200 * 8)
+        listing = '\n'.join(str(v[3]) for v in variants)
+        outcomes = {str(v[3]): [] for v in variants}
+        for attempt in range(3):
+            result = subprocess.run([sys.executable, '-c', SWEEP_CALL, str(attempt)], input=listing, env=child_env(),
+                                    capture_output=True, text=True, timeout=900, check=True)
+            for row in result.stdout.splitlines():
+                path, outcome, launched = row.split()
+                outcomes[path].append((outcome, int(launched)))
+        refused = 0
+        for name, position, value, path, damaged in variants:
+            seen = outcomes[str(path)]
+            where = f'{name} byte {position} -> {value:#04x}'
+            self.assertEqual(len(seen), 3, where)
+            self.assertLessEqual(11 + sum(n for _, n in seen), packet_ab.CAP, where)
+            if seen == [('refused', 0)] * 3:
+                refused += 1
+                self.assertEqual(path.read_bytes(), damaged, where)
+                with self.assertRaises(packet_ab.LedgerRefused, msg=where):
+                    packet_ab.CallLedger(path).state()
+                continue
+            self.assertEqual(seen, [('ok', 1), ('not_run', 0), ('not_run', 0)], where)
+            text = path.read_bytes()
+            self.assertTrue(text.startswith(damaged), where)
+            state = packet_ab.CallLedger(path).state()
+            self.assertEqual((state['real_calls'], state['refused']), (12, 2), where)
+            self.assertEqual(path.read_bytes(), text, where)
+        # Most damage breaks the record; the survivors are string or timestamp content that charges the same.
+        self.assertGreater(refused, len(variants) // 2)
+
+    def test_single_bit_flip_anywhere_in_a_full_ledger_never_frees_budget(self):
+        """Every bit of a ledger holding every record type: refused, or the same count and history."""
+        packet_ab.CallLedger(self.path, cap=3).reserve('fake', 'f', 'circuit', 'plan')
+        for n in range(3):
+            seq = packet_ab.CallLedger(self.path, cap=3).reserve('real', f'cell-{n}', 'circuit', 'plan')
+            packet_ab.CallLedger(self.path, cap=3).settle(seq, {'execution': 'raised', 'error': 'OSError'})
+        with self.assertRaises(packet_ab.CallCapReached):
+            packet_ab.CallLedger(self.path, cap=3).reserve('real', 'x', 'circuit', 'plan')
+        with self.path.open('ab') as handle:
+            handle.write(json.dumps({'event': 'settle', 'seq': 1, 'at_utc': packet_ab._now(), 'execution': None,
+                                     'duration_s': None}, sort_keys=True).encode())
+        expected = packet_ab.CallLedger(self.path, cap=3).state()
+        self.assertEqual((expected['tails_terminated'], expected['refused'], expected['real_calls']), (1, 1, 3))
+        clean = self.path.read_bytes()
+        survived = 0
+        for position, byte in enumerate(clean):
+            for bit in range(8):
+                damaged = clean[:position] + bytes([byte ^ (1 << bit)]) + clean[position + 1:]
+                self.path.write_bytes(damaged)
+                try:
+                    state = packet_ab.CallLedger(self.path, cap=3).state()
+                except ValueError:
+                    self.assertEqual(self.path.read_bytes(), damaged)
+                    continue
+                survived += 1
+                self.assertEqual(state, expected, f'byte {position} bit {bit}')
+        self.assertLess(survived, len(clean) * 8 // 2)
+
+    def test_retained_live_ledger_validates_without_writing(self):
+        retained = Path(__file__).resolve().parents[1] / 'evidence/packet-index-ab/call-ledger.jsonl'
+        copy = Path(self.tmp.name) / 'retained.jsonl'
+        copy.write_bytes(retained.read_bytes())
+        state = packet_ab.CallLedger(copy).state()
+        self.assertEqual((state['real_calls'], state['fake_calls'], state['refused'], state['unsettled']), (9, 8, 0, []))
+        self.assertEqual(copy.read_bytes(), retained.read_bytes())
 
     def test_torn_header_is_refused_without_writing(self):
         self.path.parent.mkdir(parents=True)
@@ -148,6 +309,20 @@ class CallLedgerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 packet_ab.CallLedger(self.path).reserve('real', 'a', 'circuit', 'plan')
         self.assertEqual(self.path.read_text(), '{"schema": "agent-ee.call-led')
+
+    def test_settle_requires_an_unsettled_reservation(self):
+        ledger = packet_ab.CallLedger(self.path)
+        seq = ledger.reserve('real', 'a', 'circuit', 'plan')
+        ledger.settle(seq, {'execution': 'ok'})
+        for bad in (seq, 99, 0, '1'):
+            with self.assertRaises(ValueError):
+                ledger.settle(bad, {'execution': 'ok'})
+        seq = ledger.reserve('real', 'b', 'circuit', 'plan')
+        before = self.path.read_bytes()
+        with self.assertRaises(ValueError):
+            ledger.settle(seq, {'execution': 'ok', 'tokens': 5})
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(ledger.state()['unsettled'], [seq])
 
     def test_reservation_is_durable_before_launch_and_each_retry_is_a_call(self):
         ledger = packet_ab.CallLedger(self.path)

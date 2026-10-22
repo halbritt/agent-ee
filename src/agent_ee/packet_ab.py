@@ -9,6 +9,7 @@ call is first reserved in a durable ledger, which refuses calls beyond the cap.
 import datetime
 import fcntl
 import json
+import math
 import os
 import re
 import shutil
@@ -39,17 +40,81 @@ class CallCapReached(RuntimeError):
     pass
 
 
+class LedgerRefused(ValueError):
+    """The call ledger holds a line that is not a validated known record; nothing may be reserved."""
+
+
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+# Ledger invariant: every ledger line is either a validated known record or is counted against the cap.
+# The one rule for a line that is not a validated known record (unknown or missing event, a missing,
+# extra or mistyped field, a value outside its allowed set, non-canonical or non-ASCII bytes, a record
+# inconsistent with the lines before it, or a torn tail) is: it is charged as the whole remaining
+# budget. The ledger is refused, so nothing is counted, reserved, written or launched, and its bytes
+# are left as they are. No line is ever skipped, repaired, rewritten or discarded.
+
+def _text(value):
+    return isinstance(value, str) and value != ''
+
+
+def _count(value):
+    return type(value) is int and value >= 0
+
+
+def _utc(value):
+    try:
+        return isinstance(value, str) and datetime.datetime.fromisoformat(value).utcoffset() is not None
+    except ValueError:
+        return False
+
+
+def _seconds(value):
+    return value is None or (type(value) in (int, float) and math.isfinite(value) and value >= 0)
+
+
+# event: (required fields, optional fields), each field mapped to its validator. 'event' is implied.
+LEDGER_RECORDS = {
+    'header': ({'schema': lambda v: v == LEDGER_SCHEMA, 'cap': lambda v: type(v) is int and 0 < v <= CAP,
+                'created_utc': _utc}, {}),
+    'reserve': ({'seq': _count, 'kind': lambda v: v in ('real', 'fake'), 'cell': _text, 'label': _text,
+                 'plan_id': _text, 'at_utc': _utc, 'real_calls_after': _count}, {}),
+    'settle': ({'seq': _count, 'at_utc': _utc, 'execution': lambda v: v is None or _text(v)},
+               {'duration_s': _seconds, 'error': _text}),
+    'refused': ({'kind': lambda v: v == 'real', 'cell': _text, 'label': _text, 'plan_id': _text, 'at_utc': _utc,
+                 'real_calls': _count}, {}),
+    'tail_terminated': ({'line': _count, 'at_utc': _utc}, {}),
+}
+
+
+def _encode(record):
+    return json.dumps(record, sort_keys=True).encode('ascii')
+
+
+def record_problem(record):
+    """Why a decoded record is not a known ledger record, or None. Context checks are in CallLedger."""
+    if not isinstance(record, dict):
+        return 'not a JSON object'
+    if not isinstance(record.get('event'), str) or record['event'] not in LEDGER_RECORDS:
+        return f'unknown or missing event {record.get("event")!r}'
+    required, optional = LEDGER_RECORDS[record['event']]
+    fields = set(record) - {'event'}
+    if missing := sorted(set(required) - fields):
+        return f'{record["event"]} record lacks {missing}'
+    if extra := sorted(fields - set(required) - set(optional)):
+        return f'{record["event"]} record has unknown fields {extra}'
+    bad = sorted(k for k in fields if not {**required, **optional}[k](record[k]))
+    return f'{record["event"]} record has invalid {bad}' if bad else None
 
 
 class CallLedger:
     """Append-only JSONL. A reservation is fsynced before its call and is never undone.
 
-    Retries and resubmissions are separate reservations. A line that does not parse
-    (for example one torn by a crash) counts as a real call, so damage never frees budget.
-    Bytes that are not valid UTF-8 are never decoded leniently: the ledger is refused and left
-    unmodified, because a replacement character could silently change what a reservation says.
+    Retries and resubmissions are separate reservations. Every line is validated against
+    LEDGER_RECORDS, in canonical form and in sequence, before anything is counted, written or
+    launched. A line that fails refuses the ledger (see the invariant above), so damage never
+    frees budget. A complete record left without its newline by a crash is terminated in place.
     """
 
     def __init__(self, path, cap=CAP):
@@ -61,7 +126,7 @@ class CallLedger:
     def _open(self):
         created = not self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(self.path, 'a+', encoding='utf-8')
+        handle = open(self.path, 'a+b')
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         if created:
             directory = os.open(self.path.parent, os.O_RDONLY)
@@ -73,60 +138,81 @@ class CallLedger:
 
     @staticmethod
     def _append(handle, record):
+        problem = record_problem(record)
+        if problem:
+            raise ValueError(f'refusing to write an invalid ledger record: {problem}')
         handle.seek(0, os.SEEK_END)
-        handle.write(json.dumps(record, sort_keys=True) + '\n')
+        handle.write(_encode(record) + b'\n')
         handle.flush()
         os.fsync(handle.fileno())
 
-    def _entries(self, handle):
-        handle.seek(0)
-        try:
-            text = handle.read()
-        except UnicodeDecodeError as error:
-            # Undecodable bytes could hide a damaged reservation, so nothing is charged, written or launched.
-            raise ValueError(f'call ledger {self.path} is not valid UTF-8; refusing to reserve or launch: {error}') from error
-        entries = []
-        for line in text.splitlines():
-            try:
-                entry = json.loads(line)
-                if not isinstance(entry, dict):
-                    raise ValueError
-            except ValueError:
-                entry = {'event': 'malformed'}
-            entries.append(entry)
-        if not entries:
-            self._append(handle, {'schema': LEDGER_SCHEMA, 'event': 'header', 'cap': self.cap, 'created_utc': _now()})
-            return self._entries(handle)
-        header = entries[0]
-        if header.get('schema') != LEDGER_SCHEMA or header.get('event') != 'header':
-            raise ValueError('call ledger header missing or malformed')
-        if header.get('cap') != self.cap:
-            raise ValueError(f'call ledger cap {header.get("cap")!r} differs from requested cap {self.cap}')
-        if not text.endswith('\n'):
-            # A crash left the last record unterminated. Terminate it in place, so it stays its
-            # own line (a reservation if complete, a charged malformed line if not), and record
-            # the repair. Nothing is removed, and the next record cannot fuse with the tail.
-            handle.write('\n')
-            self._append(handle, {'event': 'tail_terminated', 'line': len(entries), 'at_utc': _now()})
-            return self._entries(handle)
-        return entries
+    def _refuse(self, number, reason):
+        raise LedgerRefused(f'call ledger {self.path} line {number}: {reason}; it is charged as the whole '
+                            'remaining budget, so nothing is reserved or launched and the file is left unmodified')
 
-    @staticmethod
-    def _summary(entries):
-        reserved = [e for e in entries if e.get('event') == 'reserve']
-        malformed = sum(1 for e in entries if e.get('event') == 'malformed')
-        return {'real_calls': sum(1 for e in reserved if e.get('kind') == 'real') + malformed,
-                'fake_calls': sum(1 for e in reserved if e.get('kind') == 'fake'),
-                'refused': sum(1 for e in entries if e.get('event') == 'refused'),
-                'malformed_lines': malformed,
-                'tails_terminated': sum(1 for e in entries if e.get('event') == 'tail_terminated'),
-                'unsettled': sorted({e['seq'] for e in reserved} -
-                                    {e.get('seq') for e in entries if e.get('event') == 'settle'})}
+    def _validated(self, lines):
+        """Validate every line in order and return the summary; refuse on the first invalid line."""
+        summary = {'real_calls': 0, 'fake_calls': 0, 'refused': 0, 'tails_terminated': 0}
+        unsettled = set()
+        for index, raw in enumerate(lines):
+            try:
+                record = json.loads(raw.decode('ascii'))
+            except (ValueError, RecursionError):
+                self._refuse(index + 1, 'not ASCII JSON')
+            problem = record_problem(record)
+            if problem is None and _encode(record) != raw:
+                problem = 'not in canonical form'
+            event = record.get('event') if problem is None else None
+            if problem is None and (event == 'header') != (index == 0):
+                problem = 'the header must be the first line and only there'
+            elif event == 'header' and record['cap'] != self.cap:
+                raise ValueError(f'call ledger cap {record["cap"]!r} differs from requested cap {self.cap}')
+            elif event == 'reserve':
+                summary[f'{record["kind"]}_calls'] += 1
+                if record['seq'] != index:
+                    problem = f'reservation seq {record["seq"]} is not its line index {index}'
+                elif record['real_calls_after'] != summary['real_calls']:
+                    problem = f'real_calls_after {record["real_calls_after"]} differs from the count {summary["real_calls"]}'
+                elif summary['real_calls'] > self.cap:
+                    problem = f'{summary["real_calls"]} real reservations exceed the cap {self.cap}'
+                unsettled.add(record['seq'])
+            elif event == 'settle':
+                if record['seq'] not in unsettled:
+                    problem = f'settle of seq {record["seq"]}, which is not an unsettled reservation'
+                unsettled.discard(record['seq'])
+            elif event == 'refused':
+                summary['refused'] += 1
+                if record['real_calls'] != summary['real_calls'] or summary['real_calls'] < self.cap:
+                    problem = f'refusal at {record["real_calls"]} real calls, but the count is {summary["real_calls"]}'
+            elif event == 'tail_terminated':
+                summary['tails_terminated'] += 1
+                if record['line'] != index:
+                    problem = f'tail_terminated line {record["line"]} is not its line index {index}'
+            if problem:
+                self._refuse(index + 1, problem)
+        return {**summary, 'unsettled': sorted(unsettled), 'lines': len(lines)}
+
+    def _read(self, handle):
+        handle.seek(0)
+        data = handle.read()
+        if not data:
+            self._append(handle, {'schema': LEDGER_SCHEMA, 'event': 'header', 'cap': self.cap, 'created_utc': _now()})
+            return self._read(handle)
+        lines = data.split(b'\n')
+        terminated = lines[-1] == b''
+        summary = self._validated(lines[:-1] if terminated else lines)
+        if not terminated:
+            # A crash left a complete, valid record without its newline. Terminate it in place and record
+            # the repair, so the next record cannot fuse with it. A torn, invalid tail was refused above.
+            handle.write(b'\n')
+            self._append(handle, {'event': 'tail_terminated', 'line': len(lines), 'at_utc': _now()})
+            return self._read(handle)
+        return summary
 
     def state(self):
         with self._open() as handle:
-            entries = self._entries(handle)
-            return {'path': str(self.path), 'cap': self.cap, **self._summary(entries)}
+            summary = self._read(handle)
+            return {'path': str(self.path), 'cap': self.cap, **{k: v for k, v in summary.items() if k != 'lines'}}
 
     def remaining(self):
         return self.cap - self.state()['real_calls']
@@ -135,13 +221,12 @@ class CallLedger:
         if kind not in ('real', 'fake'):
             raise ValueError('ledger kind must be real or fake')
         with self._open() as handle:
-            entries = self._entries(handle)
-            summary = self._summary(entries)
+            summary = self._read(handle)
             if kind == 'real' and summary['real_calls'] >= self.cap:
                 self._append(handle, {'event': 'refused', 'kind': kind, 'cell': cell, 'label': label,
                                       'plan_id': plan_id, 'at_utc': _now(), 'real_calls': summary['real_calls']})
                 raise CallCapReached(f'subscription call cap {self.cap} reached; call refused before launch')
-            seq = len(entries)
+            seq = summary['lines']
             self._append(handle, {'event': 'reserve', 'seq': seq, 'kind': kind, 'cell': cell, 'label': label,
                                   'plan_id': plan_id, 'at_utc': _now(),
                                   'real_calls_after': summary['real_calls'] + (kind == 'real')})
@@ -149,7 +234,8 @@ class CallLedger:
 
     def settle(self, seq, outcome):
         with self._open() as handle:
-            self._entries(handle)
+            if seq not in self._read(handle)['unsettled']:
+                raise ValueError(f'seq {seq!r} is not an unsettled reservation')
             self._append(handle, {'event': 'settle', 'seq': seq, 'at_utc': _now(), **outcome})
 
 
