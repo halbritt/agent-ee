@@ -96,20 +96,20 @@ def plan_digest(result):
 PINNED = {
     0: 'd4f80f98aa3a1a0c',
     1: '0d5aa4f15a941cc0',
-    2: 'ae08e933892b1e88',
-    3: 'fa3fa6268bd1e59b',
+    2: 'f87df319b32a17c0',  # AGENTEE-418 ruling 418a; was 'ae08e933892b1e88'
+    3: '186f882430d6c985',  # AGENTEE-418 ruling 418a; was 'fa3fa6268bd1e59b'
     4: '9d1123eb54b7b44c',  # ruling 371a; was '09b23360d8a95cc5' (planned around P0's off-board copper)
-    5: '3c46df6fd9305d1a',
+    5: '75706ad78795171e',  # AGENTEE-418 ruling 418a; was '3c46df6fd9305d1a'
     6: 'd313f75a3cfdbd56',
     7: '777a59037f3ffdc4',
     8: '2e85300b93402a02',
-    9: 'e02185f7851d0996',
-    10: 'f2ab3ca3e1cc1ce6',
+    9: '10266ed7aa920477',  # AGENTEE-418 ruling 418a; was 'e02185f7851d0996'
+    10: '28253c4dc0423922',  # AGENTEE-418 ruling 418a; was 'f2ab3ca3e1cc1ce6'
     11: '1521230d33ab9e2e',
-    12: '72e0f8277b1683e1',
-    13: '6a29a8f2a7857d5c',
+    12: 'cb260998c3b1bbae',  # AGENTEE-418 ruling 418a; was '72e0f8277b1683e1'
+    13: 'f830688b01518a06',  # AGENTEE-418 ruling 418a; was '6a29a8f2a7857d5c'
     14: 'c664064d0d37f301',
-    15: '399a119463a05d4f',
+    15: 'cdd045866213c0c2',  # AGENTEE-418 ruling 418a; was '399a119463a05d4f'
     16: 'd978a0fa28d7e773',
     17: '0444d37ea7d6f653',
     18: '15a48b2fcd8ecd9d',
@@ -117,9 +117,9 @@ PINNED = {
     20: 'a60a301148bd0d50',
     21: '866791f48730197e',
     22: '95ccca70a8e1aab2',
-    23: 'a4775eb9502b93d9',
+    23: '5425b2aa50ec0a65',  # AGENTEE-418 ruling 418a; was 'a4775eb9502b93d9'
     24: 'aa3fd93efc95a660',
-    25: '8ca216b473944963',
+    25: '871a8800606f9017',  # AGENTEE-418 ruling 418a; was '8ca216b473944963'
     26: '1077b78a42c5b39a',
     27: '285efa2c09d1c809',
     28: '4948f9e467f6a828',
@@ -127,17 +127,21 @@ PINNED = {
     30: '4da96b8a8d3c363e',
     31: '9f28a86c33bc69b6',
     32: '145f3a6c72c6fb23',
-    33: '4cb17af59e0d87dd',
+    33: '59738b581e8edae0',  # AGENTEE-418 ruling 418a; was '4cb17af59e0d87dd'
     34: '94634067d906f081',
     35: '3e1e3826b8410485',
     36: 'a8ca538f90429ba5',
     37: '29de9f60e3175c54',
     38: 'f15cdc5daa4d3922',
-    39: '9bf5febe723a0055',
+    39: '288e79ed8590595f',  # AGENTEE-418 ruling 418a; was '9bf5febe723a0055'
 }
 COPPER_GATED = {0, 3, 23, 38}
 # Coordinator ruling 371a: seed 4's fixed P0 has pad 2 copper off the board in the input itself;
 # it is now the typed fixed_input_copper refusal (AGENTEE-371) instead of a plan around it.
+# Coordinator ruling 418a: seeds 2, 3, 5, 9, 10, 12, 13, 15, 23, 25, 33 and 39 were re-pinned by
+# AGENTEE-418: each old plan put escaped land copper (outside its own courtyard) in a peer
+# courtyard or on peer escaped copper, which the packing gate now refuses (status unchanged).
+PEER_GATED = {2, 3, 5, 9, 10, 12, 13, 15, 23, 25, 33, 39}
 FIXED_INPUT_COPPER = {4}
 
 
@@ -367,6 +371,36 @@ class SeededPackDifferentialTests(unittest.TestCase):
                     self.assertEqual((result['status'], result['outcome']), ('fixed_input_copper', 'defect'))
                     self.assertEqual([(f['reference'], f['pad']) for f in result['findings']], [('P0', '2')])
         self.assertIn('planned', statuses)
+
+    def test_seed_2_old_pinned_plan_puts_p1_copper_in_p5_back_courtyard(self):
+        # Ruling 418a evidence: the old seed-2 pin is the plan the packer made without the
+        # peer gate, and the AGENTEE-418 predicate rejects its poses, naming P1 vs P5 on B.
+        from unittest.mock import patch
+        from agent_ee import placer
+        board, policy = seeded_board(2)
+        with patch.object(placer, '_copper_meets', lambda *a: False):
+            old = pack(copy.deepcopy(board), policy)
+        self.assertEqual(plan_digest(old), 'ae08e933892b1e88')  # the pre-418 pin
+        poses = {p['ref']: p for p in old['placements']}
+        setback = placer.copper_setback(board)
+
+        def posed(ref):
+            fp = next(f for f in board['footprints'] if f['ref'] == ref)
+            fp = transform(fp, poses[ref]['position_nm'], poses[ref]['rotation_deg'])
+            fp['_packing_copper_setback'] = setback
+            placer._cache_copper_extent(fp)
+            return fp
+        p1, p5 = posed('P1'), posed('P5')
+        self.assertEqual(p5['side'], 'B')
+        self.assertTrue(placer._copper_meets(p1, p5))
+        self.assertTrue(any(intersection_area(c, y) > 0
+                            for c in p1['_packing_copper']['sides']['B']['polygons']
+                            for y in placement.qualified_polygons(p5['courtyards']['B'])))
+        outline = placement.qualified_polygons(board['outline'])[0]  # as placer._qualified
+        self.assertEqual(placer._copper_escapes(p1, outline, [], [p5]), ('peer_courtyard', {'P5'}))
+        self.assertEqual(placer._copper_escapes(p5, outline, [], [p1]), ('peer_courtyard', {'P1'}))
+        new = pack(copy.deepcopy(board), policy)
+        self.assertEqual((new['status'], new['outcome'], plan_digest(new)), ('planned', 'info', PINNED[2]))
 
 
 class LazyRankingTests(unittest.TestCase):

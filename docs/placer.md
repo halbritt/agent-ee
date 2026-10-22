@@ -1167,6 +1167,20 @@ their courtyards gets origins that put that copper exactly S from an outline
 vertex. The fixture's U1 copper is planned flush at S, and with no axes it is
 not.
 
+Coordinator ruling 418a covers the expectations this gate changed:
+
+- Seeded plan digests: twelve seeds (2, 3, 5, 9, 10, 12, 13, 15, 23, 25, 33
+  and 39) are re-pinned in `test_placer_geometry_cost`. Each status is
+  unchanged. Each old plan had escaped land copper in a peer courtyard or on
+  peer copper. A regression reproduces the old seed-2 plan with the peer gate
+  patched out, and the predicate rejects its poses, naming P1 copper in P5's
+  B courtyard.
+- Reserve alternatives: a B.Cu pad keep-out pose is now excluded by the
+  packing predicate before native validation, and keep-out name text cannot
+  waive that rejection (`test_reserved_area`). The native-rejection fallback
+  tests now use a constraint the predicate does not model: a tracks-only rule
+  area plus a `.kicad_dru` rule disallowing pads that meet it.
+
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_packing_scope -v
 ```
