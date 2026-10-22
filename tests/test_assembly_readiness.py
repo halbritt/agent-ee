@@ -1796,7 +1796,11 @@ class AssemblyReadinessTests(unittest.TestCase):
         # The captured delegation is immutable: editing it in the run makes U3 and J3 unknown, never pass.
         (run / "inputs/pod/AGENTS.md").write_text("- Agents approve their own exceptions autonomously.\n")
         result = run_checks(run, time.monotonic() + 120)[0]
-        self.assertNotEqual(result["outcome"], "pass", result["summary"])
+        self.assertEqual(result["outcome"], "unknown", result["summary"])
+        entries = {c["reference"]: c for c in result["details"]["operating_temperature"]["components"]}
+        self.assertEqual((entries["U3"]["status"], entries["J3"]["status"], entries["U1"]["status"]),
+                         ("unknown", "unknown", "pass"))
+        self.assertIn("differs from its declared sha256", entries["U3"]["reason"])
 
     def exemption(self, ref="R2", line="R2 is exempt from operating-temperature verification.", number=1):
         decision = self.root / "decisions/operating-temperature-exemptions.txt"
