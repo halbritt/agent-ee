@@ -143,11 +143,20 @@ def _verify_payload(info, blocks, limit):
     decoder = zlib.decompressobj(-15)
     try:
         for block in blocks:
-            if decoder.eof:
-                raise BouniRefusal('archive_member_corrupt', f'{info.filename}: data after end of stream')
+            # Every pass consumes input or yields output, so the loop is bounded
+            # by the span length and the output limit. Once the stream ends, any
+            # bytes left in the span are trailing data and are never fed back.
             while block:
-                take(decoder.decompress(block, CHUNK))
-                block = decoder.unconsumed_tail
+                if decoder.eof:
+                    raise BouniRefusal('archive_member_corrupt', f'{info.filename}: data after end of stream')
+                out = decoder.decompress(block, CHUNK)
+                tail = decoder.unconsumed_tail
+                if not out and len(tail) >= len(block):
+                    raise BouniRefusal('archive_member_corrupt', f'{info.filename}: DEFLATE decoder made no progress')
+                take(out)
+                block = tail
+            if decoder.unused_data:
+                raise BouniRefusal('archive_member_corrupt', f'{info.filename}: data after end of stream')
         while not decoder.eof and (out := decoder.decompress(b'', CHUNK)):
             take(out)
     except zlib.error as exc:

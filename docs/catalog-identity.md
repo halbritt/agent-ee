@@ -213,7 +213,10 @@ accepted. Other methods, encryption and data descriptors are refused
 (`archive_member_unsupported`). The member must tile the archive body exactly
 with no gap or overlap (`archive_member_bounds`). Exactly the compressed span is
 read. A STORED span must equal its declared size. A DEFLATE span is decoded
-incrementally and must reach its end-of-stream marker with no data left over.
+incrementally and must reach its end-of-stream marker with no data left over;
+decoding stops at that marker and any remaining span bytes are refused, and a
+decoder step that neither consumes input nor yields output is refused, so
+malformed input cannot loop (`archive_member_corrupt`).
 The size limit (`max_member_bytes`) and the CRC-32 apply to the actual output,
 not the declared sizes (`archive_member_oversized`, `archive_member_corrupt`).
 A valid manifest hash alone does not establish archive integrity. It reports counts and sizes, and never reads the

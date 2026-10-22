@@ -2,6 +2,8 @@
 import hashlib
 import io
 import json
+import random
+import signal
 from pathlib import Path
 import struct
 import tempfile
@@ -222,6 +224,57 @@ class FullMemberIntegrity(unittest.TestCase):
         eocd = padded.index(b'PK\x05\x06')
         struct.pack_into('<I', padded, eocd + 16, directory + 1)
         self.assert_refuses(padded, 'archive_member_corrupt')
+
+    def deflate_with_trailing(self, payload, junk):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('parts.db', payload)
+        data = bytearray(out.getvalue())
+        directory = data.index(b'PK\x01\x02')
+        compressed = struct.unpack_from('<I', data, directory + 20)[0]
+        data = data[:directory] + junk + data[directory:]
+        struct.pack_into('<I', data, 18, compressed + len(junk))
+        struct.pack_into('<I', data, directory + len(junk) + 20, compressed + len(junk))
+        eocd = data.index(b'PK\x05\x06')
+        struct.pack_into('<I', data, eocd + 16, directory + len(junk))
+        return bytes(data)
+
+    def assert_refuses_within(self, seconds, data, reason):
+        def expired(signum, frame):
+            raise AssertionError(f'inspect_split did not finish within {seconds} s')
+        previous = signal.signal(signal.SIGALRM, expired)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            self.assert_refuses(data, reason)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+
+    def test_trailing_data_at_output_chunk_boundary_refuses_promptly(self):
+        # Review ee253c H1: at a 1 MiB output boundary zlib reports EOF while the
+        # suffix stays in unconsumed_tail; feeding it back looped forever.
+        data = self.deflate_with_trailing(b'a' * (2 * 1024**2), b'junk')
+        self.assert_refuses_within(10, data, 'archive_member_corrupt')
+
+    def test_trailing_data_around_output_boundaries(self):
+        mib = 1024**2
+        for size in (mib - 1, mib, mib + 1, 2 * mib - 1, 2 * mib + 1, 3 * mib):
+            for junk in (b'\x00', b'junk', b'\x03' * 4096):
+                with self.subTest(size=size, junk=len(junk)):
+                    self.assert_refuses_within(10, self.deflate_with_trailing(b'a' * size, junk),
+                                               'archive_member_corrupt')
+            with self.subTest(size=size, junk=0):
+                self.assertEqual(self.inspect(self.deflate_with_trailing(b'a' * size, b''))['member_size_bytes'],
+                                 size)
+
+    def test_trailing_data_after_multi_block_compressed_span(self):
+        # Incompressible payload: the compressed span crosses read-chunk boundaries.
+        payload = random.Random(253).randbytes(1024**2 + 4096)
+        self.assertEqual(self.inspect(self.deflate_with_trailing(payload, b''))['member_size_bytes'],
+                         len(payload))
+        for junk in (b'junk', b'\x00' * (1024**2 + 7)):
+            with self.subTest(junk=len(junk)):
+                self.assert_refuses_within(10, self.deflate_with_trailing(payload, junk), 'archive_member_corrupt')
 
     def test_unaccounted_bytes_before_directory(self):
         data = self.make_archive(zipfile.ZIP_STORED)
