@@ -65,7 +65,7 @@ and the raw reports under `work/`. Compact retained results are under
 failed execution are never expected defects.
 
 The routing test uses AGENTEE-93 `routing_adapter.step` and the existing stage
-receipt implementation. Its command invokes `kicad-route run --backend krt`
+receipt implementation. Its command invokes `kicad-route run --backend builtin`
 on a read-only capture of placed-unrouted. Set `AGENT_EE_KICAD_ROUTE_CHECKOUT`
 to the adapter's qualified pin before running it. The test requires an observed
 exit and actual `result.json`, backend, routing and validation records, without

@@ -70,20 +70,41 @@ class LicenseDeclarationTests(unittest.TestCase):
         self.assertIn('Permission is hereby granted, free of charge, to any person obtaining a copy', text)
         self.assertIn('THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND', text)
         scope = ' '.join(text.split('Scope of this license', 1)[1].split())
-        for required in ('origins AE or AE-RUN and no other origin', 'not offered under this license',
-                         'docs/file-origins.json', 'src/agent_ee/checks.py', 'FOME-MC'):
+        for required in ('origins AE, AE-RUN, T1 or T2 and no other origin', 'not offered under this license',
+                         'docs/file-origins.json', 'src/agent_ee/checks.py', 'FOME-MC', '2026-10-22', 'origin T6',
+                         'fixtures/fome-mc/'):
             self.assertIn(required, scope)
+        self.assertNotIn('propos', text.lower())
 
     def test_package_metadata_declares_mit(self):
         project = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']
         self.assertEqual(project['license'], {'text': 'MIT'})
 
-    def test_readme_declares_license_and_pending_status(self):
+    def test_readme_declares_license_and_approval(self):
         text = (ROOT / 'README.md').read_text()
-        section = ' '.join(text.split('\n## License\n', 1)[1].split())
+        section = ' '.join(text.split('\n## License\n', 1)[1].split('\n\n[', 1)[0].split())
         for required in ('[MIT License](LICENSE)', 'package metadata', '(docs/file-origins.json)',
-                         '(docs/third-party-origins.md)', 'has not yet approved', 'FOME-MC', 'unresolved'):
+                         '(docs/third-party-origins.md)', '2026-10-22', 'relayed by the coordinator',
+                         '(docs/decisions.md#mit-license-approved-agentee-14-2026-10-22)', 'FOME-MC', 'unresolved'):
             self.assertIn(required, section)
+        self.assertNotIn('has not yet approved', section)
+
+    def test_owner_decision_is_recorded_as_a_verbatim_relay(self):
+        # AGENTEE-14 owner decision of 2026-10-22, relayed by agent-519 (owner-relayed, not owner-stated).
+        quote = ('Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee '
+                 'material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is '
+                 'sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.')
+        decisions = (ROOT / 'docs/decisions.md').read_text()
+        entry = decisions.split('\n## MIT license approved (AGENTEE-14, 2026-10-22)\n', 1)[1].split('\n## ', 1)[0]
+        quoted = ' '.join(line.removeprefix('>').strip() for line in entry.splitlines() if line.startswith('>'))
+        self.assertEqual(quoted, quote)
+        self.assertIn('Class: owner-relayed, agent-transcribed.', entry)
+        self.assertIn('ad29d555-b855-43f2-bc24-b5b5dfa67991', entry)
+        for key in ('AE', 'AE-RUN', 'T1', 'T2'):
+            record = REAL['origins'][key]['owner_record']
+            self.assertEqual((record['date'], record['decision'], record['class']), ('2026-10-22', quote, 'owner-relayed'))
+            self.assertIn('ad29d555-b855-43f2-bc24-b5b5dfa67991', record['where'])
+        self.assertTrue(REAL['license_proposal']['status'].startswith('Owner-approved'))
 
 
 class RepositoryInventoryTests(unittest.TestCase):
@@ -97,19 +118,32 @@ class RepositoryInventoryTests(unittest.TestCase):
         self.assertEqual(self.summary['files'], self.summary['classified'])
         self.assertGreater(self.summary['files'], 5000)
 
-    def test_fome_mc_copies_and_adapted_logic_are_unresolved(self):
+    def test_fome_mc_copies_and_adapted_logic_follow_the_mit_decision(self):
+        # 2026-10-22: T1 and T2 are owner-confirmed; copies that also declare stock KiCad data (T6) stay unresolved.
         for path in ('fixtures/rc/control/rc_filter.kicad_sch', 'fixtures/rc/control/rc_filter.kicad_pcb',
                      'fixtures/rc/control/fp-lib-table', 'fixtures/rc/seeded/rc_filter.kicad_sch',
                      'evidence/rc-verified/disposable/rc_filter.kicad_pcb',
                      'evidence/model-comparison/cases/width-a/native/rc_filter.kicad_pcb'):
             with self.subTest(path=path):
                 self.assertEqual(self.files[path]['kind'], 'copied-design')
-                self.assertIn('T1', self.files[path]['origins'])
+                self.assertEqual(self.files[path]['origins'], ['T1', 'T6'])
                 self.assertEqual(self.files[path]['permission_status'], UNRESOLVED)
+        # A T1-only file embeds T6 through the fixture and folds to derived, naming T6.
+        t6 = [{'id': 'T6', 'upstream_license': REAL['origins']['T6']['upstream_license']}]
+        for path in ('tests/fixtures/envelope/rc-explicit-stackup.kicad_pcb', 'evidence/model-comparison-grades.json'):
+            with self.subTest(path=path):
+                self.assertIn('T1', self.files[path]['origins'])
+                self.assertEqual((self.files[path]['permission_status'], self.files[path]['upstream_origins']),
+                                 (DERIVED, t6))
         checks = self.files['src/agent_ee/checks.py']
-        self.assertEqual((checks['kind'], checks['permission_status']), ('adapted-source', UNRESOLVED))
-        self.assertIn('T2', checks['origins'])
-        self.assertEqual(self.files['fixtures/rc/PROVENANCE.md']['permission_status'], PROPOSED)
+        self.assertEqual((checks['kind'], checks['origins'], checks['permission_status'], checks['upstream_origins']),
+                         ('adapted-source', ['AE', 'T2'], CONFIRMED, []))
+        self.assertEqual(self.files['fixtures/rc/PROVENANCE.md']['permission_status'], CONFIRMED)
+        # Every file mixing T1 or T2 with any unresolved origin stays unresolved.
+        unresolved = {key for key, value in REAL['origins'].items() if value['permission_status'] == UNRESOLVED}
+        for item in self.files.values():
+            if set(item['origins']) & unresolved:
+                self.assertEqual(item['permission_status'], UNRESOLVED, item['path'])
 
     def test_donor_vendor_and_archive_material_is_unresolved(self):
         expected = {
@@ -129,17 +163,25 @@ class RepositoryInventoryTests(unittest.TestCase):
                 self.assertIn(origin_id, self.files[path]['origins'])
                 self.assertEqual(self.files[path]['permission_status'], UNRESOLVED)
 
-    def test_only_agent_ee_origins_are_proposed_for_mit(self):
+    def test_only_recorded_owner_decisions_confirm_origins(self):
         for item in self.files.values():
             if item['permission_status'] == PROPOSED:
                 self.assertLessEqual(set(item['origins']), origins.OWNED, item['path'])
-        # T16 is the sole owner-confirmed origin, and every T16 file folds to derived (nothing is owner-confirmed).
+        # 2026-10-22 MIT decision (AE, AE-RUN, T1, T2) and the 2026-10-18 fixture decision (T16); nothing else.
         confirmed = {key for key, value in REAL['origins'].items() if value['permission_status'] == CONFIRMED}
-        self.assertEqual(confirmed, {'T16'})
-        self.assertEqual([item['path'] for item in self.files.values() if item['permission_status'] == CONFIRMED], [])
+        self.assertEqual(confirmed, {'AE', 'AE-RUN', 'T1', 'T2', 'T16'})
         for key, value in REAL['origins'].items():
-            if key not in origins.OWNED and key not in confirmed:
+            if key not in confirmed:
                 self.assertEqual(value['permission_status'], UNRESOLVED, key)
+        # A file is owner-confirmed only when every origin is confirmed and nothing it embeds is unresolved.
+        mit = {'AE', 'AE-RUN', 'T1', 'T2'}
+        for item in self.files.values():
+            if item['permission_status'] == CONFIRMED:
+                self.assertLessEqual(set(item['origins']), confirmed, item['path'])
+                self.assertEqual(item['upstream_origins'], [], item['path'])
+                self.assertLessEqual(set(item['origins']), mit, item['path'])
+        self.assertFalse([p for p, item in self.files.items()
+                          if 'T16' in item['origins'] and item['permission_status'] == CONFIRMED])
 
     def test_fome_mc_psu_capture_reports_its_unresolved_upstream(self):
         # Owner decision of 2026-10-18: T16 files fold to derived with upstream origin ids and licences named.
@@ -195,7 +237,7 @@ class RepositoryInventoryTests(unittest.TestCase):
                 self.assertIn('T16', self.files[path]['origins'])
                 self.assertEqual(self.files[path]['permission_status'], DERIVED)
                 self.assertEqual(self.files[path]['upstream_origins'], expected_upstream)
-        self.assertEqual(self.files['fixtures/fome-mc/LICENSE-NOTICE.md']['permission_status'], PROPOSED)
+        self.assertEqual(self.files['fixtures/fome-mc/LICENSE-NOTICE.md']['permission_status'], CONFIRMED)
         inventory_file = self.files['fixtures/fome-mc/inventory/block-inventory.json']
         self.assertEqual((inventory_file['origins'], inventory_file['permission_status'],
                           inventory_file['upstream_origins']),
@@ -286,6 +328,23 @@ class InventoryBoundaryTests(unittest.TestCase):
             mixed = [rule(['fixture/'], ['AE-RUN', 'T1'], 'retained-output')]
             errors, summary = tree.check(inventory(mixed, T1=record))
             self.assertEqual((errors, summary['inventory'][0]['permission_status']), ([], 'owner-confirmed'))
+
+    def test_structured_owner_record_needs_date_decision_and_where(self):
+        complete = {'date': '2026-10-22', 'decision': 'relayed text', 'where': 'AGENTEE-14 comment'}
+        with SyntheticTree({'fixture/a.kicad_sch': 'x'}) as tree:
+            rules = [rule(['fixture/'], ['T1'], 'copied-design')]
+            errors, summary = tree.check(inventory(rules, T1=origin(CONFIRMED, owner_record=complete)))
+            self.assertEqual((errors, summary['inventory'][0]['permission_status']), ([], CONFIRMED))
+            for field in ('date', 'decision', 'where'):
+                for value in (None, '', '  ', 7):
+                    with self.subTest(field=field, value=value):
+                        record = {**complete, field: value}
+                        if value is None:
+                            del record[field]
+                        errors, _ = tree.check(inventory(rules, T1=origin(CONFIRMED, owner_record=record)))
+                        self.assertEqual(errors, [f'origin T1: owner_record needs {field}'])
+            errors, _ = tree.check(inventory(rules, T1=origin(CONFIRMED, owner_record={})))
+            self.assertEqual(errors, [f'origin T1: owner_record needs {field}' for field in ('date', 'decision', 'where')])
 
     def test_embedded_upstream_keeps_its_own_status(self):
         record = dict(owner_record='2026-10-18 owner decision in docs/decisions.md')

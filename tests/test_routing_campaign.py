@@ -101,7 +101,7 @@ class RoutingCampaignTests(unittest.TestCase):
                     status, state, work = child.run_campaign(spec)
                     index = read_json(work / 'stage-receipts.json')
                     self.assertEqual(index['receipts'][0]['applicability'], applicability)
-                    receipt_dir = work / 'receipts/1-kicad-route-krt'
+                    receipt_dir = work / 'receipts/1-kicad-route-builtin'
                     receipt = stage_receipts.validate_receipt(receipt_dir)
                     self.assertEqual((receipt['exit_code'], receipt['status']), (code, receipt_status))
                     summary = routing.verify_campaign_receipt(receipt_dir)
@@ -112,7 +112,7 @@ class RoutingCampaignTests(unittest.TestCase):
                         self.assertEqual(len(state['history']), 2)
                         self.assertEqual(receipt['outputs']['design/rc.kicad_pcb'],
                                          index['delivered']['design/rc.kicad_pcb'])
-                        self.assertEqual(receipt['tool']['backend']['value']['name'], 'krt')
+                        self.assertEqual(receipt['tool']['backend']['value']['name'], 'builtin')
                         for artifact in ('result.json', 'attempt.json', 'RESULT.md', 'validate/preservation.json'):
                             self.assertIsNotNone(receipt['artifacts']['routing/attempt/' + artifact])
                         # AGENTEE-243: the routed candidate's review binds the verified adapter evidence.
@@ -244,7 +244,7 @@ class RoutingCampaignTests(unittest.TestCase):
 
     def test_rehashed_tool_identity_is_refused_against_the_frozen_binding(self):
         _, state, work = self.run_campaign(self.spec(separate=True))
-        receipt_dir = work / 'receipts/1-kicad-route-krt'
+        receipt_dir = work / 'receipts/1-kicad-route-builtin'
         receipt = read_json(receipt_dir / 'receipt.json')
         receipt['tool']['mounts'][-1]['sha256'] = '0' * 64
         receipt['tool_after']['mounts'][-1]['sha256'] = '0' * 64
@@ -256,7 +256,7 @@ class RoutingCampaignTests(unittest.TestCase):
 
     def test_rehashed_writable_state_mount_is_refused_on_replay(self):
         self.run_campaign(self.spec(separate=True))
-        receipt_dir = self.root / 'campaign/implementations/1/receipts/1-kicad-route-krt'
+        receipt_dir = self.root / 'campaign/implementations/1/receipts/1-kicad-route-builtin'
         receipt = read_json(receipt_dir / 'receipt.json')
         execution = receipt['execution']
         argv = execution['sandbox_argv']
@@ -274,7 +274,7 @@ class RoutingCampaignTests(unittest.TestCase):
 
     def test_fd_mount_replay_rejects_tampering_and_preserves_legacy_receipts(self):
         _, _, work = self.run_campaign(self.spec(separate=True))
-        receipt_dir = work / 'receipts/1-kicad-route-krt'
+        receipt_dir = work / 'receipts/1-kicad-route-builtin'
         original = read_json(receipt_dir / 'receipt.json')
         summary = routing.verify_campaign_receipt(receipt_dir)
 
@@ -360,7 +360,7 @@ class RoutingCampaignTests(unittest.TestCase):
         self.enterContext(patch('agent_ee.cli.LOADED_POLICY_FILES', policies))
         status, state, work = self.run_campaign(spec)
         self.assertEqual((status, state['state']), (1, 'incomplete'))
-        receipt_dir = work / 'receipts/1-kicad-route-krt'
+        receipt_dir = work / 'receipts/1-kicad-route-builtin'
         receipt = stage_receipts.validate_receipt(receipt_dir)
         self.assertEqual((receipt['status'], receipt['exit_code']), ('failed', 70))
         self.assertIsNone(receipt['artifacts']['routing/adapter-report.json'])
@@ -395,27 +395,27 @@ class RoutingPredecessorTests(unittest.TestCase):
         status,state,work=self.lane.run_campaign(self.lane.spec())
         self.assertEqual((status,state['state']),(0,'criteria_satisfied'))
         first=stage_receipts.validate_receipt(work/'receipts/1-add-planes')
-        second=stage_receipts.validate_receipt(work/'receipts/2-kicad-route-krt')
+        second=stage_receipts.validate_receipt(work/'receipts/2-kicad-route-builtin')
         source=read_json(Path(state['history'][0]['run'])/'candidate.json')
         self.assertEqual(first['inputs'],source['files'])
         self.assertEqual(second['inputs'],stage_receipts.after_tree(first))
         self.assertEqual(second['spec']['adoptable_exits'],[0,2])
-        self.assertEqual(routing.verify_campaign_receipt(work/'receipts/2-kicad-route-krt')['classification'],'complete')
-        self.assertIn('plane fixture',(work/'receipts/2-kicad-route-krt/inputs/design/rc.kicad_pcb').read_text())
+        self.assertEqual(routing.verify_campaign_receipt(work/'receipts/2-kicad-route-builtin')['classification'],'complete')
+        self.assertIn('plane fixture',(work/'receipts/2-kicad-route-builtin/inputs/design/rc.kicad_pcb').read_text())
 
     def test_owned_routing_composes_with_empty_writer_allowlist(self):
         self.lane.config['writer_editable'] = []
         status,state,work = self.lane.run_campaign(self.lane.spec())
         self.assertEqual((status,state['state']),(0,'criteria_satisfied'))
         self.assertTrue((work/'receipts/1-add-planes/receipt.json').is_file())
-        self.assertTrue((work/'receipts/2-kicad-route-krt/receipt.json').is_file())
+        self.assertTrue((work/'receipts/2-kicad-route-builtin/receipt.json').is_file())
 
     def test_failed_plane_producer_never_launches_router(self):
         self.step['argv']=['/usr/bin/false']
         status,state,work=self.lane.run_campaign(self.lane.spec())
         self.assertEqual((status,state['state']),(1,'incomplete'))
         self.assertTrue((work/'receipts/1-add-planes/receipt.json').is_file())
-        self.assertFalse((work/'receipts/2-kicad-route-krt').exists())
+        self.assertFalse((work/'receipts/2-kicad-route-builtin').exists())
         self.assertFalse((work/'proposal.scope.json').exists())
 
     def test_writer_edit_outside_plane_outputs_refused_before_first_producer(self):
@@ -462,20 +462,20 @@ class RoutingPredecessorTests(unittest.TestCase):
         state=campaign.verify_campaign(self.root/'campaign')
         self.assertEqual((status,state['state']),(1,'incomplete'))
         self.assertIn('preceding adopted receipt',state['error'])
-        self.assertFalse((self.root/'campaign/implementations/1/receipts/2-kicad-route-krt').exists())
+        self.assertFalse((self.root/'campaign/implementations/1/receipts/2-kicad-route-builtin').exists())
 
     def test_individually_valid_but_forged_receipt_chain_is_refused_on_replay(self):
         declaration=self.lane.spec()
         original=stage_receipts.run_step
         def tampered(receipt_dir,design,spec,binding,**kw):
-            if spec['step']=='kicad-route-krt':
+            if spec['step']=='kicad-route-builtin':
                 with (Path(design)/'design/rc.kicad_pcb').open('a') as f:
                     f.write('; forged intermediate input\n')
             return original(receipt_dir,design,spec,binding,**kw)
         with patch.object(stage_receipts,'run_step',side_effect=tampered):
             self.assertEqual(self.raw_run(declaration),1)
         work=self.root/'campaign/implementations/1'
-        for name in ('1-add-planes','2-kicad-route-krt'):
+        for name in ('1-add-planes','2-kicad-route-builtin'):
             stage_receipts.validate_receipt(work/'receipts'/name)
         with self.assertRaisesRegex(ValueError,'routing receipt chain'):
             campaign.verify_campaign(self.root/'campaign')
@@ -538,7 +538,7 @@ class NativeRoutingCampaignTests(unittest.TestCase):
             'name': 'rc_filter', 'label': 'krt-native', 'checkout': str(checkout), 'budget': 120})
         self.assertEqual(stage_receipts.tree_identity(checkout), before)
         self.assertEqual(len(state['history']), 2, state)
-        receipt_dir = work / 'receipts/1-kicad-route-krt'
+        receipt_dir = work / 'receipts/1-kicad-route-builtin'
         receipt = stage_receipts.validate_receipt(receipt_dir)
         self.assertEqual((receipt['exit_code'], receipt['status']), (0, 'completed'))
         summary = routing.verify_campaign_receipt(receipt_dir)

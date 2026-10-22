@@ -33,7 +33,7 @@ hosted run exposed an AppArmor user-namespace requirement, handled below.
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
-| kicad-route with KRT 0.23.1 | kicad-route `5f1c072b86e0caee82c7656226c4d0e3ec580a58`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
+| kicad-route with KRT 0.23.1 | kicad-route `b5774496d8466b67ffa0362b6665fee2108155a3`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -154,7 +154,7 @@ hash-locked [wheel list](../docker/kicad-route/krt-requirements.txt):
 
 | Input | Pin | Enforcement |
 | --- | --- | --- |
-| kicad-route | Commit `5f1c072b86e0caee82c7656226c4d0e3ec580a58` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
+| kicad-route | Commit `b5774496d8466b67ffa0362b6665fee2108155a3` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
 | Owned routing engine | `src/kicad_route/router/`, including `rust_router/Cargo.lock` and `UPSTREAM.json` | Ships inside the pin; no external KRT acquisition or prebuilt routing module |
 | Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | Existing CPython 3.12 manylinux x86-64 wheel lock, installed with `--require-hashes --only-binary=:all: --no-deps`; exact four distributions verified |
 | Rust toolchain | `rust:1.99.1-slim-bookworm` at the digest in Dockerfile | Digest-pinned image copied into the build stage; exact `rustc` and `cargo` version banners required |
@@ -170,7 +170,7 @@ and forbidden-layer weld fixes tracked in
 [upstream #1291](https://github.com/drandyhaas/KiCadRoutingTools/issues/1291) and
 [upstream #1292](https://github.com/drandyhaas/KiCadRoutingTools/issues/1292).
 `UPSTREAM.json` retains the exact lineage and MIT notices. kicad-route now owns
-this source; `--backend krt` remains the command spelling.
+this source; agent-ee passes the canonical `--backend builtin` (AGENTEE-450).
 
 The final build runs `install.sh verify` without network. It checks the source
 commit and clean tree, existing kicad-route state-manifest schema and drift,
@@ -206,6 +206,19 @@ Build from a clean checkout:
 ```sh
 docker build -t agent-ee:local .
 ```
+
+## Init and reaping
+
+The image's `ENTRYPOINT` is `/usr/bin/tini --` (Ubuntu `tini` 0.19.0-1, pinned
+and held like the other packages). As PID 1 it reaps orphaned descendants,
+forwards `SIGTERM`/`SIGINT` to the command and returns the command's exit
+status (`128+N` for a command killed by signal `N`). Without it, a long-lived
+parent such as `strict_suite.py` leaves every orphaned Bubblewrap process as a
+zombie (about 20,960 accumulated on one gate host). `docker run --init` is not
+used because it bind-mounts `/usr/sbin/docker-init`, a `/usr` submount that the
+stage-receipt refusal (`mount_source_submount`) correctly rejects; the refusal
+is unchanged. `tests/test_ci_init.py` runs the real `tini` against orphaned
+grandchildren, exit codes and signals, and checks the Dockerfile pin.
 
 ## Bubblewrap inside the container
 

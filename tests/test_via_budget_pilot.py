@@ -280,7 +280,7 @@ class PilotCampaignTests(unittest.TestCase):
         self.assertEqual((record['status'], record['derivation']['via_budget']), ('derived', 5))
         self.assertEqual(record['via_budget'], config['layer_policy_derivation']['via_budget'])
         self.assertEqual(sorted(p.name for p in (self.campaign_root / 'implementations/1/receipts').iterdir()),
-                         ['1-add-planes', '2-kicad-route-krt'])
+                         ['1-add-planes', '2-kicad-route-builtin'])
         self.assertEqual([a['tool'] for a in self.basis['attempts']], [
             {k: self.state['routing_binding']['tool'][k] for k in ('executable', 'mounts', 'source_tree')}] * 3)
 

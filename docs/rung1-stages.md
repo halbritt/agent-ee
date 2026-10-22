@@ -40,7 +40,7 @@ the record verifies. Either command exits 2 on refused input.
 | 2 | parts | `parts` | AGENTEE-101 | none declared (see [Gaps](#gaps)) |
 | 3 | schematic | `schematic` | AGENTEE-102 | `rung1_qualified` steps `emit-schematic`, `forward-annotate` |
 | 4 | placement | `placement` | AGENTEE-91 | the placement adapter's `agent-ee-placer` helper step |
-| 5 | routing | `routing` | AGENTEE-93 | `routing_adapter.step` `kicad-route-krt`, checked with `routing_adapter.verify` |
+| 5 | routing | `routing` | AGENTEE-93 | `routing_adapter.step` `kicad-route-builtin`, checked with `routing_adapter.verify` |
 | 6 | verification | `verification` | AGENTEE-104 | checks only |
 | 7 | fab | `fab` | AGENTEE-94 | checks only; `fab_package` seals exports, followed by any bound `jlc_dfm` checks |
 

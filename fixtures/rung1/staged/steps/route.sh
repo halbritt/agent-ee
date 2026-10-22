@@ -9,7 +9,7 @@ export KICAD_ROUTE_STATE=/tool/kicad-route
 mkdir -p /work/out/candidate
 cp -r /candidate/project /work/out/project || exit 70
 cd /work/out/project || exit 70
-/tool/kicad-route/bin/kicad-route --out /work/out/route run --backend krt --budget 300
+/tool/kicad-route/bin/kicad-route --out /work/out/route run --backend builtin --budget 300
 code=$?
 /usr/bin/python3 -B -P - "$name" <<'PY' || { [ "$code" -eq 0 ] && exit 70; }
 import json, shutil, sys

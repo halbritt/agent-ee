@@ -478,7 +478,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`5f1c072` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+`b577449` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -1322,6 +1322,8 @@ check is acceptance evidence for it until the owner confirms the limit.
 matches the envelope reference and contains a source-verified stackup declaration.
 Saved layer thicknesses use the profile's explicit exact matching tolerance;
 nominal copper weights come from the cited declaration, with no oz-to-mm conversion.
+A profile dielectric recorded as unpublished (`null`) binds the check, but its
+envelope and saved thicknesses are unknown unless another field proves a defect.
 Missing or unverified authority stays unknown and capture refuses it. Each
 `placement` `connector-edge/1` check selects a fixed `reference` and supplies
 `placement:connector-edge/1:<reference>`; a single fixed footprint may omit the
@@ -1375,6 +1377,27 @@ An optional `package_map` (AGENTEE-274) makes a DigiKey package that differs
 from the footprint a defect, and an unmapped one unknown. See
 [component height](board-envelope.md#component-height) for parameter contracts,
 source applicability, model transform qualification and AGENTEE-209.
+
+`tht-thickness-fit/1` (AGENTEE-448) adds a captured immutable `thickness_fit`
+declaration and supplies `envelope:tht-thickness-fit/1`. It grades each declared
+through-hole part against the envelope's NOMINAL board thickness. Each part
+cites the manufacturer's recommended nominal thickness, and may add explicit hard
+limits or a wider documented fit range. Two tolerances are involved and are
+never conflated. The fabricator's finished-thickness tolerance
+(`finished_thickness_tolerance`) bounds the board the fab delivers and is never
+read as component fit. The component-side fit band uses, per side, the explicit
+hard limit if there is one. Otherwise it uses the default +/-10% screening band
+around the recommendation (inclusive, exact), widened on that side by a
+documented fit range that reaches further. A documented range never narrows the
+band; only an explicit hard limit can. Inside passes; the default band
+reports `screened (default +/-10% component fit)`. Outside an explicit hard
+limit is a defect. Outside the widened screening band is
+advisory: unknown, needing feature geometry or evidence, never a rejection. A
+mix of defects and unknowns reports unknown, keeps every defect in
+`defects` and names each defect in the summary before the unknown reasons. An uncited declaration is refused. A part not bound to one installed PTH footprint
+of the declared part number is unknown. Undeclared parts and every other
+criterion are unchanged. See
+[through-hole thickness fit](board-envelope.md#through-hole-thickness-fit).
 
 ## Assembly and test access
 

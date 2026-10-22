@@ -18,7 +18,7 @@
       {"name": "B.Cu", "kind": "copper", "thickness_mm": 0.035, "copper_weight_oz": 1}
     ]
   },
-  "fab_profile": {"name": "jlc-2layer-fr4-1oz", "sha256": "b0f21b494e9b02016c416706fbe762bbfc609460f9ddee1aa862541d97ff9582"},
+  "fab_profile": {"name": "jlc-2layer-fr4-1oz", "sha256": "78fb89868b7b592cf77b4f564e9bf7e1a5a499f3a444f6d492a3b1e3e6131eee"},
   "mounting_holes": [],
   "keepouts": [],
   "fixed_footprints": [
