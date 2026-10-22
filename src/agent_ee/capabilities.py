@@ -628,6 +628,9 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
+            authority, history = descriptor['requirement_authority'], descriptor['requirement_history']
+            if authority['sourced'] or authority['unqualified-carryover'] or history['qualification_bound']:
+                result['requirement_qualification'] = {**authority, **history}
         elif kind == 'active_spice':
             from .active_spice import capability
             descriptor = capability(params, files, inputs, scope)
@@ -727,6 +730,14 @@ def compile_coverage(scope, files, inputs=None):
         raise ValueError('defect-capable check requires an acceptance mapping')
     report = {'schema': 'agent-ee.coverage/1', 'policy': 'executable-acceptance/1',
               'checks': checks, 'requirements': requirements}
+    qualified = {cid: c['requirement_qualification'] for cid, c in checks.items() if 'requirement_qualification' in c}
+    if qualified:
+        # Citations are reported, not coverage: only sourced IDs are qualified; carry-over never satisfies a requirement.
+        report['requirement_citations'] = {
+            'qualified': sorted({r for q in qualified.values() for r in q['sourced']}),
+            'unqualified-carryover': {cid: q['unqualified-carryover'] for cid, q in qualified.items()
+                                      if q['unqualified-carryover']},
+            'counted_as_coverage': False}
     return {**report, 'coverage_id': identity(report)}
 
 

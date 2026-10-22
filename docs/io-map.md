@@ -57,6 +57,131 @@ every hashed local source must have an entry. File bytes are never decoded or
 newline-normalized for hashing. These options do not change pinned-external
 citations, which retain their separate source contract.
 
+## Requirement qualification
+
+Each `io_map.requirements` entry is either a bare ID string (legacy) or an
+object with an enforced `qualification`: `unqualified-carryover` (`id`,
+`qualification`) or `sourced` (`id`, `qualification`, `source` = `path`,
+`sha256`, `locator`). A bare ID is read as `unqualified-carryover`, never as
+sourced, so existing contracts and the pod fixture validate unchanged. A
+`sourced` entry without a complete source, a missing or unknown status, an
+`unqualified-carryover` entry carrying a source, or a `sourced` source that is
+the inherited io-map CSV itself is refused by `validate_contract`. `capability`
+also requires every sourced source to be a captured input with the declared
+`sha256`, and makes it immutable. An ID is reported sourced only if all its
+citations are sourced.
+
+### Qualification-bound contracts (historical provenance)
+
+Legacy mode cannot detect lost or rewritten statuses, so a carried table (for
+example v9 citations) is compiled with `--history FILE`
+(`agent-ee.io-map-history/1`: `origin` = original `path`, `revision`, `sha256`,
+`locator`; optional `rows` = connector pin to per-row locator; `sourced` = IDs
+promoted with a current source) plus `--record-path` (the captured path the
+contract declares) and `--record-out`. The compiler then writes an
+`agent-ee.io-map-qualification/1` record binding every compiled row (row number,
+connector pin, signal, external destination, complete requirement entries with
+status) to its original provenance, and the contract declares
+`qualification_record` `{path, sha256}`.
+
+The scope's `hardware_interface` check params must pin the same record with the
+optional `qualification_record` `{path, sha256}`; the contract may not declare a
+record the scope does not pin, and stripping the declaration while the scope
+pins one is refused. A present but null, empty or wrong-typed pin or
+declaration is refused, never read as absent.
+
+#### One record loader
+
+Every consumer obtains a record through one typed loader:
+`load_qualification_record(declaration, raw) -> QualificationRecord`. It takes
+the record's exact bytes, checks their sha256 against the declared pin, parses
+strict JSON (UTF-8, unique keys, no NaN) and validates the
+`agent-ee.io-map-qualification/1` schema unconditionally. A parsed `null`,
+empty or wrong-typed record or field is refused; absent means no bytes were
+supplied, and a bound contract then refuses. Every presence, type and value
+constraint is checked at runtime on every call, for every consumer. Python
+type hints are not validation: a bool or float row, a numeric string, a
+whitespace-only value, an uppercase or short digest, an unsafe path, an extra
+key and a near-miss status are all refused. `bind_qualification_record` takes
+the record bytes and runs the loader itself, so no pre-built record object
+bypasses the schema. It then binds the record to the contract and to captured
+bytes. Every citation
+must equal its record row: row number, connector pin, signal, external
+destination, and the complete requirement entries with their statuses. Every
+record row must be cited. The captured io-map CSV must match the record's
+`io_map` sha256. Each record row must equal the CSV row it names: descriptive
+values and the `POD-IF-*` IDs in its Notes. Each `sourced` source must be
+captured with its declared sha256.
+
+The consumers are `verify_contract`, `validate_contract` (which returns only
+the contract), `capability` (and through it `compile_coverage` and the native
+check) and `compile_io_map`. They all call `verify_contract(contract,
+qualification=raw_bytes, captured={path: bytes})`; `capability` supplies its
+captured inputs on demand. A bound contract therefore validates only with the
+record bytes and the captured CSV and sources. `validate_contract_shape` and
+`load_contract_unverified` are the explicitly UNVERIFIED shape-only forms.
+They are used for input discovery and never for a qualification verdict.
+
+#### Original provenance
+
+Origins are verified per distinct (`path`, `sha256`) pair. One origin path
+must declare one revision and sha256 on every row. Conflicting declarations
+are refused before any row is labelled, in any row order, whether or not that
+path is captured. Each row's label comes from its own pair. The label is
+`verified` only when that pair's captured bytes match; it is
+`declared-unverified` when the path is not captured, and mismatching captured
+bytes refuse. A verified origin becomes an immutable input. Authenticating an
+origin proves those bytes only. It never qualifies a requirement or confers
+authority: a carried ID stays an `unqualified historical assertion` under a
+verified origin, and a `sourced` entry may not cite an origin path. An
+uncaptured origin is never dropped; each of its rows is reported
+`declared-unverified`. Native structural grading is unchanged.
+`--history-source FILE` (API `origin_bytes=`) supplies the origin bytes to the
+compiler, and `--captured PATH` (API `captured=`) supplies each sourced
+requirement source. The compiler verifies its own output with the same loader,
+so a history whose sourced source is missing or mismatching is refused. The
+CLI refuses a JSON input file whose value is not an object, for example
+`null`. `requirement_history.rows` reports per row whether the origin is
+`verified` or `declared-unverified`, and whether each ID is `sourced` or an
+`unqualified historical assertion`. The native check reports this as
+`details.requirement_history`.
+Contracts without a declaration remain valid legacy inputs, reported
+`qualification_bound: false`. They cannot stand in for a bound contract under
+a pinned scope.
+
+#### Mutation matrix
+
+`tests/test_qualification_matrix.py` is the regression gate for this boundary.
+It runs every case against the validator, capability, coverage and compiler,
+and every refusal case must refuse in all of them. The cases cover null,
+empty, wrong-typed and missing records and fields, declarations and pins,
+loss, upgrade and bare-ID citation changes, and changed descriptions with the
+CSV unchanged. They also cover records omitted, substituted or changed under
+an unchanged pin, conflicting origins in every order, legacy stand-ins and the
+reviewer probes. The compiler consumer accepts a bundle only if it would emit
+that contract and record. The validator and compiler have no scope input, so
+the scope-pin cases do not apply to them. `python3 -m
+tests.test_qualification_matrix` prints the per-consumer verdict table.
+
+`--qualifications FILE` (API `qualifications=`) is the lighter form: it marks
+sourced IDs and emits the rest explicitly, without a record. A mapping for an ID
+that no row cites is refused.
+
+### Consumers
+
+Unqualified citations are traceability only. The hardware_interface check
+records `details.requirement_qualification` (`sourced`, `unqualified-carryover`)
+and a limitation naming them. `compile_coverage` adds, per check, a
+`requirement_qualification` (the same lists, `qualification_bound` and the
+original `origins` per ID) and a report-level `requirement_citations`
+(`qualified`, `unqualified-carryover` per check, `counted_as_coverage: false`).
+Carry-over never counts as qualified coverage; structural predicates keep their
+independently bound requirement source and grading. With `--spec-record`, the
+CLI prints `spec traceability: qualified=... unqualified-carryover=...`, and the
+API fills `report=` with the same split. Traceability still requires every
+`POD-IF-*` ID to be cited; it no longer implies that token presence is
+qualified.
+
 ## CSV and bindings
 
 Required headers are `Connector_Pin, Signal_Name, Net, MCU_Ref, MCU_Pin,

@@ -448,7 +448,7 @@ def _native_block_subject(run, manifest, ref, record, native_id, checks):
 
 def _native_requirement_coverage(run, manifest, ref, record, req, checks):
     """Recognize qualified native interface witnesses for this block instance."""
-    from .hardware_interface import load_contract
+    from .hardware_interface import load_contract_unverified
 
     specs = {c['id']: c for c in manifest['scope']['checks']}
     if 'layout' in record or any(specs[c]['kind'] != 'hardware_interface' for c in req['checks']):
@@ -461,7 +461,7 @@ def _native_requirement_coverage(run, manifest, ref, record, req, checks):
         if subject is None:
             return False
         occurrences, symbols = subject
-        contract = load_contract(run / 'inputs', params['contract'])
+        contract = load_contract_unverified(run / 'inputs', params['contract'])
         expected = {i['id'] for i in contract['invariants'] if i['requirement'] == req['id']}
         witnesses = [i for i in checks[cid]['details']['invariants']
                      if i['expected']['requirement'] == req['id']]
