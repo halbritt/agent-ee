@@ -1,0 +1,166 @@
+{
+  "adapter": {
+    "compatibility": "kicad-route@bd1e633f2e585f4fc931ceab001299b78d0d8bb7"
+  },
+  "backend": {
+    "reason": "no result.json",
+    "status": "unknown",
+    "value": null
+  },
+  "candidate": null,
+  "candidate_editor_state": {},
+  "candidate_files": {},
+  "discovery": null,
+  "identity": "c3626d6ed54186eadd91cc7d98c9c58c97496a8f7bb796a22d7c5f5641154cef",
+  "identity_after": null,
+  "identity_before": {
+    "code": {
+      "bin": {
+        "entries": 1,
+        "sha256": "dfc758a3d0c0ecaf9e2e4f5dc9a06a322a8f6b3a74392e62abe8f940aad6687e"
+      },
+      "src": {
+        "entries": 336,
+        "sha256": "f5b516168041e8f2f0ed777024af0f5d7080701c144b739134a20eeb87c73c61"
+      }
+    },
+    "state": {
+      ".router-generations/84b30dc286f44df6b465ae8d40aa1363": {
+        "entries": 5490,
+        "sha256": "5116e6f0e309e6a1eccc4bffaf4f0e0d9879c4228601ad8de01581fd95738e4f"
+      }
+    },
+    "state_manifest": "20eb1a65200cb550a851048f4d58c69c6fe970ab180325212c765b82e13e3a71"
+  },
+  "inputs": {
+    "files": {
+      "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+      "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+      "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+      "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+      "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+    },
+    "sha256": "e8e4c33e3917e6f250d0adaf667071a87f3c63f43c2c734150589dd6af0dc561"
+  },
+  "missing_artifacts": [],
+  "omitted_design_files": {},
+  "process": null,
+  "rejected_candidate_sha256": null,
+  "reproducibility": "deterministic backend, repeatability not qualified by this attempt",
+  "request": {
+    "backend": "builtin",
+    "board": "rc_filter.kicad_pcb",
+    "budget_s": 300,
+    "experiment_policy": {
+      "allowed_trace_layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "allowed_via_spans": [
+        [
+          "F.Cu",
+          "B.Cu"
+        ]
+      ],
+      "experiment_class": "current-policy",
+      "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "schema": "routability-policy/1"
+    },
+    "label": "k91-native-positive",
+    "name": "rc_filter",
+    "project": "project",
+    "schematic": "rc_filter.kicad_sch",
+    "state": "checkout",
+    "timeout_s": 900
+  },
+  "retained": {},
+  "schema": "agent-ee.kicad-route-attempt/1",
+  "semantics": {
+    "adapter_exit": 64,
+    "classification": "not_run",
+    "coverage": "unknown",
+    "exit_code": null,
+    "experiment": {
+      "contract": "agent-ee/AGENTEE-442: routability-experiment/1 as written by kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 (unpinned, not qualified); routability-policy/1 five fields",
+      "policy": {
+        "declared": {
+          "allowed_trace_layers": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "allowed_via_spans": [
+            [
+              "F.Cu",
+              "B.Cu"
+            ]
+          ],
+          "experiment_class": "current-policy",
+          "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "schema": "routability-policy/1"
+        },
+        "policy_sha256": "3899a9eeac2ab4027c50454e4b2d1ea73b4620fd7b928fbb8cb6f0051abc37bd",
+        "sha256": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056"
+      },
+      "policy_copy": null,
+      "policy_file": "attempt/agent-ee-experiment-policy.json",
+      "qualified": false,
+      "reason": "no result.json: the router reported no experiment",
+      "status": "absent"
+    },
+    "pair_coverage": {
+      "acceptance_ready": false,
+      "limitations": [
+        "Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.",
+        "Differential pair routing was not requested; pair geometry is unqualified"
+      ],
+      "pairs": [],
+      "status": "unknown"
+    },
+    "proposal": "none",
+    "reasons": [
+      "owned engine source digest differs; router generation .router-generations/84b30dc286f44df6b465ae8d40aa1363 was built from commit f42b8796de2006bae147e65340da99462b5fd9be, not the pinned source cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2: rerun `kicad-route update` at the pin",
+      "router generation installation record differs from the pinned source or module"
+    ]
+  },
+  "state_write_probe": [
+    {
+      "directory": "/opt/kicad-route",
+      "errno": "EROFS",
+      "refused": true
+    },
+    {
+      "directory": "/opt/kicad-route/.router-generations/84b30dc286f44df6b465ae8d40aa1363",
+      "errno": "EROFS",
+      "refused": true
+    }
+  ],
+  "tool": {
+    "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "resolved": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+    },
+    "kicad_route": {
+      "path": "/opt/kicad-route/bin/kicad-route",
+      "resolved": "/opt/kicad-route/bin/kicad-route",
+      "sha256": "4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9"
+    },
+    "kicad_share_templates": {
+      "fp-lib-table": "4042e1c92709d4f872d4cdeaddfa7ec0f6bd49be240e0d9668b76e89888b1e77",
+      "sym-lib-table": "70d7bba56bcfd2f59d98e2354a8979661f2c49f3686d13e989b20202514654c3"
+    },
+    "pin": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "python": {
+      "path": "/usr/bin/python3",
+      "resolved": "/usr/bin/python3.12",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    }
+  },
+  "tool_version": {
+    "reason": "kicad-route at the pin has no --version; identity is the pinned code",
+    "status": "unknown",
+    "value": null
+  }
+}

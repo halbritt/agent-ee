@@ -913,6 +913,18 @@ Experiment evidence is never dropped and is never qualified.
     path and recomputed hash. For `unbound`, that is the unbound file.
   - `absent`: the router wrote neither `result.json` nor a root file, for
     example a refusal or a not-run attempt.
+- **Run record.** A declared policy is also part of the attempt the adapter
+  requested. kicad-route `a0ed434` onward writes `settings.experiment_policy_sha256`
+  (`common.sha256_of` of the loaded declaration) into `result.json` and
+  `attempt.json`, and the declaration itself as `attempt.json` `experiment_policy`.
+  The fixed settings include that digest exactly when a policy was declared, and
+  `attempt.json` must carry the declaration exactly then, equal as canonical
+  JSON. A run that omits either, or records another declaration, is a
+  contradiction (`result settings differ from the fixed adapter settings`,
+  `attempt.json missing or shaped differently from the pinned tool` or
+  `attempt.json experiment_policy differs from the declared policy`). The
+  synthetic fixture router omitted both until the native bd1e633 run below
+  showed it.
 - **Classification.** A refusal is a report violation. A complete or incomplete
   attempt becomes a `contradiction` (exit 65) and delivers no board, and so
   does a `validation_failed` attempt: a contradiction rejects no candidate, so
@@ -1001,6 +1013,25 @@ Experiment evidence is never dropped and is never qualified.
   `human` and `existing` are not counted as distinct evidence: the receipt is
   `locked`, and `protection.mode` is only compared with the attempt's own
   `protect` setting.
+- **Native attempt on an isolated proposed pin (2026-10-22).**
+  `scripts/k91_native_positive.py` ran the consumer path once, `step`,
+  `run_step`, `verify`, `adopt`, on a disposable copy of `fixtures/rc/control`.
+  The router was kicad-route `bd1e633f` (engine source `cb003b30…`) with the
+  existing grid_router extension `610b3acd…` agent-507 qualified it with. These
+  were copied into a private checkout-mode layout, because the executor reserves
+  `/home` and the private state's manifest names its `/home` directory. The pin,
+  the code map and the defaults are unchanged. The policy was current-policy,
+  F.Cu/B.Cu, and the router's own policy qualification was PASS. The attempt is
+  not a positive: it was a contradiction, with no candidate and adoption rejected.
+  It had two causes. The adapter refused the run settings above, which this
+  change repairs. The producer itself marked the receipt not comparison-eligible
+  (`origin predecessor is missing or does not own this input`): kicad-route
+  `experiment._origin` reads any `--dir` whose parent directory is named
+  `candidate` as a run candidate with a missing predecessor, and the adapter's
+  `--dir` is always `/candidate/<project>`. So every adapter-run K91 receipt is
+  `ineligible` until kicad-route or the sandbox layout changes. Agent-ee does not
+  relabel it. Records, receipts and negative controls are in
+  `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`).
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal

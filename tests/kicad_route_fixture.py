@@ -96,6 +96,11 @@ settings = {'backend': opts['--backend'], 'budget_s': int(opts['--budget']), 'pr
             'pour_area_loss_pct': area_bound, 'pour_min_spokes': None, 'backend_args': backend_args,
             'backend_env': {'KICAD_X': '1'} if name == 'backend_env' else {}, 'reserve_spokes': None,
             'stall_s': None, 'barrier': None, 'mode': 'all', 'rule_floor_sha256': None}
+if '--experiment-policy' in opts and scenario.get('settings_policy') != 'omit':
+    # As kicad-route a0ed434 onward: the loaded declaration's common.sha256_of, in the run settings.
+    settings['experiment_policy_sha256'] = hashlib.sha256(json.dumps(
+        {**json.loads(Path(opts['--experiment-policy']).read_bytes()),
+         **scenario.get('settings_policy_edit', {})}, sort_keys=True).encode()).hexdigest()
 paired = opts.get('--diff-pairs') == 'auto'
 plans = scenario.get('pairs', [])
 if paired:
@@ -106,6 +111,10 @@ attempt = {'schema': 'kicad-route/attempt/2' if paired else 'kicad-route/attempt
            'reference_dir': f'reference/{src.name}', 'candidate_dir': f'candidate/{src.name}',
            'reference_facts': 'facts/reference-facts.json', 'baseline': {'report': None},
            'scope': {'nets': [], 'mode': 'all'}, 'settings': settings, 'floor': None, 'rules_files': {}}
+if '--experiment-policy' in opts and scenario.get('attempt_policy') != 'omit':
+    # As kicad-route a0ed434 onward: the loaded declaration, in attempt.json.
+    attempt['experiment_policy'] = {**json.loads(Path(opts['--experiment-policy']).read_bytes()),
+                                    **scenario.get('attempt_policy_edit', {})}
 if paired:
     attempt.update(pairs=[{**p, 'initially_connected': False} for p in plans],
                    pair_routing={p['p']: {'status': 'COUPLED'} for p in plans})

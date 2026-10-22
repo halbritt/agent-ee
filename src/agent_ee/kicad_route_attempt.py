@@ -1776,6 +1776,10 @@ def expected_settings(request, rule_floor, pairs=None, reported=None):
         policy = request['layer_policy']
         settings.update(pour_area_loss_pct=float(policy['pour_area_loss_pct']),
                         backend_args=policy_backend_args(policy))
+    if request.get('experiment_policy') is not None:
+        # KICADROUTE-91 (a0ed434 onward) records the declaration it loaded in the run
+        # settings as common.sha256_of(policy): a different policy is a different attempt.
+        settings['experiment_policy_sha256'] = experiment_policy_identity(request['experiment_policy'])['policy_sha256']
     return settings
 
 
@@ -1914,8 +1918,18 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', ['result settings differ from the fixed adapter settings']
     if not discovered:
         return 'contradiction', ['result.json without exactly one attempt directory']
-    if not isinstance(attempt, dict) or set(attempt) != ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set()):
+    declared = request.get('experiment_policy')
+    if not isinstance(attempt, dict) or set(attempt) != ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set()) | (
+            {'experiment_policy'} if declared is not None else set()):
         return 'contradiction', ['attempt.json missing or shaped differently from the pinned tool']
+    # KICADROUTE-91 (a0ed434 onward) records the declaration it loaded in attempt.json.
+    if declared is not None:
+        try:
+            recorded = canonical_json(attempt['experiment_policy'])
+        except (TypeError, ValueError):
+            recorded = None
+        if recorded != canonical_json(declared):
+            return 'contradiction', ['attempt.json experiment_policy differs from the declared policy']
     if attempt['schema'] != f'kicad-route/attempt/{version}':
         return 'contradiction', ['unknown attempt schema version']
     if paired and not pair_binding(pairs, attempt, result):

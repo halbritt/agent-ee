@@ -3821,6 +3821,16 @@
     },
     {
       "paths": [
+        "evidence/k91-native-positive/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "note": "AGENTEE-442 native attempt records (JSON receipts, adapter reports, the router sidecar, policy copies and effective-configuration manifests) of one kicad-route bd1e633 run on the agent-ee RC fixture; hashes, configuration and host paths, no design file bytes."
+    },
+    {
+      "paths": [
         ".uipass-gallery.yaml",
         "deployment/agent-ee-render-gallery.service",
         "src/agent_ee/render_gallery.py"

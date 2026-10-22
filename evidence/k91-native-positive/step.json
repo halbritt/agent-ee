@@ -1,0 +1,78 @@
+{
+  "schema": "agent-ee.stage-step/1",
+  "stage": "routing",
+  "step": "kicad-route-builtin",
+  "argv": [
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "/opt/driver/run.py",
+    "--project",
+    "project",
+    "--board",
+    "rc_filter.kicad_pcb",
+    "--schematic",
+    "rc_filter.kicad_sch",
+    "--name",
+    "rc_filter",
+    "--label",
+    "k91-native-positive",
+    "--budget",
+    "300",
+    "--timeout",
+    "900",
+    "--backend",
+    "builtin",
+    "--state",
+    "checkout",
+    "--experiment-policy",
+    "{\"allowed_trace_layers\":[\"F.Cu\",\"B.Cu\"],\"allowed_via_spans\":[[\"F.Cu\",\"B.Cu\"]],\"experiment_class\":\"current-policy\",\"rule_areas_sha256\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema\":\"routability-policy/1\"}"
+  ],
+  "mounts": [
+    {
+      "source": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee442-native-positive-b/src/agent_ee/kicad_route_attempt.py",
+      "at": "/opt/agent-ee-routing/kicad_route_attempt.py"
+    },
+    {
+      "source": "/tmp/agent-ee-burndown-20261017/workers/ee442-native-positive-b/scratch/krt-bd1",
+      "at": "/opt/kicad-route"
+    },
+    {
+      "source": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee442-native-positive-b/src/agent_ee/net_binding.py",
+      "at": "/opt/agent-ee-routing/net_binding.py"
+    },
+    {
+      "source": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee442-native-positive-b/src/agent_ee/symbol_library.py",
+      "at": "/opt/agent-ee-routing/symbol_library.py"
+    },
+    {
+      "source": "/tmp/agent-ee-burndown-20261017/workers/ee442-native-positive-b/scratch/run/driver",
+      "at": "/opt/driver"
+    }
+  ],
+  "source": "/opt/kicad-route/src",
+  "backend_report": {
+    "artifact": "routing/attempt/result.json",
+    "key": "backend"
+  },
+  "writes": {
+    "project/rc_filter.kicad_pcb": "routing/candidate/project/rc_filter.kicad_pcb"
+  },
+  "artifacts": [
+    "routing/adapter-report.json",
+    "routing/kicad-route.stdout",
+    "routing/kicad-route.stderr",
+    "routing/attempt/result.json",
+    "routing/attempt/attempt.json",
+    "routing/attempt/RESULT.md",
+    "routing/attempt/snapshot.json",
+    "routing/attempt/validate",
+    "routing/attempt/facts",
+    "routing/attempt/work"
+  ],
+  "adoptable_exits": [
+    0,
+    2
+  ],
+  "timeout_s": 1200
+}

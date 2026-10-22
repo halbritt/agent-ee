@@ -413,6 +413,37 @@ class ExperimentBoundaryTest(unittest.TestCase):
             stage_receipts.adopt(receipt_dir, receipt, design)
         self.assertEqual(self.verify(receipt_dir, receipt)['classification'], 'contradiction')
 
+    def test_the_run_settings_and_attempt_must_record_the_declared_policy(self):
+        # kicad-route a0ed434 onward writes settings.experiment_policy_sha256 (the native
+        # bd1e633 run, evidence/k91-native-positive): a run that omits it, or records another
+        # declaration, is not the attempt the adapter requested.
+        # The same run records the loaded declaration in attempt.json.
+        settings, recorded = ('result settings differ from the fixed adapter settings',
+                              'attempt.json experiment_policy differs from the declared policy')
+        for label, scenario, reason in (
+                ('settings omit', {'settings_policy': 'omit'}, settings),
+                ('settings other', {'settings_policy_edit': {'experiment_class': 'historical-all-layer'}}, settings),
+                ('attempt omit', {'attempt_policy': 'omit'},
+                 'attempt.json missing or shaped differently from the pinned tool'),
+                ('attempt other', {'attempt_policy_edit': {'allowed_via_spans': []}}, recorded)):
+            with self.subTest(label):
+                receipt, receipt_dir, design, report = self.receipt({'name': 'complete', **scenario}, CURRENT)
+                sem = report['semantics']
+                self.assertEqual((receipt['exit_code'], sem['classification']),
+                                 (attempt.EXIT_CONTRADICTION, 'contradiction'))
+                self.assertIn(reason, sem['reasons'])
+                self.assertIsNone(report['candidate'])
+                with self.assertRaises(ValueError):
+                    stage_receipts.adopt(receipt_dir, receipt, design)
+                self.assertEqual(self.verify(receipt_dir, receipt)['classification'], 'contradiction')
+        receipt, receipt_dir, _, report = self.receipt({'name': 'complete'}, CURRENT)
+        result = json.loads((receipt_dir / 'run/routing/attempt/result.json').read_text())
+        self.assertEqual(result['settings']['experiment_policy_sha256'],
+                         report['semantics']['experiment']['policy']['policy_sha256'])
+        recorded = json.loads((receipt_dir / 'run/routing/attempt/attempt.json').read_text())
+        self.assertEqual(recorded['experiment_policy'], CURRENT)
+        self.assertEqual(report['semantics']['classification'], 'complete')
+
     def test_a_validation_failure_with_refused_evidence_replays_its_typed_reason(self):
         for scenario, reason in (('missing_file', 'missing'), ('tamper', 'tampered'), ('orphan', 'unbound')):
             with self.subTest(scenario):
