@@ -231,5 +231,66 @@ class ActionDocumentationTests(unittest.TestCase):
         self.assertNotIn("--security-opt apparmor=unconfined", guide)
 
 
+SAMPLE = SCRIPT.parents[1] / ".github" / "workflows" / "consumer-sample.yml"
+
+
+def sample_step_script(name):
+    """Return one consumer-sample.yml step's `run: |` body without a YAML dependency."""
+    lines = SAMPLE.read_text().splitlines()
+    start = lines.index(f"      - name: {name}")
+    run = next(i for i in range(start, len(lines)) if lines[i] == "        run: |")
+    body = []
+    for line in lines[run + 1:]:
+        if line.strip() and not line.startswith("          "):
+            break
+        body.append(line[10:])
+    return "\n".join(body) + "\n"
+
+
+class ConsumerSampleWorkflowTests(unittest.TestCase):
+    """The committed sample runs the action on the seeded fixture, by manual dispatch only."""
+
+    def test_sample_is_dispatch_only(self):
+        text = SAMPLE.read_text()
+        triggers = text.split("\non:\n", 1)[1].split("\n\n", 1)[0].splitlines()
+        self.assertEqual(triggers, ["  workflow_dispatch:"])
+        for event in ("pull_request", "pull_request_target", "push:", "schedule:", "workflow_run"):
+            self.assertNotIn(event, text)
+        self.assertIn("permissions:\n  contents: read\n", text)
+
+    def test_sample_calls_the_local_action_on_the_seeded_fixture(self):
+        text = SAMPLE.read_text()
+        self.assertIn("        uses: ./\n", text)
+        self.assertIn("          scope: fixtures/rc/seeded.scope.json\n", text)
+        self.assertIn("          artifact-name: rc-seeded-run\n", text)
+        self.assertTrue((SCRIPT.parents[1] / "fixtures/rc/seeded.scope.json").is_file())
+        # The guide's consumer copy uses the same inputs against a pinned reference.
+        guide = (SCRIPT.parents[1] / "docs" / "installation.md").read_text()
+        self.assertIn("(../.github/workflows/consumer-sample.yml)", guide)
+        for line in ("scope: fixtures/rc/seeded.scope.json", "output-directory: build/agent-ee/rc-seeded",
+                     'max-seconds: "900"', "artifact-name: rc-seeded-run"):
+            self.assertIn(line, guide)
+            self.assertIn(line, text)
+
+    def expected_outcome(self, verdict):
+        with tempfile.TemporaryDirectory() as tmp:
+            script, summary = Path(tmp) / "state.sh", Path(tmp) / "summary.md"
+            script.write_text(sample_step_script("State the expected outcome"))
+            env = dict(os.environ, VERDICT=verdict, GITHUB_STEP_SUMMARY=str(summary))
+            done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
+                                  env=env, capture_output=True, text=True)
+            return done.returncode, summary.read_text()
+
+    def test_only_the_seeded_check_failure_is_the_expected_outcome(self):
+        code, summary = self.expected_outcome("check_failed")
+        self.assertEqual(code, 0)
+        self.assertIn("Expected outcome", summary)
+        # A run that did not reach the rc-step finding is not the demonstrated failure.
+        for verdict in ("checks_passed", "coverage_incomplete", "result_invalid"):
+            code, summary = self.expected_outcome(verdict)
+            self.assertEqual(code, 1, verdict)
+            self.assertIn(f"Unexpected outcome: verdict {verdict}", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

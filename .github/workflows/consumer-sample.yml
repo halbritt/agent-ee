@@ -1,0 +1,46 @@
+name: Consumer sample (seeded RC fixture)
+
+# The installation guide's sample consumer workflow, run against this
+# repository's own seeded RC fixture through the local action (uses: ./).
+# Manual dispatch only: agent-ee's development uses no pull-request workflow.
+# The run is expected to FAIL: the seeded R1 value violates the rc-step limit,
+# and the job summary shows the check_failed verdict with that finding.
+# The uploaded run directory holds the candidate inputs (docs/container.md#sample-workflow-and-local-evidence).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seeded:
+    name: Reusable action on the seeded RC fixture (expected to fail)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: agent-ee checks-only review
+        id: agent-ee
+        uses: ./
+        with:
+          scope: fixtures/rc/seeded.scope.json
+          output-directory: build/agent-ee/rc-seeded
+          max-seconds: "900"
+          artifact-name: rc-seeded-run
+
+      # The action step above already failed the job on check_failed. This step
+      # only states in the summary whether that failure is the expected one.
+      - name: State the expected outcome
+        if: ${{ always() && steps.agent-ee.outputs.verdict != '' }}
+        shell: bash
+        env:
+          VERDICT: ${{ steps.agent-ee.outputs.verdict }}
+        run: |
+          if [ "$VERDICT" = check_failed ]; then
+            echo "Expected outcome: the seeded fixture failed with verdict check_failed (rc-step defect)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::seeded fixture verdict is $VERDICT, not the expected check_failed"
+            echo "Unexpected outcome: verdict $VERDICT; the seeded fixture should give check_failed." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
