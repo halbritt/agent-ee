@@ -324,10 +324,24 @@ NO_BACKEND = {'status': 'unknown', 'value': None, 'reason': 'no result.json'}
 SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-route',
            'state': '/opt/kicad-route-state'}
 PYTHON = '/usr/bin/python3'
-BACKENDS = ('krt', 'freerouting')
+# KICADROUTE-82: 'builtin' is the canonical name of the owned backend and 'krt' its deprecated
+# alias. A request or retained record keeps the name it was written with (receipts that say
+# 'krt' keep their bytes); names are normalized only to compare or look up.
+BACKEND_ALIASES = {'krt': 'builtin'}
+BACKENDS = ('builtin', 'krt', 'freerouting')
+# What the pinned cli.py accepts for --backend. 5f1c072 predates the rename, so both names of
+# the owned backend are emitted as 'krt' until the pin moves; then this maps builtin to itself.
+PIN_BACKEND_NAMES = {'builtin': 'krt', 'krt': 'krt', 'freerouting': 'freerouting'}
+
+
+def canonical_backend(name):
+    """The canonical spelling of a backend name; an unknown or non-string name is returned unchanged."""
+    return BACKEND_ALIASES.get(name, name) if isinstance(name, str) else name
+
+
 # Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE.
-STATE_COMPONENTS = {'krt': ('.venv-krt',), 'freerouting': ('vendor/freerouting',)}
-STATE_REQUIRED = {'krt': ('.venv-krt/bin/python',),
+STATE_COMPONENTS = {'krt': ('.venv-krt',), 'builtin': ('.venv-krt',), 'freerouting': ('vendor/freerouting',)}
+STATE_REQUIRED = {'krt': ('.venv-krt/bin/python',), 'builtin': ('.venv-krt/bin/python',),
                   'freerouting': ('vendor/freerouting',)}
 SAFE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 STAMP = re.compile(r'\d{8}T\d{6}\.\d{6}Z\Z')
@@ -368,6 +382,7 @@ CLASSES = {
     'not_run': ('none', 'unknown', EXIT_REQUEST),
 }
 REPRODUCIBILITY = {'krt': 'deterministic backend, repeatability not qualified by this attempt',
+                   'builtin': 'deterministic backend, repeatability not qualified by this attempt',
                    'freerouting': 'attempt only; never a reproducible measurement'}
 
 
@@ -583,7 +598,7 @@ def verify_state(checkout, state, backend='krt', pinned=None):
     includes it. No routing, installation or network is performed here.
     """
     pinned = PINNED_CODE if pinned is None else pinned
-    if backend != 'krt' or 'src/kicad_route/engine.py' not in pinned:
+    if canonical_backend(backend) != 'builtin' or 'src/kicad_route/engine.py' not in pinned:
         return []
     script = r'''
 import json, sys
@@ -678,13 +693,13 @@ def parse_request(argv):
     if request['state'] not in ('checkout', 'separate'):
         raise RequestError('state must be checkout or separate')
     if '--diff-pairs' in raw:
-        if raw['--diff-pairs'] != 'auto' or request['backend'] != 'krt':
-            raise RequestError('diff-pairs must be auto and requires the krt backend')
+        if raw['--diff-pairs'] != 'auto' or canonical_backend(request['backend']) != 'builtin':
+            raise RequestError('diff-pairs must be auto and requires the builtin (krt) backend')
         request['diff_pairs'] = 'auto'
     if '--layer-policy' in raw:
         # The pin refuses --backend-arg with --diff-pairs; freerouting has no KRT layer costs.
-        if request['backend'] != 'krt' or '--diff-pairs' in raw:
-            raise RequestError('layer-policy requires the krt backend without diff-pairs')
+        if canonical_backend(request['backend']) != 'builtin' or '--diff-pairs' in raw:
+            raise RequestError('layer-policy requires the builtin (krt) backend without diff-pairs')
         request['layer_policy'] = parse_layer_policy(raw['--layer-policy'])
     if request['timeout_s'] <= request['budget_s']:
         raise RequestError('timeout must exceed the router budget')
@@ -702,7 +717,7 @@ def tool_argv(request, layout):
     routing = Path(layout['work']) / 'routing'
     return [PYTHON, '-B', '-X', f'pycache_prefix={routing / "pycache"}',
             str(Path(layout['checkout']) / 'bin' / 'kicad-route'), 'run',
-            '--out', str(routing / 'out'), '--json', '--backend', request['backend'],
+            '--out', str(routing / 'out'), '--json', '--backend', PIN_BACKEND_NAMES[request['backend']],
             '--dir', str(Path(layout['candidate']) / request['project']),
             '--board', request['board'], '--schematic', request['schematic'],
             '--name', request['name'], '--label', request['label'],
@@ -730,8 +745,10 @@ def tool_env(layout):
             'GIT_CEILING_DIRECTORIES': f'{layout["candidate"]}:{work}'}
 
 
-def expected_settings(request, rule_floor, pairs=None):
-    settings = {'backend': request['backend'], 'budget_s': request['budget_s'], 'protect': 'existing',
+def expected_settings(request, rule_floor, pairs=None, reported=None):
+    # The tool echoes the --backend it was given; a reported alias of the requested backend is that echo.
+    backend = reported if canonical_backend(reported) == canonical_backend(request['backend']) else request['backend']
+    settings = {'backend': backend, 'budget_s': request['budget_s'], 'protect': 'existing',
             'max_iterations': None, 'passes': None, 'default_clearance_mm': None,
             'clearance_margin_mm': None, 'pour_area_loss_pct': None, 'pour_min_spokes': None,
             'backend_args': [], 'backend_env': {}, 'reserve_spokes': None, 'barrier': None, 'stall_s': None,
@@ -852,7 +869,7 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     if recomputed_exit(result) != exit_code:
         return 'contradiction', ['statuses imply a different exit than the one observed']
     backend = result['backend']
-    if not isinstance(backend, dict) or backend.get('name') != request['backend']:
+    if not isinstance(backend, dict) or canonical_backend(backend.get('name')) != canonical_backend(request['backend']):
         return 'contradiction', ['result backend differs from the requested backend']
     inp = result['input']
     if not isinstance(inp, dict) or inp.get('board') != request['board'] or inp.get('project') != request['name']:
@@ -860,7 +877,8 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     settings = result['settings']
     floor = settings.get('rule_floor_sha256') if isinstance(settings, dict) else None
     pairs = settings.get('pairs') if isinstance(settings, dict) and paired else None
-    if settings != expected_settings(request, floor, pairs) or not (floor is None or isinstance(floor, str)):
+    reported = settings.get('backend') if isinstance(settings, dict) else None
+    if settings != expected_settings(request, floor, pairs, reported) or not (floor is None or isinstance(floor, str)):
         return 'contradiction', ['result settings differ from the fixed adapter settings']
     if not discovered:
         return 'contradiction', ['result.json without exactly one attempt directory']
@@ -872,7 +890,7 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', ['pair evidence differs from the declared pair plan']
     dirname = PurePosixPath(request['project']).name
     if (attempt['board'] != request['board'] or attempt['schematic'] != request['schematic'] or
-            attempt['backend'] != request['backend'] or attempt['project'] != request['name'] or
+            canonical_backend(attempt['backend']) != canonical_backend(request['backend']) or attempt['project'] != request['name'] or
             attempt['reference_dir'] != f'reference/{dirname}' or
             attempt['candidate_dir'] != f'candidate/{dirname}' or
             attempt['input_fingerprint'] != inp.get('fingerprint') or attempt['settings'] != settings):
