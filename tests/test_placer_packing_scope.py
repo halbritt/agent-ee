@@ -9,6 +9,7 @@ a mutant control without the gate.
 """
 import copy
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -643,13 +644,16 @@ class NativePadKeepoutPublicationTest(NativeBoard, unittest.TestCase):
         for p in patches:
             p.start()
         try:
-            self.place(source, 'legacy')
+            with self.assertRaisesRegex(ValueError, 'introduced native DRC') as caught:
+                self.place(source, 'legacy')
         finally:
             for p in patches:
                 p.stop()
-        lands = self.saved_lands(self.scratch / 'legacy' / 'candidate.kicad_pcb')
+        self.assertFalse((self.scratch / 'legacy').exists())
+        retained = Path(re.search(r'diagnostics retained at (\S+): ', str(caught.exception)).group(1))
+        lands = self.saved_lands(retained / 'failed-candidate.kicad_pcb')
         self.assertTrue(any(x0 < 3 * MM for x0, _, _, _ in lands), lands)
-        self.assertEqual(self.not_allowed(self.scratch / 'legacy'), ['Pad 1 [SIGNAL] of C1 on F.Cu'])
+        self.assertEqual(self.not_allowed(retained), ['Pad 1 [SIGNAL] of C1 on F.Cu'])
 
     def not_allowed(self, root):
         report = json.loads((root / 'native-drc.json').read_text())
