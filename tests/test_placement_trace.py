@@ -944,7 +944,7 @@ class TracePersistenceTest(unittest.TestCase):
         self.scratch = self.root / 'scratch'
         self.scratch.mkdir()
         self.source = self.root / 'source.kicad_pcb'
-        self.source.write_text('(kicad_pcb)\n')
+        self.source.write_text('source board stand-in: only its hash is authorized\n')
         self.request = {'policy': {}, 'authorization': {
             'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
             'source_sha256': hashlib.sha256(self.source.read_bytes()).hexdigest(),
