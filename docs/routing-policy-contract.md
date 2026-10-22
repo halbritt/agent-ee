@@ -253,12 +253,16 @@ identity, or refused with a typed reason. The
 page describes the record. The declaration is the reviewed five-field
 `routability-policy/1` of kicad-route `a5fa636d`. The reference is bound only to
 the run-relative `routability-experiment.json`. The sidecar shape and the
-retained `experiment-policy.json` copy are those of kicad-route `4f06368f`, whose
-real receipts the boundary tests replay. A receipt that claims
-`comparison_eligible` is requalified from the attempt record, facts and sealed
-effective-configuration manifest it names by digest, and must describe this
-execution (input, source, request, candidate and run), never trusted on the
-producer's flag.
+retained `experiment-policy.json` copy are those of agent-507's final frozen
+producer, kicad-route `a0ed434`, whose clean native receipt the boundary tests
+replay (the interim `4f06368f` receipts are retired as malformed). A receipt
+that claims `comparison_eligible` is requalified from the attempt record, facts
+and sealed effective-configuration manifest it names by digest, and must
+describe this execution (input and named input files, source, request, the raw,
+wrapper and graded board seals, and run), never trusted on the producer's flag.
+The real replay covers two-layer route_demo current-policy evidence only, graded
+with the receipt's own execution identity; the adapter cannot run that receipt
+before a re-pin.
 That producer is not pinned or qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
 still apply when agent-ee re-pins.
 

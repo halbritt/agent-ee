@@ -413,16 +413,17 @@
     },
     "T17": {
       "name": "kicad-route routability-experiment/1 receipts",
-      "description": "Byte copies of three routability-experiment/1 sidecars, two experiment-policy.json copies and the two positive runs' work/effective-configuration manifests and requests written by kicad-route 4f06368f on its own fixtures/route_demo board, replayed by AGENTEE-442 through the routing adapter. They hold hashes, router configuration and producer-host paths, with no design file bytes.",
+      "description": "Byte copies of the routability-experiment/1 sidecar, experiment-policy.json copy and work/effective-configuration manifest and request of the clean native receipt kicad-route a0ed434 wrote on its own fixtures/route_demo board, and three retired sidecars and a policy copy of the interim producer 4f06368f on the same board, replayed by AGENTEE-442 through the routing adapter. They hold hashes, router configuration and producer-host paths, with no design file bytes.",
       "upstream": {
         "repository": "https://github.com/halbritt/kicad-route",
         "local_path": "/home/halbritt/git/kicad-route",
         "revisions": {
-          "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5": "KICADROUTE-91 producer (krt91c-experiment, for agent-507); artifacts SHA256SUMS verified 2026-10-22."
+          "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5": "Interim KICADROUTE-91 producer (krt91c-experiment, for agent-507); artifacts SHA256SUMS verified 2026-10-22; retired.",
+          "a0ed43494d44fd8312054b204083881fe76f3a81": "Final frozen KICADROUTE-91 producer (agent-507); clean native receipt copied and sha256-checked 2026-10-22."
         },
-        "license_file": "LICENSE (MIT License, Copyright (c) 2026 halbritt) at 4f06368f"
+        "license_file": "LICENSE (MIT License, Copyright (c) 2026 halbritt) at 4f06368f and a0ed434"
       },
-      "upstream_license": "MIT (kicad-route LICENSE at 4f06368f)",
+      "upstream_license": "MIT (kicad-route LICENSE at 4f06368f and a0ed434)",
       "license_verified": true,
       "permission_status": "unresolved-owner-decision-required",
       "owner_decision": "Confirm that these kicad-route output receipts, including their producer-host paths, may be published in agent-ee. kicad-route's MIT license and halbritt authorship are not treated as an agent-ee publication decision.",
@@ -3782,7 +3783,7 @@
       "origins": [
         "T17"
       ],
-      "note": "Real kicad-route 4f06368f receipts, an agent-ee binding record and provenance; see tests/fixtures/k91-real/PROVENANCE.md."
+      "note": "Real kicad-route a0ed434 receipt files, retired 4f06368f sidecars, an agent-ee binding record and provenance; see tests/fixtures/k91-real/PROVENANCE.md."
     },
     {
       "paths": [

@@ -15,6 +15,8 @@ SCRIPT = r'''#!/usr/bin/python3
 import datetime, hashlib, json, os, shutil, signal, subprocess, sys, time
 from pathlib import Path
 
+RAW_STAGE = 'backend_output_before_wrapper_lock_restore_and_native_refill'
+
 ROOT = Path(__file__).resolve().parents[1]
 scenario = json.loads((ROOT / 'scenario.json').read_text())
 name = scenario['name']
@@ -208,7 +210,7 @@ if name == 'env':
                                       'pycache_prefix': sys.pycache_prefix})
 # SYNTHETIC routability-experiment/1 sidecar (AGENTEE-442), written by this
 # fixture, never by the KICADROUTE-91 producer. It has the run-relative reference
-# and the full shape of kicad-route 4f06368f's sidecar (schemas/routability-
+# and the full shape of kicad-route a0ed434's sidecar (schemas/routability-
 # experiment-1.json), and, when it claims comparison_eligible, the evidence the
 # adapter requalifies: a synthetic effective-configuration manifest and request
 # it seals, the result.json process binding of that manifest, and the attempt
@@ -234,19 +236,38 @@ if experiment is not None and experiment != 'omit':
     if 'source_dir' in scenario:
         attempt['source']['source_dir'] = scenario['source_dir'].format(**paths)
         write(run / 'attempt.json', attempt)
+    # As kicad-route a0ed434: the attempt names the board's project file and its custom
+    # rules file (scenario['rules_files'] overrides), and the effective-configuration
+    # manifest captures the input board and the files beside it by suffix.
+    stem = Path(board).stem
+    attempt['rules_files'] = {'project': f'{stem}.kicad_pro',
+                              'custom_rules': f'{stem}.kicad_dru' if f'{stem}.kicad_dru' in files else None,
+                              'not_loaded': [], **scenario.get('rules_files', {})}
+    write(run / 'attempt.json', attempt)
+    captured = {'board_sha256': files.get(board),
+                'rules': {suffix: files.get(stem + suffix) for suffix in ('.kicad_pro', '.kicad_dru')}}
+    # The raw backend output kicad-route seals (a design file the adapter never retains);
+    # the fixture's wrapper changes nothing, so it is the delivered board.
+    raw_output = run / 'work/effective-configuration-output.kicad_pcb'
+    if board_sha is not None:
+        raw_output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(cand / board, raw_output)
+    raw_sha = sha(raw_output) if raw_output.is_file() else None
     if not (run / 'validate/candidate-facts.json').exists():
         write(run / 'validate/candidate-facts.json', {'sha256': board_sha, 'tracks': [], 'vias': []})
     source_sha, producer_sha = (hashlib.sha256(f'SYNTHETIC {n}'.encode()).hexdigest() for n in ('source', 'producer'))
     manifest_name, request_name = 'work/effective-configuration.json', 'work/effective-configuration-request.json'
     write(run / request_name, {'schema': 'kicad-route/effective-configuration-request/1',
-                               'source_sha256': source_sha, 'producer_sha256': producer_sha, 'field_names': []})
+                               'source_sha256': source_sha, 'producer_sha256': producer_sha, 'field_names': [],
+                               'input': captured, **scenario.get('request_manifest', {})})
     manifest = {'schema': 'kicad-route/effective-configuration/1', 'capture_status': 'complete',
                 'coverage': 'resolved_outer_batch_only', 'stage': 'SYNTHETIC agent-ee fixture',
                 'execution': {'later_subruns': 0, 'outer_batches': 1}, 'issues': [], 'not_captured': [],
                 'configuration': {'layers': ['F.Cu', 'B.Cu']}, 'effective_environment': {}, 'runtime_policy': {},
                 'routing_environment': {}, 'invocation': [], 'scope': [], 'rules': None, 'net_inventory': [],
                 'request_sha256': sha(run / request_name), 'source_sha256': source_sha,
-                'producer_sha256': producer_sha, 'requested_output': str(run / 'work/krt-out' / board)}
+                'producer_sha256': producer_sha, 'requested_output': str(run / 'work/krt-out' / board),
+                'input': captured, 'output': {'board_sha256': raw_sha, 'stage': RAW_STAGE}}
     manifest.update(scenario.get('manifest', {}))
     write(run / manifest_name, manifest)
     for rel, content in scenario.get('payload', {}).items():
@@ -255,7 +276,11 @@ if experiment is not None and experiment != 'omit':
     result['process']['effective_configuration'] = scenario.get('effective_binding') or {
         'status': 'bound', 'reasons': [], 'replay_authority': False, 'sha256': sha(run / manifest_name),
         'request_sha256': sha(run / request_name), 'capture_status': 'complete',
-        'coverage': 'resolved_outer_batch_only'}
+        'coverage': 'resolved_outer_batch_only', 'captured_input_sha256': files.get(board),
+        'backend_output_sha256': raw_sha, 'output_stage': RAW_STAGE,
+        'wrapper_output_board_sha256': validation.get('delivered_board_sha256'),
+        'wrapper_output_stage': 'after_wrapper_postprocessing_before_native_refill'}
+    result['process']['effective_configuration'].update(scenario.get('binding', {}))
     policy_path = opts.get('--experiment-policy')
     declared = None
     if policy_path:
@@ -279,10 +304,13 @@ if experiment is not None and experiment != 'omit':
 
     def digest_of(value):
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
-    named = {'name': None, 'sha256': None}
+    custom = attempt['rules_files']['custom_rules']
     identity = {
         'input': {'fingerprint': fingerprint, 'board': {'name': board, 'sha256': files.get(board)},
-                  'project': dict(named), 'rules': dict(named), 'files': files, 'snapshot_files': files,
+                  'project': {'name': f'{stem}.kicad_pro', 'sha256': files.get(f'{stem}.kicad_pro')},
+                  'rules': {'name': custom, 'sha256': files.get(custom) if isinstance(custom, str) else None,
+                            'not_loaded': attempt['rules_files']['not_loaded']},
+                  'files': files, 'snapshot_files': files,
                   'netlist_sha256': None, 'nets_sha256': None, 'placement_sha256': None,
                   'mechanical_sha256': None, 'setup_sha256': None, 'native_facts_kicad_version': None,
                   'source': attempt['source']},
@@ -300,16 +328,18 @@ if experiment is not None and experiment != 'omit':
         'effective': {**{k: manifest[k] for k in ('schema', 'capture_status', 'coverage', 'stage', 'execution',
                                                    'not_captured', 'configuration', 'effective_environment',
                                                    'runtime_policy', 'routing_environment', 'invocation',
-                                                   'scope')},
+                                                   'scope', 'input')},
                       'rules_sha256': None, 'net_inventory_sha256': None}}
     identity.update(scenario.get('identity', {}))
+    # scenario['input'] {key: value} overrides identity.input members (named-input cases).
+    identity['input'].update(scenario.get('input', {}))
     identity['effective'].update(scenario.get('effective', {}))
     if experiment == 'no_policy_identity':
         del identity['policy']
     copy = run / 'experiment-policy.json'
     reasons = [] if declared is not None else ['no experiment policy was declared (--experiment-policy)']
     sealed = ['attempt.json', 'facts/reference-facts.json', 'validate/candidate-facts.json', manifest_name,
-              request_name, 'experiment-policy.json']
+              request_name, 'experiment-policy.json', 'work/effective-configuration-output.kicad_pcb']
     body = {'schema': 'routability-experiment/2' if experiment == 'incompatible_schema' else
             'routability-experiment/1',
             'identity': identity,
@@ -320,7 +350,9 @@ if experiment is not None and experiment != 'omit':
                                      'actual_trace_layers': [], 'actual_via_spans': [],
                                      'effective_layers': ['F.Cu', 'B.Cu'], 'effective_via': {}},
             'native_terminals': {},
-            'candidate': {'backend_output_board_sha256': board_sha, 'pre_refill_board_sha256': board_sha,
+            'candidate': {'raw_backend_output_board_sha256': raw_sha,
+                          'backend_output_board_sha256': validation.get('delivered_board_sha256'),
+                          'pre_refill_board_sha256': validation.get('delivered_board_sha256'),
                           'candidate_board_sha256': board_sha, 'candidate_copper_signature': None,
                           'validated_board_sha256': board_sha, 'file_sha256': board_sha},
             'outcome': {'process': result['process']['status'], 'routing': routing[routing_status]['status'],
@@ -328,6 +360,7 @@ if experiment is not None and experiment != 'omit':
                         'wall_clock_stop': False},
             'artifacts': {rel: sha(run / rel) if (run / rel).is_file() else None for rel in sealed},
             'replay_authority': False}
+    body['candidate'].update(scenario.get('seals', {}))
     # scenario['artifacts'] [[name, digest | None | 'delete' | 'rename:NEW']] edits the
     # digests before sealing (artifact-binding cases).
     for rel, op in scenario.get('artifacts', []):
@@ -357,6 +390,9 @@ if experiment is not None and experiment != 'omit':
             sidecar.write_text(json.dumps(forged, indent=2) + '\n')
     else:
         sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
+    # scenario['remove'] [run-relative names] deletes sealed files after sealing.
+    for rel in scenario.get('remove', []):
+        (run / rel).unlink()
     # Byte edits [file, old, new, 'first'|'last'] of one occurrence (AGENTEE-442
     # duplicate-key probes); an edit that finds nothing writes an unmistakable file.
     for file, before, after, which in scenario.get('edits', []):

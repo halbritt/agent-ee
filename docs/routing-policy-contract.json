@@ -25,8 +25,8 @@
     "never_consumed": ["kicad-route/route-campaign/1", "campaign/2 (planned)", "blocked/2"],
     "experiment_boundary": {
       "item": "AGENTEE-442",
-      "status": "consumer boundary replayed against real kicad-route 4f06368f receipts; the pin produces no experiment evidence; no re-pin, not qualified",
-      "producer": "kicad-route 4f06368fbd68bab44cbfde839647aa5b3f7ef7c5 schemas/routability-experiment-1.json",
+      "status": "consumer boundary replayed against the real clean native receipt of kicad-route a0ed434 (two-layer route_demo, current-policy); the pin produces no experiment evidence; no re-pin, not qualified",
+      "producer": "kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 schemas/routability-experiment-1.json",
       "reference_keys": ["path", "schema", "sha256"],
       "reference_path": "routability-experiment.json (run-relative)",
       "sidecar_schema": "routability-experiment/1",

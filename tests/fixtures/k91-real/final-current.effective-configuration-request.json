@@ -1,7 +1,7 @@
 {
   "schema": "kicad-route/effective-configuration-request/1",
   "source_sha256": "9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2",
-  "source_root": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/state/.router-generations/8d1b019e5094499da285524cbc58ef6b/router",
+  "source_root": "/home/halbritt/git/kicad-route/build/krt91-runtime-agent507/state/.router-generations/6f67a8663d834c3aa94c1a36381dcad0/router",
   "producer_sha256": "fe9254c32d895f936e97f03f34f9a6edbb16fcad086179f62325cf0eeeb1722e",
   "field_names": [
     "track_width",
@@ -125,12 +125,12 @@
       ".kicad_dru": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf"
     }
   },
-  "output": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-historical/work/krt-out/route_demo.kicad_pcb",
+  "output": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt/work/krt-out/route_demo.kicad_pcb",
   "invocation": [
-    "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/state/.router-generations/8d1b019e5094499da285524cbc58ef6b/router/py_router/route.py",
-    "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-historical/work/input/route_demo/route_demo.kicad_pcb",
+    "/home/halbritt/git/kicad-route/build/krt91-runtime-agent507/state/.router-generations/6f67a8663d834c3aa94c1a36381dcad0/router/py_router/route.py",
+    "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt/work/input/route_demo/route_demo.kicad_pcb",
     "--output",
-    "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-historical/work/krt-out/route_demo.kicad_pcb",
+    "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt/work/krt-out/route_demo.kicad_pcb",
     "--escalation",
     "off",
     "--fab-tier",
@@ -139,7 +139,7 @@
     "--no-power-tap-neckdown",
     "--no-fix-drc-settings",
     "--json-out",
-    "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-historical/work/krt-out/summary.json",
+    "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt/work/krt-out/summary.json",
     "--max-iterations",
     "5000",
     "--clearance",
@@ -165,10 +165,10 @@
     "KICAD_PACK_INLINE": null
   },
   "routing_environment": {
-    "KICAD_CACHE_HOME": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/out/.home/cache",
+    "KICAD_CACHE_HOME": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-out/.home/cache",
     "KICAD_CLI": "/usr/bin/kicad-cli",
-    "KICAD_CONFIG_HOME": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/out/.kicad-config",
-    "KICAD_DOCUMENTS_HOME": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/out/.home/data",
+    "KICAD_CONFIG_HOME": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-out/.kicad-config",
+    "KICAD_DOCUMENTS_HOME": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-out/.home/data",
     "KICAD_DYNAMIC_ITERATIONS": "0",
     "KICAD_GLOBAL_PLAN": "0",
     "KICAD_IMPEDANCE_NECKDOWN": "0",
@@ -177,9 +177,9 @@
     "KICAD_PLANE_FINALIZE": "0",
     "KICAD_RESCUE_CAP_MOVE": "0",
     "KICAD_ROUTE_LEDGER": "off",
-    "KICAD_ROUTE_STATE": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/state",
-    "KICAD_STOP_FILE": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-historical/work/STOP",
+    "KICAD_ROUTE_STATE": "/home/halbritt/git/kicad-route/build/krt91-runtime-agent507/state",
+    "KICAD_STOP_FILE": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt/work/STOP",
     "KICAD_TERMINAL_ESCALATION": "0"
   },
-  "settings_sha256": "2ab318d56dc22340a739237cb28920a732b3621ef1152ccb378ccfeb810fb5a0"
+  "settings_sha256": "24629070cd2a6a4407602439ed46a1bf1df9facee6cb9cd899b2daa99c4ccdb3"
 }

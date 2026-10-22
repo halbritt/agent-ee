@@ -738,8 +738,12 @@ Experiment evidence is never dropped and is never qualified.
       absolute, `..` or other file name is unsupported), a sidecar that is not a
       JSON object, or one whose top-level or `identity` key set is not exactly
       the producer's (`EXPERIMENT_SIDECAR_KEYS`, `EXPERIMENT_IDENTITY_KEYS`,
-      after kicad-route `4f06368f` `schemas/routability-experiment-1.json`,
-      which forbids other properties). Also malformed: `replay_authority` other
+      after kicad-route `a0ed434` `schemas/routability-experiment-1.json`,
+      which forbids other properties). That schema requires
+      `identity.effective.input` (`board_sha256` and `rules` `.kicad_pro`,
+      `.kicad_dru`) and `candidate.raw_backend_output_board_sha256`, so the
+      interim `4f06368f` receipts, which lack them, are malformed: retired,
+      never reinterpreted. Also malformed: `replay_authority` other
       than `false`, a `comparison_eligible` that is not a boolean true exactly
       when `ineligible_reasons` is empty, `artifacts` digests that are not hex,
       and an `identity_sha256` that is not hex. Any other member outside the
@@ -782,8 +786,8 @@ Experiment evidence is never dropped and is never qualified.
     - `unbound`: a retained root file that no reference binds, because
       `result.json` is absent or unreadable or has no `experiment`;
     - `ineligible`: a policy was declared, and the producer marked the
-      receipt not `comparison_eligible`. One example is kicad-route's
-      stale-runtime negative, which lacks effective-configuration identity.
+      receipt not `comparison_eligible` (for example a routing-environment
+      binding mismatch).
       The record keeps `identity_sha256`, `comparison_eligible` and
       `ineligible_reasons`, and the detail quotes the reasons;
     - `unqualified`: the sidecar claims `comparison_eligible`, but this
@@ -793,12 +797,17 @@ Experiment evidence is never dropped and is never qualified.
       - every digest in the sidecar's `artifacts` is bound to the retained file
         it names, recomputed from the retained bytes. The sidecar must name
         `attempt.json`, `facts/reference-facts.json`,
-        `validate/candidate-facts.json`, `work/effective-configuration.json`
-        and `work/effective-configuration-request.json` (`EXPERIMENT_BOUND`);
+        `validate/candidate-facts.json`, `work/effective-configuration.json`,
+        `work/effective-configuration-request.json` and the raw backend output
+        `work/effective-configuration-output.kicad_pcb` (`EXPERIMENT_BOUND`);
         an unnamed or null one is `unbound`. A named file that was not
         retained is `missing`, other bytes are `tampered`, and a name that is
-        not a run-relative retained report is `malformed`. The adapter's own
-        retained files are never the identity source;
+        not a run-relative retained report is `malformed`. The raw output is a
+        design file, which is never retained: its digest must be the one the
+        adapter itself recorded for the run in `omitted_design_files` (the
+        receipt anchors the report), else `missing` or `tampered`. Any other
+        named design file is `malformed`. The adapter's own retained files are
+        never the identity source;
       - the manifest must cover exactly one outer batch and no later subrun
         (`execution` `{outer_batches: 1, later_subruns: 0}`), have coverage
         `resolved_outer_batch_only`, a `complete` capture without `issues`,
@@ -827,16 +836,41 @@ Experiment evidence is never dropped and is never qualified.
       not describe this execution. These must agree:
       - `source_dir` and the sidecar's `identity.input.source` must be exactly
         the `--dir` the adapter passed (`/candidate/<project>`);
+      - the retained `snapshot.json` must have a non-empty `files` map of
+        sha256 digests (otherwise `missing` or `malformed`, never a crash:
+        review H2, ee442g);
       - the input fingerprint must equal `attempt.json`, `result.json` and the
         fingerprint of the retained `snapshot.json` files, and the snapshot
         files, input board name and digest must match those files;
+      - the named input files (review H1, ee442g): `identity.input.project` must
+        be the board's own `<stem>.kicad_pro` with its snapshot digest (null
+        only when the snapshot has none); `identity.input.rules` must restate
+        `attempt.json` `rules_files` (`custom_rules` and `not_loaded`) with the
+        snapshot digest of that file, and a named rules file must be
+        `<stem>.kicad_dru`, the only one KiCad loads; `attempt.json` must state
+        both `rules_files` members;
+      - `identity.effective.input` must equal the files beside the board in the
+        snapshot (`board_sha256`, `.kicad_pro`, `.kicad_dru`) and the `input` of
+        both sealed manifests;
       - the request settings must restate `attempt.json` `settings`, which the
         adapter checks against its fixed request: `protect`, `mode`, the
         backend, the budgets, `experiment_policy_sha256` and the other
         `EXPERIMENT_REQUEST_SETTINGS`;
-      - the candidate's board digests must equal the board `result.json`
-        validated and `validate/candidate-facts.json`, and the pre-refill
-        digest must equal the delivered one;
+      - three distinct board seals, each against its own stage record
+        (kicad-route `a0ed434`): the raw backend output
+        (`raw_backend_output_board_sha256`) must equal the sealed raw-output
+        artifact, the manifest `output.board_sha256` and the `result.json`
+        binding's `backend_output_sha256`, at stage
+        `backend_output_before_wrapper_lock_restore_and_native_refill` in both
+        records; the wrapper output (`backend_output_board_sha256`,
+        `pre_refill_board_sha256`) must equal the binding's
+        `wrapper_output_board_sha256` (stage
+        `after_wrapper_postprocessing_before_native_refill`) and the
+        `delivered_board_sha256` `result.json` validated; the graded refilled
+        board (`candidate_board_sha256`, `validated_board_sha256`,
+        `file_sha256`) must equal the board `result.json` validated and
+        `validate/candidate-facts.json`. The binding's `captured_input_sha256`
+        must be the input board;
       - the outcome statuses must equal `result.json`'s;
       - the manifest's `requested_output` must be `RUN/work/krt-out/<board>`.
 
@@ -857,46 +891,60 @@ Experiment evidence is never dropped and is never qualified.
   argv and `verify` summaries are unchanged. `verify` returns the record as `experiment`, refuses a record
   that differs from the retained bytes, and refuses a refused record on an
   attempt that is not a contradiction, timeout or cancellation.
-- **Real producer replay.** The sidecar shape follows the real receipts of
-  kicad-route `4f06368f`, the KICADROUTE-91 producer that krt91c-experiment
-  built for agent-507. Three sidecars, two policy copies and the positives' sealed
-  manifests from that run are
-  committed byte for byte in `tests/fixtures/k91-real` (origin T17; see its
-  `PROVENANCE.md`). `RealReceiptReplayTest` in
-  `tests/test_routing_experiment_boundary.py` replays them through `step`,
-  `stage_receipts.run_step`, `verify` and `adopt`:
-  - the real positives are producer-format fixtures only. The fixture router
-    routes agent-ee's own design, so each real sidecar names another run's
-    attempt record and facts, and is refused (`tampered`, `attempt.json`),
-    with no candidate and a rejected adoption (agent-509 ruling on ee442f: the
-    old hybrid positive must refuse). The end-to-end positive is the coherent
-    synthetic receipt of `ExperimentBoundaryTest` until the corrected producer
-    and a fresh native replay supply a real one;
-  - the stale-runtime receipt is refused as `ineligible`;
-  - the positives' sealed effective-configuration manifests and requests are
-    committed too, with their `result.json` binding in `receipts.json`. The K91
-    review's resealed real variants (EI2, EI3, EI4) are refused at the binding.
-    The same cases sealed coherently on the synthetic receipt are refused by
-    their own checks: `unqualified` or `malformed` for several batches, a wrong
-    request hash, an incomplete capture, a self-cycle or a predecessor chain,
-    and list-shaped attempt records and facts. Members outside the producer
-    schema are `malformed` (review H2, ee442e);
-  - the real sidecar with its digests rewritten to this run's files and
-    resealed is `run_mismatch`;
-  - edited, re-bound, re-ordered, missing and out-of-range variants are
-    refused as `tampered`, `missing`, `incompatible_policy` or `malformed`;
-  - each receipt under the other declared policy is `incompatible_policy`.
+- **Real producer replay.** The sidecar shape follows agent-507's final frozen
+  KICADROUTE-91 producer, kicad-route `a0ed434`
+  (`a0ed43494d44fd8312054b204083881fe76f3a81`), and its clean native receipt
+  (`tool_identity` `a0ed434`, `dirty: false`, native PASS/COMPLETE, scope
+  `/SIG_A`, eligible). The receipt's sidecar, policy copy and sealed manifests
+  are committed byte for byte in `tests/fixtures/k91-real` (origin T17; see its
+  `PROVENANCE.md`). Its boards and facts hold route_demo geometry and are not
+  committed. `tests/test_routing_experiment_boundary.py` has two real replays:
+  - `FinalNativeReceiptTest` grades the receipt with its own run, source,
+    input and candidate. `retain()` copies the run's diagnostics as the
+    adapter does, and `experiment_grade()` grades the retained bytes against
+    the receipt's execution identity (its run directory, the producer's
+    `--dir`, and the design-file digests `retain()` observed). The record is
+    `retained`, `qualified: false`, with the receipt's file and identity
+    digests, and it is re-derived unchanged after the run is deleted. The same
+    path refuses the same bytes graded as another run or another input
+    directory (including one that exists on the verifier host), with another
+    observed raw output, and, resealed so that every digest verifies, with
+    another run's facts, input or seals, or with aliased, linked or looping
+    self-origins. The receipt is external: `AGENT_EE_K91_FINAL_RECEIPT` names a
+    byte copy (default `build/k91-final-clean-receipt` in the checkout, then
+    the original). The test pins its key hashes and skips, saying so, only
+    when it is absent;
+  - the same receipt delivered by a router the adapter ran, with every file it
+    seals, goes through `step`, `stage_receipts.run_step`, `verify` and `adopt`
+    and is refused `run_mismatch` (its `source_dir` is the producer's, not
+    `/candidate/<project>`), with no candidate and a rejected adoption, also
+    after `OUT` is removed. `RealReceiptReplayTest` replays the committed
+    sidecar and manifests the same way: refused at the binding (`tampered`,
+    `attempt.json`), as are the K91 review's resealed real variants (EI2, EI3,
+    EI4). The same cases sealed coherently on the synthetic receipt are refused
+    by their own checks. A real sidecar resealed over this run's digests is
+    `run_mismatch`; edited, re-bound, re-ordered, missing and out-of-range
+    variants are refused as `tampered`, `missing`, `incompatible_policy` or
+    `malformed`; under the other declared policy it is `incompatible_policy`;
+    marked not eligible it is `ineligible`;
+  - the interim `4f06368f` sidecars are retired: refused `malformed`.
 
-  Every refusal is re-derived by `verify` after the router's `OUT` is removed.
-  A retained record is still `qualified: false`: binding proves which run the
-  evidence describes, not that the producer measured it correctly (only
-  `kicad_route.experiment.verify` and producer qualification can). The `K91_REVIEWED`
-  hook records the producer commit, the sha256 of its schema file and the
-  positive receipt's file and identity digests. `EXPERIMENT_CONTRACT` names
-  the producer as unpinned and not qualified. Two contract points have still
-  not been exercised by a real run: whether `result.settings` echoes the
-  policy digest (then `expected_settings` changes), and how a re-pinned
-  router's failed runs carry the sidecar.
+  The adapter cannot itself run this receipt: its pinned router writes no
+  experiment evidence, and it issues only `--protect existing`, mode `all` and
+  `--dir /candidate/<project>`, while the receipt's request is `locked`,
+  `selected` and the producer's fixture directory. An adapter-run real positive
+  needs the re-pin. The real replay qualifies the consumer's handling of
+  two-layer route_demo current-policy evidence only. It is not target
+  qualification, not a re-pin and not a router release claim. A retained record
+  is still `qualified: false`: binding proves which run the evidence describes,
+  not that the producer measured it correctly (only
+  `kicad_route.experiment.verify` and producer qualification can). The
+  `K91_REVIEWED` hook records the producer commit, the sha256 of its schema
+  file and the receipt's file and identity digests. `EXPERIMENT_CONTRACT`
+  names the producer as unpinned and not qualified. The protection modes
+  `human` and `existing` are not counted as distinct evidence: the receipt is
+  `locked`, and `protection.mode` is only compared with the attempt's own
+  `protect` setting.
 - **Pin.** The pinned `5f1c072` `cli.py` has no `--experiment-policy`, and its
   `main` turns every usage error into a refusal (exit 4). A declared policy at
   this pin is therefore a `refused` attempt with an `absent` record, or a

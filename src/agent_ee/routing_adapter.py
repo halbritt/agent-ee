@@ -439,7 +439,8 @@ def _experiment_grade(routing, report, request, result, classification, retained
             raise ValueError('experiment policy file differs from the declared experiment policy')
     found = (report.get('discovery') or {}).get('attempt_dir')
     grade = attempt.experiment_grade(request, result, routing / 'attempt',
-                                     attempt.experiment_run(request, layout, found))
+                                     attempt.experiment_run(request, layout, found,
+                                                            report['omitted_design_files']))
     if ('experiment' in sem) != (grade is not None) or sem.get('experiment') != grade:
         raise ValueError('experiment evidence record differs from the retained routing evidence')
     if (grade is not None and grade['status'] == 'refused' and
