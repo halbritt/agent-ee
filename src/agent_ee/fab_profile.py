@@ -353,6 +353,7 @@ def native_inventory(board_path):
         outline, problem = simple_polygon(sorted(
             (e.m_Uuid.AsString(), (int(e.GetStart().x), int(e.GetStart().y)),
              (int(e.GetEnd().x), int(e.GetEnd().y))) for e in edges))
+    classes = {k.PAD_ATTRIB_PTH: 'PTH', k.PAD_ATTRIB_NPTH: 'NPTH'}
     # KiCad does not save a board UUID (each load invents one); cite saved names/UUIDs only.
     inventory = {'copper_layers': board.GetCopperLayerCount(),
                  # Canonical saved layer names; user display names may omit '.Cu'.
@@ -363,7 +364,13 @@ def native_inventory(board_path):
                                    if p.GetAttribute() == k.PAD_ATTRIB_SMD),
                  'vias': sorted(({'uuid': t.m_Uuid.AsString(), 'drill_nm': int(t.GetDrillValue())}
                                  for t in board.GetTracks() if t.GetClass() == 'PCB_VIA'),
-                                key=lambda v: v['uuid'])}
+                                key=lambda v: v['uuid']),
+                 # Every drilled pad, by plating class; a captured table may cover vias only.
+                 'holes': sorted(({'uuid': p.m_Uuid.AsString(), 'hole_class': classes.get(p.GetAttribute(), 'other'),
+                                   'drill_x_nm': int(p.GetDrillSize().x), 'drill_y_nm': int(p.GetDrillSize().y)}
+                                  for fp in board.GetFootprints() for p in fp.Pads()
+                                  if p.GetDrillSize().x > 0 or p.GetDrillSize().y > 0),
+                                 key=lambda h: h['uuid'])}
     if problem:
         inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
     return inventory
@@ -433,14 +440,21 @@ def classify_preferred(records, inventory):
                                             v['drill_nm'] not in allowed and v['drill_nm'] < continuous]
         if below:
             record['below_minimum_vias'] = below
+        # A refusal names the exact captured table (and its source hash) it checked.
+        source = record['expected']['source']
+        table = {**options, 'source_path': source['path'], 'source_sha256': source['sha256'],
+                 'as_of': source['as_of']}
         if unknown is None or unknown:
             record.update(status='not_evaluated', execution='unsupported',
+                          code='via_drill_off_table' if unknown else 'via_inventory_missing',
                           reason='via drill outside sourced options' if unknown else 'via drill inventory missing',
-                          unsupported_vias=unknown)
+                          unsupported_vias=unknown, drill_table=table)
         elif below and (record['status'] != 'violation' or
                         not {v['uuid'] for v in below} <= offender_ids(record)):
             record.update(status='not_evaluated', execution='unsupported',
-                          reason='below-minimum via drill not cited by native DRC', unsupported_vias=[])
+                          code='below_minimum_via_uncited',
+                          reason='below-minimum via drill not cited by native DRC', unsupported_vias=[],
+                          drill_table=table)
     if inventory['outline_xy_mm'] is None:
         for record in records:
             if record['expected'].get('key') == 'min_edge_clearance_mm' and record['status'] == 'satisfied':
@@ -468,7 +482,37 @@ def classify_preferred(records, inventory):
             offenders = sorted(found - illegal)
             record.update(status='extra_charge' if offenders else 'satisfied', offender_ids=offenders,
                           minimum_violation_ids=sorted(found & illegal))
+    uncovered = hole_classes_without_table(inventory)
+    for record in records:
+        # A captured drill table covers via holes only. A board that also drills pads
+        # grades its vias as before, but the uncovered hole classes keep the table's
+        # record, and so the check, unknown. Earlier refusal codes stay first.
+        if 'drill_table' not in record and (record['expected'].get('drill_options') is None
+                                            or record['execution'] != 'ok'):
+            continue
+        if uncovered:
+            record['unsupported_hole_classes'] = uncovered
+            if record['execution'] == 'ok':
+                source = record['expected']['source']
+                record.update(via_status=record['status'], status='not_evaluated', execution='unsupported',
+                              code='hole_class_without_drill_table',
+                              reason='drilled ' + ', '.join(c['hole_class'] for c in uncovered)
+                                     + ' holes have no captured drill table',
+                              drill_table={**record['expected']['drill_options'], 'source_path': source['path'],
+                                           'source_sha256': source['sha256'], 'as_of': source['as_of']})
     return records
+
+
+def hole_classes_without_table(inventory):
+    """Observed non-via hole classes with their saved pad UUIDs and requested drill sizes.
+
+    Captured drill tables (drill_options) list via drills only, so every drilled pad
+    class is uncovered. Callers without a hole inventory (unit records) observe none.
+    """
+    classes = defaultdict(list)
+    for hole in inventory.get('holes', []):
+        classes[hole['hole_class']].append(hole)
+    return [{'hole_class': name, 'holes': holes} for name, holes in sorted(classes.items())]
 
 
 def check_fab_profile(ctx):
