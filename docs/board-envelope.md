@@ -73,6 +73,8 @@ acceptance requirement with its envelope field hash and remains unresolved;
 there is no caller-supplied pass/bound flag. Baseline capture recognizes both
 versions, freezes verified stackup sources and refuses missing check coverage.
 Existing native outline and layer criteria do not cover these obligations.
+An entry may add a `coverage` record that stages it for candidate generation
+(see [staged obligations](#staged-obligations)); without one it stays unresolved.
 
 A fixed footprint's anchor is its KiCad footprint origin. The anchor is
 `position_mm` along the named edge, measured from the edge's `start`, then
@@ -294,8 +296,56 @@ unbound. It refuses:
 - a validation record and requirements document for different envelope bytes.
 
 `require_obligations(scope, requirements, record, files)` then refuses anything
-not `bound`, listing every such obligation. It also refuses requirements derived
+not `bound`, `soft` or `staged`, listing every such obligation. It also refuses requirements derived
 while predicates were unresolved. An obligation is refused rather than dropped.
+
+## Staged obligations
+
+A version 2 `/obligations/<n>` entry states a generator decision, so no check
+binds it. Its optional `coverage` record separates candidate-generation
+admission from final physical qualification:
+
+```json
+{"coverage": {
+  "generation": [{"locator": "/fixed_footprints/0"},
+                 {"locator": "/fixed_footprints/0", "criterion": "outline-containment/1"}],
+  "open": [{"id": "panel-cutout", "stage": "physical_qualification",
+            "statement": "Panel cutout fit is not yet qualified."}]
+}}
+```
+
+- `generation` lists the witnesses, which may be none. A witness without a
+  criterion is a declared `/mounting_holes/<i>`, `/keepouts/<i>` or
+  `/fixed_footprints/<i>` of the same envelope. Its own derived obligation
+  must be `bound`; a soft (informational) or unmapped one does not witness.
+  `criterion: "outline-containment/1"` is allowed only for a fixed footprint
+  with `courtyard_overhangs`. It needs a `placement` check with that criterion
+  over these exact captured envelope bytes. No other field witnesses, so
+  `/max_component_height_mm` and `component-height/1` cannot cover a staged
+  obligation.
+- `open` lists the qualification evidence still required, one or more
+  `{id, stage, statement}` items. `stage` is `candidate_assessment` (needs a
+  generated candidate, for example a placement assessment) or
+  `physical_qualification` (enclosure, fabrication or bench evidence). An empty
+  list, a status field or any other key is refused, so the envelope never
+  claims qualification.
+
+The record holds locators and text only, so it cannot add a numeric limit. A
+bound, drill or position keeps the provenance of the concrete field it points
+at. Validation moves a staged entry's predicates from `unresolved` to
+`qualification_open`, one per open item. The outcome stays `unknown`, and the
+derived requirement's statement names the witnesses and open items.
+`obligation_coverage` reports the entry as `staged`, with each witness's
+requirement, checks and status, and the open items. A missing or unbound witness
+makes it `unknown`. A baseline requirement that maps a staged obligation to a
+check, or changes its statement, is refused: no check qualifies it.
+
+`require_obligations` admits `staged` entries, so capture, scaffold and
+candidate generation can proceed. `require_qualified(coverage)` is the final
+physical-qualification gate. It refuses while any staged obligation has open
+items, naming each one, and refuses any obligation that is not bound. Nothing in
+the envelope or scope can close an open item. Closing one requires
+AGENTEE-177/179 evidence that adds a real binding.
 
 ## Stage-one requirements
 
@@ -349,7 +399,8 @@ A scope containing outline, layers, a source-bound stackup, the referenced
 profile and separately selected fixed connectors can now capture with all
 obligations listed as bound in `baseline.json`. Declared holes and keepouts also
 bind through their id-selected checks. Unresolved generator mechanics still
-have no binding. Capture refuses those obligations by name and writes no baseline or candidate record. Using an envelope only as
+have no binding. Capture refuses those obligations by name and writes no baseline or candidate record,
+unless a [coverage record](#staged-obligations) stages them. Using an envelope only as
 `connector-edge/1` data still requires declaring it and covering every obligation.
 The complete pod fixture retains its AGENTEE-177/179 mechanical obligations;
 a scoped contract fixture does not establish acceptance of the complete pod.

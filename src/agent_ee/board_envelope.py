@@ -56,6 +56,15 @@ UNBOUND = {
     'keepouts': 'needs an id-selected native keepouts/1 check',
     'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes '
                         'selecting this fixed reference'}
+# A generic /obligations entry is never bound by a check. Its optional coverage
+# record stages it: candidate generation is admitted when every witness, a
+# concrete envelope field whose own obligation is bound (or a containment check
+# over these bytes), is present; its open items stay reported, and refuse final
+# physical qualification, until AGENTEE-177/179 evidence closes them. The record
+# carries locators and text only, so it cannot introduce a numeric limit.
+WITNESS = re.compile(r'/(mounting_holes|keepouts|fixed_footprints)/(0|[1-9][0-9]*)\Z')
+WITNESS_CRITERIA = ('outline-containment/1',)
+QUALIFICATION_STAGES = ('candidate_assessment', 'physical_qualification')
 
 
 def load(raw):
@@ -398,12 +407,51 @@ def stackup_support(stackup, fab, captured):
     return unresolved
 
 
-def validate_obligations(items):
+def validate_coverage(item, envelope):
+    """A staged obligation's witnesses and open qualification items; never a pass claim."""
+    label = f"obligation {item['id']} coverage"
+    coverage = fields(item['coverage'], label, ['generation', 'open'])
+    witnesses, seen = coverage['generation'], set()
+    if not isinstance(witnesses, list) or len(witnesses) > MAX_ITEMS:
+        raise ValueError(f'{label} generation must be a list of witnesses')
+    for witness in witnesses:
+        fields(witness, f'{label} witness', ['locator'], ['criterion'])
+        match = WITNESS.fullmatch(witness['locator']) if isinstance(witness['locator'], str) else None
+        if match is None:
+            raise ValueError(f"{label} witness {witness['locator']!r} must point at a mounting hole, keepout "
+                             'or fixed footprint; other fields carry no generation witness')
+        field, index = match[1], int(match[2])
+        if index >= len(envelope[field]):
+            raise ValueError(f"{label} witness {witness['locator']} is not declared in this envelope")
+        criterion = witness.get('criterion')
+        if criterion is not None and (criterion not in WITNESS_CRITERIA or field != 'fixed_footprints' or
+                                      'courtyard_overhangs' not in envelope[field][index]):
+            raise ValueError(f"{label} witness criterion {criterion!r} needs a fixed footprint with declared "
+                             f'courtyard_overhangs and one of {list(WITNESS_CRITERIA)}')
+        if (witness['locator'], criterion) in seen:
+            raise ValueError(f"{label} repeats witness {witness['locator']}")
+        seen.add((witness['locator'], criterion))
+    opened = coverage['open']
+    # Nothing is qualified at generation: an obligation without open items is a pass claim.
+    if not isinstance(opened, list) or not 1 <= len(opened) <= MAX_ITEMS:
+        raise ValueError(f'{label} open must list the qualification evidence still required; '
+                         'final qualification is never claimed by the envelope')
+    unique_names(opened, 'id', f'{label} open item', set())
+    for entry in opened:
+        fields(entry, f'{label} open item', ['id', 'stage', 'statement'])
+        if entry['stage'] not in QUALIFICATION_STAGES:
+            raise ValueError(f'{label} open item stage must be one of {list(QUALIFICATION_STAGES)}')
+        if not isinstance(entry['statement'], str) or not entry['statement'].strip():
+            raise ValueError(f'{label} open item statement required')
+    return coverage
+
+
+def validate_obligations(items, envelope):
     """Unbound generator decisions are obligations, never caller-asserted passes."""
     namespace = set()
     unique_names(items, 'id', 'obligation', namespace)
     for item in items:
-        fields(item, 'obligation', ['id', 'requirement_ids', 'statement', 'owner_items'])
+        fields(item, 'obligation', ['id', 'requirement_ids', 'statement', 'owner_items'], ['coverage'])
         if not isinstance(item['statement'], str) or not item['statement'].strip():
             raise ValueError('obligation statement required')
         for field in ('requirement_ids', 'owner_items'):
@@ -412,6 +460,8 @@ def validate_obligations(items):
                     any(not isinstance(v, str) or not ENVELOPE_ID.fullmatch(v) for v in values) or
                     len(set(values)) != len(values)):
                 raise ValueError(f'obligation {field} needs unique nonempty identifiers')
+        if 'coverage' in item:
+            validate_coverage(item, envelope)
     return items
 
 
@@ -883,22 +933,28 @@ def validate(raw, *, profile=None, captured=None):
     copper = copper_names(envelope['layer_count'])
     fab, unresolved = validate_profile(envelope['fab_profile'], profile, captured,
                                        declared_inventory(envelope['layer_count'], copper, edges))
-    obligations = []
-    if schema == SCHEMAS[1]:
-        unresolved.extend(stackup_support(stackup, fab, captured))
-        obligations = validate_obligations(envelope['obligations'])
-        unresolved.extend({'predicate': f"mechanical_{item['id']}",
-                           'reason': f"{item['statement']} Unbound until {', '.join(item['owner_items'])}."}
-                          for item in obligations)
+    obligations, staged = [], []
     namespace = set()
     unique_names(envelope['fixed_footprints'], 'reference', 'fixed footprint', namespace)
     unique_names(envelope['mounting_holes'], 'id', 'mounting hole', namespace)
     unique_names(envelope['keepouts'], 'id', 'keepout', namespace)
+    if schema == SCHEMAS[1]:
+        unresolved.extend(stackup_support(stackup, fab, captured))
+        obligations = validate_obligations(envelope['obligations'], envelope)
+        unresolved.extend({'predicate': f"mechanical_{item['id']}",
+                           'reason': f"{item['statement']} Unbound until {', '.join(item['owner_items'])}."}
+                          for item in obligations if 'coverage' not in item)
+        # Staged obligations admit generation but stay open for final physical qualification.
+        staged.extend({'predicate': f"mechanical_{item['id']}_{entry['id']}", 'obligation': item['id'],
+                       'stage': entry['stage'], 'reason': f"{entry['statement']} Open until "
+                                                          f"{', '.join(item['owner_items'])}."}
+                      for item in obligations if 'coverage' in item for entry in item['coverage']['open'])
     provenance = validate_provenance(envelope, vertices, captured)
     return {'schema': 'agent-ee.envelope-validation/1', 'envelope_id': eid,
             'envelope_sha256': hashlib.sha256(raw).hexdigest(),
-            'structural': 'pass', 'outcome': 'unknown' if unresolved else 'pass',
-            'unresolved': unresolved, 'acceptance_ready': False,
+            'structural': 'pass', 'outcome': 'unknown' if unresolved or staged else 'pass',
+            'unresolved': unresolved, **({'qualification_open': staged} if staged else {}),
+            'acceptance_ready': False,
             'outline': outline, 'layer_count': envelope['layer_count'], 'copper_layers': copper,
             'stackup': stackup, 'fab_profile': fab,
             **height,
@@ -985,9 +1041,16 @@ def derive_requirements(record, source_path):
                                   if 'courtyard_overhangs' in fixed else ''),
                               source_path, CHECK_KINDS['fixed_footprints']))
     for index, item in enumerate(record.get('obligations', [])):
+        staged = ''
+        if 'coverage' in item:
+            witnesses = [w['locator'] + (f" ({w['criterion']})" if 'criterion' in w else '')
+                         for w in item['coverage']['generation']]
+            staged = (' Staged: candidate generation witnessed by ' + (', '.join(witnesses) or 'no concrete field')
+                      + '; open for final qualification: '
+                      + '; '.join(f"{e['id']} ({e['stage']})" for e in item['coverage']['open']) + '.')
         out.append(obligation(eid, f"obligation-{item['id']}", f'/obligations/{index}', item,
                               item['statement'] + f" Requirement IDs: {', '.join(item['requirement_ids'])}; "
-                              f"checks pending {', '.join(item['owner_items'])}.",
+                              f"checks pending {', '.join(item['owner_items'])}." + staged,
                               source_path, CHECK_KINDS['obligations']))
     by_locator = {e['locator']: e for e in record.get('constraint_provenance', {}).get('constraints', [])}
     provenance = {}
@@ -1002,6 +1065,7 @@ def derive_requirements(record, source_path):
     return {'schema': 'agent-ee.envelope-requirements/1', 'envelope_id': eid,
             'envelope_sha256': record['envelope_sha256'], 'source_path': source_path,
             'complete': not record['unresolved'], 'unresolved': record['unresolved'],
+            **({'qualification_open': record['qualification_open']} if 'qualification_open' in record else {}),
             'requirements': out, 'provenance': provenance}
 
 
@@ -1024,6 +1088,8 @@ def derive(raw, *, source_path, profile=None, captured=None):
     markdown += ''.join(f"Owner confirmation needed: {locator}\n"
                         for locator in record['constraint_provenance']['owner_confirmation'])
     markdown += ''.join(f"Unresolved: {u['predicate']}: {u['reason']}\n" for u in record['unresolved'])
+    markdown += ''.join(f"Open for final qualification ({u['stage']}): {u['predicate']}: {u['reason']}\n"
+                        for u in record.get('qualification_open', []))
     return {'envelope.json': raw, 'envelope-validation.json': canonical(record) + b'\n',
             'envelope-requirements.json': canonical(requirements) + b'\n',
             'requirements.md': markdown.encode('utf-8'),
@@ -1149,7 +1215,7 @@ def obligation_coverage(scope, requirements, record, files):
     for rid, requirement in baseline.items():
         for cid in requirement.get('checks', []) if isinstance(requirement.get('checks'), list) else []:
             mappers.setdefault(cid, set()).add(rid)
-    report = []
+    report, staged = [], []
     for item in requirements['requirements']:
         rid, mapped, field = item['id'], baseline.get(item['id']), field_of(item)
         kinds = item['check_kinds']
@@ -1165,6 +1231,14 @@ def obligation_coverage(scope, requirements, record, files):
                 raise ValueError(f'envelope obligation {rid} statement, source or informational intent differs')
             report.append({**entry, 'checks': list(mapped.get('checks', [])) if mapped else [], 'status': 'soft',
                            'reason': f"{provenance['class']} limit is soft: {provenance['soft_reason']}"})
+            continue
+        if field == 'obligations' and 'coverage' in (declared := record['obligations'][index_of(item)]):
+            # Staged, never bound: no check evaluates a generic obligation, so a mapping claims too much.
+            if mapped is not None and (mapped.get('checks') or mapped.get('statement') != item['statement']
+                                       or mapped.get('source') != item['source']):
+                raise ValueError(f'envelope obligation {rid} is staged: a baseline mapping cannot claim its '
+                                 'final qualification or alter its statement or source')
+            staged.append((entry, declared))
             continue
         if mapped is None or not mapped.get('checks'):
             report.append({**entry, 'status': 'unmapped', 'reason': f'no mapped check; {UNBOUND[field]}'})
@@ -1188,13 +1262,54 @@ def obligation_coverage(scope, requirements, record, files):
             report.append({**entry, 'status': 'unknown', 'reason': '; '.join(unknown)})
         else:
             report.append({**entry, 'status': 'bound'})
+    by_locator = {r['locator']: r for r in report}
+    for entry, declared in staged:
+        report.insert(next(i for i, r in enumerate(requirements['requirements']) if r['id'] == entry['id']),
+                      staged_coverage(entry, declared, by_locator, specs, record, files))
     return report
+
+
+def index_of(item):
+    return int(item['source']['locator'].rsplit('/', 1)[1])
+
+
+def staged_coverage(entry, declared, by_locator, specs, record, files):
+    """Generation admission for one generic obligation; its open items are never closed here."""
+    missing, witnesses = [], []
+    for witness in declared['coverage']['generation']:
+        locator, criterion = witness['locator'], witness.get('criterion')
+        if criterion is None:
+            concrete = by_locator.get(locator)
+            status = concrete['status'] if concrete else 'absent'
+            # A soft (informational) concrete limit is not acceptance, so it cannot witness.
+            if status != 'bound':
+                missing.append(f"{locator} is {status}" + (f": {concrete['reason']}" if concrete and 'reason'
+                                                             in concrete else ''))
+            witnesses.append({'locator': locator, 'requirement': concrete['id'] if concrete else None,
+                              'checks': concrete['checks'] if concrete else [], 'status': status})
+            continue
+        reference = record['fixed_footprints'][int(locator.rsplit('/', 1)[1])]['reference']
+        checks = sorted(cid for cid, spec in specs.items()
+                        if spec.get('kind') == 'placement' and isinstance(spec.get('params'), dict)
+                        and spec['params'].get('criterion') == criterion
+                        and files.get(spec['params'].get('envelope')) == record['envelope_sha256'])
+        if not checks:
+            missing.append(f'{locator} {reference} needs a placement {criterion} check over these captured '
+                           'envelope bytes')
+        witnesses.append({'locator': locator, 'criterion': criterion, 'checks': checks,
+                          'status': 'bound' if checks else 'absent'})
+    result = {**entry, 'witnesses': witnesses, 'open': declared['coverage']['open']}
+    if missing:
+        return {**result, 'status': 'unknown', 'reason': 'staged generation witnesses missing: ' + '; '.join(missing)}
+    return {**result, 'status': 'staged', 'reason': 'candidate generation admitted; final physical qualification '
+                                                    'open: ' + ', '.join(e['id'] for e in declared['coverage']['open'])}
 
 
 def require_obligations(scope, requirements, record, files):
     """Refuse a scope/3 baseline that drops, alters, vacuously maps or leaves unknown an obligation."""
     report = obligation_coverage(scope, requirements, record, files)
-    missing = [f"{r['id']} ({r['status']}: {r['reason']})" for r in report if r['status'] not in ('bound', 'soft')]
+    missing = [f"{r['id']} ({r['status']}: {r['reason']})" for r in report
+               if r['status'] not in ('bound', 'soft', 'staged')]
     if missing:
         raise ValueError('envelope obligations lack executable coverage and are refused, not dropped: '
                          + '; '.join(missing))
@@ -1202,6 +1317,23 @@ def require_obligations(scope, requirements, record, files):
         raise ValueError('envelope requirements are incomplete: unresolved ' +
                          ', '.join(u['predicate'] for u in requirements['unresolved']))
     return report
+
+
+def require_qualified(coverage):
+    """Final physical qualification: refuse while any staged obligation has open evidence.
+
+    Admission for candidate generation (require_obligations) never implies this;
+    no envelope or scope field can close an open item.
+    """
+    staged = [f"{r['id']} ({', '.join(e['id'] for e in r['open'])})" for r in coverage
+              if r['status'] == 'staged']
+    if staged:
+        raise ValueError('final physical qualification refused: staged envelope obligations remain open: '
+                         + '; '.join(staged))
+    unbound = [r['id'] for r in coverage if r['status'] not in ('bound', 'soft')]
+    if unbound:
+        raise ValueError(f'final physical qualification refused: obligations not bound: {unbound}')
+    return coverage
 
 
 def json_object_start(path):
@@ -1576,8 +1708,9 @@ def main():
         write_artifacts(artifacts, args.out)
     except (ValueError, OSError) as exc:
         parser.exit(2, f'envelope refused or unavailable: {exc}\n')
-    unresolved = json.loads(artifacts['envelope-validation.json'])['unresolved']
-    return 1 if unresolved or (trip and trip['outcome'] != 'match') else 0
+    validation = json.loads(artifacts['envelope-validation.json'])
+    return 1 if (validation['unresolved'] or validation.get('qualification_open')
+                 or (trip and trip['outcome'] != 'match')) else 0
 
 
 if __name__ == '__main__':

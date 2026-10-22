@@ -1310,6 +1310,10 @@ saved-declaration semantics. See the [native envelope contract](board-envelope.m
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.
+An obligation's `coverage` record can [stage](board-envelope.md#staged-obligations)
+it for candidate generation. The record cites bound hole, keepout and
+connector-edge witnesses, plus `outline-containment/1` for declared overhangs.
+Its open qualification items keep `require_qualified` refusing final acceptance.
 
 `component-height/1` binds the optional envelope `max_component_height_mm` field
 and supplies `envelope:component-height/1`. It grades every native footprint from

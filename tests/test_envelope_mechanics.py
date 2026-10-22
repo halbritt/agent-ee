@@ -100,6 +100,7 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         self.envelope['keepouts'] = [dict(id='antenna', layers=['F.Cu','In1.Cu','In2.Cu','B.Cu'],
             forbid=['footprints','tracks','vias','pads','copper_pours'],
             antenna=dict(reference='U1', facts_check='facts'))]
+        self.pristine = copy.deepcopy(self.envelope)
         multipage_text_pdf(self.source / 'owned.pdf', 45, 45, ['18','25.5','6','15'])
         self.facts = esp32_s3_wroom_1_datasheet_facts(pdf_path='owned.pdf', pdf_sha256=digest(self.source / 'owned.pdf'))
         write_json(self.source / 'facts.json', self.facts)
@@ -133,11 +134,20 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         checks = [dict(id='facts', kind='datasheet_facts', params=dict(facts='facts.json', extractor=dict(
             path='/usr/bin/pdftotext', sha256=digest('/usr/bin/pdftotext'), version=self.version))),
             dict(id='fab',kind='fab_profile',params=dict(fab_profile='fab-profile.json'))]
+        if record['fixed_footprints']:
+            checks += [dict(id='drc',kind='drc'),dict(id='containment',kind='placement',
+                params=dict(criterion='outline-containment/1',drc_check='drc',envelope='envelope.json'))]
+        # Generic obligations are never mapped to a check; staged coverage carries them.
+        requirements = [r for r in requirements if not r['source']['locator'].startswith('/obligations/')]
         for r in requirements:
             field = r['source']['locator'].split('/')[1]
             cid = r['id'].removeprefix('R-envelope-telemetry-pod-').lower()
             if field == 'fab_profile':
                 cid = 'fab'
+            elif field == 'fixed_footprints':
+                reference = record[field][int(r['source']['locator'].split('/')[-1])]['reference']
+                checks.append(dict(id=cid,kind='placement',params=dict(criterion='connector-edge/1',
+                    drc_check='drc',envelope='envelope.json',reference=reference)))
             else:
                 criterion = {'outline':'outline/1', 'layer_count':'layers/1', 'stackup':'stackup/1',
                              'mounting_holes':'mounting-holes/1','keepouts':'keepouts/1'}[field]
@@ -149,6 +159,10 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             del r['field_sha256'], r['check_kinds']
         requirements.append(dict(id='R-facts',statement='Verify the cited antenna dimensions.',intent='informational',
             source=dict(path='targets.md',locator='line 1'),checks=['facts']))
+        if record['fixed_footprints']:
+            requirements.append(dict(id='R-drc',statement='DRC passes; fixed courtyards stay inside their '
+                'declared overhangs.',intent='acceptance',source=dict(path='targets.md',locator='line 1'),
+                checks=['drc','containment']))
         return dict(schema='agent-ee.scope/3',name='owned-ee162',scope='All instantiated envelope geometry',
             inputs=[dict(path=str(p),at=p.relative_to(self.source).as_posix())
                     for p in sorted(self.source.rglob('*')) if p.is_file()],schematic='board.kicad_sch',board='board.kicad_pcb',
@@ -339,6 +353,153 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             require_obligations(scope,requirements,record,source_inventory(self.source)[0])
         for item in record['obligations']:
             self.assertIn('R-envelope-telemetry-pod-obligation-'+item['id'],str(raised.exception))
+
+    def stage(self):
+        """The five generic pod obligations with explicit stage coverage (AGENTEE-197, agent-509 decision).
+
+        Owned test text: witnesses are concrete envelope locators and every open
+        item is text only, so the record introduces no numeric limit.
+        """
+        self.envelope = copy.deepcopy(self.pristine)
+        self.envelope['fixed_footprints'] = [
+            dict(reference='J1', side='front', edge='bottom', position_mm=40, inset_mm=8, rotation_deg=0,
+                 insertion='from_top', tolerance_mm=0, courtyard_overhangs=[dict(edge='bottom', max_mm=20)]),
+            dict(reference='U1', side='front', edge='top', position_mm=60, inset_mm=6, rotation_deg=0,
+                 insertion='from_top', tolerance_mm=0, courtyard_overhangs=[dict(edge='top', max_mm=18)])]
+        opened = lambda stage, *ids: [dict(id=i, stage=stage, statement=f'{i} evidence is not yet captured.')
+                                      for i in ids]
+        physical, candidate = 'physical_qualification', 'candidate_assessment'
+        coverage = {
+            'corner-holes': dict(generation=[dict(locator=f'/mounting_holes/{i}') for i in range(4)],
+                                 open=opened(physical, 'hole-authority', 'fabricated-holes')),
+            'height': dict(generation=[], open=opened(candidate, 'candidate-heights') +
+                           opened(physical, 'cowl-fit', 'underside-fit', 'mating-plug-fit', 'harness-fit')),
+            'harness-edge': dict(generation=[dict(locator='/fixed_footprints/0'),
+                                             dict(locator='/fixed_footprints/0', criterion='outline-containment/1')],
+                                 open=opened(candidate, 'connector-identity') + opened(
+                                     physical, 'panel-cutout', 'mating-plug', 'retention', 'thickness-tolerance',
+                                     'harness-clearance')),
+            'antenna': dict(generation=[dict(locator='/fixed_footprints/1'),
+                                        dict(locator='/fixed_footprints/1', criterion='outline-containment/1'),
+                                        dict(locator='/keepouts/0')],
+                            open=opened(physical, 'housing-pocket', 'nearby-metal', 'support', 'rf-performance')),
+            'imu-separation': dict(generation=[], open=opened(candidate, 'placement-assessment') +
+                                   opened(physical, 'vibration-coupling'))}
+        self.envelope['obligations'] = [dict(item, coverage=coverage[item['id']]) for item in
+                                        read_json(ROOT / 'fixtures/telemetry-pod/envelope.json')['obligations']]
+        return coverage
+
+    def test_staged_obligations_admit_generation_and_keep_qualification_open(self):
+        from agent_ee.board_envelope import require_obligations, require_qualified
+        coverage = self.stage()
+        record = self.record()
+        self.assertEqual((record['outcome'], record['unresolved']), ('unknown', []))
+        self.assertEqual(sorted((u['obligation'], u['stage']) for u in record['qualification_open']),
+                         sorted((o, e['stage']) for o, c in coverage.items() for e in c['open']))
+        requirements = derive_requirements(record, 'envelope.json')
+        self.assertTrue(requirements['complete'])
+        self.assertEqual(requirements['qualification_open'], record['qualification_open'])
+        self.assertFalse(any(r['source']['locator'] == '/max_component_height_mm'
+                             for r in requirements['requirements']))
+        run, _ = self.capture()
+        report = read_json(run / 'baseline.json')['envelope']['coverage']
+        staged = {r['id'].removeprefix('R-envelope-telemetry-pod-obligation-'): r
+                  for r in report if r['status'] == 'staged'}
+        self.assertEqual(set(staged), set(coverage))
+        self.assertEqual({r['status'] for r in report if r['id'].split('-obligation-')[0] == r['id']}, {'bound'})
+        for oid, entry in staged.items():
+            self.assertEqual(entry['open'], coverage[oid]['open'])
+            self.assertEqual(entry['checks'], [])
+            self.assertEqual([(w['locator'], w.get('criterion'), w['status']) for w in entry['witnesses']],
+                             [(w['locator'], w.get('criterion'), 'bound') for w in coverage[oid]['generation']])
+        self.assertEqual([w['requirement'] for w in staged['corner-holes']['witnesses']],
+                         [f'R-envelope-telemetry-pod-hole-H{i}' for i in range(1, 5)])
+        self.assertEqual([w['checks'] for w in staged['harness-edge']['witnesses']],
+                         [['fixed-j1'], ['containment']])
+        self.assertEqual(staged['antenna']['witnesses'][2]['checks'], ['keepout-antenna'])
+        # Admission is not qualification: every staged obligation and open item is named.
+        with self.assertRaises(ValueError) as raised:
+            require_qualified(report)
+        for oid, item in coverage.items():
+            self.assertIn(f'obligation-{oid} (' + ', '.join(e['id'] for e in item['open']) + ')',
+                          str(raised.exception))
+        files = source_inventory(self.source)[0]
+        self.assertEqual(require_obligations(self.scope(), requirements, record, files), report)
+
+    def test_removing_a_witness_refuses_generation(self):
+        for mode in ('hole-absent', 'hole-unmapped', 'containment-absent', 'keepout-soft', 'coverage-absent'):
+            with self.subTest(mode=mode):
+                self.stage()
+                if mode == 'hole-absent':
+                    self.envelope['mounting_holes'].pop()
+                    with self.assertRaisesRegex(ValueError, 'witness /mounting_holes/3 is not declared'):
+                        self.record()
+                    continue
+                if mode == 'keepout-soft':
+                    # A soft keepout is informational, not acceptance, so it cannot witness.
+                    self.envelope['constraint_provenance'] = {'/keepouts/0': {
+                        'class': 'assumed', 'rationale': 'Owned test assumption awaiting owner confirmation.'}}
+                scope = self.scope()
+                if mode == 'hole-unmapped':
+                    scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements']
+                                                         if not r['id'].endswith('hole-H4')]
+                    scope['checks'] = [c for c in scope['checks'] if c['id'] != 'hole-h4']
+                if mode == 'containment-absent':
+                    scope['checks'] = [c for c in scope['checks'] if c['id'] != 'containment']
+                    next(r for r in scope['baseline']['requirements'] if r['id'] == 'R-drc')['checks'] = ['drc']
+                if mode == 'coverage-absent':
+                    del self.envelope['obligations'][0]['coverage']
+                    scope = self.scope()
+                expected = {'hole-unmapped': 'obligation-corner-holes .*/mounting_holes/3 is unmapped',
+                            'containment-absent': 'obligation-harness-edge .*outline-containment/1 check.*'
+                                                  'obligation-antenna',
+                            'keepout-soft': 'obligation-antenna .*/keepouts/0 is soft',
+                            'coverage-absent': 'refused, not dropped: R-envelope-telemetry-pod-obligation-corner-holes \\(unmapped'}[mode]
+                with self.assertRaisesRegex(ValueError, expected):
+                    self.capture(scope)
+                self.assertFalse((self.root / f'run-{self.count}' / 'baseline.json').exists())
+
+    def test_final_qualification_cannot_be_claimed(self):
+        for mode in ('no-open', 'status', 'mapped', 'statement'):
+            with self.subTest(mode=mode):
+                self.stage()
+                height = self.envelope['obligations'][1]
+                if mode == 'no-open':
+                    height['coverage']['open'] = []
+                if mode == 'status':
+                    height['coverage']['open'][0]['status'] = 'qualified'
+                if mode in ('no-open', 'status'):
+                    with self.assertRaisesRegex(ValueError, 'open'):
+                        self.record()
+                    continue
+                scope = self.scope()
+                record = self.record()
+                derived = next(r for r in derive_requirements(record, 'envelope.json')['requirements']
+                               if r['id'].endswith('obligation-height'))
+                claim = {k: derived[k] for k in ('id', 'statement', 'source', 'intent')} | dict(checks=['drc'])
+                if mode == 'statement':
+                    claim['statement'] = 'Height qualified.'
+                scope['baseline']['requirements'].append(claim)
+                with self.assertRaisesRegex(ValueError, 'obligation-height is staged'):
+                    self.capture(scope)
+
+    def test_staged_coverage_carries_no_numeric_limit(self):
+        for mode, change, message in (
+                ('cap field', lambda c: c.update(max_component_height_mm=12), 'unknown'),
+                ('height witness', lambda c: c['generation'].append(dict(locator='/max_component_height_mm')),
+                 'mounting hole, keepout or fixed footprint'),
+                ('height criterion', lambda c: c['generation'].append(
+                    dict(locator='/fixed_footprints/0', criterion='component-height/1')), 'courtyard_overhangs'),
+                ('numeric item', lambda c: c['open'][0].update(max_mm=4), 'unknown'),
+                ('numeric statement', lambda c: c['open'][0].update(statement=4), 'statement required'),
+                ('stage', lambda c: c['open'][0].update(stage='qualified'), 'stage must be one of'),
+                ('duplicate witness', lambda c: c['generation'].append(dict(locator='/fixed_footprints/0')),
+                 'repeats witness')):
+            with self.subTest(mode=mode):
+                self.stage()
+                change(self.envelope['obligations'][2]['coverage'])
+                with self.assertRaisesRegex(ValueError, message):
+                    self.record()
 
 
 class EnvelopeMechanicsGeometryTests(unittest.TestCase):
