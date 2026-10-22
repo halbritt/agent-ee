@@ -2079,7 +2079,10 @@ zero/negative printed edge clearance, owner-rule declarations and both producer
 paths. `tests.test_outline_containment` exercises saved copper polygon subtraction,
 crossing and wholly outside pads/tracks, concave outlines and cutouts, round
 copper whose bounding-box corners are outside, saved zone fills, captured DRC,
-parity, plane refusal, and sublayout source preservation. The independent
+parity, plane refusal, and sublayout source preservation.
+`tests.test_sublayout.SublayoutProvenanceTests` covers the sub-layout DRC delta
+(AGENTEE-399): project rules reach both runs, and new findings grade by class.
+The independent
 `containment/copper-containment.json` witnesses are engineering/hard and are
 included in `drc-constraints.json`, without rewriting the native report.
 Four-decimal millimetre reports have a 50 nm comparison limit; printed copper-edge
