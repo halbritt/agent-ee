@@ -673,6 +673,12 @@ def _saved_judgment(output, plan):
     if 'block_arrangement' in plan:
         from .block_arrangement import saved_rules
         judgment['block_rules'] = saved_rules(facts, plan, policy)
+    if 'advisory_regions' in policy:
+        # Re-derived on the saved board: shadows follow their owners' native poses (AGENTEE-436).
+        from .advisory_regions import grade
+        from .placer import _fixed_refs
+        fixed = {p['ref'] for p in plan['placements'] if p['fixed']} | _fixed_refs(facts, policy)
+        judgment['advisory_regions'] = grade(facts, policy['advisory_regions'], fixed)
     return facts, judgment
 
 

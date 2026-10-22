@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import blocks, electrical_locality, placement_groups, placer
+from . import advisory_regions, blocks, electrical_locality, placement_groups, placer
 from .catalog import strict_json
 from .footprint_library import digest
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -1264,6 +1264,9 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         for fp in copy.deepcopy(capture['footprints'])]}
     rows = grade_rules(complete, arrangement, {r: search.owner[r] for r in members}, fixed)
     record['rules'] = rows
+    if 'advisory_regions' in effective:
+        # The residual pass graded members as fixed; report the complete plan's own fixed parts.
+        plan['advisory_regions'] = advisory_regions.grade(complete, effective['advisory_regions'], fixed)
     record['deferred_grading'] = _deferred_grading(plan, admitted)
     record['residual']['steps_used'] = plan['steps_used']
     plan['steps_used'] += search.steps

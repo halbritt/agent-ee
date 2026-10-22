@@ -513,6 +513,8 @@ citation is refused.
 | `no_block_over_fixed` | A non-exempt block member's courtyard may not overlap a fixed part's courtyard on the other side | `[block, member, fixed]` |
 | `thermal` | With `min_distance_nm`, sources (footprint origins) in different blocks keep that distance | Pairwise source distances and the minimum |
 
+A packing policy's `advisory_regions` with `shadow_of` report the same shadow geometry, never searched, on flat plans and saved boards too (see [placer](placer.md#advisory-regions-and-pose-bound-shadows-agentee-436)). Its `proximity_nm` reports nearby parts as well as intruders.
+
 A block whose own members lie in its own shadow refuses
 (`block_internal_stacking`). The writer re-grades the rules on the native saved
 board (`judgment.block_rules`). A failed hard rule there refuses publication.

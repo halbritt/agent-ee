@@ -137,6 +137,28 @@ b.Add(t); assert k.SaveBoard(sys.argv[1], b)
         self.assertEqual(fixed['position_nm'], [3000000, 3000000])
         self.assertEqual(self.source.read_bytes(), self.saved)
 
+    def test_advisory_regions_regraded_on_saved_board_without_pruning(self):
+        # AGENTEE-436: the obstacle ring above, declared advisory, never moves a part.
+        import json
+        from test_placement import rectangle
+        ring = [rectangle(1, 1, 5, 0.5), rectangle(1, 5.5, 5, 0.5),
+                rectangle(1, 1.5, 0.5, 4), rectangle(5.5, 1.5, 0.5, 4)]
+        plain = place_candidate(self.source, self.netlist, self.scratch / 'plain', self.config)
+        self.config['policy']['advisory_regions'] = [{
+            'id': 'u1-ring', 'side': 'F', 'polygons': ring, 'subject': 'U1', 'proximity_nm': 20000000,
+            'source': {'class': 'agent-advisory', 'reason': 'Original fixture: unsourced ring.'}}]
+        destination = self.scratch / 'advisory-ring'
+        report = place_candidate(self.source, self.netlist, destination, self.config)
+        self.assertEqual((plain['status'], report['status']), ('placed', 'placed'), report)
+        placements = [json.loads((self.scratch / name / 'placement-plan.json').read_text())['placements']
+                      for name in ('plain', 'advisory-ring')]
+        self.assertEqual(placements[0], placements[1])
+        judgment = json.loads((destination / 'placement-judgment.json').read_text())
+        row, = judgment['advisory_regions']['regions']
+        self.assertEqual((row['subject']['reference'], row['subject']['position_nm']), ('U1', [3000000, 3000000]))
+        self.assertEqual({i['reference'] for i in row['intruders'] + row['near']}, {'C1'})
+        self.assertEqual(row['status'], 'info')
+
     def test_actual_saved_placements_repeat_and_preserve_static_and_source(self):
         first = place_candidate(self.source, self.netlist, self.scratch / 'one', self.config)
         second = place_candidate(self.source, self.netlist, self.scratch / 'two', self.config)
