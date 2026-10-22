@@ -534,6 +534,104 @@ groups, a plan or saved board is accepted only when no advisory is exceeded
 (`placement_groups.satisfied`). These source records follow the existing caller qualification contract;
 authenticating declared citations remains AGENTEE-348.
 
+A caller who wants unsourced geometry reported but not searched declares it as
+an advisory region instead of an obstacle (next section).
+
+### Advisory regions and pose-bound shadows (AGENTEE-436)
+
+A packing policy may declare `advisory_regions`. Search, region and board
+capacity proofs and the judge never read them, so a region never prunes a
+candidate pose and never refuses a fixed part. The planned result, the block
+arrangement's complete plan and the saved-board judgment
+(`placement-judgment.json`) each carry an `agent-ee.advisory-regions/1` report.
+For every region it lists `intruders` (positive-area courtyard overlap on the
+region's side) and `near` parts (exact courtyard edge distance at most
+`proximity_nm`, floored to whole nanometres). Each entry is marked `fixed` or
+not. Status is `info` when anything is listed and `pass` otherwise. A finding is
+review input: it never passes a physical requirement and is never a defect.
+
+Every grading path (planned result, arranged plan, saved board and the CLI)
+goes through one qualification, `advisory_regions.qualified`, and refuses what
+it cannot qualify instead of grading it clear: the capture schema and board
+hash, unique reference and UUID identities (`placement.validate_capture`), a
+mounting side and a courtyard there on every part, and every declared courtyard
+`proven` (a curved courtyard by its conservative outer bound). A part with no
+courtyard on the region's side, and a qualified one on its mounting side, is a
+legitimate opposite-side exclusion.
+
+```json
+{"advisory_regions": [
+ {"id": "imu-u2-back-box", "side": "B", "subject": "U2", "proximity_nm": 2000000,
+  "polygons": [[[7000000, 5000000], [17000000, 5000000], [17000000, 15000000], [7000000, 15000000]]],
+  "concern": "tall or heavy parts away from the IMU; rigid mounting",
+  "source": {"class": "agent-advisory", "reason": "iteration-2 agent rule; no sourced distance"}},
+ {"id": "L1-shadow", "proximity_nm": 1000000,
+  "shadow_of": {"reference": "L1", "margin_nm": 500000},
+  "source": {"class": "agent-advisory", "reason": "no parts under the buck inductor; unsourced"}}]}
+```
+
+- **Absolute regions** (`side`, `polygons`) use the obstacle polygon validator.
+  An optional `subject` binds the protected part's identity and pose into the
+  report and leaves it out of the findings.
+- **Shadow regions** (`shadow_of`) are derived on every grading from the
+  owner's actual pose: its mounting-side courtyard box, grown by `margin_nm`, on
+  the opposite side. This is the same geometry as the block-arrangement
+  `no_stacking` shadow. The report binds the owner's reference, UUID, FPID,
+  side, position, rotation and courtyard box, so a shadow follows its owner
+  through arrangement, residual packing and native save. It cannot go stale the
+  way a copied obstacle polygon did: the pod's iteration-5 L1/L2 shadows, policy
+  obstacles 5 and 6, stayed in the packing policy after the arrangement moved
+  both inductors.
+- **`source.class`** is one of `owner`, `datasheet`, `manufacturer`
+  (each needs a `citation`) or `agent-advisory` (needs a `reason`). It is a
+  declared, unauthenticated label (AGENTEE-348) and never makes a region hard.
+  Sourced keep-outs still reach the board as native rule areas
+  (`board`/`hard`, AGENTEE-365), and sourced obstacles keep their AGENTEE-361
+  record.
+
+`python3 -m agent_ee.advisory_regions --probe placement-probe.json --policy
+policy.json [--heights heights.json] [--sourced-heights parts.json] --out
+report.json` grades a saved board's capture. `--heights` takes a native
+`agent-ee.component-height-probe/1` result for the same board. It attaches each
+intruding or nearby part's installed height (`native-step-bounds`) or
+`unknown`. `--sourced-heights` takes an `agent-ee.sourced-heights/1` document
+that binds board references to heights from their sources:
+
+```json
+{"schema": "agent-ee.sourced-heights/1", "parts": [
+ {"reference": "L1", "part": "SRP7050TA-150M", "height_mm": "4.8", "tolerance_mm": "0.2",
+  "source": {"class": "datasheet", "citation": "captured SRP7050TA datasheet, dimensions",
+             "sha256": "<sha256 of the captured PDF>"}}]}
+```
+
+Heights and tolerances are decimal strings in mm. The source class is
+`datasheet` or `manufacturer` (each with a `citation` and the captured
+document's `sha256`) or `owner` (a `citation`). Every reference must be a
+unique board reference. A sourced height is the body's height
+(`status: sourced`) whatever the probe says: a probe `unknown` is kept beside it
+as `model_probe` and never replaces it, and a measured model outside the sourced
+tolerance makes the body a `conflict` with both values reported. A part with
+neither a source nor a measurement stays `unknown`. `tall_heavy_risk` stays
+`unresolved` for physical review in every case, because no sourced height or
+mass threshold exists to turn a height into a verdict. For the pod, agent-509
+bound L1 (SRP7050TA-150M) at 4.8 ± 0.2 mm and L2 (SRP7050WA-6R8M) at
+5.2 ± 0.2 mm from the captured datasheets; mass, centre of gravity and coupling
+remain unknown. A `near` entry's `distance_nm` is the part's courtyard distance
+to the region polygon (for the IMU ring, to the ring, not to U2's body); it is
+neither a body clearance nor a proven violation.
+
+Unchanged by this section: native footprint keep-outs and rule areas, sourced
+copper, drill, edge and access constraints (AGENTEE-366 copper extent,
+AGENTEE-379 access lanes, AGENTEE-418 owned keep-outs moving with arranged
+members), fixed parts, and every obstacle that stays in `obstacles`. An
+unsourced obstacle is still searched exactly as before; moving one into
+`advisory_regions` is a caller's policy decision. The decision record for the
+pod (agent-509, relayed by agent-449) moves the IMU box and ring (obstacles 0 to
+4) and the stale L1/L2 shadows (5 and 6) there. The L1/L2 shadow regions
+deliberately duplicate the arrangement's advisory `no_stacking` findings, so
+they also cover flat placement and the saved board. J3 under L1 is reported
+as an advisory shadow intrusion with `fixed: true`, not a defect.
+
 ### Board capacity (AGENTEE-249)
 
 After the fixed reservations and region proofs, the engine bounds board-wide
@@ -1169,7 +1267,13 @@ bind each affected item to the rule areas it actually contacts. Board and peer
 contacts include absolute item geometry and area geometry; moving a pad with the
 same UUID inside an already violated board area is a new finding. An owner's
 own contact uses unchanged footprint-local copper and area geometry, retaining
-its rigid baseline finding through translation and every quarter turn. A new
+its rigid baseline finding through translation and every quarter turn. A side
+flip mirrors the pad and its own area together, so a flipped footprint is
+compared at its front-side local geometry, with pad layers restricted to the
+board's enabled layers (KiCad drops absent inner layers from a flipped
+through-hole pad), and keeps the same baseline on either side and in either
+native flip direction (AGENTEE-426). A new peer or board contact, or an owned
+area reshaped under the same UUID, still blocks after the flip. A new
 peer contact cannot hide behind that owner baseline. Custom disallow rules
 also bind to saved native geometry, including rules that reference areas whose
 built-in pad flag is false and rules without an area. Footprint-only findings
@@ -1183,23 +1287,30 @@ land geometry and native Pad 1 of C1 finding in failed-candidate diagnostics
 (coordinator ruling 424a); the healthy publication control is unchanged.
 `tests.test_placer_pad_keepout` also covers moved baseline items, both peer
 movement directions, missing coverage and the owner's rigid baseline at
-0/90/180/270 degrees.
+0/90/180/270 degrees, unflipped and side-flipped from either side, through both
+`_drc_comparison` and the complete `_proposal_drc`.
 
 ### Native keep-out witness cost (AGENTEE-427)
 
 `placer_runner._keepout_item_states` loads the saved board once and builds UUID
 indexes for footprints and local rule areas. It collects native contacts at the saved
 absolute poses before normalizing any footprint. Each contacted owner is then
-normalized once, and each absolute/local area record is serialized once per
-coordinate frame. No-contact custom-rule witnesses reuse the complete absolute
-area environment. Witness serialization and comparison verdicts below the work
-limit are unchanged, including unsupported contours and rigid-owner exemptions.
+normalized once, including side-flip canonicalization; its local pad/graphic
+inventory is recomputed once without scanning other owners. Each absolute/local
+area record is serialized once per coordinate frame. No-contact custom-rule
+witnesses reuse the complete absolute area environment. Absolute witnesses and
+unsupported-contour refusals are unchanged; owner-local witnesses apply the
+side-flip canonicalization above.
 
 The computational coverage guard is `KEEPOUT_MAX_STEPS = 1_000_000`. This is a
 resource budget requested by AGENTEE-427, not a sourced physical design limit.
 It counts native inventory visits, item/area pairs, layer tests weighted by area
 vertex count, area serialization weighted by vertex count, owner normalization
-and witness assembly (including each no-contact environment entry). The cap is
+(including side-flip canonicalization and cached local inventory), and witness
+assembly (including each no-contact environment entry). The existing per-owner
+normalization work unit is retained so unflipped inputs keep their exact budget
+boundary. Pad counts are bounded by the earlier inventory visits and the native
+layer count is fixed. The cap is
 checked before each charged operation; there is no wall-clock default. The
 scan remains O(copper items × rule areas), but stops at this deterministic
 budget. It does not bound native board-loading time, memory or the duration of
@@ -1513,6 +1624,9 @@ uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a
 nonempty `scale_reference`, and the same source reference. The check recomputes
 the product exactly. This is a declared measurement with a recorded scale;
 it does not automatically interpret a PDF image.
+Because the scale is authored rather than captured, the
+[manual physical intent compiler](physical-intent.md) refuses `kind: layout`
+and compiles a hard datasheet maximum only from a `numeric` derivation.
 
 For `owner`, `decision_reference` carries the same verified source reference
 plus a nonempty `owner` identity. An agent identity or a case-insensitive
@@ -2055,3 +2169,9 @@ Proposals carry enabled project-local model files before candidate imaging.
 `project-models.json` records copied file hashes and missing references; the
 placement result includes the same receipt. See [model closure](pcb-renders.md#proposal-project-model-closure-agentee-394)
 for resolution provenance, path safety and publication checks.
+
+## Placement trace (AGENTEE-430)
+
+`placer_runner --trace PATH` and `python3 -m agent_ee.placement_trace pack` record
+an opt-in, bounded timing and Stage-A replay trace. Tracing is off by default and
+leaves plans and boards unchanged. See [placement trace](placement-trace.md).

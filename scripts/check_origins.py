@@ -8,10 +8,22 @@ material are not silently classified as agent-ee material, and that retained
 captures and archives declare every origin their inputs came from. It does not
 establish anyone's rights or read upstream licenses.
 
+Evidence relocated out of the tree (evidence/relocation.json, AGENTEE-20) is
+still classified: its exact paths come from the hash-pinned files manifest, and
+the byte-derived facts the check needs (content markers, captured origins) were
+recorded from fetched, hash-verified bytes under a recorded basis digest. They
+are trusted offline attestations, not a fresh inspection of the absent bytes.
+The record must cover every relocated file explicitly (an empty marker list is
+the recorded negative); a missing table or entry, a malformed value, a changed
+marker pattern, capture source or files manifest refuses until the facts are
+re-recorded from a fresh fetch.
+
     python3 scripts/check_origins.py          # check; exit 1 on any error
     python3 scripts/check_origins.py --list   # per-file inventory as JSON
+    python3 scripts/check_origins.py --relocated-facts FETCHED_DIR   # print facts to record
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -22,6 +34,9 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 INVENTORY = 'docs/file-origins.json'
+RELOCATION = 'evidence/relocation.json'
+RELOCATION_SCHEMA = 'agent-ee.evidence-relocation/1'
+FACTS_SCHEMA = 'agent-ee.relocated-origin-facts/2'
 SCHEMA = 'agent-ee.file-origins/1'
 OWNED = {'AE', 'AE-RUN'}
 PROPOSED = 'proposed-mit-pending-owner-approval'
@@ -219,14 +234,147 @@ def capture_origins(inventory, manifest):
     return found, errors
 
 
-def check(root=ROOT, inventory=None, paths=None):
+def facts_basis(inventory):
+    """Digest of every input, besides hash-pinned bytes, that relocated origin facts depend on."""
+    basis = {'content_markers': {label: pattern.pattern.decode('latin-1')
+                                 for label, pattern in sorted(CONTENT_MARKERS.items())},
+             'capture_sources': {key: origin.get('capture_sources', [])
+                                 for key, origin in sorted(inventory['origins'].items())}}
+    return hashlib.sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
+
+
+def relocated_manifest(root, relocation):
+    """The hash-pinned files manifest a relocation record names, or ValueError."""
+    if relocation.get('schema') != RELOCATION_SCHEMA:
+        raise ValueError(f'schema must be {RELOCATION_SCHEMA}')
+    raw = (Path(root) / 'evidence' / relocation['files_manifest']).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != relocation['files_manifest_sha256']:
+        raise ValueError('files manifest digest does not match')
+    manifest = json.loads(raw)
+    unknown = sorted(set(relocation['relocated_groups']) - set(manifest['groups']))
+    if unknown:
+        raise ValueError(f'relocated groups missing from manifest: {unknown}')
+    return manifest
+
+
+def relocated_paths(root, relocation):
+    manifest = relocated_manifest(root, relocation)
+    return {f'evidence/{group}/{name}' for group in relocation['relocated_groups']
+            for name in manifest['groups'][group]['files']}
+
+
+def record_relocated_facts(inventory, relocation, fetched, root=ROOT):
+    """Byte-derived facts for every file of the relocated groups, read from a hash-verified fetch.
+
+    Every file gets an explicit content-marker entry (an empty list is the
+    recorded negative) and every candidate.json an explicit captured-origins
+    entry (null when it has no sources table), so a missing entry is never read
+    as clean bytes.
+    """
+    manifest = relocated_manifest(root, relocation)
+    markers, captured = {}, {}
+    for group in sorted(relocation['relocated_groups']):
+        for name, record in sorted(manifest['groups'][group]['files'].items()):
+            source = Path(fetched) / group / name
+            if source.is_symlink() or not source.is_file():
+                raise ValueError(f'fetched {group}/{name} is missing or not a regular file')
+            data = source.read_bytes()
+            if len(data) != record['bytes'] or hashlib.sha256(data).hexdigest() != record['sha256']:
+                raise ValueError(f'fetched {group}/{name} does not match the files manifest')
+            path = f'evidence/{group}/{name}'
+            markers[path] = content_markers(data)
+            if path.endswith('/candidate.json'):
+                origins, problems = candidate_origins(inventory, data)
+                if problems:
+                    raise ValueError(f'{path}: {problems}')
+                captured[path] = origins
+    return {'schema': FACTS_SCHEMA, 'basis_sha256': facts_basis(inventory),
+            'files_manifest_sha256': relocation['files_manifest_sha256'],
+            'content_markers': markers, 'captured_origins': captured}
+
+
+def candidate_origins(inventory, data):
+    """(sorted captured origins or None without a sources table, problems) for candidate.json bytes."""
+    sources = json.loads(data).get('sources')
+    if not isinstance(sources, dict):
+        return None, []
+    origins, problems = capture_origins(inventory, {'sources': sources})
+    return sorted(origins), problems
+
+
+def facts_problems(facts, inventory, relocation, expected):
+    """Why recorded relocated facts cannot be used; [] only for a complete, well-formed record.
+
+    The facts are trusted offline attestations recorded from verified bytes,
+    not a fresh inspection; this establishes their shape, basis and coverage.
+    """
+    if not isinstance(facts, dict) or facts.get('schema') != FACTS_SCHEMA:
+        return [f'origin_facts schema must be {FACTS_SCHEMA}; re-record them with '
+                'scripts/check_origins.py --relocated-facts']
+    keys = {'schema', 'basis_sha256', 'files_manifest_sha256', 'content_markers', 'captured_origins'}
+    if set(facts) != keys:
+        return [f'origin_facts must have exactly the keys {sorted(keys)}']
+    problems = []
+    if facts['basis_sha256'] != facts_basis(inventory):
+        problems.append('relocated origin facts were recorded under different content markers '
+                        'or capture sources; fetch the relocated groups and re-record them with '
+                        'scripts/check_origins.py --relocated-facts')
+    if facts['files_manifest_sha256'] != relocation['files_manifest_sha256']:
+        problems.append('relocated origin facts were recorded for a different files manifest')
+    candidates = {path for path in expected if path.endswith('/candidate.json')}
+    for table, paths, allowed, nullable in (('content_markers', expected, set(CONTENT_MARKERS), False),
+                                            ('captured_origins', candidates, set(inventory['origins']), True)):
+        recorded = facts[table]
+        if not isinstance(recorded, dict):
+            problems.append(f'origin_facts {table} must be an object')
+            continue
+        if missing := sorted(paths - set(recorded)):
+            problems.append(f'origin_facts {table} lacks {len(missing)} relocated file(s), first {missing[0]}')
+        if extra := sorted(set(recorded) - paths):
+            problems.append(f'origin_facts {table} names {len(extra)} file(s) outside the relocated groups, '
+                            f'first {extra[0]}')
+        for path, value in sorted(recorded.items()):
+            if value is None and nullable:
+                continue
+            if (not isinstance(value, list) or not all(isinstance(v, str) for v in value) or
+                    value != sorted(set(value)) or not set(value) <= allowed):
+                problems.append(f'origin_facts {table} entry for {path} is malformed: {value!r}')
+    return problems
+
+
+def check(root=ROOT, inventory=None, paths=None, relocation=None):
     root = Path(root)
     if inventory is None:
         inventory = json.loads((root / INVENTORY).read_text())
     errors = validate(inventory)
     if errors:
         return errors, {}
-    paths = tracked_files(root) if paths is None else sorted(paths)
+    if paths is None:
+        paths = tracked_files(root)
+        if relocation is None and (root / RELOCATION).is_file():
+            relocation = json.loads((root / RELOCATION).read_text())
+    paths, virtual, facts = sorted(paths), set(), {}
+    if relocation is not None:
+        try:
+            relocated = relocated_paths(root, relocation)
+            virtual = relocated - set(paths)
+        except (ValueError, KeyError, OSError) as exc:
+            return [f'{RELOCATION}: {exc}'], {}
+        facts = relocation.get('origin_facts')
+        problems = facts_problems(facts, inventory, relocation, relocated)
+        if problems:
+            return [f'{RELOCATION}: {problem}' for problem in problems], {}
+        # Retained files of relocated groups are read here; their recorded facts must agree.
+        for path in sorted(relocated & set(paths)):
+            data = (root / path).read_bytes()
+            fresh = {'content_markers': content_markers(data)}
+            if path in facts['captured_origins']:
+                fresh['captured_origins'] = candidate_origins(inventory, data)[0]
+            for table, value in fresh.items():
+                if facts[table][path] != value:
+                    errors.append(f'{RELOCATION}: origin_facts {table} for retained {path} '
+                                  f'disagree with its bytes: {facts[table][path]!r} != {value!r}')
+        paths = sorted(set(paths) | virtual)
     assigned, problems = classify(inventory, paths)
     errors += problems
     rules = inventory['rules']
@@ -235,18 +383,25 @@ def check(root=ROOT, inventory=None, paths=None):
         rule = rules[index]
         if set(rule['origins']) & third_party or 'reviewed' in rule:
             continue
-        reasons = ['file type'] if risky_name(path) else content_markers((root / path).read_bytes())
+        reasons = (['file type'] if risky_name(path) else
+                   facts['content_markers'][path] if path in virtual else
+                   content_markers((root / path).read_bytes()))
         if reasons:
             errors.append(f'{path}: {", ".join(reasons)} needs a third-party origin or an exact reviewed rule')
     captured = {}
     for path, index in assigned.items():
         if not (path.startswith('evidence/') and path.endswith('/candidate.json')):
             continue
-        manifest = json.loads((root / path).read_text())
-        if not isinstance(manifest.get('sources'), dict):
-            continue
-        captured[path], problems = capture_origins(inventory, manifest)
-        errors += [f'{path}: {problem}' for problem in problems]
+        if path in virtual:
+            if facts['captured_origins'][path] is None:
+                continue
+            captured[path] = set(facts['captured_origins'][path])
+        else:
+            manifest = json.loads((root / path).read_text())
+            if not isinstance(manifest.get('sources'), dict):
+                continue
+            captured[path], problems = capture_origins(inventory, manifest)
+            errors += [f'{path}: {problem}' for problem in problems]
         missing = sorted((captured[path] - set(rules[index]['origins'])) & third_party)
         if missing:
             errors.append(f'{path}: captured inputs come from {missing}, not declared by rule {index}')
@@ -267,7 +422,7 @@ def check(root=ROOT, inventory=None, paths=None):
               'upstream_origins': with_embedded(inventory, rules[index]['origins']),
               'rule': index}
              for path, index in sorted(assigned.items())]
-    summary = {'files': len(paths), 'classified': len(files),
+    summary = {'files': len(paths), 'classified': len(files), 'relocated': len(virtual),
                'by_status': dict(sorted(Counter(f['permission_status'] for f in files).items())),
                'by_kind': dict(sorted(Counter(f['kind'] for f in files).items())),
                'by_origin': dict(sorted(Counter(o for f in files for o in f['origins']).items())),
@@ -278,7 +433,15 @@ def check(root=ROOT, inventory=None, paths=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--list', action='store_true', help='print the per-file inventory as JSON')
+    parser.add_argument('--relocated-facts', type=Path, metavar='FETCHED_DIR',
+                        help='print origin facts for the relocated groups fetched (hash-verified) into FETCHED_DIR')
     args = parser.parse_args(argv)
+    if args.relocated_facts:
+        inventory = json.loads((ROOT / INVENTORY).read_text())
+        relocation = json.loads((ROOT / RELOCATION).read_text())
+        print(json.dumps(record_relocated_facts(inventory, relocation, args.relocated_facts),
+                         indent=1, sort_keys=True))
+        return 0
     errors, summary = check()
     if args.list and not errors:
         print(json.dumps(summary['inventory'], indent=1))

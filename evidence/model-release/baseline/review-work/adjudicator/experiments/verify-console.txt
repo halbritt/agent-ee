@@ -1,9 +1,0 @@
-{
-  "drc": {
-    "violations": true,
-    "schematic_parity": true,
-    "unconnected_items": true
-  },
-  "erc_sheets_equal": true,
-  "netlist_memberships_equal": true
-}

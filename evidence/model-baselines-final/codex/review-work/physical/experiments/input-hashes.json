@@ -1,9 +1,0 @@
-{
-  "/evidence/work/drc/drc.json": "5c71e49818e8904138dda9d61b0cdfb55a6a9cce105043751154565fe8039b19",
-  "/evidence/work/erc/erc.json": "8ed3e3817a9a4812e8f763ed4d0d967c088f53a381c4261519fe6e4dfde80de0",
-  "/evidence/work/netlist/design.xml": "9dfdf2a1e79fe56d928e01583c23f439bb34d756c5f7f966538e7206977eca90",
-  "/evidence/work/netlist/connectivity.json": "21d592a86611652ca29452fbd887ab7b13c38533e96208a1875f2f4f7352179f",
-  "/candidate/project/Polygonus-Universal-Base.kicad_pcb": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
-  "/candidate/project/VR Conditioner.kicad_sch": "377a2691ec878301977100851c40e302b2b7864d88cc27c6c305c03bbf14e15b",
-  "/candidate/project/VR conditioner.kicad_sch": "377a2691ec878301977100851c40e302b2b7864d88cc27c6c305c03bbf14e15b"
-}

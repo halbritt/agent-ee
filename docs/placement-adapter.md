@@ -30,6 +30,12 @@ The campaign configuration key `placement_adapter` holds an
   a helper. The helper selects the highest-scoring eligible row or cluster seed;
   every candidate retains its judgment and no eligible candidate means no write.
   The coordinator binds the list’s path and digest and replay re-derives the request.
+- `blocks` optionally names a captured block-arrangement request (AGENTEE-439):
+  `{"netlist": "layout/netlist.xml", "allocation": "layout/allocation.json",
+  "arrangement": "layout/arrangement.json", "candidates": ["layout/Power.json"]}`
+  (`allocation` is optional). It requires a helper and is refused together with
+  `targeted_plans`. Every file must be a captured immutable input. See
+  [Captured blocks requests](#captured-blocks-requests-agentee-439).
 - `fixed_footprints` lists native footprint UUIDs that must not move. The list
   may be incomplete: envelope-fixed parts are protected anyway (see below).
 - `sublayout` is optional. It names a captured
@@ -145,12 +151,15 @@ the index comes from the step plan. The step's sandbox view is:
 
 - `/candidate`: the receipt's read-only copy of the delivered design. The
   source board is therefore outside the writable root.
-- `/placement-tool`: a coordinator copy of the `agent_ee` sources plus a constant
-  launcher. Python runs with `-I`, so this hashed tree, rather than `/app`,
+- `/placement-tool`: a coordinator copy of the pinned `agent_ee` files plus a
+  constant launcher. Python runs with `-I`, so this hashed tree, rather than `/app`,
   supplies the helper code. The receipt records the tree as the step's source
-  identity. The snapshot must equal the campaign's pinned `agent_ee` sources
-  (the launch policy files) before the step runs, and verification checks the
-  retained snapshot against both the pin and the receipt.
+  identity. The snapshot must equal the campaign's pin (the launch policy files,
+  `cli.policy_files`) before the step runs, and verification checks the
+  retained snapshot against both the pin and the receipt. The pin covers the
+  `agent_ee/*.py` sources and the package data under `agent_ee/data/`, such as
+  the captured JLCPCB locality record that block admission reads (AGENTEE-439).
+  A snapshot without a pinned data file is refused.
 - `/placement-request/request.json`: a request derived by the coordinator. It
   contains `agent-ee.placement-write/1` with `single_design_writer: true`, the
   exact delivered board SHA-256 and `writable_root: /work/placement`. Its policy is
@@ -183,6 +192,65 @@ anchored. Neither the original board nor any default placement is substituted.
 A successful native netlist export does not prove that the netlist is
 populated. KiCad exports an empty netlist from a parseable stub schematic. The
 placer's inventory binding then refuses it.
+
+### Captured blocks requests (AGENTEE-439)
+
+A `blocks` declaration lets the campaign helper run a
+[block-arrangement request](blocks.md#runner-request) instead of `pack`. At
+binding time the coordinator reads every declared file and checks it against
+its captured digest. It then refuses the binding, before any iteration is spent,
+unless:
+
+- every candidate is a valid bare `agent-ee.block-candidate/2`;
+- no block appears in more than one candidate;
+- every candidate's `sources` name:
+  - the captured netlist bytes (`inventory_sha256`);
+  - the captured allocation, or none if no allocation is declared;
+  - the exact request policy (`policy_sha256`).
+
+The request policy is `placement_adapter.request_policy`. It is the bound policy
+(captured file, envelope overhangs and provenance, locality binding and edge
+margin) with every protected reference added to `fixed_refs`. Candidates must
+therefore be packed or materialized against that policy. A refusal names the
+expected digests. The binding record gains `blocks`: the netlist path, digest,
+stamp-masked identity and stamp fields; the allocation, the arrangement and each
+candidate with its path, digest and block id; and `request_policy_sha256`. The
+request carries the section as `request["blocks"]`, built from the bound bytes by
+`block_arrangement.request_section_from_bytes`, and replay re-derives it. The
+placer's own admission still binds the board, the derivation and every member.
+A writer edit to the board therefore makes admission refuse.
+
+The step argv then ends with `--netlist /candidate/<netlist> --netlist-sha256
+<digest>`. The driver still exports a fresh netlist from the captured schematic.
+It uses the captured netlist only after these two checks:
+
+1. Its bytes have the bound digest. Otherwise the driver exits 4 with status
+   `netlist_identity_refused`.
+2. Its stamp-masked identity equals the fresh export's. Otherwise the driver
+   exits 4 with status `netlist_identity_mismatch`.
+
+The stamp-masked identity (`native_netlist.stamp_identity`) masks only the text
+of the two declared stamp fields, `native_netlist.STAMP_FIELDS` =
+`/export/design/date` and `/export/design/tool`. Every other byte must be
+identical, with no XML canonicalization. That includes the `source` path, the
+`Sheetfile` properties, whitespace, comments and the title-block date. A header
+that does not open with `source`, `date` and `tool` is refused.
+
+`driver.json` records `netlist_identity`: the stamp fields, then for each side
+the exact SHA-256, the masked SHA-256 and the stamps, and the status. The placer
+reads the captured bytes, so `placement-result.json` binds their
+`netlist_sha256`. A regenerated export whose date alone differs is accepted with
+both identities on record. A content change refuses, and no board is written.
+No candidate hash is bypassed. Candidates still bind the exact bytes of the
+captured netlist.
+
+`source` and `Sheetfile` depend on the export path and working directory. The
+captured netlist must therefore be exported the way the step's sandbox exports
+it: with the design mounted at `/candidate` and the working directory `/work`.
+For example, run `executor.execute(design, work, ["kicad-cli", "sch", "export",
+"netlist", "--format", "kicadxml", "-o", "/work/netlist.xml",
+"/candidate/<schematic>"])`. A host-path export differs in `source` and is
+refused.
 
 ## Placement write scope
 

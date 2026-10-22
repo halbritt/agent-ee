@@ -1,1 +1,0 @@
-[{"direction": [1, 1], "all_in_saved_fill": true}, {"direction": [1, -1], "all_in_saved_fill": true}, {"direction": [-1, 1], "all_in_saved_fill": true}, {"direction": [-1, -1], "all_in_saved_fill": true}]

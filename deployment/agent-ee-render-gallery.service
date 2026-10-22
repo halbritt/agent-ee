@@ -1,0 +1,20 @@
+[Unit]
+Description=Private PCB render gallery
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=%h/.local/share/agent-ee-render-gallery/app
+EnvironmentFile=%h/.config/agent-ee-render-gallery/environment
+ExecStart=/usr/bin/python3 -m agent_ee.render_gallery --root %h/.local/share/agent-ee-render-gallery/artifacts serve --bind ${GALLERY_BIND} --port 18510
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -1,5 +1,6 @@
 """Board build from a native XML netlist, checked with actual pcbnew, placer and DRC."""
 import copy
+import hashlib
 import json
 import re
 import shutil
@@ -155,6 +156,12 @@ class NativeBoardBuildTest(unittest.TestCase):
         _, files = board_build.project_files(self.project)
         board_build.write_project('rc_filter', files, template_project, destination)
         emitted = json.loads((destination / 'rc_filter.kicad_pro').read_bytes())
+        witness = emitted[PROJECT_KEY]['geometry_emission']
+        payload = copy.deepcopy(emitted)
+        del payload[PROJECT_KEY]['geometry_emission']
+        raw = json_bytes(payload)
+        self.assertEqual(witness['project_bytes'].encode('utf-8'), raw)
+        self.assertEqual(witness['sha256'], hashlib.sha256(raw).hexdigest())
         self.assertEqual(emitted['board'], project['board'])
         self.assertEqual(emitted['net_settings'], project['net_settings'])
         rows = emitted[PROJECT_KEY]['unsourced_geometry']

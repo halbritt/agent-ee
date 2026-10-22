@@ -68,7 +68,8 @@ Supported minimum/preferred keys:
 | `supports_smt` | boolean | Presence of saved SMD pads |
 
 `agent-ee.fab-profile/2` accepts every `/1` limit unchanged and adds
-[conjunctive surcharge rules](#conjunctive-surcharge-rules-fab-profile2). A `/1`
+[conjunctive surcharge rules](#conjunctive-surcharge-rules-fab-profile2),
+[silkscreen minima and advisories](#silkscreen-limits-fab-profile2). A `/1`
 document keeps its exact `/1` contract and refuses a conjunctive rule.
 
 Assembly coverage is limited to the declared presence of SMD pads. It does not
@@ -225,6 +226,26 @@ An unlisted drill at or above the minimum makes the minimum record
 `execution=unsupported` and `status=not_evaluated`, with the exact
 `unsupported_vias`. Missing inventory is also unsupported; an observed empty
 inventory has no unsupported vias.
+Each such refusal is typed by `code`: `via_drill_off_table`,
+`via_inventory_missing` or `below_minimum_via_uncited`. Each refusal also
+carries `drill_table`, the exact table it was checked against. That table holds
+`values_mm` and `continuous_from_mm`, plus the cited capture's `source_path`,
+`source_sha256` and `as_of`. Sizes are never rounded to a nearby option. A
+tampered or changed capture hash leaves the limit unsupported before any
+table is consulted, so on-table drills cannot be graded either.
+
+A captured table lists via drills only, so it covers no drilled pad. The native
+inventory also records every drilled pad as `holes`: saved pad UUID,
+`hole_class` (`PTH`, `NPTH`, or `other` for any other drilled attribute) and the
+requested `drill_x_nm`/`drill_y_nm`. A board with any such hole cannot be graded
+by the table, whatever its size. The table record keeps its via grading as
+`via_status`, but becomes `execution=unsupported`, `status=not_evaluated` with
+`code=hole_class_without_drill_table`, the checked `drill_table`, and
+`unsupported_hole_classes`: one entry per observed class with its holes. The
+check is then unknown, never pass. A via refusal above keeps its own code and
+lists the uncovered classes beside it. Via surcharge records are classified
+exactly as on a via-only board, so proved via surcharges are still reported.
+Profiles without `drill_options` have no table and keep their continuous grading.
 Both scalar and conjunctive drill surcharge records then remain unknown because
 their minimum is unevaluated. Raw native reports remain retained evidence, but
 cannot establish a drill charge outside the declared options. The
@@ -340,8 +361,218 @@ the examples and both joint boundaries. It checks saved via IDs and reloads
 pad layers in a fresh process. The existing seal helper rejects changed results
 and profile bytes. It also covers unlisted drills, below-minimum defects, a
 below-minimum plus unlisted mix, exact nanometre boundaries,
-invalid option declarations and missing inventory. The compiler accepts the
+invalid option declarations and missing inventory. Saved and reloaded PTH,
+NPTH (including an oblong slot) and mixed via/pad boards are unknown, with
+their pad UUIDs and sizes, while via grading and surcharges stay as on via-only
+boards. The compiler accepts the
 optional `/2` drill field; check kinds and predicate names are unchanged.
+
+## Silkscreen limits (fab-profile/2)
+
+A `/2` profile may state four silkscreen (legend) minima. Each key keeps its
+own meaning and source, and none is derived from another:
+
+| Key | Native measurement | Gate before grading |
+| --- | --- | --- |
+| `min_pad_to_silk_mm` | `silk_clearance` with condition `B.Type == 'Pad'`: KiCad reports `silk_over_copper` | A tented pad (no mask opening on that side) reports `silk_overlap` and is unknown |
+| `min_silk_text_height_mm` | `text_height` on `?.Silkscreen` | Visible outline-font or knockout text is unknown |
+| `min_silk_line_width_mm` | `text_thickness` on `?.Silkscreen`, plus every saved silk stroke width | Filled or zero-width shapes are unknown |
+| `min_silk_to_mask_mm` | None: always `code=silk_to_mask_unmeasured`, unknown | Not graded |
+
+KiCad 10 measures silk to pad copper, not to the mask aperture. A host probe
+measured the same `actual 0.1400 mm` with a 0.05 mm and a 0.3 mm pad mask
+margin. That reading supports pad-to-silk only. No qualified measurement exists
+for silkscreen-to-solder-mask clearance, so that limit stays unknown and the
+check is never pass while the profile states it. A board silk line exactly at
+the bound is legal: KiCad's `min` reports only distances strictly below it.
+Silk-to-silk spacing has no sourced limit and none is accepted:
+`min_silk_to_silk_mm` is an unsupported key.
+
+Silk keys are minimum tier only. Their rules stage no `.kicad_pro` board
+minimum, and the keys are kept out of the `NATIVE` table, so scaffold template
+guards are unchanged. A `/1` profile refuses them.
+
+A silk citation binds the meaning of its fact, not only its occurrence. The
+quote must be one whole recorded line `<subject> / <role>: <value> mm`. Its
+subject must state the key's quantity, and its value must equal the limit's
+value exactly. A limit must cite a `minimum` or `absolute minimum` role. A
+recommendation cited as a limit, with its source and value unchanged, is
+unknown (`code=source_role_mismatch`) and stages no rule, at any value. A
+separately sourced minimum with the same number still grades. Other mismatches
+are `source_subject_mismatch`, `source_value_mismatch` and
+`source_fact_unparsed`. Advisories are bound the same way: a `recommended`
+advisory must cite a recommendation, and a `guide_minimum` must cite a minimum.
+
+Silk minima also need supplier applicability, in three parts: the cited page's
+supplier scope, a captured order selection inside it, and a saved board that
+matches the order. Profile-level `applicability` entries (fab-profile/2) each
+hold exactly `id`, a `source` and one scope component:
+
+- `base_materials`: names, quoted as `scope / <subject> / base material: <names>`
+  (or `supported base materials`)
+- `processes`: names, quoted as `scope / <subject> / process: <names>` (or
+  `supported processes`)
+- `copper_layers`: an inclusive `[min, max]` range, quoted as
+  `scope / <subject> / copper layers: <min>-<max>`
+
+Each quote must be one whole recorded line naming exactly the entry's values. A
+page states each component at most once, and its entries cover the silk minima
+that cite that page. The profile-level `order` holds the captured target order
+selection. It has exactly one entry for each of `process`, `base_material` and
+`copper_layers`. Each entry has exactly `id`, `selection`, `value` (one name, or
+a positive layer count) and a `source`, quoted as one whole recorded line
+`order / <subject> / <process|base material|copper layers>: <value>`. An
+unverified scope or order entry refuses the descriptor. The verified selections
+must be one captured target order: every quote names the same `<subject>` on the
+same capture and page, and that capture records each selection for the subject
+exactly once. Selections from different subjects, pages or captures are never
+merged into an order no capture records, and a subject that records a selection
+twice is ambiguous. Either way the compiled `order_binding` is `unsupported`,
+listing each selection's subject, capture and page (and any repeated lines),
+and the silk records keep it as `order_conflict`. A coherent order is recorded
+in `order_binding` and in each record's `order` by subject, capture and page.
+A designer's saved stackup or a profile default never stands in for a missing
+order.
+
+The inventory adds `dielectrics`: the saved `core`/`prepreg` stackup layers and
+their `material` names, read with the shared S-expression parser, or `null` when
+the board saves no stackup. It also adds `stackup_problems`. Every saved stackup
+layer must classify. Copper layers must equal the board's copper layers, top to
+bottom, and every adjacent copper pair needs a `core` or `prepreg` between it.
+Mask, paste and silk types must lie outside the copper span. An untyped or
+unrecognized layer, an omitted dielectric, or a misplaced layer is a problem.
+KiCad saves each further dielectric sublayer after a bare `addsublayer` marker.
+Each sublayer of a multi-sublayer core or prepreg must name exactly one
+material; a sublayer without one never inherits another's. That is a problem
+listing every sublayer's materials by position.
+Each problem keeps the saved layer name, type and materials; nothing drops out
+of scope. Applicability is checked first. Every outcome below is unknown and
+keeps the native result:
+
+- the page lacks any scope component: `silk_applicability_unsourced`
+  (`unqualified_silk` lists the missing components)
+- selections that are not one unambiguous captured order:
+  `silk_order_incoherent`
+- no verified order selection: `silk_order_unsourced`
+- any stackup problem: `silk_stackup_unverified`
+- no saved stackup, a dielectric with no material, or a material outside the
+  qualified mapping (only KiCad `FR4` maps, to `FR-4`): `silk_material_unverified`
+- the order's process, base material or layer count, or the board's dielectric
+  material or copper-layer count, outside the page's scope:
+  `silk_applicability_mismatch`
+- the board's mapped material or copper-layer count differs from the order:
+  `silk_order_mismatch`
+
+Grading continues only when none applies. KiCad writes `FR4` into a new stackup
+by default, so the saved material is the designer's declaration. It is checked
+against the order, and is never the order itself.
+
+The native inventory also adds `silk`: every saved item on `F.SilkS`/`B.SilkS`, as
+`texts` (class, visibility, stroke font or font name, knockout, height,
+thickness, enabled textbox border width), `graphics` (shape, integer-nanometre
+stroke width, fill) and `other` (any other class, such as dimensions, tables,
+zones or pads on silk). After applicability, and before a silk record is graded:
+
+- any `other` item makes every silk record unknown (`silk_item_unqualified`)
+- a native finding that cites hidden text is unknown (`hidden_silk_text`).
+  KiCad 10 skips hidden footprint fields, and board text has no saved visibility.
+- the text keys need KiCad's stroke font. On it, the nominal height is the
+  centreline cap height; the printed extent adds the stroke. Outline fonts and
+  knockout text are `silk_text_unqualified`.
+- line width compares every stroked shape and enabled textbox border with the
+  bound in exact nanometres. Offenders are in `offender_ids` and
+  `silk_graphic_violations`; `filled` (solid or hatched) or zero-width shapes are
+  `silk_graphic_unmeasured`.
+
+A refused record keeps its native result as `native_status`, its findings, the
+first `code`, `unqualified_silk` and every refusal in `silk_refusals`. As with
+drill tables, unknown takes precedence over a proved violation.
+
+Profile-level `advisories` (fab-profile/2) hold sourced values that never grade:
+each has exactly `id`, `key`, `value` (positive mm), `unit`, `role`
+(`recommended` or `guide_minimum`) and a `source` checked by the citation
+verifier. They compile to `advisories` metadata only. They produce no native rule,
+predicate, defect or extra charge. An unverified advisory refuses the descriptor.
+
+## Dated JLCPCB silkscreen profile
+
+[profile.json](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/profile.json)
+is an explicitly selected `jlcpcb_silkscreen_2026-10-22` profile. It is separate
+from the via preset and the pod profile, so their bytes and hashes are unchanged.
+A candidate that needs both runs two `fab_profile` checks.
+
+| Limit | Value | Source |
+| --- | --- | --- |
+| `pad-to-silk` | 0.15 mm | [Capabilities](https://jlcpcb.com/capabilities/pcb-capabilities/), Legend, Pad To Silkscreen |
+| `silk-text-height` | 1.0 mm | Capabilities, Legend, Minimum text height |
+| `silk-line-width` | 0.15 mm | Capabilities, Legend, Minimum Line Width (characters) |
+| `silk-to-mask` | 0.15 mm | [Silkscreen guide](https://jlcpcb.com/blog/pcb-silkscreen), silkscreen-to-solder-mask clearance, absolute minimum (unmeasured) |
+
+| Advisory | Value | Role |
+| --- | --- | --- |
+| `guide-line-width` | 0.15 mm | Guide's absolute line-width / text-thickness minimum. The capability minimum grades |
+| `guide-text-height` | 0.8 mm | Guide's absolute character-height minimum. The capability table's 1.0 mm minimum grades |
+| `recommended-line-width` | 0.2 mm | Recommended only |
+| `recommended-silk-to-mask` | 0.25 mm | Recommended only |
+
+| Applicability | Component | Source |
+| --- | --- | --- |
+| `capability-scope` (page 1) | base materials: FR-4 | Capabilities page, PCB Specifications, Material row |
+| `capability-process` (page 1) | processes: rigid PCB | Capabilities page heading, Rigid PCB Manufacturing Capabilities |
+| `capability-copper-layers` (page 1) | copper layers: 1-32 | Capabilities page, PCB Specifications, Layer count |
+| `guide-scope` (page 2) | base materials: FR-4, Aluminum, Copper Core, Flex (FPC) | Silkscreen guide table, Supported Base Materials |
+
+All three graded limits cite page 1. The capabilities table says characters
+narrower than 0.15 mm are unidentifiable, so `silk-line-width` cites that row.
+The guide's equal 0.15 mm absolute minimum is the `guide-line-width` advisory.
+The guide table names no legend process or copper-layer range, so a limit that
+cites it is `silk_applicability_unsourced`. The guide's 0.15 mm pad-edge
+clipping buffer is recorded but not graded.
+
+No order selection was captured, so the preset carries no `order`. On its own,
+every graded silk limit is `silk_order_unsourced`, even on an FR4 board. A
+design grades only under a profile variant that adds its captured order
+selection, a rigid PCB in FR-4 with 1 to 32 copper layers that equals the saved
+board.
+
+[source-capture.json](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/source-capture.json)
+records both host-captured URLs with UTC timestamps, HTTP status, raw response
+SHA-256 values, byte counts, locators and interpretation limits. The
+[numeric record](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/jlcpcb-silkscreen.txt)
+holds numbers and names only. Page 1 is the capabilities table and page 2,
+after a form feed, is the guide. Raw vendor HTML remains in worker scratch,
+as for the via preset. Raw bytes were rechecked against the recorded lengths
+and SHA-256 values during review; the committed tests verify the numeric record
+only. Applicability is checked as above. No order selection is shipped, and this
+is not complete DFM, pricing or supplier approval.
+
+`tests.test_silk_fab_profile` covers the preset contract: distinct page/quote
+bindings, advisory refusal and `/1` refusal. It also covers fact role, subject
+and value binding (recommendations cited as minima), applicability scope
+lines for each component, and order selection lines. It refuses missing, changed,
+misquoted and wrong-page captures, and runs the qualification gates on unit
+records. Real sandboxed KiCad DRC covers: a compliant board (pass, or unknown
+with `silk-to-mask`), the exact 0.15 mm boundary, and a 0.14 mm pad gap with
+0.8 mm text, 0.1 mm thickness and a 0.1 mm line as a defect citing saved silk
+and pad UUIDs. It also covers mask-margin independence, back-side grading
+with opposite-side silk ignored, tented pads and outline fonts as unknown,
+hidden footprint fields and the saved silk inventory. It also covers the 0.2 mm
+and 0.25 mm recommendations promoted to minima (unknown, not a defect). The
+following are all unknown on compliant and violating boards, with
+`native_status` kept: a missing scope, a missing stackup or material,
+Polyimide, and an owned out-of-scope record. On an FR4 board, so are the shipped
+preset without an order, an order for another process or material, an order
+for four layers on a two-layer board, and a guide-cited limit. Four-layer boards
+with one FR4 core and an untyped, unrecognized-type or omitted dielectric are
+`silk_stackup_unverified`, citing the offending saved layers. A complete
+four-layer FR4 stackup under a matching four-layer order grades: it passes or
+reports a defect. One capture recording two incompatible orders, with the
+process cited from one and the material and layers from the other, and one
+subject cited across two captures, are `silk_order_incoherent`; a coherent
+rigid FR-4 two-layer order recorded beside them grades. A natively resaved
+two-layer board whose FR4 core has a second sublayer without a material is
+`silk_stackup_unverified`, and with Polyimide there `silk_material_unverified`;
+with FR4 on both sublayers it passes or reports a defect.
 
 ## Evidence and failure
 

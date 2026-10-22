@@ -761,7 +761,8 @@ Each entry carries `setting`, exact `value`, `consumers` (`router` and/or
 `zone_filler`), source `class` and `citation`, `enforcement: advisory`, and
 `native_enforcement: retained`. Consumers identify potential use, including
 unassigned classes and conditional rules; they do not claim a rule matched the
-current board. Only value-matched owner, manufacturer or datasheet sources omit
+current board. Only value-matched owner, manufacturer or datasheet sources with
+a nonempty citation omit
 an entry. Source-verified producer fab derivations count as manufacturer sources.
 Engineering-class limits stay inventoried here; their existing hard DRC grading
 does not change.
@@ -776,11 +777,50 @@ constraints are retained as parsed native forms, with positional setting locator
 so repeated names cannot collapse entries. Captured owner rules retain their
 immutable-file source and composition precedence.
 
+AGENTEE-437 also inventories generated forms whose names collide with owner
+rules. The binding's `shadowed_generated_rules` records their original source
+class and citation at the generated form's position in the composed file. These
+forms remain advisory in the geometry inventory; owner forms remain sourced.
+Name-based DRC authority and native last-rule precedence stay unchanged.
+
+At grading time `finding_sources` re-derives the inventory from the saved project,
+bound sources and same-stem native rule bytes. A missing inventory, edited row,
+changed preset or stale generated constraint refuses evaluation. The DRC check
+reports unavailable coverage (unknown), including for an otherwise empty native
+report. Projects without a provenance binding retain their existing behavior;
+bound projects must carry a matching inventory. This verifies consistency with
+captured inputs, not the authenticity or applicability of a citation.
+
+Coordinator ruling 437a permits native-save materialization only for values in
+[a closed KiCad 10.0.7 default table](../src/agent_ee/native_geometry_defaults.py).
+Each entry cites its native capture and setting locator. The executable source
+is `NativeDefaultTableTest.test_pinned_native_defaults`: load an original minimal
+board beside an empty project using the pinned `/usr/bin/python3` `pcbnew`, then
+`SaveBoard` and enumerate the saved project's geometry settings. The regression
+compares all 104 entries against that native output, including tuning patterns,
+teardrops, zones and the native Default net class. These are observed facts;
+no KiCad implementation or third-party design/library files are copied.
+
+`geometry_emission` retains the exact `storage.json_bytes` serialization at
+emission, its SHA-256 and the table version. To avoid a self-referential digest,
+the serialized snapshot includes the project, sources and bound inventory but
+excludes only `geometry_emission` itself. The final emitted project carries this
+witness in its provenance envelope; the hash identifies the pre-witness bytes,
+not the final envelope's file digest. Grading verifies the snapshot digest,
+serialization and original provenance metadata, then re-derives both inventories
+from the emitted snapshot and saved project/rules. Every originally inventoried
+row must remain equal. An added row is equivalent only if its setting and value
+match the cited table; additions remain advisory and never acquire authority.
+Changed or removed rows, unknown/non-default additions, edited inventories and
+missing/altered witnesses refuse evaluation. Unbound legacy projects retain
+their previous handling. The snapshot is a consistency witness within immutable
+candidate inputs, not an independent signature or owner evidence store.
+
 This is an inventory of emitted project/rule settings, not of KiCad or router
 implementation constants, nor of explicit pad, zone or footprint geometry.
 It does not certify citations' engineering applicability; verified reference
-authority remains the separate owner item G4. No router code or acceptance
-verdict changes.
+authority remains the separate owner item G4. No router code changes; valid
+inventories preserve existing acceptance verdicts.
 
 Thermal-spoke counts are dimensionless numeric limits. A native
 `starved_thermal` finding with an unsourced minimum remains advisory. KiCad's

@@ -49,6 +49,21 @@ validation summary to clear this gate. The old exemption file cannot pass.
 Use already captured local DigiKey evidence; live DigiKey capture remains
 owner-gated. The driver does not infer or synthesize these declarations.
 
+U3 NEO-M9N and J3 DM3AT-SF-PEJM5 are not owner acceptances. Their 85 degC
+exceptions are the recorded D-PCB-9 and D-PCB-12 decisions in
+`expansion/design-rules/constraints.json`, made under the repository's
+`AGENTS.md` delegation. Declare them as
+[`delegated_acceptance`](assembly-readiness.md#delegated-engineering-acceptance)
+records citing both files, with the decided ranges -40 to 85 and -25 to 85
+degC. The delegation names `github.com/halbritt/fome-mc` and the owner's grant
+commit `3f959131abca2dd9d40400496f3f6ebac9d363f5`. The decisions authorize
+exactly u-blox NEO-M9N-00B and Hirose Electric Co Ltd DM3AT-SF-PEJM5. Never
+add U3 or J3 lines to `operating-temperature-acceptances.txt`. They need the
+same DigiKey binding and thermal evidence. Two obligations stay open. The pod
+has no captured thermal validation, so every accepted part stays unknown. J3's
+rating comes only from the LCSC listing and is not yet captured, so J3 stays
+unknown until a rating is captured.
+
 ## Explicit plan
 
 A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
@@ -58,6 +73,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `scope` | Path relative to the plan, or absolute path, to the compiled scope/3 planning file |
 | `envelope`, `parts` | Candidate-relative paths to the ordinary envelope and approved parts records |
 | `spec`, `spec_record` | Candidate-relative canonical pod spec and exact `spec_record` capture |
+| `requirement_source` | Name of a pinned authoritative source in `pod_driver.SOURCES`; the spec and capture must be its pinned bytes; see [requirement set](#requirement-set-agentee-197) |
 | `writer_inputs` | Exactly `{intent: PATH, deviations: PATH}`; both captured JSON paths |
 | `implementation_steps` | Existing stage-step declarations for the five producers listed below |
 | `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command/pin/exit semantics remain owned by that adapter |
@@ -68,7 +84,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `implementation` | Explicit subscription writer definition |
 | `routing_budget_s` | Integer matching the routing adapter's budget |
 | `review_budget_s` | Explicit time reserved for reviews |
-| `max_iterations` | Optional, default 10; minimum 8, maximum 100 |
+| `max_iterations` | Optional, default 10; any integer in the campaign engine's 1–100 range (`campaign.validate_iterations`) |
 | `max_seconds` | Optional, defaults to two full receipt timeouts plus review time; may increase up to the engine's 86400-second ceiling |
 
 Each routing timeout must be at least twice the routing budget plus 300 seconds.
@@ -78,6 +94,19 @@ coordinator margin. `max_schema_resubmissions` is fixed at one in the generated
 campaign. Stage `finding_retry_limit` is validated by the existing loader and
 must be at least two.
 
+The driver adds no iteration minimum of its own (AGENTEE-197, agent-509
+production decision 2026-10-22): an explicit `max_iterations` such as 2 is
+accepted when it lies in the engine's 1–100 range, and the default stays 10.
+Zero, more than 100, non-integers and booleans are refused before any output,
+as is any profile or writer outside the explicit subscription harnesses.
+`max_seconds` is the campaign wall clock, not a placement or routing timeout.
+It is derived from the routing adapter's budget/timeout and the review reserve
+and never changes them, nor `max_iterations`. The driver receipt records the
+derivation as `budget_derivation`: the iteration value with its source
+(`plan` or `default`) and the engine range, the routing budget, timeout, step
+margin and two reserved turns, the review reserve, and `max_seconds` with its
+source (`plan` or `derived`), minimum and formula.
+
 The scope captures all dependencies needed by its checks and producers, including
 the project template, libraries and initial intent/deviation records. Its native
 mutable paths are the planned schematic/child sheets and board; the shared
@@ -86,7 +115,56 @@ and the declared coordinator outputs, all of which must already be captured afte
 scaffolding. Baseline inputs stay immutable. It preserves requirements, baseline
 mappings, targets, reference architectures and limitations rather than inventing
 coverage. The spec and its exact capture must be immutable baseline sources.
-`POD-AC-8` and `POD-AC-9` must remain explicit `BENCH REQUIRED` limitations.
+
+### Requirement set (AGENTEE-197)
+
+The campaign baseline enters at `validate_configuration`, so the driver binds
+it there to the complete acceptance set of an authoritative source. The
+generic `compile_baseline` knows nothing of the pod, and the evidence index
+runs after the fact; neither is the entry boundary.
+
+The plan's `requirement_source` names one entry of `pod_driver.SOURCES`, a
+committed, reviewed registry. Each entry pins the sha256 of the captured spec
+and of its exact `spec_record` capture, the capture's `spec.name`, the
+revision and the bench obligations. The supplied record must first verify as
+the exact capture of the supplied spec bytes. `requirement_set` then requires
+the spec hash to be the pin and the record hash, computed over the verified
+record with only `spec.name` replaced by the pinned name, to be the record
+pin. The filename is not source authority: the capture CLI records the input
+basename as `spec.name`, so a byte-identical spec recaptured under another
+filename is the same source, while every other field still has to match.
+The source is never selected by supplied prose: a
+recapture with an edited `Revision N`, a dropped, renamed or added criterion
+is another source and is refused. Only after the hashes match are the
+acceptance IDs and their byte locators read from the verified capture, and
+the spec's own `POD-DOC-P1` must declare the pinned revision.
+
+| Source | Captured files | Revision, criteria | Bench obligations | Scope contract |
+|---|---|---|---|---|
+| `telemetry-pod-rev2` | `fixtures/telemetry-pod/spec.md` sha256 `09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493`, `spec-record.json` sha256 `58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250`, name `spec.md` | 2, `POD-AC-1`..`9` | `POD-AC-8`, `POD-AC-9` | Legacy, unchanged: each bench criterion appears in a `BENCH REQUIRED` limitation |
+| `telemetry-pod-rev3` | fome-mc `1157b91899fd9f420089fbec4264b823310f0ad9` `telemetry-pod/expansion/requirements/compiled/requirements-map/spec.md` sha256 `e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6`, `spec-record.json` sha256 `1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b`, name `REQUIREMENTS.md`; `POD-DOC-P1` bytes 30-421, `POD-AC-10` bytes 21943-22224, `POD-AC-11` bytes 22229-22495 | 3, `POD-AC-1`..`11` | `POD-AC-8`..`11` | Every criterion is a baseline requirement ID or the prefix `POD-AC-n: ` of a limitation; each bench criterion has a limitation starting `POD-AC-n: BENCH REQUIRED` |
+
+Refusals raise `RequirementSetError` with `reason` and `requirement`:
+`undeclared-source` (the plan names no pinned source; refused with the plan,
+before scaffolding), `downgraded-source` (the supplied capture is the pin of
+an earlier revision), `unapproved-source` (any other spec or record bytes),
+`revision-mismatch` (the pinned capture does not declare its revision),
+`unaccounted-acceptance-criterion` (the scope drops it) and
+`missing-bench-obligation`. The source name, revision, revision locator, the
+spec hash, the supplied record hash and capture name, the authoritative record
+pin, criteria and their locators are recorded as `requirement_set` in the
+driver receipt's validation. This proves only that every criterion is carried;
+it is not acceptance. Thermal, owner DFM/preview and bench limitations stay in
+the prepared scope. `test_pod_driver` reads the actual Rev-3 capture
+read-only from the pinned fome-mc store and checks both pins against the
+captured files.
+
+Admitting a new source, or changing a pin, is a coordinator action: capture
+the spec with `python3 -m agent_ee.spec_record capture`, take both hashes from
+`sha256sum` of the captured spec and record, add a `SOURCES` entry naming its
+capture name, revision and bench obligations in a reviewed commit, extend
+`test_pinned_sources_are_the_captured_files`, and select it by name in the
+plan. A plan never supplies its own hashes.
 Additional captured accounting artifacts, such as an evidence-index criterion
 map, can be included in baseline targets without a new driver field.
 
@@ -233,7 +311,7 @@ the fresh checks grade the board that results.
 | `scaffold-receipt/` | Ordinary sandbox receipt, tool identities and retained output |
 | `constraints-receipt/` | Constraint application receipt, only when `net_constraints` is declared |
 | `content-receipt/` | Envelope-content sandbox receipt, only when `envelope_content` is declared |
-| `driver-receipt.json` | Source hashes, validation identities, config/scope hashes, scaffold binding and inference estimate note |
+| `driver-receipt.json` | Source hashes, validation identities, budget derivation, config/scope hashes, scaffold binding and inference estimate note |
 | `dry-run/` | Ordinary checks-only review, when requested |
 | `dry-run-record.json` | Exact check results, stage reachability and sealed result hash; always `done: false`, `inference: false` |
 | `campaign/` | Ordinary campaign run only with explicit `--run` |
@@ -272,7 +350,9 @@ cannot be combined into an unrelated chain.
 `tests.test_pod_driver` runs the shared scaffold in the real receipt sandbox and
 executes the checks-only path using an explicitly synthetic parts fixture. Its
 production driver has no fixture fallback. Tests also cover malformed plans,
-small budgets, subscription-route refusal, removed bench obligations, widened
+iteration budgets outside the engine's 1–100 range (0 and 101 refused before
+output, by the driver and by `run_campaign`), a real two-iteration plan to
+campaign to driver receipt, small wall-clock budgets, subscription-route refusal, removed bench obligations, widened
 writes, tampered scaffold receipts and failed scaffold execution. They also
 prepare a plan with the owned placement adapter, pass the engine's own campaign
 start validation (without launching an iteration), and refuse the adapter beside

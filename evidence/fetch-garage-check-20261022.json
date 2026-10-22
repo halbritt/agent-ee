@@ -1,0 +1,41 @@
+{
+  "access_checks": {
+    "anonymous_get": "403",
+    "put_with_mismatched_payload_sha256": "400 (object not created)",
+    "read_only_key_put": "403"
+  },
+  "bytes": 325214213,
+  "comparison": "Every run with an agent-ee.result/1 result.json in the 20 manifest groups: verify exit, stdout and stderr in source and --snapshot-only modes plus independent diagnostics equal between the pre-relocation in-tree baseline and each fetched tree.",
+  "fetch_command": "scripts/evidence_fetch.py fetch GROUP --base-url s3://agent-ee-evidence [--endpoint ORIGIN] --destination DIR (read-only key)",
+  "files": 4857,
+  "files_manifest_sha256": "8bd1f2adfd0a0cee9ba813c01ed4b610d7dd9df07107b03a8d4976791736bfbe",
+  "groups": 20,
+  "implementation": "scripts/evidence_fetch.py s3:// store support as committed with this receipt (base 050436f4)",
+  "limitation": "Fetches ran on proximal over loopback and over the tailnet forward. Other hosts were not exercised; they need the read-only credentials file. The c4 gate does not need it, because no test reads relocated bytes.",
+  "modes": [
+    "source",
+    "snapshot"
+  ],
+  "pre_relocation_verify_baseline": "verify-baseline-20261022.json",
+  "pre_relocation_verify_baseline_sha256": "533dd5913338bc6b05e63ad6347b88582abaa54adb3e09847963199e39d45e6c",
+  "recorded_at": "2026-10-22",
+  "schema": "agent-ee.evidence-store-fetch-check/1",
+  "store": "s3://agent-ee-evidence (see relocation.json)",
+  "transports": {
+    "loopback": {
+      "all_path_size_hashes_equal": true,
+      "endpoint": "http://127.0.0.1:3900 on proximal",
+      "post_fetch_verify_sha256": "b08cb937476b199a64164317346d56bc78c3d0d22417d808c0543a85cb308b31",
+      "runs_with_equal_verify_results": 73
+    },
+    "tailnet": {
+      "all_path_size_hashes_equal": true,
+      "endpoint": "proximal tailnet address, port 3900 (tailscale serve TCP forward), fetched from proximal",
+      "post_fetch_verify_sha256": "bf2a9412ae76592a209396fe41d1a97afc1e61aec73226b9d7a6b9261c145efc",
+      "runs_with_equal_verify_results": 73
+    }
+  },
+  "upload": "scripts/evidence_fetch.py upload GROUP --evidence evidence --base-url s3://agent-ee-evidence --credentials <owner upload key file>; every PUT signed with the manifest SHA-256 as payload hash",
+  "verify_outcome": "All 73 runs exit 2 in both modes before and after relocation (candidate snapshot changed; evidence is stale); preserved, not repaired.",
+  "work_item": "AGENTEE-20"
+}

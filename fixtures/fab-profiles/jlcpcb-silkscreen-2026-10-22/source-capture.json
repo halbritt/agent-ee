@@ -1,0 +1,66 @@
+{
+  "work_item": "AGENTEE-75",
+  "as_of": "2026-10-22",
+  "raw_captures": [
+    {
+      "file": "jlcpcb-capabilities.html",
+      "url": "https://jlcpcb.com/capabilities/pcb-capabilities/",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-capabilities/",
+      "http_status": 200,
+      "captured_at": "2026-10-22T07:32:50.463456+00:00",
+      "sha256": "7fe7f5a5192a2e7c3c4962349738ea50f14dfec2f8390af191bd2135caf08efb",
+      "bytes": 136364,
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlcpcb-pcb-silkscreen.html",
+      "url": "https://jlcpcb.com/blog/pcb-silkscreen",
+      "resolved_url": "https://jlcpcb.com/blog/pcb-silkscreen",
+      "http_status": 200,
+      "captured_at": "2026-10-22T07:32:52.336260+00:00",
+      "sha256": "a66a888425ff507e32c22bdf2a4254dcd1ea9bb423ffa2ca02b435f5a3759533",
+      "bytes": 215981,
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    }
+  ],
+  "raw_bytes_committed": false,
+  "retention": "Raw vendor responses remain worker scratch only; no owner evidence store. Only original numeric/name records and source identities are committed.",
+  "recorded_sources": {
+    "jlcpcb-silkscreen.txt": {
+      "path": "jlcpcb-silkscreen.txt",
+      "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+      "bytes": 1010
+    }
+  },
+  "pages": {
+    "1": "jlcpcb-capabilities.html",
+    "2": "jlcpcb-pcb-silkscreen.html"
+  },
+  "locators": {
+    "pad-to-silk": "PCB capabilities / Legend / Pad To Silkscreen / 0.15 mm (minimum distance between pad and silkscreen)",
+    "silk-text-height": "PCB capabilities / Legend / Minimum text height / 40 mil (1.0 mm)",
+    "silk-line-width": "PCB capabilities / Legend / Minimum Line Width / >=0.15 mm (character width)",
+    "silk-to-mask": "Silkscreen guide / same table / Silkscreen-to-Solder Mask Clearance / absolute minimum 0.15 mm",
+    "guide-text-height": "Silkscreen guide / same table / Character Height / absolute minimum 0.8 mm; recommended >=1.0 mm",
+    "recommended-line-width": "Silkscreen guide / same table / Line Width / Text Thickness / recommended >=0.2 mm",
+    "recommended-silk-to-mask": "Silkscreen guide / same table / Silkscreen-to-Solder Mask Clearance / recommended >=0.25 mm",
+    "pad-clipping": "Silkscreen guide / 2. Automated CAM Adjustments / legend trimmed within 0.15 mm of a solder pad perimeter; recorded, not graded",
+    "capability-scope": "PCB capabilities / h1 Rigid PCB Manufacturing Capabilities / PCB Specifications / Material / FR-4 Grade A laminates",
+    "guide-scope": "Silkscreen guide / 1. Geometrical Constraints and Tolerances / Supported Base Materials / FR-4, Aluminum, Copper Core, Flex (FPC); the table names no legend process or copper-layer range",
+    "guide-line-width": "Silkscreen guide / 1. Geometrical Constraints and Tolerances / Line Width / Text Thickness / absolute minimum 0.15 mm; recorded as a sourced advisory",
+    "capability-process": "PCB capabilities / h1 Rigid PCB Manufacturing Capabilities (Rigid PCB Capabilities tab)",
+    "capability-copper-layers": "PCB capabilities / PCB Specifications / Layer count / 1-32 Layers (the number of copper layers in the PCB)"
+  },
+  "interpretation_limits": [
+    "Pad-to-silkscreen (capability table) and silkscreen-to-solder-mask clearance (silkscreen guide) are distinct limits with distinct sources; neither is derived from the other.",
+    "KiCad 10 silk_clearance against a pad reports silk_over_copper measured from pad copper; the actual distance does not change with the pad solder-mask margin (host probe, 2026-10-22). It grades pad-to-silk only. Silkscreen-to-solder-mask has no qualified measurement and stays unknown.",
+    "The capability table names 1.0 mm as minimum text height; the guide names 0.8 mm as absolute minimum and 1.0 mm as recommended. The profile grades the capability 1.0 mm minimum; the 0.8 mm guide value is a sourced advisory that never grades.",
+    "Recommendations (0.2 mm line width, 0.25 mm silkscreen-to-mask) are advisories only: no native rule, predicate, defect or extra charge.",
+    "Text height and thickness are graded for KiCad stroke-font silk text by native text_height/text_thickness; KiCad stroke-font nominal height equals the centreline cap height (printed extent adds the stroke). Outline-font or knockout text, and other unqualified silk items, leave silk limits unknown.",
+    "No silkscreen-to-silkscreen limit was found in either source; none is recorded.",
+    "Applicability is bound per source page and component: each graded silk limit needs its own page to state base materials, process and a copper-layer range on whole recorded scope lines, a verified captured order selection (process, base material, copper layers) inside that scope, and a saved board whose complete stackup classifies, whose dielectric materials map to the ordered base material (KiCad FR4 as FR-4) and whose copper-layer count equals the order. Only the capability page states a process and layer range; the guide table states neither, so limits citing it stay unknown. No order selection was captured, so the shipped profile alone grades no silk limit. Pricing, assembly and supplier approval are not claimed.",
+    "Each limit and advisory quote must be one whole recorded fact line whose subject matches the key and whose role matches its use: limits cite a minimum or absolute minimum, recommended advisories cite a recommendation. A recommendation cited as a limit is unknown.",
+    "Source verification proves occurrence in the original numeric record, not authenticity or interpretation of vendor bytes. Raw response hashes cannot replay absent vendor pages."
+  ],
+  "recording_method": "Worker reviewed the host HTML Legend table and the silkscreen guide table and recorded numbers/names only; no vendor prose, graphics, designs or code retained."
+}

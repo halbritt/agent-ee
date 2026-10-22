@@ -213,7 +213,9 @@ behavior and its limits explicitly.
 
 Exact input snapshots, experiments, retrieved references and native logs are in
 [versioned archives](archives/manifest.json), indexed by implementation commit.
-Restore a group with `python3 scripts/evidence_archive.py restore GROUP`.
+The archives and most run files are in the owner's private evidence store
+(AGENTEE-20). Fetch the `archives` group and the recorded group, then restore
+with `python3 scripts/evidence_archive.py restore GROUP --evidence FETCHED_DIR`.
 Use its recorded core for historical policy verification; current `verify` is
 supposed to reject an older implementation as current acceptance. See
 [reproduction instructions](../docs/reproducing-evidence.md).

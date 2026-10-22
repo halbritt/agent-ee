@@ -88,10 +88,36 @@ class ConstraintImportTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             geometry_defaults({}, {}, b'(rule')
 
+    def test_geometry_sourced_class_without_citation_stays_inventoried(self):
+        raw = b'(version 1)\n(rule "generated" (constraint clearance (min 0.37mm)))\n'
+        for source in ('owner', 'manufacturer', 'datasheet'):
+            with self.subTest(source=source):
+                project = {'board': {'design_settings': {'rules': {'min_clearance': 0.37}}}}
+                record = {'derived_settings': [{'setting': 'board.design_settings.rules.min_clearance',
+                    'value': 0.37, 'class': source, 'citation': None}],
+                    'generated_rules': {'generated': {'class': source, 'citation': None}}}
+                rows = geometry_defaults(project, record, raw)
+                self.assertEqual(len(rows), 2)
+                self.assertTrue(all(r['class'] == source and r['citation'] is None and
+                                    r['enforcement'] == 'advisory' for r in rows))
+
     def test_new_geometry_setting_is_inventoried_without_a_known_field_allowlist(self):
         project = {'board': {'design_settings': {'rules': {'future_geometry_limit': 0.41}}}}
         self.assertEqual(geometry_defaults(project, {})[0]['setting'],
                          'board.design_settings.rules.future_geometry_limit')
+
+    def test_shadowed_generated_sources_are_positional_and_fail_closed(self):
+        raw = b'(version 1)\n(rule "same" (constraint clearance (min 0.2mm)))\n(rule "same" (constraint clearance (min 0.4mm)))\n'
+        source = dict(index=1, name='same', **{'class': 'default', 'citation': None})
+        rows = geometry_defaults({}, {'shadowed_generated_rules': [source]}, raw)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['setting'], 'native_rules.1.same.0')
+        self.assertEqual(rows[0]['value'][-1], ['min', '0.2mm'])
+        for bad in (None, {}, [None], [{}], [dict(source, index=True)],
+                    [dict(source, index=-1)], [dict(source, index=99)],
+                    [dict(source, name='wrong')], [source, source]):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'geometry inventory'):
+                geometry_defaults({}, {'shadowed_generated_rules': bad}, raw)
 
     def test_new_editor_default_is_not_silently_omitted(self):
         project = {'board': {'design_settings': {'defaults': {'future_geometry_limit': 0.41}}}}
@@ -263,6 +289,140 @@ class ProducerConstraintTest(ProducerFixture, unittest.TestCase):
 
 
 class FindingSourceTest(unittest.TestCase):
+    def test_geometry_binding_is_rederived_before_drc_grading(self):
+        import tempfile
+        from agent_ee.design_rule_provenance import bind_project, finding_sources, PROJECT_KEY
+        from agent_ee.checks import drc_admissible
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'design.kicad_pcb'
+            raw = b'(version 1)\n(rule "generated" (constraint track_width (min 0.37mm)))\n'
+            project = {'board': {'design_settings': {'track_widths': [0.37]}}}
+            record = {'settings': inventory(project),
+                      'generated_rules': {'generated': {'class': 'default', 'citation': None}}}
+            bind_project(project, record, raw)
+            board.with_suffix('.kicad_dru').write_bytes(raw)
+            write_json(board.with_suffix('.kicad_pro'), project)
+            finding_sources(board)
+            report = dict(violations=[], unconnected_items=[], schematic_parity=[])
+            drc_admissible(board.parent, board.name, report, '')
+            for mutation in ('empty', 'value', 'consumer', 'missing', 'preset', 'rule', 'rule_missing'):
+                with self.subTest(mutation=mutation):
+                    changed = copy.deepcopy(project)
+                    rows = changed[PROJECT_KEY]['unsourced_geometry']
+                    if mutation == 'empty':
+                        rows.clear()
+                    elif mutation == 'value':
+                        rows[0]['value'] = 99
+                    elif mutation == 'consumer':
+                        rows[0]['consumers'] = []
+                    elif mutation == 'missing':
+                        del changed[PROJECT_KEY]['unsourced_geometry']
+                    elif mutation == 'preset':
+                        changed['board']['design_settings']['track_widths'][0] = 0.99
+                    board.with_suffix('.kicad_dru').write_bytes(
+                        raw.replace(b'0.37mm', b'0.99mm') if mutation == 'rule' else raw)
+                    if mutation == 'rule_missing':
+                        board.with_suffix('.kicad_dru').unlink()
+                    write_json(board.with_suffix('.kicad_pro'), changed)
+                    with self.assertRaisesRegex(ValueError, 'geometry inventory'):
+                        finding_sources(board)
+                    with self.assertRaisesRegex(ValueError, 'DRC constraint provenance:.*geometry inventory'):
+                        drc_admissible(board.parent, board.name, report, '')
+
+    def test_emission_witness_and_materialization_boundaries(self):
+        import tempfile
+        import hashlib
+        from agent_ee.design_rule_provenance import bind_project, finding_sources, PROJECT_KEY
+        from agent_ee.native_geometry_defaults import DEFAULTS
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'design.kicad_pcb'
+            project = {'board': {'design_settings': {'track_widths': [0.37]}}}
+            record = {'settings': inventory(project)}
+            bind_project(project, record)
+            emission = record['geometry_emission']
+            self.assertEqual(hashlib.sha256(emission['project_bytes'].encode()).hexdigest(),
+                             emission['sha256'])
+            self.assertEqual(json.loads(emission['project_bytes'])[PROJECT_KEY],
+                             {k: v for k, v in record.items() if k != 'geometry_emission'})
+            for mutation in ('missing witness', 'hash', 'bytes', 'version', 'metadata',
+                             'removed', 'changed to native default', 'unknown addition',
+                             'nondefault addition', 'bool impersonation'):
+                with self.subTest(mutation=mutation):
+                    changed = copy.deepcopy(project)
+                    witness = changed[PROJECT_KEY]['geometry_emission']
+                    design = changed['board']['design_settings']
+                    if mutation == 'missing witness':
+                        del changed[PROJECT_KEY]['geometry_emission']
+                    elif mutation == 'hash':
+                        witness['sha256'] = '0' * 64
+                    elif mutation == 'bytes':
+                        witness['project_bytes'] += ' '
+                    elif mutation == 'version':
+                        witness['native_defaults_version'] = 'future'
+                    elif mutation == 'metadata':
+                        changed[PROJECT_KEY]['generated_rules'] = {}
+                    elif mutation == 'removed':
+                        del design['track_widths']
+                    elif mutation == 'changed to native default':
+                        design['track_widths'] = [0.0]
+                    elif mutation == 'unknown addition':
+                        design['future_geometry'] = False
+                    elif mutation == 'nondefault addition':
+                        design['zones_allow_external_fillets'] = True
+                    else:
+                        design['zones_allow_external_fillets'] = 0
+                    write_json(board.with_suffix('.kicad_pro'), changed)
+                    with self.assertRaisesRegex(ValueError, 'geometry inventory'):
+                        finding_sources(board)
+            # Every allowed addition is closed over a cited native setting/value;
+            # adding it must not refresh or enlarge the original binding.
+            for name, (value, citation) in DEFAULTS.items():
+                with self.subTest(native_default=name):
+                    changed = copy.deepcopy(project)
+                    parts = name.split('.')
+                    node = changed
+                    for part in parts[:-1]:
+                        if isinstance(node, list):
+                            index = 0 if part == 'Default' else int(part)
+                            while len(node) <= index:
+                                node.append({})
+                            node = node[index]
+                        else:
+                            node = node.setdefault(part, [] if part in {
+                                'track_widths', 'via_dimensions', 'diff_pair_dimensions',
+                                'teardrop_options', 'teardrop_parameters', 'classes'} else {})
+                    if isinstance(node, list):
+                        while len(node) <= int(parts[-1]):
+                            node.append(0.0)
+                        node[int(parts[-1])] = value
+                    else:
+                        node[parts[-1]] = value
+                    if name.startswith('net_settings.classes.'):
+                        changed['net_settings']['classes'][0]['name'] = 'Default'
+                    # Track preset index zero was explicitly emitted as 0.37:
+                    # materialization cannot excuse overwriting it.
+                    if name == 'board.design_settings.track_widths.0':
+                        continue
+                    self.assertIn('10.0.7', citation)
+                    write_json(board.with_suffix('.kicad_pro'), changed)
+                    finding_sources(board)
+                    self.assertEqual(changed[PROJECT_KEY], record)
+                    if type(value) is float and value.is_integer():
+                        node[int(parts[-1]) if isinstance(node, list) else parts[-1]] = int(value)
+                        write_json(board.with_suffix('.kicad_pro'), changed)
+                        finding_sources(board)
+
+    def test_empty_binding_refuses_while_unbound_legacy_stays_supported(self):
+        import tempfile
+        from agent_ee.design_rule_provenance import finding_sources, PROJECT_KEY
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'legacy.kicad_pcb'
+            write_json(board.with_suffix('.kicad_pro'), {})
+            finding_sources(board)
+            write_json(board.with_suffix('.kicad_pro'), {PROJECT_KEY: {}})
+            with self.assertRaisesRegex(ValueError, 'no valid settings inventory'):
+                finding_sources(board)
+
     def test_native_materialized_defaults_are_advisory_without_changing_bound_settings(self):
         import tempfile
         from agent_ee.design_rule_provenance import bind_project, finding_sources
@@ -379,6 +539,41 @@ class FindingSourceTest(unittest.TestCase):
             for name, cls in [('Default', 'default'), ('Owned', 'owner')]]}
         finding = {'type': 'clearance', 'description': 'Clearance violation ( clearance 0.2000 mm; actual 0.1500 mm)'}
         self.assertEqual(classify_finding(finding, sources)['constraint_provenance']['class'], 'default')
+
+
+class NativeDefaultTableTest(unittest.TestCase):
+    def test_pinned_native_defaults(self):
+        import tempfile
+        import subprocess
+        from agent_ee.native_geometry_defaults import DEFAULTS, VERSION
+        from agent_ee.design_rule_provenance import bind_project, finding_sources, PROJECT_KEY
+        require_toolchain(native=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'native.kicad_pcb'
+            # Original minimal board and empty project: no third-party fixtures.
+            board.write_text('(kicad_pcb (version 20260101) (generator "pcbnew") '
+                '(general (thickness 1.6)) (paper "A4") '
+                '(layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user)))')
+            project = {}
+            record = {'settings': []}
+            bind_project(project, record)
+            write_json(board.with_suffix('.kicad_pro'), project)
+            script = ('import pcbnew,sys; '
+                'assert pcbnew.GetBuildVersion().startswith(sys.argv[2]); '
+                'b=pcbnew.LoadBoard(sys.argv[1]); pcbnew.SaveBoard(sys.argv[1],b)')
+            result = subprocess.run(['/usr/bin/python3', '-c', script, str(board), VERSION],
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            saved = read_json(board.with_suffix('.kicad_pro'))
+            rows = geometry_defaults(saved, {})
+            self.assertEqual({r['setting']: r['value'] for r in rows},
+                             {name: value for name, (value, _) in DEFAULTS.items()})
+            self.assertEqual(saved[PROJECT_KEY], project[PROJECT_KEY])
+            finding_sources(board)
+            saved['board']['design_settings']['zones_allow_external_fillets'] = True
+            write_json(board.with_suffix('.kicad_pro'), saved)
+            with self.assertRaisesRegex(ValueError, 'geometry inventory'):
+                finding_sources(board)
 
 
 class NativeGeometryInventoryTest(PlaneFixture, unittest.TestCase):
@@ -518,6 +713,29 @@ class NativeFindingSourceTest(unittest.TestCase):
 
 
 class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
+    def test_shadowed_generated_geometry_is_inventoried_without_owner_promotion(self):
+        from agent_ee.design_rule_provenance import finding_sources
+        self.use_net_constraints()
+        write_json(self.source / 'rule-sources.json', document())
+        self.plan['constraint_source'] = 'rule-sources.json'
+        rule = self.source / 'project/design.kicad_dru'
+        rule.parent.mkdir(exist_ok=True)
+        raw = b'(version 1)\n(rule "agent_ee_netclass_RF_50" (constraint track_width (min 0.35mm)))\n'
+        rule.write_bytes(raw)
+        self.write()
+        receipt = self.build()
+        board = self.root / 'produced/inputs/project/design.kicad_pcb'
+        project = read_json(board.with_suffix('.kicad_pro'))
+        record = receipt['constraint_provenance']
+        rows = record['unsourced_geometry']
+        native = [r for r in rows if r['setting'].startswith('native_rules.')]
+        self.assertEqual(len(native), 3)
+        shadowed, = [r for r in native if '.agent_ee_netclass_RF_50.' in r['setting']]
+        self.assertEqual((shadowed['class'], shadowed['citation']), ('default', None))
+        self.assertEqual(rows, geometry_defaults(project, record, board.with_suffix('.kicad_dru').read_bytes()))
+        self.assertEqual(finding_sources(board)['rules']['agent_ee_netclass_RF_50']['class'], 'owner')
+        self.assertEqual((board.parent / 'design.owner.kicad_dru').read_bytes(), raw)
+
     def test_generated_geometry_is_disclosed_in_receipt_and_project(self):
         self.use_net_constraints()
         receipt = self.build()
@@ -600,6 +818,44 @@ class NativeCapturedDrcSourceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         require_toolchain(native=True)
+
+    def test_native_clean_report_with_edited_geometry_inventory_is_unknown(self):
+        import shutil
+        import tempfile
+        import time
+        from agent_ee.checks import run_checks
+        from agent_ee.design_rule_provenance import bind_project, PROJECT_KEY
+        repo = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            shutil.copytree(repo / 'fixtures/rc/control', source)
+            project_path = next(source.glob('*.kicad_pro'))
+            project = read_json(project_path)
+            project['board']['design_settings']['track_widths'] = [0.37]
+            record = {'settings': inventory(project)}
+            bind_project(project, record)
+            self.assertTrue(record['unsourced_geometry'])
+            scope = read_json(repo / 'fixtures/rc/control.scope.json')
+            for entry in scope['inputs']:
+                entry['path'] = (str(source) if entry['at'] == 'project' else
+                                 str((repo / 'fixtures/rc' / entry['path']).resolve()))
+            scope['checks'] = [{'id': 'drc', 'kind': 'drc'}]
+            write_json(root / 'scope.json', scope)
+            for edited in (False, True):
+                if edited:
+                    project[PROJECT_KEY]['unsourced_geometry'] = []
+                write_json(project_path, project)
+                run = root / ('edited' if edited else 'valid')
+                run.mkdir()
+                capture(root / 'scope.json', run)
+                result = run_checks(run, time.monotonic() + 120)[0]
+                self.assertEqual(read_json(run / 'work/drc/drc.json')['violations'], [])
+                if edited:
+                    self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'), result)
+                    self.assertIn('geometry inventory', result['summary'])
+                else:
+                    self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
 
     def test_captured_check_and_review_packet_keep_native_advisories(self):
         import shutil

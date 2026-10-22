@@ -1,9 +1,0 @@
-Ideal shutdown from saved R1=10k and C1=100n; node names from native nets
-VIN IN 0 0
-R1 IN OUT 10k
-C1 OUT 0 100n IC=1
-.options reltol=1e-8 abstol=1e-14 vntol=1e-11
-.tran 1u 6m 0 1u uic
-.measure tran out_5ms FIND v(OUT) AT=5m
-.measure tran out_initial FIND v(OUT) AT=1n
-.end

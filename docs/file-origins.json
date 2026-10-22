@@ -435,6 +435,16 @@
   "rules": [
     {
       "paths": [
+        "tests/test_physical_intent.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-388 S1 physical-intent compiler regressions. They edit the owned datasheet-pins fixture board in a temporary directory: an authored two-pad decoupling footprint, a lock and a duplicated pad. Owner-decision and layout-note texts are authored test records. No third-party design or library text is copied, and the TJA1051 PDF is referenced in place by the existing fixture scope."
+    },
+    {
+      "paths": [
         "tests/test_reserved_area.py"
       ],
       "kind": "owned-source",
@@ -463,6 +473,17 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-344 carried-silk regressions. The hash-comment attack embeds authored minimal copper arcs and silk text and derives the hidden R9 footprint from the existing owned test_placement_adapter.TEXT fixture. No upstream design or library bytes are copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/native_netlist.py",
+        "tests/test_placement_blocks_request.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-439 netlist stamp identity code and tests. The module matches the opening <export version=\"E\"> design header only to locate the date and tool stamps; the minimal one-resistor netlist text in the tests is authored here, and native netlists are exported at test time from the owned RC fixture. No upstream design, library or vendor document bytes are embedded."
     },
     {
       "paths": [
@@ -549,6 +570,7 @@
     },
     {
       "paths": [
+        "schemas/",
         "src/",
         "scripts/",
         "tests/"
@@ -1041,9 +1063,21 @@
     },
     {
       "paths": [
+        "evidence/relocation.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-20 relocation record: store description without credentials, retained paths, and per-path content-marker labels and captured-origin ids recorded from fetched evidence; names file paths only."
+    },
+    {
+      "paths": [
         "evidence/model-comparison-summary.json",
         "evidence/fetch-local-check-20261017.json",
         "evidence/verify-baseline-20261017.json",
+        "evidence/verify-baseline-20261022.json",
+        "evidence/fetch-garage-check-20261022.json",
         "evidence/model-release/tests.log",
         "evidence/model-release/uncertainty-expectation.json",
         "evidence/archives/manifest.json"
@@ -2414,6 +2448,16 @@
     },
     {
       "paths": [
+        "tests/test_render_gallery.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing a minimal synthetic KiCad board literal (one graphic line, optionally one segment) for supplement candidate binding; no owner or third-party design is read or committed."
+    },
+    {
+      "paths": [
         "tests/test_render3d.py"
       ],
       "kind": "owned-source",
@@ -3739,6 +3783,18 @@
         "T17"
       ],
       "note": "Real kicad-route 4f06368f receipts, an agent-ee binding record and provenance; see tests/fixtures/k91-real/PROVENANCE.md."
+    },
+    {
+      "paths": [
+        ".uipass-gallery.yaml",
+        "deployment/agent-ee-render-gallery.service",
+        "src/agent_ee/render_gallery.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original gallery service, HTML markup, native fixture browser configuration and user service unit written for agent-ee; existing third-party viewer assets remain under their existing origin rules."
     }
   ]
 }

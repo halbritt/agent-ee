@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter
 from decimal import Decimal
+import functools
 import hashlib
 import json
 import os
@@ -13,7 +14,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
-from . import placement_groups
+from . import placement_groups, placement_trace
 from .board_net_names import from_xml
 from .locking import writer_lock
 from .placement import judge
@@ -114,6 +115,10 @@ def _padstack_refusal(board):
 
 
 def _pad_inventory(board):
+    return {fp.m_Uuid.AsString(): _footprint_pad_inventory(fp) for fp in board.GetFootprints()}
+
+
+def _footprint_pad_inventory(fp):
     """Footprint-local pad facts that a footprint move must leave unchanged.
 
     A quarter turn can report the unchanged relative angle as 360 degrees.
@@ -122,7 +127,7 @@ def _pad_inventory(board):
     every = pcbnew.PADSTACK.ALL_LAYERS
     def xy(v):
         return [int(v.x), int(v.y)]
-    return {fp.m_Uuid.AsString(): {
+    return {
         'fpid': fp.GetFPIDAsString(), 'pads': sorted([
             [pad.m_Uuid.AsString(), pad.GetNumber(), pad.GetNetname(), int(pad.GetAttribute()),
              int(pad.Padstack().Mode()), int(pad.GetShape(every)), xy(pad.GetSize(every)),
@@ -131,7 +136,7 @@ def _pad_inventory(board):
              int(pad.GetChamferPositions(every)), pad.GetLayerSet().FmtHex(),
              xy(pad.GetFPRelativePosition()), round(pad.GetFPRelativeOrientation().AsDegrees(), 6) % 360,
              custom_pad_geometry(pad) if pad.GetShape(every) == pcbnew.PAD_SHAPE_CUSTOM else None]
-            for pad in fp.Pads()])} for fp in board.GetFootprints()}
+            for pad in fp.Pads()])}
 
 
 def _native_drc(board, scratch):
@@ -302,14 +307,30 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
     environment = sorted(absolute.values(), key=lambda a: a['uuid']) if needs_environment else []
     environment_proven = all(a['outline']['status'] == 'proven' for a in environment)
     local_records = {}
-    normalized = set()
+    local_witnesses = {}
     for uid in sorted(local_ids):
         owner, area, _ = areas[uid]
-        if owner not in normalized:
+        if owner not in local_witnesses:
             charge()
-            owners[owner].SetOrientationDegrees(0)
-            owners[owner].SetPosition(k.VECTOR2I(0, 0))
-            normalized.add(owner)
+            fp = owners[owner]
+            # All absolute contacts and records are captured before normalization.
+            # Unflip the owner and its areas together on this disposable board.
+            if fp.IsFlipped():
+                fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+            fp.SetOrientationDegrees(0)
+            fp.SetPosition(k.VECTOR2I(0, 0))
+            enabled = board.GetEnabledLayers()
+            for pad in fp.Pads():
+                layers = k.LSET()
+                for layer in pad.GetLayerSet().Seq():
+                    if enabled.Contains(layer):
+                        layers.AddLayer(layer)
+                pad.SetLayerSet(layers)
+            # Inventory only this owner, once; do not rescan the board per contact.
+            # Keep the existing per-owner normalization work unit: inventory
+            # size is bounded by the earlier pad visits and native layer count.
+            local_witnesses[owner] = (owner, json.dumps({
+                'pads': _footprint_pad_inventory(fp), 'graphics': _local_graphics(fp)}, sort_keys=True))
             work['normalized_owners'] += 1
         local_records[uid] = record(local_areas[owner, area.m_Uuid.AsString()], owner)
 
@@ -323,7 +344,7 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
             if area_record['outline']['status'] != 'proven':
                 witnesses = None
                 break
-            witnesses.append((states[uid][:2] if local else states[uid], area_record))
+            witnesses.append((local_witnesses[states[uid][0]] if local else states[uid], area_record))
         if witnesses == []:
             charge(len(environment))
             witnesses = [(states[uid], environment)] if environment_proven else None
@@ -331,6 +352,13 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
     if stats is not None:
         stats.update(work)
     return result
+
+
+def _local_graphics(fp):
+    """Graphic primitives of a footprint already normalized to the origin at 0 degrees."""
+    return sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
+                    'shape': primitive(item)} for item in fp.GraphicalItems()
+                   if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
 
 
 def _drc_item_states(path):
@@ -350,10 +378,7 @@ def _drc_item_states(path):
                 fp.GetOrientationDegrees(), int(fp.GetLayer()))
         fp.SetOrientationDegrees(0)
         fp.SetPosition(pcbnew.VECTOR2I(0, 0))
-        graphics = sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
-                            'shape': primitive(item)} for item in fp.GraphicalItems()
-                           if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
-        geometry = json.dumps({'pads': inventory[owner], 'graphics': graphics}, sort_keys=True)
+        geometry = json.dumps({'pads': inventory[owner], 'graphics': _local_graphics(fp)}, sort_keys=True)
         for item in [fp, *fp.Pads(), *fp.GraphicalItems(), *fp.GetFields()]:
             uuid = item.m_Uuid.AsString()
             if uuid in states and states[uuid][0] != owner:
@@ -676,6 +701,12 @@ def _saved_judgment(output, plan):
     if 'block_arrangement' in plan:
         from .block_arrangement import saved_rules
         judgment['block_rules'] = saved_rules(facts, plan, policy)
+    if 'advisory_regions' in policy:
+        # Re-derived on the saved board: shadows follow their owners' native poses (AGENTEE-436).
+        from .advisory_regions import grade
+        from .placer import _fixed_refs
+        fixed = {p['ref'] for p in plan['placements'] if p['fixed']} | _fixed_refs(facts, policy)
+        judgment['advisory_regions'] = grade(facts, policy['advisory_regions'], fixed)
     return facts, judgment
 
 
@@ -700,7 +731,9 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
                                'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': {}, 'pads': custom},
                               proposal['position_nm'], proposal['rotation_deg'])
             expected_custom.update({p['uuid']: p['custom_geometry']['bbox_nm'] for p in moved['pads']})
+    placement_trace.phase('export')  # Trace phases (AGENTEE-430) are no-ops unless tracing is on.
     _apply_plan(board, plan, output)
+    placement_trace.phase('native_checks')
     if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
         raise ValueError('native saved board changed footprint pad geometry')
     overlaps, comparison = _proposal_drc(source, output)
@@ -808,6 +841,7 @@ def place_candidate(source, netlist, destination, request):
     allowlist and evidence-sealing checks remain the caller's responsibility.
     """
     from .candidate_visuals import produce, skip_requested
+    placement_trace.phase('prep')
     skip_visuals = skip_requested(request.get('skip_visuals', False))
     source, netlist = Path(source).resolve(), Path(netlist).resolve()
     destination = Path(destination).absolute()
@@ -822,7 +856,10 @@ def place_candidate(source, netlist, destination, request):
         # Refuse before even creating a lease file. A successful plan is rebuilt
         # under the writer lease below; caller-provided plans are never trusted.
         policy = reserve_imu_markings(pcbnew.LoadBoard(str(source)), _effective_policy(request))
-        preview = _plan(extract(source), request, policy)
+        facts = extract(source)
+        placement_trace.phase(None)
+        preview = _plan(facts, request, policy)
+        placement_trace.phase('prep')
         if preview['status'] != 'planned':
             return preview
     with writer_lock(destination):
@@ -831,7 +868,9 @@ def place_candidate(source, netlist, destination, request):
         board = _unrouted_board(source)
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = reserve_imu_markings(board, _effective_policy(request))
+        placement_trace.phase(None)  # Planning records its own prep, Stage-A and Stage-B time.
         plan = _plan(facts, request, policy, netlist)
+        placement_trace.phase('native_checks')
         # A per-layer padstack also leaves its copper extent unproven (AGENTEE-366):
         # the padstack refusal names the cause either way.
         refusal = plan['status'] in ('planned', 'unsupported_geometry') and _padstack_refusal(board)
@@ -853,6 +892,7 @@ def place_candidate(source, netlist, destination, request):
                 if scope['status'] != 'allowed':
                     raise ValueError(f"native saved placement exceeded write scope: {scope['violations']}")
                 report['write_scope'] = scope
+                placement_trace.phase('export')
                 if 'block_arrangement' in plan:
                     # Review input naming every placed block's identity, class and enforcement,
                     # bound to the saved board and graded on it (AGENTEE-355).
@@ -879,6 +919,108 @@ def place_candidate(source, netlist, destination, request):
             # Destination is absent and held under this writer lease. Move the
             # complete directory in one operation; no partial board is placed.
             os.rename(scratch, destination)
+    placement_trace.phase(None)
+    return report
+
+
+def _trace_identity(source, netlist, request, report, experiment):
+    from .trace_envelope import canonical_sha256, qualified, unknown
+    def file_identity(path, reason):
+        return qualified(digest(path)) if path.is_file() else unknown(reason)
+    placed = isinstance(report, dict) and report.get('status') == 'placed'
+    return {'pcb': file_identity(source, 'source board unreadable'),
+            'project': file_identity(source.with_suffix('.kicad_pro'), 'source has no .kicad_pro project file'),
+            'rules': qualified(canonical_sha256(request.get('policy')), kind='agent-ee.packing-policy'),
+            'design_rules': file_identity(source.with_suffix('.kicad_dru'), 'source has no .kicad_dru rules file'),
+            'experiment': qualified(id=experiment) if experiment else unknown('no experiment declared'),
+            'netlist': file_identity(netlist, 'netlist unreadable'),
+            'candidate': (qualified(report['board_sha256'], kind='placed-board',
+                                    plan_sha256=canonical_sha256(report['plan'])) if placed else
+                          unknown('no placed candidate: ' + (report.get('status', 'no report')
+                                                             if isinstance(report, dict) else 'placement raised')))}
+
+
+def _trace_path(trace_path, root, destination):
+    """A fresh trace file directly inside the authorized writable root, beside the candidate."""
+    trace_path = Path(trace_path).absolute()
+    if trace_path.parent != root or trace_path.name.startswith('.') or trace_path == destination \
+            or trace_path.exists() or trace_path.is_symlink():
+        raise ValueError('trace must be a fresh file directly inside authorized scratch root, '
+                         'not the candidate destination')
+    return trace_path
+
+
+class TracePersistenceError(RuntimeError):
+    """Placement returned its report, but its requested trace was not written (AGENTEE-430).
+
+    The trace is an observer: this is not a placement failure, and a placed candidate may
+    already be published at its destination. ``report`` is the placement report;
+    ``__cause__`` is the trace error.
+    """
+
+    def __init__(self, report, trace_path):
+        self.report, self.trace_path = report, trace_path
+        status = report.get('status') if isinstance(report, dict) else None
+        super().__init__(f'placement {status}, but its trace was not written to {trace_path}')
+
+
+def _persist_trace(recorder, trace_path, *, state, source, netlist, request, report, experiment):
+    """Assemble and export the trace; the exception that stopped it, or None once written."""
+    try:
+        document = placement_trace.envelope(
+            recorder, stage='place-candidate', state=state,
+            identity=_trace_identity(source, netlist, request, report, experiment),
+            native_tools=placement_trace.native_tool_hashes(),
+            outcome=report.get('status') if isinstance(report, dict) else None)
+        placement_trace.export(document, trace_path)
+    except Exception as exc:
+        return exc
+    return None
+
+
+def traced_place_candidate(source, netlist, destination, request, trace_path, *, experiment=None, limits=None):
+    """``place_candidate`` with the opt-in placement trace written to a fresh ``trace_path`` (AGENTEE-430).
+
+    The single-design-writer authorization and the trace path (a fresh, non-hidden direct
+    child of the authorized writable root, not the destination) are checked before
+    anything is recorded or written: a refusal leaves no trace and no candidate. After
+    that, the trace is written even when placement raises; it then records a failed
+    state and the placement error is re-raised. The candidate directory and report are
+    unchanged.
+
+    A trace that cannot be written never replaces the placement outcome. When placement
+    raised, its own exception is re-raised, carrying the trace error, or the interruption
+    (KeyboardInterrupt or another BaseException) that stopped the write, as
+    ``placement_trace_error`` and a note. When placement returned, ``TracePersistenceError``
+    carries the report: the candidate may exist although its trace does not.
+    """
+    source, netlist = Path(source).resolve(), Path(netlist).resolve()
+    destination = Path(destination).absolute()
+    root = _authorization(source, destination, request['authorization'])
+    trace_path = _trace_path(trace_path, root, destination)
+    placement_trace.Recorder(limits)  # Refuse invalid limits before placement, not after it.
+    recorder = report = None
+    persist = functools.partial(_persist_trace, trace_path=trace_path, source=source, netlist=netlist,
+                                request=request, experiment=experiment)
+    try:
+        with placement_trace.recording(limits) as recorder:
+            report = place_candidate(source, netlist, destination, request)
+    except BaseException as exc:
+        state = {'status': 'failed' if isinstance(exc, Exception) else 'interrupted',
+                 'reason': f'{exc.__class__.__name__}: {exc}'}
+        failure = None
+        if recorder is not None:
+            try:
+                failure = persist(recorder, report=report, state=state)
+            except BaseException as interruption:
+                failure = interruption  # Even an interrupted write never displaces the primary exception.
+        if failure is not None:
+            exc.placement_trace_error = failure
+            exc.add_note(f'placement trace not written to {trace_path}: {failure.__class__.__name__}: {failure}')
+        raise
+    failure = persist(recorder, report=report, state={'status': 'completed'})
+    if failure is not None:
+        raise TracePersistenceError(report, trace_path) from failure
     return report
 
 
@@ -890,6 +1032,8 @@ def main(argv=None):
     parser.add_argument('--destination', required=True)
     parser.add_argument('--result', required=True)
     parser.add_argument('--skip-visuals', action='store_true')
+    parser.add_argument('--trace', help='opt-in placement trace: fresh file directly inside the writable root')
+    parser.add_argument('--trace-experiment', help='experiment identifier recorded in the trace')
     args = parser.parse_args(argv)
     request = read_json(args.request)
     if args.skip_visuals:
@@ -898,10 +1042,30 @@ def main(argv=None):
     result_path = Path(args.result).absolute()
     if result_path.parent != root or result_path.exists() or result_path.is_symlink():
         raise ValueError('result must be a fresh file directly inside authorized scratch root')
-    report = place_candidate(args.board, args.netlist, args.destination, request)
-    with result_path.open('x') as stream:
-        stream.write(json.dumps(report, indent=2, sort_keys=True) + '\n')
+    if args.trace is None:
+        if args.trace_experiment is not None:
+            raise ValueError('--trace-experiment needs --trace')
+        report = place_candidate(args.board, args.netlist, args.destination, request)
+    else:
+        trace_path = Path(args.trace).absolute()
+        if trace_path == result_path:
+            raise ValueError('trace must be a fresh file directly inside authorized scratch root, not the result')
+        # traced_place_candidate checks authorization and the trace path before any write.
+        try:
+            report = traced_place_candidate(args.board, args.netlist, args.destination, request, trace_path,
+                                            experiment=args.trace_experiment)
+        except TracePersistenceError as exc:
+            # The placement outcome is still reported; the missing trace fails the command (exit 3).
+            _write_result(result_path, exc.report)
+            print(f'{exc}: {exc.__cause__.__class__.__name__}: {exc.__cause__}', file=sys.stderr)
+            return 3
+    _write_result(result_path, report)
     return 0 if report['status'] == 'placed' else 1
+
+
+def _write_result(path, report):
+    with path.open('x') as stream:
+        stream.write(json.dumps(report, indent=2, sort_keys=True) + '\n')
 
 
 if __name__ == '__main__':

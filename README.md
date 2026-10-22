@@ -209,6 +209,13 @@ through the writer's native gate. The writer publishes each placed block's
 provenance class and enforcement as review input, which a scope's
 `block_provenance` carries to every initial reviewer.
 
+An opt-in [placement trace](docs/placement-trace.md) (`placer_runner --trace`,
+`python3 -m agent_ee.placement_trace`) records per-stage timings and a capped,
+replayable Stage-A scoring sample. It uses the shared
+[`pcb-trace-envelope/1`](docs/trace-envelope.md). Plans and saved boards are the
+same with tracing on and off. It is experimental and off by default: its
+provisional 5% overhead gate is not met.
+
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 
@@ -268,6 +275,15 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+[Retained evidence relocation](docs/reproducing-evidence.md#evidence-relocation-agentee-20)
+moves 4,753 run and archive files (about 321 MB) out of the tracked tree into the
+owner's private Garage bucket. A hash-verified fetch restores any manifest group
+with a credentials file kept outside the checkout. Without that file, the fetch
+refuses with a typed error. Upload refuses a store that does not enforce atomic
+create-if-absent; the owner's Garage does not. Files that tests and summaries read stay in the tree.
+History is not rewritten, so clone size does not fall; the tree is still above
+the 20 MB target (AGENTEE-20).
+
 [Historical datasheet imports](docs/datasheet-capture.md#offline-historical-import-agentee-306)
 retain hash-bound source notes and PDF bytes offline, explicitly preserving unknown
 redirect history and unrecorded fetch times (AGENTEE-306). Consumer receipts
@@ -297,6 +313,9 @@ records design-rule classes and citations. Native DRC retains unsourced numeric
 findings as advisories while sourced limits and structural gates remain hard.
 Scaffold and board-build also bind an [inventory of retained unsourced geometry defaults](docs/scaffold.md#unsourced-geometry-inventory-agentee-425)
 with their potential router and zone-filler consumers (AGENTEE-425).
+Grading verifies that inventory against the saved project and native rules;
+stale or edited bindings leave coverage unknown (AGENTEE-437). Native-save
+additions are equivalent only at cited, pinned KiCad 10.0.7 default values.
 Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through
@@ -623,7 +642,13 @@ diameter are both under their bounds. An explicit [dated JLCPCB via preset](docs
 records the published small-via surcharge options, grades drills below the
 0.15 mm minimum as defects and reports unlisted small drills as unknown; it
 covers a subset of DFM
-and supplies no pricing or supplier approval.
+and supplies no pricing or supplier approval. A separate [dated JLCPCB silkscreen profile](docs/fab-profile.md#dated-jlcpcb-silkscreen-profile)
+grades pad-to-silk, silk text height and line width. It grades them only under a
+single captured order (one subject on one capture, never spliced) inside the
+cited page's supplier process, material and layer scope, on a matching board
+whose saved stackup classifies completely, one material per sublayer. No
+order is shipped, so the preset alone is unknown. Its sourced silk-to-mask limit
+stays unknown because no qualified measurement exists.
 The [DFM geometry check](docs/dfm-geometry.md) applies seven deterministic rules
 with captured thresholds to exact pcbnew geometry from the saved board: annular
 ring, via aspect ratio, acid traps, SMD bridge gap, courtyard spacing,

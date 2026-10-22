@@ -7,6 +7,7 @@ import argparse
 import copy
 import io
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -16,7 +17,7 @@ from .baseline import compile_baseline
 from .cli import validate_scope
 from .profiles import validate_profile
 from .tool_source import snapshot
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, identity, json_bytes, read_json, write_json
 
 SCHEMA = 'agent-ee.pod-plan/1'
 ORDER = ['schematic', 'placement', 'routing', 'verification']
@@ -28,6 +29,28 @@ RATING_PROVENANCE = 'rating-provenance'
 # Optional envelope-content inputs; envelope, parts and board are the plan's and scope's own.
 CONTENT_PATHS = ('intent', 'layout', 'antenna_facts', 'captured_rule_areas')
 SOURCE = Path(__file__).resolve().parents[1]
+# Authoritative pod requirement sources (AGENTEE-197 review H1). A plan selects one by name as
+# requirement_source; the supplied spec and its exact capture must be the pinned bytes, so the
+# revision, acceptance IDs and their locators come from that verified capture, never from
+# supplied prose. A new source is admitted only by a reviewed commit adding an entry here, with
+# both hashes taken from sha256sum of the captured files (see docs/pod-driver.md). ``name`` is the
+# pinned record's spec.name: the capture CLI records the input basename there, so a byte-identical
+# spec recaptured under another filename differs only in that field and is compared normalized to it.
+SOURCES = {
+    # agent-ee fixtures/telemetry-pod/spec.md and spec-record.json (POD-AC-1..9).
+    'telemetry-pod-rev2': dict(
+        revision=2, name='spec.md', bench=('POD-AC-8', 'POD-AC-9'),
+        spec_sha256='09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493',
+        record_sha256='58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250'),
+    # fome-mc 1157b91899fd9f420089fbec4264b823310f0ad9
+    # telemetry-pod/expansion/requirements/compiled/requirements-map/{spec.md,spec-record.json} (POD-AC-1..11).
+    'telemetry-pod-rev3': dict(
+        revision=3, name='REQUIREMENTS.md', bench=('POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'),
+        spec_sha256='e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6',
+        record_sha256='1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b'),
+}
+REVISION = re.compile(r'\bRevision (\d+)\b')
+DEFAULT_ITERATIONS = 10
 BUDGET_NOTE = ('Historical rung-1 estimate: $10-15 review plus $1-3.6 writing per iteration '
                'for three parts; pod work may multiply this. Estimate, not measurement or spending authority.')
 
@@ -36,6 +59,72 @@ def _path(value):
     if not isinstance(value, str) or str(candidate.safe_relative(value)) != value:
         raise ValueError('canonical candidate-relative path required')
     return value
+
+
+class RequirementSetError(ValueError):
+    """The captured spec or scope does not carry its revision's complete acceptance set."""
+
+    def __init__(self, reason, requirement, message):
+        super().__init__(f'{reason}: {requirement}: {message}')
+        self.reason, self.requirement = reason, requirement
+
+
+def requirement_set(source, spec, record_sha256, scope):
+    """The pinned source's acceptance set, bound to the verified spec record and scope.
+
+    ``spec`` must already be verified as the exact capture of the spec bytes, and ``record_sha256``
+    must be the sha256 of those record bytes. Its spec hash and its record hash, with only the
+    filename-derived ``spec.name`` normalized to the source's pinned name, must be the selected
+    source's pins; a capture pinned for an earlier revision is a downgrade, any other capture is
+    unapproved. Rev-2 keeps its legacy scope contract (AC8/AC9 bench); Rev-3 must also account for
+    every criterion in the scope and keep its bench obligations."""
+    if not isinstance(source, str) or source not in SOURCES:
+        raise RequirementSetError('undeclared-source', str(source),
+                                  'requirement_source must be one of ' + ', '.join(sorted(SOURCES)))
+    from .spec_record import sha256
+    if sha256(json_bytes(spec)) != record_sha256:
+        raise ValueError('record_sha256 is not the digest of the verified spec record')
+    rule = SOURCES[source]
+
+    def pinned_as(entry):
+        normalized = {**spec, 'spec': {**spec['spec'], 'name': entry['name']}}
+        return (spec['spec']['sha256'], sha256(json_bytes(normalized))) == (entry['spec_sha256'], entry['record_sha256'])
+    supplied = (spec['spec']['sha256'], record_sha256)
+    if not pinned_as(rule):
+        pinned = [name for name, entry in SOURCES.items() if pinned_as(entry)]
+        if pinned and SOURCES[pinned[0]]['revision'] < rule['revision']:
+            raise RequirementSetError('downgraded-source', source,
+                                      f'supplied capture is {pinned[0]}, not the selected Revision {rule["revision"]}')
+        raise RequirementSetError('unapproved-source', source,
+                                  f'spec sha256 {supplied[0]} and record sha256 {supplied[1]} are not its pinned capture')
+    revision = str(rule['revision'])
+    prose = [p for p in spec['prose'] if p['id'] == 'POD-DOC-P1']
+    if not prose or set(REVISION.findall(prose[0]['text'])) != {revision}:
+        raise RequirementSetError('revision-mismatch', 'POD-DOC-P1',
+                                  f'{source} is pinned as Revision {revision}; the capture does not declare exactly that')
+    entries = [r for r in spec['requirements'] if r['kind'] == 'acceptance']
+    required = [r['id'] for r in entries]
+    limitations = scope.get('limitations', [])
+    if revision == '2':
+        # Legacy contract, preserved exactly.
+        for rid in rule['bench']:
+            if not any(rid in text and 'BENCH REQUIRED' in text for text in limitations):
+                raise ValueError(f'{rid} must remain an explicit BENCH REQUIRED obligation')
+    else:
+        mapped = {r['id'] for r in scope['baseline']['requirements']}
+        for rid in required:
+            if rid not in mapped and not any(text.startswith(rid + ': ') for text in limitations):
+                raise RequirementSetError('unaccounted-acceptance-criterion', rid,
+                                          'scope maps it to no baseline requirement and no limitation')
+        for rid in rule['bench']:
+            if not any(text.startswith(rid + ': BENCH REQUIRED') for text in limitations):
+                raise RequirementSetError('missing-bench-obligation', rid,
+                                          'must remain an explicit BENCH REQUIRED obligation')
+    return dict(source=source, revision=rule['revision'], revision_locator=prose[0]['locator'],
+                spec_sha256=supplied[0], record_sha256=supplied[1], capture_name=spec['spec']['name'],
+                authoritative_record_sha256=rule['record_sha256'], acceptance=required,
+                locators={r['id']: [r['locator']['byte_start'], r['locator']['byte_end']] for r in entries},
+                bench=list(rule['bench']))
 
 
 def _integer(value, name, low, high):
@@ -52,7 +141,7 @@ def _require_rf_reviewer(plan):
 
 
 def validate_plan(plan):
-    required = {'schema', 'scope', 'envelope', 'parts', 'spec', 'spec_record',
+    required = {'schema', 'scope', 'envelope', 'parts', 'spec', 'spec_record', 'requirement_source',
                 'writer_inputs', 'implementation_steps', 'review_profile', 'implementation',
                 'routing_adapter', 'routing_budget_s', 'review_budget_s'}
     if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
@@ -68,6 +157,10 @@ def validate_plan(plan):
         stage_receipts.validate_step(step, host=False)
     for key in ('envelope', 'parts', 'spec', 'spec_record'):
         _path(plan[key])
+    source = plan['requirement_source']
+    if not isinstance(source, str) or source not in SOURCES:
+        raise RequirementSetError('undeclared-source', str(source),
+                                  'requirement_source must be one of ' + ', '.join(sorted(SOURCES)))
     if (not isinstance(plan['writer_inputs'], dict) or
             set(plan['writer_inputs']) != {'intent', 'deviations'}):
         raise ValueError('writer_inputs requires intent and deviations paths')
@@ -95,7 +188,15 @@ def validate_plan(plan):
     validate_profile(plan['review_profile'])
     validate_profile({**plan['review_profile'], 'adjudicator': plan['implementation']})
     _require_rf_reviewer(plan)
-    iterations = _integer(plan.get('max_iterations', 10), 'max_iterations', 8, 100)
+    derivation = budget_derivation(plan)
+    return derivation['max_iterations']['value'], derivation['max_seconds']['value']
+
+
+def budget_derivation(plan):
+    """Iteration and wall-clock budgets with their sources; the derived time never sets another budget."""
+    from .campaign import MAX_ITERATIONS, validate_iterations
+    # The engine's 1-100 range is the only iteration bound; the driver adds no minimum of its own.
+    iterations = validate_iterations(plan.get('max_iterations', DEFAULT_ITERATIONS))
     routing = _integer(plan['routing_budget_s'], 'routing_budget_s', 1, 3600)
     review = _integer(plan['review_budget_s'], 'review_budget_s', 1, 86400)
     # Reserve two full routing turns, each with coordinator overhead, plus explicit review time.
@@ -105,7 +206,16 @@ def validate_plan(plan):
         raise ValueError('routing adapter budget must match and timeout must cover twice budget plus 300 seconds')
     minimum = 2 * (route['timeout'] + STEP_MARGIN_S) + review
     seconds = _integer(plan.get('max_seconds', minimum), 'max_seconds', minimum, 86400)
-    return iterations, seconds
+    return dict(
+        max_iterations=dict(value=iterations, source='plan' if 'max_iterations' in plan else 'default',
+                            default=DEFAULT_ITERATIONS, engine_range=[1, MAX_ITERATIONS]),
+        routing=dict(budget_s=route['budget'], timeout_s=route['timeout'], step_margin_s=STEP_MARGIN_S,
+                     reserved_turns=2),
+        review_budget_s=review,
+        max_seconds=dict(value=seconds, source='plan' if 'max_seconds' in plan else 'derived', minimum_s=minimum,
+                         formula='2 * (routing.timeout_s + routing.step_margin_s) + review_budget_s'),
+        note=('max_seconds is the campaign wall clock only; it is derived from, and never changes, '
+              'the routing adapter budget/timeout or max_iterations.'))
 
 
 def validate_configuration(plan, scope, files, inputs):
@@ -188,18 +298,18 @@ def validate_configuration(plan, scope, files, inputs):
         raise ValueError('pod generation must retain the fab_package done gate')
     if checks[generation['done_check']]['stage'] != 'verification':
         raise ValueError('fab_package must grade the final declared stage')
-    from .spec_record import verify
+    from .spec_record import sha256, verify
     spec_path, record_path = inputs / plan['spec'], inputs / plan['spec_record']
-    verify(record_path.read_bytes(), spec_path.read_bytes())
-    spec = read_json(record_path)
+    record_raw = record_path.read_bytes()
+    spec = verify(record_raw, spec_path.read_bytes())
     if spec['ids']['prefix'] != 'POD' or not {'POD-AC-8', 'POD-AC-9'} <= {r['id'] for r in spec['requirements']}:
         raise ValueError('expected the captured telemetry pod requirement record')
     if not {plan['spec'], plan['spec_record']} <= baseline['files'].keys():
         raise ValueError('pod spec and capture must be immutable baseline sources')
-    for requirement in ('POD-AC-8', 'POD-AC-9'):
-        if not any(requirement in text and 'BENCH REQUIRED' in text for text in scope.get('limitations', [])):
-            raise ValueError(f'{requirement} must remain an explicit BENCH REQUIRED obligation')
+    # The campaign baseline enters here: bind it to the complete acceptance set of its pinned source.
+    requirements = requirement_set(plan['requirement_source'], spec, sha256(record_raw), scope)
     return dict(baseline_id=baseline['baseline_id'], stage_policy_id=identity(declaration),
+                requirement_set=requirements,
                 mutable_inputs=sorted(mutable), writer_inputs=sorted(writer),
                 coordinator_outputs=sorted(written), max_iterations=iterations,
                 max_seconds=seconds, implementation_steps=normalized, routing_step=route,
@@ -381,7 +491,8 @@ def build(plan_path, out, *, dry_run=False):
     record = dict(schema='agent-ee.pod-driver-receipt/1', status='preparing', done=False,
                   plan_sha256=digest(plan_path), source_scope_sha256=digest(scope_path),
                   tool=dict(module_sha256=digest(Path(__file__)), python=sys.version.split()[0]),
-                  source_files=before, validation=validation, inference_budget_note=BUDGET_NOTE,
+                  source_files=before, validation=validation, budget_derivation=budget_derivation(plan),
+                  inference_budget_note=BUDGET_NOTE,
                   limitations=scope.get('limitations', []),
                   acceptance='Preparation is not design acceptance; owner DFM and physical bench obligations remain.')
     write_json(out / 'driver-receipt.json', record)

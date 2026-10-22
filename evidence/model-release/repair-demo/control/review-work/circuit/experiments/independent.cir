@@ -1,8 +1,0 @@
-* Independent native-value RC check; unloaded, initially discharged
-R1 IN OUT 10000
-C1 OUT 0 1.0000000000000001e-07
-V1 IN 0 PWL(0 0 1p 1)
-.tran 0.1u 5m 0 0.1u
-.meas tran vout_1ms FIND v(OUT) AT=1m
-.meas tran vout_5ms FIND v(OUT) AT=5m
-.end

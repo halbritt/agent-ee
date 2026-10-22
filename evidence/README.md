@@ -57,11 +57,19 @@ freshness only; its exit 0 can accompany `defects_or_unresolved` or `incomplete`
 Acceptance also requires the recorded `criteria_satisfied` outcome.
 
 Expanded `inputs/` copies remain on the original workstation. Versioned
-archives preserve their exact bytes alongside the readable reports:
+archives preserve their exact bytes. Since AGENTEE-20 the archives and most run
+files are in the owner's private evidence store, not in this tree; the readable
+reports linked here stay in the tree. Fetch and restore into a new directory
+(see [reproducing evidence](../docs/reproducing-evidence.md#evidence-relocation-agentee-20)):
 
 ```sh
-python3 scripts/evidence_archive.py restore donor-verified
-python3 scripts/evidence_archive.py restore rc-verified
+mkdir -p build/fetched-evidence
+for group in archives donor-verified rc-verified; do
+  python3 scripts/evidence_fetch.py fetch "$group" \
+    --base-url s3://agent-ee-evidence --destination build/fetched-evidence
+done
+python3 scripts/evidence_archive.py restore donor-verified --evidence build/fetched-evidence
+python3 scripts/evidence_archive.py restore rc-verified --evidence build/fetched-evidence
 ```
 
 Each [archive manifest](archives/manifest.json) identifies the source commit,

@@ -441,6 +441,16 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
         state["stage_receipts"][work.name] = bind_implementation(work, design, number, manifest["candidate_id"])
 
 
+MAX_ITERATIONS = 100
+
+
+def validate_iterations(value):
+    """The engine's iteration range; drivers that write campaigns validate against it, not a policy of their own."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_ITERATIONS:
+        raise ValueError(f"max_iterations must be between 1 and {MAX_ITERATIONS}")
+    return value
+
+
 def run_campaign(config_path, out):
     from .cli import run_review, verify, policy_files, runtime_files
     from .measurements import finite
@@ -451,9 +461,7 @@ def run_campaign(config_path, out):
         raise ValueError("expected agent-ee.campaign/1")
     from .review_run import resubmission_limit
     config["max_schema_resubmissions"] = resubmission_limit(config.get("max_schema_resubmissions", 1))
-    iterations = config["max_iterations"]
-    if isinstance(iterations, bool) or not isinstance(iterations, int) or not 1 <= iterations <= 100:
-        raise ValueError("max_iterations must be between 1 and 100")
+    iterations = validate_iterations(config["max_iterations"])
     seconds = finite(config["max_seconds"], "max_seconds")
     if not 1 <= seconds <= 86400:
         raise ValueError("max_seconds must be between 1 and 86400")

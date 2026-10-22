@@ -1,7 +1,0 @@
-Nominal RC baseline only: no ADC load, no extracted PCB parasitics
-Vstep in 0 PWL(0 0 1p 1 2m 1)
-R1 in out 10k
-C1 out 0 100n IC=0
-.tran 1u 1.1m 0 100n uic
-.measure tran v_at_1ms FIND v(out) AT=1m
-.end

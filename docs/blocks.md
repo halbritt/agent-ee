@@ -513,6 +513,8 @@ citation is refused.
 | `no_block_over_fixed` | A non-exempt block member's courtyard may not overlap a fixed part's courtyard on the other side | `[block, member, fixed]` |
 | `thermal` | With `min_distance_nm`, sources (footprint origins) in different blocks keep that distance | Pairwise source distances and the minimum |
 
+A packing policy's `advisory_regions` with `shadow_of` report the same shadow geometry, never searched, on flat plans and saved boards too (see [placer](placer.md#advisory-regions-and-pose-bound-shadows-agentee-436)). Its `proximity_nm` reports nearby parts as well as intruders.
+
 A block whose own members lie in its own shadow refuses
 (`block_internal_stacking`). The writer re-grades the rules on the native saved
 board (`judgment.block_rules`). A failed hard rule there refuses publication.
@@ -647,6 +649,10 @@ the section from files. Every candidate file must be a bare
 `agent-ee.block-candidate/2` packed (`blocks pack --allocation`) or materialized
 (`block_library materialize --allocation --block`) against the same allocation
 file; any other document, such as a materialize result record, is refused.
+`block_arrangement.request_section_from_bytes` builds the same section from
+bytes the caller has already bound by digest. A campaign placement iteration
+uses it for a captured `blocks` declaration
+([placement adapter](placement-adapter.md#captured-blocks-requests-agentee-439)).
 
 ### Review input: block provenance (AGENTEE-355)
 

@@ -53,7 +53,7 @@ def _source_identity(record, policy):
         _relative(rel, 'owned source file')
         if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha):
             raise ValueError('invalid intent producer source hash')
-    if {p: sha for p, sha in files.items() if p.endswith('.py')} != {
+    if {p: sha for p, sha in files.items() if p.endswith('.py') or p.startswith('agent_ee/data/')} != {
             'agent_ee/' + p: sha for p, sha in policy.items()}:
         raise ValueError('intent producer source differs from frozen campaign policy')
     return {'sha256': identity(files), 'files': len(files)}

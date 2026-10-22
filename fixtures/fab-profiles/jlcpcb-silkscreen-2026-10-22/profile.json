@@ -1,0 +1,195 @@
+{
+  "schema": "agent-ee.fab-profile/2",
+  "name": "jlcpcb_silkscreen_2026-10-22",
+  "as_of": "2026-10-22",
+  "limits": [
+    {
+      "id": "pad-to-silk",
+      "requirement": "fab",
+      "key": "min_pad_to_silk_mm",
+      "value": 0.15,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB capabilities, Legend table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "legend / pad to silkscreen / minimum: 0.15 mm"
+      }
+    },
+    {
+      "id": "silk-text-height",
+      "requirement": "fab",
+      "key": "min_silk_text_height_mm",
+      "value": 1.0,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB capabilities, Legend table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "legend / text height / minimum: 1.0 mm"
+      }
+    },
+    {
+      "id": "silk-line-width",
+      "requirement": "fab",
+      "key": "min_silk_line_width_mm",
+      "value": 0.15,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB capabilities, Legend table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "legend / line width (characters) / minimum: 0.15 mm"
+      }
+    },
+    {
+      "id": "silk-to-mask",
+      "requirement": "fab",
+      "key": "min_silk_to_mask_mm",
+      "value": 0.15,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "legend / silkscreen to solder mask clearance / absolute minimum: 0.15 mm"
+      }
+    }
+  ],
+  "advisories": [
+    {
+      "id": "guide-line-width",
+      "key": "min_silk_line_width_mm",
+      "value": 0.15,
+      "unit": "mm",
+      "role": "guide_minimum",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "legend / line width / text thickness / absolute minimum: 0.15 mm"
+      }
+    },
+    {
+      "id": "guide-text-height",
+      "key": "min_silk_text_height_mm",
+      "value": 0.8,
+      "unit": "mm",
+      "role": "guide_minimum",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "legend / character height / absolute minimum: 0.8 mm"
+      }
+    },
+    {
+      "id": "recommended-line-width",
+      "key": "min_silk_line_width_mm",
+      "value": 0.2,
+      "unit": "mm",
+      "role": "recommended",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "legend / line width / text thickness / recommended: 0.2 mm"
+      }
+    },
+    {
+      "id": "recommended-silk-to-mask",
+      "key": "min_silk_to_mask_mm",
+      "value": 0.25,
+      "unit": "mm",
+      "role": "recommended",
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "legend / silkscreen to solder mask clearance / recommended: 0.25 mm"
+      }
+    }
+  ],
+  "applicability": [
+    {
+      "id": "capability-scope",
+      "base_materials": [
+        "FR-4"
+      ],
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB rigid PCB capabilities, PCB Specifications material row; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "scope / rigid PCB capabilities / base material: FR-4"
+      }
+    },
+    {
+      "id": "capability-process",
+      "processes": [
+        "rigid PCB"
+      ],
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB rigid PCB capabilities, page heading and PCB Specifications layer-count row; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "scope / rigid PCB capabilities / process: rigid PCB"
+      }
+    },
+    {
+      "id": "capability-copper-layers",
+      "copper_layers": [
+        1,
+        32
+      ],
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB rigid PCB capabilities, page heading and PCB Specifications layer-count row; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 1,
+        "quote": "scope / rigid PCB capabilities / copper layers: 1-32"
+      }
+    },
+    {
+      "id": "guide-scope",
+      "base_materials": [
+        "FR-4",
+        "Aluminum",
+        "Copper Core",
+        "Flex (FPC)"
+      ],
+      "source": {
+        "path": "jlcpcb-silkscreen.txt",
+        "sha256": "be6bf04a53a985aecad9bb30987227e23f76aa044ef236d369240a61d5c0c3c0",
+        "source": "JLCPCB PCB silkscreen guide, legend DFM table supported base materials; agent-ee numeric record",
+        "as_of": "2026-10-22",
+        "page": 2,
+        "quote": "scope / legend DFM table / supported base materials: FR-4, Aluminum, Copper Core, Flex (FPC)"
+      }
+    }
+  ]
+}

@@ -542,9 +542,34 @@ saved integer-nanometre drills against 0.15, 0.2 and 0.25 mm or the continuous
 range from 0.3 mm. A drill below the sourced 0.15 mm minimum is a `via-drill`
 defect (`below_minimum_vias`), never a surcharge. Other drills (including 0.22 and
 0.28 mm) make drill grading unsupported and the check unknown, with saved via
-UUIDs in `unsupported_vias`; beside a below-minimum drill, unknown takes
-precedence and both lists are kept. Drill surcharge records then stay unevaluated. Supplier process applicability
+UUIDs in `unsupported_vias`, typed `code=via_drill_off_table`, and the checked
+`drill_table` with its capture path and sha256; beside a below-minimum drill, unknown takes
+precedence and both lists are kept. Drill surcharge records then stay unevaluated.
+Drilled PTH or NPTH pads have no captured table: the `via-drill` record keeps its
+via result as `via_status` but is unknown with `code=hole_class_without_drill_table`
+and `unsupported_hole_classes` (saved pad UUIDs and requested drill sizes), and
+the check is unknown, never pass. Supplier process applicability
 and pricing remain unqualified.
+`/2` [silkscreen minima](fab-profile.md#silkscreen-limits-fab-profile2) grade
+pad-to-silk (native `silk_over_copper`, measured to pad copper), stroke-font
+silk text height and thickness, and saved silk stroke widths. Silk-to-mask
+clearance has no qualified measurement and is always unknown
+(`code=silk_to_mask_unmeasured`). Tented pads, outline-font or knockout text,
+filled shapes and other silk classes are typed unknowns. Silk citations bind the
+fact's role and value, so a recommendation cited as a minimum is unknown
+(`source_role_mismatch`). Silk minima grade only when profile `applicability`
+cites the source page's supplier base-material, process and copper-layer scope,
+a captured profile `order` selection lies inside it, and the saved board matches
+the order. The order selections must cite one captured order subject on one
+capture and page that records each selection once; spliced or ambiguous orders
+are never merged. The saved stackup must also classify completely, with one
+material on every dielectric sublayer and every material mapped. Otherwise they
+are unknown, with codes `silk_applicability_unsourced`, `silk_order_incoherent`,
+`silk_order_unsourced`, `silk_stackup_unverified`, `silk_material_unverified`,
+`silk_applicability_mismatch` or `silk_order_mismatch`. Sourced `advisories`
+(recommendations, guide values) never grade. The
+[2026-10-22 JLCPCB silkscreen profile](fab-profile.md#dated-jlcpcb-silkscreen-profile)
+binds the capability Legend table and the silkscreen guide.
 The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
 eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance
 from numeric/name captures. Envelope/2 checks the honest physical sum against
@@ -1733,8 +1758,25 @@ ordered decimal ranges and one reference per line, unique across the file.
 Citations quote the exact complete line. One invalid line makes all citations
 from that file unknown. Legacy `exemptions`, including the old canonical
 `is exempt from operating-temperature verification.` form, return unknown
-with a migration message. Native KiCad files, legacy design files, library
-tables and mutable deviations remain refused as citation sources. An optional
+with a migration message. A distinct `delegated_acceptance` record
+(`authority: delegated_engineering`) covers selection exceptions decided by an
+agent under a repository delegation. It binds a recorded JSON decision (`id`,
+source, sha256, line, quote) and an `AGENTS.md` delegation (`kind:
+repository_agents_md`, repository, owner commit, source, sha256, line, quote).
+Authority comes only from grants pinned in agent-ee by owner commit and item
+hash (`OWNER_GRANTS`), and from decisions registered there by member hash with
+their reference, range and exact MPN and manufacturer (`DELEGATED_DECISIONS`).
+A captured grant or decision that differs from the pinned bytes, a whole
+grant or decision file that is not an approved owner snapshot (full-file
+SHA-256), an unregistered decision or a different evaluated part is refused or
+unknown. So the exact item placed in a newly composed, fenced, conditional or
+rescoped context never authorizes.
+Owner, withdrawn or non-autonomous decisions, `authority: owner`, unrecognized
+kinds and self-citing or temperature-file sources are refused. Ratings and thermal
+evidence are judged exactly as for owner acceptance
+([details](assembly-readiness.md#delegated-engineering-acceptance)).
+Native KiCad files, legacy design files, library tables and mutable deviations
+remain refused as citation sources. An optional
 `package_map` compares the DigiKey package with the footprint. A mismatch is a
 `digikey_package_mismatch` defect, and an unmapped name is unknown. DigiKey
 stock never counts as JLCPCB stock. See
@@ -2091,7 +2133,17 @@ to scaffold receipts and project bindings; board-build refreshes it on template
 merge. It lists retained unsourced settings and potential router/zone-filler
 consumers, including generated native constraints. Value-matched owner,
 manufacturer and datasheet settings are excluded. This disclosure changes no
-native value, check registration, schema version or DRC verdict.
+native value, check registration or schema version. AGENTEE-437 requires a
+nonempty citation for those exclusions and discloses shadowed generated forms
+by position without changing name-based owner DRC authority. Before grading,
+`finding_sources` re-derives and compares the bound inventory with the saved
+project and native rules. Missing, stale or edited inventory refuses DRC
+evaluation as unknown, even with no native violations. Valid inventories retain
+their existing verdicts. Under ruling 437a, a bound emission snapshot and its
+hash anchor the original inventory; native-save additions are equivalent only
+when their values match the closed, cited KiCad 10.0.7 table. Removed/changed
+settings and unknown or non-default additions remain stale. Projects without a
+provenance binding remain supported.
 
 The placement comparison retains classified baseline and candidate findings,
 including baseline silk/text, and derives added numeric blockers from those
@@ -2157,7 +2209,9 @@ The placer publication comparison independently refuses newly introduced copper
 the pose or the finding has advisory numeric provenance. Native saved shapes
 bind the affected item to each contacted board/peer area in absolute geometry;
 only its own footprint area uses rigid local geometry to retain an unchanged
-owner baseline through translation and quarter turns. Missing contact geometry,
+owner baseline through translation, quarter turns and a side flip (AGENTEE-426:
+the flipped footprint is compared at its front-side local geometry, pad layers
+restricted to the board's enabled layers). Missing contact geometry,
 unsupported contacted contours or ignored category coverage refuses publication.
 Footprint-only findings retain their prior treatment. The native regression is
 `tests.test_placer_pad_keepout`; the authorized courtyard-only mutant in
@@ -2169,7 +2223,8 @@ See [pad keep-outs](placer.md#peer-courtyards-and-pad-keep-outs-agentee-418).
 area geometry. A deterministic one-million-step computational guard refuses
 publication as typed `keepout_work_limit` unknown coverage; it returns no partial
 witnesses and adds no wall-clock default or physical design threshold. Native
-comparison bytes and verdicts remain unchanged within budget. The exact budget
+absolute witnesses and verdicts remain unchanged within budget; owner-local
+witnesses also canonicalize side flips as described above. The exact budget
 boundary, 1,024-pad/64-area case, default exhaustion and retained failure fields
 are exercised by `tests.test_placer_pad_keepout`.
 
@@ -2289,6 +2344,12 @@ other backslash refuses (tests: `test_scope_refuses_backslashes_even_when_parser
 AGENTEE-434). An optional receipted target set of footprint reference and
 field pairs restricts the repair to those fields; the proof refuses any other
 silk move ([targeted repair](silk-artwork.md#targeted-repair-agentee-434)).
+An exact field-pose request, bound to the source digest and to footprint and
+field uuids, permits only its named source-to-destination poses. An angle may
+change only where the request names it. Pose tokens must be unquoted plain
+decimals, and an explicit `null` request refuses rather than selecting the
+default search. Everything else must stay byte-exact
+([field-pose request](silk-artwork.md#exact-field-pose-request-agentee-434)).
 This adds no check registration or verdict waiver. The initial placer continues
 to refuse routed boards. The native campaign regression proves downstream
 refusal before the repair and passing verification geometry and native fab export after closure.
@@ -2325,6 +2386,17 @@ already refuse a policy-level `constraint_provenance`. Hard block-arrangement
 keep-outs and `no_stacking` shadows carry their rule's citation as
 `arrangement_rule`/`hard`, so a residual capacity proof that rests on one
 reports `defect` instead of `unknown`. No check registration changes.
+
+AGENTEE-439 makes the campaign placement helper accept a captured
+[blocks request](placement-adapter.md#captured-blocks-requests-agentee-439).
+Its candidates must bind the captured netlist bytes, the allocation and the
+exact request policy at binding time. The helper uses the captured netlist only
+when a fresh in-sandbox export differs from it in nothing but the declared
+`/export/design/date` and `/export/design/tool` stamps. Any other difference
+refuses (driver exit 4) and no board is written. The campaign source pin
+(`policy_files`) and the helper snapshot now include `agent_ee/data/*`.
+Run results therefore record the data digests under `data/<name>`. No check
+registration or verdict changes.
 
 ### Saved-placement reserve diagnostics (AGENTEE-380)
 

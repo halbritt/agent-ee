@@ -1,9 +1,0 @@
-* Physical review: original PCB values; unloaded ideal RC
-Rnative IN OUT 100000
-Cnative OUT 0 1e-07
-Vdrive IN 0 PWL(0 0 100u 0 100.001u 1 5.100001m 1)
-.tran 0.1u 5.100001m 0 0.1u
-.meas tran at_1ms FIND v(OUT) AT=1.100001m
-.meas tran at_5ms FIND v(OUT) AT=5.100001m
-.meas tran input_at_1ms FIND v(IN) AT=1.100001m
-.end

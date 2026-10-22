@@ -1,3 +1,0 @@
-R1 pad1 x: 104.0875 == track end 104.0875: True
-R1 pad2 x: 105.9125 C1 pad1 x: 109.05
-vertical track lands on /OUT horizontal track: True
