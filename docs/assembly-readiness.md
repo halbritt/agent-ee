@@ -248,7 +248,7 @@ replaces or edits the owner quote, which stays the only hand-fit authority:
 ```
 
 With `selection`, the identities need not appear in the owner quote. The
-complete chain is mandatory: an affirmative decision, a manifest entry and the
+complete chain is mandatory: a reviewed decision, a manifest entry and the
 part record it names. Instead:
 
 - `category` is a whole token in the owner quote. The owner unit is checked
@@ -257,21 +257,21 @@ part record it names. Instead:
 - `selection.source` is a captured input other than the owner source, the
   deviations file and any KiCad design file. Its bytes equal `sha256` and its
   `quote` is on line `line`;
-- the `quote` must be exactly the one recognised affirmative selection form,
-  the form of the pod's D-PCB-10:
-  `REF is the <description> MPN (LCSC Cnnn; footprint Library:Footprint)`.
-  The description names the category as a whole token. `identities` must be
-  exactly that one MPN/LCSC. No other wording is interpreted; there is no
-  natural-language parser;
-- the quote must open its statement on the cited line: only whitespace, a list
-  bullet or a JSON member label (`"label": "`) may precede it. The label and the
-  rest of the sentence up to its terminator (on the same line) must not contain
-  a negating, revoking, hedging or conditional word (for example *not*,
-  *rejected*, *superseded*, *withdrawn*, *proposed*, *if*, *only*, *unless*).
-  The MPN, LCSC and footprint must each appear exactly once in the whole
-  decision file, inside the quote, so a later statement cannot revise them.
-  A negated, conditional, hedged, ambiguous or unrecognised selection is
-  `unsupported`; it is never read as a selection;
+- the selection must be a **reviewed decision**: its `sha256`, `line`,
+  `quote` and `category` must equal one entry of the closed profile
+  `REVIEWED_HAND_FIT_SELECTIONS` in `src/agent_ee/assembly_readiness.py`
+  exactly. The profile binds the whole captured decision document by its
+  hash, so the decision's context is reviewed with it. Each entry records the
+  decision label, the reference, MPN, LCSC and footprint the reviewed quote
+  states. `identities` must be exactly that one MPN/LCSC. The only entry is the
+  pod's D-PCB-10 (`constraints.json` at fome-mc
+  `7ab81564dd638ed68b664f3036a78187ce5760bd`, line 175, category `AMPSEAL`).
+  No decision wording is interpreted and there is no natural-language parser
+  or word list. Any other decision, and any revision of a reviewed document, is
+  `unsupported`, whatever it says. This includes an added qualifier, an added
+  or appended withdrawal, a renamed label and an unrelated new decision. A new
+  revision is accepted only after it is reviewed and added to the profile. A
+  revision cannot pass by keeping the quoted sentence unchanged;
 - every record is a captured JSON file, pinned by `sha256`, whose object at
   `pointer` (RFC 6901) carries `mpn` and `lcsc` equal to the identity;
 - at least two records are required: a parts-manifest entry (an object with
@@ -293,7 +293,7 @@ Every chain source becomes an immutable input. A malformed or incomplete chain
 is `unsupported`; changed bytes, a missing file or quote, an unresolved
 pointer, another identity or a broken part-record link refuse the run
 (`failed`). Accepted entries also report `policy_selection` (the verified
-chain with the parsed `reference`, `mpn`, `lcsc` and `footprint`,
+chain with the reviewed `decision`, `reference`, `mpn`, `lcsc` and `footprint`,
 `association: category_selection`, the verified `part_record_links` and the
 pinned `footprints`).
 This is an assembly disposition only. A hand-fit approval, with or without a
@@ -308,8 +308,11 @@ complete-parts-manifest `connector/J1` entry carry that identity, and the
 manifest entry links the part record by hash.
 `test_pod_j1_category_selection_chain_on_the_actual_source_bytes`,
 `test_pod_j1_chain_is_mandatory_and_complete` and
-`test_pod_d_pcb_10_is_the_recognised_affirmative_selection` check this against
-the owner's fome-mc store, without copying the files.
+`test_pod_d_pcb_10_is_the_reviewed_selection` check this against the owner's
+fome-mc store, without copying the files. The `test_actual_decision_*` tests
+revise the actual D-PCB-10 document (a qualifier, a withdrawal key, an
+appended withdrawal, a changed label, an added decision), re-pin its hash and
+line, and require `unsupported`.
 
 ## Fabrication exclusion
 

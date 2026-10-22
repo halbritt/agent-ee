@@ -1480,7 +1480,7 @@ def _validate_hand_fit_policy(raw, deviations):
         raise ValueError("duplicate hand_fit_policy identity")
     if selection is not None and [(i["mpn"], i["lcsc"]) for i in identities] != [
             (selection["mpn"], selection["lcsc"])]:
-        raise ValueError("hand_fit_policy.identities must be exactly the one identity the selection sentence names")
+        raise ValueError("hand_fit_policy.identities must be exactly the one identity the reviewed selection names")
     return {key: raw[key] for key in ("source", "sha256", "line", "quote")} | {
         "identities": [dict(i) for i in identities]} | ({"selection": selection} if selection is not None else {})
 
@@ -1502,8 +1502,9 @@ def _validate_hand_fit_selection(raw, policy, deviations):
     """Category-to-identity source chain (AGENTEE-207): the owner quote names a part category, never the MPN.
 
     The owner statement stays the only hand-fit authority and is cited unchanged. The selection is a captured
-    decision line naming both that category and the exact MPN/LCSC; each record is a captured JSON object at a
-    pointer carrying that exact identity. Nothing here is agent testimony: every link is pinned bytes."""
+    decision line naming both that category and the exact MPN/LCSC, and must be a reviewed decision document
+    (REVIEWED_HAND_FIT_SELECTIONS); each record is a captured JSON object at a pointer carrying that exact
+    identity. Nothing here is agent testimony: every link is pinned bytes."""
     from .hardware_interface import exact_keys, text
     from .part_decisions import names_identity
     label = "hand_fit_policy.selection"
@@ -1523,7 +1524,6 @@ def _validate_hand_fit_selection(raw, policy, deviations):
         raise ValueError(f"{label}.quote must be text from one source line")
     if not names_identity(raw["category"], raw["quote"]):
         raise ValueError(f"{label}.quote does not name the category {raw['category']!r}")
-    sentence = _selection_sentence(raw["quote"], raw["category"])
     records = raw["records"]
     if not isinstance(records, list) or not records:
         raise ValueError(f"{label}.records must name at least one captured identity record")
@@ -1536,74 +1536,36 @@ def _validate_hand_fit_selection(raw, policy, deviations):
         raise ValueError(f"duplicate {label} record")
     if len(records) < 2:
         raise ValueError(f"{label}.records must pin both the manifest entry and the part record it names")
-    return {key: raw[key] for key in ("category", "source", "sha256", "line", "quote")} | sentence | {
+    reviewed = _reviewed_selection(raw)
+    return {key: raw[key] for key in ("category", "source", "sha256", "line", "quote")} | reviewed | {
         "records": [dict(r) for r in records]}
 
 
-# The one recognised affirmative selection form (AGENTEE-207), the form of the pod's captured D-PCB-10:
-# "J1 is the 35-position RIGHT-ANGLE TE AMPSEAL 1-776163-1 (LCSC C596198; footprint PodConnector:AMPSEAL_35_1-776163-1)".
-# Anything else -- negated, conditional, hedged or merely different wording -- is unsupported, never inferred.
-SELECTION_SENTENCE_RE = re.compile(
-    r"(?P<reference>[A-Z]+[0-9]+) is the (?P<description>[A-Za-z0-9][A-Za-z0-9 -]*[A-Za-z0-9]) "
-    r"(?P<mpn>[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]) \(LCSC (?P<lcsc>C[0-9]+); "
-    r"footprint (?P<footprint>[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+)\)", re.ASCII)
-UNAFFIRMED_SELECTION_RE = re.compile(
-    r"(?:(?<![A-Za-z0-9_])(?:not|never|no|nor|neither|none|cannot|without|instead|rather|but|however|reject|"
-    r"rejected|rejects|rejection|replace|replaced|replacing|supersede|superseded|withdraw|withdrawn|revoke|revoked|"
-    r"rescind|rescinded|void|former|formerly|previous|previously|alternative|alternate|proposed|tentative|"
-    r"tentatively|pending|maybe|perhaps|possibly|might|may|could|would|tbd|tbc)(?![A-Za-z0-9_])|n't)", re.I)
-SELECTION_PREFIX_RE = re.compile(r'\s*(?:[-*+]\s+)?|\s*"(?P<key>[^"\\]*)"\s*:\s*"')
-SENTENCE_END_RE = re.compile(r'[.!?](?=\s|"|$)')
+# The closed, reviewed profile of hand-fit selection decisions (AGENTEE-207). A selection binds an owner category
+# to an exact identity only when its cited decision is one of these reviewed captured documents, byte for byte
+# (sha256), at the reviewed line, quote and category. The whole document is the reviewed context: any other
+# revision -- an added qualifier, a withdrawal, a renamed label, even an unrelated new decision -- is unsupported
+# until it is reviewed and added here. No decision wording is interpreted, so no wording can authorize a part.
+# Entry: the pod's D-PCB-10 in telemetry-pod/expansion/design-rules/constraints.json, fome-mc commit
+# 7ab81564dd638ed68b664f3036a78187ce5760bd (the same blob as fome-mc main 7c62ef7), reviewed under AGENTEE-207.
+REVIEWED_HAND_FIT_SELECTIONS = (
+    {"decision": "D-PCB-10 J1 orientation (owner ruling 2026-10-21)",
+     "sha256": "e7e095b3ca595fdfb3c73fc22ad87c326fbc1c152523e85f2da4df4d908ea2e4", "line": 175,
+     "quote": "J1 is the 35-position RIGHT-ANGLE TE AMPSEAL 1-776163-1 (LCSC C596198; footprint "
+              "PodConnector:AMPSEAL_35_1-776163-1)",
+     "category": "AMPSEAL", "reference": "J1", "mpn": "1-776163-1", "lcsc": "C596198",
+     "footprint": "PodConnector:AMPSEAL_35_1-776163-1"},
+)
 
 
-def _unaffirmed(text):
-    """The first negating, revoking, hedging or conditional word in text, or None."""
-    match = UNAFFIRMED_SELECTION_RE.search(text) or CONDITIONAL_RE.search(text)
-    return match.group(0) if match else None
-
-
-def _selection_sentence(quote, category):
-    """Parse the cited selection quote; only the recognised affirmative form binds a category to an identity."""
-    from .part_decisions import names_identity
-    label = "hand_fit_policy.selection.quote"
-    match = SELECTION_SENTENCE_RE.fullmatch(quote)
-    if match is None:
-        raise ValueError(f"{label} is not the recognised affirmative selection form 'REF is the <category "
-                         "description> MPN (LCSC Cnnn; footprint Library:Footprint)'; other wording is unsupported")
-    word = _unaffirmed(match["description"])
-    if word is not None:
-        raise ValueError(f"{label} description is not an affirmative selection ({word!r})")
-    if not names_identity(category, match["description"]):
-        raise ValueError(f"{label} does not describe the selected part as the category {category!r}")
-    return {key: match[key] for key in ("reference", "mpn", "lcsc", "footprint")}
-
-
-def _selection_context(content, selection):
-    """The cited quote must be a whole affirmative statement and the decision's only mention of the identity."""
-    lines = content.splitlines()
-    line = lines[selection["line"] - 1]
-    if line.count(selection["quote"]) != 1:
-        raise ValueError("the selection quote must occur exactly once on its line")
-    position = line.index(selection["quote"])
-    prefix = SELECTION_PREFIX_RE.fullmatch(line[:position])
-    if prefix is None:
-        raise ValueError(f"the selection quote does not open its statement (preceded by {line[:position].strip()!r})")
-    word = _unaffirmed(prefix["key"] or "")
-    if word is not None:
-        raise ValueError(f"the selection statement's label is not an affirmative selection ({word!r})")
-    rest = line[position + len(selection["quote"]):]
-    end = SENTENCE_END_RE.search(rest)
-    if end is None:
-        raise ValueError("the selection sentence does not end on its cited line")
-    word = _unaffirmed(rest[:end.start()])
-    if word is not None:
-        raise ValueError(f"the selection sentence continues with a non-affirmative qualifier ({word!r})")
-    for key in ("mpn", "lcsc", "footprint"):
-        pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(selection[key]) + r"(?![A-Za-z0-9_/-])"
-        count = len(re.findall(pattern, content))
-        if count != 1:
-            raise ValueError(f"the selection decision names {selection[key]!r} {count} times; the selection "
-                             "sentence must be its only mention")
+def _reviewed_selection(raw):
+    """The reviewed decision the citation is, exactly; anything else is unsupported, never inferred."""
+    for reviewed in REVIEWED_HAND_FIT_SELECTIONS:
+        if all(raw[key] == reviewed[key] for key in ("sha256", "line", "quote", "category")):
+            return {key: reviewed[key] for key in ("decision", "reference", "mpn", "lcsc", "footprint")}
+    raise ValueError("hand_fit_policy.selection is not a reviewed selection decision: its document sha256, line, "
+                     "quote and category must equal one reviewed entry exactly; any other decision, or any revision "
+                     "of a reviewed one, is unsupported until reviewed")
 
 
 def _json_pointer(doc, pointer):
@@ -1753,7 +1715,7 @@ def _verify_hand_fit_policy(inputs, policy):
 
 
 def _verify_hand_fit_selection(inputs, policy):
-    """The complete chain is mandatory: an affirmative pinned decision, a manifest entry pinning the decision's
+    """The complete chain is mandatory: a reviewed pinned decision, a manifest entry pinning the decision's
     footprint, and the part record that entry names. Every link is pinned bytes carrying the one identity."""
     selection, identities = policy["selection"], policy["identities"]
 
@@ -1773,11 +1735,6 @@ def _verify_hand_fit_selection(inputs, policy):
     if selection["line"] > len(lines) or selection["quote"] not in lines[selection["line"] - 1]:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy selection quote is absent from {rel!r} line {selection['line']}")
-    try:
-        _selection_context(content, selection)
-    except ValueError as exc:
-        raise AssemblyReadinessExecutionError(
-            "unsupported", f"hand_fit_policy selection {rel!r} line {selection['line']}: {exc}") from exc
     wanted = {(i["mpn"], i["lcsc"]) for i in identities}
     hashes, matched, links, footprints = {r["source"]: r["sha256"] for r in selection["records"]}, set(), [], {}
     for record in selection["records"]:

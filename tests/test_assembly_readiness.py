@@ -575,6 +575,9 @@ class AssemblyReadinessTests(unittest.TestCase):
             self.evaluate(netlist, params)
 
     # ------------------------------------------------------------------ category selection chain (AGENTEE-207)
+    # A selection decision binds only when it is a reviewed captured document (REVIEWED_HAND_FIT_SELECTIONS), byte
+    # for byte. The pod's actual D-PCB-10 is the reviewed entry; every other decision text, synthetic or a revision
+    # of the actual bytes, is unsupported.
     CATEGORY_DECISION = ('Owned synthetic owner decision record; not a copy of any project specification.\n'
                          'Decision 8: parts JLCPCB does not assemble (the HDRX header) are hand-fitted after '
                          'delivery.\n')
@@ -583,8 +586,9 @@ class AssemblyReadinessTests(unittest.TestCase):
                  'ee29:R_0603), the selected header."\n }\n}\n')
     SELECTION_QUOTE = 'J1 is the HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603)'
 
-    def chain_case(self, **changes):
-        """Owner quote names only the category; a pinned selection line and records bind the exact identity."""
+    def chain_case(self):
+        """Synthetic: the owner quote names only the category; a pinned, well-formed but unreviewed selection
+        decision and complete records name the exact identity."""
         netlist, params = self.policy_case()
         (self.root / 'decision.md').write_text(self.CATEGORY_DECISION)
         (self.root / 'selection.json').write_text(self.SELECTION)
@@ -597,183 +601,47 @@ class AssemblyReadinessTests(unittest.TestCase):
                          {'source': 'record.json', 'sha256': digest(self.root / 'record.json'), 'pointer': ''},
                          {'source': 'manifest.json', 'sha256': digest(self.root / 'manifest.json'),
                           'pointer': '/parts/1'}]}
-        selection.update(changes)
         params['hand_fit_policy'] = {'source': 'decision.md', 'sha256': digest(self.root / 'decision.md'),
                                      'line': 2, 'quote': self.CATEGORY_QUOTE,
                                      'identities': [{'mpn': '776228-1', 'lcsc': 'C90099'}], 'selection': selection}
         return netlist, params
 
-    def test_category_selection_chain_admits_exact_identity_and_keeps_owner_quote(self):
+    def test_category_selection_refuses_every_unreviewed_decision(self):
+        # H1 (AGENTEE-207 review): no decision wording is interpreted. A complete, well-formed affirmative synthetic
+        # chain is unsupported because its decision document is not reviewed, and so is every rewording of it.
         netlist, params = self.chain_case()
-        report = self.evaluate(netlist, params)
-        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
-        entry, = report['declared_deviation']
-        self.assertEqual((entry['reference'], entry['stock_state']), ('J1', 'owner_hand_fit'))
-        # The owner statement is the citation, unchanged; the selection is a separate pinned link.
-        self.assertEqual(entry['policy_citation'], {'source': 'decision.md', 'line': 2, 'quote': self.CATEGORY_QUOTE,
-                                                    'sha256': digest(self.root / 'decision.md')})
-        self.assertEqual(entry['policy_selection']['association'], 'category_selection')
-        self.assertEqual(entry['policy_selection']['quote'], self.SELECTION_QUOTE)
-        self.assertEqual(report['hand_fit_policy']['selection']['part_record_links'], [{
-            'record': 'manifest.json', 'pointer': '/parts/1', 'part_record': 'record.json',
-            'part_record_sha256': digest(self.root / 'record.json')}])
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'not a reviewed selection decision') as caught:
+            self.evaluate(netlist, params)
+        self.assertEqual(caught.exception.execution, 'unsupported')
         # Without the chain the same category quote cannot name the exact MPN: unchanged refusal.
         del params['hand_fit_policy']['selection']
         with self.assertRaisesRegex(AssemblyReadinessExecutionError, "does not name '776228-1'"):
             self.evaluate(netlist, params)
-
-    def test_category_selection_chain_sources_are_captured_and_immutable(self):
-        from agent_ee.assembly_readiness import capability
-        netlist, params = self.chain_case()
-        files = {'catalog.json': {}, 'deviations.json': {}, 'decision.md': {}, 'selection.json': {}, 'record.json': {}}
-        with self.assertRaisesRegex(ValueError, 'selection sources must be captured inputs'):
-            capability(params, files, self.root)
-        desc = capability(params, {**files, 'manifest.json': {}}, self.root)
-        for rel in ('decision.md', 'selection.json', 'record.json', 'manifest.json'):
-            self.assertIn(rel, desc['immutable_inputs'])
-
-    def test_category_selection_chain_refuses_every_broken_link(self):
-        record, manifest = {'source': 'record.json', 'pointer': ''}, {'source': 'manifest.json', 'pointer': '/parts/1'}
-        copy = {'source': 'copy.json', 'pointer': ''}
-        for name, change, execution, message in (
-                ('selection names another MPN', {'quote': 'J1 is the HDRX 776228-2 (LCSC C90099; footprint ee29:R_0603)'},
-                 'unsupported', "does not name '776228-1'"),
-                ('selection names another LCSC', {'quote': 'J1 is the HDRX 776228-1 (LCSC C90098; footprint ee29:R_0603)'},
-                 'unsupported', "does not name 'C90099'"),
-                ('selection omits MPN', {'quote': 'J1 is the HDRX'}, 'unsupported', 'recognised affirmative selection form'),
-                ('selection omits footprint', {'quote': 'J1 is the HDRX 776228-1 (LCSC C90099)'}, 'unsupported',
-                 'recognised affirmative selection form'),
-                ('category not in owner quote', {'category': 'AMPX'}, 'unsupported', 'does not name the category'),
-                ('selection is the owner statement', {'source': 'decision.md'}, 'unsupported', 'other than the owner'),
-                ('selection is the deviations file', {'source': 'deviations.json'}, 'unsupported', 'mutable deviations'),
-                ('selection quote absent', {'line': 2}, 'failed', 'selection quote is absent'),
-                ('selection hash', {'sha256': '0' * 64}, 'failed', 'selection source .* sha256 mismatch'),
-                ('no records', {'records': []}, 'unsupported', 'at least one captured identity record'),
-                ('manifest omitted', {'records': [record]}, 'unsupported', 'must pin both the manifest entry'),
-                ('part record omitted', {'records': [manifest]}, 'unsupported', 'must pin both the manifest entry'),
-                ('no manifest entry', {'records': [record, copy]}, 'unsupported', 'no manifest entry'),
-                ('unlinked extra record', {'records': [record, manifest, copy]}, 'unsupported',
-                 'neither a manifest entry nor the part record'),
-                ('record hash', {'records': [{**record, 'sha256': '0' * 64}, manifest]}, 'failed',
-                 'record .* sha256 mismatch'),
-                ('record pointer', {'records': [record, {**manifest, 'pointer': '/parts/7'}]}, 'failed',
-                 'does not resolve'),
-                ('record is another part', {'records': [record, {**manifest, 'pointer': '/parts/0'}]},
-                 'failed', 'not a policy identity'),
-                ('manifest without its part record', {'records': [manifest, copy]},
-                 'failed', 'not a pinned record of the chain'),
-                ('extra key', {'owner': 'agent'}, 'unsupported', 'expected fields')):
-            with self.subTest(name):
-                netlist, params = self.chain_case()
-                write_json(self.root / 'copy.json', {'mpn': '776228-1', 'lcsc': 'C90099', 'note': 'copy'})
-                selection = params['hand_fit_policy']['selection']
-                if 'records' in change:
-                    change = {'records': [{'sha256': digest(self.root / r['source']), **r} for r in change['records']]}
-                selection.update(change)
-                with self.assertRaisesRegex(AssemblyReadinessExecutionError, message) as caught:
-                    self.evaluate(netlist, params)
-                self.assertEqual(caught.exception.execution, execution)
-        # A changed manifest entry (its part-record hash no longer the pinned record) refuses.
-        netlist, params = self.chain_case()
-        doc = read_json(self.root / 'manifest.json')
-        doc['parts'][1]['selection']['part_record_sha256'] = '1' * 64
-        write_json(self.root / 'manifest.json', doc)
-        params['hand_fit_policy']['selection']['records'][1]['sha256'] = digest(self.root / 'manifest.json')
-        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'not a pinned record of the chain'):
-            self.evaluate(netlist, params)
-
-    def rechain(self, params, *, selection=None, quote=None, record=None, entry=None):
-        """Rewrite chain sources of chain_case and re-pin every hash, so only the stated content differs."""
-        chain = params['hand_fit_policy']['selection']
-        if selection is not None:
-            (self.root / 'selection.json').write_text(selection)
-            chain.update(sha256=digest(self.root / 'selection.json'), line=1)
-        if quote is not None:
-            chain['quote'] = quote
-        if record is not None:
-            write_json(self.root / 'record.json', record)
-        doc = read_json(self.root / 'manifest.json')
-        doc['parts'][1] = entry(doc['parts'][1]) if entry is not None else doc['parts'][1]
-        doc['parts'][1]['selection']['part_record_sha256'] = digest(self.root / 'record.json')
-        write_json(self.root / 'manifest.json', doc)
-        for item in chain['records']:
-            item['sha256'] = digest(self.root / item['source'])
-        params['hand_fit_policy']['identities'] = [{'mpn': '776228-1', 'lcsc': 'C90099'}]
-
-    def test_category_selection_chain_binds_the_pinned_footprint_to_the_design(self):
-        # The decision, the manifest entry and any record pinning a footprint (CAD provenance) must agree, and
-        # the placed part must carry it: an absent or disagreeing CAD link refuses, a different placement is a defect.
-        netlist, params = self.chain_case()
-        self.rechain(params, record={'mpn': '776228-1', 'lcsc': 'C90099', 'footprint': 'ee29:R_0603'})
-        report = self.evaluate(netlist, params)
-        self.assertEqual(report['outcome'], 'pass', report)
-        self.assertEqual(report['declared_deviation'][0]['policy_selection']['footprints'],
-                         [{'mpn': '776228-1', 'lcsc': 'C90099', 'footprint': 'ee29:R_0603'}])
-        self.assertEqual(report['declared_deviation'][0]['policy_selection']['reference'], 'J1')
-        hdrx = 'J1 is the HDRX 776228-1 (LCSC C90099; footprint Conn:HDRX_35)'
-        for name, change, execution, message in (
-                ('records pin conflicting footprints',
-                 {'record': {'mpn': '776228-1', 'lcsc': 'C90099', 'footprint': 'Conn:HDRX_35'}},
-                 'failed', 'conflicting footprints'),
-                ('manifest pins no footprint', {'entry': lambda e: {k: v for k, v in e.items() if k != 'footprint'}},
-                 'unsupported', 'pins no footprint'),
-                ('manifest disagrees with the decision', {'entry': lambda e: e | {'footprint': 'Conn:HDRX_35'}},
-                 'unsupported', "decision pins footprint 'ee29:R_0603'")):
-            with self.subTest(name):
-                netlist, params = self.chain_case()
-                self.rechain(params, **change)
-                with self.assertRaisesRegex(AssemblyReadinessExecutionError, message) as caught:
-                    self.evaluate(netlist, params)
-                self.assertEqual(caught.exception.execution, execution)
-        # A complete chain pinning Conn:HDRX_35 while J1 is placed with ee29:R_0603 is a design defect.
-        netlist, params = self.chain_case()
-        self.rechain(params, selection=f'{hdrx}.\n', quote=hdrx, entry=lambda e: e | {'footprint': 'Conn:HDRX_35'})
-        report = self.evaluate(netlist, params)
-        self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []), report)
-        self.assertIn("differs from the hand-fit selection chain's pinned footprint", report['findings'][0]['message'])
-        # The decision selects a different reference than the placed one: a design defect too.
-        netlist, params = self.chain_case()
-        j2 = 'J2 is the HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603)'
-        self.rechain(params, selection=f'{j2}.\n', quote=j2)
-        report = self.evaluate(netlist, params)
-        self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []), report)
-        self.assertIn("differ from the hand-fit selection decision's 'J2'", report['findings'][0]['message'])
-
-    def test_category_selection_refuses_a_non_affirmative_decision(self):
-        # H2: hash-pinned bytes that reject, condition, hedge or merely reword the selection never associate the
-        # category with the identity; only the recognised affirmative form does, and every refusal is unsupported.
         quote = self.SELECTION_QUOTE
         for name, text, cited in (
                 ('reviewer negated probe', 'J1 is NOT the HDRX 776228-1 (LCSC C90099); this part is rejected.',
                  'J1 is NOT the HDRX 776228-1 (LCSC C90099); this part is rejected.'),
                 ('negated canonical quote', 'J1 is not the HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603).',
                  'J1 is not the HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603)'),
-                ('negated description', 'J1 is the never-fitted HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603).',
-                 'J1 is the never-fitted HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603)'),
                 ('hedged description', 'J1 is the proposed HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603).',
                  'J1 is the proposed HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603)'),
-                ('negating lead-in', f'It is false that {quote}.', quote),
                 ('rejected afterwards', f'{quote}, which is rejected.', quote),
                 ('conditional afterwards', f'{quote} if stock allows.', quote),
-                ('superseded afterwards', f'{quote}, now superseded by C90100.', quote),
+                ('effective after approval', f'{quote}, effective after owner approval.', quote),
+                ('illustrative', f'{quote}, as an illustrative example.', quote),
                 ('revoked later in the statement', f'{quote}. 776228-1 is withdrawn.', quote),
-                ('contradicted on another line', f'{quote}.\nC90099 must not be used.', quote),
                 ('rejecting label', f'{{"D-SYN-1 rejected header": "{quote}."}}', quote),
-                ('conditional label', f'{{"D-SYN-1 if unstocked": "{quote}."}}', quote),
-                ('unterminated sentence', f'{quote}, and', quote),
                 ('unrecognised wording', 'J1 uses the HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603).',
                  'J1 uses the HDRX 776228-1 (LCSC C90099; footprint ee29:R_0603)'),
-                ('ambiguous repetition', f'{quote}. {quote}.', quote)):
+                ('plain affirmative', f'{quote}.', quote)):
             with self.subTest(name):
                 netlist, params = self.chain_case()
-                self.rechain(params, selection=text + '\n', quote=cited)
+                (self.root / 'selection.json').write_text(text + '\n')
+                params['hand_fit_policy']['selection'].update(
+                    sha256=digest(self.root / 'selection.json'), line=1, quote=cited)
                 with self.assertRaises(AssemblyReadinessExecutionError) as caught:
                     self.evaluate(netlist, params)
                 self.assertEqual(caught.exception.execution, 'unsupported', str(caught.exception))
-        # The exact affirmative statement, alone, passes.
-        netlist, params = self.chain_case()
-        self.rechain(params, selection=f'{quote}, the selected header.\n', quote=quote)
-        self.assertEqual(self.evaluate(netlist, params)['outcome'], 'pass')
 
     # The pod's actual J1 chain, read from the owner's fome-mc store at POD_COMMIT (the same four blobs as fome-mc
     # main 7c62ef7) and checked against pinned hashes; nothing is copied into this repository.
@@ -791,7 +659,7 @@ class AssemblyReadinessTests(unittest.TestCase):
                          'PodConnector:AMPSEAL_35_1-776163-1)')
     J1_FOOTPRINT = 'PodConnector:AMPSEAL_35_1-776163-1'
 
-    def j1_chain_case(self, *, footprint=J1_FOOTPRINT):
+    def j1_chain_case(self, *, footprint=J1_FOOTPRINT, reference='J1'):
         repository = Path(os.environ.get("AGENT_EE_FOME_MC_CHECKOUT", Path.home() / "git/fome-mc"))
         fome_mc_store(repository, self.POD_COMMIT)
         for rel, expected in self.J1_CHAIN.items():
@@ -813,7 +681,7 @@ class AssemblyReadinessTests(unittest.TestCase):
                                           {'lcsc': 'C596198', 'mpn': '1-776163-1', 'stock': 0, 'is_basic': False,
                                            'last_seen': '2026-10-15'}])
         netlist = self.export('j1.kicad_sch', schematic('j1', [part('R1'),
-            part('J1', 'J', lcsc='C596198', footprint=footprint, part_number=('Partnumber', '1-776163-1'),
+            part(reference, 'J', lcsc='C596198', footprint=footprint, part_number=('Partnumber', '1-776163-1'),
                  rating=None, extra={'JLCPCB_Assembly': 'not_assembled'})]))
         params['hand_fit_policy'] = {
             'source': requirements, 'sha256': self.J1_CHAIN[requirements], 'line': 139, 'quote': self.J1_AC5_QUOTE,
@@ -823,6 +691,117 @@ class AssemblyReadinessTests(unittest.TestCase):
                     {'source': record, 'sha256': self.J1_CHAIN[record], 'pointer': ''},
                     {'source': manifest, 'sha256': self.J1_CHAIN[manifest], 'pointer': f'/parts/{index}'}]}}
         return netlist, params
+
+    def rewrite_j1_record(self, params, rel, change):
+        """Rewrite one actual J1 chain record through change(doc) and re-pin every hash link to it, so only the
+        stated content differs; the reviewed D-PCB-10 document is untouched."""
+        record = list(self.J1_CHAIN)[2]
+        doc = read_json(self.root / rel)
+        write_json(self.root / rel, change(doc) or doc)
+        manifest = list(self.J1_CHAIN)[3]
+        if rel == record:
+            doc = read_json(self.root / manifest)
+            for entry in doc['parts']:
+                if entry['id'] == 'connector/J1':
+                    entry['selection']['part_record_sha256'] = digest(self.root / record)
+            write_json(self.root / manifest, doc)
+        for item in params['hand_fit_policy']['selection']['records']:
+            item['sha256'] = digest(self.root / item['source'])
+
+    def test_category_selection_chain_sources_are_captured_and_immutable(self):
+        from agent_ee.assembly_readiness import capability
+        netlist, params = self.j1_chain_case()
+        requirements, constraints, record, manifest = self.J1_CHAIN
+        files = {'catalog.json': {}, 'deviations.json': {}, requirements: {}, constraints: {}, record: {}}
+        with self.assertRaisesRegex(ValueError, 'selection sources must be captured inputs'):
+            capability(params, files, self.root)
+        desc = capability(params, {**files, manifest: {}}, self.root)
+        for rel in self.J1_CHAIN:
+            self.assertIn(rel, desc['immutable_inputs'])
+
+    def test_category_selection_chain_refuses_every_broken_link(self):
+        requirements, constraints, record_rel, manifest_rel = self.J1_CHAIN
+        netlist, params = self.j1_chain_case()
+        record, manifest = params['hand_fit_policy']['selection']['records']
+        record, manifest = {k: record[k] for k in ('source', 'pointer')}, {k: manifest[k] for k in ('source', 'pointer')}
+        copy_ = {'source': 'copy.json', 'pointer': ''}
+        other = '/parts/0' if manifest['pointer'] != '/parts/0' else '/parts/1'
+        for name, change, execution, message in (
+                ('selection names another MPN', {'quote': self.J1_D_PCB_10_QUOTE.replace('1-776163-1 (', '776228-1 (')},
+                 'unsupported', 'not a reviewed selection decision'),
+                ('selection names another LCSC', {'quote': self.J1_D_PCB_10_QUOTE.replace('C596198', 'C596199')},
+                 'unsupported', 'not a reviewed selection decision'),
+                ('selection omits footprint', {'quote': self.J1_D_PCB_10_QUOTE.split(';')[0]}, 'unsupported',
+                 'not a reviewed selection decision'),
+                ('category not in owner quote', {'category': 'AMPX'}, 'unsupported', 'does not name the category'),
+                ('category other than the reviewed one', {'category': 'the'}, 'unsupported',
+                 'not a reviewed selection decision'),
+                ('selection is the owner statement', {'source': requirements}, 'unsupported', 'other than the owner'),
+                ('selection is the deviations file', {'source': 'deviations.json'}, 'unsupported', 'mutable deviations'),
+                ('selection cites another line', {'line': 2}, 'unsupported', 'not a reviewed selection decision'),
+                ('selection hash', {'sha256': '0' * 64}, 'unsupported', 'not a reviewed selection decision'),
+                ('no records', {'records': []}, 'unsupported', 'at least one captured identity record'),
+                ('manifest omitted', {'records': [record]}, 'unsupported', 'must pin both the manifest entry'),
+                ('part record omitted', {'records': [manifest]}, 'unsupported', 'must pin both the manifest entry'),
+                ('no manifest entry', {'records': [record, copy_]}, 'unsupported', 'no manifest entry'),
+                ('unlinked extra record', {'records': [record, manifest, copy_]}, 'unsupported',
+                 'neither a manifest entry nor the part record'),
+                ('record hash', {'records': [{**record, 'sha256': '0' * 64}, manifest]}, 'failed',
+                 'record .* sha256 mismatch'),
+                ('record pointer', {'records': [record, {**manifest, 'pointer': '/parts/9999'}]}, 'failed',
+                 'does not resolve'),
+                ('record is another part', {'records': [record, {**manifest, 'pointer': other}]},
+                 'failed', 'not a policy identity'),
+                ('manifest without its part record', {'records': [manifest, copy_]},
+                 'failed', 'not a pinned record of the chain'),
+                ('extra key', {'owner': 'agent'}, 'unsupported', 'expected fields')):
+            with self.subTest(name):
+                netlist, params = self.j1_chain_case()
+                write_json(self.root / 'copy.json', {'mpn': '1-776163-1', 'lcsc': 'C596198', 'note': 'copy'})
+                selection = params['hand_fit_policy']['selection']
+                if 'records' in change:
+                    change = {'records': [{'sha256': digest(self.root / r['source']), **r} for r in change['records']]}
+                selection.update(change)
+                with self.assertRaisesRegex(AssemblyReadinessExecutionError, message) as caught:
+                    self.evaluate(netlist, params)
+                self.assertEqual(caught.exception.execution, execution)
+        # A changed manifest entry (its part-record hash no longer the pinned record) refuses.
+        netlist, params = self.j1_chain_case()
+        self.rewrite_j1_record(params, manifest_rel, lambda doc: [
+            e['selection'].update(part_record_sha256='1' * 64) for e in doc['parts'] if e['id'] == 'connector/J1'] and None)
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'not a pinned record of the chain'):
+            self.evaluate(netlist, params)
+
+    def test_category_selection_chain_binds_the_pinned_footprint_to_the_design(self):
+        # The reviewed decision, the manifest entry and any record pinning a footprint (CAD provenance) must agree,
+        # and the placed part must carry it: an absent or disagreeing CAD link refuses, a different placement or
+        # reference is a defect.
+        requirements, constraints, record, manifest = self.J1_CHAIN
+
+        def j1_entry(change):
+            return lambda doc: [change(e) for e in doc['parts'] if e['id'] == 'connector/J1'] and None
+        for name, rel, change, execution, message in (
+                ('records pin conflicting footprints', record, lambda doc: doc.update(footprint='Conn:HDRX_35'),
+                 'failed', 'conflicting footprints'),
+                ('manifest pins no footprint', manifest, j1_entry(lambda e: e.pop('footprint')),
+                 'unsupported', 'pins no footprint'),
+                ('manifest disagrees with the decision', manifest, j1_entry(lambda e: e.update(footprint='Conn:HDRX_35')),
+                 'unsupported', f"decision pins footprint '{self.J1_FOOTPRINT}'")):
+            with self.subTest(name):
+                netlist, params = self.j1_chain_case()
+                self.rewrite_j1_record(params, rel, change)
+                with self.assertRaisesRegex(AssemblyReadinessExecutionError, message) as caught:
+                    self.evaluate(netlist, params)
+                self.assertEqual(caught.exception.execution, execution)
+        # A record agreeing on the footprint keeps the pass.
+        netlist, params = self.j1_chain_case()
+        self.rewrite_j1_record(params, record, lambda doc: doc.update(footprint=self.J1_FOOTPRINT))
+        self.assertEqual(self.evaluate(netlist, params)['outcome'], 'pass')
+        # The reviewed decision selects J1; the identity placed as J2 is a design defect.
+        netlist, params = self.j1_chain_case(reference='J2')
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []), report)
+        self.assertIn("differ from the hand-fit selection decision's 'J1'", report['findings'][0]['message'])
 
     def test_pod_j1_category_selection_chain_on_the_actual_source_bytes(self):
         # AC5 names "the AMPSEAL header", never 1-776163-1; D-PCB-10, the C596198 part record and the
@@ -895,28 +874,97 @@ class AssemblyReadinessTests(unittest.TestCase):
                     self.evaluate(netlist, params)
                 self.assertEqual(caught.exception.execution, 'failed')
 
-    def test_pod_d_pcb_10_is_the_recognised_affirmative_selection(self):
-        # The actual captured D-PCB-10 bytes are the recognised form; their parsed identity and CAD are reported.
+    def test_pod_d_pcb_10_is_the_reviewed_selection(self):
+        # The reviewed profile entry is exactly the actual captured D-PCB-10: its pinned document hash, line and
+        # quote; the identity and CAD it records are the ones the quote states, and they are reported.
+        from agent_ee.assembly_readiness import REVIEWED_HAND_FIT_SELECTIONS
         netlist, params = self.j1_chain_case()
+        constraints = list(self.J1_CHAIN)[1]
+        entry, = REVIEWED_HAND_FIT_SELECTIONS
+        cited = params['hand_fit_policy']['selection']
+        self.assertEqual((entry['sha256'], entry['line'], entry['quote'], entry['category']),
+                         (self.J1_CHAIN[constraints], cited['line'], self.J1_D_PCB_10_QUOTE, 'AMPSEAL'))
+        line = (self.root / constraints).read_text().split('\n')[entry['line'] - 1]
+        self.assertTrue(line.startswith(f'    "{entry["decision"]}": "{entry["quote"]},'), line)
+        self.assertEqual(entry['quote'], f"{entry['reference']} is the 35-position RIGHT-ANGLE TE {entry['category']} "
+                                         f"{entry['mpn']} (LCSC {entry['lcsc']}; footprint {entry['footprint']})")
         selection = self.evaluate(netlist, params)['declared_deviation'][0]['policy_selection']
-        self.assertEqual({k: selection[k] for k in ('reference', 'mpn', 'lcsc', 'footprint', 'quote')},
-                         {'reference': 'J1', 'mpn': '1-776163-1', 'lcsc': 'C596198', 'footprint': self.J1_FOOTPRINT,
+        self.assertEqual({k: selection[k] for k in ('decision', 'reference', 'mpn', 'lcsc', 'footprint', 'quote')},
+                         {'decision': 'D-PCB-10 J1 orientation (owner ruling 2026-10-21)', 'reference': 'J1',
+                          'mpn': '1-776163-1', 'lcsc': 'C596198', 'footprint': self.J1_FOOTPRINT,
                           'quote': self.J1_D_PCB_10_QUOTE})
-        # The same pinned bytes cited with a truncated quote (no footprint) are not the recognised form.
+        # The same pinned bytes cited with a truncated quote (no footprint) are not the reviewed citation.
         params['hand_fit_policy']['selection']['quote'] = self.J1_D_PCB_10_QUOTE.split(';')[0]
-        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'recognised affirmative selection form') as caught:
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'not a reviewed selection decision') as caught:
             self.evaluate(netlist, params)
         self.assertEqual(caught.exception.execution, 'unsupported')
 
+    def revise_d_pcb_10(self, params, revise):
+        """Rewrite the actual captured constraints.json through revise(text) and re-pin hash and line, so the
+        cited D-PCB-10 quote is unchanged and only the reviewed document's content differs."""
+        constraints = list(self.J1_CHAIN)[1]
+        path = self.root / constraints
+        before = path.read_text()
+        path.write_text(revise(before))
+        self.assertNotEqual(path.read_text(), before)
+        json.loads(path.read_text())
+        chain = params['hand_fit_policy']['selection']
+        line = next(n for n, text in enumerate(path.read_text().split('\n'), 1) if self.J1_D_PCB_10_QUOTE in text)
+        chain.update(sha256=digest(path), line=line)
+
+    def assert_revised_d_pcb_10_refuses(self, revise):
+        netlist, params = self.j1_chain_case()
+        self.revise_d_pcb_10(params, revise)
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'not a reviewed selection decision') as caught:
+            self.evaluate(netlist, params)
+        self.assertEqual(caught.exception.execution, 'unsupported', str(caught.exception))
+
+    def test_actual_decision_unrecognised_qualifiers_refuse(self):
+        # H1 (review of 4f79989d): correctly hashed revisions of the actual D-PCB-10 that condition or illustrate
+        # the selection are unsupported, whatever the wording.
+        for suffix in (', effective after owner approval.', ', dependent on owner approval.',
+                       ', as an illustrative example.', ', contingent upon owner approval.',
+                       ', subject to owner approval.'):
+            with self.subTest(suffix=suffix):
+                self.assert_revised_d_pcb_10_refuses(lambda text: re.sub(
+                    r'("D-PCB-10 J1 orientation[^"]*": ")[^"]*"',
+                    lambda m: m.group(1) + self.J1_D_PCB_10_QUOTE + suffix + '"', text))
+
+    def test_actual_decision_revoked_by_key_refuses(self):
+        # H2: the unchanged D-PCB-10 value with a withdrawal added to the same decisions object.
+        self.assert_revised_d_pcb_10_refuses(lambda text: text.replace(
+            '    "D-PCB-10 J1 orientation', '    "D-PCB-10 status": "D-PCB-10 is withdrawn.",\n    "D-PCB-10 J1 orientation'))
+
+    def test_actual_decision_appended_withdrawal_refuses(self):
+        # H2: a withdrawal appended to the decision that does not repeat the MPN, LCSC or footprint.
+        self.assert_revised_d_pcb_10_refuses(lambda text: text.replace(
+            'Not reversible without an owner change."', 'Not reversible without an owner change. D-PCB-10 is withdrawn."'))
+
+    def test_actual_decision_changed_context_refuses(self):
+        # Any other revision of the reviewed document is unsupported until reviewed: a negating label, a rejection
+        # recorded in another decision, or even an unrelated added decision.
+        for name, revise in (
+                ('rejecting label', lambda text: text.replace(
+                    '"D-PCB-10 J1 orientation (owner ruling 2026-10-21)"', '"D-PCB-10 J1 orientation (REJECTED 2026-10-22)"')),
+                ('rejection elsewhere', lambda text: text.replace(
+                    '    "D-PCB-13 ', '    "D-PCB-17": "The D-PCB-10 selection is rejected by the owner.",\n    "D-PCB-13 ')),
+                ('unrelated added decision', lambda text: text.replace(
+                    '    "D-PCB-13 ', '    "D-PCB-17": "Silkscreen font height 1.0 mm.",\n    "D-PCB-13 '))):
+            with self.subTest(name):
+                self.assert_revised_d_pcb_10_refuses(revise)
+
     def test_category_selection_chain_still_requires_an_unconditional_owner_category(self):
+        # The owner statement is not part of the reviewed selection profile; its own conditional/negation checks
+        # still apply with the reviewed D-PCB-10.
         for text, message in (
-                ('Parts JLCPCB does not assemble (the 776228-1 header, and the HDRX header if unstocked) are '
+                ('Parts JLCPCB does not assemble (the 776228-1 header, and the AMPSEAL header if unstocked) are '
                  'hand-fitted after delivery.', 'named only conditionally'),
-                ('Parts JLCPCB does not assemble (the HDRX header) are not hand-fitted.', 'affirmatively declare')):
+                ('Parts JLCPCB does not assemble (the AMPSEAL header) are not hand-fitted.', 'affirmatively declare')):
             with self.subTest(text=text):
-                netlist, params = self.chain_case()
+                netlist, params = self.j1_chain_case()
                 (self.root / 'decision.md').write_text(text + '\n')
-                params['hand_fit_policy'].update(sha256=digest(self.root / 'decision.md'), line=1, quote='HDRX')
+                params['hand_fit_policy'].update(source='decision.md', sha256=digest(self.root / 'decision.md'),
+                                                 line=1, quote='AMPSEAL')
                 with self.assertRaisesRegex(AssemblyReadinessExecutionError, message):
                     self.evaluate(netlist, params)
 
