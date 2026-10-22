@@ -3,8 +3,10 @@
 Each case names the review finding it closes. A label, a file's presence or a citation
 whose captured text does not state the governed value never grants hard authority.
 """
+import copy
 import hashlib
 import tempfile
+from fractions import Fraction
 import unittest
 from pathlib import Path
 
@@ -210,6 +212,139 @@ class GeneratedRulePayloadTest(ProducerFixture, unittest.TestCase):
                     self.assertEqual(source['unsourced_reason'], 'cited quote does not state the declared value')
                     self.assertTrue(rows)
                     self.assertTrue(all(r['unsourced_reason'] == source['unsourced_reason'] for r in rows))
+
+
+
+class TypedLiteralTest(unittest.TestCase):
+    """Round-2 H1: a quoted literal is read whole; a suffix or a dropped sign never qualifies."""
+
+    def setting(self, quote, value_mm=3):
+        path = 'review/signed.txt'
+        document = {'schema': SCHEMA, 'source_records': {path: quote}, 'board_setup_rules': {'min_clearance': {
+            'value_mm': value_mm, 'class': 'datasheet', 'basis': 'review numeric token',
+            'citation': citation('datasheet', quote, path)}}}
+        project, record = import_constraints({}, json_bytes(document), 'review/limits.json', 'probe')
+        return record['settings'][0], geometry_defaults(project, record)
+
+    def locality(self, quote, nm):
+        path = 'review/signed.txt'
+        pair = {'max_distance_nm': nm, 'provenance': {'class': 'datasheet', 'basis': 'review numeric token',
+                'derivation': {'kind': 'numeric', 'value_nm': nm, 'source': citation('datasheet', quote, path)}}}
+        return locality_provenance.classify(pair, {path: quote})
+
+    def test_exponent_and_signed_literals_never_qualify_their_suffix(self):
+        for quote in ('Captured length: 1e-3 mm', 'Captured length: -3 mm', 'Captured length: \u22123 mm',
+                      'Captured length: x-3 mm', 'Captured length: 1-3 mm', 'Captured length: 13 mm',
+                      'Captured length: 3.3 mm', 'Captured length: 1/3 mm'):
+            with self.subTest(quote=quote):
+                setting, rows = self.setting(quote)
+                self.assertEqual((setting['enforcement'], setting['unsourced_reason']),
+                                 ('advisory', 'cited quote does not state the declared value'))
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(self.locality(quote, 3000000)['enforcement'], 'advisory')
+        for quote in ('Captured length: 3 mm', 'Captured length: 3mm', 'Captured length: +3 mm'):
+            with self.subTest(control=quote):
+                setting, rows = self.setting(quote)
+                self.assertEqual((setting['enforcement'], rows), ('hard', []))
+                self.assertEqual(self.locality(quote, 3000000)['enforcement'], 'hard')
+        # The complete exponent literal is read exactly: 1e-3 mm is 0.001 mm.
+        setting, rows = self.setting('Captured length: 1e-3 mm', 0.001)
+        self.assertEqual((setting['enforcement'], rows), ('hard', []))
+
+
+class CountFactTest(unittest.TestCase):
+    """Round-2 H2: a dimensionless count qualifies only against an explicit count of its kind."""
+
+    RAW = b'(version 1) (rule "spoke rule" (constraint thermal_spoke_count (min 3)))'
+
+    def sources(self, root, quote=None):
+        board = Path(root) / 'candidate.kicad_pcb'
+        board.with_suffix('.kicad_dru').write_bytes(self.RAW)
+        project, record = {}, {}
+        if quote is not None:
+            path = 'review/count.txt'
+            spec = {'rule': 'spoke rule', 'class': 'owner', 'basis': 'count probe',
+                    'citation': citation('owner', quote, path)}
+            document = {'schema': SCHEMA, 'source_records': {path: quote}, 'board_setup_rules': {},
+                        'custom_rules': {'candidate.kicad_dru': [spec]}}
+            project, record = import_constraints({}, json_bytes(document), 'review/limits.json', 'probe')
+            bind_project(project, record, self.RAW)
+        write_json(board.with_suffix('.kicad_pro'), project)
+        sources = finding_sources(board)
+        hard = [s for s in sources['settings'] if s['setting'].startswith('native_rules.')
+                and s['enforcement'] == 'hard']
+        return sources['rules']['spoke rule'], hard, geometry_defaults(project, record, self.RAW)
+
+    def test_bound_count_rule_needs_an_explicit_spoke_count(self):
+        for quote in ('Captured board thickness: 3 mm. This record states no thermal spoke count.',
+                      'Captured board thickness: 3mm.', 'Captured value: 3', 'Captured: 3 vias',
+                      'Captured: 4 thermal spokes', 'Captured: 3.0 thermal spokes'):
+            with self.subTest(quote=quote), tempfile.TemporaryDirectory() as root:
+                rule, hard, rows = self.sources(root, quote)
+                self.assertIsNone(rule['citation'])
+                self.assertEqual(rule['unsourced_reason'], 'cited quote does not state the declared value')
+                self.assertEqual(hard, [])
+                self.assertEqual([r['unsourced_reason'] for r in rows], [rule['unsourced_reason']])
+        for quote in ('Captured: 3 thermal spokes', 'Captured: spoke count: 3', 'Captured: 3 spokes'):
+            with self.subTest(control=quote), tempfile.TemporaryDirectory() as root:
+                rule, hard, rows = self.sources(root, quote)
+                self.assertIsNotNone(rule['citation'])
+                self.assertEqual([(s['value'], s['class']) for s in hard], [(3, 'owner')])
+                self.assertEqual(rows, [])
+        self.assertFalse(source_authority.states('3 mm', [], [('thermal_spoke_count', 3)]))
+        self.assertFalse(source_authority.states('3mm', [], [('thermal_spoke_count', 3)]))
+        self.assertFalse(source_authority.states('3 spokes', [3], []))
+
+    def test_standalone_count_rule_is_advisory_and_disclosed(self):
+        with tempfile.TemporaryDirectory() as root:
+            rule, hard, rows = self.sources(root)
+            self.assertEqual((rule['class'], rule['citation']), ('default', None))
+            self.assertEqual(rule['unsourced_reason'],
+                             'captured native rule has no owner decision or provenance declaration')
+            self.assertEqual(hard, [])
+            self.assertEqual([r['unsourced_reason'] for r in rows], [rule['unsourced_reason']])
+
+
+class LocalityDatasheetModelTest(unittest.TestCase):
+    """Round-2 H3: locality datasheet authority goes through the common exact-unit model."""
+
+    def pair(self, quote, nm, layout=None):
+        path = 'review/source.txt'
+        derivation = ({'kind': 'numeric', 'value_nm': nm} if layout is None else
+                      {'kind': 'layout', **layout, 'scale_reference': 'agent selected scale'})
+        derivation['source'] = citation('datasheet', quote, path)
+        return {'max_distance_nm': nm, 'provenance': {'class': 'datasheet', 'basis': 'review', 'derivation': derivation}}, {path: quote}
+
+    def test_layout_needs_its_distance_stated_by_the_captured_source(self):
+        quote = 'Captured diagram: illustrative only; no numeric distance or scale requirement.'
+        layout = {'distance_units': 10, 'scale_nm_per_unit': 100000}
+        pair, records = self.pair(quote, 1000000, layout)
+        self.assertEqual(locality_provenance.classify(pair, records),
+                         {'class': 'datasheet', 'enforcement': 'advisory',
+                          'reason': 'layout derivation scale is not validated by the captured source'})
+        self.assertEqual(source_authority.cite('datasheet', pair['provenance']['derivation']['source'],
+                                               records, [1])['enforcement'], 'advisory')
+        facts, doc = board(), declaration(limit=1000000)
+        doc['source_records'] = records
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role]['provenance'] = copy.deepcopy(pair['provenance'])
+        graded = locality.grade(facts, doc)
+        self.assertEqual((graded['status'], graded['defects']), ('info', []))
+        # A captured source that states the derived distance qualifies the same layout.
+        pair, records = self.pair('Captured reference layout: 1 mm', 1000000, layout)
+        self.assertEqual(locality_provenance.classify(pair, records)['enforcement'], 'hard')
+
+    def test_every_supported_unit_agrees_across_consumers(self):
+        for quote, nm, mm in (('Captured: 1 mm', 1000000, 1), ('Captured: 1000 um', 1000000, 1),
+                              ('Captured: 1000 \u00b5m', 1000000, 1), ('Captured: 1000000 nm', 1000000, 1),
+                              ('Captured: 10 mil', 254000, Fraction(254, 1000)), ('Captured: 1e3 um', 1000000, 1)):
+            for declared_nm, expected in ((nm, 'hard'), (nm + 1, 'advisory')):
+                with self.subTest(quote=quote, declared_nm=declared_nm):
+                    pair, records = self.pair(quote, declared_nm)
+                    local = locality_provenance.classify(pair, records)
+                    common = source_authority.cite('datasheet', pair['provenance']['derivation']['source'],
+                                                   records, [Fraction(declared_nm, 10 ** 6)])
+                    self.assertEqual((local['enforcement'], common['enforcement']), (expected, expected))
 
 
 if __name__ == '__main__':

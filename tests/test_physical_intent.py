@@ -594,10 +594,10 @@ class PhysicalIntentTests(unittest.TestCase):
                      "unverifiable derivation kind 'layout'")
         document = {'schema': electrical_locality.SCHEMA, 'obligations': invented,
                     'source_records': {'layout-notes.md': LAYOUT_TEXT}}
-        # The shared classifier still grants it hard authority (existing locality_provenance
-        # contract), which is exactly what the compiler must not publish.
+        # AGENTEE-348 round-2 H3 (was 'hard'): the shared classifier no longer grants an
+        # authored layout scale authority; the captured quote does not state 1 nm.
         self.assertEqual(locality_provenance.classify(invented[0]['supply'], document['source_records'])['enforcement'],
-                         'hard')
+                         'advisory')
         self.stale_package(self.local, self.intent(self.local, records=records,
                                                    locality=self.locality(self.pair(self.datasheet()))),
                            bad, 'contracts/electrical-locality.json', document, "derivation kind 'layout'")

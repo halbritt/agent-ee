@@ -71,21 +71,16 @@ def classify(pair, records=None):
         derivation = provenance.get('derivation', {})
         if not isinstance(derivation, dict):
             return result
-        verification = verified_reference(derivation.get('source'), records)
+        source = derivation.get('source')
+        verification = verified_reference(source, records)
         if verification['enforcement'] == 'integrity':
             return {**result, **verification}
         if verification['enforcement'] != 'verified':
             return result
+        # The derivation may only restrict: its declared value must equal the bound.
         if derivation.get('kind') == 'numeric':
             value = derivation.get('value_nm')
             valid = type(value) is int and value >= 0
-            if valid:
-                quote = derivation['source']['quote']
-                # Exact original numeric records in nm or mm. Prose-only citations
-                # and values elsewhere on the page cannot establish this limit.
-                tokens = re.findall(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*(nm|mm)\b', quote)
-                valid = any(Fraction(n) * (1000000 if unit == 'mm' else 1) == value
-                            for n, unit in tokens)
         elif derivation.get('kind') == 'layout':
             distance, scale = (derivation.get(k) for k in ('distance_units', 'scale_nm_per_unit'))
             valid = (type(distance) is int and distance >= 0 and type(scale) is int and scale > 0
@@ -94,8 +89,16 @@ def classify(pair, records=None):
             value = distance * scale if valid else None
         else:
             valid, value = False, None
-        if valid and value == pair.get('max_distance_nm'):
+        if not valid or value != bound:
+            return result
+        # Round-2 H3: authority comes only from the common exact-unit qualification. The
+        # captured source must state the derived distance itself, so an authored layout
+        # scale or a prose diagram never establishes the limit.
+        resolved = source_authority.cite('datasheet', {**source, 'kind': 'captured_source'}, records, values)
+        if resolved['enforcement'] == 'hard':
             return {**result, 'enforcement': 'hard', 'reason': 'numeric derivation equals declared bound'}
+        return {**result, 'reason': ('layout derivation scale is not validated by the captured source'
+                                     if derivation['kind'] == 'layout' else resolved['reason'])}
     return result
 
 

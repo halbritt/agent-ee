@@ -128,8 +128,9 @@ COUNT_CONSTRAINTS = frozenset(('thermal_spoke_count', 'via_count'))
 def rule_payload(node):
     """The numeric payload of one native rule form (AGENTEE-348 H1/H3).
 
-    Returns exact millimetre lengths and integer counts from every constraint's
-    min/max/opt bound, or None when a bound is not an exact value with a known unit.
+    Returns exact millimetre lengths and typed counts ``(constraint, n)`` from every
+    constraint's min/max/opt bound, or None when a bound is not an exact value with a
+    known unit. A count is qualified only by a stated count of the same kind.
     """
     lengths, counts = [], []
     for constraint in node[2:]:
@@ -145,7 +146,7 @@ def rule_payload(node):
             if value[2]:
                 lengths.append(Fraction(value[1]) * source_authority.UNITS[value[2]])
             elif str(constraint[1]).lower() in COUNT_CONSTRAINTS and value[1].isdigit():
-                counts.append(int(value[1]))
+                counts.append((str(constraint[1]).lower(), int(value[1])))
             else:
                 return None
     return lengths, counts

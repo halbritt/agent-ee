@@ -155,9 +155,9 @@ without a bound published, passed `verify_receipt` and then crashed
   `scale_nm_per_unit` and `scale_reference` are authored values, not captured
   evidence. Before this refusal, a captured `within 3 mm` quote with an invented
   1 nm-per-unit scale compiled to a hard 1 nm datasheet maximum (verification 510
-  R2). The shared `locality_provenance.classify` still grades such a manually
-  authored layout derivation `hard`. That existing contract is outside this
-  compiler, and changing it would alter existing locality verdicts.
+  R2). Since AGENTEE-348 round-2 H3, the shared `locality_provenance.classify`
+  also grades such a layout `advisory` unless the captured source states the
+  derived distance.
 
 **Owner maxima never enforce.** AGENTEE-348 dropped signing (owner-relayed
 decision, 2026-10-22). Owner authority there is a committed decision pinned in

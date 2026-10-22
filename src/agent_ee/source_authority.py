@@ -135,13 +135,69 @@ def manufacturer_capture(citation, values_mm=()):
     return {'enforcement': 'hard', 'reason': 'captured manufacturer fact verified by hash'}
 
 
+# A quoted numeric literal (AGENTEE-348 round-2 H1-H3): the COMPLETE run of digits,
+# decimal point, sign, exponent and separator characters is one literal, never a suffix of
+# one. It may not start inside a word, another literal or after a sign or operator.
+LITERAL = re.compile(r'(?<![\w.,/+\-−±])[+\-−±]?[0-9][0-9.,/]*(?:[eE][+\-−]?[0-9]+)?')
+DECIMAL = re.compile(r'[+\-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+\-]?[0-9]+)?')
+# Length units a quote may state; each converts exactly to millimetres.
+QUOTE_UNITS = {'mm': Fraction(1), 'nm': Fraction(1, 10 ** 6), 'um': Fraction(1, 1000),
+               'µm': Fraction(1, 1000), 'μm': Fraction(1, 1000), 'mil': Fraction(254, 10000)}
+UNIT = re.compile(r'[ \t]?(mm|nm|um|µm|μm|mil)(?![\w])')
+# Explicit count facts: a dimensionless integer bound to the noun it counts.
+COUNT_NOUNS = {'thermal_spoke_count': ('spoke', 'spokes'), 'via_count': ('via', 'vias')}
+
+
+def numeric_literals(quote):
+    """Typed facts from a quote: ('length', mm) or ('number', value), with their spans.
+
+    A literal is read whole and parsed exactly, sign and exponent included. A literal with
+    a separator, fraction or range character is unsupported and yields no fact.
+    """
+    facts = []
+    for match in LITERAL.finditer(quote):
+        text = match[0].rstrip('.,')
+        end = match.start() + len(text)
+        if DECIMAL.fullmatch(text.replace('−', '-')) is None:
+            continue
+        value = Fraction(text.replace('−', '-'))
+        unit = UNIT.match(quote, end)
+        if unit:
+            facts.append(('length', value * QUOTE_UNITS[unit[1]], match.start(), unit.end()))
+        elif re.match(r'[\wµμ]', quote[end:end + 1]):
+            continue  # a literal run into a word ('3x', '3rd') states nothing
+        elif not re.match(r'[ \t]?[A-Za-zµμ]', quote[end:]) or COUNT_TAIL.match(quote, end):
+            facts.append(('number', value, match.start(), end))
+    return facts
+
+
+COUNT_TAIL = re.compile(r'[ \t]+(?:thermal[ \t]+)?(spokes?|vias?)(?![\w])', re.I)
+COUNT_HEAD = re.compile(r'(spoke|via)[ \t]+count[ \t]*(?:of|is|=|:)?[ \t]*$', re.I)
+
+
+def counted(quote, fact):
+    """The count kind an integer fact explicitly counts, or None."""
+    kind, value, start, end = fact
+    if kind != 'number' or not quote[start:end].isdigit():  # an unsigned integer literal only
+        return None
+    tail, head = COUNT_TAIL.match(quote, end), COUNT_HEAD.search(quote[:start])
+    noun = (tail[1] if tail else head[1] if head else '').lower()
+    return next((count for count, nouns in COUNT_NOUNS.items() if noun in nouns or noun + 's' in nouns), None)
+
+
 def states(quote, values_mm, counts=()):
-    """Every value occurs in the quote: lengths with an exact unit, counts as whole integers."""
-    lengths = {Fraction(n) * UNITS[unit] for n, unit in
-               re.findall(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*(mm|nm|um|mil|in)\b', quote)}
-    integers = {int(n) for n in re.findall(r'(?<![\w.])([0-9]+)(?![\w.])', quote)}
+    """Every governed value is an explicit typed fact of the quote, compared exactly.
+
+    A length matches only a stated length of equal exact value; a count ``(kind, n)``
+    matches only an integer explicitly counting that kind. A length never qualifies a
+    count, and a number never qualifies a length.
+    """
+    facts = numeric_literals(quote)
+    lengths = {value for kind, value, _, _ in facts if kind == 'length'}
+    stated = {(counted(quote, fact), fact[1]) for fact in facts}
     return (all(millimetres(v) in lengths for v in values_mm)
-            and all(type(n) is int and n in integers for n in counts))
+            and all(isinstance(c, tuple) and len(c) == 2 and type(c[1]) is int
+                    and (c[0], Fraction(c[1])) in stated for c in counts))
 
 
 def cite(cls, citation, records, values_mm=(), counts=()):

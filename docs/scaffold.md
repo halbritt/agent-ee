@@ -668,10 +668,24 @@ grant hard authority. A declaration (board rule, `net_class_default` or
 
 `source_records` maps cited paths to captured UTF-8 text, as in
 electrical-locality/1. Authority binds the governed numeric payload (AGENTEE-348
-review H2/H3/H5). Every quoted citation must state each governed value as a whole
-length token in `mm`, `nm`, `um`, `mil` or `in`, compared exactly, or as an
-integer count. A citation with no value to bind is advisory (`no declared value to
-bind to the citation`). The governed values are:
+review H2/H3/H5). Every quoted citation must state each governed value as a typed
+fact, compared exactly. `source_authority.numeric_literals` reads each complete
+numeric literal, with its sign and exponent, never a suffix of a longer literal
+(round-2 H1). For example, `1e-3 mm` is 0.001 mm and `-3 mm` is −3 mm, so neither
+states 3 mm. A literal containing a separator, fraction or range (`1,000`, `1/3`,
+`1-3`) states nothing.
+
+The typed facts are:
+
+- a **length**: a literal with `mm`, `nm`, `um`, `µm` or `mil`, attached or after
+  one space;
+- a **count**: an unsigned integer literal that explicitly counts its kind, as in
+  `3 thermal spokes`, `3 spokes` or `spoke count: 3`, and likewise for vias.
+
+A length never qualifies a count, a bare or unrelated integer never qualifies a
+count (round-2 H2), and a number never qualifies a length. A citation with no
+value to bind is advisory (`no declared value to bind to the citation`). The
+governed values are:
 
 - for a board rule or net-class default, its declared millimetre values;
 - for a `custom_rules` entry, the emitted or captured native rule's own

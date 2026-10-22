@@ -1617,13 +1617,17 @@ owner authorship. Do not publish third-party source text without rights approval
 original numeric transcription records can retain source identities instead.
 
 For `datasheet`, `derivation.kind: numeric` requires `value_nm` equal to
-`max_distance_nm` and an equal explicit nm or mm number in the source quote.
+`max_distance_nm`. The source quote must then state that distance through the
+common exact-unit model, `source_authority.cite` (round-2 H3). That is the same
+qualification as the design-rule import, so `1000 um` states 1 mm in both.
 `derivation.source` carries the source reference above. A prose citation such as
 “as close as possible” cannot qualify. A measured recommended/reference layout
 uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a
 nonempty `scale_reference`, and the same source reference. The check recomputes
-the product exactly. This is a declared measurement with a recorded scale;
-it does not automatically interpret a PDF image.
+the product exactly. The product only restricts: the layout bound is hard only
+when the captured source itself states the derived distance. Otherwise it is
+advisory with `layout derivation scale is not validated by the captured source`
+(round-2 H3). It does not automatically interpret a PDF image.
 Because the scale is authored rather than captured, the
 [manual physical intent compiler](physical-intent.md) refuses `kind: layout`
 and compiles a hard datasheet maximum only from a `numeric` derivation.
