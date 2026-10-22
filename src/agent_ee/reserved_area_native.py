@@ -68,7 +68,7 @@ class NativeAlternatives:
         # Native DRC embeds its execution date. Keep raw-file digests in the
         # witness, not the deterministic advisory cost report.
         summary = {k: v for k, v in evidence.items() if k not in
-                   ('drc_sha256', 'baseline_drc_sha256')}
+                   ('drc_sha256', 'baseline_drc_sha256', 'write_scope')}
         summary['qualification'] = {'validated': 'legal under captured rules',
                                     'unknown': 'hypothetical, unverified',
                                     'rejected': 'not legal'}[summary['status']]
@@ -113,7 +113,9 @@ class NativeAlternatives:
         scope = write_scope(self.board_bytes, output.read_bytes(), protected)
         write_json(output.parent / 'placement-write-scope.json', scope)
         if scope['status'] != 'allowed':
-            evidence.update(status='rejected', reason='write-scope preservation refused', write_scope=scope)
+            # The scope report stays in the retained witness; the summary binds it by digest.
+            evidence.update(status='rejected', reason='write-scope preservation refused', write_scope=scope,
+                            write_scope_sha256=digest(output.parent / 'placement-write-scope.json'))
             return
         saved = extract(output)
         for actual in saved['footprints']:

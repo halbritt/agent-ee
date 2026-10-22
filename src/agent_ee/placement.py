@@ -187,9 +187,11 @@ def _overhang_source(source):
         raise ValueError('courtyard overhang must cite its envelope id, sha256 and pointer')
 
 
-def _overhang_edge(ref, edge, sides, outline):
+def _overhang_edge_fields(ref, edge):
+    """One declared edge's closed fields and types, without the outline it must lie on."""
     if (not isinstance(edge, dict) or set(edge) != {'name', 'start_nm', 'end_nm', 'outward', 'max_nm'}
-            or edge['outward'] not in AXES or not isinstance(edge['name'], str) or not edge['name']):
+            or not isinstance(edge['outward'], str) or edge['outward'] not in AXES
+            or not isinstance(edge['name'], str) or not edge['name']):
         raise ValueError(f'{ref}: overhang edge needs name, start_nm, end_nm, outward axis and max_nm')
     ends = []
     for point in (edge['start_nm'], edge['end_nm']):
@@ -199,6 +201,11 @@ def _overhang_edge(ref, edge, sides, outline):
     distance = edge['max_nm']
     if type(distance) is not int or distance <= 0:
         raise ValueError(f'{ref}: overhang max_nm must be a positive integer')
+    return ends, distance
+
+
+def _overhang_edge(ref, edge, sides, outline):
+    ends, distance = _overhang_edge_fields(ref, edge)
     (sx, sy), (ex, ey) = ends
     ux, uy = AXES[edge['outward']]
     if frozenset(ends) not in sides or (ex-sx)*ux + (ey-sy)*uy != 0:
@@ -222,18 +229,30 @@ def overhang_bands(declarations, outline):
         raise ValueError('courtyard overhangs must be a list')
     bands = {}
     for declaration in declarations:
-        if (not isinstance(declaration, dict) or set(declaration) != {'reference', 'edges', 'source'}
-                or not isinstance(declaration['reference'], str) or not declaration['reference']):
-            raise ValueError('courtyard overhang needs exactly reference, edges and source')
-        ref, declared = declaration['reference'], declaration['edges']
+        ref = overhang_declaration(declaration)
         if ref in bands:
             raise ValueError(f'{ref}: more than one courtyard overhang declared')
-        _overhang_source(declaration['source'])
-        if (not isinstance(declared, list) or not declared or
-                len({e.get('name') if isinstance(e, dict) else None for e in declared}) != len(declared)):
-            raise ValueError(f'{ref}: overhang edges must be a nonempty list of distinct edges')
-        bands[ref] = overhang_regions(ref, declared, outline)
+        bands[ref] = overhang_regions(ref, declaration['edges'], outline)
     return bands
+
+
+def overhang_declaration(declaration):
+    """One overhang declaration's closed schema, independent of any outline; its reference.
+
+    Exactly reference, source and a nonempty list of distinct, fully typed edges.
+    Shared by ``overhang_bands`` and by evidence that copies a declaration."""
+    if (not isinstance(declaration, dict) or set(declaration) != {'reference', 'edges', 'source'}
+            or not isinstance(declaration['reference'], str) or not declaration['reference']):
+        raise ValueError('courtyard overhang needs exactly reference, edges and source')
+    ref, declared = declaration['reference'], declaration['edges']
+    _overhang_source(declaration['source'])
+    if (not isinstance(declared, list) or not declared or
+            len({e.get('name') if isinstance(e, dict) and isinstance(e.get('name'), str) else None
+                 for e in declared}) != len(declared)):
+        raise ValueError(f'{ref}: overhang edges must be a nonempty list of distinct edges')
+    for edge in declared:
+        _overhang_edge_fields(ref, edge)
+    return ref
 
 
 def overhang_regions(ref, declared, outline):

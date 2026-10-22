@@ -1943,7 +1943,10 @@ relative pose kept. All members are checked against the same packing, locality,
 group and hard block predicates, and native validation unprotects exactly the
 block's members on the scratch copy. The record adds `rigid_block` (block id,
 anchor, references) and, with a saving, `moves` (each member's pose); witnesses
-list the moved members. A block with an owner-fixed member stays `not_searched`.
+list the moved members, each once. Packet ingress refuses a rigid attempt without
+that witness, and a legal rigid alternative whose selected member poses differ
+from its validated witness. A preservation refusal's write-scope report stays in
+the retained witness; the summary carries its `write_scope_sha256`. A block with an owner-fixed member stays `not_searched`.
 Block members are never fixed overhang owners, so no overhang band applies to
 them. If no cheaper attempt validates and any
 attempt is unknown, the alternative is `unknown`, labelled

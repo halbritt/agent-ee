@@ -17,17 +17,14 @@ def validated(costs):
     return reserve.validate(json.loads(json.dumps(costs)))
 
 
-# Copied declarations and witnesses whose contents are typed elsewhere, not by the reserve validator.
-OPAQUE = ('provenance', 'overhang_envelope', 'write_scope')
-
-
 def single_field_mutations(record):
     """Every single-field mutation of a valid reserve record, each of which must be refused.
 
     An extra field on each nested record; wrongly typed values (scalar and container) for
     each field and list element; an inexact, negative or zero-denominator value for each ratio. An owner row
     shown again as a finding's reserve is mutated in both copies, so the allow-list
-    itself (not the copies' disagreement) must refuse.
+    itself (not the copies' disagreement) must refuse; so is a fixed declaration copied
+    into its owner decision. Every nested record is walked, copied declarations included.
     """
     import json
     def wrong(value):
@@ -52,8 +49,7 @@ def single_field_mutations(record):
                 for bad in ([-1, 1], [1, 0], [1.0, 1]):
                     yield (path + (key, str(bad)), path,
                            lambda holder, key=key, bad=bad: holder.__setitem__(key, bad))
-            if key not in OPAQUE:
-                yield from walk(item, path + (key,))
+            yield from walk(item, path + (key,))
     def at(holder, path):
         for key in path:
             holder = holder[key]
@@ -64,12 +60,30 @@ def single_field_mutations(record):
         for j, row in enumerate(record['sides'][side]['owners']):
             if row == finding['reserve']:
                 copies[('sides', side, 'owners', j)] = ('findings', i, 'reserve')
+    def declared(label, holder):
+        """The holder of the same field in the other copy of a fixed declaration, if any."""
+        if 'fixed_source' not in label:
+            return None
+        i = label.index('fixed_source')
+        if label[i-1] == 'decision_required':
+            return holder[:i-1] + holder[i:]
+        return holder[:i] + ('decision_required',) + holder[i:]
     for label, holder, mutate in walk(record, ()):
         mutated = json.loads(json.dumps(record))
-        mutate(at(mutated, holder))
-        shown = copies.get(holder[:4])
-        if shown is not None:
-            mutate(at(mutated, shown + holder[4:]))
+        holders = [holder]
+        other = declared(label, holder)
+        if other is not None:
+            try:
+                at(mutated, other)
+            except (KeyError, IndexError, TypeError):
+                pass
+            else:
+                holders.append(other)
+        for target in holders:
+            mutate(at(mutated, target))
+            shown = copies.get(target[:4])
+            if shown is not None:
+                mutate(at(mutated, shown + target[4:]))
         yield '/'.join(map(str, label)), mutated
 
 
@@ -556,6 +570,65 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
                 build_packet(run, [], 'ee384')
         with self.assertRaisesRegex(ValueError, reason):
             reserve.validate(record)
+
+    def test_copied_fixed_declarations_are_closed_at_both_ingress_paths(self):
+        """Review H1: the owner decision's envelope and provenance copies meet their own schemas."""
+        import hashlib, json
+        from agent_ee import placer
+        facts = capture([part('U1', 5, 5)])
+        facts['board_sha256'] = hashlib.sha256(b'(kicad_pcb (version 20260206) (generator "owned"))\n').hexdigest()
+        edge = {'name': 'left', 'start_nm': [0, 20*MM], 'end_nm': [0, 0], 'outward': 'x-', 'max_nm': MM}
+        band = [{'reference': 'U1', 'source': {'envelope_id': 'owned', 'envelope_sha256': 'b'*64,
+                                               'pointer': '/fixed/U1'}, 'edges': [edge]}]
+        fab = {'U1': {'F': proven([rectangle(5, 5, 1, 2)])}}
+        record = reserve.report(facts, request(gap_nm=0, fixed_overhangs=band), fab)
+        reserve.alternatives(facts, request(gap_nm=0, fixed_overhangs=band), fab, record, {})
+        record = json.loads(json.dumps(record))
+        self.assertEqual(record['sides']['F']['owners'][0]['alternative']['status'], 'decision_required')
+        self.assert_both_ingress_paths(record)
+
+        def everywhere(change):
+            """Apply ``change`` to every fixed_source copy: side, finding and decision copies stay equal."""
+            mutated = copy.deepcopy(record)
+            for row in [*mutated['sides']['F']['owners'], *(f['reserve'] for f in mutated['findings'])]:
+                alternative = row['alternative']
+                for source in (alternative['fixed_source'], alternative['decision_required']['fixed_source']):
+                    change(source)
+            return mutated
+
+        def declared(field, value):
+            return everywhere(lambda source: source['overhang_envelope'].__setitem__(field, copy.deepcopy(value)))
+        # The reviewer's three envelope mutations, exactly.
+        for label, field, value in (('wrong envelope reference type', 'reference', []),
+                                    ('extra envelope field', 'unexpected', 1),
+                                    ('wrong envelope edge limit type', 'edges', [{**edge, 'max_nm': 'unlimited'}])):
+            with self.subTest(refused=label):
+                self.assert_both_ingress_paths(declared(field, value), 'overhang')
+        with self.subTest(refused='envelope for another reference'):
+            self.assert_both_ingress_paths(declared('reference', 'U2'), 'another reference')
+        self.assertEqual(record['sides']['F']['owners'][0]['alternative']['fixed_source']['provenance'],
+                         placer.UNDECLARED)
+        for label, provenance in (
+                ('undeclared provenance with an extra field', {**placer.UNDECLARED, 'unexpected': 1}),
+                ('soft provenance without its reason', {'class': 'assumed', 'enforcement': 'soft'}),
+                ('unknown provenance class', {'class': 'invented', 'enforcement': 'hard'}),
+                ('provenance class wrongly typed', {'class': ['owner_stated'], 'enforcement': 'hard'})):
+            with self.subTest(refused=label):
+                self.assert_both_ingress_paths(
+                    everywhere(lambda source: source.__setitem__('provenance', copy.deepcopy(provenance))),
+                    'provenance')
+        with self.subTest(accepted='owner-stated soft provenance'):
+            self.assert_both_ingress_paths(everywhere(lambda source: source.__setitem__('provenance', {
+                'class': 'owner_stated', 'enforcement': 'soft', 'soft_reason': 'owner said not fixed'})))
+        # A native witness's write scope stays in the retained witness, bound by digest.
+        with self.subTest(refused='embedded write scope'):
+            rejected = {'status': 'rejected', 'qualification': 'not legal', 'reason': 'write-scope preservation refused',
+                        'write_scope': {'status': 'refused', 'violations': ['x']}}
+            mutated = copy.deepcopy(record)
+            for row in [*mutated['sides']['F']['owners'], *(f['reserve'] for f in mutated['findings'])]:
+                row['alternative']['native_attempts'] = [{'position_nm': [0, 0], 'rotation_deg': 0,
+                                                          'validation': rejected}]
+            self.assert_both_ingress_paths(mutated, 'not allowed write_scope')
 
     def test_nested_reserve_evidence_is_validated_before_reviewers(self):
         import hashlib, json
@@ -1110,6 +1183,13 @@ class NativeAlternativeTests(unittest.TestCase):
             result = validator('J3', (0, 32*MM), 180)
         self.assertEqual(result['status'], 'rejected')
         self.assertIn('preservation', result['reason'])
+        # The scope report stays in the retained witness; the summary binds it by digest only.
+        from agent_ee.storage import digest, read_json
+        self.assertNotIn('write_scope', result)
+        directory = self.root / result['directory']
+        self.assertEqual(result['write_scope_sha256'], digest(directory / 'placement-write-scope.json'))
+        self.assertEqual(read_json(self.root / result['witness'])['write_scope']['violations'],
+                         ['injected preservation refusal'])
 
     def test_ignored_placement_category_never_establishes_legality(self):
         import json
@@ -1269,6 +1349,72 @@ class NativeAlternativeTests(unittest.TestCase):
         member = next(r for r in costs['sides']['B']['owners'] if r['owner'] == 'R1')
         self.assertEqual(member['area_mm2'], [1, 1])
         self.assertEqual(member['alternative']['status'], 'no_cheaper_contained_pose')
+        self.assert_rigid_witness_bound(costs)
+
+    def assert_rigid_witness_bound(self, costs):
+        """Review H2: a legal rigid alternative's member poses are its validated witness's, in any order.
+
+        The real producer record passes both packet ingress paths; a selected or witness member
+        pose that diverges, a duplicate contradictory witness move, or a missing witness is refused.
+        """
+        import hashlib, json
+        record = json.loads(json.dumps(costs))
+        record['board_sha256'] = hashlib.sha256(b'(kicad_pcb (version 20260206) (generator "owned"))\n').hexdigest()
+        packet = PacketCostTests('assert_both_ingress_paths')
+        packet.setUp()
+        self.addCleanup(packet.doCleanups)
+        packet.assert_both_ingress_paths(record)
+
+        def changed(change):
+            mutated = copy.deepcopy(record)
+            for side in mutated['sides'].values():
+                for row in side['owners']:
+                    if row.get('alternative', {}).get('status') == 'native_validated':
+                        change(row['alternative'])
+            for finding in mutated['findings']:
+                old = finding['reserve']
+                finding['reserve'] = copy.deepcopy(next(
+                    row for row in mutated['sides'][old['side']]['owners']
+                    if (row['owner'], row['kind'], row.get('id')) == (old['owner'], old['kind'], old.get('id'))))
+            self.assertNotEqual(mutated, record)
+            return mutated
+
+        def member(moves, reference='R1'):
+            return next(m for m in moves if m['reference'] == reference)
+
+        def witness(alternative):
+            return alternative['native_attempts'][-1]['validation']
+
+        def selected_diverges(alternative):
+            member(alternative['moves'])['position_nm'][0] += 1000000000
+
+        def witness_diverges(alternative):
+            member(witness(alternative)['moves'])['position_nm'][0] += 1000000000
+
+        def duplicate_witness_move(alternative):
+            moves = witness(alternative)['moves']
+            bad = copy.deepcopy(moves[0]); bad['position_nm'][0] += 1000000000
+            moves.insert(0, bad)
+
+        def witness_rotation_diverges(alternative):
+            member(witness(alternative)['moves'])['rotation_deg'] += 90
+
+        def witness_missing(alternative):
+            witness(alternative).pop('moves')
+
+        def witness_reordered(alternative):
+            witness(alternative)['moves'].reverse()
+
+        for label, change, reason in (
+                ('selected member diverges from witness', selected_diverges, 'differ from the validated native witness'),
+                ('witness member diverges from selection', witness_diverges, 'differ from the validated native witness'),
+                ('duplicate contradictory witness move', duplicate_witness_move, 'repeat a reference'),
+                ('witness member rotation diverges', witness_rotation_diverges, 'differ from the validated native witness'),
+                ('validated witness without member moves', witness_missing, 'no member-move witness')):
+            with self.subTest(refused=label):
+                packet.assert_both_ingress_paths(changed(change), reason)
+        with self.subTest(accepted='witness moves in another order'):
+            packet.assert_both_ingress_paths(changed(witness_reordered))
 
     def test_rigid_block_move_rejected_natively_never_moves_one_member_alone(self):
         import pcbnew as k

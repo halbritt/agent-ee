@@ -2,7 +2,7 @@
 import copy
 from fractions import Fraction
 
-from .placement import area2, edges, overhang_bands, qualified_polygons, simple_polygon
+from .placement import area2, edges, overhang_bands, overhang_declaration, qualified_polygons, simple_polygon
 
 SCHEMA = 'agent-ee.reserved-area/1'
 # Computational coverage guards, not physical limits or acceptance thresholds.
@@ -490,7 +490,7 @@ FIELD_TYPES = {
     'declared_by': _texts, 'overhang_envelope': _object, 'current_position_nm': _position,
     'current_rotation_deg': _angle, 'candidate_position_nm': _position, 'candidate_rotation_deg': _angle,
     'source_sha256': _sha, 'rules': _object, 'directory': _text, 'witness': _text,
-    'write_scope': _object, 'write_scope_sha256': _sha, 'blocking_types': _texts, 'advisory_types': _texts,
+    'write_scope_sha256': _sha, 'blocking_types': _texts, 'advisory_types': _texts,
     'drc_content_sha256': _sha, 'baseline_drc_content_sha256': _sha,
 }
 
@@ -543,10 +543,12 @@ _WITNESS = {'source_sha256', 'rules', 'directory', 'moves', 'reason', 'witness',
             'baseline_drc_content_sha256'}
 VALIDATION_FIELDS = {'validated': ({'status', 'qualification'}, _WITNESS),
                      'unknown': ({'status', 'qualification'}, _WITNESS),
-                     'rejected': ({'status', 'qualification'}, _WITNESS | {'write_scope'})}
+                     'rejected': ({'status', 'qualification'}, _WITNESS)}
 MOVE_FIELDS = ({'reference', 'position_nm', 'rotation_deg'}, set())
 RIGID_FIELDS = ({'block', 'anchor', 'references'}, set())
 FIXED_SOURCE_FIELDS = ({'declared_by', 'provenance'}, {'overhang_envelope'})
+# A copied fixed-part provenance entry: the placer's undeclared default, or an envelope entry.
+FIXED_PROVENANCE_FIELDS = ({'class', 'enforcement'}, {'soft_reason'})
 DECISION_FIELDS = ({'decision', 'reference', 'fixed_source', 'current_position_nm', 'current_rotation_deg',
                     'candidate_position_nm', 'candidate_rotation_deg', 'saving_mm2', 'qualification'}, set())
 
@@ -564,10 +566,11 @@ def _valid_move(move, label):
     return move['reference'], move['position_nm'], move['rotation_deg']
 
 
-def _valid_attempts(alternative, anchor, members, label):
+def _valid_attempts(alternative, anchor, members, label, rigid=False):
     """Each native attempt has a pose and a known validation status with its fixed qualification.
 
-    A witness's moves, when present, cover the moved members with the anchor at the attempted pose.
+    A witness's moves, when present, name each moved member once and cover them with the
+    anchor at the attempted pose. A rigid block attempt must carry that witness.
     """
     statuses = []
     for attempt in alternative['native_attempts']:
@@ -588,15 +591,24 @@ def _valid_attempts(alternative, anchor, members, label):
         if status == 'validated' and validation.get('blocking_types', []):
             raise ValueError(f'{label} validated native attempt has blocking findings')
         if 'moves' in validation:
-            moves = {}
-            for move in validation['moves']:
-                reference, position, angle = _valid_move(move, f'{label} native attempt move')
-                moves[reference] = (position, angle)
+            moves = _move_map(validation['moves'], f'{label} native attempt witness')
             if (set(moves) != set(members)
                     or moves[anchor] != (attempt['position_nm'], attempt['rotation_deg'])):
                 raise ValueError(f'{label} native attempt witness moves disagree with the attempted pose')
+        elif rigid:
+            raise ValueError(f'{label} rigid block native attempt has no member-move witness')
         statuses.append(status)
     return statuses
+
+
+def _move_map(moves, label):
+    """{reference: (position, rotation)} of a closed move list; a repeated reference refuses."""
+    _list(moves, f'{label} moves')
+    poses = [_valid_move(move, f'{label} move') for move in moves]
+    references = [reference for reference, _, _ in poses]
+    if len(set(references)) != len(references):
+        raise ValueError(f'{label} moves repeat a reference')
+    return {reference: (position, angle) for reference, position, angle in poses}
 
 
 def _valid_alternative(alternative, row, label):
@@ -630,13 +642,7 @@ def _valid_alternative(alternative, row, label):
             raise ValueError(f'{label} a fixed owner is never searched within a rigid block')
         if alternative['applied'] is not False or alternative['enforcement'] != FIXED_ENFORCEMENT:
             raise ValueError(f'{label} owner-fixed record must have applied false and enforcement {FIXED_ENFORCEMENT!r}')
-        source = alternative['fixed_source']
-        _closed(source, *FIXED_SOURCE_FIELDS, f'{label} fixed_source')
-        if not source['declared_by'] or any(d not in FIXED_DECLARATIONS for d in source['declared_by']):
-            raise ValueError(f'{label} fixed_source declared_by must name {" or ".join(FIXED_DECLARATIONS)}')
-        if (not isinstance(source['provenance'].get('class'), str)
-                or source['provenance'].get('enforcement') not in ('hard', 'soft')):
-            raise ValueError(f'{label} fixed_source provenance needs a class and a hard/soft enforcement')
+        _valid_fixed_source(alternative['fixed_source'], row['owner'], f'{label} fixed_source')
     block = alternative.get('rigid_block')
     if block is not None:
         _closed(block, *RIGID_FIELDS, f'{label} rigid_block')
@@ -648,7 +654,7 @@ def _valid_alternative(alternative, row, label):
         anchor, members = row['owner'], [row['owner']]
     if alternative['domain'] != (BLOCK_DOMAIN if block is not None else DOMAIN):
         raise ValueError(f'{label} domain must be the declared {"rigid block" if block else "single part"} pose set')
-    statuses = _valid_attempts(alternative, anchor, members, label)
+    statuses = _valid_attempts(alternative, anchor, members, label, block is not None)
     complete = alternative['search_complete']
     if status == 'decision_required':
         return _valid_decision(alternative, row, statuses, label)
@@ -667,11 +673,18 @@ def _valid_alternative(alternative, row, label):
     if block is not None:
         if 'moves' not in alternative:
             raise ValueError(f'{label} rigid block moves must cover every member')
+        _list(alternative['moves'], f'{label} rigid block moves')
         moves = [_valid_move(m, f'{label} rigid block move') for m in alternative['moves']]
         if [m[0] for m in moves] != members or next(
                 (p, a) for r, p, a in moves if r == anchor) != (alternative['position_nm'],
                                                                 alternative['rotation_deg']):
             raise ValueError(f'{label} rigid block moves must cover every member with the anchor at the selected pose')
+        # Native legality is the validated attempt's: every selected member pose is its witness's.
+        if status == 'native_validated':
+            witness = _move_map(alternative['native_attempts'][-1]['validation']['moves'],
+                                f'{label} validated native attempt witness')
+            if {r: (p, a) for r, p, a in moves} != witness:
+                raise ValueError(f'{label} rigid block selected member poses differ from the validated native witness')
     elif 'moves' in alternative:
         raise ValueError(f'{label} moves belong only to a rigid block alternative')
 
@@ -693,11 +706,36 @@ def _valid_saving(alternative, row, statuses, status, label):
         raise ValueError(f'{label} search_complete must be false exactly when a native attempt is unknown')
 
 
+def _valid_fixed_source(source, owner, label):
+    """A copied fixed declaration: who declared it, its provenance entry and its overhang envelope.
+
+    Each part is checked against its own closed declaration schema here, at ingress, since
+    the captured copy is not the record its producer validated.
+    """
+    from .placer import UNDECLARED, provenance_entry
+    _closed(source, *FIXED_SOURCE_FIELDS, label)
+    if not source['declared_by'] or any(d not in FIXED_DECLARATIONS for d in source['declared_by']):
+        raise ValueError(f'{label} declared_by must name {" or ".join(FIXED_DECLARATIONS)}')
+    provenance = source['provenance']
+    if provenance != UNDECLARED:
+        _closed(provenance, *FIXED_PROVENANCE_FIELDS, f'{label} provenance',
+                {'class': _text, 'enforcement': _text, 'soft_reason': _text})
+        provenance_entry(provenance)
+    if 'overhang_envelope' in source:
+        try:
+            reference = overhang_declaration(source['overhang_envelope'])
+        except ValueError as exc:
+            raise ValueError(f'{label} overhang_envelope: {exc}') from exc
+        if reference != owner:
+            raise ValueError(f'{label} overhang_envelope declares another reference')
+
+
 def _valid_decision(record, row, statuses, label):
     """A fixed owner's cheaper pose is a named, unapplied decision consistent with its validation."""
     _valid_saving(record, row, statuses, record['validation_status'], label)
     decision = record['decision_required']
     _closed(decision, *DECISION_FIELDS, f'{label} decision_required')
+    _valid_fixed_source(decision['fixed_source'], row['owner'], f'{label} decision_required fixed_source')
     expected = {'decision': 'change owner-fixed pose', 'reference': row['owner'],
                 'fixed_source': record['fixed_source'],
                 'candidate_position_nm': record['position_nm'], 'candidate_rotation_deg': record['rotation_deg'],

@@ -2303,7 +2303,13 @@ findings, alternatives, owner decisions, fixed sources, rigid blocks, moves,
 native attempts and their validation witnesses) has a closed, per-status
 allow-list of required and optional fields, each typed. An extra or missing
 field, a wrong type, or a qualification incompatible with the status refuses the
-record before any status rule runs (AGENTEE-384). `already_zero`, `not_searched`,
+record before any status rule runs (AGENTEE-384). Copied declarations are
+checked against their own closed schemas at ingress: a fixed source's
+`overhang_envelope` against the courtyard-overhang declaration schema the packer
+uses (reference, source and typed edges, for the owner's own reference) and its
+provenance against the placer's provenance entry rules (or the exact undeclared
+default). A native witness carries no embedded write-scope report; a refused scope
+is bound by `write_scope_sha256` to the retained `placement-write-scope.json`. `already_zero`, `not_searched`,
 `no_cheaper_contained_pose`, `none_found` and `unknown` alternatives never carry
 a selected pose, a measurement, a saving or a legal qualification; `unknown` is
 qualified `hypothetical, unverified`. `legal under captured rules` is accepted
@@ -2315,7 +2321,10 @@ measurements with a positive saving equal to the owner area less the alternative
 area, and the qualification of its status. `native_validated` needs its selected
 pose to be the one `validated` native attempt, and `search_complete` is false
 exactly when an attempt was unknown; unknown-only attempts are never published
-as validated. A `decision_required` record must be unapplied and agree with its
+as validated. A witness's `moves` name each reference once; a rigid block's
+native attempts must carry them, and a `native_validated` rigid alternative's
+selected `moves` must equal its validated witness's moves member by member, in
+any order. A `decision_required` record must be unapplied and agree with its
 alternative's pose, saving and qualification. The scope `board` must be captured and the record's
 `board_sha256` must equal its digest; a malformed or unbound record refuses the
 packet.
