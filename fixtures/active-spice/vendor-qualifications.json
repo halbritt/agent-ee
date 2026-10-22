@@ -1,0 +1,16 @@
+{
+  "schema": "agent-ee.vendor-spice-qualifications/1",
+  "publication": "Vendor model bytes are never tracked here. Entries record hashes and receipt hashes only; publication of vendor files stays behind the licence/publication gate AGENTEE-118.",
+  "entries": [
+    {
+      "id": "ti-opa197",
+      "vendor": "Texas Instruments",
+      "part": "OPA197",
+      "status": "unqualified",
+      "model_files": {},
+      "receipt_sha256": null,
+      "reason": "Captured model bytes are not available to the qualifying worker (host talos, 2026-10-22): no copy exists on that host or in the burndown records, and the AGENTEE-19 evidence recorded no file hashes, subcircuit header, pin map or receipt. Without hash-bound bytes the scenarios cannot be rerun or bound, so no qualification is claimed. Qualify by running scripts/qualify_vendor_spice.py on the owner-held capture and recording its file and receipt hashes here.",
+      "history": "AGENTEE-19 (2026-10-17) reported five local scenarios (control pass, seeded response defect, missing model and invalid formal unsupported, convergence failed) passing in the pinned image on the original host; that report is unverifiable without the bytes and is not a receipt."
+    }
+  ]
+}
