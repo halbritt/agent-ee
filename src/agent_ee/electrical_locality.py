@@ -242,6 +242,9 @@ def grade(probe, document):
                 measured.append(record)
                 authority = record['constraint_provenance']
                 floor = record['manufacturing_floor']
+                if authority['enforcement'] == 'integrity':
+                    unknown.append({'kind': 'source_record_integrity', **record, 'reason': authority['reason']})
+                    continue
                 if 'max_distance_nm' not in pair or ('citation' not in pair and authority['enforcement'] == 'hard'):
                     raise ValueError('declared numeric limit and citation required')
                 if (authority['enforcement'] == 'feasibility' and floor['status'] != 'known'

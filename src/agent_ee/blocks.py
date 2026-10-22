@@ -898,6 +898,8 @@ def _grade(grade, sub, refs):
             seen.add(key)
             pair = pairs[key]
             authority = locality_provenance.classify(pair, document.get('source_records'))
+            if authority['enforcement'] == 'integrity':
+                raise ValueError(f'locality pair {key} has source record integrity failure')
             if row.get('constraint_provenance') != authority:
                 raise ValueError(f'locality pair {key} has stale provenance')
             exceeded = _squared(row, 'locality distance') > pair['max_distance_nm'] ** 2

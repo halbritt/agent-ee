@@ -1904,6 +1904,10 @@ AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#localit
 legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
 when no hard defect/unknown exists; these never block publication. Datasheet
 numeric/scale derivations and owner decision references retain hard constraints.
+A well-formed reference to present source text with a SHA-256 mismatch instead
+reports `source_record_integrity` unknown, reason `source record sha256 mismatch`
+(AGENTEE-402 ruling 402a); packing and block admission refuse it. Absent records
+and malformed hashes remain advisory/unsourced, a known boundary.
 Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
 refuses hard sourced or explicit manufacturer bounds below it as `locality_infeasible`.
 Assembly package spacing produces advisory estimates only, because native lands
@@ -1918,7 +1922,9 @@ and captured manufacturer-record integrity failures retain unknown coverage.
 A sourced bound below the necessary copper floor is `locality_infeasible`.
 Block candidates preserve source records and accept truthful advisory `info`
 through production, validation and independent admission regrading; hard defects
-and unknown coverage still refuse. See [blocks](blocks.md).
+and unknown coverage still refuse. Deferred block-locality rows retain those
+advisories and report `info` for above-bound advisory measurements
+(AGENTEE-402). See [blocks](blocks.md).
 AGENTEE-401 requires explicit floor and provenance records in every stored block
 locality measurement. Structural validation refuses missing or malformed records;
 board admission still independently regrades locality before consumers trust it.
