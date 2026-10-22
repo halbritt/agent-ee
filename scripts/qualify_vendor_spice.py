@@ -103,19 +103,64 @@ def load_manifest(path):
     return manifest
 
 
+# Directories are pinned with O_PATH so traversal needs no read permission on ancestors.
+DIR_FLAGS = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+
+
+def read_pinned(model_dir, rel):
+    """Read one declared file through pinned directory descriptors and return its bytes.
+
+    Every component from / through the resolved model directory and the relative path is
+    opened relative to its already-open parent with O_NOFOLLOW (directories also
+    O_DIRECTORY), so a link or non-directory anywhere refuses instead of being followed.
+    After the read, each name is looked up again in its pinned parent and must still be
+    the same unlinked directory or file: a component renamed, replaced or linked while
+    the file was read refuses, as does a file whose size or mtime changed."""
+    parts = [*Path(model_dir).resolve().parts[1:], *Path(rel).parts]
+    descriptors = [os.open('/', DIR_FLAGS)]
+    chain = []
+    try:
+        for index, part in enumerate(parts):
+            flags = FILE_FLAGS if index == len(parts) - 1 else DIR_FLAGS
+            try:
+                descriptors.append(os.open(part, flags, dir_fd=descriptors[-1]))
+            except FileNotFoundError:
+                raise ValueError(f'vendor model file is missing: {rel}') from None
+            except OSError as exc:
+                # ELOOP for a link, ENOTDIR for a non-directory component.
+                raise ValueError(f'vendor model file is linked or unreadable: {rel}: {exc.strerror}') from None
+            chain.append((descriptors[-2], part, os.fstat(descriptors[-1])))
+        before = chain[-1][2]
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(f'vendor model file is not a regular file: {rel}')
+        blocks = []
+        while block := os.read(descriptors[-1], 1 << 20):
+            blocks.append(block)
+        after = os.fstat(descriptors[-1])
+        for parent, part, pinned in chain:
+            try:
+                current = os.stat(part, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                current = None
+            if current is None or (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) != (
+                    pinned.st_dev, pinned.st_ino, stat.S_IFMT(pinned.st_mode)):
+                raise ValueError(f'vendor model path component {part!r} was replaced or linked '
+                                 f'while it was snapshotted: {rel}')
+        identity = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+        if identity(before) != identity(after) or identity(before) != identity(current):
+            raise ValueError(f'vendor model file changed while it was snapshotted: {rel}')
+        return b''.join(blocks)
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+
 def bind_model_dir(manifest, model_dir):
-    """Refuse unless every declared file exists unlinked with exactly its declared hash."""
-    model_dir = Path(model_dir).resolve()
+    """Refuse unless every declared file reads unlinked with exactly its declared hash."""
     observed = {}
     for rel, expected in manifest['model_files'].items():
-        path = model_dir
-        for part in Path(rel).parts:
-            path = path / part
-            if path.is_symlink():
-                raise ValueError(f'vendor model file is linked: {rel}')
-        if not path.is_file():
-            raise ValueError(f'vendor model file is missing: {rel}')
-        observed[rel] = digest(path)
+        observed[rel] = hashlib.sha256(read_pinned(model_dir, rel)).hexdigest()
         if observed[rel] != expected:
             raise ValueError(f'vendor model file hash differs from manifest: {rel}')
     return observed
@@ -124,34 +169,14 @@ def bind_model_dir(manifest, model_dir):
 def snapshot_model_dir(manifest, model_dir, snapshot):
     """Copy each declared file once into a private snapshot and verify the copied bytes.
 
-    The source is opened without following links, read once, and the hash of exactly the
-    bytes written is compared with the manifest; a file changed, replaced, linked or
-    missing while it is copied refuses. Nothing later reads the live directory."""
-    model_dir = Path(model_dir).resolve()
+    Each source is read once through pinned, non-following descriptors (read_pinned), and
+    the hash of exactly the bytes written is compared with the manifest; a file or any
+    ancestor changed, replaced, linked or missing while it is copied refuses. Nothing
+    later reads the live directory."""
     snapshot.mkdir(mode=0o700)
     observed = {}
     for rel, expected in manifest['model_files'].items():
-        path = model_dir
-        for part in Path(rel).parts:
-            path = path / part
-            if path.is_symlink():
-                raise ValueError(f'vendor model file is linked: {rel}')
-        try:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        except FileNotFoundError:
-            raise ValueError(f'vendor model file is missing: {rel}') from None
-        except OSError as exc:
-            raise ValueError(f'vendor model file is linked or unreadable: {rel}: {exc}') from None
-        with os.fdopen(descriptor, 'rb') as stream:
-            before = os.fstat(stream.fileno())
-            if not stat.S_ISREG(before.st_mode):
-                raise ValueError(f'vendor model file is not a regular file: {rel}')
-            data = stream.read()
-            after = os.fstat(stream.fileno())
-        current = os.lstat(path)
-        identity = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-        if identity(before) != identity(after) or identity(before) != identity(current):
-            raise ValueError(f'vendor model file changed while it was snapshotted: {rel}')
+        data = read_pinned(model_dir, rel)
         observed[rel] = hashlib.sha256(data).hexdigest()
         if observed[rel] != expected:
             raise ValueError(f'vendor model file hash differs from manifest: {rel}')

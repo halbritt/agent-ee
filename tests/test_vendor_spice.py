@@ -110,6 +110,47 @@ class RegistryAndBindingTests(unittest.TestCase):
                 self.assertFalse((out / 'receipt.json').exists())
                 self.assertFalse((out / 'snapshot').exists())
 
+    def test_ancestry_swapped_during_snapshot_refuses_and_keeps_no_copy(self):
+        # Review H1 (ee441b): after the pathname checks, an unprivileged writer renames a
+        # directory on the model path and puts a link (or a lookalike directory) in its place
+        # immediately before a component is opened. The traversal is pinned, so a link is never
+        # followed and a swapped ancestor refuses even though the bytes are identical.
+        def relink(path):
+            path.rename(path.with_name('real-' + path.name))
+            path.symlink_to(path.with_name('real-' + path.name))
+
+        def lookalike(path):
+            path.rename(path.with_name('real-' + path.name))
+            shutil.copytree(path.with_name('real-' + path.name), path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cases = (('sub', 'stage.lib', relink, 'replaced or linked'),
+                     ('sub', 'sub', relink, 'linked'),
+                     ('sub', 'stage.lib', lookalike, 'replaced or linked'),
+                     ('models', 'AEOPA.LIB', relink, 'replaced or linked'),
+                     ('models', 'stage.lib', lookalike, 'replaced or linked'))
+            for index, (target, trigger, swap, message) in enumerate(cases):
+                case = root / f'case{index}'
+                files = write_models(case / 'models')
+                write_json(case / 'manifest.json', manifest(files))
+                victim = case / 'models' / ('sub' if target == 'sub' else '')
+                real_open, swapped = qvs.os.open, []
+
+                def racing_open(path, flags, *args, dir_fd=None, **kwargs):
+                    if Path(path).name == trigger and not swapped:
+                        swap(victim)
+                        swapped.append(trigger)
+                    return real_open(path, flags, *args, dir_fd=dir_fd, **kwargs)
+                out = case / 'out'
+                with self.subTest(target=target, trigger=trigger, swap=swap.__name__), \
+                        mock.patch.object(qvs.os, 'open', racing_open), \
+                        self.assertRaisesRegex(ValueError, message):
+                    qualify(case / 'manifest.json', case / 'models', out)
+                self.assertEqual(swapped, [trigger])
+                self.assertFalse((out / 'receipt.json').exists())
+                self.assertFalse((out / 'snapshot').exists())
+
     def test_snapshot_changed_after_verification_refuses_before_capture(self):
         # The parse and every scenario read only the verified private snapshot; a later
         # change to the snapshot itself refuses rather than simulating unverified bytes.
