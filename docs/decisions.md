@@ -654,9 +654,15 @@ The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
 remaining numeric limits and their effects; gap-source authentication remains
 AGENTEE-348.
 
-## Owner decisions, 2026-10-22 (owner via agent-519 decision quiz, and owner corrections relayed by agent-509)
+## Decisions relayed 2026-10-22 (agent-519 quiz answers and agent-509 relays)
 
-Each decision is also recorded as an owner comment on its Plane item.
+This is an agent-written summary (agent-449), not owner wording, and the owner has not reviewed it. The authoritative
+records are the relayed messages: agent-519's quiz answers (Cairn notice of 2026-10-22, also posted as "Owner decision
+(2026-10-22, owner via agent-519 decision quiz)" comments on each Plane item) and agent-509's relays (Cairn d162e001,
+b706da93, 9561cd0c for the pod mechanics and through-hole fit items). Where this summary and a relayed record differ,
+the relayed record wins. The fome-mc J1 record quoting the 509 relays verbatim is
+`telemetry-pod/expansion/connector-candidate/mating-interface/sources/owner-decision-2026-10-22-board-thickness.txt`
+(class owner-relayed, agent-drafted).
 
 - **Reviewer capacity.** Use codex-3 for held cross-class reviews (no top-up, no other arrangement).
 - **Release gate host.** Retry the Spot `agent-ee-gate-c4` in us-central1-a; if it stocks out again, leave it off and gate on peecee-wsl.
