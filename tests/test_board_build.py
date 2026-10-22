@@ -138,6 +138,38 @@ class NativeBoardBuildTest(unittest.TestCase):
         return board_build.build(self.project, netlist or self.netlist, footprints, self.envelope,
                                  self.template / 'rc_filter.kicad_pcb', self.request, self.root / out)
 
+    def test_project_geometry_inventory_is_refreshed_and_native_sources_are_unchanged(self):
+        from agent_ee.design_rule_provenance import import_constraints, bind_project, PROJECT_KEY
+        from agent_ee.storage import json_bytes
+        project = json.loads((ROOT / 'fixtures/netclass-completeness/native.kicad_pro').read_bytes())
+        project, record = import_constraints(project, json_bytes({
+            'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
+                'min_clearance': {'class': 'owner', 'basis': 'Original synthetic board-build limit', 'value_mm': 0.17}},
+            'net_class_default': {'class': 'datasheet', 'basis': 'Original synthetic width source', 'track_width_mm': 0.29}}),
+            'source.json', 'fixture')
+        bind_project(project, record)
+        project['net_settings']['classes'][0]['clearance'] = 0.43
+        template_project = self.template / 'rc_filter.kicad_pro'
+        template_project.write_text(json.dumps(project))
+        destination = self.root / 'emitted'
+        _, files = board_build.project_files(self.project)
+        board_build.write_project('rc_filter', files, template_project, destination)
+        emitted = json.loads((destination / 'rc_filter.kicad_pro').read_bytes())
+        self.assertEqual(emitted['board'], project['board'])
+        self.assertEqual(emitted['net_settings'], project['net_settings'])
+        rows = emitted[PROJECT_KEY]['unsourced_geometry']
+        self.assertEqual([r['value'] for r in rows if r['setting'] == 'net_settings.classes.Default.clearance'], [0.43])
+        self.assertNotIn('board.design_settings.rules.min_clearance', [r['setting'] for r in rows])
+        self.assertNotIn('net_settings.classes.Default.track_width', [r['setting'] for r in rows])
+        shutil.copyfile(self.template / 'rc_filter.kicad_pcb', destination / 'rc_filter.kicad_pcb')
+        script = ('import json, pcbnew, sys; b=pcbnew.LoadBoard(sys.argv[1]); s=b.GetDesignSettings(); '
+                  'c=s.m_NetSettings.GetDefaultNetclass(); '
+                  'print(json.dumps([s.m_MinClearance, c.GetTrackWidth(), c.GetClearance()]))')
+        native = subprocess.run(['/usr/bin/python3', '-c', script, str(destination / 'rc_filter.kicad_pcb')],
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(native.returncode, 0, native.stderr)
+        self.assertEqual(json.loads(native.stdout), [170000, 290000, 430000])
+
     def xml_terminals(self):
         root = ET.parse(self.netlist).getroot()
         return {(n.get('ref'), n.get('pin')): net.get('name')

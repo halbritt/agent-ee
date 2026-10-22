@@ -15,6 +15,7 @@ annotation (AGENTEE-52) and placement writer step (AGENTEE-91) supersede it at
 integration; the owned board envelope record is AGENTEE-85.
 """
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -483,7 +484,7 @@ def _row_main(spec_path):
 def write_project(name, files, template_project, destination):
     """Copy the schematic project; take board rules and net classes from the template."""
     destination.mkdir(parents=True, exist_ok=True)
-    from .design_rule_provenance import PROJECT_KEY
+    from .design_rule_provenance import PROJECT_KEY, bind_project, inventory
     for path in files:
         target = destination / path.name
         if path.suffix == '.kicad_pro':
@@ -495,6 +496,8 @@ def write_project(name, files, template_project, destination):
                     merged[key] = template[key]
                 else:
                     merged.pop(key, None)
+            record = copy.deepcopy(merged.get(PROJECT_KEY, {'settings': inventory(merged)}))
+            bind_project(merged, record)
             if merged == project:
                 shutil.copyfile(path, target)
             else:

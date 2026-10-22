@@ -140,8 +140,94 @@ NUMERIC_FIELDS = {
 }
 
 
-def bind_project(project, record):
+def geometry_defaults(project, record, rules_raw=None):
+    """Inventory retained unsourced native geometry inputs (AGENTEE-425).
+
+    This is disclosure, not a change to native enforcement or DRC grading.
+    Consumers denote potential use: a class may have no assigned net and a
+    conditional rule may not match the current board. Unknown geometry keys
+    conservatively name both consumers rather than silently disappearing.
+    """
+    from .net_constraints import rule_forms
+
+    sourced_classes = {'owner', 'manufacturer', 'datasheet'}
+    sources = {s['setting']: s for s in inventory(
+        project, record.get('document'), record.get('path'))}
+    for derived in record.get('derived_settings', []):
+        current = sources.get(derived['setting'])
+        if current is not None and current['value'] == derived['value'] and current['citation'] is None:
+            sources[derived['setting']] = derived
+    result = []
+
+    def add(setting, value, consumers, source=None):
+        source = source or sources.get(setting, {})
+        if source.get('class') in sourced_classes and source.get('citation'):
+            return
+        result.append({'setting': setting, 'value': copy.deepcopy(value),
+                       'consumers': list(consumers), 'class': source.get('class', 'default'),
+                       'citation': copy.deepcopy(source.get('citation')),
+                       'enforcement': 'advisory', 'native_enforcement': 'retained'})
+
+    def leaves(value, setting, consumers):
+        if isinstance(value, dict):
+            for key, child in sorted(value.items()):
+                leaves(child, setting + '.' + key, consumers)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                leaves(child, setting + '.' + str(index), consumers)
+        elif value is not None and value != '':
+            add(setting, value, consumers)
+
+    both = ('router', 'zone_filler')
+    router_rules = {'min_track_width', 'min_via_diameter', 'min_via_annular_width',
+                    'min_through_hole_diameter', 'min_microvia_diameter', 'min_microvia_drill'}
+    design = project.get('board', {}).get('design_settings', {})
+    # These are display/editor and DRC-only settings, not copper geometry inputs.
+    drc_only = {'min_silk_clearance', 'min_text_height', 'min_text_thickness', 'silk_clearance'}
+    for name, value in sorted(design.get('rules', {}).items()):
+        if name not in drc_only:
+            add('board.design_settings.rules.' + name, value,
+                ('router',) if name in router_rules else both)
+    for name, value in sorted(design.items()):
+        if name in {'rules', 'rule_severities', 'drc_exclusions', 'meta'}:
+            continue
+        if name == 'defaults':
+            # Graphic/text/dimension defaults do not govern routed copper.
+            display_prefixes = ('board_', 'copper_', 'courtyard_', 'dimension',
+                                'fab_', 'other_', 'silk_')
+            value = {k: v for k, v in value.items() if not k.startswith(display_prefixes)}
+        leaves(value, 'board.design_settings.' + name,
+               ('router',) if name in {'track_widths', 'via_dimensions', 'diff_pair_dimensions'} else both)
+    display = {'name', 'priority', 'bus_width', 'wire_width', 'line_style',
+               'pcb_color', 'schematic_color'}
+    for cls in project.get('net_settings', {}).get('classes', []):
+        for name, value in sorted(cls.items()):
+            if name not in display:
+                leaves(value, 'net_settings.classes.' + cls['name'] + '.' + name,
+                       both if name == 'clearance' else ('router',))
+    if rules_raw is not None:
+        for index, node in enumerate(rule_forms(rules_raw, native=True)):
+            if not isinstance(node, list) or len(node) < 2 or node[0] != 'rule':
+                continue
+            name = str(node[1])
+            # Captured owner forms retain the existing owner-file authority;
+            # only generated forms can be unsourced in this composition path.
+            source = record.get('generated_rules', {}).get(name)
+            if source is None:
+                continue
+            for ordinal, constraint in enumerate(node[2:]):
+                if isinstance(constraint, list) and constraint and constraint[0] == 'constraint':
+                    router_only = len(constraint) > 1 and constraint[1] in {
+                        'track_width', 'via_diameter', 'annular_width', 'hole_size',
+                        'diff_pair_gap', 'diff_pair_uncoupled', 'length', 'skew', 'via_count'}
+                    add(f'native_rules.{index}.{name}.{ordinal}', constraint,
+                        ('router',) if router_only else both, source)
+    return sorted(result, key=lambda item: item['setting'])
+
+
+def bind_project(project, record, rules_raw=None):
     """Bind emitted settings to their receipt without introducing a second schema."""
+    record['unsourced_geometry'] = geometry_defaults(project, record, rules_raw)
     project[PROJECT_KEY] = copy.deepcopy(record)
 
 

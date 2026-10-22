@@ -7,7 +7,7 @@ import unittest
 
 from agent_ee.candidate import capture
 from agent_ee.campaign import check_proposal
-from agent_ee.design_rule_provenance import declaration, import_constraints, inventory
+from agent_ee.design_rule_provenance import declaration, import_constraints, inventory, geometry_defaults
 from agent_ee.scaffold import scaffold
 from agent_ee.storage import digest, json_bytes, read_json, write_json
 
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_scaffold import ScaffoldFixture
 from test_scaffold_producer import ProducerFixture
 from toolchain import require_toolchain
+from test_add_planes import PlaneFixture
 
 
 def document():
@@ -26,6 +27,78 @@ def document():
 
 
 class ConstraintImportTest(unittest.TestCase):
+    def test_geometry_inventory_is_exact_and_preserves_native_values(self):
+        project = {'board': {'design_settings': {
+            'rules': {'min_clearance': 0.27, 'min_track_width': 0.12, 'min_text_height': 1},
+            'rule_severities': {'clearance': 'error'}, 'drc_exclusions': ['test'],
+            'defaults': {'board_text_size_h': 1, 'zone_clearance': 0.38},
+            'track_widths': [0, 0.31], 'via_dimensions': [{'diameter': 0.7, 'drill': 0.3}]}},
+            'net_settings': {'classes': [{'name': 'Default', 'clearance': 0.27,
+                'track_width': 0.33, 'via_drill': 0.3, 'wire_width': 6, 'priority': 1,
+                'tuning_profile': ''}]}}
+        before = copy.deepcopy(project)
+        records = geometry_defaults(project, {})
+        values = {r['setting']: r['value'] for r in records}
+        self.assertEqual(values, {
+            'board.design_settings.rules.min_clearance': 0.27,
+            'board.design_settings.rules.min_track_width': 0.12,
+            'board.design_settings.defaults.zone_clearance': 0.38,
+            'board.design_settings.track_widths.0': 0,
+            'board.design_settings.track_widths.1': 0.31,
+            'board.design_settings.via_dimensions.0.diameter': 0.7,
+            'board.design_settings.via_dimensions.0.drill': 0.3,
+            'net_settings.classes.Default.clearance': 0.27,
+            'net_settings.classes.Default.track_width': 0.33,
+            'net_settings.classes.Default.via_drill': 0.3})
+        self.assertTrue(all(r['enforcement'] == 'advisory' and r['native_enforcement'] == 'retained'
+                            and r['consumers'] and r['citation'] is None for r in records))
+        self.assertEqual(project, before)
+
+    def test_geometry_sources_require_allowed_class_and_exact_value(self):
+        for source in ('owner', 'manufacturer', 'datasheet', 'engineering', 'default'):
+            with self.subTest(source=source):
+                declared = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
+                    'min_clearance': {'class': source, 'basis': 'Original fixture limit', 'value_mm': 0.17}},
+                    'net_class_default': {'class': source, 'basis': 'Original fixture target', 'track_width_mm': 0.29}}
+                project, record = import_constraints({'net_settings': {'classes': [
+                    {'name': 'Default', 'track_width': 0.4}]}}, json_bytes(declared), 'source.json', 'fixture')
+                records = geometry_defaults(project, record)
+                if source in ('owner', 'manufacturer', 'datasheet'):
+                    self.assertEqual(records, [])
+                    self.assertEqual(project['board']['design_settings']['rules']['min_clearance'], 0.17)
+                    self.assertEqual(project['net_settings']['classes'][0]['track_width'], 0.29)
+                    project['board']['design_settings']['rules']['min_clearance'] = 0.18
+                    self.assertEqual([r['value'] for r in geometry_defaults(project, record)], [0.18])
+                else:
+                    self.assertTrue(records)
+                    self.assertTrue(all(r['enforcement'] == 'advisory' for r in records))
+
+    def test_geometry_generated_rules_retain_exact_constraints_and_consumers(self):
+        raw = b'(version 1)\n(rule "generated" (condition "A.NetClass == \'Power\'") (constraint track_width (min 0.37mm)))\n'
+        record = {'generated_rules': {'generated': {'class': 'default', 'citation': None}}}
+        rows = geometry_defaults({}, record, raw)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['value'], ['constraint', 'track_width', ['min', '0.37mm']])
+        self.assertEqual(rows[0]['consumers'], ['router'])
+        for source in ('owner', 'manufacturer', 'datasheet'):
+            record['generated_rules']['generated'] = {'class': source, 'citation': {'path': 'source.json'}}
+            self.assertEqual(geometry_defaults({}, record, raw), [])
+        # Captured owner rules are sourced by the immutable file, not the template.
+        self.assertEqual(geometry_defaults({}, {}, raw), [])
+        with self.assertRaises(ValueError):
+            geometry_defaults({}, {}, b'(rule')
+
+    def test_new_geometry_setting_is_inventoried_without_a_known_field_allowlist(self):
+        project = {'board': {'design_settings': {'rules': {'future_geometry_limit': 0.41}}}}
+        self.assertEqual(geometry_defaults(project, {})[0]['setting'],
+                         'board.design_settings.rules.future_geometry_limit')
+
+    def test_new_editor_default_is_not_silently_omitted(self):
+        project = {'board': {'design_settings': {'defaults': {'future_geometry_limit': 0.41}}}}
+        row, = geometry_defaults(project, {})
+        self.assertEqual((row['setting'], row['value'], row['consumers']),
+                         ('board.design_settings.defaults.future_geometry_limit', 0.41, ['router', 'zone_filler']))
+
     def test_every_class_and_missing_source_classification(self):
         project = {'board': {'design_settings': {'rules': {'min_clearance': 0.2, 'min_track_width': 0.2}}},
                    'net_settings': {'classes': [{'name': 'Default', 'clearance': 0.2, 'via_drill': 0.3}]}}
@@ -141,8 +214,31 @@ class ScaffoldConstraintTest(ScaffoldFixture, unittest.TestCase):
         self.assertTrue(all(r['class'] == 'default' and r['citation'] is None
                             for r in receipt['constraint_provenance']['settings']))
 
+    def test_template_geometry_changes_are_disclosed_in_bound_inventory(self):
+        first = self.build('first')['constraint_provenance']['unsourced_geometry']
+        self.project['net_settings']['classes'][0]['clearance'] = 0.43
+        write_json(self.source / 'project/design.kicad_pro', self.project)
+        second = self.build('second')['constraint_provenance']['unsourced_geometry']
+        setting = 'net_settings.classes.Default.clearance'
+        self.assertEqual([r['value'] for r in first if r['setting'] == setting], [0.25])
+        self.assertEqual([r['value'] for r in second if r['setting'] == setting], [0.43])
+        project = read_json(self.root / 'second/inputs/project/design.kicad_pro')
+        self.assertEqual(project['agent_ee_constraint_provenance']['unsourced_geometry'], second)
+        self.assertEqual(project['net_settings'], self.project['net_settings'])
+
 
 class ProducerConstraintTest(ProducerFixture, unittest.TestCase):
+    def test_producer_inventory_excludes_sourced_fab_limits_and_binds_to_project(self):
+        receipt = self.build()
+        project = read_json(self.root / 'produced/inputs/project/design.kicad_pro')
+        record = receipt['constraint_provenance']
+        rows = record['unsourced_geometry']
+        self.assertEqual(project['agent_ee_constraint_provenance']['unsourced_geometry'], rows)
+        hard = {r['setting'] for r in record['derived_settings']}
+        self.assertFalse(hard & {r['setting'] for r in rows})
+        self.assertTrue(rows)
+        self.assertEqual(rows, geometry_defaults(project, record))
+
     def test_producer_plan_declares_captured_source(self):
         write_json(self.source / 'constraints.json', document())
         rule = self.source / 'project/design.kicad_dru'
@@ -285,6 +381,32 @@ class FindingSourceTest(unittest.TestCase):
         self.assertEqual(classify_finding(finding, sources)['constraint_provenance']['class'], 'default')
 
 
+class NativeGeometryInventoryTest(PlaneFixture, unittest.TestCase):
+    def test_zone_filler_template_clearance_is_disclosed_and_remains_advisory(self):
+        from agent_ee.design_rule_provenance import bind_project, PROJECT_KEY
+        template = read_json(Path(__file__).resolve().parents[1] /
+                             'fixtures/netclass-completeness/native.kicad_pro')
+        areas = []
+        for clearance in (0.25, 0.85):
+            project = copy.deepcopy(template)
+            project['net_settings']['classes'][0]['clearance'] = clearance
+            project['board']['design_settings'] = {'rules': {'min_clearance': clearance}}
+            record = {'settings': inventory(project)}
+            bind_project(project, record)
+            path = (self.source / self.board).with_suffix('.kicad_pro')
+            write_json(path, project)
+            rows = record['unsourced_geometry']
+            row, = [r for r in rows if r['setting'] == 'net_settings.classes.Default.clearance']
+            self.assertEqual((row['value'], row['enforcement']), (clearance, 'advisory'))
+            self.assertIn('zone_filler', row['consumers'])
+            report = self.run_plan(str(clearance))
+            self.assertEqual(report['execution'], 'ok', report)
+            restored = self.root / str(clearance) / 'native/native-project/pod.kicad_pro'
+            self.assertEqual(read_json(restored)[PROJECT_KEY]['unsourced_geometry'], rows)
+            areas.append(sum(z['filled_area_mm2'] for z in report['zones']))
+        self.assertGreater(areas[0], areas[1])
+
+
 class NativeFindingSourceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -396,6 +518,21 @@ class NativeFindingSourceTest(unittest.TestCase):
 
 
 class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
+    def test_generated_geometry_is_disclosed_in_receipt_and_project(self):
+        self.use_net_constraints()
+        receipt = self.build()
+        inputs = self.root / 'produced/inputs'
+        project = read_json(inputs / 'project/design.kicad_pro')
+        record = receipt['constraint_provenance']
+        raw = (inputs / 'project/design.kicad_dru').read_bytes()
+        rows = record['unsourced_geometry']
+        self.assertEqual(rows, geometry_defaults(project, record, raw))
+        self.assertEqual(rows, project['agent_ee_constraint_provenance']['unsourced_geometry'])
+        native = [r for r in rows if r['setting'].startswith('native_rules.')]
+        self.assertEqual(len(native), 3)
+        self.assertTrue(all(r['class'] == 'default' and r['enforcement'] == 'advisory' for r in native))
+        self.assertEqual({r['value'][1] for r in native}, {'track_width'})
+
     def test_declared_sources_compose_net_rules_and_preserve_owner_bytes(self):
         from agent_ee.design_rule_provenance import finding_sources
         self.use_net_constraints()

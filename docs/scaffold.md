@@ -748,10 +748,39 @@ only graded findings; the row stand-in uses that count for its clean flag.
 Board-build carries the template provenance binding alongside its imported
 board rules and net classes.
 
-The router and native zone filler still consume template defaults when choosing
-geometry. Classification changes no saved native rule value; resolving that
-geometry policy and reconciling class authority with verified references are
-separate follow-up work (AGENTEE-331 rulings G4/G5).
+### Unsourced geometry inventory (AGENTEE-425)
+
+The scaffold receipt's `constraint_provenance.unsourced_geometry` and the same
+inventory in the emitted project's `agent_ee_constraint_provenance` binding
+explicitly disclose retained unsourced geometry inputs. Board-build recomputes
+this inventory after merging template settings. This implements G5's inventory
+alternative: native values stay unchanged, and unsourced numeric limits remain
+advisory to agent-ee even when native tools use them to choose geometry.
+
+Each entry carries `setting`, exact `value`, `consumers` (`router` and/or
+`zone_filler`), source `class` and `citation`, `enforcement: advisory`, and
+`native_enforcement: retained`. Consumers identify potential use, including
+unassigned classes and conditional rules; they do not claim a rule matched the
+current board. Only value-matched owner, manufacturer or datasheet sources omit
+an entry. Source-verified producer fab derivations count as manufacturer sources.
+Engineering-class limits stay inventoried here; their existing hard DRC grading
+does not change.
+
+The inventory covers project board rules except silk/text-only limits, native
+track/via/differential-pair presets, zone/thermal editor defaults, and copper
+net-class fields (including inherited microvia and differential-pair values).
+Display fields, class priority, empty optional tuning profiles, DRC severities
+and exclusions are not geometry defaults. Other design-setting leaves and new
+board-rule/net-class keys are conservatively inventoried. Generated custom-rule
+constraints are retained as parsed native forms, with positional setting locators
+so repeated names cannot collapse entries. Captured owner rules retain their
+immutable-file source and composition precedence.
+
+This is an inventory of emitted project/rule settings, not of KiCad or router
+implementation constants, nor of explicit pad, zone or footprint geometry.
+It does not certify citations' engineering applicability; verified reference
+authority remains the separate owner item G4. No router code or acceptance
+verdict changes.
 
 Thermal-spoke counts are dimensionless numeric limits. A native
 `starved_thermal` finding with an unsourced minimum remains advisory. KiCad's
