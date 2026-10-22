@@ -810,7 +810,9 @@ declared criterion per check: native DRC courtyard overlap and footprint
 keepouts from an earlier DRC, outline containment, courtyard edge clearance,
 declared connector edges and a pad-centre ratsnest proxy. The advisory
 [pre-route congestion report](docs/placement-congestion.md) ranks pad overlaps,
-courtyard issues and congested regions with suggested moves; it never passes a board. An
+courtyard issues and congested regions with suggested moves; it never passes a board.
+[Local copper access](docs/placement-access.md) reports diagnostic, native-qualified
+access witnesses or unknowns per terminal and never ranks or rejects a placement. An
 [initial placer](docs/placer.md) proposes deterministic positions on an isolated
 copy and validates the saved result with native tools. Opt-in
 [targeted plans](docs/placement-plans.md) place caller-named decoupling capacitors

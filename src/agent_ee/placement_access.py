@@ -1,0 +1,964 @@
+"""Diagnostic local copper access on a complete candidate board (AGENTEE-386, routability plan M3a).
+
+Pure, bounded and geometry-based; not a router. Input is the opt-in
+``agent-ee.routing-geometry/1`` capture (``placement_probe.routing_geometry``):
+raw native pad copper and drills, native own clearances, tracks, vias, outline,
+rule areas and the board rule floor. For each conductive terminal component
+(same-net pads whose copper already touches) a finite, deterministic candidate
+set is tested in the stated model:
+
+1. direct straight or one-bend links to another same-net component;
+2. straight and one-bend exits from the pad to a local shell around its footprint;
+3. short stubs to an approved through via that reaches another routing layer.
+
+A result is ``witness`` (clear alternatives with margins; never mutually
+compatible reservations), ``unknown`` (no witness in the finite search, budget,
+unsupported geometry or rules, incomplete coverage) or ``not_required``. A
+finite-search failure is never infeasibility: there is no ``proven_no_access``
+and nothing here can reject a placement. Different-net copper is enlarged by
+half the track width plus max(board minimum, both native own clearances);
+holes by the hole clearance (vias also hole-to-hole); the outline by the
+copper-edge clearance; track/via keepouts block their item. Native custom rules
+and copper zones are not evaluated: present custom rules make every terminal
+unknown, and a different-net zone makes its layer unknown.
+
+Native KiCad remains the authority: ``qualify`` materializes witnesses on an
+isolated copy with unchanged rules, refills and runs kicad-cli DRC in the
+existing sandbox. The ``agent-ee.block-access/1`` sidecar binds the strict
+candidate/2 digest and is written only in diagnostic mode; it never changes a
+candidate, its order or its admission. See docs/placement-access.md.
+"""
+import argparse
+from collections import Counter
+import json
+import math
+from pathlib import Path
+import shutil
+import sys
+
+from .catalog import strict_json
+from .footprint_library import digest
+from .placer import rotate
+
+SCHEMA = 'agent-ee.placement-access/1'
+SIDECAR = 'agent-ee.block-access/1'
+GEOMETRY = 'agent-ee.routing-geometry/1'
+SEARCH = 'bounded-local-access/1'
+QUALIFICATION = 'agent-ee.access-qualification/1'
+# Search budget, not physical limits (plan section 4.2: provisional eight witnesses).
+LIMITS = {'max_witnesses': 8, 'max_candidates': 96, 'direct_max_nm': 5_000_000, 'grid_nm': 10_000,
+          'shell_nm': None}
+# KiCad board y grows downward. Existing deterministic order: normals, then diagonals.
+DIRECTIONS = (('up', (0, -1)), ('down', (0, 1)), ('left', (-1, 0)), ('right', (1, 0)),
+              ('up-left', (-1, -1)), ('up-right', (1, -1)), ('down-left', (-1, 1)), ('down-right', (1, 1)))
+CELL_NM = 1_000_000
+# A stub ends open by construction; only these native findings on materialized items are expected.
+DANGLING = frozenset(('track_dangling', 'via_dangling'))
+
+
+# ------------------------------------------------------------------ geometry
+
+def _box(points, grow=0):
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    return (min(xs) - grow, min(ys) - grow, max(xs) + grow, max(ys) + grow)
+
+
+def _point_segment(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length2 = dx*dx + dy*dy
+    t = 0.0 if length2 == 0 else max(0.0, min(1.0, ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / length2))
+    return math.hypot(a[0] + t*dx - p[0], a[1] + t*dy - p[1])
+
+
+def _orient(a, b, c):
+    value = (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
+    return (value > 0) - (value < 0)
+
+
+def _crosses(a, b, c, d):
+    o1, o2, o3, o4 = _orient(a, b, c), _orient(a, b, d), _orient(c, d, a), _orient(c, d, b)
+    if o1 != o2 and o3 != o4:
+        return True
+
+    def on(p, q, r):
+        return min(p[0], q[0]) <= r[0] <= max(p[0], q[0]) and min(p[1], q[1]) <= r[1] <= max(p[1], q[1])
+    return ((o1 == 0 and on(a, b, c)) or (o2 == 0 and on(a, b, d)) or (o3 == 0 and on(c, d, a))
+            or (o4 == 0 and on(c, d, b)))
+
+
+def segment_distance(a, b, c, d):
+    """Distance between segments ab and cd (zero when they meet)."""
+    if _crosses(a, b, c, d):
+        return 0.0
+    return min(_point_segment(a, c, d), _point_segment(b, c, d), _point_segment(c, a, b), _point_segment(d, a, b))
+
+
+def inside(point, polygon):
+    """Even-odd containment; a point on the boundary may fall either way, callers add margins."""
+    x, y, result = point[0], point[1], False
+    for (x1, y1), (x2, y2) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            result = not result
+    return result
+
+
+def _edges(polygon):
+    return zip(polygon, polygon[1:] + polygon[:1])
+
+
+def shape_distance(a, b, shape):
+    """Distance from segment ab to an obstacle shape: ('poly', points) or ('capsule', c, d, radius)."""
+    if shape[0] == 'capsule':
+        return segment_distance(a, b, shape[1], shape[2]) - shape[3]
+    polygon = shape[1]
+    if inside(a, polygon) or inside(b, polygon):
+        return 0.0
+    return min(segment_distance(a, b, p, q) for p, q in _edges(polygon))
+
+
+def _polygons_touch(left, right):
+    if inside(left[0], right) or inside(right[0], left):
+        return True
+    return any(_crosses(a, b, c, d) for a, b in _edges(left) for c, d in _edges(right))
+
+
+# ------------------------------------------------------------------- inputs
+
+def validate_geometry(geometry):
+    if not isinstance(geometry, dict) or geometry.get('schema') != GEOMETRY:
+        raise ValueError(f'local access needs an {GEOMETRY} capture')
+    for key in ('board_sha256', 'copper_layers', 'rules', 'track_clearance_nm', 'outline', 'rule_areas',
+                'footprints', 'pads', 'tracks', 'vias', 'zones', 'max_error_nm'):
+        if key not in geometry:
+            raise ValueError(f'routing geometry lacks {key}')
+    refs = Counter(fp['ref'] for fp in geometry['footprints'])
+    if any(count > 1 for count in refs.values()):
+        raise ValueError('routing geometry has duplicate footprint references: '
+                         + ', '.join(sorted(r for r, n in refs.items() if n > 1)))
+    uuids = Counter(p['uuid'] for p in geometry['pads'])
+    if any(count > 1 for count in uuids.values()):
+        raise ValueError('routing geometry has duplicate pad UUIDs')
+    return geometry
+
+
+def _nm(value, label, positive=True):
+    if type(value) is not int or (positive and value <= 0):
+        raise ValueError(f'{label} must be a positive integer nm')
+    return value
+
+
+def routing_policy(policy, geometry):
+    """Validate the declared track, routing layers and approved through vias against the captured rule floor."""
+    if not isinstance(policy, dict) or set(policy) - {'track_width_nm', 'routing_layers', 'vias'} or \
+            {'track_width_nm', 'routing_layers'} - set(policy):
+        raise ValueError('routing policy needs track_width_nm and routing_layers, optionally vias')
+    rules, layers = geometry['rules'], geometry['copper_layers']
+    width = _nm(policy['track_width_nm'], 'track_width_nm')
+    if width < rules['min_track_width_nm']:
+        raise ValueError('track_width_nm is below the captured minimum track width')
+    routing = policy['routing_layers']
+    if (not isinstance(routing, list) or not routing or len(set(routing)) != len(routing)
+            or any(layer not in layers for layer in routing)):
+        raise ValueError('routing_layers must list distinct captured copper layers')
+    vias = []
+    for via in policy.get('vias', []):
+        if not isinstance(via, dict) or set(via) != {'diameter_nm', 'drill_nm'}:
+            raise ValueError('an approved via needs exactly diameter_nm and drill_nm (through via)')
+        diameter, drill = _nm(via['diameter_nm'], 'via diameter_nm'), _nm(via['drill_nm'], 'via drill_nm')
+        if (diameter < rules['min_via_diameter_nm'] or drill < rules['min_through_drill_nm']
+                or (diameter - drill) < 2 * rules['min_via_annular_nm']):
+            raise ValueError('approved via is below the captured via diameter, drill or annular minimum')
+        vias.append({'diameter_nm': diameter, 'drill_nm': drill})
+    return {'track_width_nm': width, 'routing_layers': [l for l in layers if l in routing], 'vias': vias}
+
+
+def search_limits(limits):
+    out = dict(LIMITS)
+    for key, value in (limits or {}).items():
+        if key not in LIMITS:
+            raise ValueError(f'unknown access limit {key}')
+        if value is not None or key != 'shell_nm':
+            _nm(value, key)
+        out[key] = value
+    return out
+
+
+def _turns(delta):
+    turns = delta / 90
+    if not math.isfinite(turns) or turns != round(turns):
+        raise ValueError('a local access pose may change rotation only by quarter turns')
+    return int(round(turns)) % 4
+
+
+# -------------------------------------------------------------------- index
+
+class AccessIndex:
+    """Spatial index of the captured obstacles with exact push/pop of footprint poses.
+
+    ``push(ref, pose)`` moves one footprint's pads, drills and footprint-owned
+    rule areas by the placer's quarter-turn convention (``placer.rotate``);
+    ``pop()`` restores the previous entries exactly. ``state()`` is the
+    canonical content for equality tests against a fresh index.
+    """
+
+    def __init__(self, geometry, policy, limits=None):
+        self.geometry = validate_geometry(geometry)
+        self.policy = routing_policy(policy, geometry)
+        self.limits = search_limits(limits)
+        self.rules = geometry['rules']
+        self.footprints = {fp['ref']: fp for fp in geometry['footprints']}
+        self.owner = {fp['uuid']: fp['ref'] for fp in geometry['footprints']}
+        self.pose = {ref: {'position_nm': list(fp['position_nm']), 'rotation_deg': fp['rotation_deg']}
+                     for ref, fp in self.footprints.items()}
+        self.pads = {p['uuid']: p for p in geometry['pads']}
+        self.pads_of = {}
+        for pad in geometry['pads']:
+            self.pads_of.setdefault(pad['ref'], []).append(pad)
+        self.shapes = {}
+        self.coverage = self._coverage()
+        self.outline = ([tuple(p) for p in geometry['outline']['polygons'][0]]
+                        if geometry['outline'].get('status') == 'proven' else None)
+        values = [self.rules['min_clearance_nm']] + [v for layers in geometry['track_clearance_nm'].values()
+                                                     for v in layers.values()]
+        self.max_clearance = max(values + [v for p in geometry['pads'] for v in p['own_clearance_nm'].values()])
+        self.items, self.cells, self.by_ref, self.history = {}, {}, {}, []
+        for item in self._items():
+            self._insert(item)
+
+    # Global model limits make every terminal unknown; they are reported, never guessed around.
+    def _coverage(self):
+        reasons = []
+        custom = self.rules.get('custom_rules', {}).get('status')
+        if custom not in ('absent', 'empty'):
+            reasons.append('native custom rules present; pairwise evaluation not modelled')
+        if self.geometry['outline'].get('status') != 'proven':
+            reasons.append('board outline not proven')
+        for area in self.geometry['rule_areas']:
+            if area['outline'].get('status') != 'proven' and (area['forbid']['tracks'] or area['forbid']['vias']):
+                reasons.append(f"rule area {area['uuid']} outline unsupported")
+        for track in self.geometry['tracks']:
+            if track['kind'] != 'segment':
+                reasons.append(f"existing {track.get('native_class', 'track')} {track['uuid']} not modelled")
+        for via in self.geometry['vias']:
+            if via['layers'] != self.geometry['copper_layers']:
+                reasons.append(f"existing blind or buried via {via['uuid']} not modelled")
+        return sorted(set(reasons))
+
+    def _items(self):
+        geometry, items = self.geometry, []
+        for pad in geometry['pads']:
+            for layer, bounds in sorted(pad['copper'].items()):
+                for i, polygon in enumerate(bounds['outer']):
+                    items.append({'id': f"pad:{pad['uuid']}:{layer}:{i}", 'kind': 'pad', 'source': pad['uuid'],
+                                  'ref': pad['ref'], 'net': pad['net'], 'layer': layer,
+                                  'clearance_nm': pad['own_clearance_nm'][layer],
+                                  'shape': ('poly', [tuple(p) for p in polygon])})
+            if pad['hole']:
+                for i, polygon in enumerate(pad['hole']['outer']):
+                    items.append({'id': f"hole:{pad['uuid']}:{i}", 'kind': 'hole', 'source': pad['uuid'],
+                                  'ref': pad['ref'], 'net': pad['net'], 'layer': '*', 'clearance_nm': 0,
+                                  'shape': ('poly', [tuple(p) for p in polygon])})
+        for track in geometry['tracks']:
+            if track['kind'] == 'segment':
+                items.append({'id': f"track:{track['uuid']}", 'kind': 'track', 'source': track['uuid'], 'ref': None,
+                              'net': track['net'], 'layer': track['layer'],
+                              'clearance_nm': geometry['track_clearance_nm'][track['net']][track['layer']],
+                              'shape': ('capsule', tuple(track['start_nm']), tuple(track['end_nm']),
+                                        track['width_nm'] / 2)})
+        for via in geometry['vias']:
+            centre = tuple(via['position_nm'])
+            for layer in via['layers']:
+                items.append({'id': f"via:{via['uuid']}:{layer}", 'kind': 'via', 'source': via['uuid'], 'ref': None,
+                              'net': via['net'], 'layer': layer,
+                              'clearance_nm': geometry['track_clearance_nm'][via['net']][layer],
+                              'shape': ('capsule', centre, centre, via['diameter_nm'] / 2)})
+            items.append({'id': f"hole:{via['uuid']}", 'kind': 'hole', 'source': via['uuid'], 'ref': None,
+                          'net': via['net'], 'layer': '*', 'clearance_nm': 0,
+                          'shape': ('capsule', centre, centre, via['drill_nm'] / 2)})
+        if geometry['outline'].get('status') == 'proven':
+            polygon = [tuple(p) for p in geometry['outline']['polygons'][0]]
+            for i, (a, b) in enumerate(_edges(polygon)):
+                items.append({'id': f'edge:{i}', 'kind': 'edge', 'source': 'outline', 'ref': None, 'net': None,
+                              'layer': '*', 'clearance_nm': 0, 'shape': ('capsule', a, b, 0)})
+        for area in geometry['rule_areas']:
+            if area['outline'].get('status') != 'proven':
+                continue
+            forbid = sorted(k for k in ('tracks', 'vias') if area['forbid'][k])
+            if not forbid:
+                continue
+            ref = self.owner.get(area['owner'])
+            for layer in area['layers']:
+                for i, polygon in enumerate(area['outline']['polygons']):
+                    items.append({'id': f"keepout:{area['uuid']}:{layer}:{i}", 'kind': 'keepout',
+                                  'source': area['uuid'], 'ref': ref, 'net': None, 'layer': layer,
+                                  'forbid': forbid, 'clearance_nm': 0,
+                                  'shape': ('poly', [tuple(p) for p in polygon])})
+        return items
+
+    def _cells_of(self, item):
+        shape = item['shape']
+        points = shape[1] if shape[0] == 'poly' else (shape[1], shape[2])
+        grow = 0 if shape[0] == 'poly' else shape[3]
+        x0, y0, x1, y1 = _box(points, grow)
+        return [(item['layer'], ix, iy) for ix in range(int(x0 // CELL_NM), int(x1 // CELL_NM) + 1)
+                for iy in range(int(y0 // CELL_NM), int(y1 // CELL_NM) + 1)]
+
+    def _insert(self, item):
+        self.items[item['id']] = item
+        for cell in self._cells_of(item):
+            self.cells.setdefault(cell, set()).add(item['id'])
+        if item['ref'] is not None:
+            self.by_ref.setdefault(item['ref'], []).append(item['id'])
+
+    def _remove(self, item_id):
+        item = self.items.pop(item_id)
+        for cell in self._cells_of(item):
+            self.cells[cell].discard(item_id)
+            if not self.cells[cell]:
+                del self.cells[cell]
+        if item['ref'] is not None:
+            self.by_ref[item['ref']].remove(item_id)
+        return item
+
+    def near(self, box, layers):
+        x0, y0, x1, y1 = box
+        found = set()
+        for layer in layers:
+            for ix in range(int(x0 // CELL_NM), int(x1 // CELL_NM) + 1):
+                for iy in range(int(y0 // CELL_NM), int(y1 // CELL_NM) + 1):
+                    found |= self.cells.get((layer, ix, iy), set())
+        return [self.items[i] for i in sorted(found)]
+
+    # ------------------------------------------------------------ poses
+
+    def mover(self, ref, pose):
+        old = self.pose[ref]
+        turns = _turns(pose['rotation_deg'] - old['rotation_deg'])
+        origin, target = old['position_nm'], pose['position_nm']
+        if not isinstance(target, list) or len(target) != 2 or any(type(v) is not int for v in target):
+            raise ValueError('a local access pose needs an integer position_nm')
+
+        def move(point):
+            x, y = rotate([point[0] - origin[0], point[1] - origin[1]], turns)
+            return (x + target[0], y + target[1])
+        return move
+
+    def push(self, ref, pose):
+        """Move ``ref`` to ``pose`` (quarter-turn change); undo with ``pop``."""
+        if ref not in self.footprints:
+            raise ValueError(f'unknown footprint {ref}')
+        move = self.mover(ref, pose)
+        before = [self._remove(i) for i in list(self.by_ref.get(ref, []))]
+        for item in before:
+            shape = item['shape']
+            moved = (('poly', [move(p) for p in shape[1]]) if shape[0] == 'poly'
+                     else ('capsule', move(shape[1]), move(shape[2]), shape[3]))
+            self._insert({**item, 'shape': moved})
+        self.history.append((ref, self.pose[ref], before))
+        self.shapes = {}
+        self.pose[ref] = {'position_nm': list(pose['position_nm']), 'rotation_deg': pose['rotation_deg']}
+
+    def pop(self):
+        ref, pose, before = self.history.pop()
+        for item_id in list(self.by_ref.get(ref, [])):
+            self._remove(item_id)
+        for item in before:
+            self._insert(item)
+        self.pose[ref] = pose
+        self.shapes = {}
+
+    def state(self):
+        return {'pose': self.pose, 'history': len(self.history),
+                'items': {i: self.items[i] for i in sorted(self.items)},
+                'cells': {f'{k[0]}|{k[1]}|{k[2]}': sorted(v) for k, v in sorted(self.cells.items())}}
+
+    def pad_shape(self, uuid, layer, bound):
+        """Current (posed) outer or inner copper polygons of a pad on a layer."""
+        key = (uuid, layer, bound)
+        if key not in self.shapes:
+            pad = self.pads[uuid]
+            move = self._from_capture(pad['ref'])
+            self.shapes[key] = [[move(p) for p in polygon] for polygon in pad['copper'][layer][bound]]
+        return self.shapes[key]
+
+    def anchor(self, uuid):
+        pad = self.pads[uuid]
+        return self._from_capture(pad['ref'])(pad['position_nm'])
+
+    def _from_capture(self, ref):
+        fp, pose = self.footprints[ref], self.pose[ref]
+        turns = _turns(pose['rotation_deg'] - fp['rotation_deg'])
+        origin, target = fp['position_nm'], pose['position_nm']
+
+        def move(point):
+            x, y = rotate([point[0] - origin[0], point[1] - origin[1]], turns)
+            return (x + target[0], y + target[1])
+        return move
+
+    # ---------------------------------------------------------- checks
+
+    def required(self, net, layer, item):
+        own = self.geometry['track_clearance_nm'].get(net, {}).get(layer)
+        if own is None:
+            raise ValueError(f'no captured native clearance for net {net!r} on {layer}')
+        return max(self.rules['min_clearance_nm'], own, item['clearance_nm'])
+
+    def check_track(self, a, b, layer, net, half, connected):
+        """(margin, blocker) of a track segment; margin < 0 names the first violated obstacle."""
+        rules = self.rules
+        reach = half + max(rules['hole_clearance_nm'], rules['copper_edge_clearance_nm'],
+                           self.max_clearance) + self.geometry['max_error_nm']
+        box = _box((a, b), reach)
+        best, limiting = math.inf, None
+        for item in self.near(box, (layer, '*')):
+            kind = item['kind']
+            if kind == 'pad' and item['net'] == net:
+                continue
+            if kind in ('track', 'via') and item['net'] == net:
+                continue
+            if kind == 'hole' and item['source'] in connected:
+                continue
+            if kind == 'keepout':
+                if 'tracks' not in item['forbid']:
+                    continue
+                need = half + 1
+            elif kind == 'hole':
+                need = half + rules['hole_clearance_nm']
+            elif kind == 'edge':
+                need = half + rules['copper_edge_clearance_nm']
+            else:
+                need = half + self.required(net, layer, item)
+            margin = shape_distance(a, b, item['shape']) - need
+            if margin < best:
+                best, limiting = margin, item['id']
+            if margin < 0:
+                return margin, limiting
+        if self.outline is None or not (inside(a, self.outline) and inside(b, self.outline)):
+            return -1.0, 'outline'
+        return best, limiting
+
+    def check_via(self, centre, via, net, connected):
+        rules, radius, drill = self.rules, via['diameter_nm'] / 2, via['drill_nm'] / 2
+        layers = self.geometry['copper_layers']
+        reach = radius + max(rules['hole_clearance_nm'], rules['hole_to_hole_nm'], rules['copper_edge_clearance_nm'],
+                             self.max_clearance) + self.geometry['max_error_nm']
+        box = _box((centre,), reach)
+        best, limiting = math.inf, None
+        for item in self.near(box, tuple(layers) + ('*',)):
+            kind = item['kind']
+            if kind in ('pad', 'track', 'via') and item['net'] == net:
+                continue
+            if kind == 'keepout':
+                if 'vias' not in item['forbid']:
+                    continue
+                need = radius + 1
+            elif kind == 'hole':
+                # Drill to drill everywhere; via copper to a foreign drill by the hole clearance.
+                need = drill + rules['hole_to_hole_nm']
+                if item['source'] not in connected:
+                    need = max(need, radius + rules['hole_clearance_nm'])
+            elif kind == 'edge':
+                need = radius + rules['copper_edge_clearance_nm']
+            else:
+                need = radius + self.required(net, item['layer'], item)
+            margin = shape_distance(centre, centre, item['shape']) - need
+            if margin < best:
+                best, limiting = margin, item['id']
+            if margin < 0:
+                return margin, limiting
+        if self.outline is None or not inside(centre, self.outline):
+            return -1.0, 'outline'
+        return best, limiting
+
+    # --------------------------------------------------------- analysis
+
+    def analyze(self, refs=None):
+        """The ``agent-ee.placement-access/1`` report for every terminal (or those with a pad on ``refs``)."""
+        terminals = []
+        components = self.components()
+        for component in components:
+            if refs is not None and not {p['ref'] for p in component['pads']} & set(refs):
+                continue
+            terminals.append(self.terminal(component, components))
+        summary = Counter(t['status'] for t in terminals)
+        return {'schema': SCHEMA, 'search': SEARCH, 'board_sha256': self.geometry['board_sha256'],
+                'geometry_sha256': digest(self.geometry), 'policy': self.policy, 'limits': self.limits,
+                'poses': {ref: pose for ref, pose in sorted(self.pose.items())
+                          if pose != {'position_nm': self.footprints[ref]['position_nm'],
+                                      'rotation_deg': self.footprints[ref]['rotation_deg']}},
+                'coverage': {'status': 'unknown' if self.coverage else 'modelled', 'reasons': self.coverage,
+                             'model': ['pad copper (native outer bound)', 'drills and slots', 'tracks', 'vias',
+                                       'board outline', 'track/via rule areas', 'native own clearances'],
+                             'not_modelled': ['native custom rules', 'copper zones (refilled by native authority)',
+                                              'simultaneous routability']},
+                'summary': {k: summary.get(k, 0) for k in ('witness', 'unknown', 'not_required')},
+                'terminals': terminals}
+
+    def components(self):
+        """Same-net pads whose posed copper touches on a shared layer form one terminal component."""
+        pads = sorted((p for p in self.geometry['pads'] if p['copper']),
+                      key=lambda p: (p['ref'], p['number'], p['uuid']))
+        parent = {p['uuid']: p['uuid'] for p in pads}
+
+        def find(u):
+            while parent[u] != u:
+                parent[u] = parent[parent[u]]
+                u = parent[u]
+            return u
+        by_net = {}
+        for pad in pads:
+            by_net.setdefault(pad['net'], []).append(pad)
+        for net, group in by_net.items():
+            if not net:
+                continue
+            for i, left in enumerate(group):
+                for right in group[i + 1:]:
+                    if find(left['uuid']) == find(right['uuid']):
+                        continue
+                    for layer in sorted(set(left['copper']) & set(right['copper'])):
+                        lp = self.pad_shape(left['uuid'], layer, 'outer')
+                        rp = self.pad_shape(right['uuid'], layer, 'outer')
+                        lb, rb = _box([q for poly in lp for q in poly]), _box([q for poly in rp for q in poly])
+                        if lb[2] < rb[0] or rb[2] < lb[0] or lb[3] < rb[1] or rb[3] < lb[1]:
+                            continue
+                        if any(_polygons_touch(a, b) for a in lp for b in rp):
+                            parent[find(right['uuid'])] = find(left['uuid'])
+                            break
+        groups = {}
+        for pad in pads:
+            groups.setdefault(find(pad['uuid']), []).append(pad)
+        out = []
+        for members in groups.values():
+            first = members[0]
+            out.append({'id': f"{first['ref']}.{first['number']}@{first['uuid']}", 'net': first['net'],
+                        'pads': [{'ref': p['ref'], 'number': p['number'], 'uuid': p['uuid']} for p in members]})
+        return sorted(out, key=lambda c: c['id'])
+
+    def terminal(self, component, components):
+        net = component['net']
+        peers = [c for c in components if c['net'] == net and c is not component]
+        record = {'id': component['id'], 'net': net, 'pads': component['pads']}
+        connected_tracks = any(t['net'] == net for t in self.geometry['tracks'] + self.geometry['vias'])
+        if not net or net.startswith('unconnected-') or (not peers and not connected_tracks):
+            return {**record, 'status': 'not_required', 'reason': 'no other terminal on the net'}
+        if self.coverage:
+            return {**record, 'status': 'unknown', 'reason': 'coverage', 'details': self.coverage}
+        unsupported = [f"{self.pads[p['uuid']]['ref']}.{self.pads[p['uuid']]['number']}: "
+                       + '; '.join(self.pads[p['uuid']]['reasons'])
+                       for p in component['pads'] if self.pads[p['uuid']]['status'] != 'supported']
+        if unsupported:
+            return {**record, 'status': 'unknown', 'reason': 'unsupported_geometry', 'details': unsupported}
+        source = self._source(component)
+        if source is None:
+            return {**record, 'status': 'unknown', 'reason': 'no pad anchor inside its copper on a routing layer'}
+        uuid, layers = source
+        zoned = self._zoned_layers(net)
+        layers = [l for l in layers if l not in zoned]
+        if not layers:
+            return {**record, 'status': 'unknown', 'reason': 'different-net copper zone on every start layer',
+                    'details': sorted(zoned)}
+        search = _Search(self, component, uuid, layers, peers, zoned)
+        result = search.run()
+        result['source_pad'] = uuid
+        if zoned:
+            result['zone_layers_unknown'] = sorted(zoned)
+        return {**record, **result}
+
+    def _source(self, component):
+        for pad in component['pads']:
+            layers = [l for l in self.policy['routing_layers'] if l in self.pads[pad['uuid']]['copper']]
+            anchor = self.anchor(pad['uuid'])
+            layers = [l for l in layers
+                      if any(inside(anchor, poly) for poly in self.pad_shape(pad['uuid'], l, 'inner'))]
+            if layers:
+                return pad['uuid'], layers
+        return None
+
+    def _zoned_layers(self, net):
+        return {layer for zone in self.geometry['zones'] if zone['net'] != net for layer in zone['layers']
+                if layer in self.geometry['copper_layers']}
+
+
+class _Search:
+    """Finite deterministic candidate set for one terminal component."""
+
+    def __init__(self, index, component, uuid, layers, peers, zoned):
+        self.index, self.component, self.uuid, self.layers = index, component, uuid, layers
+        self.peers, self.zoned = peers, zoned
+        self.net = component['net']
+        self.limits, self.policy = index.limits, index.policy
+        self.half = self.policy['track_width_nm'] / 2
+        self.connected = {p['uuid'] for p in component['pads']}
+        self.anchor = index.anchor(uuid)
+        self.witnesses, self.blockers, self.attempted = [], Counter(), 0
+        ref = index.pads[uuid]['ref']
+        own = [q for pad in index.pads_of[ref] for layer in pad['copper']
+               for poly in index.pad_shape(pad['uuid'], layer, 'outer') for q in poly]
+        clear = max(index.rules['min_clearance_nm'],
+                    *(index.geometry['track_clearance_nm'][self.net].values()))
+        self.clear = clear
+        shell = self.limits['shell_nm']
+        if shell is None:
+            shell = clear + self.policy['track_width_nm']
+        self.shell = _box(own, shell)
+        self.own_box = _box(own)
+        self.pad_points = [q for layer in index.pads[uuid]['copper'] for poly in index.pad_shape(uuid, layer, 'outer')
+                           for q in poly]
+
+    def run(self):
+        for candidate in self.candidates():
+            if len(self.witnesses) >= self.limits['max_witnesses']:
+                return self.result(truncated=True)
+            if self.attempted >= self.limits['max_candidates']:
+                return self.result(budget=True)
+            self.attempted += 1
+            self.test(candidate)
+        return self.result()
+
+    def result(self, truncated=False, budget=False):
+        ranked = sorted(self.blockers.items(), key=lambda kv: (-kv[1], kv[0]))
+        blockers = [{'obstacle': k, 'candidates': n} for k, n in ranked][:8]
+        out = {'attempted': self.attempted, 'truncated': truncated}
+        if self.witnesses:
+            return {**out, 'status': 'witness', 'witnesses': self.witnesses, 'blockers': blockers}
+        return {**out, 'status': 'unknown', 'witnesses': [],
+                'reason': 'search_budget_exhausted' if budget else 'no_witness_in_finite_search',
+                'blockers': blockers}
+
+    def test(self, candidate):
+        kind, layer, path = candidate['kind'], candidate['layer'], candidate['path']
+        margins = []
+        connected = self.connected | set(candidate.get('target_pads', ()))
+        for a, b in zip(path, path[1:]):
+            margin, limiting = self.index.check_track(a, b, layer, self.net, self.half, connected)
+            if margin < 0:
+                self.blockers[limiting] += 1
+                return
+            margins.append((margin, limiting))
+        if 'via' in candidate:
+            margin, limiting = self.index.check_via(path[-1], candidate['via'], self.net, connected)
+            if margin < 0:
+                self.blockers[limiting] += 1
+                return
+            margins.append((margin, limiting))
+        margin, limiting = min(margins, key=lambda m: m[0])
+        witness = {'kind': kind, 'source_pad': self.uuid, 'net': self.net, 'layer': layer,
+                   'track_width_nm': self.policy['track_width_nm'], 'path_nm': [list(p) for p in path],
+                   'min_margin_nm': math.floor(margin) if math.isfinite(margin) else None, 'limiting': limiting}
+        if kind == 'direct':
+            witness['target'] = candidate['target']
+        if 'via' in candidate:
+            witness['via'] = {**candidate['via'], 'position_nm': list(path[-1]),
+                              'layers': self.index.geometry['copper_layers'],
+                              'reaches': [l for l in self.policy['routing_layers'] if l != layer]}
+        if 'direction' in candidate:
+            witness['direction'] = candidate['direction']
+        if witness not in self.witnesses:
+            self.witnesses.append(witness)
+
+    def _snap(self, value):
+        grid = self.limits['grid_nm']
+        return math.ceil(value / grid) * grid
+
+    def _exit(self, origin, unit):
+        """Smallest t with origin + t*unit strictly outside the local shell box."""
+        x0, y0, x1, y1 = self.shell
+        ts = []
+        for axis, (lo, hi) in ((0, (x0, x1)), (1, (y0, y1))):
+            if unit[axis] > 0:
+                ts.append((hi - origin[axis]) / unit[axis])
+            elif unit[axis] < 0:
+                ts.append((lo - origin[axis]) / unit[axis])
+        return self._snap(max(0, min(ts)) + 1)
+
+    @staticmethod
+    def _point(origin, unit, t):
+        return (int(round(origin[0] + unit[0] * t)), int(round(origin[1] + unit[1] * t)))
+
+    def _extent(self, points, unit):
+        base = self.anchor[0] * unit[0] + self.anchor[1] * unit[1]
+        return max(p[0] * unit[0] + p[1] * unit[1] for p in points) - base
+
+    def candidates(self):
+        index = self.index
+        # 1. Direct links to nearby same-net components, nearest first.
+        peers = []
+        for peer in self.peers:
+            for pad in peer['pads']:
+                target = index.anchor(pad['uuid'])
+                distance = math.hypot(target[0] - self.anchor[0], target[1] - self.anchor[1])
+                shared = [l for l in self.layers if l in index.pads[pad['uuid']]['copper']
+                          and any(inside(target, poly) for poly in index.pad_shape(pad['uuid'], l, 'inner'))]
+                if distance <= self.limits['direct_max_nm'] and shared:
+                    peers.append((distance, peer['id'], pad['uuid'], target, shared, peer))
+                    break
+        for distance, peer_id, pad_uuid, target, shared, peer in sorted(peers, key=lambda p: (p[0], p[1])):
+            targets = [p['uuid'] for p in peer['pads']]
+            bends = [(target[0], self.anchor[1]), (self.anchor[0], target[1])]
+            for layer in shared:
+                yield {'kind': 'direct', 'layer': layer, 'path': [self.anchor, target], 'target': peer_id,
+                       'target_pads': targets}
+                for bend in bends:
+                    if bend != self.anchor and bend != target:
+                        yield {'kind': 'direct', 'layer': layer, 'path': [self.anchor, bend, target],
+                               'target': peer_id, 'target_pads': targets}
+        # 2. Straight then one-bend exits to the local shell.
+        for layer in self.layers:
+            for name, direction in DIRECTIONS:
+                unit = (direction[0] / math.hypot(*direction), direction[1] / math.hypot(*direction))
+                end = self._point(self.anchor, unit, self._exit(self.anchor, unit))
+                yield {'kind': 'exit', 'layer': layer, 'path': [self.anchor, end], 'direction': name}
+            for name, direction in DIRECTIONS[:4]:
+                for leg in self._first_legs(layer, direction):
+                    corner = self._point(self.anchor, direction, leg)
+                    for side_name, side in self._sides(direction):
+                        for turn_name, turn in ((side_name, side), (f'{name}-{side_name}', (
+                                (direction[0] + side[0]) / math.sqrt(2), (direction[1] + side[1]) / math.sqrt(2)))):
+                            end = self._point(corner, turn, self._exit(corner, turn))
+                            yield {'kind': 'exit', 'layer': layer, 'path': [self.anchor, corner, end],
+                                   'direction': f'{name}+{turn_name}'}
+        # 3. Short stubs to approved through vias that reach another routing layer.
+        if len(self.policy['routing_layers']) > 1 and not (self.zoned & set(index.geometry['copper_layers'])):
+            for via in self.policy['vias']:
+                for layer in self.layers:
+                    for name, direction in DIRECTIONS:
+                        unit = (direction[0] / math.hypot(*direction), direction[1] / math.hypot(*direction))
+                        t = self._snap(self._extent(self.pad_points, unit) + via['diameter_nm'] / 2 + self.clear)
+                        yield {'kind': 'via', 'layer': layer, 'path': [self.anchor, self._point(self.anchor, unit, t)],
+                               'via': via, 'direction': name}
+
+    @staticmethod
+    def _sides(direction):
+        return (('left', (-1, 0)), ('right', (1, 0))) if direction[0] == 0 else (('up', (0, -1)), ('down', (0, 1)))
+
+    def _first_legs(self, layer, direction):
+        """First-leg lengths from the pad boundary, the footprint copper and the straight blocker, plus clearance."""
+        clear = self.clear + self.half
+        exit_t = self._exit(self.anchor, direction)
+        legs = {self._snap(self._extent(self.pad_points, direction) + clear),
+                self._snap(self._extent([(self.own_box[0], self.own_box[1]), (self.own_box[2], self.own_box[3])],
+                                        direction) + clear)}
+        # The longest clear straight stub before the first blocker (bisection on the grid).
+        grid, lo, hi = self.limits['grid_nm'], 0, exit_t
+        end = self._point(self.anchor, direction, hi)
+        if self.index.check_track(self.anchor, end, layer, self.net, self.half, self.connected)[0] < 0:
+            while hi - lo > grid:
+                mid = self._snap((lo + hi) / 2 - grid + 1)
+                mid = mid if lo < mid < hi else (lo + hi) // 2
+                probe = self._point(self.anchor, direction, mid)
+                if self.index.check_track(self.anchor, probe, layer, self.net, self.half, self.connected)[0] < 0:
+                    hi = mid
+                else:
+                    lo = mid
+            if lo > 0:
+                legs.add(lo)
+        return sorted(t for t in legs if 0 < t < exit_t)
+
+
+def analyze_access(geometry, poses, routing_policy, limits=None, refs=None):
+    """Full (non-incremental) local access report; ``poses`` maps ref to a quarter-turn pose change."""
+    index = AccessIndex(geometry, routing_policy, limits)
+    for ref in sorted(poses or {}):
+        index.push(ref, poses[ref])
+    return index.analyze(refs)
+
+
+# ------------------------------------------------------------------ sidecar
+
+def block_access(candidate, geometry, routing_policy, limits=None):
+    """Diagnostic ``agent-ee.block-access/1`` for a candidate/2 placed on a complete candidate board.
+
+    The candidate is read, never changed: the sidecar binds its canonical
+    digest. Every member must sit on the board at the candidate's frame poses
+    relative to its anchor. Witnesses that use space outside the block (edge,
+    neighbours, vias) must be rechecked after arrangement.
+    """
+    from . import blocks
+    blocks.validate_candidate(candidate)
+    index = AccessIndex(geometry, routing_policy, limits)
+    members = [row['reference'] for row in candidate['members']]
+    anchor = candidate['frame']['anchor']
+    missing = [ref for ref in members if ref not in index.footprints]
+    if missing:
+        raise ValueError('candidate members absent from the board: ' + ', '.join(missing))
+    origin = index.footprints[anchor]['position_nm']
+    turns = _turns(index.footprints[anchor]['rotation_deg'])
+    for row in candidate['members']:
+        fp = index.footprints[row['reference']]
+        position, rotation = blocks._frame_pose(fp, origin, turns)
+        if (fp['side'] != row['side'] or position != row['pose']['position_nm']
+                or rotation != row['pose']['rotation_deg'] % 360):
+            raise ValueError(f"{row['reference']}: board pose differs from the candidate frame pose")
+    report = index.analyze(members)
+    member_set = set(members)
+    roles = {}
+    for terminal in report['terminals']:
+        refs = {p['ref'] for p in terminal['pads']}
+        net = terminal['net']
+        outside = any(p['ref'] not in member_set for p in index.geometry['pads'] if p['net'] == net)
+        if net and not net.startswith('unconnected-'):
+            roles[net] = 'boundary' if outside else 'internal'
+        terminal['members'] = sorted(refs & member_set)
+    return {'schema': SIDECAR, 'mode': 'diagnostic', 'block_id': candidate['block_id'],
+            'candidate_sha256': digest(candidate), 'candidate_status': candidate['status'],
+            'frame': candidate['frame'], 'board_sha256': report['board_sha256'],
+            'geometry_sha256': report['geometry_sha256'],
+            'pad_geometry_sha256': {row['reference']: row['pad_geometry_sha256'] for row in candidate['members']},
+            'courtyard_sha256': {row['reference']: row['courtyard_sha256'] for row in candidate['members']},
+            'net_roles': [{'net': net, 'role': roles[net]} for net in sorted(roles)],
+            'policy': report['policy'], 'limits': report['limits'], 'search': SEARCH, 'coverage': report['coverage'],
+            'recheck_after_arrangement': ['board edge', 'neighbour copper', 'via sites', 'planes'],
+            'summary': report['summary'], 'terminals': report['terminals']}
+
+
+def access_status(candidate, sidecar=None):
+    """Access evidence for a candidate; a missing sidecar is unknown and admission is unchanged."""
+    if sidecar is None:
+        return {'status': 'unknown', 'reason': 'no block-access sidecar'}
+    if not isinstance(sidecar, dict) or sidecar.get('schema') != SIDECAR:
+        raise ValueError(f'access sidecar must be {SIDECAR}')
+    if sidecar.get('candidate_sha256') != digest(candidate):
+        raise ValueError('access sidecar is bound to another candidate')
+    summary = sidecar['summary']
+    if not summary['witness']:
+        status = 'unknown'
+    else:
+        status = 'partial' if summary['unknown'] else 'witnessed'
+    return {'status': status, 'summary': summary}
+
+
+# ------------------------------------------------------------ native authority
+
+def materialize(board_path, witnesses, out_path):
+    """Write witnesses' copper (tracks and vias on the source net) into a new board file; rules untouched."""
+    import pcbnew
+    board = pcbnew.LoadBoard(str(board_path))
+    pads = {p.m_Uuid.AsString(): p for fp in board.GetFootprints() for p in fp.Pads()}
+    added = []
+    for witness in witnesses:
+        net = pads[witness['source_pad']].GetNet()
+        layer = board.GetLayerID(witness['layer'])
+        for a, b in zip(witness['path_nm'], witness['path_nm'][1:]):
+            track = pcbnew.PCB_TRACK(board)
+            track.SetStart(pcbnew.VECTOR2I(*a))
+            track.SetEnd(pcbnew.VECTOR2I(*b))
+            track.SetWidth(witness['track_width_nm'])
+            track.SetLayer(layer)
+            track.SetNet(net)
+            board.Add(track)
+            added.append(track.m_Uuid.AsString())
+        if 'via' in witness:
+            via = pcbnew.PCB_VIA(board)
+            via.SetViaType(pcbnew.VIATYPE_THROUGH)
+            via.SetPosition(pcbnew.VECTOR2I(*witness['via']['position_nm']))
+            via.SetWidth(witness['via']['diameter_nm'])
+            via.SetDrill(witness['via']['drill_nm'])
+            via.SetNet(net)
+            board.Add(via)
+            added.append(via.m_Uuid.AsString())
+    pcbnew.SaveBoard(str(out_path), board)
+    return added
+
+
+def _violations(report):
+    return list(report.get('violations', []))
+
+
+def _key(violation):
+    return json.dumps({'type': violation.get('type'), 'description': violation.get('description'),
+                       'items': sorted(json.dumps(i, sort_keys=True) for i in violation.get('items', []))},
+                      sort_keys=True)
+
+
+def qualify(board_path, groups, out):
+    """Native qualification: each group of witnesses on its own isolated copy, unchanged rules, refilled DRC.
+
+    A group is qualified only when the native DRC of its copy adds no rule
+    finding beyond the unmodified copy, other than the dangling-end warnings an
+    open access stub carries by construction, and does not add an unconnected
+    item (a same-net stub re-pairs the ratsnest but cannot disconnect).
+    pcbnew rewrites the project file on save; the copy's rule files are
+    restored to the source bytes before DRC. Execution failure is refused,
+    never a pass.
+    """
+    from .executor import execute
+    board_path, out = Path(board_path), Path(out)
+    if out.exists():
+        raise ValueError('qualification output must be new')
+    out.mkdir(parents=True)
+    siblings = [board_path.with_suffix(s) for s in ('.kicad_pcb', '.kicad_pro', '.kicad_dru')]
+    siblings = [p for p in siblings if p.is_file()]
+
+    def copy(directory):
+        directory.mkdir()
+        for path in siblings:
+            shutil.copyfile(path, directory / path.name)
+        return directory
+
+    def drc(directory, work):
+        record = execute(directory, work, ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+                                           '--refill-zones', '-o', '/work/report.json',
+                                           '/candidate/' + board_path.name], timeout=600)
+        if record['execution'] != 'ok' or not (work / 'report.json').is_file():
+            raise ValueError(f'native DRC execution failed: {record["execution"]}')
+        return strict_json((work / 'report.json').read_bytes())
+
+    base = copy(out / 'base')
+    report = drc(base, out / 'base-drc')
+    before, unconnected = Counter(_key(v) for v in _violations(report)), len(report.get('unconnected_items', []))
+    results = []
+    for number, group in enumerate(groups):
+        directory = copy(out / f'group-{number}')
+        rules = {p.name: p.read_bytes() for p in siblings if p.suffix != '.kicad_pcb'}
+        added = set(materialize(directory / board_path.name, group, directory / board_path.name))
+        for name, raw in rules.items():
+            (directory / name).write_bytes(raw)
+        report = drc(directory, out / f'group-{number}-drc')
+        after = _violations(report)
+        remaining, new = Counter(before), []
+        for violation in after:
+            key = _key(violation)
+            if remaining[key] > 0:
+                remaining[key] -= 1
+                continue
+            items = {i.get('uuid') for i in violation.get('items', [])}
+            if violation.get('type') in DANGLING and items <= added:
+                continue
+            new.append(violation)
+        connections = len(report.get('unconnected_items', []))
+        if connections > unconnected:
+            new.append({'type': 'unconnected_items', 'description': f'{connections} unconnected items after, '
+                                                                    f'{unconnected} before'})
+        results.append({'group': number, 'status': 'refused' if new else 'qualified', 'added_items': sorted(added),
+                        'new_findings': new, 'unconnected_items': [unconnected, connections]})
+    return {'schema': QUALIFICATION, 'board': board_path.name, 'groups': results}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest='command', required=True)
+    for name in ('analyze', 'block'):
+        command = sub.add_parser(name)
+        command.add_argument('--geometry', required=True,
+                             help=f'{GEOMETRY} capture (placement_probe --routing-geometry)')
+        command.add_argument('--policy', required=True,
+                             help='routing policy JSON: track_width_nm, routing_layers, vias')
+        command.add_argument('--limits', help='optional search limits JSON')
+        command.add_argument('--out', required=True)
+        if name == 'block':
+            command.add_argument('--candidate', required=True, help='agent-ee.block-candidate/2 document')
+    args = parser.parse_args(argv)
+    geometry = strict_json(Path(args.geometry).read_bytes())
+    policy = strict_json(Path(args.policy).read_bytes())
+    limits = strict_json(Path(args.limits).read_bytes()) if args.limits else None
+    if args.command == 'analyze':
+        report = analyze_access(geometry, None, policy, limits)
+    else:
+        report = block_access(strict_json(Path(args.candidate).read_bytes()), geometry, policy, limits)
+    Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+    print(json.dumps(report['summary'], sort_keys=True), file=sys.stderr)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
