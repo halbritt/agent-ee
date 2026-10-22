@@ -2,7 +2,7 @@
 
 `fab_consistency` (params `{export_check}`) never regenerates or runs exports. It
 reads the earlier export check's `work/EXPORT/fab/` staging tree and its
-`agent-ee.fab-manifest/1`, the export's sealed native XML netlist prerequisite,
+`agent-ee.fab-manifest/2`, the export's sealed native XML netlist prerequisite,
 every earlier sealed `geometry` probe of the captured board, and the captured
 board bytes (S-expression parse only). The manifest is a claim to verify, never
 authority: its kicad-cli identity must be the pinned binary and its sealed
@@ -41,7 +41,9 @@ from .fab_export import (ASSEMBLY_RULES, BOM_COLUMNS as BOM_HEADER, CPL_COLUMNS 
                          assembly_exclusions, header_records, verify_jlc_templates)
 from .storage import digest, read_json, write_json
 
-MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
+MANIFEST_SCHEMA = 'agent-ee.fab-manifest/2'
+LEGACY_MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
+MANIFEST_SCHEMAS = frozenset((MANIFEST_SCHEMA, LEGACY_MANIFEST_SCHEMA))
 MANIFEST_KEYS = frozenset(('schema', 'candidate_id', 'board_path', 'board_sha256', 'tool', 'files',
                            'headers', 'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
                            'generated_utc'))
@@ -344,8 +346,8 @@ def load_manifest(ctx, stage):
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         fail('manifest', f'manifest.json is not JSON ({exc})')
     if (not isinstance(data, dict) or not (MANIFEST_KEYS <= set(data) <= MANIFEST_KEYS | OPTIONAL_MANIFEST_KEYS)
-            or data['schema'] != MANIFEST_SCHEMA):
-        fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields')
+            or data['schema'] not in MANIFEST_SCHEMAS):
+        fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields (or legacy {LEGACY_MANIFEST_SCHEMA})')
     board = ctx.scope.get('board')
     captured = ctx.manifest['files'].get(board)
     if data['candidate_id'] != ctx.manifest['candidate_id']:
@@ -405,6 +407,8 @@ def load_manifest(ctx, stage):
                 e['designator'] not in non_dnp for e in excluded) or
             len({e['designator'] for e in excluded}) != len(excluded)):
         fail('manifest', 'designators.excluded must be unique board_non_dnp designators under exclusion_rule')
+    if data['schema'] == MANIFEST_SCHEMA and 'mechanical' not in designators:
+        fail('manifest', f'{MANIFEST_SCHEMA} requires designators.mechanical (an empty list when the board has none)')
     mechanical = designators.get('mechanical', [])
     if (not isinstance(mechanical, list) or
             any(not isinstance(ref, str) or not ref for ref in mechanical) or
@@ -972,6 +976,11 @@ def gate(ctx, eid, export_spec, export_result, stage):
             manifest['designators']['mechanical'] != mechanical):
         raise CheckError('malformed', 'stale: manifest mechanical differs from the captured board')
     details['mechanical'] = mechanical
+    if manifest['schema'] == LEGACY_MANIFEST_SCHEMA:
+        details['legacy_manifest_schema'] = {
+            'severity': 'advisory', 'schema': LEGACY_MANIFEST_SCHEMA,
+            'detail': f'{LEGACY_MANIFEST_SCHEMA} manifests are accepted as legacy only; the mechanical '
+                      'declaration is not required for them, so a missing designators.mechanical is not refused'}
     details['copper_features'] = sorted(copper)
     rule = (export_spec.get('params') or {}).get('assembly_exclusion')
     if manifest['designators']['exclusion_rule'] != rule:
@@ -1061,6 +1070,8 @@ def gate(ctx, eid, export_spec, export_result, stage):
     write_json(ctx.work / 'fab-consistency.json', report)
     ctx.evidence('fab-consistency.json')
     details.update(defects=defects, coverage_gaps=gaps)
+    if 'legacy_manifest_schema' in details:
+        ctx.result['limitations'].append(details['legacy_manifest_schema']['detail'])
     ctx.result['limitations'] += [
         'CPL coordinates use the fab_export/1 native footprint anchor and absolute export origin; '
         'assembly centroid corrections and rotation policy belong to the rotation lane.',

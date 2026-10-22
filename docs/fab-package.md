@@ -31,7 +31,7 @@ One run of the check does three things in order, in its own workspace
 1. Export. It runs the [`fab_export`](fab-export.md) producer: the pinned
    `kicad-cli` in the executor sandbox, the same steps, normalisation, BOM/CPL
    rules and refusals, writing `work/ID/fab/` and its
-   `agent-ee.fab-manifest/1`.
+   `agent-ee.fab-manifest/2`.
 2. Gate. It runs the [`fab_consistency`](fab-consistency.md) gate on that
    staging tree, with this check as the export. The gate's details are kept
    under `details.consistency` and its report at `work/ID/fab-consistency.json`.

@@ -403,6 +403,47 @@ class FabConsistencyTests(FabCase):
                 self.assertStatus(result, 'malformed', 'unknown')
                 self.assertIn('mechanical', result['summary'])
 
+    def test_v2_manifest_requires_mechanical_declaration(self):
+        def v2(mechanical=None):
+            def edit(m):
+                m['schema'] = 'agent-ee.fab-manifest/2'
+                if mechanical is not None:
+                    m['designators']['mechanical'] = mechanical
+            return edit
+        absent = self.run_case(manifest_edit=v2())
+        self.assertStatus(absent, 'malformed', 'unknown', 'requires designators.mechanical')
+        holes = board_text().rstrip()[:-1]
+        from tests.test_fab_export import mounting_holes
+        holed = self.run_case(board=holes + mounting_holes() + ')', non_dnp=NON_DNP + ['H1', 'H2', 'H3', 'H4'],
+                              manifest_edit=v2())
+        self.assertStatus(holed, 'malformed', 'unknown', 'requires designators.mechanical')
+        self.assertStatus(self.run_case(manifest_edit=v2([])), 'ok', 'pass')
+        disagree = self.run_case(manifest_edit=v2(['H1']))
+        self.assertStatus(disagree, 'malformed', 'unknown')
+        self.assertIn('mechanical', disagree['summary'])
+        missing = self.run_case(board=holes + mounting_holes() + ')',
+                                non_dnp=NON_DNP + ['H1', 'H2', 'H3', 'H4'], manifest_edit=v2([]))
+        self.assertStatus(missing, 'malformed', 'unknown', 'stale')
+        good = self.run_case(board=holes + mounting_holes() + ')', non_dnp=NON_DNP + ['H1', 'H2', 'H3', 'H4'],
+                             manifest_edit=v2(['H1', 'H2', 'H3', 'H4']))
+        self.assertStatus(good, 'ok', 'pass')
+        self.assertNotIn('legacy_manifest_schema', good['details'])
+
+    def test_v1_manifest_is_legacy_with_explicit_advisory(self):
+        result = self.run_case()
+        self.assertStatus(result, 'ok', 'pass')
+        advisory = result['details']['legacy_manifest_schema']
+        self.assertEqual((advisory['severity'], advisory['schema']), ('advisory', 'agent-ee.fab-manifest/1'))
+        self.assertIn('not required', advisory['detail'])
+        self.assertIn(advisory['detail'], result['limitations'])
+
+    def test_unknown_manifest_schema_versions_are_refused(self):
+        for version in ('0', '3', '01', '1.0', '2 '):
+            with self.subTest(version=version):
+                result = self.run_case(
+                    manifest_edit=lambda m: m.update(schema=f'agent-ee.fab-manifest/{version}'))
+                self.assertStatus(result, 'malformed', 'unknown', 'fields')
+
     def test_defect_citations_stay_sealable_when_export_seals_only_manifest(self):
         files = package()
         files['bom.csv'] = files['bom.csv'].replace(b'"R1,R2"', b'"R1,R1"')
@@ -471,7 +512,7 @@ class FabConsistencyTests(FabCase):
             'candidate': (lambda m: m.update(candidate_id='0' * 64), 'different candidate'),
             'board digest': (lambda m: m.update(board_sha256='0' * 64), 'board_sha256'),
             'board path': (lambda m: m.update(board_path='other.kicad_pcb'), 'board_path'),
-            'schema': (lambda m: m.update(schema='agent-ee.fab-manifest/2'), 'fields'),
+            'schema': (lambda m: m.update(schema='agent-ee.fab-manifest/3'), 'fields'),
             'extra key': (lambda m: m.update(note='x'), 'fields'),
             'traversal': (lambda m: m['files'].update({'../escape': 'b' * 64}), 'unsafe'),
             'tool': (lambda m: m['tool'].update(sha256='short'), 'tool needs'),

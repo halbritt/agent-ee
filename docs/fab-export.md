@@ -30,14 +30,14 @@ acceptance requirement. The board stays mutable candidate input. A captured
 Board-only mechanical footprints carrying all three native attributes
 `board_only`, `exclude_from_bom` and `exclude_from_pos_files` remain in
 `board_non_dnp` and the native geometry inventory. They need no schematic part,
-BOM binding or placement row. Their sorted references appear in the optional
-`designators.mechanical` manifest set (emitted when nonempty), and their holes
+BOM binding or placement row. Their sorted references appear in the 
+`designators.mechanical` manifest set (always emitted by `agent-ee.fab-manifest/2`, `[]` when the board has none), and their holes
 remain in the native drill output. Mechanical items must have no netlist path,
 no matching native netlist component and no assigned pad net. Netted or
 unqualified pad-net declarations are refused even when the exclusions are
-present. `fab_consistency` independently re-derives admission and verifies a
-present mechanical set; legacy manifests without this field retain admission
-replay. Original 3.2 mm hole fixtures exercise this path without copying stock
+present. `fab_consistency` independently re-derives admission and verifies the
+mechanical set; a `/2` manifest without it is refused, while legacy `/1` manifests
+without the field are accepted with an advisory and retain admission replay. Original 3.2 mm hole fixtures exercise this path without copying stock
 library files. Partial exclusion combinations on non-DNP
 footprints still fail closed; this exception does not admit arbitrary excluded
 schematic parts. Qualified probe features retain their separate source checks.
@@ -158,7 +158,7 @@ The layout follows the fab lane interface contract v1, under `work/<id>/fab/`:
 | `cpl.csv` | Header `Designator,Mid X,Mid Y,Layer,Rotation` (verified against `fixtures/fab-export/jlc-cpl-template.csv`) |
 | `gerbers.zip` | Flat archive of `gerbers/` (sorted) then `drill/` (sorted). Each member has the date 1980-01-01, mode 0644, Unix create system and deflate level 9. |
 | `pcb_summary.json` | Native `pcb export stats` JSON, with only `metadata.date` normalised |
-| `manifest.json` | `agent-ee.fab-manifest/1`, written last |
+| `manifest.json` | `agent-ee.fab-manifest/2`, written last |
 
 Native timestamps are normalised so that two runs on the same captured board
 give byte-identical Gerbers, drills, CSVs, summary and zip. These are the
@@ -307,7 +307,7 @@ the output malformed and retains the files only in `fab.incomplete/`.
 ### Manifest
 
 ```json
-{"schema": "agent-ee.fab-manifest/1", "candidate_id": "...",
+{"schema": "agent-ee.fab-manifest/2", "candidate_id": "...",
  "board_path": "design/fab.kicad_pcb", "board_sha256": "<captured digest>",
  "tool": {"path": "/usr/bin/kicad-cli", "version": "10.0.7", "sha256": "..."},
  "files": {"bom.csv": "<sha256>", "gerbers/fab-F_Cu.gtl": "<sha256>", "...": "..."},
@@ -321,7 +321,8 @@ the output malformed and retains the files only in `fab.incomplete/`.
  "drill": {"pth": "fab-PTH.drl", "npth": "fab-NPTH.drl"},
  "designators": {"board_non_dnp": ["C1", "C2", "C10", "J1", "..."],
                  "excluded": [{"designator": "J1", "rule": "JLCPCB_Assembly=not_assembled"}],
-                 "exclusion_rule": "JLCPCB_Assembly=not_assembled"},
+                 "exclusion_rule": "JLCPCB_Assembly=not_assembled",
+                 "mechanical": []},
  "generated_utc": "2026-10-17T19:04:46Z"}
 ```
 

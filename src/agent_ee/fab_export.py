@@ -13,7 +13,7 @@ fab lane interface contract v1 under `work/<check-id>/fab/`:
                       without the parts the declared exclusion rule omits
     gerbers.zip       gerbers/ + drill/, deterministic member order and metadata
     pcb_summary.json  native `kicad-cli pcb export stats` JSON
-    manifest.json     agent-ee.fab-manifest/1, written last and only on success
+    manifest.json     agent-ee.fab-manifest/2, written last and only on success
 
 Assembled means board non-DNP and not omitted by the optional declared
 `assembly_exclusion` rule (v1: `JLCPCB_Assembly=not_assembled`). The rule is a
@@ -57,7 +57,8 @@ from pathlib import Path
 
 from .storage import digest, read_json, write_json
 
-SCHEMA = 'agent-ee.fab-manifest/1'
+SCHEMA = 'agent-ee.fab-manifest/2'
+LEGACY_SCHEMAS = ('agent-ee.fab-manifest/1',)
 TEMPLATE_SCHEMA = 'agent-ee.jlc-templates/1'
 JLC_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / 'fixtures/fab-export'
 BOM_HEADER = 'Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,"LCSC Part #"'
@@ -1066,8 +1067,8 @@ def inventory(fab):
 
 def verify_manifest(fab, manifest):
     """Recompute the staging inventory; raise ValueError on any disagreement."""
-    if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
-        raise ValueError('not an agent-ee.fab-manifest/1')
+    if not isinstance(manifest, dict) or manifest.get('schema') not in (SCHEMA,) + LEGACY_SCHEMAS:
+        raise ValueError(f'not an {SCHEMA} (or legacy {LEGACY_SCHEMAS[0]})')
     if 'headers' in manifest and manifest['headers'] != header_records():
         raise ValueError('manifest headers do not match captured JLC templates')
     actual = inventory(fab)
@@ -1456,11 +1457,9 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
         'headers': headers,
         'copper_layers': facts['copper_layers'], 'enabled_fab_layers': layers,
         'drill': roles, 'designators': {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded,
-                                        'exclusion_rule': rule},
+                                        'exclusion_rule': rule, 'mechanical': facts['mechanical']},
         'generated_utc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
-    if facts.get('mechanical'):
-        manifest['designators']['mechanical'] = facts['mechanical']
     if variant is not None:
         manifest['bom_variant'] = {key: variant[key] for key in
                                    ('name', 'project', 'registered', 'native_bom_sha256', 'binding_changes')}
