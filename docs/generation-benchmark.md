@@ -5,12 +5,25 @@ scores native outputs through the existing candidate, baseline and check runner.
 It adds no check kind or model judge. This measures declared generation
 requirements; it establishes no fabrication or bench validity.
 
-AGENTEE-69's ten unlicensed upstream prompts are **blocked on owner permission**.
+AGENTEE-69's ten unlicensed upstream prompts are **kept private and not
+committed**. The relayed decision (owner-relayed, agent-drafted record, recorded
+as a Plane comment on AGENTEE-69) reads verbatim:
+
+> "Owner decision (2026-10-22, owner via agent-519 decision quiz): KEEP PRIVATE: the ten unlicensed tscircuit prompts are not committed. Accept the committed original prompt series as the substitute and amend criterion 2 accordingly."
+
 No upstream prompts, rule files, code, netlists or non-MIT fixture set were
-imported. The committed `fixtures/generation-benchmark/original-series` task is
-original agent-ee material, made with the owned topology fixture generator.
-It is a qualification example, not a substitute claim that the requested ten
-prompts were imported. Golden-netlist equivalence scoring is not implemented.
+imported. The committed original prompt series under
+`fixtures/generation-benchmark/` (currently the `original-series` task) is
+original agent-ee material, made with the owned topology fixture generator. It
+is the accepted substitute for the ten prompts. Golden-netlist equivalence
+scoring is not implemented.
+
+AGENTEE-69 criterion 2 therefore reads, as amended under that decision:
+*importing the committed original prompt series as scope/2 or scope/3 baselines
+gives every acceptance criterion at least one check ID, or scope/3 refuses it.*
+`test_committed_original_series_maps_every_acceptance_criterion` validates every
+committed task against it, and
+`test_scope3_refuses_unmapped_acceptance_and_scoring_gaps` covers the refusals.
 
 ## Frozen tasks
 

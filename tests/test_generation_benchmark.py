@@ -41,6 +41,22 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(task['id'], 'original-series')
         self.assertEqual(len(task['fingerprint']), 64)
 
+    def test_committed_original_series_maps_every_acceptance_criterion(self):
+        # AGENTEE-69 criterion 2 as amended: the committed original series substitutes the private prompts.
+        tasks = sorted(p.parent for p in FIXTURE.parent.glob('*/task.json'))
+        self.assertIn(FIXTURE, tasks)
+        for root in tasks:
+            with self.subTest(task=root.name):
+                pinned_task(root)
+                doc = read_json(root / 'task.json')
+                self.assertEqual(doc['scope']['schema'], 'agent-ee.scope/3')
+                checks = {c['id'] for c in doc['scope']['checks']}
+                acceptance = [r for r in doc['scope']['baseline']['requirements'] if r['intent'] == 'acceptance']
+                self.assertTrue(acceptance)
+                for req in acceptance:
+                    self.assertTrue(req['checks'] and set(req['checks']) <= checks, req['id'])
+                    self.assertTrue(any(req['id'] in rule['source_criteria'] for rule in doc['rules']), req['id'])
+
     def test_external_pins_digest_refuses_coordinated_task_repin(self):
         anchor = digest(self.task / 'pins.json')
         self.assertEqual(pinned_task(self.task, expect_pins=anchor)['id'], 'original-series')
