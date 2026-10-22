@@ -478,7 +478,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`5f1c072` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+`b577449` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -1322,6 +1322,8 @@ check is acceptance evidence for it until the owner confirms the limit.
 matches the envelope reference and contains a source-verified stackup declaration.
 Saved layer thicknesses use the profile's explicit exact matching tolerance;
 nominal copper weights come from the cited declaration, with no oz-to-mm conversion.
+A profile dielectric recorded as unpublished (`null`) binds the check, but its
+envelope and saved thicknesses are unknown unless another field proves a defect.
 Missing or unverified authority stays unknown and capture refuses it. Each
 `placement` `connector-edge/1` check selects a fixed `reference` and supplies
 `placement:connector-edge/1:<reference>`; a single fixed footprint may omit the

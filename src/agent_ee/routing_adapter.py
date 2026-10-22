@@ -14,6 +14,7 @@ accepted.
 
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 
 from . import kicad_route_attempt as attempt
@@ -27,13 +28,27 @@ BINDING_MOUNTS = [{'source': str(ADAPTER_SOURCE.with_name(name)),
 # Hashing the adapter, code and state mounts, and retaining diagnostics, happen
 # after the router's own timeout inside the same step budget.
 STEP_MARGIN_S = 300
+COMPATIBILITY = re.compile(r'kicad-route@([0-9a-f]{40})\Z')
+
+
+class StaleRoutingEvidence(ValueError):
+    """Routing evidence produced by another kicad-route pin (AGENTEE-450).
+
+    Results do not transfer between pins: the report is refused for every new
+    comparison, adoption or baseline, whatever else it says. Its retained bytes
+    stay as they are; this only names why they no longer qualify."""
+
+    def __init__(self, pin, expected, what='routing attempt'):
+        super().__init__(f'stale routing evidence: {what} claims a different kicad-route pin {pin}, '
+                         f'not the pinned {expected}; rerun it on the current pin')
+        self.pin, self.expected = pin, expected
 ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routing/kicad-route.stderr',
              'routing/attempt/result.json', 'routing/attempt/attempt.json', 'routing/attempt/RESULT.md',
              'routing/attempt/snapshot.json', 'routing/attempt/validate', 'routing/attempt/facts',
              'routing/attempt/work')
 
 
-def preflight(checkout, state=None, backend='krt'):
+def preflight(checkout, state=None, backend='builtin'):
     """Host-side identity without running git, routing or installation.
 
     Running `git status` could rewrite the checkout's index, so HEAD is read
@@ -50,8 +65,11 @@ def preflight(checkout, state=None, backend='krt'):
     code_problems = attempt.verify_code(checkout)
     problems += code_problems
     if not code_problems:
-        problems += attempt.verify_state(checkout, state, backend)
-    for rel in attempt.STATE_REQUIRED[backend]:
+        problems += attempt.verify_state(checkout, state, backend, mounted_at=attempt.SANDBOX[
+            'checkout' if state == checkout else 'state'])
+    generation, selection = attempt.state_generation(state)
+    problems += selection
+    for rel in attempt.state_required(backend, generation):
         if not os.path.lexists(state / rel):
             problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
     return {'checkout': str(checkout), 'state': str(state), 'commit': commit, 'pin': attempt.PIN,
@@ -60,7 +78,7 @@ def preflight(checkout, state=None, backend='krt'):
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='krt', diff_pairs=None, layer_policy=None):
+         backend='builtin', diff_pairs=None, layer_policy=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
 
     layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
@@ -116,7 +134,7 @@ def validate_declaration(value):
     separate = state is not None and state != checkout
     request = attempt.parse_request(_request_argv({
         **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
-        'backend': value.get('backend', 'krt'), 'budget_s': budget, 'timeout_s': timeout,
+        'backend': value.get('backend', 'builtin'), 'budget_s': budget, 'timeout_s': timeout,
         'state': 'separate' if separate else 'checkout',
         **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
         **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
@@ -161,6 +179,9 @@ def campaign_binding(declaration, manifest, mutable):
 
 
 def validate_binding(binding, declaration, manifest, mutable, policy_files):
+    if (isinstance(binding, dict) and isinstance(binding.get('pin'), str) and
+            re.fullmatch(r'[0-9a-f]{40}', binding['pin']) and binding['pin'] != attempt.PIN):
+        raise StaleRoutingEvidence(binding['pin'], attempt.PIN, 'campaign routing binding')
     expected = campaign_spec(declaration, manifest, mutable)
     if (not isinstance(binding, dict) or set(binding) != {'spec', 'tool', 'pin', 'adapter_sha256'} or
             binding['spec'] != expected or binding['pin'] != attempt.PIN or
@@ -302,6 +323,12 @@ def verify(run, inputs=None, *, receipt=None, layout=None):
 
 def _verify(run, report, inputs, receipt, layout):
     routing = run / 'routing'
+    expected_pin = (layout or {}).get('pin', attempt.PIN)
+    claimed = COMPATIBILITY.match(report['adapter'].get('compatibility') or '') if isinstance(
+        report['adapter'], dict) else None
+    if claimed and claimed.group(1) != expected_pin:
+        # Checked first: an older pin's report may not even parse under today's request rules.
+        raise StaleRoutingEvidence(claimed.group(1), expected_pin)
     request = attempt.parse_request(_request_argv(report['request']))
     if request != report['request']:
         raise ValueError('routing adapter request is not a valid adapter request')
@@ -396,6 +423,9 @@ def _verify(run, report, inputs, receipt, layout):
                 if malformed or discovery['problems'] or report['identity_after'] != report['identity_before']:
                     raise ValueError(f'a {classification} attempt with discovery, report or tool-state '
                                      'violations is a contradiction')
+                generation = attempt.generation_of_components(request['backend'], report['identity_before']['state'])
+                if attempt.runtime_problems(request, expected, generation, result):
+                    raise ValueError(f'a {classification} attempt ran an engine other than the verified one')
         if proposal != 'none':
             _bind(routing, retained, report, request, expected, result, record)
     backend = attempt.backend_of(result)
@@ -455,7 +485,9 @@ def _tool_claims(report, request, layout, *, ran):
         targets = [str(t) for t in layout['probe']]
     else:
         state, checkout = Path(layout['state']), Path(layout['checkout'])
-        targets = [str(state)] + [str(state / c) for c in attempt.STATE_COMPONENTS[request['backend']]] + (
+        components = attempt.state_components(
+            request['backend'], attempt.generation_of_components(request['backend'], report['identity_before']['state']))
+        targets = [str(state)] + [str(state / c) for c in components] + (
             [str(checkout)] if checkout != state else [])
     if (not isinstance(probes, list) or [p.get('directory') for p in probes] != targets or
             any(p.get('refused') is not True or not p.get('errno') for p in probes)):
@@ -485,6 +517,16 @@ def _bind(routing, retained, report, request, layout, result, record):
         raise ValueError('routed candidate is not the board the router validated')
     if validation.get('restored_project_files') != []:
         raise ValueError('the router restored project files of an eligible attempt')
+    terminal = attempt.terminal_problems(result)
+    if terminal:
+        raise ValueError(terminal[0])
+    custody = result.get('copper_ownership')
+    if isinstance(custody, dict) and custody.get('status') == 'bound':
+        key = 'attempt/' + attempt.COPPER_OWNERSHIP_RECORD
+        records = (result.get('evidence') or {}).get('records') if isinstance(result.get('evidence'), dict) else None
+        if (retained.get(key) != custody['sha256'] or not isinstance(records, dict) or
+                records.get(attempt.COPPER_OWNERSHIP_RECORD) != custody['sha256']):
+            raise ValueError('copper ownership record differs from the retained routing evidence')
     # The adapter's sandbox origin, not the host path: report paths are resolved lexically.
     origin = Path(layout['work']) / 'routing'
     run_dir = origin / report['discovery']['attempt_dir']

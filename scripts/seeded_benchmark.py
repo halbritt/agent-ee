@@ -12,7 +12,7 @@ from agent_ee import benchmark_run as benchmark
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command',required=True)
-    for name in ('fetch','prepare','run','report','closure'):
+    for name in ('fetch','prepare','run','report','closure','control-facts'):
         command = sub.add_parser(name)
         command.add_argument('manifest',type=Path)
         if name=='fetch':
@@ -31,6 +31,9 @@ def main():
         elif name=='report':
             command.add_argument('first',type=Path)
             command.add_argument('--second',type=Path)
+            command.add_argument('--judgements',type=Path,help='control judgement ledger, reported as a separate layer')
+        elif name=='control-facts':
+            command.add_argument('first',type=Path)
         else:
             command.add_argument('cache',type=Path)
             command.add_argument('--closure',type=Path,required=True)
@@ -51,7 +54,9 @@ def main():
     elif args.command=='run':
         print(benchmark.run(args.manifest,args.prepared,args.output,args.expectation_commit,args.image))
     elif args.command=='report':
-        print(json.dumps(benchmark.report(args.manifest,args.first,args.second),indent=2,allow_nan=False))
+        print(json.dumps(benchmark.report(args.manifest,args.first,args.second,args.judgements),indent=2,allow_nan=False))
+    elif args.command=='control-facts':
+        print(json.dumps(benchmark.open_control_facts(args.manifest,args.first),indent=2,allow_nan=False))
     elif args.command=='closure':
         result = benchmark.verify_closure(args.manifest,args.cache,args.closure,args.run)
         print(json.dumps(result,indent=2,allow_nan=False))

@@ -109,6 +109,16 @@ copper/dielectric shape, including explicit copper weights; their exact sum is
 board order. The name identifies the cited stack; the source uses the existing
 path/hash/identity/date/page/exact-quote verifier. Fab-profile/1 refuses this metadata.
 
+When the source publishes no thickness for a dielectric, that layer's
+`thickness_mm` is `null`, and so is the physical `thickness_mm`. Copper layers
+and the nominal thickness always need a value. An envelope layer can never be
+`null`. The authority still binds `stackup/1`. The check compares nominal
+thickness, names, kinds, copper weights and copper thicknesses, so a mismatch
+is a defect. It reports each envelope or saved thickness of a `null` layer as
+unknown, and never derives it from the nominal thickness. The recorded
+[JLCPCB 2-layer profile](../fixtures/board-envelope/jlc-2layer/fab-profile.json)
+uses this for its unpublished core (AGENTEE-85).
+
 The explicit nonnegative layer tolerance bounds the difference between each
 saved or envelope layer thickness and its declared profile thickness, using
 exact rational arithmetic and an inclusive boundary. It is a **saved-design

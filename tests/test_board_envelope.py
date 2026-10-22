@@ -86,9 +86,11 @@ RC_JLC_ENVELOPE = ROOT / 'fixtures/board-envelope/rc-jlc-2layer.envelope.json'
 STACKUP_REASON = 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
 
 
-def jlc_capture(root):
+def jlc_capture(root, stackup=True):
     """The recorded JLCPCB 2-layer profile at root, its sources and the RC variant at ENVELOPE_PATH.
 
+    stackup=False removes the profile's partial stackup authority (the recorded profile before
+    AGENTEE-85 G1) and re-references the envelope to those bytes.
     Returns (envelope bytes, profile bytes, files) with files hashed as captured.
     """
     import shutil
@@ -96,6 +98,14 @@ def jlc_capture(root):
     (root / 'requirements').mkdir(parents=True, exist_ok=True)
     (root / 'requirements/targets.md').write_text('Owned RC envelope targets.\n')
     envelope = RC_JLC_ENVELOPE.read_bytes()
+    if not stackup:
+        recorded = (root / 'fab-profile.json').read_bytes()
+        profile = json.loads(recorded)
+        del profile['stackup']
+        stripped = (json.dumps(profile, indent=2) + '\n').encode()
+        (root / 'fab-profile.json').write_bytes(stripped)
+        envelope = envelope.replace(hashlib.sha256(recorded).hexdigest().encode(),
+                                    hashlib.sha256(stripped).hexdigest().encode())
     (root / ENVELOPE_PATH).write_bytes(envelope)
     files = {p.relative_to(root).as_posix(): digest(p) for p in root.rglob('*') if p.is_file()}
     return envelope, (root / 'fab-profile.json').read_bytes(), files
@@ -562,7 +572,7 @@ class RcJlcProfileTests(unittest.TestCase):
         self.envelope, self.profile, self.files = jlc_capture(self.root)
         self.captured = (self.files, self.root)
 
-    def test_recorded_profile_is_source_verified_and_declares_no_stackup(self):
+    def test_recorded_profile_is_source_verified_and_declares_only_published_stackup_facts(self):
         from agent_ee.fab_profile import compile_profile
         compiled = compile_profile(json.loads(self.profile), self.files, self.root)
         self.assertEqual(compiled['name'], 'jlc-2layer-fr4-1oz')
@@ -573,8 +583,23 @@ class RcJlcProfileTests(unittest.TestCase):
                           'min_edge_clearance_mm': ('ready', .2), 'min_hole_to_hole_mm': ('ready', .45),
                           'max_layers': ('ready', 2), 'max_board_mm': ('ready', [670, 600])})
         self.assertEqual(compiled['finished_thickness_tolerance']['execution'], 'ready')
-        # JLCPCB publishes no 2-layer dielectric thickness, so no stackup authority is recorded.
-        self.assertNotIn('stackup', compiled)
+        # JLCPCB publishes the 1.6 mm nominal, two 1 oz (35 um) copper layers and one FR-4 dielectric,
+        # but no 2-layer dielectric thickness: the core and the physical total stay null, never derived.
+        stackup = compiled['stackup']
+        self.assertEqual(stackup['execution'], 'ready')
+        self.assertEqual({k: stackup['expected'][k] for k in (
+            'name', 'layer_count', 'nominal_thickness_mm', 'thickness_mm', 'layer_thickness_tolerance_mm', 'layers')},
+            {'name': 'jlc-2layer-fr4-1oz-1.6mm', 'layer_count': 2, 'nominal_thickness_mm': '1.6',
+             'thickness_mm': None, 'layer_thickness_tolerance_mm': '0', 'layers': [
+                 {'name': 'F.Cu', 'kind': 'copper', 'thickness_mm': '0.035', 'copper_weight_oz': '1'},
+                 {'name': 'core', 'kind': 'dielectric', 'thickness_mm': None},
+                 {'name': 'B.Cu', 'kind': 'copper', 'thickness_mm': '0.035', 'copper_weight_oz': '1'}]})
+        self.assertEqual(stackup['expected']['source']['path'], 'sources/jlcpcb-2layer.txt')
+        # Without the stackup member these are the exact profile bytes recorded before G1.
+        _, stripped, _ = jlc_capture(self.root / 'stripped', stackup=False)
+        self.assertEqual(hashlib.sha256(stripped).hexdigest(),
+                         'b0f21b494e9b02016c416706fbe762bbfc609460f9ddee1aa862541d97ff9582')
+        self.assertNotIn('stackup', compile_profile(json.loads(stripped), self.files, self.root))
         manifest = json.loads((JLC_2LAYER / 'source-capture.json').read_text())
         self.assertEqual((manifest['raw_bytes_committed'], manifest['stackup_authority']['status']),
                          (False, 'unpublished'))
@@ -596,12 +621,37 @@ class RcJlcProfileTests(unittest.TestCase):
                           for s in record['fab_profile']['support']],
                          [('fab_profile_supports_layer_count', 2, 2, 'satisfied'),
                           ('fab_profile_supports_board_size', [670, 600], [20.0, 12.0], 'satisfied')])
-        self.assertNotIn('stackup', record['fab_profile'])
+        self.assertEqual(record['fab_profile']['stackup']['execution'], 'ready')
+        self.assertEqual([l['thickness_mm'] for l in record['fab_profile']['stackup']['expected']['layers']],
+                         ['0.035', None, '0.035'])
         # The source is the authority: one changed byte leaves support unresolved, never assumed.
         (self.root / 'sources/jlcpcb-2layer.txt').write_text('changed after hashing')
         changed = validate(self.envelope, profile=self.profile, captured=self.captured)
         self.assertEqual(changed['outcome'], 'unknown')
         self.assertIn('captured file missing or hash changed', changed['unresolved'][0]['reason'])
+
+    def test_unpublished_thickness_is_profile_only_dielectric_only_and_never_summed(self):
+        from agent_ee.fab_profile import compile_profile
+        recorded = json.loads(self.profile)
+        compile_profile(recorded, self.files, self.root)
+        for label, edit, message in (
+                ('numeric total with an unpublished core', lambda s: s.update(thickness_mm=1.6),
+                 'thickness_mm must be null when a dielectric thickness is unpublished'),
+                ('null copper thickness', lambda s: s['layers'][0].update(thickness_mm=None),
+                 'stackup layer F.Cu thickness_mm'),
+                ('null total with every layer published', lambda s: s['layers'][1].update(thickness_mm=1.53),
+                 'stackup thickness_mm'),
+                ('null nominal', lambda s: s.update(nominal_thickness_mm=None), 'nominal_thickness_mm')):
+            with self.subTest(label):
+                profile = copy.deepcopy(recorded)
+                edit(profile['stackup'])
+                with self.assertRaisesRegex(ValueError, message):
+                    compile_profile(profile, self.files, self.root)
+        # An envelope must state its own dielectric thickness; only a profile may record it unpublished.
+        value = json.loads(self.envelope)
+        value['stackup']['layers'][1]['thickness_mm'] = None
+        with self.assertRaisesRegex(ValueError, 'stackup layer core thickness_mm'):
+            validate(raw(value), profile=self.profile, captured=self.captured)
 
     def test_profile_refuses_a_four_layer_envelope(self):
         value = json.loads(self.envelope)
@@ -1034,12 +1084,11 @@ class EnvelopeBaselineTests(unittest.TestCase):
         self.assertFalse((run / 'baseline.json').exists())
         self.assertFalse((run / 'candidate.json').exists())
 
-    def test_recorded_jlc_profile_binds_everything_but_stackup_and_capture_refuses(self):
-        # The production RC path: the variant envelope, the recorded JLCPCB 2-layer profile and real
-        # bindings only. The profile publishes no per-layer stackup, so stackup alone stays unknown.
+    def jlc_scope(self, stackup):
+        """The production RC path: the variant envelope, the recorded JLCPCB 2-layer profile, real bindings only."""
         import shutil
         source = self.root / 'jlc'
-        envelope, profile, _ = jlc_capture(source)
+        envelope, profile, _ = jlc_capture(source, stackup=stackup)
         (source / 'project').mkdir()
         for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_sch'):
             shutil.copyfile(RC_BOARD.with_suffix(suffix), source / 'project' / f'rc_filter{suffix}')
@@ -1069,6 +1118,12 @@ class EnvelopeBaselineTests(unittest.TestCase):
                               for field, criterion in criteria.items())],
                  'baseline': {'requirements': requirements, 'targets': ['requirements/targets.md'],
                               'reference_architectures': ['requirements/targets.md']}}
+        return scope, document, record, files
+
+    def test_recorded_jlc_profile_binds_everything_but_stackup_and_capture_refuses(self):
+        # The recorded profile without its stackup member (its bytes before G1) has no copper-weight
+        # authority, so stackup alone stays unknown and capture is refused.
+        scope, document, record, files = self.jlc_scope(stackup=False)
         report = {r['id']: r for r in obligation_coverage(scope, document, record, files)}
         self.assertEqual({k: r['status'] for k, r in report.items()}, {
             'R-envelope-rc-filter-outline': 'bound', 'R-envelope-rc-filter-layer-count': 'bound',
@@ -1081,6 +1136,22 @@ class EnvelopeBaselineTests(unittest.TestCase):
         run = self.root / f'run{self.runs}'
         self.assertFalse((run / 'baseline.json').exists())
         self.assertFalse((run / 'candidate.json').exists())
+
+    def test_recorded_jlc_copper_weight_authority_binds_every_obligation_without_stand_ins(self):
+        # G1: the recorded profile cites JLCPCB's 1.6 mm nominal and 1 oz (35 um) copper, with the
+        # unpublished core thickness null. That authority binds stackup/1, so capture succeeds.
+        from agent_ee.baseline import load_baseline
+        scope, document, record, files = self.jlc_scope(stackup=True)
+        report = obligation_coverage(scope, document, record, files)
+        self.assertEqual({r['id']: r['status'] for r in report}, {r['id']: 'bound' for r in document['requirements']})
+        run, _ = self.capture(scope)
+        baseline = load_baseline(run)
+        self.assertEqual({c['id']: c['status'] for c in baseline['envelope']['coverage']},
+                         {r['id']: 'bound' for r in document['requirements']})
+        self.assertTrue({ENVELOPE_PATH, 'fab-profile.json', 'sources/jlcpcb-2layer.txt'} <= baseline['files'].keys())
+        stackup = baseline['envelope']['validation']['fab_profile']['stackup']
+        self.assertEqual((stackup['execution'], stackup['expected']['layers'][1]['thickness_mm']), ('ready', None))
+        # Copper-weight and thickness differences are graded by stackup/1, not at capture (tests.test_envelope_check).
 
     def test_complete_bindings_freeze_envelope_profile_sources_and_dialog(self):
         from agent_ee.baseline import load_baseline
@@ -1357,6 +1428,11 @@ class EnvelopeNativeBaselineTests(unittest.TestCase):
         requirements.append({'id': 'R-drc-placement', 'statement': 'Placement-stage DRC passes.',
                              'source': {'path': 'requirements/targets.md', 'locator': 'drc'},
                              'intent': 'acceptance', 'checks': ['drc-placement']})
+        if not any('drc-final' in r['checks'] for r in requirements):
+            # Every envelope obligation is bound elsewhere; the full DRC still traces to a requirement.
+            requirements.append({'id': 'R-drc-final', 'statement': 'Full DRC passes.',
+                                 'source': {'path': 'requirements/targets.md', 'locator': 'drc'},
+                                 'intent': 'acceptance', 'checks': ['drc-final']})
         scope = {'schema': 'agent-ee.scope/3', 'board': 'project/rc_filter.kicad_pcb',
                  'schematic': 'project/rc_filter.kicad_sch',
                  'inputs': [{'path': str(source / name), 'at': name}
@@ -1407,56 +1483,62 @@ class EnvelopeNativeBaselineTests(unittest.TestCase):
             load_baseline(run)
 
 
-    def test_recorded_profile_coordinator_path_grades_j1_with_only_a_stackup_stand_in(self):
-        # Real native outline/1 and layers/1, real connector-edge/1 and the recorded JLCPCB profile.
-        # Only stackup, which that profile cannot source, is stood in for, and only inside this block.
+    def test_recorded_profile_coordinator_path_grades_j1_with_real_bindings_only(self):
+        # AGENTEE-92 criterion 3 through the coordinator path, with no stand-in: real native outline/1,
+        # layers/1 and stackup/1, real connector-edge/1 and the recorded JLCPCB profile, whose copper-weight
+        # authority binds stackup (AGENTEE-85 G1/G2).
         from agent_ee.baseline import freeze_evidence, load_baseline, validate_witnesses
-        criteria = {'outline': 'outline/1', 'layer-count': 'layers/1'}
+        criteria = {'outline': 'outline/1', 'layer-count': 'layers/1', 'stackup': 'stackup/1'}
         native = tuple({'id': field, 'kind': 'board_envelope',
                         'params': {'criterion': criterion, 'envelope': ENVELOPE_PATH}}
                        for field, criterion in criteria.items())
         bound = {PROFILE_ID: 'fab', 'R-envelope-rc-filter-fixed-J1': 'connector',
                  **{f'R-envelope-rc-filter-{field}': field for field in criteria}}
         drc_limits = {'trace', 'clearance', 'via-drill', 'via-pad', 'edge', 'holes'}
-        with patch.dict(CHECK_KINDS, {'stackup': ['drc']}), patch.dict(BINDINGS, {('stackup', 'drc'): accept}):
-            # The saved routed RC board meets every recorded minimum. The moved candidate is unrouted, so the
-            # native DRC-backed minima have no load witness and stay unknown; only layers and size are graded.
-            for label, move, routed, connector_outcome, fab in (
-                    ('at-anchor', None, True, 'pass', ('ok', 'pass')),
-                    ('moved', {'J1': (103, 100)}, False, 'defect', ('unsupported', 'unknown'))):
-                with self.subTest(label):
-                    source, document = self.jlc_source('jlc-' + label, move=move, routed=routed)
-                    run, results = self.run_scope(source, document, profile='fab-profile.json', bound=bound,
-                                                  checks_extra=native)
-                    coverage = {c['id']: c['status'] for c in load_baseline(run)['envelope']['coverage']}
-                    self.assertEqual(coverage, {r['id']: 'bound' for r in document['requirements']})
-                    for check in ('outline', 'layer-count'):
-                        self.assertEqual((results[check]['execution'], results[check]['outcome']), ('ok', 'pass'),
-                                         results[check])
-                    self.assertEqual((results['fab']['execution'], results['fab']['outcome']), fab, results['fab'])
-                    constraints = {c['id']: c for c in results['fab']['details']['constraints']}
-                    self.assertEqual({k: constraints[k]['status'] for k in ('layers', 'size')},
-                                     {'layers': 'satisfied', 'size': 'satisfied'})
-                    if not routed:
-                        self.assertEqual({k: constraints[k].get('reason') for k in drc_limits},
-                                         {k: 'native rule loading witness missing' for k in drc_limits})
-                    connector = results['connector']
-                    self.assertEqual((connector['execution'], connector['outcome']), ('ok', connector_outcome),
-                                     connector)
-            violation, = connector['details']['defects'][0]['violations']
-            self.assertEqual((violation['edge'], violation['distance_mm']), ('left', 3.0))
-            ordered = [results[c] for c in ('drc-placement', 'connector', 'fab', 'outline', 'layer-count',
-                                            'drc-final')]
-            freeze_evidence(run, ordered)
-            evidence = [{'path': 'checks/connector.json'}]
-            validate_witnesses(run, [{'requirement_id': 'R-envelope-rc-filter-fixed-J1', 'check_id': 'connector'}],
-                               evidence)
-            with self.assertRaisesRegex(ValueError, 'does not trace'):
-                validate_witnesses(run, [{'requirement_id': 'R-envelope-rc-filter-outline',
-                                          'check_id': 'connector'}], evidence)
-        # Without the stackup stand-in the retained run is not a valid baseline.
-        with self.assertRaisesRegex(ValueError, 'stackup.*outside kinds'):
-            load_baseline(run)
+        # The saved routed RC board meets every recorded minimum. The moved candidate is unrouted, so the
+        # native DRC-backed minima have no load witness and stay unknown; only layers and size are graded.
+        for label, move, routed, connector_outcome, fab in (
+                ('at-anchor', None, True, 'pass', ('ok', 'pass')),
+                ('moved', {'J1': (103, 100)}, False, 'defect', ('unsupported', 'unknown'))):
+            with self.subTest(label):
+                source, document = self.jlc_source('jlc-' + label, move=move, routed=routed)
+                run, results = self.run_scope(source, document, profile='fab-profile.json', bound=bound,
+                                              checks_extra=native)
+                coverage = {c['id']: c['status'] for c in load_baseline(run)['envelope']['coverage']}
+                self.assertEqual(coverage, {r['id']: 'bound' for r in document['requirements']})
+                for check in ('outline', 'layer-count'):
+                    self.assertEqual((results[check]['execution'], results[check]['outcome']), ('ok', 'pass'),
+                                     results[check])
+                # The RC board saves no stackup section and JLCPCB publishes no core thickness: unknown, never pass.
+                stackup = results['stackup']
+                self.assertEqual((stackup['execution'], stackup['outcome']), ('unsupported', 'unknown'), stackup)
+                self.assertEqual((stackup['details']['status'], stackup['details']['defects'],
+                                  stackup['details']['unknown']),
+                                 ('unknown', [], ['missing or duplicate saved stackup']), stackup)
+                self.assertEqual(stackup['details']['fab_profile']['stackup']['execution'], 'ready')
+                self.assertEqual((results['fab']['execution'], results['fab']['outcome']), fab, results['fab'])
+                constraints = {c['id']: c for c in results['fab']['details']['constraints']}
+                self.assertEqual({k: constraints[k]['status'] for k in ('layers', 'size')},
+                                 {'layers': 'satisfied', 'size': 'satisfied'})
+                if not routed:
+                    self.assertEqual({k: constraints[k].get('reason') for k in drc_limits},
+                                     {k: 'native rule loading witness missing' for k in drc_limits})
+                connector = results['connector']
+                self.assertEqual((connector['execution'], connector['outcome']), ('ok', connector_outcome),
+                                 connector)
+        violation, = connector['details']['defects'][0]['violations']
+        self.assertEqual((violation['edge'], violation['distance_mm']), ('left', 3.0))
+        ordered = [results[c] for c in ('drc-placement', 'connector', 'fab', 'outline', 'layer-count', 'stackup',
+                                        'drc-final')]
+        freeze_evidence(run, ordered)
+        evidence = [{'path': 'checks/connector.json'}]
+        validate_witnesses(run, [{'requirement_id': 'R-envelope-rc-filter-fixed-J1', 'check_id': 'connector'}],
+                           evidence)
+        with self.assertRaisesRegex(ValueError, 'does not trace'):
+            validate_witnesses(run, [{'requirement_id': 'R-envelope-rc-filter-outline',
+                                      'check_id': 'connector'}], evidence)
+        # With no stand-in there is nothing to remove: the retained run stays a valid baseline.
+        self.assertEqual(load_baseline(run)['envelope']['validation']['fab_profile']['stackup']['execution'], 'ready')
 
 
 class EnvelopeRoundTripTests(unittest.TestCase):

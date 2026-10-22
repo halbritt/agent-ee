@@ -13,7 +13,7 @@ are committed as fixtures" and "Telemetry pod questions (second batch,
 2026-10-18)".
 
 This notice records those decisions and where the material came from. It grants
-no licence beyond the owner's decision. The MIT proposal in [`LICENSE`](../../LICENSE)
+no licence beyond the owner's decision. The MIT license in [`LICENSE`](../../LICENSE)
 does not cover these files. [`docs/file-origins.json`](../../docs/file-origins.json)
 classifies them under origin `T16`, and `scripts/check_origins.py` folds their
 permission status to `derived` (not `owner-confirmed`) with each embedded

@@ -262,7 +262,11 @@ def compare_saved(criterion, record, facts):
             if source != expected:
                 defects.append('saved structural stackup differs in name, order, kind or exact thickness')
         else:
-            defects.extend(compare_stackup(record['stackup'], source, authority['expected']))
+            found, unpublished = compare_stackup(record['stackup'], source, authority['expected'])
+            defects.extend(found)
+            # An unpublished layer is unknown, but never masks a proven difference.
+            if not found:
+                unknown.extend(unpublished)
     if field in ('layer_count', 'stackup'):
         for layer in record['stackup']['layers']:
             if 'role' in layer:
@@ -280,8 +284,12 @@ def compare_saved(criterion, record, facts):
 
 
 def compare_stackup(declared, saved, profile):
-    """Compare exact rational thickness bounds and explicitly declared copper weights."""
-    defects = []
+    """Compare exact rational thickness bounds and explicitly declared copper weights.
+
+    Returns (defects, unpublished): a profile layer without a published thickness bounds nothing,
+    so its envelope and saved thicknesses are reported as unknown, never compared or derived.
+    """
+    defects, unpublished = [], []
     if declared['thickness_mm'] != profile['nominal_thickness_mm']:
         defects.append('envelope nominal thickness differs from profile stackup')
     if saved['thickness_mm'] != declared['thickness_mm']:
@@ -293,11 +301,14 @@ def compare_stackup(declared, saved, profile):
             defects.append(f'{label} stackup layer names, order or kinds differ from profile')
             continue
         for layer, bound in zip(layers, expected):
-            if abs(Fraction(layer['thickness_mm']) - Fraction(bound['thickness_mm'])) > tolerance:
+            if bound['thickness_mm'] is None:
+                unpublished.append(f"{label} layer {layer['name']} thickness {layer['thickness_mm']} mm "
+                                   f"has no published profile thickness")
+            elif abs(Fraction(layer['thickness_mm']) - Fraction(bound['thickness_mm'])) > tolerance:
                 defects.append(f"{label} layer {layer['name']} thickness exceeds profile tolerance")
             if label == 'envelope' and layer.get('copper_weight_oz') != bound.get('copper_weight_oz'):
                 defects.append(f"envelope layer {layer['name']} copper_weight_oz differs from profile")
-    return defects
+    return defects, unpublished
 
 
 def captured_record(scope, params, files, inputs):

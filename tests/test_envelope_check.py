@@ -114,6 +114,66 @@ class ExactBoundaryTests(unittest.TestCase):
                 parameters(params)
 
 
+class PublishedCopperWeightAuthorityTests(unittest.TestCase):
+    """stackup/1 against the recorded JLCPCB 2-layer profile, which publishes no core thickness (AGENTEE-85 G1)."""
+    def setUp(self):
+        import hashlib
+        import shutil
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        shutil.copytree(ROOT / 'fixtures/board-envelope/jlc-2layer', self.root, dirs_exist_ok=True)
+        self.files = {p.relative_to(self.root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in self.root.rglob('*') if p.is_file()}
+        self.profile = (self.root / 'fab-profile.json').read_bytes()
+        self.envelope = json.loads((ROOT / 'fixtures/board-envelope/rc-jlc-2layer.envelope.json').read_bytes())
+        # The owned explicit-stackup board, with its dielectric under the envelope's layer name.
+        explicit = (ROOT / 'tests/fixtures/envelope/rc-explicit-stackup.kicad_pcb').read_bytes()
+        self.assertEqual(explicit.count(b'"dielectric 1"'), 1)
+        self.pcb = explicit.replace(b'"dielectric 1"', b'"core"')
+
+    def compare(self, envelope=None, pcb=None):
+        record = validate(json.dumps(envelope or self.envelope).encode(), profile=self.profile,
+                          captured=(self.files, self.root))
+        self.assertEqual(record['fab_profile']['stackup']['execution'], 'ready')
+        return compare_saved('stackup/1', record, saved_structure(pcb or self.pcb))
+
+    def test_unpublished_core_is_unknown_never_pass_or_derived(self):
+        result = self.compare()
+        self.assertEqual((result['status'], result['defects']), ('unknown', []))
+        self.assertEqual(result['unknown'], [
+            'envelope layer core thickness 1.53 mm has no published profile thickness',
+            'saved layer core thickness 1.53 mm has no published profile thickness'])
+
+    def test_published_copper_weight_thickness_and_nominal_still_prove_defects(self):
+        cases = []
+        heavy = json.loads(json.dumps(self.envelope))
+        heavy['stackup']['layers'][0]['copper_weight_oz'] = 2
+        cases.append(('2 oz F.Cu against the published 1 oz', heavy, self.pcb,
+                      'envelope layer F.Cu copper_weight_oz differs from profile'))
+        self.assertEqual(self.pcb.count(b'(thickness 0.035)'), 2)
+        cases.append(('saved copper off the published 35 um', None,
+                      self.pcb.replace(b'(thickness 0.035)', b'(thickness 0.036)', 1),
+                      'saved layer F.Cu thickness exceeds profile tolerance'))
+        thin = json.loads(json.dumps(self.envelope))
+        thin['stackup'] = {'thickness_mm': 1.0, 'layers': [
+            {'name': 'F.Cu', 'kind': 'copper', 'thickness_mm': 0.035, 'copper_weight_oz': 1},
+            {'name': 'core', 'kind': 'dielectric', 'thickness_mm': 0.93},
+            {'name': 'B.Cu', 'kind': 'copper', 'thickness_mm': 0.035, 'copper_weight_oz': 1}]}
+        cases.append(('1.0 mm nominal against the published 1.6 mm', thin, self.pcb,
+                      'envelope nominal thickness differs from profile stackup'))
+        for label, envelope, pcb, defect in cases:
+            with self.subTest(label):
+                result = self.compare(envelope, pcb)
+                self.assertEqual(result['status'], 'defect', result)
+                self.assertIn(defect, result['defects'])
+
+    def test_board_without_saved_stackup_stays_unknown(self):
+        result = self.compare(pcb=PCB)
+        self.assertEqual((result['status'], result['unknown']), ('unknown', ['missing or duplicate saved stackup']))
+
+
 class EnvelopeRegistrationTests(unittest.TestCase):
     def describe(self, criterion, *, params=None, files=None, board='board.kicad_pcb'):
         from agent_ee.capabilities import describe_check

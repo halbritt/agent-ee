@@ -123,7 +123,11 @@
       "jlc-thickness-blog.html says a 2-layer 1.6 mm board uses a single thick core, without a thickness",
       "jlc-laminated.html covers 4-32 layer laminate structures only"
     ],
-    "consequence": "The profile declares no stackup. A per-layer stackup would require a dielectric thickness the fabricator does not publish; deriving it as nominal minus copper would assume physical equals nominal thickness. board_envelope stackup/1 therefore stays unknown for envelopes referencing this profile."
+    "consequence": "The profile declares a partial stackup (AGENTEE-85 G1, 2026-10-22): nominal 1.6 mm and two 1 oz (35 um) copper layers are cited from the recorded source; the core thickness and physical total are null (unpublished). Deriving the core as nominal minus copper would assume physical equals nominal thickness, so board_envelope stackup/1 binds on the copper-weight authority and reports the core thickness as unknown.",
+    "published": [
+      "2-layer nominal thickness option 1.6 mm (jlc-capabilities.html / Thickness)",
+      "two 1 oz (35 um) copper layers and one FR-4 dielectric (jlc-custom-pcb.html / Standard 2-Layer Custom PCB Stackup; jlc-copper-weight.html)"
+    ]
   },
   "interpretation_limits": [
     "min_clearance_mm records only the track-spacing floor. Pair-specific pad/hole/copper constraints require additional DFM rules; this profile is not complete JLCPCB DFM acceptance.",

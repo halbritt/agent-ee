@@ -390,16 +390,29 @@ def copper_names(count):
     return ['F.Cu'] + [f'In{i}.Cu' for i in range(1, count - 1)] + ['B.Cu']
 
 
-def validate_stackup(value, count, *, schema=SCHEMA):
+def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
+    """Exact alternating stackup; `unpublished` (profiles only) admits a null dielectric thickness.
+
+    A null dielectric thickness records that the fabricator publishes none. The physical total
+    must then be null too; nothing is derived from the nominal thickness.
+    """
     if isinstance(count, bool) or not isinstance(count, int) or not 2 <= count <= MAX_COPPER:
         raise ValueError(f'layer_count must be an integer from 2 to {MAX_COPPER}')
     sourced = schema == SCHEMAS[1]
     fields(value, 'stackup', ['nominal_thickness_mm', 'physical_thickness_mm', 'layers']
            if sourced else ['thickness_mm', 'layers'])
-    total = length(value['physical_thickness_mm' if sourced else 'thickness_mm'],
-                   'stackup physical thickness_mm' if sourced else 'stackup thickness_mm', positive=True)
-    nominal = length(value['nominal_thickness_mm'], 'nominal_thickness_mm', positive=True) if sourced else total
     layers = value['layers']
+    gaps = unpublished and isinstance(layers, list) and any(
+        isinstance(layer, dict) and layer.get('kind') == 'dielectric' and layer.get('thickness_mm') is None
+        for layer in layers)
+    if gaps:
+        if value['thickness_mm'] is not None:
+            raise ValueError('stackup thickness_mm must be null when a dielectric thickness is unpublished')
+        total = None
+    else:
+        total = length(value['physical_thickness_mm' if sourced else 'thickness_mm'],
+                       'stackup physical thickness_mm' if sourced else 'stackup thickness_mm', positive=True)
+    nominal = length(value['nominal_thickness_mm'], 'nominal_thickness_mm', positive=True) if sourced else total
     if not isinstance(layers, list) or not layers:
         raise ValueError('stackup layers must be a nonempty list')
     records, copper, names, summed = [], [], set(), 0
@@ -426,18 +439,22 @@ def validate_stackup(value, count, *, schema=SCHEMA):
         if not isinstance(label, str) or not label.strip() or len(label) > 64 or label in names:
             raise ValueError(f'invalid or duplicate stackup layer name: {label!r}')
         names.add(label)
-        thickness = length(layer['thickness_mm'], f'stackup layer {label} thickness_mm', positive=True)
-        summed += thickness
-        records.append({'name': label, 'kind': layer['kind'], 'thickness_mm': mm(thickness),
+        if gaps and layer['kind'] == 'dielectric' and layer['thickness_mm'] is None:
+            thickness = None
+        else:
+            thickness = length(layer['thickness_mm'], f'stackup layer {label} thickness_mm', positive=True)
+            summed += thickness
+        records.append({'name': label, 'kind': layer['kind'],
+                        'thickness_mm': None if thickness is None else mm(thickness),
                         **({'role': layer['role']} if 'role' in layer else {}),
                         **({'copper_weight_oz': fixed_point(weight, MAX_PLACES)} if weight is not None else {})})
     if len(layers) % 2 == 0:
         raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
     if copper != copper_names(count):
         raise ValueError(f'layer_count {count} requires copper layers {copper_names(count)}, got {copper}')
-    if summed != total:
+    if total is not None and summed != total:
         raise ValueError(f'stackup layers sum to {mm(summed)} mm, not thickness_mm {mm(total)}')
-    return {'thickness_mm': mm(nominal), 'layers': records,
+    return {'thickness_mm': None if nominal is None else mm(nominal), 'layers': records,
             **({'nominal_thickness_mm': mm(nominal), 'physical_thickness_mm': mm(total),
                 'sources': [layer['source'] for layer in layers]} if sourced else {})}
 
