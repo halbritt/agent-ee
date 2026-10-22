@@ -473,14 +473,153 @@ def extract(board_path):
             'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid']))}
 
 
+ROUTING_GEOMETRY = 'agent-ee.routing-geometry/1'
+
+
+def _outer_contours(poly):
+    """Outer contours of a native polygon set; a contour hole is dropped, so the set still contains the shape."""
+    return [[vector_nm(poly.COutline(i).CPoint(j)) for j in range(poly.COutline(i).PointCount())]
+            for i in range(poly.OutlineCount())]
+
+
+def _routing_pad(board, fp, pad, error):
+    """Raw copper per layer (outer and inner native bounds), drill and native own clearance of one pad."""
+    import pcbnew
+    record = {'uuid': pad.m_Uuid.AsString(), 'ref': fp.GetReference(), 'footprint_uuid': fp.m_Uuid.AsString(),
+              'number': pad.GetNumber(), 'net': pad.GetNetname(), 'attribute': pad_attribute(pad),
+              'shape': int(pad.GetShape()), 'position_nm': vector_nm(pad.GetPosition()),
+              'rotation_deg': pad.GetOrientationDegrees(), 'copper': {}, 'own_clearance_nm': {}, 'hole': None}
+    reasons = []
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        reasons.append('per-layer padstack not qualified')
+    if pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:
+        reasons.append('custom pad shape not qualified for access')
+    for layer in board.GetEnabledLayers().CuStack():
+        if not pad.IsOnLayer(layer) or not pad.IsOnCopperLayer():
+            continue
+        bounds = {}
+        for name, bound in (('outer', pcbnew.ERROR_OUTSIDE), ('inner', pcbnew.ERROR_INSIDE)):
+            poly = pcbnew.SHAPE_POLY_SET()
+            pad.TransformShapeToPolygon(poly, layer, 0, error, bound)
+            if poly.HasHoles():
+                reasons.append('pad copper contour has holes')
+            bounds[name] = _outer_contours(poly)
+        if not bounds['outer']:
+            continue
+        name = pcbnew.LayerName(layer)
+        record['copper'][name] = bounds
+        record['own_clearance_nm'][name] = int(pad.GetOwnClearance(layer))
+    if pad.HasHole() or pad.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH):
+        poly = pcbnew.SHAPE_POLY_SET()
+        if not pad.TransformHoleToPolygon(poly, 0, error, pcbnew.ERROR_OUTSIDE) or not poly.OutlineCount():
+            reasons.append('native drill contour unavailable')
+        record['hole'] = {'plated': pad.GetAttribute() != pcbnew.PAD_ATTRIB_NPTH,
+                          'drill_nm': vector_nm(pad.GetDrillSize()), 'outer': _outer_contours(poly)}
+    record['status'] = 'unsupported' if reasons else 'supported'
+    if reasons:
+        record['reasons'] = sorted(set(reasons))
+    return record
+
+
+def _custom_rules(path):
+    """Native custom rules are captured by identity; their pairwise evaluation is not modelled."""
+    from .net_constraints import rule_forms
+    dru = path.with_suffix('.kicad_dru')
+    if not dru.is_file():
+        return {'status': 'absent'}
+    raw = dru.read_bytes()
+    names = sorted(str(node[1]) for node in rule_forms(raw, native=True)
+                   if isinstance(node, list) and len(node) > 1 and node[0] == 'rule')
+    return {'status': 'present' if names else 'empty', 'sha256': hashlib.sha256(raw).hexdigest(), 'rules': names}
+
+
+def routing_geometry(board_path):
+    """Opt-in ``agent-ee.routing-geometry/1`` capture for local access analysis (AGENTEE-386).
+
+    Raw pad copper (native outer and inner polygon bounds per copper layer),
+    drills and slots, native own clearances under the saved project's rules,
+    existing tracks and vias, outline, rule areas, copper zones and the board
+    rule floor. Separate from ``extract``: packing reservations are enlarged
+    and are never read as raw copper. Custom rule files are identified, not
+    evaluated; the analysis reports their presence as unknown coverage.
+    """
+    import pcbnew
+    path = Path(board_path)
+    before = path.read_bytes()
+    board = pcbnew.LoadBoard(str(path))
+    settings = board.GetDesignSettings()
+    error = int(settings.m_MaxError)
+    layers = [pcbnew.LayerName(layer) for layer in board.GetEnabledLayers().CuStack()]
+    pads, footprints, outline_shapes = [], [], [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
+    areas = [rule_area(z, 'board') for z in board.Zones() if z.GetIsRuleArea()]
+    for fp in board.GetFootprints():
+        areas.extend(rule_area(z, fp.m_Uuid.AsString()) for z in fp.Zones() if z.GetIsRuleArea())
+        outline_shapes.extend(s for s in fp.GraphicalItems() if s.GetLayer() == pcbnew.Edge_Cuts)
+        footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(),
+                           'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),
+                           'position_nm': vector_nm(fp.GetPosition()), 'rotation_deg': fp.GetOrientationDegrees()})
+        pads.extend(_routing_pad(board, fp, pad, error) for pad in fp.Pads())
+    nets = sorted({p['net'] for p in pads} | {t.GetNetname() for t in board.GetTracks()})
+    clearances = {}
+    for net in nets:
+        # A trial track's own clearance under the native rule resolution, without touching the board.
+        probe = pcbnew.PCB_TRACK(board)
+        found = board.FindNet(net)
+        if found is not None:
+            probe.SetNet(found)
+        clearances[net] = {}
+        for layer in board.GetEnabledLayers().CuStack():
+            probe.SetLayer(layer)
+            clearances[net][pcbnew.LayerName(layer)] = int(probe.GetOwnClearance(layer))
+    tracks, vias = [], []
+    for item in board.GetTracks():
+        record = {'uuid': item.m_Uuid.AsString(), 'net': item.GetNetname()}
+        if item.GetClass() == 'PCB_VIA':
+            top, bottom = item.TopLayer(), item.BottomLayer()
+            vias.append({**record, 'position_nm': vector_nm(item.GetPosition()), 'diameter_nm': int(item.GetWidth(top)),
+                         'drill_nm': int(item.GetDrillValue()), 'via_type': int(item.GetViaType()),
+                         'layers': [n for n in layers if item.IsOnLayer(board.GetLayerID(n))],
+                         'span': [pcbnew.LayerName(top), pcbnew.LayerName(bottom)]})
+        elif item.GetClass() == 'PCB_TRACK':
+            tracks.append({**record, 'kind': 'segment', 'layer': pcbnew.LayerName(item.GetLayer()),
+                           'start_nm': vector_nm(item.GetStart()), 'end_nm': vector_nm(item.GetEnd()),
+                           'width_nm': int(item.GetWidth())})
+        else:
+            tracks.append({**record, 'kind': 'unsupported', 'native_class': item.GetClass()})
+    zones = [{'uuid': z.m_Uuid.AsString(), 'net': z.GetNetname(), 'filled': bool(z.IsFilled()),
+              'layers': sorted(pcbnew.LayerName(layer) for layer in z.GetLayerSet().Seq())}
+             for z in board.Zones() if not z.GetIsRuleArea()]
+    if path.read_bytes() != before:
+        raise ValueError('saved board changed during routing geometry capture')
+    outline = prove_contours([primitive(s) for s in outline_shapes], 'outline_missing', 'outline_unproven')
+    if outline['status'] == 'proven' and len(outline['polygons']) != 1:
+        outline.update(status='outline_unproven', reason='multiple board contours unsupported')
+    rules = {'min_clearance_nm': int(settings.m_MinClearance), 'hole_clearance_nm': int(settings.m_HoleClearance),
+             'hole_to_hole_nm': int(settings.m_HoleToHoleMin),
+             'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
+             'min_track_width_nm': int(settings.m_TrackMinWidth), 'min_via_diameter_nm': int(settings.m_ViasMinSize),
+             'min_via_annular_nm': int(settings.m_ViasMinAnnularWidth),
+             'min_through_drill_nm': int(settings.m_MinThroughDrill), 'custom_rules': _custom_rules(path)}
+    return {'schema': ROUTING_GEOMETRY, 'board_sha256': hashlib.sha256(before).hexdigest(),
+            'pcbnew_version': pcbnew.Version(), 'max_error_nm': error, 'copper_layers': layers, 'rules': rules,
+            'track_clearance_nm': clearances, 'outline': outline,
+            'rule_areas': sorted(areas, key=lambda a: (a['owner'], a['uuid'])),
+            'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid'])),
+            'pads': sorted(pads, key=lambda p: (p['ref'], p['number'], p['uuid'])),
+            'tracks': sorted(tracks, key=lambda t: t['uuid']), 'vias': sorted(vias, key=lambda v: v['uuid']),
+            'zones': sorted(zones, key=lambda z: z['uuid'])}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('board')
     parser.add_argument('--out', required=True)
+    parser.add_argument('--routing-geometry', action='store_true',
+                        help='write the opt-in agent-ee.routing-geometry/1 capture instead (AGENTEE-386)')
     args = parser.parse_args(argv)
     if Path(args.out).resolve() == Path(args.board).resolve():
         raise ValueError('placement probe cannot overwrite its source board')
-    report = extract(args.board)
+    report = routing_geometry(args.board) if args.routing_geometry else extract(args.board)
     Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
     return 0
 
