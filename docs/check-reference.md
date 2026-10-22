@@ -1360,8 +1360,8 @@ band; only an explicit hard limit can. Inside passes; the default band
 reports `screened (default +/-10% component fit)`. Outside an explicit hard
 limit is a defect. Outside the widened screening band is
 advisory: unknown, needing feature geometry or evidence, never a rejection. A
-mix of defects and unknowns reports unknown and keeps every defect in
-`defects`. An uncited declaration is refused. A part not bound to one installed PTH footprint
+mix of defects and unknowns reports unknown, keeps every defect in
+`defects` and names each defect in the summary before the unknown reasons. An uncited declaration is refused. A part not bound to one installed PTH footprint
 of the declared part number is unknown. Undeclared parts and every other
 criterion are unchanged. See
 [through-hole thickness fit](board-envelope.md#through-hole-thickness-fit).

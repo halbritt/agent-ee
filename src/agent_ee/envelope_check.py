@@ -397,7 +397,10 @@ def check_board_envelope(ctx):
     ctx.evidence('envelope-judgment.json')
     ctx.result['details'].update(judgment)
     if result['status'] == 'unknown':
-        raise CheckError('unsupported', '; '.join(result['unknown']))
+        # Fail closed, but never mask a known defect behind the unknown reasons.
+        known = (f"{len(result['defects'])} exact envelope mismatch(es): " + '; '.join(result['defects'])
+                 + '; unknown: ') if result['defects'] else ''
+        raise CheckError('unsupported', known + '; '.join(result['unknown']))
     label = criterion + (' ' + ctx.params['id'] if 'id' in ctx.params else '')
     ctx.result.update(execution='ok', outcome=result['status'],
                       summary=f"{label}: {len(result['defects'])} exact envelope mismatch(es)")

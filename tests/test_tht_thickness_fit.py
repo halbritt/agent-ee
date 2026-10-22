@@ -363,6 +363,11 @@ class NativeThicknessFitTests(unittest.TestCase):
         self.assertEqual(result['details']['defects'],
                          ['J1: board nominal 1.6 mm is above the manufacturer hard limit 1.58 mm'])
         self.assertIn('J2: expected exactly one native footprint', result['summary'])
+        # The operator's one-line summary names the hard defect, not only the unknown reasons.
+        self.assertIn('1 exact envelope mismatch(es): '
+                      'J1: board nominal 1.6 mm is above the manufacturer hard limit 1.58 mm; unknown: ',
+                      result['summary'])
+        self.assertNotEqual(result['outcome'], 'pass')
 
     def test_native_smd_footprint_and_uncited_declaration_do_not_pass(self):
         result = self.run_fit('1.6', raw(j1()), pads='smd')

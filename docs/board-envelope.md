@@ -678,7 +678,7 @@ agent-ee carries only the contract and original test fixtures.
 1.727 mm boundaries and 1 nm outside them, 1.40 mm as advisory, explicit-limit
 pass and fail, documented ranges that are wider, narrower or one-sided wider
 than the band, hard limits narrowing a documented range, mixed defect and
-unknown parts, refused citations, unbound parts, and
+unknown parts (the summary names the defect), refused citations, unbound parts, and
 proof that the fab tolerance does not change the verdict. Its native tests run
 the registered check over original pcbnew boards:
 
