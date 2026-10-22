@@ -47,10 +47,16 @@ PYTHONPATH=src python3 -m agent_ee.placement_probe board.kicad_pcb --routing-geo
 approved through `vias` (`diameter_nm`, `drill_nm`). A value below the captured
 rule floor refuses.
 
-**Terminal components.** Same-net pads whose copper already touches form one
-terminal component. Pads that share a number keep their own UUIDs. A net with
-only one terminal, an `unconnected-*` net and a pad without copper (NPTH) are
-`not_required`.
+**Terminal components.** Same-net pads whose native inner copper bounds
+(`ERROR_INSIDE`, a subset of the real copper) touch on a shared layer form one
+terminal component, so a join is physical contact. Outer bounds
+(`ERROR_OUTSIDE`) that touch never join on their own. Two pads within the
+max-error rim can still have a real gap that native KiCad reports as a missing
+connection. Such pads stay separate components, each listing the other under
+`unresolved_contact`. The extra obligation is conservative. Pads that share a
+number keep their own UUIDs. An `unconnected-*` net and a pad without copper
+(NPTH) are `not_required`, and so is the only component of a net that has no
+same-net track, via or zone.
 
 **Candidates.** The finite, deterministic candidate set is tested in this order:
 
@@ -114,14 +120,33 @@ PYTHONPATH=src python3 -m agent_ee.placement_access analyze --geometry geometry.
 `placement_access.qualify(board, groups, out)` checks each group of witnesses on
 its own isolated copy of the board:
 
-1. Copy the board and keep its rule files byte-identical. pcbnew rewrites the
+1. Check each witness's claim against a fresh native capture of the board,
+   before any copper is written. Native DRC proves only copper legality and that
+   no opens were added. A shortened or retargeted witness is legal copper too.
+   The checks are:
+   - Every witness starts inside the source pad's inner copper on its layer, on
+     the source pad's net, at no less than the minimum track width.
+   - A `direct` witness ends inside the inner copper of a pad of its named
+     `target`, a different same-net terminal component.
+   - An `exit` witness ends outside the owning footprint's copper box grown by
+     clearance plus half the track width.
+   - A `via` witness ends at a through via that meets the via rule minima and
+     reaches another copper layer.
+
+   Any failure refuses the group with `semantic_findings`. A malformed witness
+   is never materialized. A writable refused group still runs the native steps
+   below, so its native findings are reported too.
+2. Copy the board and keep its rule files byte-identical. pcbnew rewrites the
    project file on save, so the source bytes are restored before DRC.
-2. Add the witness tracks and vias on the source net.
-3. Run `kicad-cli pcb drc --refill-zones` in the existing sandbox.
-4. Compare the findings with the DRC of the unmodified copy.
+3. Add the witness tracks and vias on the source net. Native pcbnew connectivity
+   must show each witness's first track touching its source pad. For a `direct`
+   witness, its last track must touch a target pad.
+4. Run `kicad-cli pcb drc --refill-zones` in the existing sandbox.
+5. Compare the findings with the DRC of the unmodified copy.
 
-A group is `qualified` only when two conditions hold:
+A group is `qualified` only when three conditions hold:
 
+- Every witness passes the semantic and native connectivity checks.
 - The DRC adds no rule finding other than the dangling-end warnings that an open
   stub carries.
 - The DRC does not add an unconnected item.
@@ -165,6 +190,15 @@ PYTHONPATH=src python3 -m agent_ee.placement_access block --candidate block.cand
 - Quarter-turn poses compared against saved pcbnew geometry.
 - Mirroring compared against an independent reflection.
 - Every witness on the fixture passes native DRC, and a forged witness is refused.
+- Terminal contact. Two 1 mm same-net lands with an 8.63 µm gap overlap only in
+  their outer bounds. They keep the connection obligation that native DRC
+  reports. Truly overlapping lands and a four-piece exposed pad are one
+  component, with no native opening.
+- Witness semantics. A full direct link qualifies and removes one native
+  opening. A direct link shortened short of its target, a retargeted direct link,
+  an exit that stays on its own land and a witness on a foreign source are all
+  refused. Native DRC alone passes the shortened link. A malformed witness is
+  never written.
 - The exact U23/C87 replay from the pinned fome-mc store. It includes the actual
   sensor-power-front candidate sidecar, and those witnesses also pass native DRC.
 

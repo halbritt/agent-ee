@@ -4,7 +4,7 @@ Pure, bounded and geometry-based; not a router. Input is the opt-in
 ``agent-ee.routing-geometry/1`` capture (``placement_probe.routing_geometry``):
 raw native pad copper and drills, native own clearances, tracks, vias, outline,
 rule areas and the board rule floor. For each conductive terminal component
-(same-net pads whose copper already touches) a finite, deterministic candidate
+(same-net pads whose inner copper bounds touch) a finite, deterministic candidate
 set is tested in the stated model:
 
 1. direct straight or one-bend links to another same-net component;
@@ -188,6 +188,73 @@ def _turns(delta):
     if not math.isfinite(turns) or turns != round(turns):
         raise ValueError('a local access pose may change rotation only by quarter turns')
     return int(round(turns)) % 4
+
+
+def terminal_components(geometry, pad_shape):
+    """Same-net pads whose copper soundly touches on a shared layer form one terminal component.
+
+    A join needs contact of the native inner bounds (ERROR_INSIDE, a subset of
+    the real copper), so it is physical contact. Touching outer bounds
+    (ERROR_OUTSIDE, a superset) alone never join: two pads within the max-error
+    rim may have a real gap, and merging them would remove a connection
+    obligation that native KiCad still reports. Such pairs stay separate
+    components and are listed under ``unresolved_contact``; the extra
+    obligation is conservative. ``pad_shape(uuid, layer, bound)`` gives the
+    (posed) polygons.
+    """
+    pads = sorted((p for p in geometry['pads'] if p['copper']), key=lambda p: (p['ref'], p['number'], p['uuid']))
+    parent = {p['uuid']: p['uuid'] for p in pads}
+
+    def find(u):
+        while parent[u] != u:
+            parent[u] = parent[parent[u]]
+            u = parent[u]
+        return u
+
+    def touch(left, right, layer, bound):
+        lp, rp = pad_shape(left['uuid'], layer, bound), pad_shape(right['uuid'], layer, bound)
+        if not lp or not rp:
+            return False
+        lb, rb = _box([q for poly in lp for q in poly]), _box([q for poly in rp for q in poly])
+        if lb[2] < rb[0] or rb[2] < lb[0] or lb[3] < rb[1] or rb[3] < lb[1]:
+            return False
+        return any(_polygons_touch(a, b) for a in lp for b in rp)
+    by_net, rim = {}, []
+    for pad in pads:
+        by_net.setdefault(pad['net'], []).append(pad)
+    for net, group in by_net.items():
+        if not net:
+            continue
+        for i, left in enumerate(group):
+            for right in group[i + 1:]:
+                if find(left['uuid']) == find(right['uuid']):
+                    continue
+                layers = sorted(set(left['copper']) & set(right['copper']))
+                if any(touch(left, right, layer, 'inner') for layer in layers):
+                    parent[find(right['uuid'])] = find(left['uuid'])
+                elif any(touch(left, right, layer, 'outer') for layer in layers):
+                    rim.append((left['uuid'], right['uuid']))
+    groups = {}
+    for pad in pads:
+        groups.setdefault(find(pad['uuid']), []).append(pad)
+    ids = {}
+    for members in groups.values():
+        first = members[0]
+        ids[find(first['uuid'])] = f"{first['ref']}.{first['number']}@{first['uuid']}"
+    unresolved = {}
+    for left, right in rim:
+        a, b = ids[find(left)], ids[find(right)]
+        if a != b:
+            unresolved.setdefault(a, set()).add(b)
+            unresolved.setdefault(b, set()).add(a)
+    out = []
+    for root, members in groups.items():
+        record = {'id': ids[root], 'net': members[0]['net'],
+                  'pads': [{'ref': p['ref'], 'number': p['number'], 'uuid': p['uuid']} for p in members]}
+        if ids[root] in unresolved:
+            record['unresolved_contact'] = sorted(unresolved[ids[root]])
+        out.append(record)
+    return sorted(out, key=lambda c: c['id'])
 
 
 # -------------------------------------------------------------------- index
@@ -495,51 +562,18 @@ class AccessIndex:
                 'terminals': terminals}
 
     def components(self):
-        """Same-net pads whose posed copper touches on a shared layer form one terminal component."""
-        pads = sorted((p for p in self.geometry['pads'] if p['copper']),
-                      key=lambda p: (p['ref'], p['number'], p['uuid']))
-        parent = {p['uuid']: p['uuid'] for p in pads}
-
-        def find(u):
-            while parent[u] != u:
-                parent[u] = parent[parent[u]]
-                u = parent[u]
-            return u
-        by_net = {}
-        for pad in pads:
-            by_net.setdefault(pad['net'], []).append(pad)
-        for net, group in by_net.items():
-            if not net:
-                continue
-            for i, left in enumerate(group):
-                for right in group[i + 1:]:
-                    if find(left['uuid']) == find(right['uuid']):
-                        continue
-                    for layer in sorted(set(left['copper']) & set(right['copper'])):
-                        lp = self.pad_shape(left['uuid'], layer, 'outer')
-                        rp = self.pad_shape(right['uuid'], layer, 'outer')
-                        lb, rb = _box([q for poly in lp for q in poly]), _box([q for poly in rp for q in poly])
-                        if lb[2] < rb[0] or rb[2] < lb[0] or lb[3] < rb[1] or rb[3] < lb[1]:
-                            continue
-                        if any(_polygons_touch(a, b) for a in lp for b in rp):
-                            parent[find(right['uuid'])] = find(left['uuid'])
-                            break
-        groups = {}
-        for pad in pads:
-            groups.setdefault(find(pad['uuid']), []).append(pad)
-        out = []
-        for members in groups.values():
-            first = members[0]
-            out.append({'id': f"{first['ref']}.{first['number']}@{first['uuid']}", 'net': first['net'],
-                        'pads': [{'ref': p['ref'], 'number': p['number'], 'uuid': p['uuid']} for p in members]})
-        return sorted(out, key=lambda c: c['id'])
+        return terminal_components(self.geometry, self.pad_shape)
 
     def terminal(self, component, components):
         net = component['net']
         peers = [c for c in components if c['net'] == net and c is not component]
         record = {'id': component['id'], 'net': net, 'pads': component['pads']}
-        connected_tracks = any(t['net'] == net for t in self.geometry['tracks'] + self.geometry['vias'])
-        if not net or net.startswith('unconnected-') or (not peers and not connected_tracks):
+        if 'unresolved_contact' in component:
+            record['unresolved_contact'] = component['unresolved_contact']
+        # Other same-net copper (tracks, vias, zones) keeps the obligation; only a sole pad component is exempt.
+        connected = any(item['net'] == net for item in
+                        self.geometry['tracks'] + self.geometry['vias'] + self.geometry['zones'])
+        if not net or net.startswith('unconnected-') or (not peers and not connected):
             return {**record, 'status': 'not_required', 'reason': 'no other terminal on the net'}
         if self.coverage:
             return {**record, 'status': 'unknown', 'reason': 'coverage', 'details': self.coverage}
@@ -829,15 +863,97 @@ def access_status(candidate, sidecar=None):
 
 # ------------------------------------------------------------ native authority
 
+def _witness_problems(witness, geometry, components):
+    """Source, target, kind and reach semantics of one witness against the native capture of the qualified board.
+
+    Native DRC proves only copper legality and no extra opens; a shortened or
+    retargeted witness is legal copper too. Each kind's claim is checked here
+    on the raw capture before any copper is materialized:
+    every witness starts inside the source pad's inner (ERROR_INSIDE) copper on
+    its layer; ``direct`` ends inside the inner copper of a pad of its named
+    same-net target component, which is not the source's; ``exit`` ends outside
+    the owning footprint's copper box grown by clearance plus half the width;
+    ``via`` ends at a through via of at least the rule minima that reaches
+    another copper layer. Returns ``(problems, writable)``: a witness that is
+    not writable (malformed, or without source copper on its layer) is never
+    materialized.
+    """
+    pads = {p['uuid']: p for p in geometry['pads']}
+    rules, layers = geometry['rules'], geometry['copper_layers']
+
+    def inner(uuid, layer, point):
+        bounds = pads[uuid]['copper'].get(layer)
+        return bool(bounds) and any(inside(point, [tuple(q) for q in poly]) for poly in bounds['inner'])
+    kind, layer, path = witness.get('kind'), witness.get('layer'), witness.get('path_nm')
+    if kind not in ('direct', 'exit', 'via'):
+        return [f'unknown witness kind {kind!r}'], False
+    source = pads.get(witness.get('source_pad'))
+    if source is None:
+        return ['source pad is not on the board'], False
+    if (not isinstance(path, list) or len(path) < 2
+            or any(not isinstance(q, list) or len(q) != 2 or any(type(v) is not int for v in q) for q in path)):
+        return ['path_nm must list at least two integer points'], False
+    problems = []
+    path = [tuple(q) for q in path]
+    if source['net'] != witness.get('net') or not source['net']:
+        problems.append('witness net is not the source pad net')
+    if layer not in layers or layer not in source['copper']:
+        return problems + [f'source pad has no copper on {layer!r}'], False
+    width = witness.get('track_width_nm')
+    if type(width) is not int or width < max(1, rules['min_track_width_nm']):
+        return problems + ['track width is below the captured minimum'], False
+    if not inner(source['uuid'], layer, path[0]):
+        problems.append('path does not start inside the source pad copper')
+    own = next(c for c in components if any(p['uuid'] == source['uuid'] for p in c['pads']))
+    if kind == 'direct':
+        target = next((c for c in components if c['id'] == witness.get('target')), None)
+        if target is None or target is own or target['net'] != source['net']:
+            problems.append('direct target is not another same-net terminal component')
+        elif not any(inner(p['uuid'], layer, path[-1]) for p in target['pads']):
+            problems.append('direct path does not end inside the target pad copper')
+    elif kind == 'exit':
+        own_clearance = geometry['track_clearance_nm'].get(source['net'], {})
+        clear = max([rules['min_clearance_nm'], *own_clearance.values()])
+        box = _box([tuple(q) for pad in geometry['pads'] if pad['ref'] == source['ref']
+                    for bounds in pad['copper'].values() for poly in bounds['outer'] for q in poly],
+                   clear + width / 2)
+        end = path[-1]
+        if box[0] <= end[0] <= box[2] and box[1] <= end[1] <= box[3]:
+            problems.append('exit path ends inside the footprint copper clearance box')
+    else:
+        via = witness.get('via')
+        if not isinstance(via, dict):
+            return problems + ['via witness lacks its via'], False
+        diameter, drill = via.get('diameter_nm'), via.get('drill_nm')
+        if type(diameter) is not int or type(drill) is not int or diameter <= drill or drill <= 0:
+            return problems + ['via diameter_nm and drill_nm must be positive integers'], False
+        reaches = via.get('reaches')
+        if via.get('position_nm') != list(path[-1]):
+            problems.append('via is not at the path end')
+        if via.get('layers') != layers:
+            problems.append('via is not a through via')
+        if not isinstance(reaches, list) or not reaches or layer in reaches or not set(reaches) <= set(layers):
+            problems.append('via reaches no other copper layer')
+        if (diameter < rules['min_via_diameter_nm'] or drill < rules['min_through_drill_nm']
+                or diameter - drill < 2 * rules['min_via_annular_nm']):
+            problems.append('via is below the captured via diameter, drill or annular minimum')
+    return problems, True
+
+
 def materialize(board_path, witnesses, out_path):
-    """Write witnesses' copper (tracks and vias on the source net) into a new board file; rules untouched."""
+    """Write witnesses' copper (tracks and vias on the source net) into a new board file; rules untouched.
+
+    Returns one record per witness: its added item UUIDs and the native
+    (pcbnew connectivity) pads its first and last track directly touch.
+    """
     import pcbnew
     board = pcbnew.LoadBoard(str(board_path))
     pads = {p.m_Uuid.AsString(): p for fp in board.GetFootprints() for p in fp.Pads()}
-    added = []
+    records = []
     for witness in witnesses:
         net = pads[witness['source_pad']].GetNet()
         layer = board.GetLayerID(witness['layer'])
+        tracks, added = [], []
         for a, b in zip(witness['path_nm'], witness['path_nm'][1:]):
             track = pcbnew.PCB_TRACK(board)
             track.SetStart(pcbnew.VECTOR2I(*a))
@@ -846,6 +962,7 @@ def materialize(board_path, witnesses, out_path):
             track.SetLayer(layer)
             track.SetNet(net)
             board.Add(track)
+            tracks.append(track)
             added.append(track.m_Uuid.AsString())
         if 'via' in witness:
             via = pcbnew.PCB_VIA(board)
@@ -856,8 +973,16 @@ def materialize(board_path, witnesses, out_path):
             via.SetNet(net)
             board.Add(via)
             added.append(via.m_Uuid.AsString())
+        records.append({'items': added, 'tracks': tracks})
+    board.BuildConnectivity()
+    connectivity = board.GetConnectivity()
+    for record in records:
+        tracks = record.pop('tracks')
+        record['first_touches'], record['last_touches'] = (
+            sorted(p.m_Uuid.AsString() for p in connectivity.GetConnectedPads(track))
+            for track in (tracks[0], tracks[-1]))
     pcbnew.SaveBoard(str(out_path), board)
-    return added
+    return records
 
 
 def _violations(report):
@@ -873,21 +998,33 @@ def _key(violation):
 def qualify(board_path, groups, out):
     """Native qualification: each group of witnesses on its own isolated copy, unchanged rules, refilled DRC.
 
-    A group is qualified only when the native DRC of its copy adds no rule
-    finding beyond the unmodified copy, other than the dangling-end warnings an
-    open access stub carries by construction, and does not add an unconnected
-    item (a same-net stub re-pairs the ratsnest but cannot disconnect).
-    pcbnew rewrites the project file on save; the copy's rule files are
-    restored to the source bytes before DRC. Execution failure is refused,
-    never a pass.
+    Before any copper is materialized, every witness's source, target, kind
+    and reach claim is checked against a fresh native capture of the board
+    (``_witness_problems``); a semantic failure refuses the group, and a
+    malformed witness is never written. Writable groups are still checked
+    natively so their findings are reported. After
+    materialization, native connectivity must show each witness's first track
+    touching its source pad and a direct witness's last track touching a pad of
+    its target. A group is then qualified only when the native DRC of its copy
+    adds no rule finding beyond the unmodified copy, other than the
+    dangling-end warnings an open access stub carries by construction, and does
+    not add an unconnected item (a same-net stub re-pairs the ratsnest but
+    cannot disconnect). pcbnew rewrites the project file on save; the copy's
+    rule files are restored to the source bytes before DRC. Execution failure
+    is refused, never a pass.
     """
     from .executor import execute
+    from .placement_probe import routing_geometry
     board_path, out = Path(board_path), Path(out)
     if out.exists():
         raise ValueError('qualification output must be new')
     out.mkdir(parents=True)
     siblings = [board_path.with_suffix(s) for s in ('.kicad_pcb', '.kicad_pro', '.kicad_dru')]
     siblings = [p for p in siblings if p.is_file()]
+    geometry = routing_geometry(board_path)
+    pads = {p['uuid']: p for p in geometry['pads']}
+    components = terminal_components(
+        geometry, lambda uuid, layer, bound: [[tuple(q) for q in poly] for poly in pads[uuid]['copper'][layer][bound]])
 
     def copy(directory):
         directory.mkdir()
@@ -908,9 +1045,28 @@ def qualify(board_path, groups, out):
     before, unconnected = Counter(_key(v) for v in _violations(report)), len(report.get('unconnected_items', []))
     results = []
     for number, group in enumerate(groups):
+        semantic, writable = [], True
+        for i, witness in enumerate(group):
+            problems, ok = _witness_problems(witness, geometry, components)
+            semantic += [{'witness': i, 'problem': problem} for problem in problems]
+            writable = writable and ok
+        if not writable:
+            results.append({'group': number, 'status': 'refused', 'added_items': [], 'semantic_findings': semantic,
+                            'new_findings': [], 'unconnected_items': None})
+            continue
         directory = copy(out / f'group-{number}')
         rules = {p.name: p.read_bytes() for p in siblings if p.suffix != '.kicad_pcb'}
-        added = set(materialize(directory / board_path.name, group, directory / board_path.name))
+        records = materialize(directory / board_path.name, group, directory / board_path.name)
+        added = {uuid for record in records for uuid in record['items']}
+        for i, (witness, record) in enumerate(zip(group, records)):
+            if witness['source_pad'] not in record['first_touches']:
+                semantic.append({'witness': i,
+                                 'problem': 'native connectivity: first track does not touch the source pad'})
+            if witness['kind'] == 'direct':
+                target = next((c for c in components if c['id'] == witness.get('target')), {'pads': []})
+                if not {p['uuid'] for p in target['pads']} & set(record['last_touches']):
+                    semantic.append({'witness': i,
+                                     'problem': 'native connectivity: last track does not touch the target pad'})
         for name, raw in rules.items():
             (directory / name).write_bytes(raw)
         report = drc(directory, out / f'group-{number}-drc')
@@ -929,8 +1085,9 @@ def qualify(board_path, groups, out):
         if connections > unconnected:
             new.append({'type': 'unconnected_items', 'description': f'{connections} unconnected items after, '
                                                                     f'{unconnected} before'})
-        results.append({'group': number, 'status': 'refused' if new else 'qualified', 'added_items': sorted(added),
-                        'new_findings': new, 'unconnected_items': [unconnected, connections]})
+        results.append({'group': number, 'status': 'refused' if new or semantic else 'qualified',
+                        'added_items': sorted(added), 'semantic_findings': semantic, 'new_findings': new,
+                        'unconnected_items': [unconnected, connections]})
     return {'schema': QUALIFICATION, 'board': board_path.name, 'groups': results}
 
 

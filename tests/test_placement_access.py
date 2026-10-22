@@ -549,6 +549,115 @@ class NativeQualificationTests(NativeFixture, unittest.TestCase):
         self.assertTrue(result['groups'][0]['new_findings'])
 
 
+# Terminal contact and witness semantics (agent-510 HOLD R1/R2): original 1 mm circular same-net lands.
+CONTACT = {
+    'outline': [0, 0, 20, 20],
+    'footprints': [
+        # 8.63 um physical gap: inside the ERROR_OUTSIDE rims, so only the outer bounds touch.
+        {'ref': 'J1', 'at': [5, 5], 'rot': 0, 'pads': [pad('1', 'A', [0, 0], [1, 1], 'circle')]},
+        {'ref': 'J2', 'at': [6, 4.868348], 'rot': 0, 'pads': [pad('1', 'A', [0, 0], [1, 1], 'circle')]},
+        {'ref': 'J3', 'at': [5, 10], 'rot': 0, 'pads': [pad('1', 'B', [0, 0], [1, 1], 'circle')]},
+        {'ref': 'J4', 'at': [10, 10], 'rot': 0, 'pads': [pad('1', 'B', [0, 0], [1, 1], 'circle')]},
+        # Truly overlapping lands of different footprints: one component, natively connected.
+        {'ref': 'T1', 'at': [5, 15], 'rot': 0, 'pads': [pad('1', 'C', [0, 0], [1, 1], 'circle')]},
+        {'ref': 'T2', 'at': [5.8, 15], 'rot': 0, 'pads': [pad('1', 'C', [0, 0], [1, 1], 'circle')]},
+        # A four-piece exposed pad, one number, overlapping pieces.
+        {'ref': 'EP1', 'at': [14, 5], 'rot': 90, 'pads': [
+            pad('9', 'D', [x, y], [1.0, 1.0]) for x in (-0.45, 0.45) for y in (-0.45, 0.45)]},
+    ],
+    'keepouts': [], 'tracks': [], 'vias': [],
+}
+
+
+def native_unconnected(board, out):
+    subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '-o', str(out), str(board)],
+                   check=True, capture_output=True)
+    pairs = set()
+    for item in json.loads(Path(out).read_text())['unconnected_items']:
+        pairs.add(tuple(sorted(i['description'].split(' of ')[1].split(' ')[0] for i in item['items'])))
+    return pairs
+
+
+class ContactAndSemanticsTests(unittest.TestCase):
+    """An outer-bound overlap never removes an obligation; a witness qualifies only for what it claims."""
+
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain()
+        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-access-contact-')
+        cls.dir = Path(cls.tmp.name)
+        cls.board = build(cls.dir, CONTACT)
+        cls.geometry = routing_geometry(cls.board)
+        cls.report = access.analyze_access(cls.geometry, None, POLICY)
+        cls.native = native_unconnected(cls.board, cls.dir / 'drc.json')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def pads(self, ref):
+        return [p for p in self.geometry['pads'] if p['ref'] == ref]
+
+    def test_near_gap_outer_overlap_keeps_the_native_obligation(self):
+        j1, j2 = self.pads('J1')[0], self.pads('J2')[0]
+        outer = [[tuple(q) for q in poly] for poly in j1['copper']['F.Cu']['outer']]
+        other = [[tuple(q) for q in poly] for poly in j2['copper']['F.Cu']['outer']]
+        self.assertTrue(any(access._polygons_touch(a, b) for a in outer for b in other))  # the rim overlaps
+        self.assertIn(('J1', 'J2'), self.native)  # native KiCad: a missing connection
+        first, second = terminal(self.report, 'J1', '1'), terminal(self.report, 'J2', '1')
+        self.assertNotEqual(first['id'], second['id'])
+        self.assertNotEqual(first['status'], 'not_required')
+        self.assertNotEqual(second['status'], 'not_required')
+        self.assertEqual(first['unresolved_contact'], [second['id']])
+        self.assertTrue(any(w['kind'] == 'direct' and w['target'] == second['id'] for w in first['witnesses']))
+
+    def test_truly_touching_lands_are_one_component(self):
+        joined = terminal(self.report, 'T1', '1')
+        self.assertEqual(sorted(p['ref'] for p in joined['pads']), ['T1', 'T2'])
+        self.assertNotIn('unresolved_contact', joined)
+        self.assertEqual(joined['status'], 'not_required')
+        self.assertFalse([pair for pair in self.native if 'T1' in pair or 'T2' in pair])
+
+    def test_exposed_pad_pieces_are_one_component(self):
+        ep = terminal(self.report, 'EP1', '9')
+        self.assertEqual(len({p['uuid'] for p in ep['pads']}), 4)
+        self.assertEqual(ep['status'], 'not_required')
+        self.assertFalse([pair for pair in self.native if 'EP1' in pair])
+
+    def test_witness_semantics_are_checked_before_native_copper_legality(self):
+        j3, j4 = terminal(self.report, 'J3', '1'), terminal(self.report, 'J4', '1')
+        full = next(w for w in j3['witnesses'] if w['kind'] == 'direct' and len(w['path_nm']) == 2)
+        self.assertEqual(full['target'], j4['id'])
+        shortened = copy.deepcopy(full)
+        shortened['path_nm'][-1] = [6 * MM, 10 * MM]  # legal copper, but it never reaches J4
+        retargeted = copy.deepcopy(full)
+        retargeted['target'] = j3['id']
+        exit_ = copy.deepcopy(next(w for w in j3['witnesses'] if w['kind'] == 'exit'))
+        exit_['path_nm'] = [exit_['path_nm'][0], [5 * MM + 200_000, 10 * MM]]  # still on its own land
+        foreign = copy.deepcopy(full)
+        foreign['source_pad'] = self.pads('J1')[0]['uuid']
+        malformed = copy.deepcopy(full)
+        malformed['path_nm'] = [full['path_nm'][0]]
+        result = access.qualify(self.board, [[full], [shortened], [retargeted], [exit_], [foreign], [malformed]],
+                                self.dir / 'semantics')
+        groups = result['groups']
+        self.assertEqual(groups[0]['status'], 'qualified', groups[0])
+        before, after = groups[0]['unconnected_items']
+        self.assertEqual(after, before - 1)  # the full direct link removes the J3-J4 opening natively
+        self.assertEqual([g['status'] for g in groups[1:]], ['refused'] * 5)
+        problems = [[f['problem'] for f in g['semantic_findings']] for g in groups[1:]]
+        self.assertIn('direct path does not end inside the target pad copper', problems[0])
+        self.assertIn('native connectivity: last track does not touch the target pad', problems[0])
+        # Native DRC alone passes the shortened link: legal copper, no extra opening, no reach.
+        self.assertEqual(groups[1]['new_findings'], [])
+        self.assertEqual(groups[1]['unconnected_items'], [before, before])
+        self.assertIn('direct target is not another same-net terminal component', problems[1])
+        self.assertIn('exit path ends inside the footprint copper clearance box', problems[2])
+        self.assertIn('witness net is not the source pad net', problems[3])
+        self.assertEqual(problems[4], ['path_nm must list at least two integer points'])
+        self.assertEqual(groups[5]['added_items'], [])  # a malformed witness is never written
+
+
 def synthetic_geometry(capture, candidate):
     """A routing geometry of the block fixture with members at the candidate's frame poses.
 
