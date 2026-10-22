@@ -5,8 +5,11 @@ routing_adapter.step() declares it, stage_receipts.run_step() executes it in the
 networkless sandbox, and routing_adapter.verify() re-derives it from the
 receipt's retained bytes. The router is the coordinator fixture in
 kicad_route_fixture.py. Its sidecar is SYNTHETIC: it has the agreed reference
-shape result.experiment {path, sha256, schema} and only the sidecar fields the
-adapter reads (schema, policy). It is not KICADROUTE-91 output.
+shape result.experiment {path: 'routability-experiment.json', sha256, schema},
+run-relative, and only the sidecar fields the adapter reads (schema and
+identity.policy, after the unfrozen krt91c draft). It is not KICADROUTE-91
+output. The policy declarations are the reviewed five-field routability-policy/1
+form of kicad-route a5fa636d experiment_policy.load.
 """
 import hashlib
 import json
@@ -22,14 +25,22 @@ from agent_ee import stage_receipts
 from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
 from tests.toolchain import require_toolchain
 
-# HOOK (AGENTEE-442): when agent-507 sends the final reviewed routability-experiment/1
-# schema and the producer commit, record them here, update EXPERIMENT_CONTRACT and the
-# fields experiment_grade reads, and rerun test_current_policy_evidence_is_retained
-# against a sidecar from that producer. Until then the positive case is synthetic.
-K91_REVIEWED = {'producer_commit': None, 'schema_sha256': None}
+# HOOK (AGENTEE-442), FINAL REAL NATIVE REPLAY: when agent-507 sends the final
+# reviewed routability-experiment/1 schema, the producer commit and a real native
+# receipt, record them here, update EXPERIMENT_CONTRACT and the fields
+# experiment_grade reads (identity.policy, the experiment-policy.json copy, any
+# settings echo), and rerun test_current_policy_evidence_is_retained against a
+# sidecar from that producer on a re-pinned router. Until then the positive case
+# is synthetic and qualifies nothing.
+K91_REVIEWED = {'producer_commit': None, 'schema_sha256': None, 'native_receipt': None}
 
-CURRENT = {'schema': 'routability-policy/1', 'policy': 'current-policy'}
-HISTORICAL = {'schema': 'routability-policy/1', 'policy': 'historical-all-layer'}
+# Reviewed five-field declarations. The rule-area digest is a placeholder: only
+# the router can bind it to the board's native rule areas.
+AREAS = hashlib.sha256(b'agent-ee synthetic rule areas').hexdigest()
+CURRENT = {'schema': 'routability-policy/1', 'experiment_class': 'current-policy',
+           'allowed_trace_layers': ['F.Cu', 'B.Cu'], 'allowed_via_spans': [['F.Cu', 'B.Cu']],
+           'rule_areas_sha256': AREAS}
+HISTORICAL = {**CURRENT, 'experiment_class': 'historical-all-layer'}
 DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'import kicad_route_attempt as a\n'
           'cfg = json.load(open("/opt/driver/layout.json"))\n'
@@ -37,8 +48,12 @@ DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'layout.update(pin=cfg["pin"], code=cfg["code"])\n'
           'sys.exit(a.main(sys.argv[1:], layout))\n')
 REFUSALS = {'tamper': 'tampered', 'missing_file': 'missing', 'omit': 'missing', 'malformed': 'malformed',
-            'malformed_reference': 'malformed', 'escape': 'malformed', 'unknown_schema': 'unknown_schema',
-            'incompatible_schema': 'incompatible_schema', 'incompatible_policy': 'incompatible_policy'}
+            'malformed_reference': 'malformed', 'escape': 'malformed', 'cwd_relative': 'malformed',
+            'second_sidecar': 'malformed', 'no_policy_identity': 'malformed', 'unknown_schema': 'unknown_schema',
+            'incompatible_schema': 'incompatible_schema', 'incompatible_policy': 'incompatible_policy',
+            'policy_copy_mismatch': 'incompatible_policy'}
+# Every refusal that has a regular root sidecar keeps its recomputed identity.
+KEEPS_SIDECAR = set(REFUSALS) - {'missing_file', 'omit'}
 
 
 def sha256(path):
@@ -86,18 +101,24 @@ class ExperimentBoundaryTest(unittest.TestCase):
         self.assertEqual(argv[argv.index('--experiment-policy') + 1],
                          '/work/routing/attempt/agent-ee-experiment-policy.json')
         policy_bytes = (attempt_dir / 'agent-ee-experiment-policy.json').read_bytes()
-        self.assertEqual(json.loads(policy_bytes), CURRENT)
+        # The sealed bytes are the canonical five-field declaration.
+        self.assertEqual(policy_bytes, json.dumps(CURRENT, sort_keys=True, separators=(',', ':')).encode())
         result = json.loads((attempt_dir / 'result.json').read_text())
+        # The binding is run-relative: the canonical root file name, not a cwd-relative path.
+        self.assertEqual(result['experiment']['path'], 'routability-experiment.json')
         sidecar = attempt_dir / 'routability-experiment.json'
+        copy = attempt_dir / 'experiment-policy.json'
         self.assertIn('SYNTHETIC'.lower(), sidecar.read_text().lower())
         record = report['semantics']['experiment']
         self.assertEqual(record, {
             'status': 'retained', 'qualified': False, 'contract': attempt.EXPERIMENT_CONTRACT,
             'schema': 'routability-experiment/1', 'reference': result['experiment'],
             'path': 'attempt/routability-experiment.json', 'sha256': sha256(sidecar),
-            'policy': {'schema': 'routability-policy/1', 'policy': 'current-policy',
-                       'sha256': hashlib.sha256(policy_bytes).hexdigest()},
-            'policy_file': 'attempt/agent-ee-experiment-policy.json'})
+            'policy': {'declared': CURRENT, 'sha256': hashlib.sha256(policy_bytes).hexdigest(),
+                       'policy_sha256': hashlib.sha256(json.dumps(CURRENT, sort_keys=True).encode()).hexdigest()},
+            'policy_file': 'attempt/agent-ee-experiment-policy.json',
+            'policy_copy': {'path': 'attempt/experiment-policy.json', 'sha256': sha256(copy)}})
+        self.assertEqual(report['retained']['attempt/experiment-policy.json'], sha256(copy))
         self.assertEqual(record['sha256'], result['experiment']['sha256'])
         self.assertEqual(report['retained']['attempt/routability-experiment.json'], sha256(sidecar))
         self.assertEqual(report['retained']['attempt/agent-ee-experiment-policy.json'],
@@ -115,11 +136,12 @@ class ExperimentBoundaryTest(unittest.TestCase):
         for policy in (CURRENT, HISTORICAL):
             receipt, receipt_dir, _, report = self.receipt({'name': 'complete'}, policy)
             self.assertEqual(receipt['exit_code'], 0, report['semantics'])
-            records[policy['policy']] = self.verify(receipt_dir, receipt)['experiment']
-        self.assertEqual({k: v['policy']['policy'] for k, v in records.items()},
+            records[policy['experiment_class']] = self.verify(receipt_dir, receipt)['experiment']
+        self.assertEqual({k: v['policy']['declared']['experiment_class'] for k, v in records.items()},
                          {'current-policy': 'current-policy', 'historical-all-layer': 'historical-all-layer'})
-        self.assertNotEqual(records['current-policy']['policy']['sha256'],
-                            records['historical-all-layer']['policy']['sha256'])
+        for key in ('sha256', 'policy_sha256'):
+            self.assertNotEqual(records['current-policy']['policy'][key],
+                                records['historical-all-layer']['policy'][key])
 
     def test_unknown_malformed_missing_tampered_or_incompatible_evidence_is_refused(self):
         for scenario, reason in REFUSALS.items():
@@ -137,8 +159,8 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 self.assertIn(reason, attempt.EXPERIMENT_REFUSALS)
                 self.assertTrue(any(r.startswith(f'routability experiment evidence refused ({reason})')
                                     for r in sem['reasons']), sem['reasons'])
-                self.assertEqual(record['policy']['policy'], 'current-policy')
-                if scenario in ('tamper', 'malformed', 'incompatible_schema', 'incompatible_policy'):
+                self.assertEqual(record['policy']['declared'], CURRENT)
+                if scenario in KEEPS_SIDECAR:
                     # Refused evidence is still retained with its recomputed identity, never dropped.
                     kept = receipt_dir / 'run/routing/attempt/routability-experiment.json'
                     self.assertEqual((record['path'], record['sha256']),
@@ -160,10 +182,20 @@ class ExperimentBoundaryTest(unittest.TestCase):
         self.assertEqual(self.verify(receipt_dir, receipt)['classification'], 'contradiction')
 
     def test_incompatible_policy_versions_are_refused_before_the_router_runs(self):
-        bad = ({'schema': 'routability-policy/2', 'policy': 'current-policy'},
-               {'schema': 'routability-policy/1', 'policy': 'all-layer'},
-               {'schema': 'routability-policy/1', 'policy': 'current-policy', 'seed': 1},
-               {'policy': 'current-policy'}, ['current-policy'])
+        def without(key):
+            return {k: v for k, v in CURRENT.items() if k != key}
+        bad = (
+            # The superseded two-field draft is never accepted.
+            {'schema': 'routability-policy/1', 'policy': 'current-policy'},
+            {'schema': 'routability-policy/1', 'experiment_class': 'current-policy'},
+            {**CURRENT, 'schema': 'routability-policy/2'}, {**CURRENT, 'experiment_class': 'all-layer'},
+            {**CURRENT, 'policy': 'current-policy'}, without('rule_areas_sha256'), without('allowed_via_spans'),
+            {**CURRENT, 'allowed_trace_layers': []}, {**CURRENT, 'allowed_trace_layers': ['F.Cu', 'F.Cu']},
+            {**CURRENT, 'allowed_trace_layers': ['F.Cu', '']}, {**CURRENT, 'allowed_trace_layers': 'F.Cu'},
+            {**CURRENT, 'allowed_via_spans': [['F.Cu']]}, {**CURRENT, 'allowed_via_spans': [['F.Cu', 'F.Cu']]},
+            {**CURRENT, 'allowed_via_spans': [['F.Cu', 'B.Cu'], ['F.Cu', 'B.Cu']]},
+            {**CURRENT, 'rule_areas_sha256': AREAS.upper()}, {**CURRENT, 'rule_areas_sha256': AREAS[:63]},
+            {**CURRENT, 'rule_areas_sha256': None}, ['current-policy'])
         declaration = {'schema': 'agent-ee.routing-adapter/1', 'project': 'project', 'board': 'rc.kicad_pcb',
                        'schematic': 'rc.kicad_sch', 'name': 'rc', 'label': 'step-1', 'checkout': '/opt/kr'}
         self.assertEqual(routing_adapter.validate_declaration(
@@ -176,8 +208,22 @@ class ExperimentBoundaryTest(unittest.TestCase):
                     attempt.parse_request(['--project', 'p', '--board', 'b.kicad_pcb', '--schematic', 's.kicad_sch',
                                            '--name', 'n', '--label', 'l', '--budget', '5', '--timeout', '30',
                                            '--experiment-policy', json.dumps(policy)])
-        with self.assertRaisesRegex(ValueError, 'incompatible experiment policy schema'):
+        with self.assertRaisesRegex(ValueError, 'exactly the routability-policy/1 fields'):
             routing_adapter.validate_declaration({**declaration, 'experiment_policy': bad[0]})
+        with self.assertRaisesRegex(ValueError, 'incompatible experiment policy schema'):
+            routing_adapter.validate_declaration({**declaration, 'experiment_policy': bad[2]})
+        # An empty via-span list is the reviewed way to prohibit all vias.
+        no_vias = {**CURRENT, 'allowed_via_spans': []}
+        self.assertEqual(routing_adapter.validate_declaration(
+            {**declaration, 'experiment_policy': no_vias})['experiment_policy'], no_vias)
+        argv = ['--project', 'p', '--board', 'b.kicad_pcb', '--schematic', 's.kicad_sch', '--name', 'n',
+                '--label', 'l', '--budget', '5', '--timeout', '30', '--experiment-policy']
+        canonical = attempt.canonical_json(CURRENT)
+        for text, message in ((canonical[:-1] + ',"schema":"routability-policy/1"}', 'duplicate key'),
+                              (json.dumps(CURRENT), 'canonical JSON')):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(attempt.RequestError, message):
+                    attempt.parse_request(argv + [text])
 
     def test_undeclared_policy_retains_or_refuses_router_evidence_and_is_otherwise_unchanged(self):
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete'})
@@ -187,8 +233,9 @@ class ExperimentBoundaryTest(unittest.TestCase):
         self.assertNotIn('experiment', self.verify(receipt_dir, receipt))
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete', 'experiment': 'ok'})
         record = report['semantics']['experiment']
-        self.assertEqual((receipt['exit_code'], record['status'], record['policy'], record['policy_file']),
-                         (0, 'retained', None, None))
+        self.assertEqual((receipt['exit_code'], record['status'], record['policy'], record['policy_file'],
+                          record['policy_copy'], record['qualified']),
+                         (0, 'retained', None, None, None, False))
         self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], record)
         # A sidecar that claims a policy the coordinator never declared is incompatible.
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete', 'experiment': 'incompatible_policy'})
@@ -196,7 +243,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
                          (attempt.EXIT_CONTRADICTION, 'incompatible_policy'))
 
     def test_an_unreferenced_root_sidecar_is_retained_and_refused_as_unbound(self):
-        for scenario, policy in (('orphan', None), ('orphan', CURRENT), ('second_sidecar', CURRENT)):
+        for scenario, policy in (('orphan', None), ('orphan', CURRENT)):
             with self.subTest(scenario=scenario, policy=policy):
                 receipt, receipt_dir, design, report = self.receipt({'name': 'complete', 'experiment': scenario},
                                                                     policy)
@@ -223,6 +270,20 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 shutil.rmtree(receipt_dir / 'run/routing/out')
                 summary = self.verify(receipt_dir, receipt)
                 self.assertEqual((summary['classification'], summary['experiment']), ('contradiction', record))
+
+    def test_an_unreferenced_policy_copy_is_retained_and_refused_as_unbound(self):
+        receipt, receipt_dir, design, report = self.receipt({'name': 'complete', 'experiment': 'orphan_copy'},
+                                                            CURRENT)
+        sem = report['semantics']
+        self.assertEqual((receipt['exit_code'], sem['classification']), (attempt.EXIT_CONTRADICTION, 'contradiction'))
+        record = sem['experiment']
+        copy = receipt_dir / 'run/routing/attempt/experiment-policy.json'
+        self.assertEqual((record['status'], record['reason'], record['path'], record['sha256']),
+                         ('refused', 'unbound', 'attempt/experiment-policy.json', sha256(copy)))
+        self.assertEqual(record['policy_copy'], {'path': 'attempt/experiment-policy.json', 'sha256': sha256(copy)})
+        with self.assertRaises(ValueError):
+            stage_receipts.adopt(receipt_dir, receipt, design)
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], record)
 
     def test_an_unreferenced_root_sidecar_link_is_a_contradiction(self):
         receipt, receipt_dir, design, report = self.receipt({'name': 'complete', 'experiment': 'orphan_link'})
@@ -278,7 +339,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
 
         def edit_sidecar(report):
             body = json.loads(original)
-            body['policy'] = None
+            body['identity']['policy']['declared'] = HISTORICAL
             sidecar.write_text(json.dumps(body))
             report['retained']['attempt/routability-experiment.json'] = attempt.digest(sidecar)
 

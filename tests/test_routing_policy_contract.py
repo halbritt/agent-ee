@@ -119,7 +119,9 @@ class ContractSummaryTests(unittest.TestCase):
                          (attempt.EXPERIMENT_SCHEMA, attempt.EXPERIMENT_POLICY_SCHEMA,
                           attempt.EXPERIMENT_POLICY_FILE))
         self.assertEqual(boundary['sidecar_file'], attempt.EXPERIMENT_SIDECAR)
-        self.assertEqual(boundary['policies'], list(attempt.EXPERIMENT_POLICIES))
+        self.assertEqual(boundary['policy_copy_file'], attempt.EXPERIMENT_POLICY_COPY)
+        self.assertEqual(boundary['policy_keys'], sorted(attempt.EXPERIMENT_POLICY_KEYS))
+        self.assertEqual(boundary['experiment_classes'], list(attempt.EXPERIMENT_CLASSES))
         self.assertEqual(boundary['refusal_reasons'], list(attempt.EXPERIMENT_REFUSALS))
         self.assertIs(boundary['qualified'], False)
         self.assertNotIn(attempt.EXPERIMENT_SCHEMA + ' (planned)', self.adapter['never_consumed'])

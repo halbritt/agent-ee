@@ -683,67 +683,88 @@ authority for the adapter, checkout and state bytes.
 ## Routability experiment evidence (AGENTEE-442)
 
 KICADROUTE-91 M1b adds a versioned extension to `run`: `result.json` may carry
-`experiment = {path, sha256, schema: "routability-experiment/1"}`, which names a
-sidecar in the attempt directory. The router can also take
-`--experiment-policy PATH`, a `routability-policy/1` file whose `policy` is
-`historical-all-layer` or `current-policy`. The adapter consumes both at its
-boundary. It retains the evidence with its identity, or refuses it with a typed
-reason. Experiment evidence is never dropped and is never qualified.
+`experiment = {path, sha256, schema: "routability-experiment/1"}`. `path` is
+relative to the run directory and is always `routability-experiment.json`, the
+root sidecar. The router can also take `--experiment-policy PATH`, a
+`routability-policy/1` declaration. The adapter consumes both at its boundary.
+It retains the evidence with its identity, or refuses it with a typed reason.
+Experiment evidence is never dropped and is never qualified.
 
 - **Declaration.** The step declaration, `step(experiment_policy=...)` and the
-  `agent-ee.routing-adapter/1` field `experiment_policy` take the policy document
-  inline. It must have exactly `schema` and `policy`. Any other schema version,
-  policy name or key is refused before the router runs (exit 64 when it
-  reaches the sandbox), and the request is bound to the stage receipt as usual.
-  The adapter writes the canonical bytes to
+  `agent-ee.routing-adapter/1` field `experiment_policy` take the policy inline.
+  It must have exactly the five fields that kicad-route's reviewed
+  `experiment_policy.load` (kicad-route `a5fa636d`, `docs/experiment-policy.md`)
+  accepts, with the same value rules:
+  - `schema`: `routability-policy/1`;
+  - `experiment_class`: `current-policy` or `historical-all-layer`;
+  - `allowed_trace_layers`: unique nonempty layer names, at least one;
+  - `allowed_via_spans`: distinct two-layer endpoint pairs, no duplicates. An
+    empty list prohibits all vias;
+  - `rule_areas_sha256`: 64 lowercase hex digits.
+
+  Duplicate keys, any other key, schema version or class, and the superseded
+  two-field `{schema, policy}` draft are refused before the router runs (exit 64
+  when they reach the sandbox). The request is bound to the stage receipt as
+  usual. The adapter writes the canonical bytes (sorted keys, no spaces) to
   `routing/attempt/agent-ee-experiment-policy.json` and passes that path as
   `--experiment-policy`. A router that changes the file makes the attempt a
-  contradiction.
-- **Retention.** A reference that names a `.json` file directly inside the
-  discovered attempt directory is copied to `routing/attempt/<name>` and hashed in
-  `retained`. Names the adapter already retains, or names starting with
-  `agent-ee-`, are not sidecars. The agreed root sidecar
-  `routability-experiment.json` is copied and hashed the same way even when no
-  reference names it, so an unreferenced sidecar is never omitted. If it is a
-  link or special file and unreferenced, it is a link violation (contradiction).
+  contradiction. agent-ee does not check `rule_areas_sha256` against the board.
+  That digest binds the native board and footprint rule areas, and only the
+  router's native qualification can establish it.
+- **Retention.** Two run-relative root files are copied to `routing/attempt/`
+  and hashed in `retained`, whether or not `result.json` names them:
+  `routability-experiment.json` and `experiment-policy.json`, the router's
+  retained copy of the declaration. A link or special file at either name is a
+  link violation (contradiction). Other sidecar names are never retained.
 - **Record.** `semantics.experiment` is re-derived from the retained bytes. It is
-  present whenever a policy was declared, `result.json` has a reference, or a
-  root `routability-experiment.json` was retained:
-  - `retained`: `path` (the retained copy), the recomputed `sha256`, `schema`,
-    `reference` (the result.json reference, verbatim), `policy` (`schema`,
-    `policy`, sha256 of the policy file, or `null` when undeclared),
-    `policy_file`, `contract` and `qualified: false`.
-  - `refused`: `reason` is one of `missing` (no reference despite a declared
-    policy, or no regular sidecar file at the path), `malformed` (reference
-    shape, a hash that is not hex, a path outside the attempt directory, or a
-    sidecar that is not a JSON object), `unknown_schema` (the reference schema),
-    `tampered` (the recomputed sha256 differs from the reference),
-    `incompatible_schema` (the sidecar's own `schema`) or `incompatible_policy`
-    (the sidecar `policy` differs from the declared identity, including a policy
-    the coordinator never declared), or `unbound` (a retained root
-    `routability-experiment.json` that no reference binds: `result.json` is
-    absent, has no `experiment`, or names a different file). The record keeps
-    the reference and, when a file was retained, its path and recomputed hash;
-    for `unbound` that is the unbound root sidecar.
-  - `absent`: the router wrote neither `result.json` nor a root sidecar, for
+  present whenever a policy was declared, `result.json` has a reference, or one
+  of the root files was retained. Every record carries `policy` (`declared`, the
+  `sha256` of the canonical policy file and `policy_sha256`, which is kicad-route's
+  `common.sha256_of(declared)`, or `null` when undeclared), `policy_file`,
+  `policy_copy` (path and recomputed hash of the retained copy, or `null`),
+  `contract` and `qualified: false`.
+  - `retained`: `path` (the retained root sidecar), the recomputed `sha256`,
+    `schema` and `reference` (the result.json reference, verbatim).
+  - `refused`: `reason` is one of the following:
+    - `missing`: no reference despite a declared policy, or no regular root
+      sidecar was retained;
+    - `malformed`: the reference shape, a hash that is not hex, a `path` other than
+      the literal run-relative `routability-experiment.json` (a cwd-relative,
+      absolute, `..` or other file name is unsupported), a sidecar that is not a
+      JSON object, or one without `identity.policy`;
+    - `unknown_schema`: the reference schema;
+    - `tampered`: the recomputed sha256 differs from the reference;
+    - `incompatible_schema`: the sidecar's own `schema`;
+    - `incompatible_policy`: the sidecar `identity.policy` (`declared`,
+      `declared_sha256`, `experiment_class`) differs from the declared identity,
+      including a policy the coordinator never declared, or the retained
+      `experiment-policy.json` is not the declaration;
+    - `unbound`: a retained root file that no reference binds, because
+      `result.json` is absent or has no `experiment`.
+
+    The record keeps the reference and, when a root sidecar was retained, its
+    path and recomputed hash. For `unbound`, that is the unbound file.
+  - `absent`: the router wrote neither `result.json` nor a root file, for
     example a refusal or a not-run attempt.
 - **Classification.** A refusal is a report violation. A complete or incomplete
   attempt becomes a `contradiction` (exit 65) and delivers no board, and so
   does a `validation_failed` attempt: a contradiction rejects no candidate, so
   `rejected_candidate_sha256` is cleared and `verify` still returns the typed
   record. A timeout or cancellation keeps its class with the refusal in
-  `reasons`. Without a declared policy, a reference or a root sidecar, reports,
+  `reasons`. Without a declared policy, a reference or a root file, reports,
   argv and `verify` summaries are unchanged. `verify` returns the record as `experiment`, refuses a record
   that differs from the retained bytes, and refuses a refused record on an
   attempt that is not a contradiction, timeout or cancellation.
-- **Provisional contract.** Only the reference shape and the sidecar's `schema`
-  and `policy` fields are read. The policy identity inside the sidecar is assumed
-  to be `{schema, policy, sha256}` of the file the router read. Both stay
-  provisional until agent-507 sends the final reviewed schema and producer SHA;
-  `EXPERIMENT_CONTRACT` says so. `tests/test_routing_experiment_boundary.py`
-  exercises the boundary through `step`, `stage_receipts.run_step` and `verify`
-  with a synthetic fixture sidecar. Its `K91_REVIEWED` hook is where the
-  reviewed identity goes before the positive test is rerun.
+- **Provisional contract.** The five-field policy is the reviewed producer
+  contract. The sidecar body is not frozen: the fields read (`schema`,
+  `identity.policy`), the `experiment-policy.json` copy, whether
+  `result.settings` echoes the policy digest (then `expected_settings`
+  changes), and whether failed runs carry a sidecar follow the unfrozen
+  krt91c-experiment draft. `EXPERIMENT_CONTRACT` says so.
+  `tests/test_routing_experiment_boundary.py` exercises the boundary through
+  `step`, `stage_receipts.run_step` and `verify` with a synthetic fixture
+  sidecar. Its `K91_REVIEWED` hook marks where the final reviewed schema,
+  producer commit and real native receipt go before the positive test is rerun.
 - **Pin.** The pinned `5f1c072` `cli.py` has no `--experiment-policy`, and its
   `main` turns every usage error into a refusal (exit 4). A declared policy at
   this pin is therefore a `refused` attempt with an `absent` record, or a

@@ -65,8 +65,8 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
 
     layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
     layer costs, pour area-loss bound and optional RF reference plane.
-    experiment_policy (AGENTEE-442) is a routability-policy/1 document the router
-    receives as --experiment-policy; its experiment evidence is retained or refused."""
+    experiment_policy (AGENTEE-442) is a five-field routability-policy/1 declaration the
+    router receives as --experiment-policy; its experiment evidence is retained or refused."""
     check = preflight(checkout, state, backend)
     if check['problems']:
         raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
@@ -414,7 +414,7 @@ def _verify(run, report, inputs, receipt, layout):
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
         raise ValueError('pair coverage differs from retained routing evidence')
     policy = _policy_grade(routing, report, request, result, classification)
-    experiment = _experiment_grade(routing, report, request, result, classification, retained, expected)
+    experiment = _experiment_grade(routing, report, request, result, classification, retained)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
             'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
@@ -424,7 +424,7 @@ def _verify(run, report, inputs, receipt, layout):
             **({'experiment': experiment} if experiment is not None else {})}
 
 
-def _experiment_grade(routing, report, request, result, classification, retained, layout):
+def _experiment_grade(routing, report, request, result, classification, retained):
     """Re-derive the K91 experiment record (AGENTEE-442) from the retained bytes; None when not involved.
 
     A refused record is honest only on an attempt that delivers no board."""
@@ -437,10 +437,7 @@ def _experiment_grade(routing, report, request, result, classification, retained
         if (key not in retained or (routing / key).read_bytes() !=
                 attempt.canonical_json(request['experiment_policy']).encode()):
             raise ValueError('experiment policy file differs from the declared experiment policy')
-    origin = Path(layout['work']) / 'routing'
-    found = (report['discovery'] or {}).get('attempt_dir')
-    grade = attempt.experiment_grade(request, result, routing / 'attempt',
-                                     origin / found if found is not None else None, origin)
+    grade = attempt.experiment_grade(request, result, routing / 'attempt')
     if ('experiment' in sem) != (grade is not None) or sem.get('experiment') != grade:
         raise ValueError('experiment evidence record differs from the retained routing evidence')
     if (grade is not None and grade['status'] == 'refused' and

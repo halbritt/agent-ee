@@ -250,9 +250,11 @@ Since AGENTEE-442 the adapter also has a consumer boundary for
 declared `routability-policy/1` file are retained with their recomputed
 identity, or refused with a typed reason. The
 [routing adapter](routing-adapter.md#routability-experiment-evidence-agentee-442)
-page describes the record. Only the reference shape and the sidecar `schema` and
-`policy` fields are read, and they are provisional until the reviewed K91 schema
-exists. The pin does not produce this evidence, so steps 1-3 and 5-7 below still
+page describes the record. The declaration is the reviewed five-field
+`routability-policy/1` of kicad-route `a5fa636d`. The reference is bound only to
+the run-relative `routability-experiment.json`. The sidecar fields read (`schema`,
+`identity.policy`) and the retained `experiment-policy.json` copy are provisional
+until the reviewed K91 schema exists. The pin does not produce this evidence, so steps 1-3 and 5-7 below still
 apply when agent-ee re-pins.
 
 The code pin is still byte-exact over every tracked `bin/` and `src/` file:
@@ -292,11 +294,12 @@ When agent-ee re-pins onto a commit with that work:
 4. **Sidecar retention.** `retain` copies only `result.json`, `attempt.json`,
    `RESULT.md`, `snapshot.json` and the `validate/`, `facts/` and `work/` trees.
    Other top-level files are not retained, with one exception since AGENTEE-442:
-   the `.json` sidecar that `result.json` `experiment` names, and the root
-   `routability-experiment.json` with or without a reference, are copied, hashed
-   and graded by `experiment_grade`. A root sidecar without a binding reference is
-   refused as `unbound`, so the receipt never omits it. When the reviewed schema arrives, re-check the sidecar fields
-   `experiment_grade` reads (`schema`, and `policy` as `{schema, policy, sha256}`),
+   the root `routability-experiment.json` and `experiment-policy.json` are copied,
+   hashed and graded by `experiment_grade`, with or without a reference. A root
+   file without a binding reference is refused as `unbound`, so the receipt never
+   omits it. When the reviewed schema arrives, re-check the sidecar fields
+   `experiment_grade` reads (`schema`, and `identity.policy` as
+   `{declared, declared_sha256, experiment_class}`), the policy copy,
    whether the router echoes the policy in `result.settings` (then
    `expected_settings` changes), and whether a sidecar exists on process
    failure. Its comparison key must still be rebuilt from the bytes agent-ee

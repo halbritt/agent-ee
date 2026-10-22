@@ -13,8 +13,8 @@ coordinator-declared arguments matched against fixed patterns; nothing the
 writer controls reaches them, and ``--backend-env``, ``--force``, ``--canary``
 and ``--rev`` are never passed. ``--backend-arg`` carries only KRT's
 ``--layers``/``--layer-costs`` built from a declared layer policy (AGENTEE-231).
-``--experiment-policy`` names only the adapter-written routability-policy/1 file
-(AGENTEE-442).
+``--experiment-policy`` names only the adapter-written five-field
+routability-policy/1 file (AGENTEE-442).
 
 The report is provenance. It never makes a check pass: acceptance comes only
 from agent-ee's own fresh checks on the captured proposal.
@@ -422,24 +422,31 @@ CONTINUITY_SCOPE = ('2D fill coverage of the declared reference plane under each
 TRACK_IDENTITY = ('kind', 'layer', 'net', 'width', 'start', 'mid', 'end')
 
 # KICADROUTE-91 M1b experiment evidence (AGENTEE-442). result.json may carry
-# experiment = {path, sha256, schema}, naming a routability-experiment/1 sidecar
-# in the attempt directory; --experiment-policy PATH gives the router a
-# routability-policy/1 file. The adapter retains the sidecar with its recomputed
-# identity or refuses it with a typed reason; it is provenance, never qualified.
-# The agreed root sidecar EXPERIMENT_SIDECAR is retained even when result.json
-# does not reference it, and is then refused as unbound, never dropped.
-# EXPERIMENT_CONTRACT is the agreed reference shape. Only the sidecar fields named
-# here are read (schema, policy). They are provisional until agent-507 sends the
-# final reviewed schema and producer SHA; tests/test_routing_experiment_boundary.py
-# marks the hook to rerun against it.
+# experiment = {path, sha256, schema}; path is relative to the router's run
+# directory and is always EXPERIMENT_SIDECAR. --experiment-policy PATH gives the
+# router a routability-policy/1 declaration with exactly the five fields
+# kicad_route.experiment_policy.load accepts (reviewed at kicad-route a5fa636d).
+# The adapter retains the sidecar with its recomputed identity or refuses it with
+# a typed reason; it is provenance, never qualified. The root sidecar and the
+# router's retained policy copy EXPERIMENT_POLICY_COPY are retained even when
+# result.json does not reference them, and are then refused as unbound, never
+# dropped. The sidecar fields experiment_grade reads (schema and identity.policy
+# {declared, declared_sha256, experiment_class}) and the policy copy follow the
+# unfrozen krt91c-experiment draft; EXPERIMENT_CONTRACT says so until agent-507
+# sends the final reviewed schema and producer SHA, and
+# tests/test_routing_experiment_boundary.py marks the hook to rerun against it.
 EXPERIMENT_SCHEMA = 'routability-experiment/1'
 EXPERIMENT_POLICY_SCHEMA = 'routability-policy/1'
-EXPERIMENT_POLICIES = ('historical-all-layer', 'current-policy')
+EXPERIMENT_CLASSES = ('current-policy', 'historical-all-layer')
 EXPERIMENT_REFERENCE_KEYS = {'path', 'sha256', 'schema'}
-EXPERIMENT_POLICY_KEYS = {'schema', 'policy'}
+EXPERIMENT_POLICY_KEYS = {'schema', 'experiment_class', 'allowed_trace_layers', 'allowed_via_spans',
+                          'rule_areas_sha256'}
+EXPERIMENT_SIDECAR_POLICY_KEYS = {'declared', 'declared_sha256', 'experiment_class'}
 EXPERIMENT_POLICY_FILE = 'agent-ee-experiment-policy.json'
 EXPERIMENT_SIDECAR = 'routability-experiment.json'
-EXPERIMENT_CONTRACT = 'agent-ee/AGENTEE-442 provisional: K91 M1b reference shape; sidecar body unreviewed'
+EXPERIMENT_POLICY_COPY = 'experiment-policy.json'
+EXPERIMENT_CONTRACT = ('agent-ee/AGENTEE-442 provisional: routability-policy/1 five fields reviewed at '
+                       'kicad-route a5fa636d; K91 sidecar body unfrozen')
 EXPERIMENT_REFUSALS = ('missing', 'malformed', 'unknown_schema', 'tampered', 'incompatible_schema',
                        'incompatible_policy', 'unbound')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
@@ -508,136 +515,167 @@ def parse_layer_policy(text):
     return policy
 
 
+def _unique_names(value):
+    return (isinstance(value, list) and bool(value) and
+            all(isinstance(v, str) and v for v in value) and len(value) == len(set(value)))
+
+
+def _unique_keys(pairs):
+    found = {}
+    for key, value in pairs:
+        if key in found:
+            raise RequestError('experiment policy has a duplicate key')
+        found[key] = value
+    return found
+
+
 def parse_experiment_policy(text):
     """A declared routability-policy/1 document, unchanged, or RequestError.
 
-    Any other schema version or policy name is incompatible and refused before
-    the router runs."""
+    Exactly the five fields kicad_route.experiment_policy.load accepts, with its
+    value rules; any other schema version, class, key or shape (including the
+    two-field {schema, policy} draft) is refused before the router runs. Whether
+    rule_areas_sha256 matches the board's native rule areas is the router's
+    qualification, which agent-ee does not claim."""
     try:
-        policy = json.loads(text)
+        policy = json.loads(text, object_pairs_hook=_unique_keys)
     except (TypeError, json.JSONDecodeError):
         raise RequestError('experiment policy must be JSON') from None
     if not isinstance(policy, dict) or set(policy) != EXPERIMENT_POLICY_KEYS:
-        raise RequestError('experiment policy must have exactly schema and policy')
+        raise RequestError('experiment policy must have exactly the routability-policy/1 fields '
+                           + ', '.join(sorted(EXPERIMENT_POLICY_KEYS)))
     if policy['schema'] != EXPERIMENT_POLICY_SCHEMA:
         raise RequestError(f'incompatible experiment policy schema: expected {EXPERIMENT_POLICY_SCHEMA}')
-    if policy['policy'] not in EXPERIMENT_POLICIES:
-        raise RequestError(f'experiment policy must be one of {EXPERIMENT_POLICIES}')
+    if policy['experiment_class'] not in EXPERIMENT_CLASSES:
+        raise RequestError(f'experiment_class must be one of {EXPERIMENT_CLASSES}')
+    if not _unique_names(policy['allowed_trace_layers']):
+        raise RequestError('allowed_trace_layers must be unique nonempty layer names')
+    spans = policy['allowed_via_spans']
+    if not isinstance(spans, list) or any(not _unique_names(s) or len(s) != 2 for s in spans):
+        raise RequestError('allowed_via_spans must contain distinct endpoint pairs')
+    if len({tuple(s) for s in spans}) != len(spans):
+        raise RequestError('duplicate allowed_via_spans')
+    if not isinstance(policy['rule_areas_sha256'], str) or not SHA256.match(policy['rule_areas_sha256']):
+        raise RequestError('rule_areas_sha256 must be 64 lowercase hex digits')
     if canonical_json(policy) != text:
         raise RequestError('experiment policy must be canonical JSON (sorted keys, no spaces)')
     return policy
 
 
 def experiment_policy_identity(policy):
-    """The identity of the policy file the adapter writes for the router, or None."""
+    """The identity of the declaration the adapter writes for the router, or None.
+
+    sha256 is of the canonical file bytes; policy_sha256 is kicad-route's
+    common.sha256_of(policy), the digest experiment_policy.validate reports."""
     if policy is None:
         return None
-    return {'schema': policy['schema'], 'policy': policy['policy'],
-            'sha256': hashlib.sha256(canonical_json(policy).encode()).hexdigest()}
+    return {'declared': policy, 'sha256': hashlib.sha256(canonical_json(policy).encode()).hexdigest(),
+            'policy_sha256': hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()}
 
 
-def experiment_sidecar_name(result, run_dir, origin):
-    """The sidecar file name a result.json experiment reference names, or None.
+def retain_experiment(run_dir, routing):
+    """Copy the root sidecar and the router's policy copy into routing/attempt.
 
-    The reported path is an untrusted string resolved lexically against origin;
-    only a .json file directly inside the attempt directory, outside the names
-    the adapter already retains or owns, can be a sidecar."""
-    ref = result.get('experiment') if isinstance(result, dict) else None
-    if run_dir is None or not isinstance(ref, dict):
-        return None
-    path = resolve_reported(ref.get('path'), origin, origin)
-    if path is None or path.parent != Path(run_dir):
-        return None
-    name = path.name
-    if (not SAFE.match(name) or not name.endswith('.json') or name in RETAINED_FILES or
-            name.startswith('agent-ee-')):
-        return None
-    return name
-
-
-def retain_experiment(result, run_dir, routing):
-    """Copy the referenced sidecar and the agreed root sidecar into routing/attempt.
-
-    Returns the retained names and the unreferenced root sidecar if it is a link
-    or special file. The root sidecar is copied with or without a reference, so
-    experiment_grade can refuse an unbound one from the retained bytes."""
-    if run_dir is None:
-        return [], []
-    referenced = experiment_sidecar_name(result, run_dir, routing)
+    Both are run-relative root files, copied whether or not result.json names
+    them, so experiment_grade can grade or refuse them from the retained bytes.
+    Returns the retained names and those that are links or special files."""
     kept, links = [], []
-    for name in dict.fromkeys(n for n in (referenced, EXPERIMENT_SIDECAR) if n is not None):
+    if run_dir is None:
+        return kept, links
+    for name in (EXPERIMENT_SIDECAR, EXPERIMENT_POLICY_COPY):
         src = Path(run_dir) / name
         if src.is_symlink() or (os.path.lexists(src) and not src.is_file()):
-            if name != referenced:
-                links.append(name)
+            links.append(name)
         elif src.is_file():
             shutil.copyfile(src, routing / 'attempt' / name)
             kept.append(name)
     return kept, links
 
 
-def experiment_grade(request, result, attempt_dir, run_dir, origin):
+def _retained_file(attempt_dir, name):
+    path = Path(attempt_dir) / name
+    if path.is_symlink() or not path.is_file():
+        return None
+    return {'path': f'attempt/{name}', 'sha256': digest(path)}
+
+
+def experiment_grade(request, result, attempt_dir):
     """The experiment-evidence record, re-derived from the retained bytes alone.
 
-    None when no policy was declared, result.json references no sidecar and no
-    root EXPERIMENT_SIDECAR was retained. Otherwise 'retained' with the sidecar's
+    None when no policy was declared, result.json references no sidecar and
+    neither root file was retained. Otherwise 'retained' with the sidecar's
     recomputed identity, 'refused' with one of EXPERIMENT_REFUSALS, or 'absent'
-    when the router wrote neither result.json nor a sidecar. A retained root
-    sidecar that no valid reference binds is refused as 'unbound' with its
-    recomputed identity. Every record is qualified: false."""
+    when the router wrote neither result.json nor a sidecar. The reference binds
+    only the run-relative EXPERIMENT_SIDECAR; a retained root file that no valid
+    reference binds is refused as 'unbound' with its recomputed identity. Every
+    record is qualified: false."""
     expected = experiment_policy_identity(request.get('experiment_policy'))
     has_ref = isinstance(result, dict) and 'experiment' in result
-    root = Path(attempt_dir) / EXPERIMENT_SIDECAR
-    orphan = ({'path': f'attempt/{EXPERIMENT_SIDECAR}', 'sha256': digest(root)}
-              if root.is_file() and not root.is_symlink() else None)
-    if expected is None and not has_ref and orphan is None:
+    orphan = _retained_file(attempt_dir, EXPERIMENT_SIDECAR)
+    copy = _retained_file(attempt_dir, EXPERIMENT_POLICY_COPY)
+    if expected is None and not has_ref and orphan is None and copy is None:
         return None
     base = {'qualified': False, 'contract': EXPERIMENT_CONTRACT, 'policy': expected,
-            'policy_file': f'attempt/{EXPERIMENT_POLICY_FILE}' if expected is not None else None}
+            'policy_file': f'attempt/{EXPERIMENT_POLICY_FILE}' if expected is not None else None,
+            'policy_copy': copy}
     ref = result.get('experiment') if isinstance(result, dict) else None
 
     def refused(reason, detail, **known):
         return {'status': 'refused', **base, 'reason': reason, 'detail': detail,
                 'reference': ref, 'path': None, 'sha256': None, **known}
 
+    unbound = orphan or copy
+    unbound_name = EXPERIMENT_SIDECAR if orphan is not None else EXPERIMENT_POLICY_COPY
     if not isinstance(result, dict):
-        if orphan is not None:
-            return refused('unbound', f'{EXPERIMENT_SIDECAR} exists but there is no result.json to bind it',
-                           **orphan)
+        if unbound is not None:
+            return refused('unbound', f'{unbound_name} exists but there is no result.json to bind it', **unbound)
         return {'status': 'absent', **base, 'reason': 'no result.json: the router reported no experiment'}
     if not has_ref:
-        if orphan is not None:
-            return refused('unbound', f'{EXPERIMENT_SIDECAR} exists but result.json has no experiment reference',
-                           **orphan)
+        if unbound is not None:
+            return refused('unbound', f'{unbound_name} exists but result.json has no experiment reference',
+                           **unbound)
         return refused('missing', 'a policy was declared but result.json has no experiment reference')
     if (not isinstance(ref, dict) or set(ref) != EXPERIMENT_REFERENCE_KEYS or
             not all(isinstance(ref[k], str) for k in EXPERIMENT_REFERENCE_KEYS)):
-        return refused('malformed', 'experiment reference must have exactly string path, sha256 and schema')
+        return refused('malformed', 'experiment reference must have exactly string path, sha256 and schema',
+                       **(orphan or {}))
     if ref['schema'] != EXPERIMENT_SCHEMA:
-        return refused('unknown_schema', f'experiment reference schema is not {EXPERIMENT_SCHEMA}')
+        return refused('unknown_schema', f'experiment reference schema is not {EXPERIMENT_SCHEMA}',
+                       **(orphan or {}))
     if not SHA256.match(ref['sha256']):
-        return refused('malformed', 'experiment reference sha256 is not 64 lowercase hex digits')
-    name = experiment_sidecar_name(result, run_dir, origin)
-    if name is None:
-        return refused('malformed', 'experiment path is not a .json sidecar directly inside the attempt directory')
-    if name != EXPERIMENT_SIDECAR and orphan is not None:
-        return refused('unbound', f'{EXPERIMENT_SIDECAR} exists beside the referenced {name} and is not bound',
-                       **orphan)
-    kept = Path(attempt_dir) / name
-    if kept.is_symlink() or not kept.is_file():
+        return refused('malformed', 'experiment reference sha256 is not 64 lowercase hex digits',
+                       **(orphan or {}))
+    if ref['path'] != EXPERIMENT_SIDECAR:
+        # Only the run-relative root sidecar binds; a cwd-relative, absolute or
+        # other path is unsupported and must not look like bound evidence.
+        return refused('malformed', f'experiment path is not the run-relative {EXPERIMENT_SIDECAR}',
+                       **(orphan or {}))
+    if orphan is None:
         return refused('missing', 'no regular sidecar file at the referenced path was retained')
-    known = {'path': f'attempt/{name}', 'sha256': digest(kept)}
-    if known['sha256'] != ref['sha256']:
-        return refused('tampered', 'sidecar sha256 differs from the result.json reference', **known)
+    if orphan['sha256'] != ref['sha256']:
+        return refused('tampered', 'sidecar sha256 differs from the result.json reference', **orphan)
     problems = []
-    body = load_json(kept, problems, 'experiment sidecar')
+    body = load_json(Path(attempt_dir) / EXPERIMENT_SIDECAR, problems, 'experiment sidecar')
     if not isinstance(body, dict):
-        return refused('malformed', '; '.join(problems) or 'experiment sidecar is not a JSON object', **known)
+        return refused('malformed', '; '.join(problems) or 'experiment sidecar is not a JSON object', **orphan)
     if body.get('schema') != EXPERIMENT_SCHEMA:
-        return refused('incompatible_schema', f'sidecar schema is not {EXPERIMENT_SCHEMA}', **known)
-    if 'policy' not in body or body['policy'] != expected:
-        return refused('incompatible_policy', 'sidecar policy identity differs from the declared policy', **known)
-    return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **known}
+        return refused('incompatible_schema', f'sidecar schema is not {EXPERIMENT_SCHEMA}', **orphan)
+    identity = body.get('identity')
+    claimed = identity.get('policy') if isinstance(identity, dict) else None
+    if not isinstance(claimed, dict) or not EXPERIMENT_SIDECAR_POLICY_KEYS <= set(claimed):
+        return refused('malformed', 'sidecar has no identity.policy {declared, declared_sha256, experiment_class}',
+                       **orphan)
+    declared = None if expected is None else expected['declared']
+    if (claimed['declared'] != declared or
+            claimed['declared_sha256'] != (None if expected is None else expected['policy_sha256']) or
+            claimed['experiment_class'] != (None if declared is None else declared['experiment_class'])):
+        return refused('incompatible_policy', 'sidecar policy identity differs from the declared policy', **orphan)
+    if copy is not None:
+        kept = load_json(Path(attempt_dir) / EXPERIMENT_POLICY_COPY, problems, EXPERIMENT_POLICY_COPY)
+        if declared is None or kept != declared:
+            return refused('incompatible_policy',
+                           f'{EXPERIMENT_POLICY_COPY} differs from the declared policy', **orphan)
+    return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **orphan}
 
 
 def policy_backend_args(policy):
@@ -1851,7 +1889,7 @@ def attempt(request, layout, cancel=None):
     report['identity_before'] = _identities(request, layout)
     if problems:
         report['semantics'] = {'classification': 'not_run', 'reasons': problems, 'exit_code': None}
-        experiment = experiment_grade(request, None, routing / 'attempt', None, routing)
+        experiment = experiment_grade(request, None, routing / 'attempt')
         if experiment is not None:
             report['semantics']['experiment'] = experiment
         return _finish(report, routing)
@@ -1879,11 +1917,11 @@ def attempt(request, layout, cancel=None):
     result = load_json(routing / 'attempt/result.json', load, 'result.json') if 'result.json' in retained else None
     attempt_record = load_json(routing / 'attempt/attempt.json', load, 'attempt.json') if 'attempt.json' in retained else None
     report['backend'] = backend_of(result)
-    sidecars, sidecar_links = retain_experiment(result, run_dir, routing)
+    sidecars, sidecar_links = retain_experiment(run_dir, routing)
     for sidecar in sidecars:
         report['retained'][f'attempt/{sidecar}'] = digest(routing / 'attempt' / sidecar)
     links += sidecar_links
-    experiment = experiment_grade(request, result, routing / 'attempt', run_dir, routing)
+    experiment = experiment_grade(request, result, routing / 'attempt')
     stdout = (routing / 'kicad-route.stdout').read_bytes().decode('utf-8', 'replace')
     refused_line = refused_output(stdout)
     process = report['process']

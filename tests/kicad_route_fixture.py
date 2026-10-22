@@ -206,40 +206,57 @@ if name == 'env':
     write(run / 'validate/env.json', {'environ': dict(os.environ), 'cwd': os.getcwd(),
                                       'dont_write_bytecode': sys.flags.dont_write_bytecode,
                                       'pycache_prefix': sys.pycache_prefix})
-# SYNTHETIC routability-experiment/1 sidecar (AGENTEE-442): the agreed reference
-# shape only, written by this fixture, never by the KICADROUTE-91 producer.
+# SYNTHETIC routability-experiment/1 sidecar (AGENTEE-442), written by this
+# fixture, never by the KICADROUTE-91 producer. It has the run-relative reference
+# and only the fields the adapter reads, shaped after the unfrozen krt91c draft:
+# identity.policy {declared, declared_sha256, experiment_class} and the router's
+# retained declaration copy experiment-policy.json.
 experiment = scenario.get('experiment', 'ok' if '--experiment-policy' in opts else None)
 if experiment is not None and experiment != 'omit':
     policy_path = opts.get('--experiment-policy')
-    policy = None
+    declared = None
     if policy_path:
-        policy_bytes = Path(policy_path).read_bytes()
-        declared = json.loads(policy_bytes)
-        policy = {'schema': declared['schema'], 'policy': declared['policy'],
-                  'sha256': hashlib.sha256(policy_bytes).hexdigest()}
+        declared = json.loads(Path(policy_path).read_bytes())
+        shutil.copyfile(policy_path, run / 'experiment-policy.json')
         if experiment == 'rewrite_policy':
-            Path(policy_path).write_text('{"policy":"historical-all-layer","schema":"routability-policy/1"}')
+            Path(policy_path).write_text(json.dumps({**declared, 'experiment_class': 'historical-all-layer'},
+                                                    sort_keys=True, separators=(',', ':')))
+        if experiment == 'policy_copy_mismatch':
+            (run / 'experiment-policy.json').write_text(json.dumps({**declared, 'allowed_via_spans': []}))
     if experiment == 'incompatible_policy':
-        policy = {**(policy or {}), 'policy': 'historical-all-layer'}
+        declared = {**(declared or {}), 'experiment_class': 'historical-all-layer'}
+    policy = {'declared': declared,
+              'declared_sha256': None if declared is None else
+              hashlib.sha256(json.dumps(declared, sort_keys=True).encode()).hexdigest(),
+              'experiment_class': None if declared is None else declared.get('experiment_class')}
     sidecar = run / 'routability-experiment.json'
     body = {'schema': 'routability-experiment/2' if experiment == 'incompatible_schema' else
             'routability-experiment/1',
             'synthetic': 'agent-ee coordinator fixture (AGENTEE-442); not the KICADROUTE-91 producer',
-            'policy': policy, 'input_fingerprint': fingerprint}
+            'identity': {'policy': policy, 'input': {'fingerprint': fingerprint}},
+            'comparison_eligible': False, 'ineligible_reasons': ['synthetic fixture'],
+            'replay_authority': False}
+    if experiment == 'no_policy_identity':
+        del body['identity']['policy']
     sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
-    result['experiment'] = {'path': os.path.relpath(sidecar), 'sha256': sha(sidecar),
+    result['experiment'] = {'path': 'routability-experiment.json', 'sha256': sha(sidecar),
                             'schema': 'routability-experiment/1'}
     if experiment == 'unknown_schema':
         result['experiment']['schema'] = 'routability-experiment/2'
     if experiment == 'malformed_reference':
         del result['experiment']['sha256']
     if experiment == 'escape':
-        result['experiment']['path'] = os.path.relpath(run / '../routability-experiment.json')
+        result['experiment']['path'] = '../routability-experiment.json'
+    if experiment == 'cwd_relative':
+        result['experiment']['path'] = os.path.relpath(sidecar)
     if experiment == 'tamper':
-        sidecar.write_text(json.dumps({**body, 'policy': None}) + '\n')
+        sidecar.write_text(json.dumps({**body, 'identity': {}}) + '\n')
     if experiment == 'missing_file':
         sidecar.unlink()
     if experiment == 'orphan':
+        del result['experiment']
+    if experiment == 'orphan_copy':
+        sidecar.unlink()
         del result['experiment']
     if experiment == 'orphan_link':
         sidecar.unlink()
@@ -247,7 +264,7 @@ if experiment is not None and experiment != 'omit':
         del result['experiment']
     if experiment == 'second_sidecar':
         shutil.copyfile(sidecar, run / 'alternate.json')
-        result['experiment']['path'] = os.path.relpath(run / 'alternate.json')
+        result['experiment']['path'] = 'alternate.json'
 text = 'not json {' if name == 'malformed_json' else json.dumps(result, indent=2) + '\n'
 (run / 'result.json').write_text(text)
 print(text, flush=True)
