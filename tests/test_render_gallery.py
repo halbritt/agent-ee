@@ -470,6 +470,62 @@ class GalleryTests(unittest.TestCase):
                 self.assertNotIn(leak, text)
         self.assertIn('R1: <redacted>/e.step', json.loads(body)['warnings'])
 
+    # A file URI's authority is consumed with its scheme and is never a basename:
+    # with an empty or root path (or a bare UNC host) only the marker remains.
+    AUTHORITY_URIS = ('FILE://private-server/', 'fIlE://private-server', 'file://private-server',
+                      'FiLe://localhost/', 'file://localhost', 'FILE:\\\\private-server\\',
+                      '\\\\private-server', 'file:/', 'File:///', 'file:////private-server/')
+    AUTHORITY_LEAKS = ('private-server', 'localhost', 'FILE:', 'fIlE:', 'FiLe:', 'File:', 'file:')
+
+    def assert_no_authority(self, body):
+        for leak in self.AUTHORITY_LEAKS:
+            self.assertNotIn(leak, body)
+
+    def test_file_uri_authority_with_empty_or_root_path_is_fully_redacted_on_every_surface(self):
+        uris = self.AUTHORITY_URIS
+        self.manifest['model_coverage']['board']['path'] = uris[0]
+        self.manifest['model_coverage']['extra'] = {u: 'path:' + u for u in uris}
+        self.manifest['warnings'] = ['R9: missing 3D model ' + u for u in uris]
+        self.save()
+        viewer = self.make_viewer(private_location=uris[1])
+        metadata = json.loads((viewer / 'viewer.json').read_text())
+        metadata['board']['path'] = uris[0]
+        metadata['warnings'] = list(uris)
+        (viewer / 'viewer.json').write_text(json.dumps(metadata))
+        bundle = publish(self.root, self.renders, label=' '.join(uris), stage=uris[1], viewer=viewer)
+        stored = [(self.root / 'bundles' / bundle / name).read_text()
+                  for name in ('manifest.json', 'viewer/viewer.json')] + [(self.root / 'index.json').read_text()]
+        with self.serving() as url:
+            served = [urlopen(url + '/bundles/' + bundle + '/' + suffix).read().decode()
+                      for suffix in ('manifest.json', 'viewer/viewer.json')]
+            served.append(urlopen(url).read().decode())
+        for body in stored + served:
+            self.assert_no_authority(body)
+        record = json.loads(served[0])
+        self.assertEqual(record['model_coverage']['board']['path'], '<redacted>')
+        self.assertEqual(record['model_coverage']['extra'], {'<redacted>': 'path:<redacted>'})
+        self.assertEqual(record['warnings'], ['R9: missing 3D model <redacted>'] * len(uris))
+        metadata = json.loads(served[1])
+        self.assertEqual(metadata['warnings'], ['<redacted>'] * len(uris))
+        self.assertEqual((metadata['board']['path'], metadata['private_location']), ('<redacted>', '<redacted>'))
+        self.assertIn('R9: missing 3D model &lt;redacted&gt;', served[2])
+
+    def test_legacy_bundle_with_file_uri_authority_is_fully_redacted_when_served(self):
+        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=self.make_viewer())
+        for name in ('manifest.json', 'viewer/viewer.json'):
+            path = self.root / 'bundles' / bundle / name
+            record = json.loads(path.read_text())
+            record['warnings'] = ['R1: ' + u for u in self.AUTHORITY_URIS]
+            path.write_text(json.dumps(record))
+        with self.serving() as url:
+            bodies = [urlopen(url + '/bundles/' + bundle + '/' + suffix).read().decode()
+                      for suffix in ('manifest.json', 'viewer/viewer.json')]
+            bodies.append(urlopen(url).read().decode())
+        for body in bodies:
+            self.assert_no_authority(body)
+        for body in bodies[:2]:
+            self.assertEqual(json.loads(body)['warnings'], ['R1: <redacted>'] * len(self.AUTHORITY_URIS))
+
     def test_redact_path_forms(self):
         cases = {'C:/Users/A/m.step': '<redacted>/m.step', 'C:\\Users\\A B\\m.step': '<redacted>/m.step',
                  '\\\\srv\\share\\m.step': '<redacted>/m.step', '//srv/share/m.step': '<redacted>/m.step',
@@ -489,6 +545,18 @@ class GalleryTests(unittest.TestCase):
             self.assertEqual(redact(text), expected, text)
             self.assertEqual(redact(expected), expected, expected)
         self.assertEqual(redact({'/home/a/key': 1}), {'<redacted>/key': 1})
+        authority_cases = {**{u: '<redacted>' for u in self.AUTHORITY_URIS},
+                           'FILE://private-server/ and fIlE://private-server.': '<redacted> and <redacted>',
+                           'x="file://private-server" y': 'x="<redacted>" y', '\\\\private-server\\': '<redacted>',
+                           '//private-server/': '<redacted>', 'file://localhost/home/a/m.step': '<redacted>/m.step',
+                           'FILE://private-server\\share\\m.step': '<redacted>/m.step',
+                           'missing file: m.step': 'missing file: m.step',
+                           '/home/a b/m.step file://private-server/': '<redacted>/m.step <redacted>',
+                           'C:\\Users\\A B\\m.step \\\\private-server': '<redacted>/m.step <redacted>',
+                           'HTTP://private-server/ ${KIPRJMOD}/m.step': 'HTTP://private-server/ ${KIPRJMOD}/m.step'}
+        for text, expected in authority_cases.items():
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
 
     def test_malformed_counts_or_coverage_are_never_complete(self):
         good = dict(resolved=3, missing=0, unresolved=0, disabled=0, no_model=0)
@@ -814,6 +882,32 @@ class DiagnosticSupplementTests(unittest.TestCase):
         self.assertEqual(record['source_packet']['name'], '<redacted>/INDEX.md')
         self.assertEqual(record['label'], 'see <redacted>/board.kicad_pcb')
 
+    def test_file_uri_authority_with_empty_or_root_path_is_fully_redacted_on_every_supplement_surface(self):
+        uris = GalleryTests.AUTHORITY_URIS
+        identifier = self.add(label='see ' + uris[0], stage=' '.join(uris))
+        stored = (self.root/'diagnostics'/identifier/'manifest.json').read_text()
+        stored += (self.root/'diagnostics.json').read_text()
+        base = self.serving()
+        listing = json.loads((self.root/'diagnostics.json').read_text())
+        legacy_id = 'a' * 12 + '-' + 'b' * 12
+        legacy = dict(listing[0], id=legacy_id, label=uris[1], stage=uris[5],
+                      source_packet={'name': uris[3], 'sha256': 'c' * 64})
+        (self.root/'diagnostics'/legacy_id).mkdir()
+        (self.root/'diagnostics'/legacy_id/'manifest.json').write_text(json.dumps(legacy))
+        (self.root/'diagnostics.json').write_text(json.dumps([legacy, *listing]))
+        bodies = [stored]
+        for ident in (identifier, legacy_id):
+            bodies += [self.get(base + '/diagnostics/' + ident + suffix) for suffix in ('/index.html', '/manifest.json')]
+        bodies.append(self.get(base))
+        for body in bodies:
+            for leak in GalleryTests.AUTHORITY_LEAKS:
+                self.assertNotIn(leak, body)
+        record = json.loads(bodies[2])
+        self.assertEqual((record['label'], record['stage']), ('see <redacted>', ' '.join(['<redacted>'] * len(uris))))
+        record = json.loads(bodies[4])
+        self.assertEqual((record['label'], record['stage'], record['source_packet']['name']),
+                         ('<redacted>', '<redacted>', '<redacted>'))
+
     def test_case_insensitive_and_authority_file_uris_are_redacted_on_every_supplement_surface(self):
         uris = GalleryTests.FILE_URIS
         identifier = self.add(label='see ' + uris[0], stage=' '.join(uris))
@@ -836,9 +930,10 @@ class DiagnosticSupplementTests(unittest.TestCase):
                 self.assertNotIn(leak, body)
         record = json.loads(bodies[2])
         self.assertEqual(record['label'], 'see <redacted>/board.kicad_pcb')
-        # A host path runs to the end of the text (spaced directory names), so the
-        # space-joined stage collapses to the last basename.
-        self.assertEqual(record['stage'], '<redacted>/e.step')
+        # A host path runs to the end of the text (spaced directory names) but stops
+        # before another file URI, so each URI of the joined stage keeps its basename.
+        self.assertEqual(record['stage'], ' '.join('<redacted>/' + n for n in
+                                                   ('board.kicad_pcb', 'b.step', 'c.step', 'd.step', 'e.step')))
         record = json.loads(bodies[4])
         self.assertEqual(record['source_packet']['name'], '<redacted>/d.step')
         self.assertEqual(record['label'], '<redacted>/b.step')

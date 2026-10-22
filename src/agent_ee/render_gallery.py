@@ -26,13 +26,24 @@ from .viewer import _ASSETS, _source_board, _stage_board, _validate_glb
 
 _VIEWS = ("top", "bottom", "isometric")
 # URLs other than file:// (scheme matched case-insensitively, RFC 3986) are not
-# host paths; a file URI's authority (file://host/share) is redacted with its path.
+# host paths. A file URI is parsed structurally: the scheme and the authority
+# (file://host) are consumed first, atomically, and only the path after them can
+# give a basename; with an empty or root path the whole URI becomes <redacted>.
 # Everything else that starts at a
 # POSIX root, a drive letter (either slash) or a UNC prefix is. A path runs to the
-# end of the text or a quote, so directory names containing spaces are removed too.
+# end of the text or a quote, so directory names containing spaces are removed too,
+# but stops before whitespace that starts another file URI or UNC host, whose
+# authority must not become the earlier path's basename.
+# The host of a UNC path (\\host or //host) is never a basename either.
 # Already redacted text is left alone, so serving a redacted bundle is idempotent.
 _URL = re.compile(r"(?<![\w.+-])(?!(?i:file):)[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]*")
-_ABSOLUTE = re.compile(r"(?<![\w.}\])/\\])(?<!<redacted>)(?:(?i:file):(?://[^/\\\s'\"<>]*)?)?(?:/|\\\\|[A-Za-z]:[\\/])(?=[^\s'\"<>])[^'\"<>\r\n]*")
+_PATH = r"(?=[^\s'\"<>])(?:(?!\s+(?:(?i:file):|[\\/]{2}))[^'\"<>\r\n])*"
+_ABSOLUTE = re.compile(
+    r"(?<![\w.}\])/\\])(?<!<redacted>)"
+    r"(?:(?>(?i:file)://[^/\\\s'\"<>]*)(?P<tail>[/\\](?:" + _PATH + r")?)?"
+    r"|(?i:file):[/\\]+(?=$|[\s'\"<>])"
+    r"|(?:(?i:file):)?(?P<path>(?:/|\\\\|[A-Za-z]:[\\/])" + _PATH + r"))")
+_UNC_HOST = re.compile(r"^[\\/]{2}[^\\/]*")
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
 _ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -46,8 +57,14 @@ _ADOPTION = {"not-adopted": "Proposed change NOT adopted (publisher statement)",
              "no-proposal": "No change proposed (publisher statement)"}
 
 
+def _redacted_path(match):
+    path = match.group("tail") if match.group("path") is None else match.group("path")
+    parts = [p for p in re.split(r"[\\/]", _UNC_HOST.sub("", (path or "").rstrip("/\\ \t"))) if p]
+    return "<redacted>/" + parts[-1] if parts else "<redacted>"
+
+
 def _redact_text(text):
-    return _ABSOLUTE.sub(lambda m: "<redacted>/" + re.split(r"[\\/]", m.group().rstrip("/\\ \t"))[-1], text)
+    return _ABSOLUTE.sub(_redacted_path, text)
 
 
 def redact(value):

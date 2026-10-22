@@ -73,7 +73,12 @@ Windows drive paths with either slash, UNC paths and `file:` URIs, including
 directory names with spaces (a path runs to the end of the text or a quote).
 The `file:` scheme is matched case-insensitively (`FILE:///...`,
 `File:///C:/...`), and a file URI's authority (`file://host/share/...`) is
-removed together with its path.
+removed together with its path: the scheme and authority are parsed first and
+only a real path component can be kept as the basename. A file URI with an
+empty or root path (`file://host`, `FILE://host/`, `file:/`), or a bare UNC
+host (`\\host`), becomes a bare `<redacted>`. A path stops before whitespace
+that starts another file URI or UNC host, so a later authority never becomes an
+earlier path's basename. Redaction is idempotent.
 Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
 server applies the same redaction to `manifest.json`, `viewer.json` and page
 warnings of older bundles on the way out.
