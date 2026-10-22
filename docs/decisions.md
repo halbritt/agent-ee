@@ -653,3 +653,20 @@ its reservations, and native saved-board checks retain their authority.
 The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
 remaining numeric limits and their effects; gap-source authentication remains
 AGENTEE-348.
+
+## Owner decisions, 2026-10-22 (owner via agent-519 decision quiz, and owner corrections relayed by agent-509)
+
+Each decision is also recorded as an owner comment on its Plane item.
+
+- **Reviewer capacity.** Use codex-3 for held cross-class reviews (no top-up, no other arrangement).
+- **Release gate host.** Retry the Spot `agent-ee-gate-c4` in us-central1-a; if it stocks out again, leave it off and gate on peecee-wsl.
+- **AGENTEE-348 signing is dropped.** Deliberate agent forgery of owner or manufacturer records is outside the threat model. Owner authority is a citation to a committed owner decision (pinned commit plus hash, as `OWNER_GRANTS` does). Checks guard against accidental mislabeling of unsourced values, not forgery, and reviewers do not raise holds on "an agent could write its own grant" hypotheticals. AGENTEE-348 keeps only its G4/G5 scope.
+- **AGENTEE-20 repository size.** The target is amended: retained run evidence lives in the private Garage bucket and only test-needed bytes stay in the tree. No history rewrite.
+- **AGENTEE-441.** Accepted as partial; the OPA197 vendor SPICE model stays recorded as unqualified.
+- **AGENTEE-219.** Vendoring the kicad-happy MIT patch (KICAD-HAPPY-219) with its notice is approved, and it is also sent upstream.
+- **AGENTEE-14.** MIT licensing is approved for agent-ee material and for T1/T2 (the FOME-MC RC fixture and eda.py-derived logic). T3-T13 stay excluded.
+- **AGENTEE-21 / AGENTEE-12.** The network re-fetch of the five redistributable boards and a capped live reviewer A/B run (at most 12 subscription calls) are approved, with evidence kept in the private Garage store.
+- **AGENTEE-108** stays private and closes against the private store. **AGENTEE-69** keeps the tscircuit prompts uncommitted, accepts the committed original series and amends criterion 2.
+- **Autonomous pod decisions** since 2026-10-20 (D-PCB-1, -8, -9, -11, -12, -14) are acknowledged as they stand; the thermal-evidence release gate (AGENTEE-447) still applies.
+- **Telemetry pod mechanics.** The ECU and pod are built from the ground up: the enclosure, panel and harness are team design deliverables, not blockers for bare-board placement, routing or fabrication readiness, and the seat cowl is the only existing external constraint. The standard JLCPCB four-layer 1.6 mm board with its published finished tolerance is accepted.
+- **Through-hole board-thickness fit (AGENTEE-448).** At least +/-10% of a part's recommended nominal board thickness is the inclusive component-side fit-screening default, independent of the fabricator's finished-thickness tolerance. Explicit manufacturer limits override, and outside the band alone is advisory. For J1, TE's 1.57 mm gives 1.413-1.727 mm, so the 1.6 mm board fits.
