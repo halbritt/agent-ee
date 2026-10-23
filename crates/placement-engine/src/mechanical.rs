@@ -3,12 +3,12 @@
 //! and current geometry without delegating planning or granting source authority.
 use crate::blocks::{digest, keys, rows, text};
 use crate::exact::{
-    decimal, integer, point, point_value, rational, rational_value, rotate, Point, Rat,
+    Point, Rat, decimal, integer, point, point_value, rational, rational_value, rotate,
 };
 use crate::geometry::{courtyard_bounds, intersection_area, simple_polygon};
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use num_traits::{ToPrimitive, Zero};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 const SCHEMA: &str = "agent-ee.mechanical-reservations/1";
@@ -209,6 +209,319 @@ fn document(value: &Value) -> Result<()> {
     Ok(())
 }
 
+// Mirror footprint_library._custom_primitives: only bounded, exact native
+// primitives qualify. Numeric tokens are compared as nanometres, not spellings.
+fn custom_number(value: &Value) -> Result<crate::exact::Int> {
+    let token = value.as_str().context("invalid custom-pad numeric token")?;
+    ensure!(token.len() <= 128, "invalid custom-pad numeric token");
+    // Decimal (the Python qualifier) accepts whitespace and underscores.
+    // Validate the finite decimal grammar before using exact::decimal, whose
+    // internal callers already supply syntactically qualified numbers.
+    let token = token.trim().replace('_', "");
+    static NUMBER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$").unwrap()
+    });
+    ensure!(NUMBER.is_match(&token), "invalid custom-pad numeric token");
+    crate::exact::nanometres(&json!(token))
+}
+
+fn custom_point(value: &Value, tag: &str) -> Result<Point> {
+    let values = rows(value)?;
+    ensure!(
+        values.len() == 3 && values[0] == tag,
+        "unsupported custom-pad coordinate"
+    );
+    Ok(Point {
+        x: custom_number(&values[1])?,
+        y: custom_number(&values[2])?,
+    })
+}
+
+fn ceil_hypot(p: &Point) -> crate::exact::Int {
+    let square = &p.x * &p.x + &p.y * &p.y;
+    let root = crate::exact::isqrt(&square);
+    if &root * &root < square {
+        root + 1
+    } else {
+        root
+    }
+}
+
+fn custom_primitives(value: &Value, reflected: bool) -> Result<Value> {
+    use num_traits::Signed;
+    let primitives = rows(value)?;
+    ensure!(
+        (1..=128).contains(&primitives.len()),
+        "custom pad requires 1..128 supported primitives"
+    );
+    let limit = crate::exact::Int::from(1_000_000_000);
+    let mut result = Vec::new();
+    for primitive in primitives {
+        let nodes = rows(primitive)?;
+        let kind = text(nodes.first().context("invalid custom-pad primitive")?)?;
+        let expected: &[&str] = match kind {
+            "gr_poly" => &["pts", "width", "fill"],
+            "gr_rect" => &["start", "end", "width", "fill"],
+            "gr_circle" => &["center", "end", "width", "fill"],
+            "gr_line" => &["start", "end", "width"],
+            _ => anyhow::bail!("unsupported custom-pad primitive/options"),
+        };
+        let mut fields = BTreeMap::new();
+        for node in &nodes[1..] {
+            let items = rows(node)?;
+            let name = text(items.first().context("invalid custom-pad field")?)?;
+            ensure!(
+                expected.contains(&name) && fields.insert(name, node).is_none(),
+                "unsupported custom-pad primitive/options"
+            );
+        }
+        ensure!(
+            fields.len() == expected.len(),
+            "unsupported custom-pad primitive/options"
+        );
+        let width_node = rows(fields["width"])?;
+        ensure!(width_node.len() == 2, "unsupported custom-pad width");
+        let width = custom_number(&width_node[1])?;
+        let fill = if kind == "gr_line" {
+            "no"
+        } else {
+            let fill_node = rows(fields["fill"])?;
+            ensure!(fill_node.len() == 2, "unsupported custom-pad fill");
+            text(&fill_node[1])?
+        };
+        ensure!(
+            width <= limit
+                && width >= crate::exact::Int::zero()
+                && ["yes", "no"].contains(&fill)
+                && (fill != "no" || !width.is_zero()),
+            "unsupported custom-pad primitive fill/width"
+        );
+        let points = if kind == "gr_poly" {
+            let vertices = rows(fields["pts"])?;
+            ensure!(
+                (4..=1025).contains(&vertices.len()),
+                "custom polygon requires 3..1024 vertices"
+            );
+            let points = vertices[1..]
+                .iter()
+                .map(|v| custom_point(v, "xy"))
+                .collect::<Result<Vec<_>>>()?;
+            simple_polygon(&json!(points.iter().map(point_value).collect::<Vec<_>>()))?;
+            points
+        } else {
+            let first = if kind == "gr_circle" {
+                "center"
+            } else {
+                "start"
+            };
+            let start = custom_point(fields[first], first)?;
+            let end = custom_point(fields["end"], "end")?;
+            ensure!(
+                start != end && (kind != "gr_rect" || (start.x != end.x && start.y != end.y)),
+                "degenerate custom-pad primitive"
+            );
+            vec![start, end]
+        };
+        ensure!(
+            points
+                .iter()
+                .all(|p| p.x.abs() <= limit && p.y.abs() <= limit),
+            "custom-pad primitive coordinate exceeds +/-1000 mm"
+        );
+        let (extent, reach) = if kind == "gr_circle" {
+            let radius = ceil_hypot(&points[0].minus(&points[1]));
+            (
+                points[0].x.abs().max(points[0].y.abs()) + &radius,
+                ceil_hypot(&points[0]) + radius,
+            )
+        } else {
+            let extent = points
+                .iter()
+                .flat_map(|p| [p.x.abs(), p.y.abs()])
+                .max()
+                .unwrap();
+            let corners = if kind == "gr_rect" {
+                [&points[0].x, &points[1].x]
+                    .into_iter()
+                    .flat_map(|x| {
+                        [&points[0].y, &points[1].y]
+                            .into_iter()
+                            .map(move |y| Point {
+                                x: x.clone(),
+                                y: y.clone(),
+                            })
+                    })
+                    .collect()
+            } else {
+                points.clone()
+            };
+            (extent, corners.iter().map(ceil_hypot).max().unwrap())
+        };
+        ensure!(
+            extent * 2 + &width <= &limit * 2 && reach * 2 + &width <= &limit * 2,
+            "custom-pad copper reach exceeds 1000 mm"
+        );
+        let mut normalized = primitive.clone();
+        for node in normalized.as_array_mut().unwrap().iter_mut().skip(1) {
+            let tag = node[0].as_str().unwrap().to_owned();
+            if tag == "width" {
+                node[1] = crate::exact::integer_value(&width);
+            } else if tag == "pts" {
+                for vertex in node.as_array_mut().unwrap().iter_mut().skip(1) {
+                    let mut p = custom_point(vertex, "xy")?;
+                    if reflected {
+                        p.y = -p.y;
+                    }
+                    *vertex = json!([
+                        "xy",
+                        crate::exact::integer_value(&p.x),
+                        crate::exact::integer_value(&p.y)
+                    ]);
+                }
+            } else if ["start", "end", "center"].contains(&tag.as_str()) {
+                let mut p = custom_point(node, &tag)?;
+                if reflected {
+                    p.y = -p.y;
+                }
+                *node = json!([
+                    tag,
+                    crate::exact::integer_value(&p.x),
+                    crate::exact::integer_value(&p.y)
+                ]);
+            }
+        }
+        if kind == "gr_rect" {
+            let nodes = normalized.as_array_mut().unwrap();
+            let a = nodes.iter().position(|n| n[0] == "start").unwrap();
+            let b = nodes.iter().position(|n| n[0] == "end").unwrap();
+            for axis in [1, 2] {
+                if integer(&nodes[a][axis])? > integer(&nodes[b][axis])? {
+                    let temp = nodes[a][axis].clone();
+                    nodes[a][axis] = nodes[b][axis].clone();
+                    nodes[b][axis] = temp;
+                }
+            }
+        }
+        result.push(normalized);
+    }
+    Ok(json!(result))
+}
+
+fn custom_geometry(pad: &Value) -> Result<&Value> {
+    let geometry = &pad["custom_geometry"];
+    ensure!(
+        pad["shape"] == 6 && geometry.is_object() && geometry["status"] == "proven",
+        "mechanical custom-pad geometry is not native qualified"
+    );
+    keys(
+        geometry,
+        &[
+            "status",
+            "anchor",
+            "primitives",
+            "merged_polygons_nm",
+            "bbox_nm",
+        ],
+        &[],
+    )?;
+    ensure!(
+        matches!(geometry["anchor"].as_i64(), Some(0 | 1)),
+        "mechanical custom-pad anchor is unsupported"
+    );
+    custom_primitives(&geometry["primitives"], false)?;
+    let polygons = rows(&geometry["merged_polygons_nm"])?;
+    ensure!(
+        (1..=64).contains(&polygons.len()),
+        "mechanical custom-pad merged copper is missing"
+    );
+    for polygon in polygons {
+        ensure!(
+            (3..=1024).contains(&rows(polygon)?.len()),
+            "mechanical custom-pad merged contour is invalid"
+        );
+        simple_polygon(polygon)?;
+    }
+    let bbox = rows(&geometry["bbox_nm"])?;
+    ensure!(bbox.len() == 4, "mechanical custom-pad bounds are invalid");
+    let b = bbox.iter().map(integer).collect::<Result<Vec<_>>>()?;
+    ensure!(
+        b[0] < b[2] && b[1] < b[3],
+        "mechanical custom-pad bounds are invalid"
+    );
+    Ok(geometry)
+}
+
+fn custom_contours(value: &Value, reflected: bool) -> Result<Vec<Vec<Point>>> {
+    let mut result = Vec::new();
+    for polygon in rows(value)? {
+        let mut points = rows(polygon)?
+            .iter()
+            .map(point)
+            .collect::<Result<Vec<_>>>()?;
+        if reflected {
+            for p in &mut points {
+                p.y = -&p.y;
+            }
+        }
+        let start = points.iter().enumerate().min_by_key(|(_, p)| *p).unwrap().0;
+        points.rotate_left(start);
+        let mut reverse = points.clone();
+        reverse[1..].reverse();
+        result.push(points.min(reverse));
+    }
+    result.sort();
+    Ok(result)
+}
+
+fn custom_follows(
+    before: &Value,
+    after: &Value,
+    source: &Value,
+    current: &Value,
+    flipped: bool,
+) -> Result<()> {
+    let old = custom_geometry(before)?;
+    let new = custom_geometry(after)?;
+    let b = rows(&old["bbox_nm"])?;
+    let source_position = point(&source["position_nm"])?;
+    let current_position = point(&current["position_nm"])?;
+    let mut corners = Vec::new();
+    for x in [0, 2] {
+        for y in [1, 3] {
+            let local = rotate(
+                &Point {
+                    x: integer(&b[x])?,
+                    y: integer(&b[y])?,
+                }
+                .minus(&source_position),
+                -angle(&source["rotation_deg"])? / 90,
+            );
+            corners.push(moved(
+                &local,
+                &current_position,
+                angle(&current["rotation_deg"])?,
+                flipped,
+            ));
+        }
+    }
+    let expected_box = json!([
+        crate::exact::integer_value(corners.iter().map(|p| &p.x).min().unwrap()),
+        crate::exact::integer_value(corners.iter().map(|p| &p.y).min().unwrap()),
+        crate::exact::integer_value(corners.iter().map(|p| &p.x).max().unwrap()),
+        crate::exact::integer_value(corners.iter().map(|p| &p.y).max().unwrap())
+    ]);
+    ensure!(
+        old["anchor"] == new["anchor"]
+            && custom_primitives(&old["primitives"], flipped)?
+                == custom_primitives(&new["primitives"], false)?
+            && custom_contours(&old["merged_polygons_nm"], flipped)?
+                == custom_contours(&new["merged_polygons_nm"], false)?
+            && expected_box == new["bbox_nm"],
+        "mechanical native custom-pad geometry changed independently of owner"
+    );
+    Ok(())
+}
+
 fn native_owner(fp: &Value) -> Result<()> {
     text(&fp["ref"])?;
     text(&fp["uuid"])?;
@@ -220,10 +533,9 @@ fn native_owner(fp: &Value) -> Result<()> {
     angle(&fp["rotation_deg"])?;
     let mut seen = BTreeSet::new();
     for pad in rows(&fp["pads"])? {
-        ensure!(
-            pad["shape"] != 6 && pad.get("custom_geometry").is_none(),
-            "mechanical attachments do not support custom-pad geometry"
-        );
+        if pad["shape"] == 6 || pad.get("custom_geometry").is_some() {
+            custom_geometry(pad)?;
+        }
         ensure!(
             seen.insert(text(&pad["uuid"])?),
             "mechanical pad identity missing or ambiguous"
@@ -435,6 +747,9 @@ fn current_owner(source: &Value, current: &Value) -> Result<()> {
                 && expected_angle == angle(&after["rotation_deg"])?,
             "mechanical native pad pose changed independently of owner"
         );
+        if before["shape"] == 6 {
+            custom_follows(before, after, source, current, flipped)?;
+        }
         for key in ["copper_centroid_offset_nm", "copper_land_offset_nm"] {
             ensure!(
                 before.get(key).is_some() == after.get(key).is_some(),
@@ -766,6 +1081,129 @@ mod tests {
     }
 
     #[test]
+    fn custom_numeric_reflection_preserves_geometry_not_token_spelling() {
+        let before = json!([
+            [
+                "gr_circle",
+                ["center", "0", "10"],
+                ["end", "1", "10"],
+                ["width", "0"],
+                ["fill", "yes"]
+            ],
+            [
+                "gr_rect",
+                ["start", "0", "10"],
+                ["end", "1", "20"],
+                ["width", "0"],
+                ["fill", "yes"]
+            ],
+            [
+                "gr_line",
+                ["start", "0", "10"],
+                ["end", "1", "20"],
+                ["width", "0.1"]
+            ],
+            [
+                "gr_poly",
+                [
+                    "pts",
+                    ["xy", "0", "10"],
+                    ["xy", "1", "10"],
+                    ["xy", "1", "20"]
+                ],
+                ["width", "0"],
+                ["fill", "yes"]
+            ]
+        ]);
+        let after = json!([
+            [
+                "gr_circle",
+                ["center", "0", "-1E+1"],
+                ["end", "1", "-10"],
+                ["width", "0.0"],
+                ["fill", "yes"]
+            ],
+            [
+                "gr_rect",
+                ["start", "0", "-20"],
+                ["end", "1", "-10"],
+                ["width", "0"],
+                ["fill", "yes"]
+            ],
+            [
+                "gr_line",
+                ["start", "0", "-10"],
+                ["end", "1", "-20"],
+                ["width", "0.1"]
+            ],
+            [
+                "gr_poly",
+                [
+                    "pts",
+                    ["xy", "0", "-10"],
+                    ["xy", "1", "-10"],
+                    ["xy", "1", "-20"]
+                ],
+                ["width", "0"],
+                ["fill", "yes"]
+            ]
+        ]);
+        assert_eq!(
+            custom_primitives(&before, true).unwrap(),
+            custom_primitives(&after, false).unwrap()
+        );
+        let mut changed = after.clone();
+        changed[0][1][2] = json!("-10.000001");
+        assert_ne!(
+            custom_primitives(&before, true).unwrap(),
+            custom_primitives(&changed, false).unwrap()
+        );
+        for invalid in [
+            json!([["gr_arc", ["start", "0", "0"]]]),
+            json!([[
+                "gr_line",
+                ["start", "0", "0"],
+                ["end", "1", "1"],
+                ["width", "0"]
+            ]]),
+            json!([[
+                "gr_circle",
+                ["center", "1000", "0"],
+                ["end", "1001", "0"],
+                ["width", "0"],
+                ["fill", "yes"]
+            ]]),
+            json!([[
+                "gr_rect",
+                ["start", "0", "0"],
+                ["end", "1", "0"],
+                ["width", "0"],
+                ["fill", "yes"]
+            ]]),
+            json!([[
+                "gr_line",
+                ["start", "0", "0"],
+                ["end", "1", "1"],
+                ["width", "0.0000001"]
+            ]]),
+            json!([[
+                "gr_line",
+                ["start", "0", "0"],
+                ["end", "1", "1"],
+                ["width", "NaN"]
+            ]]),
+            json!([[
+                "gr_line",
+                ["start", "0", "0"],
+                ["end", "1.2.3", "1"],
+                ["width", "1"]
+            ]]),
+        ] {
+            assert!(custom_primitives(&invalid, false).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn declarations_cover_full_board_inventory_with_finite_cap() {
         let (_, bound) = fixture();
         let mut doc = bound["document"].clone();
@@ -839,7 +1277,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_pads_refuse_and_exact_copper_offsets_follow_native_transform() {
+    fn unqualified_custom_pads_refuse_and_exact_copper_offsets_follow_native_transform() {
         let (mut capture, mut bound) = fixture();
         let source = &mut bound["owners"][0]["pads"][0];
         source["copper_centroid_offset_nm"] = json!([[1, 2], [3, 4]]);
@@ -865,13 +1303,15 @@ mod tests {
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["unknown"][0]["reason"],
-            "mechanical attachments do not support custom-pad geometry"
+            "mechanical custom-pad geometry is not native qualified"
         );
         bound["owners"][0]["pads"][0]["shape"] = json!(6);
-        assert!(grade(&capture, &bound, false)
-            .unwrap_err()
-            .to_string()
-            .contains("custom-pad"));
+        assert!(
+            grade(&capture, &bound, false)
+                .unwrap_err()
+                .to_string()
+                .contains("custom-pad")
+        );
     }
 
     #[test]
