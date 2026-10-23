@@ -1646,9 +1646,10 @@ def review_input(run_dir, manifest):
 
 def _candidate_file(path, raw=None):
     """A bare candidate file; a ``block_library materialize`` record is refused, not unwrapped."""
+    from .block_variants import SCHEMA as CANDIDATE_SET
     document = strict_json(Path(path).read_bytes() if raw is None else raw)
-    if not isinstance(document, dict) or document.get('schema') != blocks.CANDIDATE:
-        raise ValueError(f'{path}: expected a bare {blocks.CANDIDATE} file '
+    if not isinstance(document, dict) or document.get('schema') not in (blocks.CANDIDATE, CANDIDATE_SET):
+        raise ValueError(f'{path}: expected a bare {blocks.CANDIDATE} or {CANDIDATE_SET} file '
                          '(block_library materialize --out writes one; its result record is not a candidate)')
     return document
 
@@ -1657,7 +1658,7 @@ def load_entries(paths):
     return [{'candidate': _candidate_file(p)} for p in paths]
 
 
-def request_section(allocation, arrangement, candidates):
+def request_section(allocation, arrangement, candidates, *, side_eligibility=None, contract=None):
     """The ``blocks`` section of a placer_runner request from file paths.
 
     ``allocation`` is the same allocation file every candidate was packed or
@@ -1666,15 +1667,27 @@ def request_section(allocation, arrangement, candidates):
     """
     return request_section_from_bytes(None if allocation is None else Path(allocation).read_bytes(),
                                       Path(arrangement).read_bytes(), [Path(c).read_bytes() for c in candidates],
-                                      names=list(map(str, candidates)))
+                                      names=list(map(str, candidates)),
+                                      side_eligibility=None if side_eligibility is None else Path(side_eligibility).read_bytes(),
+                                      contract=None if contract is None else Path(contract).read_bytes())
 
 
-def request_section_from_bytes(allocation, arrangement, candidates, names=None):
+def request_section_from_bytes(allocation, arrangement, candidates, names=None, *, side_eligibility=None,
+                               contract=None):
     """The same section from bytes a caller has already bound by digest (AGENTEE-439)."""
     names = names or [f'candidate {i + 1}' for i in range(len(candidates))]
-    return {'allocation_text': None if allocation is None else allocation.decode('utf-8'),
-            'arrangement': strict_json(arrangement),
-            'candidates': [{'candidate': _candidate_file(name, raw)} for name, raw in zip(names, candidates)]}
+    if len(names) != len(candidates):
+        raise ValueError('candidate names and records must have equal lengths')
+    section = {'allocation_text': None if allocation is None else allocation.decode('utf-8'),
+               'arrangement': strict_json(arrangement),
+               'candidates': [{'candidate': _candidate_file(name, raw)} for name, raw in zip(names, candidates)]}
+    for key, raw in (('side_eligibility', side_eligibility), ('contract', contract)):
+        if raw is not None:
+            section[key] = strict_json(raw)
+    if any(entry['candidate']['schema'] == 'agent-ee.block-candidate-set/1' for entry in section['candidates']):
+        if allocation is None or side_eligibility is None or contract is None:
+            raise ValueError('candidate sets require captured allocation, side_eligibility and contract')
+    return section
 
 
 def plan_from_request(facts, section, policy, effective, netlist, heartbeat=None):
@@ -1710,6 +1723,8 @@ def main(argv=None):
     parser.add_argument('--policy', required=True, type=Path, help='agent-ee.packing-policy/1')
     parser.add_argument('--arrangement', required=True, type=Path, help=f'{POLICY} JSON')
     parser.add_argument('--candidate', required=True, type=Path, action='append', help='admitted block candidate')
+    parser.add_argument('--side-eligibility', type=Path, help='captured original-board-bound face eligibility JSON')
+    parser.add_argument('--contract', type=Path, help='captured saved-board block contract JSON')
     parser.add_argument('--out', required=True, type=Path, help='new output JSON file')
     parser.add_argument('--provenance', type=Path, help=f'new {PROVENANCE_ARTIFACT} file, written when planned')
     parser.add_argument('--runner-section', type=Path,
@@ -1717,9 +1732,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         capture, inventory, derivation = blocks._load(args)
-        result = arrange(capture, inventory, derivation, strict_json(args.policy.read_bytes()),
-                         strict_json(args.arrangement.read_bytes()), load_entries(args.candidate),
-                         heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
+        section = request_section(args.allocation, args.arrangement, args.candidate,
+                                  side_eligibility=args.side_eligibility, contract=args.contract)
+        policy = strict_json(args.policy.read_bytes())
+        block_contract.validate(capture, section, policy)
+        options = {key: section[key] for key in ('side_eligibility', 'contract') if key in section}
+        result = arrange(capture, inventory, derivation, policy, section['arrangement'], section['candidates'],
+                         heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True), **options)
         blocks._write(args.out, result)
         if args.provenance is not None and result['status'] == 'planned':
             # No saved board or fabrication inventory exists offline; the reserve stays a
@@ -1729,7 +1748,7 @@ def main(argv=None):
                 result, plan_sha256=hashlib.sha256(args.out.read_bytes()).hexdigest(),
                 reserved_area=unmeasured(result['board_sha256'], 'offline_unsaved_plan', OFFLINE_RESERVE)))
         if args.runner_section is not None and result['status'] == 'planned':
-            blocks._write(args.runner_section, request_section(args.allocation, args.arrangement, args.candidate))
+            blocks._write(args.runner_section, section)
     except (OSError, ValueError) as exc:
         print(json.dumps({'status': 'refused', 'reason': str(exc)}))
         return 1

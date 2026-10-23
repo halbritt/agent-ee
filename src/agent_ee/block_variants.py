@@ -204,23 +204,29 @@ def produce(source, capture, inventory, derivation, block_id, policy, eligibilit
 
 
 def _structure(document, capture, eligibility=None):
-    validate_capture(capture)
+    if capture is not None:
+        validate_capture(capture)
     blocks._keys(document, {'schema', 'block_id', 'sources', 'eligibility', 'captured_members', 'variants'},
                  label='block candidate set')
     if document['schema'] != SCHEMA:
         raise ValueError(f'expected {SCHEMA}')
     blocks._text(document['block_id'], 'candidate-set block id')
+    blocks._keys(document['sources'], {'board_sha256', 'inventory_sha256', 'allocation_sha256',
+                                      'derivation_sha256', 'policy_sha256'}, label='candidate-set sources')
+    for key, value in document['sources'].items():
+        if key != 'allocation_sha256' or value is not None:
+            blocks._hex(value, 'candidate-set ' + key)
     bundle = document['eligibility']
     blocks._keys(bundle, {'record', 'record_sha256', 'eligible_faces'}, label='candidate-set eligibility')
     if digest(bundle['record']) != bundle['record_sha256']:
         raise ValueError('eligibility record canonical hash mismatch')
     if eligibility is not None and digest(eligibility) != bundle['record_sha256']:
         raise ValueError('candidate set belongs to another eligibility record')
-    _eligibility_binding(bundle['record'], capture)
+    _eligibility_binding(bundle['record'], capture if capture is not None else document['sources'])
     faces = eligible_faces(bundle['record'], document['block_id'])
     if bundle['eligible_faces'] != faces or not isinstance(document['variants'], dict) or set(document['variants']) != set(faces):
         raise ValueError('every eligible face needs exactly one explicit result')
-    board = {fp['ref']: fp for fp in capture['footprints']}
+    board = None if capture is None else {fp['ref']: fp for fp in capture['footprints']}
     rows = document['captured_members']
     if not isinstance(rows, list) or not rows:
         raise ValueError('candidate set needs captured members')
@@ -233,8 +239,10 @@ def _structure(document, capture, eligibility=None):
             raise ValueError('candidate set needs unique captured members')
         seen_refs.add(row['ref'])
         seen_uuids.add(row['uuid'])
-        fp = board.get(row['ref'])
-        if fp is None or row != {'ref': fp['ref'], 'uuid': fp['uuid'], 'side': fp['side']}:
+        if row['side'] not in ('F', 'B'):
+            raise ValueError('captured member needs an F/B side')
+        fp = None if board is None else board.get(row['ref'])
+        if board is not None and (fp is None or row != {'ref': fp['ref'], 'uuid': fp['uuid'], 'side': fp['side']}):
             raise ValueError('captured member identity differs from original capture')
     for face, variant in document['variants'].items():
         blocks._keys(variant, VARIANT_KEYS, label='face variant')
@@ -258,6 +266,12 @@ def _structure(document, capture, eligibility=None):
         if (digest(variant['capture']) != variant['capture_sha256']
                 or variant['capture']['board_sha256'] != variant['board_sha256']):
             raise ValueError('variant capture hash mismatch')
+        derivation = variant['derivation']
+        if not isinstance(derivation, dict) or derivation.get('board_sha256') != variant['board_sha256']:
+            raise ValueError('variant derivation board binding mismatch')
+        original_derivation = {**derivation, 'board_sha256': document['sources']['board_sha256']}
+        if digest(original_derivation) != document['sources']['derivation_sha256']:
+            raise ValueError('variant derivation differs beyond the native board binding')
         for member in members:
             blocks._hex(member['pad_inventory_sha256'], 'native member pad inventory')
         if variant['status'] == 'packed':
@@ -265,6 +279,10 @@ def _structure(document, capture, eligibility=None):
                 raise ValueError('packed variant cannot carry a failure')
             candidate = variant['candidate']
             blocks.validate_candidate(candidate)
+            expected_sources = {**document['sources'], 'board_sha256': variant['board_sha256'],
+                                'derivation_sha256': digest(derivation)}
+            if candidate['sources'] != expected_sources:
+                raise ValueError('variant candidate sources differ from its native evidence')
             if candidate['block_id'] != document['block_id']:
                 raise ValueError('variant candidate belongs to another block')
             by_ref = {member['ref']: member for member in members}
@@ -276,6 +294,15 @@ def _structure(document, capture, eligibility=None):
               or variant['failure'].get('status') != variant['status']):
             raise ValueError('failed eligible face needs its complete typed failure')
     return rows
+
+
+def validate_document(document, eligibility=None):
+    """Validate packaged records before a native source capture is available.
+
+    This is a structural and hash check only. ``validate`` performs own-board
+    admission; ``verify_native`` independently reproduces the native evidence.
+    """
+    _structure(document, None, eligibility)
 
 
 def validate(document, capture, inventory, derivation, policy, eligibility=None):

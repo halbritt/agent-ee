@@ -1106,10 +1106,25 @@ if supplied too, must describe exactly the same transitions. The R5 custom-pad,
 UUID, movable-member and saved-pad checks still run. Plain `/2` candidates retain
 their captured sides and existing admission path.
 
-An optional `blocks.contract` supplies the independent final-coordinate contract.
+`blocks.contract` supplies the independent final-coordinate contract and is
+required for candidate sets; it remains optional for plain `/2` requests.
 Its eligibility record must equal `blocks.side_eligibility`. After native saving
 and the existing placement/DRC checks, the writer extracts the saved board again
 and writes `block-contract.json`. A required missing measurement or violation
 refuses publication; the complete report and planning execution receipt remain
 in the failure directory. Successful placement results link the report and its
 SHA-256. This check does not establish routing acceptance.
+
+For campaign placement declarations, `blocks.candidates` accepts captured bare
+`/2` or `candidate-set/1` files. Candidate sets also require captured `allocation`,
+`side_eligibility`, and `contract` JSON paths in that declaration. The adapter
+requires every path to be an immutable captured input, records its byte hash,
+and carries the full eligibility and contract records into the runner request.
+It checks each set against the original captured board, native netlist,
+allocation and effective request policy. These package checks do not replace
+the writer's native reproduction or final saved-board judgment.
+
+The offline arrangement CLI accepts `--side-eligibility` and `--contract` paths;
+`--runner-section` retains both full records. Programmatic `request_section`
+accepts the same optional keyword paths; `request_section_from_bytes` accepts
+their already-bound bytes. Missing records for a candidate set are refused.
