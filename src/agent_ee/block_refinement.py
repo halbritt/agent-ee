@@ -5,12 +5,33 @@ has a separate witness; this is neither flat packing nor reference-layout reuse.
 """
 from copy import deepcopy
 from fractions import Fraction
+import math
 
 from . import block_contract, electrical_locality, placement_groups, placer
 from .footprint_library import digest
 from .placement import box, courtyard_bounds, judge
 
 SCHEMA = 'agent-ee.block-member-refinement/1'
+CAPTURE_DIGEST_BASIS = 'public-capture-integral-angles/1'
+
+
+def capture_digest(capture):
+    """Seal public facts, excluding private caches and integral angle spelling.
+
+    Every public field remains present, including raw owned areas and derived
+    public geometry. Only finite, native-range quarter-turn footprint/pad angles
+    share an integer spelling. Missing and nonintegral angles remain distinct.
+    """
+    public = deepcopy(capture)
+    for fp in public.get('footprints', []):
+        for key in [key for key in fp if key.startswith('_packing_')]:
+            del fp[key]
+        for item in [fp, *fp.get('pads', [])]:
+            angle = item.get('rotation_deg')
+            if (type(angle) is float and math.isfinite(angle) and angle.is_integer()
+                    and angle % 90 == 0 and -(2**63) <= angle < 2**63):
+                item['rotation_deg'] = int(angle)
+    return digest(public)
 
 
 def _bbox(fp):
@@ -134,7 +155,7 @@ def refine(capture, policy, contract, block_records, *, step_budget):
         raise ValueError('member refinement requires a complete passing block contract')
     result = deepcopy(capture)
     fixed = placer._fixed_refs(capture, policy)
-    witness = {'schema': SCHEMA, 'source_capture_sha256': digest(capture),
+    witness = {'schema': SCHEMA, 'capture_digest_basis': CAPTURE_DIGEST_BASIS, 'source_capture_sha256': capture_digest(capture),
                'policy_sha256': digest(policy), 'contract_sha256': digest(contract),
                'step_budget': step_budget, 'steps_used': 0, 'moves': [], 'rejected': {}, 'skipped': []}
     exhausted = False
@@ -172,7 +193,7 @@ def refine(capture, policy, contract, block_records, *, step_budget):
                 witness['moves'].append({'block': bid, 'reference': reference, 'starting_candidate_sha256': block['candidate_sha256'],
                     'before_position_nm': fp['position_nm'], 'after_position_nm': list(position),
                     'side': fp['side'], 'rotation_deg': fp['rotation_deg'], 'block_window_nm': list(window),
-                    'before_capture_sha256': digest(result), 'after_capture_sha256': digest(proposed),
+                    'before_capture_sha256': capture_digest(result), 'after_capture_sha256': capture_digest(proposed),
                     'before': _record_metrics(before), 'after': _record_metrics(after)})
                 result, before, fp = proposed, after, candidate
             if exhausted:
@@ -181,7 +202,7 @@ def refine(capture, policy, contract, block_records, *, step_budget):
             break
     witness.update(status='refined' if witness['moves'] else 'unchanged',
                    termination='budget_exhausted' if exhausted else 'complete',
-                   final_capture_sha256=digest(result),
+                   final_capture_sha256=capture_digest(result),
                    final_member_poses=[{'reference': fp['ref'], 'position_nm': fp['position_nm'],
                                         'rotation_deg': fp['rotation_deg'], 'side': fp['side']}
                                        for fp in sorted(result['footprints'], key=lambda fp: blocks_key(fp['ref']))

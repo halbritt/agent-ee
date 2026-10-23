@@ -50,6 +50,25 @@ def facts():
 
 
 class BlockRefinementTest(unittest.TestCase):
+    def test_capture_digest_preserves_public_facts_without_private_cache_or_angle_spelling(self):
+        board = facts()
+        expected = block_refinement.capture_digest(board)
+        cached = deepcopy(board)
+        cached['footprints'][0].update(_packing_targets=['private cache'],
+                                       _packing_copper_setback=5050, rotation_deg=0.0)
+        cached['footprints'][0]['pads'][0]['rotation_deg'] = 0.0
+        untouched = deepcopy(cached)
+        self.assertEqual(block_refinement.capture_digest(cached), expected)
+        self.assertEqual(cached, untouched)
+        for change in ('nanometre', 'nonintegral', 'public', 'missing_angle'):
+            changed = deepcopy(board)
+            if change == 'nanometre': changed['footprints'][0]['position_nm'][0] += 1
+            elif change == 'nonintegral': changed['footprints'][0]['rotation_deg'] = 0.5
+            elif change == 'public': changed['footprints'][0]['packing_keepouts'] = []
+            else: del changed['footprints'][0]['rotation_deg']
+            with self.subTest(change=change):
+                self.assertNotEqual(block_refinement.capture_digest(changed), expected)
+
     def test_one_member_moves_inside_window_while_anchor_and_original_stay_exact(self):
         board = facts()
         policy, contract, record = declarations(board)
@@ -57,6 +76,7 @@ class BlockRefinementTest(unittest.TestCase):
         final, witness = block_refinement.refine(board, policy, contract, record, step_budget=64)
         self.assertEqual(board, before)
         self.assertEqual(witness['status'], 'refined', witness)
+        self.assertEqual(witness['capture_digest_basis'], block_refinement.CAPTURE_DIGEST_BASIS)
         self.assertEqual(final['footprints'][0], board['footprints'][0])
         self.assertEqual(final['footprints'][1]['position_nm'], [4500000, 2000000])
         self.assertTrue(all(m['after']['internal_hpwl_nm'] < m['before']['internal_hpwl_nm'] for m in witness['moves']))

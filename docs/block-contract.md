@@ -71,3 +71,10 @@ position, rotation and face. These are explicit pose authorities, not sourced
 numeric electrical limits. A logical allocation `fixed` role alone does not enter
 this list. If no plan policy is supplied, the report labels that input unavailable
 and reports only native locks; it never guesses pose authority from membership.
+
+Member-refinement witnesses name their capture hash basis as
+`public-capture-integral-angles/1`. This binds every public capture field,
+including pad identities, geometry, owned rule areas, and metadata. Only private
+footprint `_packing_*` caches are excluded; finite native-range quarter-turn
+footprint and pad angles use integral JSON spelling. Capture outputs and strict
+plan comparison retain their original representation.

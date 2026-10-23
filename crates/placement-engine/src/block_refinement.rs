@@ -11,6 +11,38 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 const SCHEMA: &str = "agent-ee.block-member-refinement/1";
+pub const CAPTURE_DIGEST_BASIS: &str = "public-capture-integral-angles/1";
+
+/// All public facts remain bound. Private footprint caches and the JSON spelling
+/// of native-range quarter-turn footprint/pad angles are not state differences.
+pub fn capture_digest(capture: &Value) -> String {
+    fn angle(item: &mut Value) {
+        if let Some(value) = item.get_mut("rotation_deg") {
+            if let Ok(rotation) = exact::rotation(value) {
+                if exact::decimal(value)
+                    .is_ok_and(|angle| angle == Rat::from_integer(rotation.into()))
+                {
+                    *value = json!(rotation);
+                }
+            }
+        }
+    }
+    let mut public = capture.clone();
+    if let Some(fps) = public.get_mut("footprints").and_then(Value::as_array_mut) {
+        for fp in fps {
+            if let Some(fields) = fp.as_object_mut() {
+                fields.retain(|key, _| !key.starts_with("_packing_"));
+            }
+            angle(fp);
+            if let Some(pads) = fp.get_mut("pads").and_then(Value::as_array_mut) {
+                for pad in pads {
+                    angle(pad);
+                }
+            }
+        }
+    }
+    blocks::digest(&public)
+}
 fn bbox(fp: &Value) -> Result<geometry::Bounds> {
     let mut polygons = Vec::new();
     for record in fp["courtyards"]
@@ -401,7 +433,7 @@ pub fn refine(
                 moves.push(json!({"block":id,"reference":reference,"starting_candidate_sha256":block["candidate_sha256"],
                     "before_position_nm":fp["position_nm"],"after_position_nm":exact::point_value(&position),"side":fp["side"],"rotation_deg":fp["rotation_deg"],
                     "block_window_nm":[exact::integer_value(&window.x0),exact::integer_value(&window.y0),exact::integer_value(&window.x1),exact::integer_value(&window.y1)],
-                    "before_capture_sha256":blocks::digest(&result),"after_capture_sha256":blocks::digest(&proposed),"before":before.record(),"after":after.record()}));
+                    "before_capture_sha256":capture_digest(&result),"after_capture_sha256":capture_digest(&proposed),"before":before.record(),"after":after.record()}));
                 fp = candidate.clone();
                 result = proposed;
                 before = after;
@@ -425,9 +457,9 @@ pub fn refine(
     let poses:Vec<_>=blocks::natural(finalboard.keys().filter(|r| members.contains(*r)).cloned().collect()).into_iter().map(|r| {
         let fp=finalboard[&r]; json!({"reference":r,"position_nm":fp["position_nm"],"rotation_deg":fp["rotation_deg"],"side":fp["side"]})
     }).collect();
-    let witness = json!({"schema":SCHEMA,"source_capture_sha256":blocks::digest(capture),"policy_sha256":blocks::digest(policy),"contract_sha256":blocks::digest(contract),
+    let witness = json!({"schema":SCHEMA,"capture_digest_basis":CAPTURE_DIGEST_BASIS,"source_capture_sha256":capture_digest(capture),"policy_sha256":blocks::digest(policy),"contract_sha256":blocks::digest(contract),
         "step_budget":step_budget,"steps_used":steps,"status":if moves.is_empty(){"unchanged"}else{"refined"},"termination":if exhausted{"budget_exhausted"}else{"complete"},
-        "moves":moves,"rejected":rejected,"skipped":skipped,"final_capture_sha256":blocks::digest(&result),"final_member_poses":poses});
+        "moves":moves,"rejected":rejected,"skipped":skipped,"final_capture_sha256":capture_digest(&result),"final_member_poses":poses});
     Ok((result, witness))
 }
 
@@ -459,6 +491,43 @@ mod tests {
         let policy = json!({"schema":"agent-ee.packing-policy/1","step_budget":10000,"gap_nm":500000,"fixed_refs":["U1"],"priority_refs":[],"ground_nets":["GND"],"obstacles":[],"electrical_locality":document});
         let record = json!({"blocks":[{"block":"device","references":["U1","C1"],"anchor":"U1","candidate_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","provenance":{"class":"search-derived"}}],"arrangement":{}});
         (capture, policy, contract, record)
+    }
+    #[test]
+    fn capture_digest_excludes_only_private_caches_and_integral_angle_spelling() {
+        let (capture, _, _, _) = fixture();
+        let expected = capture_digest(&capture);
+        let mut cached = capture.clone();
+        cached["footprints"][0]["_packing_targets"] = json!(["private cache"]);
+        cached["footprints"][0]["_packing_copper_setback"] = json!(5050);
+        cached["footprints"][0]["rotation_deg"] = json!(0.0);
+        cached["footprints"][0]["pads"][0]["rotation_deg"] = json!(0.0);
+        assert_eq!(capture_digest(&cached), expected);
+        assert!(cached["footprints"][0].get("_packing_targets").is_some());
+        for key in [
+            "position_nm",
+            "rotation_deg",
+            "fine_nonintegral",
+            "public",
+            "missing_angle",
+        ] {
+            let mut changed = capture.clone();
+            match key {
+                "position_nm" => changed["footprints"][0]["position_nm"][0] = json!(2000001),
+                "rotation_deg" => changed["footprints"][0]["rotation_deg"] = json!(0.5),
+                "fine_nonintegral" => {
+                    changed["footprints"][0]["rotation_deg"] =
+                        serde_json::from_str("0.0000000000000000001").unwrap()
+                }
+                "public" => changed["footprints"][0]["packing_keepouts"] = json!([]),
+                _ => {
+                    changed["footprints"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("rotation_deg");
+                }
+            }
+            assert_ne!(capture_digest(&changed), expected, "{key}");
+        }
     }
     #[test]
     fn exact_member_improvement_keeps_anchor_and_window() {
