@@ -3,9 +3,13 @@ use std::io::{self, BufReader, Write};
 
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args == ["--version"] {
+        println!("agent-ee-placement {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let events = args == ["--events"];
     let outcome = if !args.is_empty() && !events {
-        Err(anyhow::anyhow!("usage: agent-ee-placement [--events]"))
+        Err(anyhow::anyhow!("usage: agent-ee-placement [--events | --version]"))
     } else {
         serde_json::from_reader(BufReader::new(io::stdin().lock()))
             .map_err(anyhow::Error::from)

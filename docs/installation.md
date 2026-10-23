@@ -240,7 +240,9 @@ is no API-key or OpenRouter fallback. Do not copy credential contents into a
 scope, report, issue or archive.
 
 `doctor` probes executable versions and the Python binding import, and prints
-the SHA-256 of each probed binary. It does not
+the SHA-256 of each probed binary, including the resolved Rust planner. An
+adjacent planner build receipt is hashed and checked against that binary when
+present. It does not
 read the credential file, validate subscription access, run a real sandboxed
 check, or perform inference. A passing doctor report is prerequisite evidence
 only. Run the fixture described in the [operator guide](operator-guide.md) for

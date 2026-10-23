@@ -663,9 +663,10 @@ def build(project_dir, netlist_path, fpdir, envelope_path, template_board, reque
         **request['authorization'], 'source_sha256': digest(unplaced), 'writable_root': str(root)}}
     write_json(out / 'placement-request.json', effective)
     receipt['placement_request'] = {'path': 'placement-request.json', 'sha256': digest(out / 'placement-request.json')}
+    from .placement_runtime import PlanningProcessError
     try:
         report = place_candidate(unplaced, paths['netlist'], root / 'proposal', effective)
-    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+    except (ValueError, OSError, subprocess.SubprocessError, PlanningProcessError) as exc:
         # The runner retains its own NAME-failure-* diagnostics under the root.
         receipt['placement'] = {'status': 'not_placed', 'execution': 'failed', 'outcome': 'unknown',
                                 'error': str(exc)}
@@ -675,7 +676,14 @@ def build(project_dir, netlist_path, fpdir, envelope_path, template_board, reque
     receipt['placement'] = {'status': report.get('status'), 'outcome': report.get('outcome'),
                             'reason': report.get('reason'), 'steps_used': plan.get('steps_used'),
                             'step_budget': plan.get('step_budget')}
-    receipt['placer'] = 'agent_ee.placer.pack (AGENTEE-54)'
+    execution = report.get('planning_execution')
+    labels = {'rust': 'agent-ee-placement (Rust)',
+              'python-reference': 'agent_ee.placer_runner._plan_local (Python reference)'}
+    receipt['placer'] = labels.get(execution['implementation'] if execution else None,
+                                  'agent_ee.placer_runner.place_candidate')
+    if execution:
+        receipt['placement']['planning_execution'] = {
+            **execution, 'path': str((root / 'proposal' / execution['path']).relative_to(out))}
     if report['status'] != 'placed':
         write_json(root / 'placement-plan.json', report)
         receipt['placement']['plan'] = 'placement/placement-plan.json'
