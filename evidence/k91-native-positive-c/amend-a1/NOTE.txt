@@ -1,0 +1,9 @@
+AGENTEE-442 positive-c amendment A1 (agent-521 ruling f14c71ec, relayed by agent-449; coordinator decisions, not owner text).
+
+original-classifier/k91_classify.py is a byte copy of scripts/k91_classify.py at c01035e724ad698f0c37dfa9e324756dc4f420b1
+(CLASSIFIER_V2 = agent-ee.k91-native-positive/verdict-2r4), the classifier that judged the one bd1 attempt
+(bd1/out/evidence-manifest.json classifier_sha256). Its verdict there stays INCOMPLETE for control A, with qualified:false.
+
+The amended contract is scripts/k91_classify_a1.py (CLASSIFIER_V2A1 = agent-ee.k91-native-positive/verdict-2r4-a1),
+tested by tests/test_k91_classify_a1.py. No evaluation of the sealed records under A1 is written here: that
+record comes only after the independent delta review accepts the implementation, beside the originals.

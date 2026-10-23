@@ -1196,6 +1196,20 @@ Experiment evidence is never dropped and is never qualified.
   kept apart as `low_level`. The successor `scripts/k91_native_positive_v2.py`
   takes the exact runtime and input identities and the router and total
   limits.
+
+  Amendment A1 (`scripts/k91_classify_a1.py`, classifier
+  `verdict-2r4-a1`; agent-521 ruling f14c71ec, a coordinator decision)
+  is a separate, versioned extension. `k91_classify.py` (`verdict-2r4`) is
+  unchanged, and its INCOMPLETE for the positive-c control A stands.
+  A1 accepts one more control-A reason. It is the exact wrong-commit
+  message `validate_campaign_step` raised for the different-commit runtime
+  (b5774496 presented to the proposed bd1e633f), compared by literal
+  equality. It must appear at the consumer root and at the host binding,
+  on their frame paths, with both commits checked against the captured
+  runtime and the proposed pin. All other v2 conditions still apply.
+  Every other control, and the same-commit reasons, are judged as before
+  (`tests/test_k91_classify_a1.py`). No evaluation under A1 is recorded
+  until its review accepts it.
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal
