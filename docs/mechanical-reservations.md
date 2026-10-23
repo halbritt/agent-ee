@@ -91,12 +91,21 @@ The document stores the local vertex as `[2000000, 3000000]` nanometres.
 
 The binding checks the original UUID, pad roster,
 shape/size/drill/layers, rigid pad poses, and captured copper offsets and their
-coverage reason. This is not a complete native padstack or primitive equivalence
-proof; the native writer's independent pad-inventory guard remains separate.
-An attached owner containing a custom pad (`shape == 6` or `custom_geometry`)
-is unsupported and refuses binding. A footprint's captured face is not permission
-to fix its face or pose. Bound footprint and pad rotations must be exact native
-quarter turns; other pad angles are unsupported and refuse binding.
+coverage reason. This is not a complete native padstack equivalence proof; the native writer's independent pad-inventory guard remains separate.
+An attached custom pad must carry the native probe's proven anchor, supported
+primitives, merged copper contours and board-space bounds. The binding preserves
+that evidence and checks it again after owner moves: pad-local geometry stays
+unchanged under rotation/translation and reflects in local Y on a face change;
+board-space bounds follow the full owner transform. Changed anchors, primitives,
+contours or bounds refuse materialization. Unqualified custom pads still refuse
+binding. This adds no new reservation or binding schema.
+
+A footprint's captured face is not permission to fix its face or pose. Bound
+footprint and pad rotations must be exact native quarter turns; other pad angles
+are unsupported and refuse binding. The JP1-JP5 regression binds all ten captured
+iron-access rows without changing their pad geometry. Their recipe's unknown
+height and full-tool access remain unknown; finite-height test variants establish
+only the attachment transform, not production iron-access clearance.
 
 This implementation uses conservative face projections. A producer must justify
 that the projection covers the declared height/access interval; the consumer
