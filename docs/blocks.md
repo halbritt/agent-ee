@@ -1044,3 +1044,64 @@ prompt that each profile reviewer receives (the transport is replaced in the tes
 so no model is called) contains every row and no peer's review. A packet is not
 built for an artifact bound to another board, an undeclared or uncaptured path, a
 changed capture or a relabelled enforcement.
+
+## Native face candidate sets (AGENTEE-479)
+
+`agent_ee.block_variants.produce(source, capture, inventory, derivation,
+block_id, policy, eligibility, output_directory, *, heartbeat=None,
+compact=True, member_sides=None)` produces an
+`agent-ee.block-candidate-set/1`. The output directory must be absent. Stage A
+still runs the existing Python block packer; the wrapper contains unchanged
+`agent-ee.block-candidate/2` documents.
+
+The set has exactly these fields:
+
+- `schema`, `block_id`, and `sources`: the original board, native inventory,
+  allocation, derivation and policy bindings used by `/2`.
+- `eligibility`: `record` is the complete side-eligibility document;
+  `record_sha256` hashes its canonical JSON representation, and `eligible_faces`
+  lists the block's permitted anchor faces in F/B order. The record must bind
+  `sources.board_sha256` to the original board. It is also supplied unchanged as
+  `blocks.side_eligibility` in the planning request.
+- `captured_members`: ordered `{ref, uuid, side}` original identities. This
+  retains mixed-side captures without inventing one original face for the block.
+- `variants`: exactly one result for every eligible face, including failed
+  faces. Each result has `status`, `capture`, `capture_sha256`, `board_sha256`,
+  `derivation`, `members`, `candidate`, and `failure`.
+
+For a native-qualified face, `capture` contains the complete native recapture,
+`capture_sha256` hashes its canonical JSON, and `board_sha256` hashes the saved
+board bytes. Its `derivation` differs from the original derivation only in the
+board hash. Each member records `{ref, uuid, source_side, side, flipped,
+pad_inventory_sha256}`; the last hash covers the same native footprint-local
+pad inventory used by the R5 writer. A packed result has its unchanged `/2`
+`candidate` and a null `failure`. A packing failure retains the entire typed
+result in `failure`, with a null `candidate`. A refused native flip has status
+`native_flip_refused`, a reason, and null capture, hashes, derivation and
+candidate. It is never presented as a usable alternative.
+
+The default variant places every member on its face key. Optional
+`member_sides` maps face keys to per-reference overrides for deliberate
+cross-face inputs. The key must remain the anchor's actual face. An explicit
+`eligibility.members[ref].eligible_faces` overrides the block's member face
+permission; otherwise the block's eligible faces apply. This permission alone
+does not establish a deliberate-cross-face relationship or mechanical clearance.
+Those declarations and final saved-coordinate checks remain separate.
+
+The producer flips each required footprint through native
+`pcbnew.Flip(position, FLIP_DIRECTION_LEFT_RIGHT)`, saves a disposable board,
+and extracts its full geometry. It preserves original board bytes when no flip
+is needed. Custom pads, per-layer padstacks and locked-footprint flips retain an
+explicit refusal. Project and custom-rule companions follow each disposable
+copy. Completed face results remain in `candidate-set.json` if later work fails.
+
+Before production planning, the writer recreates every supplied variant from
+the original board and compares the complete native recapture and pad inventory.
+Changing both a supplied geometry record and its declared hash cannot pass this
+check. After planning, `block_arrangement.arranged[].selected_face` and the
+block's selected inner-candidate and whole-set hashes identify the chosen
+alternative. The writer derives the exact existing `agent-ee.side-changes/1`
+record from that selection and eligibility. Explicit side-change authorization,
+if supplied too, must describe exactly the same transitions. The R5 custom-pad,
+UUID, movable-member and saved-pad checks still run. Plain `/2` candidates retain
+their captured sides and existing admission path.

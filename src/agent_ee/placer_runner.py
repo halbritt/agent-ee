@@ -953,6 +953,9 @@ def place_candidate(source, netlist, destination, request):
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = reserve_imu_markings(board, _effective_policy(request))
         placement_trace.phase(None)  # Planning records its own prep, Stage-A and Stage-B time.
+        from . import block_variants
+        native_sets = (block_variants.verify_request(source, facts, request['blocks'])
+                       if 'blocks' in request else [])
         planning_execution = {}
         plan = _plan(facts, request, policy, netlist, execution=planning_execution)
         placement_trace.phase('native_checks')
@@ -963,6 +966,16 @@ def place_candidate(source, netlist, destination, request):
             return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
         if plan['status'] != 'planned':
             return plan
+        side_changes = request.get('side_changes')
+        if native_sets:
+            derived = block_variants.authorization(source, facts, native_sets, plan,
+                                                    request['blocks']['side_eligibility'])
+            if side_changes is not None:
+                explicit = _side_changes(source, side_changes, plan)
+                expected = {} if derived is None else {row['uuid']: row['side'] for row in derived['changes']}
+                if explicit != expected:
+                    raise ValueError('explicit side changes differ from eligibility-derived authorization')
+            side_changes = derived
         with tempfile.TemporaryDirectory(prefix='.placement-staging-', dir=root) as temporary:
             scratch = Path(temporary)
             output = scratch / 'candidate.kicad_pcb'
@@ -971,7 +984,7 @@ def place_candidate(source, netlist, destination, request):
             write_json(scratch / 'planning-execution.json', planning_execution)
             try:
                 report = _evaluate_proposal(board, output, plan, netlist_bytes, facts, source,
-                                            request.get('side_changes'))
+                                            side_changes)
                 report['planning_execution'] = {
                     'path': 'planning-execution.json', 'sha256': digest(scratch / 'planning-execution.json'),
                     'implementation': planning_execution['implementation']}
