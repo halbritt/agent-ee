@@ -52,16 +52,20 @@ producer refuses an `isolated_copper` violation attributed to a planned
 UUIDs. Exception (AGENTEE-487): only when the caller declares the pre-routing
 phase (`step(..., phase='pre-routing')`, argv `--phase pre-routing`, as the
 routing-turn step does) may a wholly unconnected planned `always` zone be
-deferred. Wholly unconnected means EVERY filled polygon is an island by KiCad's
-native shape collision (`native/islands.json`: per polygon,
-`SHAPE_POLY_SET.Collide(effective shape, 0)` against every same-net pad, track,
-arc and via on the zone layer, so edge contact counts as connected), and each
-`isolated_copper` finding is accounted for: KiCad 10 DRC places every isolated-copper
-marker of a zone at the zone anchor (recorded as `anchor_mm`), which carries no
-polygon identity, so anchored findings are counted; any other finding must map
-(inside or on the boundary of the recorded native outline) to exactly one DISTINCT
-polygon. The finding count must equal the native polygon count. Per-polygon
-identity is the native inventory, not the DRC marker. Flags must be
+deferred. Wholly unconnected is proven by the native polygon evidence of the VERIFIED
+SAVED fill: the `inspect` child reloads the saved, spliced board and records for every
+filled polygon its index, full identity (outline and holes, digest of the exact nm
+vertices) and isolation by KiCad's native shape collision
+(`SHAPE_POLY_SET.Collide(effective shape, 0)` against every same-net pad, track, arc
+and via on the zone layer, so edge contact counts as connected), bound to the saved
+board's sha256 (`verify/facts.json`, `polygon_evidence`, `board_sha256`). Every saved
+polygon must be covered exactly once (indexes 0..n-1, n the saved polygon count,
+unique identities) and marked isolated; flags must be exact booleans and vertices
+finite. Missing, duplicate, stale, malformed or contradictory evidence refuses;
+partial isolation is not deferred. KiCad 10 DRC places every `isolated_copper` marker
+of a zone at the zone anchor, so the markers are ZONE-LEVEL corroboration only (the
+zone must have at least one, each with a finite position); they are never polygon
+witnesses and never fill missing coverage. The raw DRC findings are kept. Flags must be
 exact booleans and positions/vertices finite numbers; duplicate, unmappable,
 ambiguous or non-finite evidence and a malformed or missing native record fail
 closed; partial isolation is not deferred. A deferred zone

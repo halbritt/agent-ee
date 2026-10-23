@@ -94,8 +94,36 @@ def inspect(board, plan):
         if not actual.IsFilled() or fill.OutlineCount() == 0 or fill.Area() <= 0:
             raise ValueError('planned plane has no native filled copper')
         facts.append(dict(uuid=uid, net=actual.GetNetname(), layer=board.GetLayerName(actual.GetLayer()),
-                          filled_area_mm2=fill.Area()/1e12, fill_polygons=fill.OutlineCount()))
+                          filled_area_mm2=fill.Area()/1e12, fill_polygons=fill.OutlineCount(),
+                          polygon_evidence=_polygon_evidence(k, board, actual)))
     return dict(pcbnew_version=k.Version(), zones=facts)
+
+
+def _chain_mm(k, chain):
+    return [[k.ToMM(chain.CPoint(n).x), k.ToMM(chain.CPoint(n).y)] for n in range(chain.PointCount())]
+
+
+def _polygon_evidence(k, board, zone):
+    """AGENTEE-487 H2: one record per filled polygon of the SAVED (reloaded) zone fill: index, full identity
+    (outline and holes, digest of their exact nm vertices) and isolation from KiCad's native shape collision
+    (SHAPE_POLY_SET.Collide(effective shape, 0) against every same-net pad, track, arc and via on the layer)."""
+    import hashlib, json
+    layer, net = zone.GetLayer(), zone.GetNetCode()
+    fill = zone.GetFilledPolysList(layer)
+    shapes = [p.GetEffectiveShape(layer) for fp in board.GetFootprints() for p in fp.Pads()
+              if p.GetNetCode() == net and p.IsOnLayer(layer)]
+    shapes += [t.GetEffectiveShape(layer) for t in board.GetTracks() if t.GetNetCode() == net and t.IsOnLayer(layer)]
+    records = []
+    for i in range(fill.OutlineCount()):
+        unit = fill.UnitSet(i)
+        outline = fill.COutline(i)
+        holes = [fill.CHole(i, h) for h in range(fill.HoleCount(i))]
+        nm = [[[outline.CPoint(n).x, outline.CPoint(n).y] for n in range(outline.PointCount())],
+              *[[[c.CPoint(n).x, c.CPoint(n).y] for n in range(c.PointCount())] for c in holes]]
+        records.append(dict(index=i, outline_mm=_chain_mm(k, outline), holes_mm=[_chain_mm(k, c) for c in holes],
+                            digest=hashlib.sha256(json.dumps(nm).encode()).hexdigest(),
+                            isolated=not any(bool(unit.Collide(shape, 0)) for shape in shapes)))
+    return records
 
 
 def apply(board_path, plan, output):
@@ -122,28 +150,6 @@ def apply(board_path, plan, output):
         board.BuildConnectivity()
         if not k.ZONE_FILLER(board).Fill(planned):
             raise ValueError('native zone fill failed')
-        # AGENTEE-487 H2: per-polygon connectivity of the fresh fill from KiCad's native shape collision. Each filled
-        # polygon (with its holes) is connected when it collides (clearance 0: overlap or edge contact) with the
-        # effective copper shape of any same-net pad, track, arc or via on the zone layer; otherwise it is an island.
-        # The native outline vertices are recorded so each isolated_copper finding maps to one polygon.
-        islands = {}
-        for uid, zone in zip(zone_ids(plan), planned):
-            layer, net = zone.GetLayer(), zone.GetNetCode()
-            fill = zone.GetFilledPolysList(layer)
-            shapes = [p.GetEffectiveShape(layer) for fp in board.GetFootprints() for p in fp.Pads()
-                      if p.GetNetCode() == net and p.IsOnLayer(layer)]
-            shapes += [t.GetEffectiveShape(layer) for t in board.GetTracks() if t.GetNetCode() == net and t.IsOnLayer(layer)]
-            flags, outlines = [], []
-            for i in range(fill.OutlineCount()):
-                unit = fill.UnitSet(i)
-                flags.append(not any(bool(unit.Collide(shape, 0)) for shape in shapes))
-                chain = fill.COutline(i)
-                outlines.append([[k.ToMM(chain.CPoint(n).x), k.ToMM(chain.CPoint(n).y)] for n in range(chain.PointCount())])
-            anchor = zone.GetPosition()  # where KiCad 10 DRC places every isolated_copper marker of the zone
-            islands[uid] = dict(layer=board.GetLayerName(layer), polygons=fill.OutlineCount(), islands=flags,
-                                outlines_mm=outlines, anchor_mm=[k.ToMM(anchor.x), k.ToMM(anchor.y)],
-                                method='native SHAPE_POLY_SET.Collide(effective shape, 0) per filled polygon')
-        write_json(output.with_name('islands.json'), islands)
         if not k.SaveBoard(str(copied), board):
             raise ValueError('native plane save failed')
         shutil.copyfile(copied, output)
@@ -168,7 +174,10 @@ def main(argv=None):
         apply(args.board, plan, args.output)
     else:
         import pcbnew as k
-        write_json(args.output, inspect(k.LoadBoard(str(args.board)),plan))
+        import hashlib
+        facts = inspect(k.LoadBoard(str(args.board)), plan)
+        facts['board_sha256'] = hashlib.sha256(args.board.read_bytes()).hexdigest()  # the saved board inspected
+        write_json(args.output, facts)
     return 0
 
 

@@ -189,48 +189,39 @@ def _finite(v):
     return type(v) in (int, float) and math.isfinite(v)
 
 
-def _on_or_inside(pt, outline, eps=1e-6):
-    """Point inside the closed outline or on its boundary (within eps mm)."""
-    x, y = pt
-    inside = False
-    n = len(outline)
-    for i in range(n):
-        (x1, y1), (x2, y2) = outline[i], outline[(i + 1) % n]
-        dx, dy = x2 - x1, y2 - y1
-        seg = dx * dx + dy * dy
-        t = 0.0 if seg == 0 else max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / seg))
-        if math.hypot(x - (x1 + t * dx), y - (y1 + t * dy)) <= eps:
-            return True
-        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * dx / dy:
-            inside = not inside
-    return inside
+def _polygon_coverage(uid, zone, saved_board_sha256, facts_board_sha256):
+    """Validated per-polygon evidence of the VERIFIED SAVED fill, or ValueError (refusal). Every saved polygon must be
+    covered exactly once: one record per index 0..n-1 with n the saved polygon count, unique full identities (digest
+    of outline and holes), exact-bool isolation and finite vertices, bound to the saved board's sha256."""
+    if facts_board_sha256 != saved_board_sha256:
+        raise ValueError('native polygon evidence is not from the verified saved board (stale) for zone ' + uid)
+    count, records = zone.get('fill_polygons'), zone.get('polygon_evidence')
+    if type(count) is not int or count <= 0 or not isinstance(records, list) or len(records) != count:
+        raise ValueError('native polygon evidence does not cover the saved fill of zone ' + uid)
+    indexes, digests = [], []
+    for r in records:
+        if (not isinstance(r, dict) or type(r.get('index')) is not int or type(r.get('isolated')) is not bool or
+                not isinstance(r.get('digest'), str) or len(r['digest']) != 64 or
+                not isinstance(r.get('outline_mm'), list) or len(r['outline_mm']) < 3 or
+                not isinstance(r.get('holes_mm'), list) or
+                any(not (isinstance(pt, list) and len(pt) == 2 and all(_finite(c) for c in pt))
+                    for chain in [r['outline_mm'], *r['holes_mm']] for pt in (chain if isinstance(chain, list) else [None]))):
+            raise ValueError('native polygon evidence is malformed for zone ' + uid)
+        indexes.append(r['index']); digests.append(r['digest'])
+    if sorted(indexes) != list(range(count)) or len(set(digests)) != count:
+        raise ValueError('native polygon evidence has missing or duplicate polygons for zone ' + uid)
+    return [r['isolated'] for r in sorted(records, key=lambda r: r['index'])]
 
 
-def _native_record(uid, native, saved_count, layer):
-    """Strictly validated native island record or ValueError (unknown evidence fails closed)."""
-    if not isinstance(native, dict):
-        raise ValueError('no native island record for planned zone ' + uid)
-    polygons, flags, outlines = native.get('polygons'), native.get('islands'), native.get('outlines_mm')
-    anchor = native.get('anchor_mm')
-    if not (isinstance(anchor, list) and len(anchor) == 2 and all(_finite(c) for c in anchor)):
-        raise ValueError('native island record has no finite zone anchor for planned zone ' + uid)
-    if (type(polygons) is not int or polygons != saved_count or native.get('layer') != layer or
-            not isinstance(flags, list) or len(flags) != polygons or any(type(f) is not bool for f in flags) or
-            not isinstance(outlines, list) or len(outlines) != polygons or
-            any(not isinstance(o, list) or len(o) < 3 or
-                any(not (isinstance(p, list) and len(p) == 2 and all(_finite(c) for c in p)) for p in o) for o in outlines)):
-        raise ValueError('native island record is malformed or inconsistent for planned zone ' + uid)
-    return flags, outlines, tuple(anchor)
-
-
-def wholly_unconnected(zone_errors, zones, always_ids, islands=None, phase=None):
-    """Planned 'always' zones that may be DEFERRED (AGENTEE-487): only in phase 'pre-routing', and only when the
-    native fill marks EVERY polygon an island (native shape collision, islands.json) AND each isolated_copper
-    finding maps to exactly one DISTINCT polygon of that zone, covering every polygon. Duplicate, position-less,
-    non-finite, unmappable or ambiguous evidence and a malformed native record fail closed (ValueError)."""
+def wholly_unconnected(zone_errors, zones, always_ids, phase=None, saved_board_sha256=None, facts_board_sha256=None):
+    """Planned 'always' zones that may be DEFERRED (AGENTEE-487): only in phase 'pre-routing', and only when the native
+    polygon evidence of the VERIFIED SAVED fill covers every polygon exactly once and marks every one isolated
+    (native shape collision). KiCad 10 DRC places every isolated_copper marker of a zone at its anchor, so markers are
+    ZONE-LEVEL corroboration only (the zone must have >= 1, each with a finite position); they are never polygon
+    witnesses and never fill missing coverage. Missing, duplicate, stale, malformed or contradictory evidence refuses."""
     if phase != PRE_ROUTING:
         return set()
-    positions = {}
+    marked = {}
     for violation in zone_errors:
         if violation['type'] != 'isolated_copper':
             continue
@@ -238,31 +229,16 @@ def wholly_unconnected(zone_errors, zones, always_ids, islands=None, phase=None)
             if item['uuid'] in always_ids:
                 pos = item.get('pos')
                 if not (isinstance(pos, dict) and _finite(pos.get('x')) and _finite(pos.get('y'))):
-                    raise ValueError('isolated-copper attribution has no finite position')
-                positions.setdefault(item['uuid'], []).append((pos['x'], pos['y']))
+                    raise ValueError('isolated-copper marker has no finite position')
+                marked[item['uuid']] = marked.get(item['uuid'], 0) + 1
     saved = {z.get('uuid'): z for z in zones}
     deferred = set()
-    for uid, seen in positions.items():
+    for uid in marked:
         zone = saved.get(uid)
         if zone is None:
-            raise ValueError('isolated-copper finding names an unsaved planned zone ' + uid)
-        flags, outlines, anchor = _native_record(uid, (islands or {}).get(uid), zone.get('fill_polygons'), zone.get('layer'))
-        # KiCad 10 DRC places every isolated_copper marker of a zone at the zone anchor, so a finding carries no
-        # polygon identity there: anchored findings are counted; any other finding must map to one DISTINCT polygon.
-        anchored = [pt for pt in seen if math.hypot(pt[0] - anchor[0], pt[1] - anchor[1]) <= 1e-6]
-        mapped = []
-        for pt in seen:
-            if pt in anchored:
-                continue
-            hits = [i for i, o in enumerate(outlines) if _on_or_inside(pt, o)]
-            if len(hits) != 1:
-                raise ValueError(f'isolated-copper finding at {pt} does not map to exactly one polygon of zone {uid}')
-            mapped.append(hits[0])
-        if len(set(mapped)) != len(mapped):
-            raise ValueError('two isolated-copper findings map to the same polygon of planned zone ' + uid)
-        if len(seen) > len(flags):
-            raise ValueError('more isolated-copper findings than native polygons for planned zone ' + uid)
-        if flags and all(flags) and len(seen) == len(flags):
+            raise ValueError('isolated-copper marker names an unsaved planned zone ' + uid)
+        isolated = _polygon_coverage(uid, zone, saved_board_sha256, facts_board_sha256)
+        if all(isolated):
             deferred.add(uid)
     return deferred
 
@@ -305,8 +281,8 @@ def generate(candidate, board, plan_path, out, *, phase=None):
         # EVERY filled polygon is reported isolated is wholly unconnected: its definition is kept with the final
         # 'always' policy and its connectivity becomes an explicit post-routing obligation, not a refusal. Partial
         # isolation (some fill connected) and every other planned-zone error still refuse.
-        islands = read_json(out/'native/islands.json') if phase == PRE_ROUTING else None
-        deferred = wholly_unconnected(zone_errors, facts['zones'], always_ids, islands, phase)
+        deferred = wholly_unconnected(zone_errors, facts['zones'], always_ids, phase,
+                                      saved_board_sha256=digest(verified/board), facts_board_sha256=facts.get('board_sha256'))
         zone_errors = [v for v in zone_errors if not (v['type'] == 'isolated_copper' and
                                                       {i['uuid'] for i in v['items']} & deferred)]
         classified = [classify_finding(dict(v), sources) for v in checks['violations']]
