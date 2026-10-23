@@ -35,8 +35,9 @@ and source-bound stackup, declared holes and saved keepouts. Acceptance still ne
 
 ## Record
 
-All lengths are millimetres, exact to 1 nm (KiCad's internal unit), in KiCad
-board axes with y growing downward. The [RC envelope](../fixtures/board-envelope/rc.envelope.json)
+Envelope lengths are millimetres, exact to 1 nm (KiCad's internal unit), in KiCad
+board axes with y growing downward. The separate mechanical-reservations document
+uses integer nanometres. The [RC envelope](../fixtures/board-envelope/rc.envelope.json)
 is a complete example; its [provenance](../fixtures/board-envelope/PROVENANCE.md)
 separates facts read from the saved board from owned assumptions.
 
@@ -52,6 +53,14 @@ separates facts read from the saved board from owned assumptions.
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` plus optional `courtyard_overhangs`: a nonempty list of `{edge, max_mm}`, one per distinct axis-aligned outline edge, with positive `max_mm`. It is the only way a fixed courtyard may leave the outline: by at most `max_mm` across that edge, and into the corner between two adjacent declared edges ([AGENTEE-212](placer.md#real-pod-residuals-agentee-212)). The derived fixed-footprint obligation states it, and `outline-containment/1` with `envelope` grades it |
 | `max_component_height_mm` | Optional in both versions; positive numeric installed height limit, exact to 1 nm. Derives its own acceptance obligation and binds only `board_envelope` `component-height/1` |
 | `constraint_provenance` | Optional in both versions; who fixed each constraint, keyed by the field pointer its obligation cites. See [constraint provenance](#constraint-provenance) |
+| `mechanical_reservations` | Optional in both versions; exactly `{path, sha256}` referencing a captured `agent-ee.mechanical-reservations/1` document. Its engineering source and separate original-board snapshot must also be captured, hash-matched and immutable. Required unresolved geometry or coverage cannot pass. See [mechanical reservations](mechanical-reservations.md) for fields, coordinate transforms and supported geometry |
+
+The mechanical reference derives its own acceptance obligation, bound to a
+`placement` check with exactly `criterion: "mechanical-access/1"`, `drc_check`
+and `envelope`. This check compares fresh saved native coordinates against the
+separate original snapshot. `original_board_path` cannot name the current
+candidate board, even when its hash matches. Omitting the optional field adds
+no mechanical restriction or judgment to legacy packing.
 
 Version 2 changes `stackup` to `{nominal_thickness_mm,
 physical_thickness_mm, layers}` and requires `source` on each layer, in the
@@ -130,6 +139,14 @@ has exact fields:
 | `owner_stated` | `quote`; `source: {path, sha256}` | Hard, unless the quote weakens the limit or does not state the number in context (below) |
 | `derived` | `derivation` text; `from`, a list of other pointers, and/or `facts`, a list of `{quote, source}` owner facts; at least one citation | Hard, unless a cited field is soft, the derivation or a fact weakens the limit, or the derivation does not state the derived number (below) |
 | `assumed` | `rationale` text | Always soft |
+
+Mechanical reservations have a separate source record whose `classification`
+must be `engineering`. This is not another `constraint_provenance.class` and
+does not assert owner or manufacturer authority. Captured attribution, numeric
+derivations and uncertainty remain visible; the selected reservation's required
+check cannot turn an unsupported engineering assumption into an owner-stated
+limit. Its document, cited source and original-board snapshot join the immutable
+baseline dependencies.
 
 The [owned fixture](../fixtures/board-envelope/provenance/envelope.json) has
 all three classes. It is stated against an owned synthetic

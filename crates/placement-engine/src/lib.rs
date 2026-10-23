@@ -38,6 +38,10 @@ pub fn plan(input: &Value) -> Result<Value> {
         Some(policy) => policy.clone(),
         None => effective_policy(request)?,
     };
+    for global_policy in [&policy, &request["policy"]] {
+        ensure!(global_policy.get("mechanical_reservations").and_then(|binding| binding.get("selection")).is_none(),
+            "global policy cannot use a block mechanical selection");
+    }
     ensure!(
         ["blocks", "targeted", "targeted_plans"]
             .iter()

@@ -23,6 +23,8 @@ unchanged board file, not the mutable candidate board. Missing captures, stale
 hashes and mutable dependencies refuse binding. An envelope without this field
 retains its existing behavior. A packing policy cannot supply this field itself;
 the coordinator derives the internal binding from the envelope.
+The public saved check also refuses `original_board_path` equal to the current
+scope's board path, even if the captured bytes and all hashes match.
 
 ## Producer document
 
@@ -64,10 +66,30 @@ frames:
 | `coverage` | `{projection: "conservative-per-face", height: "covered" or "unknown", access: "covered" or "unknown", basis: "..."}`. |
 | `uncertainty` | List of retained uncertainty statements; unresolved material coverage must also be marked `unknown` or `null`. |
 
-Board-frame polygons stay in board coordinates. Attached polygons use the
-original native footprint or pad's local frame. Translation and quarter-turn
-rotation follow the current owner; a side flip reflects local Y and exchanges
-the applicable faces. The binding checks the original UUID, pad roster,
+Board-frame polygons stay in board coordinates. Attached polygon vertices are
+local offsets, not saved world coordinates. The mapping is exact:
+
+```text
+R90(x, y) = (y, -x)             # positive native rotation, board Y downward
+local = R(-original_angle) * (original_world - original_origin)
+mirror(x, y) = (x, -y)          # only when current owner side differs from original
+current_world = current_origin + R(current_angle) * mirror(local)
+```
+
+When the owner stays on its original side, `mirror` is the identity. This also
+applies to an owner originally on B: its captured side is the reference, so there
+is no initial reflection merely because it is on B. For `frame: "footprint"`,
+origin and angle are the footprint's native `position_nm` and `rotation_deg`.
+For `frame: "pad"`, they are those fields of the pad selected by number and UUID,
+not the copper centroid; reflection still follows the footprint's side change.
+`same` and `opposite` resolve against the current footprint face in both cases.
+
+For example, an original F-side frame at `(10, 20)` mm and 90 degrees maps the
+world vertex `(13, 18)` mm to local `(2, 3)` mm. If that owner moves to `(30, 40)`
+mm, rotates to 180 degrees and flips to B, the vertex becomes `(28, 43)` mm.
+The document stores the local vertex as `[2000000, 3000000]` nanometres.
+
+The binding checks the original UUID, pad roster,
 shape/size/drill/layers, rigid pad poses, and captured copper offsets and their
 coverage reason. This is not a complete native padstack or primitive equivalence
 proof; the native writer's independent pad-inventory guard remains separate.
@@ -95,14 +117,24 @@ temporarily omit unplaced owners; complete and saved checks require every bound
 owner. Fixed reservations remain fixed, and attached reservations follow native
 owner transforms with explicit self-exclusion.
 
-Stage A packs blocks on a synthetic local canvas and defers board restrictions
-to global arrangement. It does not search internal mechanical layouts. A
-locally packed candidate alone is not mechanical acceptance. Global arrangement,
-residual packing, member refinement and saved validation retain the complete
-binding and functional block constraints. A rigid candidate that cannot meet
-the restrictions may exhaust the finite search; this is not proof that no legal
-internal layout exists. Producers must regenerate candidates when the complete
-policy binding changes, rather than patching a candidate's policy digest.
+Stage A packs blocks on a synthetic local canvas. It enforces every attached
+footprint or pad reservation whose owner is a member of that block, including
+member obstruction and solid–solid/access–solid pairs. Recovery and compaction
+use the same selected subpolicy. Fixed board reservations and attachments owned
+outside the block are explicitly deferred by reservation ID to global Stage B.
+The selection retains the full source document, its raw and canonical hashes,
+and the original native owner signatures; it cannot omit an internal row.
+Packed candidates retain an independently recomputed mechanical grade, while
+their source identities continue to bind the full original policy.
+
+A locally packed candidate alone is not whole-board mechanical acceptance.
+Global arrangement, residual packing, member refinement and saved validation
+retain the complete binding and functional block constraints. A bounded local
+search failure retains the named reservations and initial grade; it does not
+prove geometric impossibility. Global search can also exhaust its finite choices
+without proving that no other internal layout exists. Producers must regenerate
+candidates when the complete policy binding changes, rather than patching a
+candidate's policy digest.
 
 The envelope derives a `mechanical-access` requirement. Bind it to a placement
 check with exactly these parameters:

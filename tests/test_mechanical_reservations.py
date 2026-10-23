@@ -244,7 +244,7 @@ class MechanicalReservationTests(unittest.TestCase):
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertEqual(plan['judgment']['verdict'], 'pass')
         self.assertNotIn('mechanical_reservations', plan['policy'])
-        self.assertNotIn('mechanical_grading', plan)
+        self.assertNotIn('mechanical_reservations', plan['judgment'])
 
     def test_attached_solid_blocks_another_owners_access_outside_both_courtyards(self):
         facts = simple_capture()
@@ -271,6 +271,18 @@ class MechanicalReservationTests(unittest.TestCase):
 
 
 class MechanicalPlanningParityTests(EngineFixture, unittest.TestCase):
+    def test_global_policy_cannot_suppress_required_rows_with_block_selection(self):
+        facts = simple_capture()
+        row = reservation('required-world-space')
+        row['geometry']['polygons_nm'] = None
+        binding = mechanics().for_block(bound(facts, [row]), ['U1'])
+        self.assertEqual(binding['selection']['reservation_ids'], [])
+        policy = request(fixed_refs=['U1'], mechanical_reservations=binding)
+        for override in (None, request(fixed_refs=['U1'])):
+            with self.subTest(effective_override=override is not None):
+                result = self.compare(facts, {'policy': policy}, policy=override)
+                self.assertEqual(result, {'error': 'global policy cannot use a block mechanical selection'})
+
     def test_required_unknown_geometry_refuses_before_search_in_python_and_rust(self):
         facts = capture([part('U1', 2, 2), part('C1', 10, 10)])
         row = reservation('unresolved-service-lane')
@@ -498,10 +510,12 @@ class NativeMechanicalReservationTests(unittest.TestCase):
                       'params': {'fab_profile': 'fab-profile.json'}})
         specs.append(copy.deepcopy(DRC_FULL))
         original_bytes = original.read_bytes()
+        original_document = copy.deepcopy(declared)
         previous_binding = None
         declaration = {'schema': placement_adapter.ADAPTER_SCHEMA, 'helper': None, 'policy': None,
                        'fixed_footprints': [], 'timeout_s': 60}
-        for state, expected in (('original', 'pass'), ('moved', 'defect'), ('stale-owner', 'unknown')):
+        for state, expected in (('original', 'pass'), ('moved', 'defect'), ('stale-owner', 'unknown'),
+                                ('current-as-original', 'unknown')):
             if state == 'moved':
                 native = k.LoadBoard(str(board))
                 owner = next(fp for fp in native.GetFootprints() if fp.GetReference() == 'U1')
@@ -515,6 +529,16 @@ class NativeMechanicalReservationTests(unittest.TestCase):
                 (source / 'requirements/mechanical.json').write_bytes(raw(declared))
                 envelope['mechanical_reservations']['sha256'] = sha(raw(declared))
                 (source / 'requirements/envelope.json').write_bytes(raw(envelope))
+            elif state == 'current-as-original':
+                # Every declared digest is valid. The invalid part is using the
+                # mutable candidate itself as its supposedly immutable reference.
+                board.write_bytes(original_bytes)
+                declared = copy.deepcopy(original_document)
+                declared['original_board_path'] = 'project/rc_filter.kicad_pcb'
+                declared['original_board_sha256'] = sha(board.read_bytes())
+                (source / 'requirements/mechanical.json').write_bytes(raw(declared))
+                envelope['mechanical_reservations']['sha256'] = sha(raw(declared))
+                (source / 'requirements/envelope.json').write_bytes(raw(envelope))
             files = {p.relative_to(source).as_posix(): sha(p.read_bytes())
                      for p in source.rglob('*') if p.is_file()}
             manifest = {'candidate_id': sha(board.read_bytes()), 'files': files, 'scope': {
@@ -522,6 +546,10 @@ class NativeMechanicalReservationTests(unittest.TestCase):
                 'checks': specs}}
             if state == 'stale-owner':
                 with self.assertRaisesRegex(ValueError, 'owner ref/UUID differs'):
+                    placement_adapter.binding(declaration, manifest, source, ['project/rc_filter.kicad_pcb'])
+            elif state == 'current-as-original':
+                self.assertEqual(files[declared['original_board_path']], declared['original_board_sha256'])
+                with self.assertRaisesRegex(ValueError, 'sources in mutable inputs'):
                     placement_adapter.binding(declaration, manifest, source, ['project/rc_filter.kicad_pcb'])
             else:
                 _, _, policy, _, _ = placement_adapter.binding(
@@ -558,13 +586,36 @@ class NativeMechanicalReservationTests(unittest.TestCase):
             scope_path.write_bytes(raw(scope))
             run = root / f'{state}-run'
             run.mkdir()
-            candidate.capture(scope_path, run)
+            if state == 'current-as-original':
+                # Normal baseline capture already rejects this dependency.
+                # Exercise the public check's independent guard too, with a
+                # deliberately constructed, byte-consistent captured manifest.
+                with self.assertRaisesRegex(ValueError, 'native design cannot be an immutable verification dependency'):
+                    candidate.capture(scope_path, run)
+                from agent_ee.storage import identity
+                captured_files, sources, revisions = candidate.source_manifest(scope, scope_path.parent)
+                self.assertEqual(captured_files, {p.relative_to(run / 'inputs').as_posix(): sha(p.read_bytes())
+                    for p in (run / 'inputs').rglob('*') if p.is_file()})
+                manual_manifest = {'schema': 'agent-ee.candidate/1', 'scope': scope, 'files': captured_files,
+                    'sources': sources, 'source_revisions': revisions, 'scope_path': str(scope_path),
+                    'scope_sha256': sha(scope_path.read_bytes()),
+                    'candidate_id': identity({'scope': scope, 'files': captured_files})}
+                (run / 'candidate.json').write_bytes(raw(manual_manifest))
+            else:
+                candidate.capture(scope_path, run)
             results = {row['id']: row for row in checks.run_checks(run, time.monotonic() + 120)}
             self.assertEqual(results['drc-placement']['execution'], 'ok', results['drc-placement'])
             self.assertEqual(results['drc-final']['execution'], 'ok', results['drc-final'])
             result = results['mechanical']
-            expected_execution = 'unsupported' if state == 'stale-owner' else 'ok'
+            expected_execution = 'unsupported' if state in ('stale-owner', 'current-as-original') else 'ok'
             self.assertEqual((result['execution'], result['outcome']), (expected_execution, expected), result)
+            if state == 'current-as-original':
+                self.assertIn('original_board_path must be distinct from the current candidate board', result['summary'])
+                for artifact in ('mechanical-source-probe.json', 'placement-probe.json'):
+                    self.assertNotIn('work/mechanical/' + artifact, result['evidence'])
+                    self.assertFalse((run / 'work/mechanical' / artifact).exists())
+                self.assertEqual(original.read_bytes(), original_bytes)
+                continue
             self.assertIn('work/mechanical/mechanical-source-probe.json', result['evidence'])
             initial_probe = json.loads((run / 'work/mechanical/mechanical-source-probe.json').read_text())
             self.assertEqual(initial_probe['board_sha256'], sha(original_bytes))

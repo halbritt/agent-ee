@@ -27,6 +27,7 @@ from .placement import courtyard_bounds, intersection_area, simple_polygon, vali
 
 SCHEMA = 'agent-ee.mechanical-reservations/1'
 BINDING_SCHEMA = 'agent-ee.mechanical-reservation-binding/1'
+SELECTION_SCHEMA = 'agent-ee.mechanical-block-selection/1'
 PROJECTION = 'conservative-per-face'
 
 
@@ -221,7 +222,7 @@ def bind(document, capture, *, source_sha256=None):
 
 def _binding(binding):
     _fields(binding, ('schema', 'document', 'document_sha256', 'canonical_document_sha256',
-                      'source_board_sha256', 'owners'), label='mechanical binding')
+                      'source_board_sha256', 'owners'), ('selection',), label='mechanical binding')
     if binding['schema'] != BINDING_SCHEMA:
         raise ValueError('unsupported mechanical binding schema')
     document = validate(binding['document'])
@@ -240,7 +241,43 @@ def _binding(binding):
     expected = {row['owner']['uuid'] for row in document['reservations'] if 'owner' in row}
     if set(owners) != expected:
         raise ValueError('mechanical bound owner coverage differs')
+    if 'selection' in binding:
+        selection = binding['selection']
+        _fields(selection, ('schema', 'references', 'reservation_ids'), label='mechanical block selection')
+        refs = selection['references']
+        _strings(refs, 'mechanical block references', empty=True)
+        expected_ids = sorted(row['id'] for row in document['reservations']
+                              if row.get('owner', {}).get('ref') in refs)
+        if (selection['schema'] != SELECTION_SCHEMA or selection['references'] != sorted(refs)
+                or selection['reservation_ids'] != expected_ids):
+            raise ValueError('mechanical block selection must include every attached member reservation')
     return document, owners
+
+
+def for_block(binding, references):
+    """Select attached member rows without rewriting the authenticated document.
+
+    Fixed board rows and external owners remain global constraints. The full
+    source-native inventory remains bound, including after a native face change.
+    """
+    document, _ = _binding(binding)
+    refs = sorted(set(references))
+    _strings(refs, 'mechanical block references', empty=True)
+    if 'selection' in binding and not set(refs) <= set(binding['selection']['references']):
+        raise ValueError('mechanical block selection cannot widen a prior selection')
+    result = copy.deepcopy(binding)
+    result['selection'] = {'schema': SELECTION_SCHEMA, 'references': refs,
+                           'reservation_ids': sorted(row['id'] for row in document['reservations']
+                                                     if row.get('owner', {}).get('ref') in refs)}
+    return result
+
+
+def _selected_rows(binding, document):
+    selected = binding.get('selection')
+    if selected is None:
+        return document['reservations']
+    ids = set(selected['reservation_ids'])
+    return [row for row in document['reservations'] if row['id'] in ids]
 
 
 def _move(point, origin, angle, flipped):
@@ -298,7 +335,8 @@ def materialize(binding, capture, phase=None, partial=False):
     document, owners = _binding(binding)
     if type(partial) is not bool:
         raise ValueError('mechanical partial must be boolean')
-    phases = sorted({p for row in document['reservations'] for p in row['phases']})
+    entries = _selected_rows(binding, document)
+    phases = sorted({p for row in entries for p in row['phases']})
     result = {'schema': 'agent-ee.materialized-mechanical-reservations/1', 'phase': phase,
               'phases': phases if phase is None else [phase], 'reservations': [],
               'unknown': [], 'advisories': [], 'status': 'pass'}
@@ -315,7 +353,7 @@ def materialize(binding, capture, phase=None, partial=False):
         result['status'] = 'unknown'
         return result
     verified = {}
-    for row in document['reservations']:
+    for row in entries:
         if phase is not None and phase not in row['phases']:
             continue
         problems = []

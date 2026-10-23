@@ -256,6 +256,9 @@ def check_placement(ctx):
     if criterion == 'mechanical-access/1':
         from .mechanical_reservations import bind
         document = declarations['document']
+        if document['original_board_path'] == ctx.scope['board']:
+            raise CheckError('unsupported',
+                             'mechanical original_board_path must be distinct from the current candidate board')
         original = ctx.candidate_path(document['original_board_path'])
         ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', original,
                      '--out', '/work/mechanical-source-probe.json'], timeout=600)

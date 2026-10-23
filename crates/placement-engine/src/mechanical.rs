@@ -3,16 +3,17 @@
 //! and current geometry without delegating planning or granting source authority.
 use crate::blocks::{digest, keys, rows, text};
 use crate::exact::{
-    Point, Rat, decimal, integer, point, point_value, rational, rational_value, rotate,
+    decimal, integer, point, point_value, rational, rational_value, rotate, Point, Rat,
 };
 use crate::geometry::{courtyard_bounds, intersection_area, simple_polygon};
-use anyhow::{Context, Result, ensure};
+use anyhow::{ensure, Context, Result};
 use num_traits::{ToPrimitive, Zero};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 const SCHEMA: &str = "agent-ee.mechanical-reservations/1";
 const BINDING_SCHEMA: &str = "agent-ee.mechanical-reservation-binding/1";
+const SELECTION_SCHEMA: &str = "agent-ee.mechanical-block-selection/1";
 
 fn sha(value: &Value) -> Result<()> {
     let value = text(value)?;
@@ -253,7 +254,7 @@ fn binding(value: &Value) -> Result<BTreeMap<String, &Value>> {
             "source_board_sha256",
             "owners",
         ],
-        &[],
+        &["selection"],
     )?;
     ensure!(
         value["schema"] == BINDING_SCHEMA,
@@ -283,7 +284,52 @@ fn binding(value: &Value) -> Result<BTreeMap<String, &Value>> {
         owners.keys().cloned().collect::<BTreeSet<_>>() == expected,
         "mechanical bound owner coverage differs"
     );
+    if let Some(selection) = value.get("selection") {
+        keys(selection, &["schema", "references", "reservation_ids"], &[])?;
+        let refs = strings(&selection["references"], &[], true)?;
+        let sorted: BTreeSet<_> = refs.iter().cloned().collect();
+        let expected = selected_ids(&value["document"], &sorted)?;
+        ensure!(
+            selection["schema"] == SELECTION_SCHEMA
+                && refs == sorted.into_iter().collect::<Vec<_>>()
+                && selection["reservation_ids"] == json!(expected),
+            "mechanical block selection must include every attached member reservation"
+        );
+    }
     Ok(owners)
+}
+
+fn selected_ids(document: &Value, references: &BTreeSet<String>) -> Result<Vec<String>> {
+    let mut ids = Vec::new();
+    for row in rows(&document["reservations"])? {
+        if row
+            .get("owner")
+            .and_then(|o| o["ref"].as_str())
+            .is_some_and(|r| references.contains(r))
+        {
+            ids.push(text(&row["id"])?.to_owned());
+        }
+    }
+    ids.sort();
+    Ok(ids)
+}
+
+/// Restrict evaluation to attached block members while retaining all source evidence.
+pub fn for_block(value: &Value, references: &BTreeSet<String>) -> Result<Value> {
+    binding(value)?;
+    if let Some(selection) = value.get("selection") {
+        let prior: BTreeSet<_> = strings(&selection["references"], &[], true)?
+            .into_iter()
+            .collect();
+        ensure!(
+            references.is_subset(&prior),
+            "mechanical block selection cannot widen a prior selection"
+        );
+    }
+    let mut result = value.clone();
+    result["selection"] = json!({"schema":SELECTION_SCHEMA,"references":references,
+        "reservation_ids":selected_ids(&value["document"], references)?});
+    Ok(result)
 }
 
 fn moved(p: &Point, origin: &Point, rotation: i64, flipped: bool) -> Point {
@@ -422,7 +468,20 @@ fn add_issue(result: &mut Value, required: bool, issue: Value) {
 pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
     let owners = binding(bound)?;
     let doc = &bound["document"];
-    let entries = rows(&doc["reservations"])?;
+    let selected = bound
+        .get("selection")
+        .map(|s| strings(&s["reservation_ids"], &[], true))
+        .transpose()?;
+    let entries: Vec<_> = rows(&doc["reservations"])?
+        .iter()
+        .filter(|r| {
+            selected.as_ref().is_none_or(|ids| {
+                r["id"]
+                    .as_str()
+                    .is_some_and(|id| ids.iter().any(|s| s == id))
+            })
+        })
+        .collect();
     let phases = entries
         .iter()
         .map(|r| strings(&r["phases"], &[], false))
@@ -809,12 +868,10 @@ mod tests {
             "mechanical attachments do not support custom-pad geometry"
         );
         bound["owners"][0]["pads"][0]["shape"] = json!(6);
-        assert!(
-            grade(&capture, &bound, false)
-                .unwrap_err()
-                .to_string()
-                .contains("custom-pad")
-        );
+        assert!(grade(&capture, &bound, false)
+            .unwrap_err()
+            .to_string()
+            .contains("custom-pad"));
     }
 
     #[test]
