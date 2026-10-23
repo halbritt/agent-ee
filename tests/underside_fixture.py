@@ -48,17 +48,17 @@ WITNESS_COURTYARDS = {'J1': rectangle(0.5, 0.5, 2, 2), 'U1': rectangle(3, 0.5, 2
                      'H1': rectangle(8, 0.5, 2, 2), 'H2': rectangle(0.5, 0.5, 2, 2)}
 
 
-def allocation_text():
+def allocation_text(*, chain=False):
     return json.dumps({'schema': 'agent-ee.block-allocation/1', 'blocks': [
         {'id': 'a', 'references': ['J1'], 'anchor': 'J1'},
-        {'id': 'b', 'references': ['U1', 'C1'], 'anchor': 'U1'}]}, sort_keys=True)
+        {'id': 'b', 'references': ['U1', 'C1'] + (['C2'] if chain else []), 'anchor': 'U1'}]}, sort_keys=True)
 
 
-def contract(board_sha256, side_eligibility, packing_policy):
+def contract(board_sha256, side_eligibility, packing_policy, *, chain=False):
     return {'schema': 'agent-ee.block-contract/1', 'allocation': {
         'schema': 'agent-ee.block-allocation/2', 'board_sha256': board_sha256,
         'blocks': [{'id': 'a', 'references': ['J1'], 'anchor': {'member': 'J1'}, 'interfaces_to_fixed': None},
-                   {'id': 'b', 'references': ['U1', 'C1'], 'anchor': {'member': 'U1'}, 'interfaces_to_fixed': None}],
+                   {'id': 'b', 'references': ['U1', 'C1'] + (['C2'] if chain else []), 'anchor': {'member': 'U1'}, 'interfaces_to_fixed': None}],
         'fixed': [{'reference': 'H1'}, {'reference': 'H2'}],
         'shared': [{'reference': 'R1', 'role': 'residual'}]},
         'eligibility': side_eligibility, 'relationships': packing_policy['electrical_locality'],
@@ -104,6 +104,31 @@ def policy():
                      'supply': pair('1', 'VCC'), 'return': pair('2', 'GND')}]}}
 
 
+def chain_policy():
+    """Authored U1-C2-C1 electrical chain, C1 searched before its C2 peer."""
+    result = policy()
+    result['priority_refs'] = ['C1', 'C2']
+    text = 'Original synthetic chain: each declared pad-pair maximum distance is 4 mm.'
+    path = 'fixture-sources/underside-chain-distance.txt'
+    source = {'path': path, 'sha256': hashlib.sha256(text.encode()).hexdigest(),
+              'locator': 'authored chain maximum distance', 'quote': text}
+
+    def pair(a, apad, b, bpad, net):
+        return {'from': {'reference': a, 'pad': apad, 'net': net},
+                'to': {'reference': b, 'pad': bpad, 'net': net},
+                'max_distance_nm': 4 * MM, 'citation': CITATION,
+                'provenance': {'class': 'datasheet', 'basis': 'Authored chain numeric relationship',
+                    'derivation': {'kind': 'numeric', 'value_nm': 4 * MM, 'source': source}}}
+
+    result['electrical_locality'] = {'schema': 'agent-ee.electrical-locality/1',
+        'source_records': {SOURCE_PATH: SOURCE_TEXT, path: text}, 'obligations': [
+            {'id': 'device-support', 'metric': 'pad-centre-to-centre',
+             'supply': pair('U1', '1', 'C2', '1', 'VCC'), 'return': pair('U1', '2', 'C2', '2', 'GND')},
+            {'id': 'chain-support', 'metric': 'pad-centre-to-centre',
+             'supply': pair('C2', '3', 'C1', '1', 'OUT'), 'return': pair('C2', '4', 'C1', '2', 'GND')}]}
+    return result
+
+
 def arrangement_policy():
     return {'schema': 'agent-ee.block-arrangement/1', 'step_budget': STEP_BUDGET,
             'priority_blocks': ['a', 'b'],
@@ -111,7 +136,7 @@ def arrangement_policy():
                             'provenance': {'enforcement': 'hard', 'citation': CITATION}}}
 
 
-def write_board(directory, *, witness=False, spare_front=False):
+def write_board(directory, *, witness=False, spare_front=False, chain=False):
     """Build and save the literal native source or the hand-constructed witness."""
     import pcbnew as k
     directory = Path(directory)
@@ -134,19 +159,23 @@ def write_board(directory, *, witness=False, spare_front=False):
         identity(shape, name)
         parent.Add(shape)
 
-    width = 15.5 if spare_front else 10.5
-    outline = [(0, 0), (width, 0), (width, 3), (0, 3)]
+    width, height = (18.5, 10) if chain else (15.5 if spare_front else 10.5, 3)
+    outline = [(0, 0), (width, 0), (width, height), (0, height)]
     for i, start in enumerate(outline):
         line(board, k.Edge_Cuts, start, outline[(i + 1) % 4], f'edge-{i}')
     nets = {}
-    for name in ('VCC', 'GND'):
+    for name in (('VCC', 'GND', 'OUT') if chain else ('VCC', 'GND')):
         nets[name] = k.NETINFO_ITEM(board, name)
         board.Add(nets[name])
-    for index, ref in enumerate(('J1', 'U1', 'C1', 'R1', 'H1', 'H2')):
+    parts = tuple((*part[:-1], {'1': 'OUT', '2': 'GND'}) if chain and part[0] == 'C1' else part for part in PARTS)
+    if chain:
+        parts += (('C2', '/b/', 'C', 'Owned:Square', 'chain support', {'1': 'VCC', '2': 'GND', '3': 'OUT', '4': 'GND'}),)
+    refs = ('J1', 'U1', 'C1', 'C2', 'R1', 'H1', 'H2') if chain else ('J1', 'U1', 'C1', 'R1', 'H1', 'H2')
+    for index, ref in enumerate(refs):
         fp = k.FOOTPRINT(board)
         identity(fp, ref)
         fp.SetReference(ref)
-        fp.SetValue(dict((p[0], p[4]) for p in PARTS).get(ref, 'fixed reservation'))
+        fp.SetValue(dict((p[0], p[4]) for p in parts).get(ref, 'fixed reservation'))
         fp.SetFPID(k.LIB_ID('Owned', 'Residual' if ref == 'R1' else 'Square'))
         fp.SetAttributes(k.FP_BOARD_ONLY | k.FP_EXCLUDE_FROM_BOM | k.FP_EXCLUDE_FROM_POS_FILES
                          if ref in ('H1', 'H2') else k.FP_SMD)
@@ -159,7 +188,9 @@ def write_board(directory, *, witness=False, spare_front=False):
         for i, start in enumerate(corners):
             line(fp, k.F_CrtYd, start, corners[(i + 1) % 4], f'{ref}-courtyard-{i}')
         if ref not in ('H1', 'H2'):
-            for number, net, y in (('1', 'VCC', -0.4), ('2', 'GND', 0.4)):
+            pins = (('1', 'VCC', -0.6), ('2', 'GND', -0.2), ('3', 'OUT', 0.2), ('4', 'GND', 0.6)) if ref == 'C2' else (
+                ('1', 'OUT' if chain and ref == 'C1' else 'VCC', -0.4), ('2', 'GND', 0.4))
+            for number, net, y in pins:
                 pad = k.PAD(fp)
                 identity(pad, f'{ref}-pad-{number}')
                 pad.SetNumber(number)
@@ -173,10 +204,24 @@ def write_board(directory, *, witness=False, spare_front=False):
                 pad.SetLayerSet(layers)
                 pad.SetNet(nets[net])
                 fp.Add(pad)
-        position, side = WITNESS[ref]
+        if chain and ref == 'R1':
+            zone = k.ZONE(fp)
+            identity(zone, 'R1-owned-pad-area')
+            zone.SetIsRuleArea(True)
+            zone.SetLayer(k.F_Cu)
+            zone.SetDoNotAllowPads(True)
+            zone.SetDoNotAllowFootprints(False)
+            zone.SetDoNotAllowTracks(False)
+            zone.SetDoNotAllowVias(False)
+            zone.SetDoNotAllowZoneFills(False)
+            fp.Add(zone)
+            zone.Outline().NewOutline()
+            for x, y in ((-0.1, -0.1), (0.1, -0.1), (0.1, 0.1), (-0.1, 0.1)):
+                zone.Outline().Append(round(x * MM), round(y * MM))
+        position, side = WITNESS.get(ref, ([4000000, 4000000], 'F'))
         if spare_front and ref == 'H1':
-            position = [14000000, 1500000]
-        if not witness and ref in ('U1', 'C1', 'R1'):
+            position = [17000000 if chain else 14000000, 1500000]
+        if not witness and ref in ('U1', 'C1', 'R1', 'C2'):
             position, side = [20 * MM, (5 + index * 4) * MM], 'F'
         if side == 'B':
             fp.Flip(vec(0, 0), k.FLIP_DIRECTION_LEFT_RIGHT)
@@ -185,5 +230,5 @@ def write_board(directory, *, witness=False, spare_front=False):
     if not k.SaveBoard(str(path), board):
         raise RuntimeError('native fixture board save failed')
     netlist = directory / 'native.xml'
-    netlist.write_bytes(native_xml(parts=PARTS, sheets=SHEETS))
+    netlist.write_bytes(native_xml(parts=parts, sheets=SHEETS))
     return path, netlist

@@ -118,10 +118,10 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         self.assertIsNone(first_difference(untouched, [facts, request]))
         return actual
 
-    def inputs(self, root, *, capacity_proof=False, spare_front=False, underside_reserve=True, mixed=False):
-        source, netlist = fixture.write_board(root / 'inputs', spare_front=spare_front)
+    def inputs(self, root, *, capacity_proof=False, spare_front=False, underside_reserve=True, mixed=False, chain=False):
+        source, netlist = fixture.write_board(root / 'inputs', spare_front=spare_front, chain=chain)
         facts = extract(source)
-        policy, rules = fixture.policy(), fixture.arrangement_policy()
+        policy, rules = (fixture.chain_policy() if chain else fixture.policy()), fixture.arrangement_policy()
         policy['capacity_proof'] = capacity_proof
         if spare_front and underside_reserve:
             # The wider front has two slots; this literal underside reservation
@@ -130,22 +130,25 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                 'polygons': [fixture.rectangle(3, 0.5, 4.5, 2)],
                 'provenance': {'enforcement': 'hard', 'citation': fixture.CITATION}}]
         inventory = read_native_inventory(netlist)
-        allocation = fixture.allocation_text()
+        allocation = fixture.allocation_text(chain=chain)
         derivation = blocks.derive(inventory, read_sheet_names(netlist), facts,
             inventory_sha256=hashlib.sha256(netlist.read_bytes()).hexdigest(), allocation_raw=allocation.encode())
         eligibility = fixture.eligibility(facts['board_sha256'])
+        mixed_sides = {'F': {'U1': 'F', 'C1': 'B'}, 'B': {'U1': 'B', 'C1': 'F'}}
+        if chain:
+            for face in mixed_sides:
+                mixed_sides[face]['C2'] = face
         candidates = [block_variants.produce(source, facts, inventory, derivation, block['id'], policy,
                       eligibility, root / 'variants' / block['id'], compact=False,
-                      member_sides=({'F': {'U1': 'F', 'C1': 'B'}, 'B': {'U1': 'B', 'C1': 'F'}}
-                                    if mixed and block['id'] == 'b' else None))
+                      member_sides=(mixed_sides if mixed and block['id'] == 'b' else None))
                       for block in derivation['blocks']]
         self.assertTrue(all(row['status'] == 'packed' for bundle in candidates for row in bundle['variants'].values()))
         request = {'policy': policy, 'blocks': {'arrangement': rules, 'side_eligibility': eligibility,
-            'allocation_text': allocation, 'contract': fixture.contract(facts['board_sha256'], eligibility, policy),
+            'allocation_text': allocation, 'contract': fixture.contract(facts['board_sha256'], eligibility, policy, chain=chain),
             'candidates': [{'candidate': bundle} for bundle in candidates]}}
         if mixed:
             request['blocks']['contract']['templates'] = [
-                {'relationship': 'device-support', 'role': role, 'template': 'decoupler-under-device'}
+                {'relationship': 'chain-support' if chain else 'device-support', 'role': role, 'template': 'decoupler-under-device'}
                 for role in ('supply', 'return')]
         return source, netlist, facts, request
 
@@ -242,8 +245,61 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                                 classification='deliberate_cross_face')
         self.assertEqual(source.read_bytes(), original)
 
+    def test_native_chain_refines_member_after_global_arrangement(self):
+        require_toolchain(native=True)
+        root = self.artifact_root()
+        source, netlist, facts, request = self.inputs(root, spare_front=True,
+            underside_reserve=False, mixed=True, chain=True)
+        original = source.read_bytes()
+        candidates = [entry['candidate'] for entry in request['blocks']['candidates']]
+        immutable_candidates = copy.deepcopy(candidates)
+        # These are real Stage-A search products, including the initially
+        # unconstrained C1-before-C2 order. No retained layout is transplanted.
+        self.assertEqual(request['policy']['priority_refs'], ['C1', 'C2'])
+        for bundle in candidates:
+            for variant in bundle['variants'].values():
+                self.assertEqual(variant['candidate']['provenance']['class'], 'search-derived')
+        plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
+        self.assert_plan_parity(facts, request, netlist, plan)
+        self.assertEqual(plan['status'], 'planned', plan)
+        record = plan['block_arrangement']
+        witness = record['member_refinement']
+        self.assertEqual(witness['status'], 'refined', witness)
+        self.assertTrue(witness['moves'])
+        self.assertEqual(record['contract_check']['status'], 'pass')
+        self.assertLessEqual(witness['steps_used'], witness['step_budget'])
+        self.assertEqual(plan['steps_used'], record['search']['steps_used']
+                         + record['residual_budget']['steps_used'] + witness['steps_used'])
+        self.assertEqual(record['routing_feedback']['status'], 'unavailable')
+        for move in witness['moves']:
+            self.assertEqual(move['block'], 'b')
+            self.assertIn(move['reference'], {'C1', 'C2'})
+            self.assertNotEqual(move['before_position_nm'], move['after_position_nm'])
+            self.assertLess(move['after']['internal_hpwl_nm'], move['before']['internal_hpwl_nm'])
+            self.assertLessEqual(move['after']['whole_board_hpwl_nm'], move['before']['whole_board_hpwl_nm'])
+            self.assertTrue(all(after <= before for before, after in zip(
+                move['before']['declared_pair_distance_squared_nm2'],
+                move['after']['declared_pair_distance_squared_nm2'])))
+        self.assertEqual(candidates, immutable_candidates)
+        self.saved_board_checks(root, source, netlist, facts, request, candidates, plan,
+            classification={'same_face', 'deliberate_cross_face'}, member_refs={'U1', 'C1', 'C2'},
+            internal_nets={'VCC', 'GND', 'OUT'})
+        saved_facts = extract(root / 'published' / 'candidate' / 'candidate.kicad_pcb')
+        before_r1 = next(fp for fp in facts['footprints'] if fp['ref'] == 'R1')
+        after_r1 = next(fp for fp in saved_facts['footprints'] if fp['ref'] == 'R1')
+        before_area = next(area for area in facts['rule_areas'] if area['owner'] == before_r1['uuid'])
+        after_area = next(area for area in saved_facts['rule_areas'] if area['owner'] == after_r1['uuid'])
+        transformed = placer_runner.transform({'position_nm': before_r1['position_nm'],
+            'rotation_deg': before_r1['rotation_deg'], 'pads': [], 'courtyards': {'zone': before_area['outline']}},
+            after_r1['position_nm'], after_r1['rotation_deg'])['courtyards']['zone']
+        self.assertEqual(after_area['outline']['status'], transformed['status'])
+        self.assertEqual([blocks.canonical_ring(p) for p in after_area['outline']['polygons']],
+                         [blocks.canonical_ring(p) for p in transformed['polygons']])
+        self.assertNotEqual(before_r1['position_nm'], after_r1['position_nm'])
+        self.assertEqual(source.read_bytes(), original)
+
     def saved_board_checks(self, root, source, netlist, facts, request, candidates, plan, *,
-                           classification='same_face'):
+                           classification='same_face', member_refs=None, internal_nets=None):
         import pcbnew as k
         writable = (root / 'published').resolve()
         writable.mkdir()
@@ -261,12 +317,13 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         checked = block_contract.judge(saved_facts, request['blocks']['contract'], original_capture=facts, plan=saved_plan)
         self.assertEqual((checked['status'], checked['unknown'], checked['defects']), ('pass', [], []))
         block = next(row for row in checked['blocks'] if row['id'] == 'b')
-        self.assertEqual({row['reference'] for row in block['members']}, {'U1', 'C1'})
+        self.assertEqual({row['reference'] for row in block['members']}, member_refs or {'U1', 'C1'})
         self.assertGreaterEqual(block['anchor_spread_squared_nm2'], 0)
         if classification == 'same_face':
             self.assertGreater(block['anchor_spread_squared_nm2'], 0)
-        self.assertEqual({row['net'] for row in block['internal_connections']['nets']}, {'VCC', 'GND'})
-        self.assertEqual({row['classification'] for row in checked['relationships']}, {classification})
+        self.assertEqual({row['net'] for row in block['internal_connections']['nets']}, internal_nets or {'VCC', 'GND'})
+        self.assertEqual({row['classification'] for row in checked['relationships']},
+                         {classification} if isinstance(classification, str) else classification)
         self.assertTrue(all(not row['exceeded'] for row in checked['relationships']))
         for label, reference in (('pin-bound', 'C1'), ('forbidden-side', 'J1')):
             mutated = root / label
