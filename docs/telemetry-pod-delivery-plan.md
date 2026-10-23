@@ -134,6 +134,34 @@ failures and record its actual terminal state before considering another run.
   through agent-449 before any AGENTEE-472 placement code change, because both
   touch `placer.py` and `placer_runner.py`.
 
+- AGENTEE-473 observed result (08:35–08:43Z, read-only; fome-mc main `4ff731c9`,
+  `telemetry-pod/expansion/agentee-473-trace/`). agent-449 verified SHA256SUMS,
+  `repro.json` and the cited source lines.
+  - Production bypassed the existing two-pass block path. The campaign adapter
+    declares no `blocks` (fome-mc `production-capture/pipeline.py`), and the flat
+    emitted schematic derives 0 blocks; with the existing 18-block allocation
+    `434a9984…` it derives 18. Production ran a flat front-side pack of 300
+    movable parts.
+  - No packing path chooses a side. Stage B macros take the captured side
+    (`block_arrangement.py:324`). AGENTEE-340's "both sides" was implemented as
+    captured side only. The only flip capability is the R5 write/admission
+    correction, and no planner produces its authorization.
+  - Device-support bounds are advisory: 22 of 26 measured pairs are exceeded on
+    R5/ROUTE-3. 5 blocks are split across faces, and block spreads are 29–106 mm.
+  - Routing feedback (AGENTEE-391) is not integrated.
+  - Proposed reusable boundary: a side-aware block arrangement. In order:
+    strict membership coverage; a bound per-block side-eligibility record;
+    mirrored stage-A candidates from the native flip; a stage-B search over
+    rotation × eligible side with no balance term; a plan side with the
+    authorization derived from the eligibility record; device-support hard only
+    when sourced; production declares `blocks`; then routing feedback. A
+    congested-underside regression design is included.
+  - Open decisions for agent-529: D1 the membership allocation and residual
+    roles; D2 per-block side eligibility (U1 antenna, U3 GNSS path, regulators,
+    double-sided assembly, back test access); D3 the hardness of support bounds;
+    D4 deliberate cross-face splits versus strict whole-block side; D5 the side
+    policy for residual parts.
+
 ## Placement acceptance matrix
 
 Every result is bound to the final saved board hash after all component changes.
