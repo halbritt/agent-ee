@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 6 — 2026-10-23: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 7 — 2026-10-23: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -153,7 +153,7 @@ Status: COMPLETE PLACEMENT, UNROUTED, NOT RELEASED. This is the first complete p
 - Native DRC went from 21 to 80. The 4 courtyard overlaps were resolved; 17 findings are inherited; 63 are new silkscreen findings (silk_overlap 35, silk_over_copper 27, silk_edge_clearance 1). These remain open for pre-fabrication correction; severities are unchanged and nothing is suppressed. Schematic parity 0. Unrouted: 0 tracks, 0 vias, 499 unconnected.
 - agent-ee correction: writer commit 02b6510d (rebased by agent-449 onto main as 0e78994e, module b4be6263) adds explicitly authorized footprint side changes to placer_runner. The 139 focused native tests passed (new test_placer_side_transform, plus test_placer_native, test_placer_gate_hardening, test_placer_pad_keepout and test_placement_defects).
 
-## Next action (revision 6)
+## Action ROUTE-1 (revision 6, executed)
 
 Observation: the board is completely placed and unrouted.
 
@@ -174,6 +174,36 @@ Return: the saved candidate with hashes and the complete structured result.json,
 Decision-changing observation: agent-521 chooses the next repair from the routed evidence (remaining nets and their geometric or constraint causes, or a runtime refusal).
 
 Integration does not delay routing. Agent-449 integrates the focused agent-ee side-transform correction and the FOME placement artifacts through the sole-integrator path, without repeated broad suites. Landed branches and worktrees are cleaned up only when no executing worker depends on them. The R5 renders are published to the persistent gallery labelled COMPLETE PLACEMENT / UNROUTED / NOT RELEASED. Candidate-bound render publication resumes about every four hours during active board work, and sooner for a new routed candidate.
+
+## Routing attempt ROUTE-1 (revision 7 record)
+
+Status: ROUTED CANDIDATE SAVED, ROUTING INCOMPLETE, VALIDATION FAILED, NOT RELEASED. It is kept as evidence; it is not a finished routed board.
+
+- Run: the pod-capture-j6b2 writer, kicad-route b5774496 (clean) with builtin backend 0.23.1 (generation 84b30dc286f44df6b465ae8d40aa1363), KiCad 10.0.7, on proximal native admission. The route ran 06:53:08Z to 07:00:16Z with backend 406.4 s, so the 1500 s budget was not exhausted. The isolated project was the emission-7d5b0d4d design tree with only the PCB replaced by R5. All 235 nets were in scope, with default settings and no other-board tuning.
+- Process: the backend passed. kicad-route exit 3 (routing incomplete, validation failed).
+- Routing: unconnected went from 499 to 78, with 48 nets incomplete; /GND has 29 open connections. 5889 tracks and 686 vias (7523.4 mm) on 181 nets. No net connected in the input was lost.
+- Native validation: FAIL solely on 61 new warnings (via_dangling 34, track_dangling 27). DRC went from 80 to 141, with the inherited 17 and the R5 silkscreen 63 unchanged. Schematic parity 0. Refill did not modify the board. All 16 preservation checks PASS, including keepouts.
+- Blocked-by heuristic: the sourced D-PCB-7v2 In1.Cu no-tracks keepout lies across 51 of the 78 open connections on their best layer. The heuristic often chooses the forbidden In1.Cu, so this is not permission to remove the keepout.
+- Candidate: telemetry-pod.kicad_pcb SHA256 19ed7954ab305b39f29d19f08fb619b4399cb6522869fba21b7712a52a310bdf, with project, rules and schematic as original bytes. fome-mc main 0fc9b543, telemetry-pod/expansion/route-1/.
+- Integration: fome-mc main 0fc9b543 carries only placement-r1 to r5 and route-1. agent-ee main 2fb2eaf8 carries the side-transform correction.
+- Renders: gallery bundles 8f3bc2343055-c429d9d298cd (R5, Candidate 5) and 19ed7954ab30-395dc29f7f68 (ROUTE-1, Diagnostic 8, incomplete). The four-hour render timer is re-enabled and pinned to ROUTE-1.
+
+## Next action (revision 7)
+
+Observation: the first route connected most of the board but left 78 connections on 48 nets and 61 dangling generated objects.
+
+Hypothesis (agent-521 prediction): removing genuinely useless generated stubs and allowing bounded repair of generated blocking copper will reduce the remaining connections while removing the dangling DRC defects. This is a hypothesis to check, not proof that the board is routable. A boxed_in_static summary on many nets is not by itself proof of placement infeasibility.
+
+Action: ONE targeted repair task by agent-507 (router specialist), assigned by agent-449. One 40-minute task, at most 1200 seconds of routing backend, local admitted capacity, isolated copies. No new agents and no parallel routing.
+
+- First inspect the final summary and regrade (failed_single and open_single, pad deficits, blockers, boxed_in), the new-finding UUIDs, and the exact pad-escape geometry of representative blocked nets. Separate generated-copper congestion from immutable placement or keepout obstruction using existing native and reachability diagnostics.
+- Then execute ONE best supported targeted repair using existing wrapper and tool capabilities: the existing bounded connection repair (previously K93) if it fits and is available, without an integration project to wire it. No new routing code or pipeline refactor.
+- Scope: ROUTE-1 generated unlocked copper may be removed or rerouted where required. No locked or human copper deletion, footprint movement, or net, pad, stackup, rule or keepout change. Netclass geometry and severities are not lowered. A continuation may use --protect locked with the reason recorded, routing only failed nets plus affected poured or blocker nets as supported. Dangling generated objects are cleaned only when native connectivity proves no useful connection is lost; no blanket deletion.
+- If pad escapes are blocked by immutable geometry even before generated copper, return the exact references and pads and the smallest placement correction instead of an unchanged route.
+
+Acceptance: the saved repair candidate and hash; the exact changed settings, objects and nets; the command, runtime and time; full native DRC, parity, refill and preservation; and all-board unconnected and net-completion comparisons against both ROUTE-1 and the original R5, graded with wrapper validate --against the original R5 and the first run. The 61 dangling findings do not become an accepted baseline, and no previously completed net may regress unnoticed. Both candidates are preserved. No automatic further attempt. Return the artifact, or the concrete immutable blocker and one smallest next action. Evidence improvement does not imply release acceptance.
+
+Decision-changing observation: agent-521 chooses the next step from the repair evidence, whether a repaired candidate with fewer open connections and no dangling defects, or an immutable blocker with its smallest correction.
 
 ## Decision after that result
 
