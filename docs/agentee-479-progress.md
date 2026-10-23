@@ -35,3 +35,24 @@ All items start unverified. A passing fixture is not telemetry-pod acceptance.
 Routing feedback remains an explicit missing requirement until implemented
 and demonstrated. Source-fixed role, side authority, pose authority and initial
 pose are distinct; none is inferred from another.
+
+## First regression result
+
+At 10:08 UTC the literal native witness passed independent placement judgment,
+group and pin checks, block rules, and native courtyard DRC. Native Stage A
+produced A/F and B/F+B candidates. The unchanged Python Stage-B entry then
+refused the new request with `unknown contract, side_eligibility`, establishing
+the expected feature RED. One test ran in 1.192 seconds; this is not an after-pass.
+Retained artifacts: `build/agentee-479/red-first1/` (including hash manifest);
+command/output: `build/agentee-479/logs/first-red.log`.
+
+The run used native-admit suite weight 4 and pinned image
+`agent-ee:exec-c6dcf2af10f18297`
+(`sha256:681564b662b2ece8fd90ebb2bdd45a3fb0bd4f7849efbc29eeb8f4a9e2d1ca2e`).
+The image build's existing 52 Rust tests passed. New contract tests and the
+latest source edits were not all in that image; they require the next build.
+Admission was unavailable from approximately 09:51 to 10:05 UTC; no tests
+were executed by the two declined admission attempts.
+
+Post-global member refinement remains unimplemented at this checkpoint.
+Whole-block re-siding alone does not complete the six owner requirements.
