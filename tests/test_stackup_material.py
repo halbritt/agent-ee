@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from agent_ee.board_envelope import board_facts, round_trip, source_inventory, validate
 from agent_ee.envelope_check import compare_saved, saved_structure
@@ -259,6 +260,60 @@ class StackupMaterialTest(unittest.TestCase):
                 for row in judgment['material_evidence']:
                     self.assertEqual((row['source_value'], row['serialized_value'], row['qualification'],
                                       row['used_for_impedance']), (None, '0.02', 'unqualified', False))
+
+    def test_public_native_discrepancy_overrides_saved_defect(self):
+        """AGENTEE-495: declared probe fault injection, not an observed bad board."""
+        from agent_ee import executor
+        require_toolchain(native=True)
+        execute = executor.execute
+        for known_loss in (True, False):
+            declared = copy.deepcopy(self.envelope)
+            if known_loss:
+                for layer in declared['stackup']['layers']:
+                    if layer['kind'] == 'dielectric':
+                        layer['loss_tangent'] = 0.018
+            (self.source / 'envelope.json').write_bytes(encoded(declared))
+            generated = board(self.record(declared), 'native-discrepancy-control')
+            before, after = ((b'(thickness 0.2104)', b'(thickness 0.3104)') if known_loss
+                             else (b'(epsilon_r 4.4)', b'(epsilon_r 4.1)'))
+            self.assertIn(before, generated)
+            payload = generated.replace(before, after, 1)
+            for fault, reason in (
+                    (None, None),
+                    ('thickness_nm', 'native thickness differs from saved board thickness'),
+                    ('has_stackup', 'native load did not retain an explicit stackup')):
+                with self.subTest(known_loss=known_loss, injected_probe_field=fault):
+                    def injected_execute(inputs, work, argv, **kwargs):
+                        result = execute(inputs, work, argv, **kwargs)
+                        probe_path = Path(work) / 'envelope-probe.json'
+                        if fault is not None and result['execution'] == 'ok':
+                            probe = json.loads(probe_path.read_text())
+                            # Preserve the real observation separately from the injected control.
+                            (Path(work) / 'envelope-probe-before-injection.json').write_bytes(
+                                probe_path.read_bytes())
+                            if fault == 'thickness_nm':
+                                probe[fault] += 1
+                            else:
+                                self.assertIs(probe[fault], True)
+                                probe[fault] = False
+                            probe_path.write_bytes(encoded(probe))
+                        return result
+
+                    with patch.object(executor, 'execute', injected_execute):
+                        result, judgment = self.public_check(
+                            payload, f'native-{known_loss}-{fault}')
+                    expected = 'unknown' if fault else 'defect'
+                    self.assertEqual((result['execution'], result['outcome']),
+                                     ('unsupported' if fault else 'ok', expected), result)
+                    self.assertEqual(judgment['status'], expected)
+                    self.assertTrue(judgment['defects'])
+                    self.assertEqual(len(judgment['unknown']),
+                                     (0 if known_loss else 3) + bool(fault))
+                    if fault:
+                        self.assertIn(reason, judgment['unknown'])
+                        self.assertIn(reason, result['summary'])
+                    self.assertEqual(len(judgment['material_evidence']), 0 if known_loss else 3)
+                    self.assertIs(judgment['impedance_qualified'], False)
 
     def test_native_zero_loss_is_known_and_compared(self):
         require_toolchain(native=True)

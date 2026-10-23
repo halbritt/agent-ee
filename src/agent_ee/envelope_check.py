@@ -422,6 +422,11 @@ def check_board_envelope(ctx):
             raise CheckError('unsupported', f"{ctx.params['id']}: native envelope item unavailable: {exc}") from exc
     else:
         result = compare_saved(criterion, record, facts)
+    # compare_saved alone can prove a material defect despite existing unknown
+    # loss. Any additional native disagreement must still take precedence.
+    saved_unknown_count = len(result['unknown'])
+    material_defect = (criterion == 'stackup/1' and 'material_evidence' in result
+                       and result['status'] == 'defect' and saved_unknown_count > 0)
     if criterion == 'layers/1' and 'unavailable' not in facts['layers']:
         if native.get('copper') != facts['layers']['copper']:
             result['unknown'].append('native enabled copper differs from saved layer table')
@@ -442,12 +447,7 @@ def check_board_envelope(ctx):
             result['unknown'].append('native load did not retain an explicit stackup')
         if native.get('thickness_nm') != envelope.length(Decimal(facts['stackup']['thickness_mm']), 'total'):
             result['unknown'].append('native thickness differs from saved board thickness')
-    # compare_saved has already distinguished a proven material defect from
-    # unknown loss. Preserve that outcome through the public check and artifact;
-    # legacy no-material and unrelated criteria keep their unknown precedence.
-    material_defect = (criterion == 'stackup/1' and 'material_evidence' in result
-                       and result['status'] == 'defect')
-    if result['unknown'] and not material_defect:
+    if result['unknown'] and (not material_defect or len(result['unknown']) > saved_unknown_count):
         result['status'] = 'unknown'
     judgment = {'schema': 'agent-ee.envelope-judgment/1', 'candidate_id': ctx.manifest['candidate_id'],
                 'board_sha256': native['board_sha256'], 'pcbnew_version': native['pcbnew_version'],

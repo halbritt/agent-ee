@@ -111,8 +111,13 @@ declares unknown loss; it is not necessarily a KiCad default.
 `stackup/1` compares supplied type, permittivity and numeric loss exactly with
 saved values. A proven material difference produces a defect even when loss is unknown.
 The public board-envelope check and retained `envelope-judgment.json` preserve
-that defect outcome. Unavailable saved stackup or material values remain unknown;
+that defect outcome unless the native probe adds a disagreement, which takes
+`unsupported`/`unknown` precedence while retaining the defect evidence.
+Unavailable saved stackup or material values remain unknown;
 missing evidence is not a proven material mismatch.
+A malformed saved Er that pcbnew refuses ends as a FAILED check (`execution: failed`)
+with no `envelope-judgment.json`, distinct from unavailable or missing material
+data that produces an unknown judgment.
 Without a proven difference, declared unknown loss produces an unknown result.
 Both results retain the unknown-loss reasons and
 `material_evidence` with the source value, serialized value and unqualified
