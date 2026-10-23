@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 import uuid
 
-from test_blocks import native_xml
+from test_blocks import PINS, native_xml
 from test_placement import MM, rectangle
 
 NAMESPACE = uuid.UUID('a87979ad-5c32-4d51-9742-0a823863a095')
@@ -169,7 +169,7 @@ def write_board(directory, *, witness=False, spare_front=False, chain=False):
         board.Add(nets[name])
     parts = tuple((*part[:-1], {'1': 'OUT', '2': 'GND'}) if chain and part[0] == 'C1' else part for part in PARTS)
     if chain:
-        parts += (('C2', '/b/', 'C', 'Owned:Square', 'chain support', {'1': 'VCC', '2': 'GND', '3': 'OUT', '4': 'GND'}),)
+        parts += (('C2', '/b/', 'CHAIN4', 'Owned:Square', 'chain support', {'1': 'VCC', '2': 'GND', '3': 'OUT', '4': 'GND'}),)
     refs = ('J1', 'U1', 'C1', 'C2', 'R1', 'H1', 'H2') if chain else ('J1', 'U1', 'C1', 'R1', 'H1', 'H2')
     for index, ref in enumerate(refs):
         fp = k.FOOTPRINT(board)
@@ -230,5 +230,6 @@ def write_board(directory, *, witness=False, spare_front=False, chain=False):
     if not k.SaveBoard(str(path), board):
         raise RuntimeError('native fixture board save failed')
     netlist = directory / 'native.xml'
-    netlist.write_bytes(native_xml(parts=parts, sheets=SHEETS))
+    pins = {**PINS, 'CHAIN4': tuple((str(i), '~', 'passive') for i in range(1, 5))} if chain else PINS
+    netlist.write_bytes(native_xml(parts=parts, sheets=SHEETS, pins=pins))
     return path, netlist
