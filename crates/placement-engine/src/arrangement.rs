@@ -3,7 +3,7 @@ use crate::exact::{self, Int, Point, Rat};
 use crate::footprint::{Keepout, PreparedFootprint};
 use crate::geometry::{Bounds, Polygon};
 use crate::{
-    blocks, constraints, footprint, geometry, groups, locality, netlist, packing, policy, progress,
+    block_variants, blocks, constraints, footprint, geometry, groups, locality, netlist, packing, policy, progress,
     rank, search,
 };
 use anyhow::{ensure, Context, Result};
@@ -344,6 +344,8 @@ struct Rotated {
 #[derive(Clone)]
 struct Placed {
     block: String,
+    variant: usize,
+    selected_face: Option<String>,
     position: Point,
     rotation: i64,
     members: Vec<PreparedFootprint>,
@@ -354,7 +356,9 @@ struct Placed {
 }
 impl Placed {
     fn record(&self) -> Value {
-        json!({"block":self.block,"position_nm":exact::point_value(&self.position),"rotation_deg":self.rotation})
+        let mut row = json!({"block":self.block,"position_nm":exact::point_value(&self.position),"rotation_deg":self.rotation});
+        if let Some(face) = &self.selected_face { row["selected_face"] = json!(face); }
+        row
     }
 }
 #[derive(Eq, PartialEq, Ord, PartialOrd)]
@@ -362,6 +366,7 @@ struct Ranked {
     terms: Vec<rank::Fraction>,
     position: (rank::Integer, rank::Integer),
     rotation: i64,
+    variant: usize,
     doomed: bool,
 }
 #[derive(Debug)]
@@ -375,8 +380,9 @@ impl std::error::Error for Stopped {}
 struct Search<'a> {
     prepared: &'a packing::Prepared,
     policy: &'a Value,
-    frames: BTreeMap<String, Vec<PreparedFootprint>>,
-    rotated: BTreeMap<(String, i64), Arc<Rotated>>,
+    frames: BTreeMap<String, Vec<Vec<PreparedFootprint>>>,
+    faces: BTreeMap<String, Vec<Option<String>>>,
+    rotated: BTreeMap<(String, usize, i64), Arc<Rotated>>,
     owner: BTreeMap<String, String>,
     placed: Vec<Placed>,
     fixed_exact: Vec<Keepout>,
@@ -420,19 +426,30 @@ impl<'a> Search<'a> {
             .map(|f| (f.reference.clone(), f))
             .collect();
         let mut frames = BTreeMap::new();
+        let mut faces = BTreeMap::new();
         let mut owner = BTreeMap::new();
         for (b, a) in admitted {
-            let poses = a["poses"].as_object().context("admitted poses")?;
-            let mut members = Vec::new();
-            for r in blocks::natural(poses.keys().cloned().collect()) {
-                let pose = &poses[&r];
-                members.push(by[&r].at(
-                    &exact::point(&pose["position_nm"])?,
-                    exact::rotation(&pose["rotation_deg"])?,
-                )?);
-                owner.insert(r, b.clone());
+            let variants = a.get("variants").and_then(Value::as_array)
+                .map(|v| v.iter().collect::<Vec<_>>()).unwrap_or_else(|| vec![a]);
+            let mut block_frames = Vec::new();
+            let mut block_faces = Vec::new();
+            for variant in variants {
+                let native = variant.get("capture").map(footprint::qualify_capture).transpose()?;
+                let native_by: BTreeMap<_, _> = native.as_ref().map(|c| c.footprints.iter()
+                    .map(|f| (f.reference.clone(), f)).collect()).unwrap_or_else(|| by.clone());
+                let poses = variant["poses"].as_object().context("admitted poses")?;
+                let mut members = Vec::new();
+                for r in blocks::natural(poses.keys().cloned().collect()) {
+                    let pose = &poses[&r];
+                    members.push(native_by[&r].at(&exact::point(&pose["position_nm"])?,
+                        exact::rotation(&pose["rotation_deg"])?)?);
+                    owner.insert(r, b.clone());
+                }
+                block_frames.push(members);
+                block_faces.push(variant["selected_face"].as_str().map(str::to_owned));
             }
-            frames.insert(b.clone(), members);
+            frames.insert(b.clone(), block_frames);
+            faces.insert(b.clone(), block_faces);
         }
         let fixed_exact = prepared.placed.iter().flat_map(courtyard_entries).collect();
         let solid: SideBoxes = prepared
@@ -519,6 +536,7 @@ impl<'a> Search<'a> {
             prepared,
             policy,
             frames,
+            faces,
             rotated: BTreeMap::new(),
             owner,
             placed: Vec::new(),
@@ -566,8 +584,8 @@ impl<'a> Search<'a> {
         }
         Ok(())
     }
-    fn members_at(&self, bid: &str, p: &Point, rotation: i64) -> Result<Vec<PreparedFootprint>> {
-        self.frames[bid]
+    fn members_at(&self, bid: &str, variant: usize, p: &Point, rotation: i64) -> Result<Vec<PreparedFootprint>> {
+        self.frames[bid][variant]
             .iter()
             .map(|f| {
                 f.at(
@@ -577,12 +595,12 @@ impl<'a> Search<'a> {
             })
             .collect()
     }
-    fn rotated(&mut self, bid: &str, rotation: i64) -> Result<Arc<Rotated>> {
-        let key = (bid.to_owned(), rotation);
+    fn rotated(&mut self, bid: &str, variant: usize, rotation: i64) -> Result<Arc<Rotated>> {
+        let key = (bid.to_owned(), variant, rotation);
         if let Some(r) = self.rotated.get(&key) {
             return Ok(r.clone());
         }
-        let members = self.members_at(bid, &Point::zero(), rotation)?;
+        let members = self.members_at(bid, variant, &Point::zero(), rotation)?;
         let mut macro_fp = macro_fp(bid, &members)?;
         macro_fp.rotation = rotation;
         macro_fp.rotation_json = json!(rotation);
@@ -639,8 +657,8 @@ impl<'a> Search<'a> {
             .cloned()
             .collect()
     }
-    fn push(&mut self, bid: &str, p: Point, rotation: i64) -> Result<()> {
-        let members = self.members_at(bid, &p, rotation)?;
+    fn push(&mut self, bid: &str, variant: usize, p: Point, rotation: i64) -> Result<()> {
+        let members = self.members_at(bid, variant, &p, rotation)?;
         let boxes = members
             .iter()
             .flat_map(|f| f.boxes.iter().map(|(s, b)| (s.clone(), b.clone())))
@@ -669,6 +687,8 @@ impl<'a> Search<'a> {
             .collect::<Result<_>>()?;
         self.placed.push(Placed {
             block: bid.into(),
+            variant,
+            selected_face: self.faces[bid][variant].clone(),
             position: p,
             rotation,
             members,
@@ -740,8 +760,9 @@ impl<'a> Search<'a> {
                 .collect::<Result<SideBoxes>>()?,
         );
         let mut ranked = Vec::new();
+        for variant in 0..self.frames[bid].len() {
         for rotation in [0, 90, 180, 270] {
-            let own = self.rotated(bid, rotation)?;
+            let own = self.rotated(bid, variant, rotation)?;
             let mut evaluator = locality::CandidateLocality::default();
             if let Some(index) = &index {
                 for f in &own.members {
@@ -1020,11 +1041,13 @@ impl<'a> Search<'a> {
                         terms,
                         position: (position.x.into(), position.y.into()),
                         rotation,
+                        variant,
                         doomed,
                     });
                 }
             }
             self.checkpoint()?;
+        }
         }
         ranked.sort();
         Ok(ranked)
@@ -1126,6 +1149,10 @@ impl<'a> Search<'a> {
         for f in members {
             if self.stacking.contains(&f.reference) {
                 let shape = shadow(f, &self.stack_margin);
+                if members.iter().any(|other| other.reference != f.reference
+                    && constraints::near(other, std::slice::from_ref(&shape), &gap)) {
+                    return Ok(Some(("no_stacking".into(), no)));
+                }
                 let mut own = f.clone();
                 own.courtyards = [(shape.side.clone(), shape.polygons.clone())]
                     .into_iter()
@@ -1207,7 +1234,7 @@ impl<'a> Search<'a> {
         bid: &str,
         ranked: &mut std::vec::IntoIter<Ranked>,
         conflicts: &mut BTreeSet<String>,
-    ) -> Result<Option<(Point, i64)>> {
+    ) -> Result<Option<(Point, i64, usize)>> {
         for row in ranked {
             self.checkpoint()?;
             if self.steps == self.budget {
@@ -1225,7 +1252,7 @@ impl<'a> Search<'a> {
                 x: row.position.0.exact(),
                 y: row.position.1.exact(),
             };
-            let own = self.rotated(bid, row.rotation)?;
+            let own = self.rotated(bid, row.variant, row.rotation)?;
             let proposed = own.macro_fp.at(&position, row.rotation)?;
             let members = own
                 .members
@@ -1236,7 +1263,7 @@ impl<'a> Search<'a> {
                 *self.rejected.entry(reason).or_default() += 1;
                 conflicts.extend(hit);
             } else {
-                return Ok(Some((position, row.rotation)));
+                return Ok(Some((position, row.rotation, row.variant)));
             }
         }
         Ok(None)
@@ -1561,7 +1588,7 @@ pub fn plan(
     blocks::keys(
         section,
         &["arrangement", "candidates"],
-        &["allocation_text"],
+        &["allocation_text", "side_eligibility", "contract"],
     )?;
     let inventory = netlist::parse(netlist_raw)?;
     let allocation = section
@@ -1578,6 +1605,7 @@ pub fn plan(
         effective_policy,
         &section["arrangement"],
         &section["candidates"],
+        section.get("side_eligibility"),
     )
 }
 pub fn arrange(
@@ -1588,6 +1616,7 @@ pub fn arrange(
     effective: &Value,
     document: &Value,
     entries: &Value,
+    eligibility: Option<&Value>,
 ) -> Result<Value> {
     let refs: BTreeSet<_> = blocks::board(capture)?.into_keys().collect();
     policy::validate(captured, &refs)?;
@@ -1606,7 +1635,7 @@ pub fn arrange(
     let mut admitted = BTreeMap::<String, Value>::new();
     let mut problems = Vec::new();
     for (i, entry) in blocks::rows(entries)?.iter().enumerate() {
-        let a = blocks::admit(entry, capture, inventory, derivation, captured)?;
+        let a = block_variants::admit(entry, capture, inventory, derivation, captured, eligibility)?;
         if a["status"] == "refused" {
             problems.push(json!({"candidate":i,"block":entry["candidate"]["block_id"],"problems":a["problems"]}));
         } else {
@@ -1765,6 +1794,9 @@ pub fn arrange(
             }
         }
         for (b, a) in &admitted {
+            // Each native alternative is checked at candidate evaluation. A bad
+            // first alternative must not discard a valid face of the same block.
+            if a.get("variants").is_some() { continue; }
             let frames = a["poses"]
                 .as_object()
                 .unwrap()
@@ -1906,6 +1938,13 @@ pub fn arrange(
     }
     let mut levels = Vec::<Level>::new();
     let (mut backjumps, mut peak) = (0u64, 0usize);
+    let has_variants = admitted.values().any(|a| a.get("variants").is_some());
+    let residual_budget = effective["step_budget"].as_u64().context("residual step budget")?;
+    let mut residual_used = 0u64;
+    let mut previous_failure: Option<(Value, Value)> = None;
+    if has_variants { record["adjustments"] = json!([]); }
+    loop {
+
     while search.placed.len() < order.len() {
         let i = search.placed.len();
         search.current = Some(order[i].clone());
@@ -1956,8 +1995,8 @@ pub fn arrange(
                     return Err(e);
                 }
             };
-        if let Some((p, r)) = candidate {
-            search.push(&level.block, p, r)?;
+        if let Some((p, r, variant)) = candidate {
+            search.push(&level.block, variant, p, r)?;
             peak = peak.max(search.placed.len());
             continue;
         }
@@ -2011,6 +2050,26 @@ pub fn arrange(
     }
     record["search"] = json!({"strategy":STRATEGY,"steps_used":search.steps,"step_budget":search.budget,"backjumps":backjumps,"rejected":search.rejected,"elapsed_s":search.started.elapsed().as_secs_f64()});
     record["arranged"] = json!(search.placed.iter().map(Placed::record).collect::<Vec<_>>());
+    if has_variants {
+        if record.get("first_arranged").is_none() { record["first_arranged"] = record["arranged"].clone(); }
+        if let Some((before, status)) = previous_failure.take() {
+            let after = record["arranged"].clone();
+            record["adjustments"].as_array_mut().unwrap().push(json!({"reason":"residual_packing_failed", "before":before,"after":after,"residual_status":status}));
+        }
+        for row in record["blocks"].as_array_mut().unwrap() {
+            let bid = row["block"].as_str().unwrap();
+            let a = &admitted[bid];
+            if let Some(variants) = a.get("variants").and_then(Value::as_array) {
+                let selected = search.placed.iter().find(|p| p.block == bid).unwrap();
+                let variant = &variants[selected.variant];
+                for key in ["candidate_sha256", "provenance", "anchor", "deferred", "selected_face"] {
+                    row[key] = variant[key].clone();
+                }
+                row["boundary"] = variant["binding"].clone();
+                row["candidate_set_sha256"] = a["candidate_set_sha256"].clone();
+            }
+        }
+    }
     let poses: BTreeMap<_, _> = search
         .placed
         .iter()
@@ -2019,22 +2078,31 @@ pub fn arrange(
     let mut residual_capture = capture.clone();
     for fp in residual_capture["footprints"].as_array_mut().unwrap() {
         if let Some(p) = poses.get(fp["ref"].as_str().unwrap()) {
-            *fp = footprint::transform_value(fp, &exact::point_value(&p.position), p.rotation)?;
+            *fp = if has_variants { p.to_value()? } else {
+                footprint::transform_value(fp, &exact::point_value(&p.position), p.rotation)?
+            };
         }
     }
-    let source_uuids: BTreeMap<_, _> = by
-        .values()
-        .filter(|f| poses.contains_key(&f.reference))
-        .map(|f| (f.uuid.clone(), f))
-        .collect();
+    let source_uuids: BTreeMap<_, _> = poses.values().map(|f| (f.uuid.clone(), f)).collect();
+    let mut native_areas = BTreeMap::new();
+    for placed in &search.placed {
+        if let Some(variants) = admitted[&placed.block].get("variants").and_then(Value::as_array) {
+            for area in variants[placed.variant]["capture"]["rule_areas"].as_array().into_iter().flatten() {
+                if placed.members.iter().any(|f| area["owner"] == f.uuid) {
+                    native_areas.insert(area["uuid"].clone().to_string(), area.clone());
+                }
+            }
+        }
+    }
     if let Some(areas) = residual_capture
         .get_mut("rule_areas")
         .and_then(Value::as_array_mut)
     {
         for area in areas {
+            if let Some(native) = native_areas.get(&area["uuid"].clone().to_string()) { *area = native.clone(); }
             if let Some(f) = area["owner"].as_str().and_then(|u| source_uuids.get(u)) {
                 let pose = &poses[&f.reference];
-                let placeholder = json!({"position_nm":exact::point_value(&f.position),"rotation_deg":f.rotation,"pads":[],"courtyards":{"zone":area["outline"]}});
+                let placeholder = json!({"position_nm":f.raw["position_nm"],"rotation_deg":f.raw["rotation_deg"],"pads":[],"courtyards":{"zone":area["outline"]}});
                 match footprint::transform_value(
                     &placeholder,
                     &exact::point_value(&pose.position),
@@ -2056,11 +2124,12 @@ pub fn arrange(
         }
     }
     let mut residual_policy = effective.clone();
+    let mut residual_obstacles = obstacles.clone();
     if hard(stacking) {
         let margin = exact::integer(&stacking["margin_nm"])?;
         for r in blocks::refs(&stacking["references"])? {
             if let Some(p) = poses.get(&r) {
-                obstacles.push(obstacle(
+                residual_obstacles.push(obstacle(
                     stacking,
                     &shadow(p, &margin),
                     format!("block-arrangement shadow {r}"),
@@ -2068,7 +2137,7 @@ pub fn arrange(
             }
         }
     }
-    residual_policy["obstacles"] = json!(obstacles);
+    residual_policy["obstacles"] = json!(residual_obstacles);
     residual_policy["fixed_refs"] = json!(blocks::natural(
         blocks::refs(&effective["fixed_refs"])?
             .into_iter()
@@ -2077,15 +2146,35 @@ pub fn arrange(
             .into_iter()
             .collect()
     ));
-    record["residual"] = json!({"references":blocks::natural(movable.iter().cloned().collect()),"policy_sha256":blocks::digest(&residual_policy),"obstacles":obstacles[blocks::rows(&effective["obstacles"])?.len()..]});
+    if has_variants { residual_policy["step_budget"] = json!(residual_budget - residual_used); }
+    record["residual"] = json!({"references":blocks::natural(movable.iter().cloned().collect()),"policy_sha256":blocks::digest(&residual_policy),"obstacles":residual_obstacles[blocks::rows(&effective["obstacles"])?.len()..]});
     let mut plan =
         packing::pack_arranged(&residual_capture, &residual_policy, Some(capture), &poses)?;
+    if has_variants {
+        residual_used += plan["steps_used"].as_u64().unwrap_or(0).max(if plan["status"] == "planned" {0} else {1});
+        record["residual_budget"] = json!({"step_budget":residual_budget,"steps_used":residual_used});
+    }
     if plan["status"] != "planned" {
+        let retryable = matches!(plan["status"].as_str(), Some("packing_search_exhausted" | "packing_budget_exhausted" | "locality_cluster_exhausted" | "fixed_conflict"));
+        if has_variants && retryable && !search.placed.is_empty() {
+            if residual_used >= residual_budget {
+                return failure(capture, effective, &record, "arrangement_budget_exhausted",
+                    "residual candidate budget exhausted across block adjustments", search.steps + residual_used);
+            }
+            previous_failure = Some((record["arranged"].clone(), plan["status"].clone()));
+            let last = search.placed.len() - 1;
+            levels[last].conflicts.extend(search.placed[..last].iter().map(|p| p.block.clone()));
+            search.placed.pop();
+            continue;
+        }
         plan["block_arrangement"] = record;
         return Ok(plan);
     }
     for p in plan["placements"].as_array_mut().unwrap() {
         p["fixed"] = json!(fixed.contains(p["ref"].as_str().unwrap()));
+        if has_variants {
+            if let Some(fp) = poses.get(p["ref"].as_str().unwrap()) { p["side"] = json!(fp.side); }
+        }
     }
     let complete_poses: BTreeMap<_, _> = plan["placements"]
         .as_array()
@@ -2093,7 +2182,7 @@ pub fn arrange(
         .iter()
         .map(|p| (p["ref"].as_str().unwrap(), p))
         .collect();
-    let mut complete = capture.clone();
+    let mut complete = if has_variants { residual_capture.clone() } else { capture.clone() };
     for fp in complete["footprints"].as_array_mut().unwrap() {
         let p = complete_poses[fp["ref"].as_str().unwrap()];
         *fp = footprint::transform_value(
@@ -2108,7 +2197,7 @@ pub fn arrange(
     }
     record["deferred_grading"] = deferred_grading(&plan, &admitted);
     record["residual"]["steps_used"] = plan["steps_used"].clone();
-    let steps = plan["steps_used"].as_u64().unwrap() + search.steps;
+    let steps = if has_variants { residual_used } else { plan["steps_used"].as_u64().unwrap() } + search.steps;
     plan["steps_used"] = json!(steps);
     plan["policy"] = effective.clone();
     let failed = blocks::rows(&record["rules"])?
@@ -2128,5 +2217,6 @@ pub fn arrange(
         );
     }
     plan["block_arrangement"] = record;
-    Ok(plan)
+    return Ok(plan);
+    }
 }
