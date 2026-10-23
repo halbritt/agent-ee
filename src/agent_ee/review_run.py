@@ -126,6 +126,9 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
         attempts.append(attempt)
         final = {**record, 'max_schema_resubmissions': limit, 'resubmissions_used': number,
                  'attempts': copy.deepcopy(attempts), 'input_identity': original_inputs}
+        if target.parent == run / 'review-executions':
+            # Recovery can read this publication before the caller returns.
+            final['role'] = role
         # Publish after every settled call, including the refusal before a retry.
         write_json(target, final)
         if interrupted:

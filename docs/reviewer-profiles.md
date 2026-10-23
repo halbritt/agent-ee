@@ -103,6 +103,13 @@ because another role fails; each retains its own logs and partial experiments.
 Owner SIGINT cancels the whole initial-review operation: queued roles remain
 `not_run`, active process groups are killed, and each role's execution logs and
 partial experiments are retained before interrupted coordinator finalization.
+Every `review-executions/<role>.json` publication includes its role, including
+settled structured calls before the reviewer worker returns (AGENTEE-461).
+The shared JSON writer fsyncs a same-directory temporary file, atomically
+renames it into place, then fsyncs the directory. Cancellation before the
+rename leaves the previous complete record or no record; after the rename,
+readers see the complete replacement. Retained attempts and execution failures
+keep their existing meanings.
 Cancellation is checked during launch and at 50 ms intervals while waiting;
 output draining and worker cleanup have one- and two-second bounds respectively.
 A cleanup overrun is retained explicitly rather than reported as a clean review.

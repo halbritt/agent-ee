@@ -169,6 +169,10 @@ output is never schema-resubmitted. Campaigns and standalone reviews default to
 one model-output resubmission per role under the
 [bounded output rule](campaign-guide.md#bounded-output-resubmission);
 `run_review(..., max_schema_resubmissions=0)` keeps a single model call.
+Reviewer execution records carry their role before atomic publication;
+`tests.test_reviewer_publication` injects cancellation before and after the
+temporary-file rename, with and without an existing record. See
+[reviewer cancellation](reviewer-profiles.md#subscription-adapters).
 Adjudicator citations may reference the verified immutable `baseline.json` for
 context, but accepted defects still require their sealed failed-check citation.
 New reviewer and adjudicator `/2` citations require a resolvable JSON `pointer`,
