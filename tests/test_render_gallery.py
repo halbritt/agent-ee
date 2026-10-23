@@ -16,6 +16,7 @@ import tempfile
 import threading
 import unittest
 import zlib
+from unittest import mock
 from pathlib import Path, PureWindowsPath
 from urllib.error import HTTPError
 from urllib.request import urlopen
@@ -164,15 +165,14 @@ def random_texts(seed, rounds):
 
 LEAKS = ('hidden', 'file:', 'C:', '\\', 'private-', 'Alice', 'localhost')
 ADDRESS_RUN = re.compile(r'[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*')
-URI_TOKEN = re.compile(r'[^\s"\'<>(){},;|]+')
 HOST_MARKERS = ('hidden', 'private-', 'localhost', 'alice')
 ULA = ipaddress.IPv6Network('fd00::/8')
 
 
-def ula_addresses(body):
-    """fd00::/8 IPv6 addresses among the tokens of body, parsed with ipaddress. A run of hex digits, colons and dots is
-    tried at every colon-group boundary, so a delimiter colon beside an address ("host:fd00::1", "fd00::1:") neither
-    hides it nor joins it; a hex id that merely contains "fd00" is no address."""
+def ip_addresses(body):
+    """IPv6 addresses among the tokens of body, parsed with ipaddress. A run of hex digits, colons and dots is tried
+    at every colon-group boundary, so a delimiter colon beside an address ("host:fd00::1", "fd00::1:") neither hides
+    it nor joins it; a zone id ("%eth0") ends the run; a hex id that merely contains "fd00" is no address."""
     found = []
     for run in ADDRESS_RUN.findall(body):
         colons = [i for i, c in enumerate(run) if c == ':']
@@ -184,59 +184,216 @@ def ula_addresses(body):
                 if end <= start or ':' not in candidate:
                     continue
                 try:
-                    address = ipaddress.IPv6Address(candidate)
+                    ipaddress.IPv6Address(candidate)
                 except ValueError:
                     continue
-                if address in ULA:
-                    found.append(candidate)
+                found.append(candidate)
     return sorted(set(found))
 
 
-URI_CANDIDATE = re.compile(r'(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s"\'<>]*')
-BARE_HOST = re.compile(r'[a-z0-9.\-]+')
+def ula_addresses(body):
+    """The fd00::/8 addresses among ip_addresses(body)."""
+    return [a for a in ip_addresses(body) if ipaddress.IPv6Address(a) in ULA]
 
 
-def authority_leaks(candidate):
-    """True when the URI-shaped candidate names a credential, a file, a private host or a ULA address, or when its
-    authority cannot be validated (non-numeric or out-of-range port, missing host, broken bracket): fail closed."""
+# The allow-list leak oracle (AGENTEE-452, third-review redesign). Each published body is read in every form a
+# reader could decode it to: as published, HTML-unescaped, every JSON key and string, and each of those
+# percent-decoded until stable. Each form is cut into tokens at whitespace and at the characters RFC 3986 never
+# allows in a URI (" < > \ ^ ` { | }), and leading ([{' and trailing )]}'.,;:!? wrapper punctuation is stripped. A
+# token is allowed whole when it has a published shape (TOKEN_SHAPES). Otherwise every URL-ish or host-ish candidate
+# in it must be allowed:
+#   scheme       a scheme then anything ("https://h/p", "http:/h/x", "http:h", "smb:..."): only https with a plain
+#                authority naming an ALLOWED_HOSTS host and an optional port 0-65535; no userinfo, no "@" anywhere,
+#                no malformed %-escape, and urllib.parse must parse it (port included), else it fails closed;
+#   //authority  a network-path reference ("//h/x"), judged as https: would be; "//" with nothing after is prose;
+#   host:port    a bare host or bracketed literal and a port ("LOCALHOST:80", "[::1]:80"): an ALLOWED_HOSTS host
+#                and a port 0-65535;
+#   @            a token holding "@" outside a scheme candidate is allowed only as a whole mailbox
+#                ("email@example.com", "user@host"): an ALLOWED_HOSTS domain or one plain host word;
+#   IP literal   any IPv6 address (fd00::/8 included, with or without a zone id) or dotted IPv4 address;
+#   dotted name  outside a scheme candidate: an ALLOWED_HOSTS host or a decimal number;
+#   host word    any word, in any case or encoding, carrying a HOST_MARKERS marker.
+# No IP literal and no other host has a published instance, so all fail. Inline CSS (a <style> element or style=
+# attribute, see page and _with_status) is not text: it is blanked when it holds only CSS characters and no host word.
+#
+# Each allowed shape has a published instance (D6 = the Diagnostic 6 bundle adfb7668ac0c-86b84f0f741e as served by
+# the gallery; its manifest and status record are pinned byte for byte by diagnostic_6()) or is one of the
+# coordinator's false-positive controls (CONTROL, AllowListMatrixTests.PASSES):
+#   ALLOWED_HOSTS  github.com: the served viewer asset viewer/vendor/GLTFLoader.js cites
+#                  https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#accessors;
+#                  example.org, example.com: CONTROL (public URLs, ports 0 and 65535, a wrapped URL, an email).
+#   time           D6 published_at "2026-10-22T23:18:18.401181+00:00".
+#   file           D6 evidence "telemetry-pod.kicad_pcb", "rj_diagnostic-6_305fp+4holes_..._20261022T231757Z.json",
+#                  images "top.png"; served index.html/status.json links; gallery model warnings
+#                  "SOIC-8_3.9x4.9mm_P1.27mm.step" and "c-1-776163-1-t-3d.stp"; packet "INDEX.md" (status
+#                  0e28e3b235a2-c50f79a6c84e); "Hidden.step" (CONTROL: a real packet name, review ee452d-r3);
+#                  "board.glb": the viewer model the gallery serves at viewer/board.glb and names in viewer.json.
+#   gallery path   D6 page links "/", "/bundles/adfb7668ac0c-86b84f0f741e/top.png" and ".../status.json".
+#   schema         D6 "agent-ee.gallery-bundle/3", "agent-ee.gallery-status/1".
+#   number         decimal numbers in published JSON.
+#   mailbox        CONTROL only ("email@example.com in prose", "commit: user@host").
+ALLOWED_HOSTS = frozenset(('github.com', 'example.org', 'example.com'))
+FILE_NAME = r'[A-Za-z0-9_][A-Za-z0-9_.+-]*\.(?:kicad_pcb|json|png|md|step|stp|html|glb)'
+TOKEN_SHAPES = {
+    'time': re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)?'),
+    'file': re.compile(FILE_NAME),
+    'gallery path': re.compile(r'/|/(?:bundles|diagnostics|statuses)/[a-f0-9]{12}-[a-f0-9]{12}/(?:viewer/)?' + FILE_NAME),
+    'schema': re.compile(r'agent-ee\.[a-z]+(?:-[a-z]+)*/\d+'),
+    'number': re.compile(r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'),
+}
+TOKEN = re.compile(r'[^\s"<>\\^`{|}]+')
+SCHEME = re.compile(r'(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]*:(?=.)', re.S)
+HOST_PORT = re.compile(r'(?<![A-Za-z0-9.%\-])(\[[^\]]*\]|[A-Za-z0-9.%\-]+):(\d+)(?![A-Za-z0-9])')
+MAILBOX = re.compile(r'[A-Za-z0-9._+\-]+@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*)')
+DOTTED = re.compile(r'(?<![A-Za-z0-9.%\-])[A-Za-z0-9%\-]+(?:\.[A-Za-z0-9%\-]+)+')
+IPV4 = re.compile(r'(?<![0-9.])\d{1,3}(?:\.\d{1,3}){3}(?![0-9])')
+BAD_ESCAPE = re.compile(r'%(?![0-9A-Fa-f]{2})')
+CSS = re.compile(r'<style>(?:@media|[A-Za-z0-9#%:;{}(),.\- ])*</style>|style="[A-Za-z0-9#%:;(),.\- ]*"')
+
+
+def without_css(form):
+    """form with each inline style that holds only CSS characters and no host word blanked."""
+    return CSS.sub(lambda m: m[0] if any(map(host_word, re.findall(r'[A-Za-z0-9%\-]+', m[0]))) else ' ', form)
+
+
+def host_word(word):
+    word = urllib.parse.unquote(word).lower()
+    return any(m in word for m in HOST_MARKERS)
+
+
+def allowed_host(host, port=None):
+    """host (already decoded) is published only when it is an ALLOWED_HOSTS name, with a port 0-65535 if any."""
+    return host.lower() in ALLOWED_HOSTS and (port is None or int(port) <= 65535)
+
+
+def allowed_uri(candidate):
+    """A scheme candidate is allowed only as https with a plain ALLOWED_HOSTS authority; anything urllib.parse
+    cannot parse fails closed."""
+    if candidate[:8].lower() != 'https://' or '@' in candidate or BAD_ESCAPE.search(candidate):
+        return False
     try:
         parts = urllib.parse.urlsplit(candidate)
-        parts.port  # raises ValueError for a non-numeric or out-of-range port
-        host = urllib.parse.unquote(parts.hostname or '').lower()
+        port = parts.port
     except ValueError:
-        return True
-    if parts.scheme.lower() == 'file' or '@' in parts.netloc or not host:
-        return True
-    return any(m in host for m in HOST_MARKERS) or bool(ula_addresses(host))
+        return False
+    return (re.fullmatch(r'[A-Za-z0-9.\-]+(?::\d+)?', parts.netloc) is not None
+            and allowed_host(parts.hostname or '', port))
 
 
-def uri_leaks(body):
-    """URI and host tokens of body that name a file, a credential, a private host or a ULA address, parsed with urllib.
-    Whole URI candidates are cut at whitespace and quotes only, so userinfo such as "bob;secret@" keeps its delimiters;
-    hosts are percent-decoded and lowercased; a malformed URI-shaped candidate fails closed."""
-    found = []
-    for candidate in URI_CANDIDATE.findall(body):
-        if authority_leaks(candidate):
-            found.append(candidate)
-    for token in URI_TOKEN.findall(body):
-        if URI_CANDIDATE.search(token):
-            continue
-        decoded = urllib.parse.unquote(token).lower()
-        try:
-            scheme = urllib.parse.urlsplit(token).scheme.lower()
-        except ValueError:
-            found.append(token)  # an unparsable URI-shaped token fails closed
-            continue
-        if scheme == 'file' or (BARE_HOST.fullmatch(decoded) and any(m in decoded for m in HOST_MARKERS)):
-            found.append(token)
+def strip_wrappers(token):
+    return token.lstrip("([{'").rstrip(")]}'.,;:!?")
+
+
+def token_leaks(token):
+    """The candidates of one token that have no allowed shape."""
+    core = strip_wrappers(token)
+    if not core or any(shape.fullmatch(core) for shape in TOKEN_SHAPES.values()):
+        return []
+    found = [w for w in re.findall(r'[A-Za-z0-9%\-]+', core) if host_word(w)]
+    found += [a for a in ip_addresses(core)] + IPV4.findall(core)
+    found += [m[0] for m in HOST_PORT.finditer(core) if not allowed_host(urllib.parse.unquote(m[1]), m[2])]
+    # "name:80" is a host:port candidate (above), not a scheme.
+    schemes = [m for m in SCHEME.finditer(core) if not re.match(r'\d+(?![A-Za-z0-9])', core[m.end():])]
+    if schemes:
+        found += [core[m.start():] for m in schemes if not allowed_uri(core[m.start():])]
+        return found + token_leaks(core[:schemes[0].start()])
+    for m in re.finditer('//', core):
+        if core[m.end():] and not allowed_uri('https:' + core[m.start():]):
+            found.append(core[m.start():])
+    if '@' in core:
+        mailbox = MAILBOX.fullmatch(core)
+        domain = mailbox and mailbox[1]
+        if not domain or not (allowed_host(domain) or ('.' not in domain and not host_word(domain))):
+            found.append(core)
+        return found
+    for m in DOTTED.finditer(core):
+        if not (allowed_host(urllib.parse.unquote(m[0])) or TOKEN_SHAPES['number'].fullmatch(m[0])):
+            found.append(m[0])
     return found
+
+
+def json_strings(data):
+    if isinstance(data, str):
+        yield data
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            yield from json_strings(key)
+            yield from json_strings(value)
+    elif isinstance(data, list):
+        for value in data:
+            yield from json_strings(value)
+
+
+def published_forms(body):
+    """body as published, HTML-unescaped and as JSON strings, each also percent-decoded until stable."""
+    forms = [body, html.unescape(body)]
+    with contextlib.suppress(ValueError):
+        forms += list(json_strings(json.loads(body)))
+    for form in forms:
+        for _ in range(4):
+            yield form
+            decoded = urllib.parse.unquote(form)
+            if decoded == form:
+                break
+            form = decoded
+
+
+def leak_candidates(body):
+    """Every URL-ish or host-ish candidate in any decoded form of body that has no allowed shape."""
+    found = []
+    for form in published_forms(body):
+        for token in TOKEN.findall(without_css(form)):
+            found += token_leaks(token)
+    return sorted(set(found))
 
 
 def assert_no_uri_leak(test, body, where):
     for leak in LEAKS:
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
-    test.assertEqual(uri_leaks(body), [], where)
+    test.assertEqual(leak_candidates(body), [], where)
     test.assertEqual(ula_addresses(urllib.parse.unquote(body)), [], where)
+
+
+# The Diagnostic 6 bundle as the render job published it (2026-10-22, run 20261022T231757Z): its stored manifest
+# and attached status record, rebuilt here and pinned by the digests that name them.
+D6_ID, D6_STATUS_ID = 'adfb7668ac0c-86b84f0f741e', '86b84f0f741e-50362385ee3a'
+D6_MANIFEST_SHA256 = '86b84f0f741e099d56a6a4c6464844f9a85106860f45df599344b635330c529a'
+D6_STATUS_SHA256 = '50362385ee3ab65611767f547bc9ebdfd5a6bc04a3141c3b1cd95d1af6d433a8'
+D6_BOARD = 'adfb7668ac0c80dc1b4f1d2f97afa86b193f630c545bf43cbc0de8f49f351a40'
+D6_UNMODELLED = ('TP4', 'U19', 'U6', 'H1', 'JP5', 'H3', 'L1', 'U18', 'JP3', 'U5', 'TP6', 'H4', 'JP4', 'U12', 'U7',
+                 'TP1', 'JP2', 'D3', 'L2', 'Q1', 'H2', 'U16', 'TP2', 'JP1', 'TP3', 'TP5')
+D6_IMAGES = (('top', 'f632ac9658d4af4f3aec4935454d8f16bc053d65b1813bc06dbc3aa4c2a55f0d'),
+             ('bottom', '1f6d59bfe554a645a34d233dae2532c4e8df8ac5ee2366542b6efa4f47ced5e5'),
+             ('isometric', 'c28e7ba4d1e9c4ff59e01dc651f1ee8900192bde9325f7a49ce5f6b81d359b04'))
+
+
+def diagnostic_6():
+    """(manifest, status record) of the Diagnostic 6 bundle."""
+    manifest = {
+        'schema': 'agent-ee.gallery-bundle/3', 'label': 'Diagnostic 6', 'stage': 'diagnostic', 'board_sha256': D6_BOARD,
+        'candidate_id': None, 'published_at': '2026-10-22T23:18:18.401181+00:00',
+        'rendered_at': '2026-10-22T23:18:18.189096+00:00',
+        'model_coverage': {'summary': {'footprints': 309, 'models': 283, 'footprints_fully_resolved': 283,
+                                       'resolved': 283, 'missing': 0, 'unresolved': 0, 'disabled': 0, 'no_model': 26}},
+        'warnings': ['File availability is not proof that KiCad loaded a model; inspect native render logs.']
+        + [r + ': no 3D model is declared' for r in D6_UNMODELLED]
+        + [v + ': KiCad produced 2384×1568 for requested 2400×1600' for v, _ in D6_IMAGES],
+        'images': [{'view': v, 'path': v + '.png', 'sha256': h} for v, h in D6_IMAGES], 'viewer': False}
+    status = {
+        'schema': 'agent-ee.gallery-status/1',
+        'subject': {'area': 'bundles', 'id': D6_ID, 'manifest_sha256': D6_MANIFEST_SHA256, 'board_sha256': D6_BOARD},
+        'label': None, 'stage': None, 'routing': {'value': 'unrouted', 'evidence': ['board']},
+        'adoption': {'value': None, 'evidence': []}, 'qualification': {'value': 'unqualified', 'evidence': ['receipt']},
+        'scope': {'value': None, 'evidence': []}, 'open_defects': {'count': None, 'class': None, 'evidence': []},
+        'drc': {'violations': None, 'raw_unconnected_items': None, 'evidence': []}, 'models': [],
+        'evidence': [
+            {'role': 'board', 'name': 'telemetry-pod.kicad_pcb', 'sha256': D6_BOARD},
+            {'role': 'association', 'name': 'render-job-association_adfb7668ac0c_20261022T231757Z.json',
+             'sha256': '18aa0244d76e069367c3f6b0d44386027a3e413a7b58707c4020fa627ba595d3'},
+            {'role': 'receipt', 'name': 'rj_diagnostic-6_305fp+4holes_unrouted_not-qualified_new-board_20261022T231757Z.json',
+             'sha256': '9e49e103cd90ef9221b42f6f54b929b3e4634431696ca60faae7c38ddc71584d'}],
+        'published_at': '2026-10-22T23:18:18.509044+00:00'}
+    return manifest, status
 
 
 class LeakScanTests(unittest.TestCase):
@@ -256,29 +413,30 @@ class LeakScanTests(unittest.TestCase):
                 assert_no_uri_leak(self, body, body)
 
     def test_uri_and_host_tokens_are_parsed(self):
-        for body, expected in (('see FILE:///x', ['FILE:///x']), ('"smb://bob@srv/x"', ['smb://bob@srv/x']),
-                               ('<http://LocalHost:80/x>', ['http://LocalHost:80/x']),
-                               ('http://[fd00::1]/x', ['http://[fd00::1]/x']), ('https://example.org/x', [])):
-            self.assertEqual(uri_leaks(body), expected, body)
+        for body, expected in (('see FILE:///x', 'FILE:///x'), ('"smb://bob@srv/x"', 'smb://bob@srv/x'),
+                               ('<http://LocalHost:80/x>', 'http://LocalHost:80/x'),
+                               ('http://[fd00::1]/x', 'http://[fd00::1]/x')):
+            self.assertIn(expected, leak_candidates(body), body)
+        self.assertEqual(leak_candidates('https://example.org/x'), [])
 
     def test_userinfo_with_semicolons_or_commas_is_detected(self):
         for body in ('https://bob;secret@example.org/x', 'https://bob,secret@example.org/x',
                      '{"u": "https://bob;secret@example.org/x"}', 'see (https://a,b:c;d@example.org/x), ok'):
-            self.assertTrue(uri_leaks(body), body)
+            self.assertTrue(leak_candidates(body), body)
             with self.assertRaises(AssertionError, msg=body):
                 assert_no_uri_leak(self, body, body)
 
     def test_encoded_and_uppercase_hosts_are_detected(self):
         for body in ('http://%6cocalhost/x', 'http://%68idden/x', 'http://%66%64%30%30%3a%3a1/', '%6c%6f%63%61%6c%68%6f%73%74',
                      'LOCALHOST', 'FD00::1', 'HIDDEN', 'http://%6C%6F%63%61%6C%68%6F%73%74:80/'):
-            self.assertTrue(uri_leaks(body) or ula_addresses(urllib.parse.unquote(body)), body)
+            self.assertTrue(leak_candidates(body), body)
             with self.assertRaises(AssertionError, msg=body):
                 assert_no_uri_leak(self, body, body)
 
     def test_malformed_authority_fails_closed(self):
         for body in ('http://example.org:bad/', 'http://example.org:65536/', 'http://', 'https:///x', 'http://[broken/',
                      'http://example.org:-1/'):
-            self.assertTrue(uri_leaks(body), body)
+            self.assertTrue(leak_candidates(body), body)
             with self.assertRaises(AssertionError, msg=body):
                 assert_no_uri_leak(self, body, body)
 
@@ -291,6 +449,174 @@ class LeakScanTests(unittest.TestCase):
         for body in ('host:fd00::1', 'fd00::1:', ':fd00::1:'):
             self.assertEqual(ula_addresses(body), ['fd00::1'], body)
         self.assertEqual(ula_addresses('fcff::1 fe00::1 a1fd00b2c3d4e5f6 12:34:56'), [])
+
+    def test_each_allowed_shape_passes_on_its_published_instance(self):
+        instances = {
+            'time': ['2026-10-22T23:18:18.401181+00:00'],
+            'file': ['telemetry-pod.kicad_pcb', 'rj_diagnostic-6_305fp+4holes_unrouted_not-qualified_new-board_20261022T231757Z.json',
+                     'top.png', 'index.html', 'SOIC-8_3.9x4.9mm_P1.27mm.step', 'c-1-776163-1-t-3d.stp', 'INDEX.md',
+                     'Hidden.step'],
+            'gallery path': ['/', '/bundles/adfb7668ac0c-86b84f0f741e/top.png', '/bundles/adfb7668ac0c-86b84f0f741e/status.json'],
+            'schema': ['agent-ee.gallery-bundle/3', 'agent-ee.gallery-status/1'],
+            'number': ['3', '0.5']}
+        for shape, values in instances.items():
+            for value in values:
+                self.assertTrue(TOKEN_SHAPES[shape].fullmatch(value), (shape, value))
+                self.assertEqual(leak_candidates(value), [], value)
+        self.assertEqual(leak_candidates(
+            'https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#accessors'), [])
+        self.assertEqual(leak_candidates('Rendered 2026-10-22T23:18:18.189096+00:00 · R1: missing 3D model m.step'), [])
+
+    def test_inline_css_is_blanked_only_without_host_words(self):
+        self.assertEqual(leak_candidates('<style>a{color:#8fc9ff}img{width:100%}@media(max-width:700px){p{margin:0}}</style>'), [])
+        self.assertEqual(leak_candidates('<div style="background:#1b2735;padding:8px 16px;font:14px system-ui">'), [])
+        for body in ('<style>.localhost{color:#fff}</style>', '<div style="color:%6cocalhost">',
+                     '<style>a{background:url(//example.net/x)}</style>'):
+            self.assertTrue(leak_candidates(body), body)
+
+    def test_bare_host_marker_words_fail_in_any_case(self):
+        # No publication holds a bare marker word, so prose such as "Hidden component" fails with it.
+        for body in ('HIDDEN', 'Hidden component count is zero', 'LocalHost', 'PRIVATE-host', '%41lice'):
+            self.assertTrue(leak_candidates(body), body)
+
+    def test_diagnostic_6_publication_is_allowed(self):
+        """The real Diagnostic 6 bundle, stored and served by the gallery, has no candidate off the allow-list."""
+        manifest, status = diagnostic_6()
+        manifest_bytes, status_bytes = gallery._encode(manifest), gallery._encode(status)
+        self.assertEqual(hashlib.sha256(manifest_bytes).hexdigest(), D6_MANIFEST_SHA256)
+        self.assertEqual(hashlib.sha256(status_bytes).hexdigest(), D6_STATUS_SHA256)
+        self.assertEqual(D6_STATUS_ID, D6_MANIFEST_SHA256[:12] + '-' + D6_STATUS_SHA256[:12])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'bundles' / D6_ID).mkdir(parents=True)
+            (root / 'statuses' / D6_STATUS_ID).mkdir(parents=True)
+            (root / 'bundles' / D6_ID / 'manifest.json').write_bytes(manifest_bytes)
+            (root / 'index.json').write_bytes(gallery._encode([{'id': D6_ID, **manifest}]))
+            (root / 'statuses' / D6_STATUS_ID / 'status.json').write_bytes(status_bytes)
+            (root / 'statuses.json').write_bytes(gallery._encode([{'id': D6_STATUS_ID, **status}]))
+            stored = [p.read_text() for p in sorted(root.rglob('*.json'))]
+            server = serve(root, '127.0.0.1', 0)
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                base = f'http://127.0.0.1:{server.server_port}'
+                served = [urlopen(base + path).read().decode() for path in (
+                    '/', f'/bundles/{D6_ID}/manifest.json', f'/bundles/{D6_ID}/index.html',
+                    f'/bundles/{D6_ID}/status.json', f'/statuses/{D6_STATUS_ID}/status.json')]
+            finally:
+                server.shutdown()
+                thread.join()
+                server.server_close()
+        self.assertEqual(len(stored), 4)
+        self.assertEqual(json.loads(served[3])['attached'], 'matched')
+        self.assertIn('Retained evidence: board: telemetry-pod.kicad_pcb', served[0])
+        for n, body in enumerate(stored + served):
+            self.assertEqual(leak_candidates(body), [], n)
+            self.assertEqual(ula_addresses(urllib.parse.unquote(body)), [], n)
+            # LEAKS holds "\": JSON publications spell "×" as ×, the only one there.
+            unescaped = body.replace('\\u00d7', '×')
+            self.assertEqual([leak for leak in LEAKS if leak in (unescaped.lower() if leak == 'file:' else unescaped)],
+                             [], n)
+
+
+REAL_PUBLICATION_TEST = 'test_real_packet_and_image_names_are_published_as_plain_basenames_or_redacted'
+
+
+def run_real_publication_test(probe):
+    """DiagnosticSupplementTests.REAL_PUBLICATION_TEST with probe added to every surface it checks, as review rounds
+    1-3 injected it: a review_probe field in each JSON object, an item in each JSON list, a line after each page."""
+    original = DiagnosticSupplementTests.surfaces
+    lines = ''.join('\n' + text for text in ([probe] if isinstance(probe, str) else probe))
+
+    def surfaces(self, *args, **kwargs):
+        changed = []
+        for body in original(self, *args, **kwargs):
+            try:
+                data = json.loads(body)
+            except ValueError:
+                changed.append(body + lines)
+                continue
+            if isinstance(data, dict):
+                data['review_probe'] = probe
+            else:
+                data.append({'review_probe': probe})
+            changed.append(json.dumps(data))
+        return changed
+    result = unittest.TestResult()
+    with mock.patch.object(DiagnosticSupplementTests, 'surfaces', surfaces):
+        DiagnosticSupplementTests(REAL_PUBLICATION_TEST).run(result)
+    return result
+
+
+class AllowListMatrixTests(unittest.TestCase):
+    """The committed leak matrix. LEAK_ROWS are every leak review rounds 1-3 reported or probed (r1:
+    ee452b-gallery-fd00, r2: ee452c-tokenize, r3: ee452d-uri-failclosed, probe scripts in
+    reviews/<round>-probes/) and the redesign's own grammar cases (g); each must fail. PASSES rows are the
+    coordinator's false-positive and over-rejection controls; each must pass."""
+    LEAK_ROWS = (
+        # r1 ee452b adversarial.py and its HOLD H1 injection
+        ('r1-01', 'fd00::1'), ('r1-02', 'host:fd00::1'), ('r1-03', 'fd00::1:'), ('r1-04', 'http://[fd00::1]/x'),
+        ('r1-05', 'fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('r1-06', 'http://localhost/x'), ('r1-07', 'file:///m.step'),
+        ('r1-08', 'server-hidden'), ('r1-09', 'http://server.example/x'),
+        # r2 ee452c adversarial.py and parser_boundaries.py (HOLD H1-H3 and the accepted address forms)
+        ('r2-01', '[fd00::1]:8080'), ('r2-02', 'beef:fd00::1'), ('r2-03', 'fd00::1%eth0'),
+        ('r2-04', 'http://[fd00::1%25eth0]/'), ('r2-05', 'FD00::1'), ('r2-06', 'fcff::1'), ('r2-07', 'fe00::1'),
+        ('r2-08', '::ffff:192.168.1.2'), ('r2-09', 'http://[::ffff:192.168.1.2]/'), ('r2-10', 'http://[::ffff:127.0.0.1]/'),
+        ('r2-11', 'http://[broken/'), ('r2-12', 'http://example.org:bad/'), ('r2-13', 'http://'), ('r2-14', 'FILE:///x'),
+        ('r2-15', 'smb://bob@srv/x'), ('r2-16', 'http://LocalHost:80/x'), ('r2-17', 'http://PRIVATE-host/x'),
+        ('r2-18', 'http://HIDDEN/x'), ('r2-19', 'LOCALHOST'), ('r2-20', '//LOCALHOST/x'), ('r2-21', 'http://%6cocalhost/x'),
+        ('r2-22', 'http://%68idden/x'), ('r2-23', 'http://%66%64%30%30%3a%3a1/'),
+        ('r2-24', 'https://bob;secret@example.org/x'), ('r2-25', 'https://bob,secret@example.org/x'),
+        ('r2-26', 'https://bob@example.org/x'), ('r2-27', 'http://example.org:65536/'),
+        ('r2-28', '%6c%6f%63%61%6c%68%6f%73%74'), ('r2-29', 'HIDDEN'),
+        # r3 ee452d adversarial.py, additional.py and boundaries.py (HOLD H1-H3)
+        ('r3-01', "https://bob'pass@example.org/x"), ('r3-02', "https://bob'pass:secret@example.org/x"),
+        ('r3-03', 'LOCALHOST:80'), ('r3-04', 'http://[::1]junk/'), ('r3-05', 'http:/example.org/x'),
+        ('r3-06', 'http://example.org:-1/'), ('r3-07', 'https:///x'), ('r3-08', 'https://'),
+        ('r3-09', 'http:/LOCALHOST/x'), ('r3-10', 'http:LOCALHOST'), ('r3-11', 'http://%6C%6F%63%61%6C%68%6F%73%74:80/'),
+        # g: scheme typos, userinfo with any delimiter, bare host:port, encoding and case, IP literals and zones
+        ('g-01', 'https:example.org'), ('g-02', 'HTTPS://LOCALHOST/'), ('g-03', 'mailto:bob@example.org'),
+        ('g-04', 'https://bob!x@example.org/'), ('g-05', 'https://bob$x@example.org/'), ('g-06', 'https://bob(x)@example.org/'),
+        ('g-07', 'https://bob*x=y&z@example.org/'), ('g-08', 'https://b%40b@example.org/'), ('g-09', 'https://:secret@example.org/'),
+        ('g-10', 'example.org:65536'), ('g-11', 'intranet.corp:443'), ('g-12', '%6C%6F%63%61%6C%68%6F%73%74:80'),
+        ('g-13', '%256cocalhost'), ('g-14', 'https://еxample.org/'), ('g-15', 'fe80::1%eth0'),
+        ('g-16', '[fe80::1%25eth0]:80'), ('g-17', '10.0.0.1'), ('g-18', 'https://192.168.1.2/'), ('g-19', 'bob@localhost'),
+        ('g-20', 'https://example.org/?u=http://intranet.corp'), ('g-21', 'x=https://intranet.corp/'),
+        ('g-22', 'intranet.corp'), ('g-23', 'https://example.org.evil.test/'), ('g-24', 'https://example.org:8443@intranet.corp/'),
+        ('g-25', 'https://example.org/%zz'), ('g-26', 'bob:secret@example.org'), ('g-27', 'https://example.org\\@intranet.corp/'))
+    PASSES = (
+        'email@example.com in prose', 'commit: user@host', 'version fd00a1b', 'a1fd00b2c3d4e5f6 plain prose',
+        'https://example.org/x', 'https://example.org:0/x', 'https://example.org:65535/x', 'https://example.org:65535',
+        'https://example.org:8443/a;b,c', 'see (https://example.org)', 'see (https://example.org:8443)',
+        '(https://example.org:65535)', "'https://example.org/x'", 'Hidden.step', 'Use // for integer division', 'a//',
+        '', '{}')
+    WRAPPERS = ('{}', '({})', "'{}'", 'see {}.', '[{}]')
+
+    def test_every_leak_fails_the_allow_list_bare_wrapped_and_encoded(self):
+        for row, text in self.LEAK_ROWS:
+            for body in ([w.format(text) for w in self.WRAPPERS] + [json.dumps({'u': text}), json.dumps([text]),
+                         html.escape(text), '<a href="' + html.escape(text) + '">x</a>']):
+                self.assertTrue(leak_candidates(body), (row, body))
+                with self.assertRaises(AssertionError, msg=(row, body)):
+                    assert_no_uri_leak(self, body, row)
+
+    def test_every_control_passes(self):
+        rng = random.Random(452)
+        ids = [''.join(rng.choices('0123456789abcdef', k=12)) + 'fd00' + ''.join(rng.choices('0123456789abcdef', k=44))
+               for _ in range(1000)]
+        for body in self.PASSES + (json.dumps({'id': ids}), json.dumps(list(self.PASSES))):
+            assert_no_uri_leak(self, body, body[:80])
+
+    def test_each_injected_leak_fails_the_real_publication_test(self):
+        for row, text in self.LEAK_ROWS:
+            result = run_real_publication_test(text)
+            self.assertEqual((result.testsRun, len(result.failures), len(result.errors), len(result.skipped)),
+                             (1, 1, 0, 0), (row, text, result.errors))
+
+    def test_injected_controls_pass_the_real_publication_test(self):
+        result = run_real_publication_test(list(self.PASSES))
+        self.assertEqual((result.testsRun, len(result.failures), len(result.errors), len(result.skipped)),
+                         (1, 0, 0, 0), result.failures + result.errors)
 
 
 def records(text):
@@ -929,7 +1255,8 @@ class GalleryTests(unittest.TestCase):
 
         exact = (legacy_marker, slash_only, plain_text, marker_name)
         for leaky in (lambda text: text, scrubbed, unlisted, loose_basename, *exact):
-            with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
+            # A marker substring, or a candidate off the allow-list (which can catch a leaky design first).
+            with self.assertRaisesRegex(AssertionError, 'unexpectedly found in|Lists differ'):
                 assert_leak_free(self, leaky, rounds=200, stride=1 if leaky in exact else 7)
         assert_leak_free(self, surfaces, seed=1, rounds=200, stride=50)
 
