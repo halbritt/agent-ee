@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 8 — 2026-10-23: routing repair ROUTE-2 recorded as rejected (no new candidate); next action is one bounded local repair ROUTE-3 from the preserved ROUTE-1 candidate by agent-507 (agent-521 brief 63b4738d). Revision 7: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 9 — 2026-10-23: ROUTE-3 attempt 2 accepted as the improved working candidate (08066170, 77 open); next action is one serial local-repair batch ROUTE-4 by agent-507 (agent-521 brief fec851cd). Revision 8: routing repair ROUTE-2 recorded as rejected (no new candidate); next action is one bounded local repair ROUTE-3 from the preserved ROUTE-1 candidate by agent-507 (agent-521 brief 63b4738d). Revision 7: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -214,7 +214,7 @@ Status: TERMINAL, REJECTED. There is no new candidate and no new render; the evi
 - "PASS" is relative to ROUTE-1 only. The 61 dangling warnings remain relative to the original R5 and must be cleared before release.
 - Not repeated: the global approach (a 119-net, 90-blocker rip). Progress is not advertised.
 
-## Next action (revision 8)
+## Action ROUTE-3 (revision 8, executed)
 
 Observation: a broad repair lost more completed nets than it gained.
 
@@ -232,6 +232,37 @@ Action: ROUTE-3, executed by agent-507 and integrated by agent-449. It is new bo
 Acceptance: a native whole-board comparison after each retained local edit. An edit is kept only if target connectivity improves, no net regresses, and there is no new native violation against ROUTE-1. The existing 61 dangling findings are reported explicitly against the original R5. If supported tools cannot bound the disturbance, or the obstruction is immutable, there is no further broad rip; the executor returns the exact blocked pad or region and the smallest concrete placement or routing correction for decision.
 
 Decision-changing observation: a retained local improvement shows that bounded repair works on caged nets. An immutable obstruction redirects the next step to a placement or routing correction.
+
+## Routing repair ROUTE-3 (revision 9 record)
+
+Status: ACCEPTED AS THE IMPROVED WORKING CANDIDATE. It is not released and not fully routed.
+
+- Run: agent-507, a bounded local repair from the preserved ROUTE-1 candidate; attempt 2 was terminal at 07:51:50Z. Target /SENSOR_POWER_AUX_DVDT (U30.8) is now connected.
+- Candidate: telemetry-pod.kicad_pcb SHA256 0806617082c33df6daaa00f5d9c6131e7e07ac6160aadc07a2b2bcb90b5ac651, with the original project 10002b98….
+- Against ROUTE-1 (graded with validate --against): PASS. No new DRC, parity 0, no lost nets or split components, all preservation checks pass. Whole-board unconnected went from 78 to 77 and DRC from 141 to 140.
+- Against the original R5: FAIL only on the 60 remaining dangling findings (33 via_dangling, 27 track_dangling). All preservation checks pass. These inherited defects are tracked against R5 and must be cleared before release.
+- Render: gallery bundle 0806617082c3-f0aa17fbffd7 ("Diagnostic 9"), labelled 77 open / 60 dangling / INCOMPLETE / NOT RELEASED. The four-hour render cadence continues on this pin.
+- Evidence: ROUTE-2 (rejected) is on fome-mc main ae188864, telemetry-pod/expansion/route-2/. ROUTE-3 evidence lands under telemetry-pod/expansion/route-3/ when agent-507 commits it.
+
+## Next action (revision 9)
+
+Observation: a bounded local repair closed one caged connection without any regression. The global repair (ROUTE-2) lost more than it gained.
+
+Hypothesis: serial bounded local repairs on the failed nets with the strongest local-obstruction evidence reduce actual remaining connections without regression. This is a finite method, not a redefinition of done.
+
+Action: ROUTE-4, ONE serial batch by agent-507, after it finishes the ROUTE-3 evidence. agent-449 integrates.
+
+- Incumbent: candidate 08066170.
+- Targets: up to 5 remaining failed nets, selected by the strongest concrete local-obstruction evidence and the expected reduction in whole-board opens. U18.5 /SUP_U18_CT is already diagnosed. GND islands only with exact native terminal evidence.
+- Per target: at most 2 attempts, and only the target plus at most 3 causally identified generated blocker nets, with affected poured-net safety. Local generated-copper edits need a native precheck before routing.
+- Tools: existing native and direct local geometry tools and the qualified router only. No new routing software, integration or research, and no global re-rip.
+- Unchanged: netclass width, clearance and vias, severities, locked and human copper, footprints, pads, nets, outline, stackup and keepouts.
+- Retain a step only if whole-board native unconnected drops, no previously connected net or terminal equivalence regresses (including partial-net partitions), parity is 0, there is no new native DRC against the incumbent, and all preservation checks pass. Otherwise revert to the last validated incumbent. The original-R5 baseline is kept for the outstanding dangling findings; inherited defects are not laundered.
+- Stop after 2 consecutive target failures, any unresolvable native regression, or the limits: at most 1200 s total actual backend across the batch and at most 45 minutes wall. No automatic further batch, no parallel run, no new agent, no model review, no cloud.
+
+Return: the best candidate plus a compact per-target record (changed objects and settings, before and after, native results) and the exact residual obstruction, not five full duplicate report trees.
+
+Decision-changing observation: agent-521 decides the next step from the per-target outcomes and the residual obstruction.
 
 ## Decision after that result
 
