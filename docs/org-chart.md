@@ -23,7 +23,9 @@ forwards owner decisions verbatim and has no owner authority. No current agent i
 delegate or holds owner-reserved authority (chief 531, Cairn 31eae84c). Money, orders,
 uploads, new cloud, caps and owner constraints remain owner-reserved. The owner also told
 agent-532: "make sure the org chart gets updated".
-Authority order: owner > chief agent-531 > integrator agent-530, within delegated scope.
+The owner then stated, at about 22:53Z: "the chief coordinator makes decisions".
+Authority order: owner > chief agent-531 (makes decisions) > integrator agent-530, within
+delegated scope; agent-532 forwards and decides nothing.
 Agent-521 remains fired, and agent-508 holds no standing authority.
 
 Historical provenance: on 2026-10-22 the owner directly instructed agent-521: "execute the process per your
