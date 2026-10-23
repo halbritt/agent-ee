@@ -53,6 +53,26 @@ def validate(inputs, board, plan_path, work, *, drc=None, timeout=180):
 
 
 
+def binding_inputs(params):
+    """Inputs that the existing baseline/capability machinery must keep immutable."""
+    from .stage_receipts import _relative
+    declarations = params.get('plane_obligations', [])
+    if not isinstance(declarations, list):
+        raise ValueError('plane_obligations must be a list')
+    paths = set()
+    for declaration in declarations:
+        if not isinstance(declaration, dict) or set(declaration) != {'plan', 'producer', 'composition'}:
+            raise ValueError('plane obligation requires plan, producer and composition bindings')
+        for link in declaration.values():
+            if not isinstance(link, dict) or set(link) != {'path', 'sha256'}:
+                raise ValueError('plane binding requires path and sha256')
+            paths.add(_relative(link['path'], 'plane binding'))
+            value = link['sha256']
+            if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+                raise ValueError('plane binding requires a SHA-256 digest')
+    return sorted(paths)
+
+
 def bound_plans(inputs, files, params):
     """Resolve explicit scope bindings against captured producer and composition facts.
 
@@ -62,9 +82,8 @@ def bound_plans(inputs, files, params):
     from .add_planes import SCHEMA, RESULT
     from .stage_receipts import _relative
     inputs = Path(inputs)
+    binding_inputs(params)
     declarations = params.get('plane_obligations', [])
-    if not isinstance(declarations, list):
-        raise ValueError('plane_obligations must be a list')
     plans, producers, compositions = set(), set(), set()
     composition_plans = {}
 

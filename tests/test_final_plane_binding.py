@@ -1,5 +1,6 @@
 """Captured provenance binding and real capture -> final DRC negative control."""
 import copy
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -91,6 +92,32 @@ class PlaneBindingTests(unittest.TestCase):
         self.assertTrue((run/'work/drc/drc.json').is_file(), result)
         self.assertEqual(result['execution'], 'malformed', result)
         self.assertIn('unbound captured plane obligation', result['summary'])
-        evidence = __import__('os').environ.get('FINAL_PLAN_EVIDENCE')
+        evidence = os.environ.get('FINAL_PLAN_EVIDENCE')
         if evidence:
             shutil.copytree(run, Path(evidence)/self._testMethodName, dirs_exist_ok=True)
+
+    def test_capture_freezes_all_three_binding_inputs_in_scope2_and_scope3(self):
+        from agent_ee.baseline import load_baseline
+        from agent_ee.capabilities import convert_scope
+        scope = fixture(self.root, 'drc')
+        scope['checks'][0]['params'] = self.params
+        for path in (self.path, 'producer.json', 'composition.json'):
+            scope['inputs'].append({'path':str(self.root/path), 'at':path})
+        for version in (2, 3):
+            with self.subTest(version=version):
+                selected = scope if version == 2 else convert_scope(scope)
+                run, manifest = capture(self.root, selected, name=f'bound-{version}')
+                baseline = load_baseline(run)
+                for path in final_planes.binding_inputs(self.params):
+                    self.assertEqual(baseline['files'][path], manifest['files'][path])
+                    if version == 3:
+                        self.assertIn(path, baseline['coverage']['checks']['drc']['immutable_inputs'])
+
+    def test_composition_cannot_hide_second_required_plan(self):
+        path = self.root/'composition.json'
+        record = read_json(path)
+        record['planes'].append({'path':'missing-second-plan.json', 'sha256':'a'*64})
+        write_json(path, record)
+        self.params['plane_obligations'][0]['composition']['sha256'] = digest(path)
+        with self.assertRaisesRegex(ValueError, 'undeclared plane obligation'):
+            final_planes.bound_plans(self.root, self.files(), self.params)
