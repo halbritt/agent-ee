@@ -1140,3 +1140,22 @@ the hash chain must end at the witness's final capture and member poses. Review
 input validation compares the complete witness and roster against the published
 plan. These identity checks do not substitute for native save/reload or the
 independent saved-board contract judgment.
+
+Candidate sets enable a post-global member pass. Optional
+`arrangement.refinement: {"step_budget": 64}` sets its separate finite budget
+(default 64; zero disables trial moves). Only search-derived, unlocked,
+non-anchor members move, within their original selected block window and with
+unchanged face and rotation. Contact targets include exact non-ground native
+pad-centroid alignments, with integer neighbors for fractional centers. An
+accepted move must reduce internal HPWL without increasing whole-board HPWL or
+any declared 3D pin distance; all applicable hard placement rules still hold.
+Reference layouts stay unchanged. The plan records refinement steps separately
+from macro and residual search, plus an explicit unavailable routing-feedback
+record. This finite local pass does not establish an optimal placement.
+
+After saving, `block-refinement-verification.json` reconstructs the selected
+starting layout from native coordinates and replays each accepted translation.
+It independently checks the actual request, candidate identity, final poses,
+metrics and hard constraints. Its saved-native capture hashes are distinct from
+the planner witness hashes. Failed replay refuses publication and retains the
+verification failure beside the saved block-contract report.
