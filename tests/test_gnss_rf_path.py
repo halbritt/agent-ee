@@ -141,7 +141,7 @@ class NativeRfMechanismTests(unittest.TestCase):
         for result in results.values():
             self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
         cls, = record['classes']
-        self.assertEqual(cls['min_track_width_mm'], 0.335)
+        self.assertEqual(cls['min_track_width_mm'], 0.293)
         self.assertEqual(cls['impedance']['status'], 'recorded_not_enforced')
         self.assertEqual(cls['impedance']['target_ohm'], 50)
         board_path = self.source / 'test.kicad_pcb'
@@ -151,13 +151,13 @@ class NativeRfMechanismTests(unittest.TestCase):
         board = k.LoadBoard(str(board_path))
         tracks = list(board.GetTracks())
         self.assertTrue(tracks)
-        self.assertTrue(all(t.GetWidth() == 335000 and t.GetNetname() == '/POD_GNSS_RF' for t in tracks))
-        tracks[0].SetWidth(334999)
+        self.assertTrue(all(t.GetWidth() == 293000 and t.GetNetname() == '/POD_GNSS_RF' for t in tracks))
+        tracks[0].SetWidth(292999)
         k.SaveBoard(str(board_path), board)
         negative = self.evaluate(self.source, 'narrower')
         self.assertEqual((negative['width']['execution'], negative['width']['outcome']), ('ok', 'defect'))
         offender, = negative['width']['details']['offending_primitives']
-        self.assertEqual((offender['net'], offender['limit_mm']), ('/POD_GNSS_RF', 0.335))
+        self.assertEqual((offender['net'], offender['limit_mm']), ('/POD_GNSS_RF', 0.293))
         self.assertEqual(negative['routing']['outcome'], 'pass')
         after = {p.name: digest(p) for p in self.source.iterdir() if p.is_file()}
         self.assertEqual({n for n in before if before[n] != after[n]}, {'test.kicad_pcb'})
@@ -223,12 +223,20 @@ class CapturedRfDeclarationTests(unittest.TestCase):
         self.assertEqual((calculation['solver_status'], calculation['result_valid']), (0, 1))
         cls, = read_json(path)['classes']
         self.assertEqual((cls['name'], cls['nets']), ('RF_50', ['/POD_GNSS_RF']))
+        # AGENTEE-186 (agent-529 4cf9d43d v2): widths come from the ADOPTED inverse result, bound by path and sha256;
+        # the forward calculation above stays the historical capture.
+        adopted = mapping['adopted_inverse']
+        inverse_path = capture_path.parent / adopted['result_path']
+        self.assertEqual(digest(inverse_path), adopted['result_sha256'])
+        inverse = read_json(inverse_path)['impedance_calc_result']
+        self.assertEqual((inverse['dResultValid'], inverse['dErEff'], inverse['dImpedance']),
+                         (1, adopted['er_eff'], adopted['impedance_ohm']))
         for label, result_field, constraint_field in (
                 ('lower_width', 'W1', 'track_width_mm'), ('gap', 'D1', 'clearance_mm'),
                 ('upper_width', 'W2', None)):
             with self.subTest(dimension=label):
                 dimension = mapping[label]
-                mil = Decimal(str(calculation['geometry_mil'][result_field]))
+                mil = Decimal(str(inverse['jBackCalc'][result_field]))
                 self.assertEqual(Decimal(str(dimension['mm'])), mil * Decimal('0.0254'))
                 self.assertEqual(dimension['constraint_field'], constraint_field)
                 if constraint_field:

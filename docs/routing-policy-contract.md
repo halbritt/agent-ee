@@ -105,7 +105,7 @@ and `netclass_patterns: []` (line 300). The four copper layers are all native ty
 | Minimum via annular ring | 0.10 mm | `board-setup.kicad_pro:157` | engineering (`constraints.json:44`) | engineering (hard) |
 | Hole clearance / hole to hole | 0.25 / 0.25 mm | `board-setup.kicad_pro:147-148` | engineering (`constraints.json:56`, `50`) | engineering (hard) |
 | Copper to edge | 0.30 mm | `board-setup.kicad_pro:145` | engineering (`constraints.json:62`) | engineering (hard) |
-| `agent_ee_netclass_RF_50` track width | min 0.335 mm | `telemetry-pod.kicad_dru:2-4` | engineering (`constraints.json:96-97`) | owner (hard), but **inert** |
+| `agent_ee_netclass_RF_50` track width | min = max 0.293 mm (AGENT-selected CONDITIONAL, 529 4cf9d43d v2; history min 0.335 mm) | `telemetry-pod.kicad_dru:2-4` | engineering (`constraints.json:96-97`) | owner (hard), **active** via the exact-net selector (fome-mc 484r); CPW gap min 0.2032 mm (186) |
 | Fine-pitch pad-to-pad, U2 and U16–U19 | 0.15 mm | `telemetry-pod.kicad_dru:5-19` | datasheet (`constraints.json:101-102`) | owner (hard), pad pairs inside one footprint only |
 
 Notes on the classes:
@@ -121,7 +121,8 @@ Notes on the classes:
 - **Same-stem custom rules are owner rules.** `finding_sources` classes each rule
   in the board's own `.kicad_dru` as `owner`, unless a binding declares it
   generated. Their `constraints.json` descriptions are not exact native rule names.
-- **RF_50 is inert.** The rule's condition is `A.NetClass == 'RF_50'`. No project
+- **RF_50 was inert (corrected).** Since fome-mc AGENTEE-484r the rule also selects `A.NetName == '/POD_GNSS_RF'` directly, so it is active; AGENTEE-186 sets width min = max 0.293 mm and a 0.2032 mm CPW gap clearance. The original finding follows.
+  **RF_50 is inert.** The rule's condition is `A.NetClass == 'RF_50'`. No project
   read here defines that class: only the older 80×50 mm pod project
   (`telemetry-pod/telemetry-pod.kicad_pro:185`) does. On the expanded board an RF
   track is routed and graded at the Default 0.20 mm. The iteration-3 diagnostic's

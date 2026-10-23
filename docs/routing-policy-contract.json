@@ -88,7 +88,7 @@
       {"item": "min_hole_clearance", "value_mm": 0.25, "source": "board-setup.kicad_pro:147", "fome_mc_class": "engineering (constraints.json:56)", "agent_ee_class": "engineering", "enforcement": "hard"},
       {"item": "min_hole_to_hole", "value_mm": 0.25, "source": "board-setup.kicad_pro:148", "fome_mc_class": "engineering (constraints.json:50)", "agent_ee_class": "engineering", "enforcement": "hard"},
       {"item": "min_copper_edge_clearance", "value_mm": 0.3, "source": "board-setup.kicad_pro:145", "fome_mc_class": "engineering (constraints.json:62)", "agent_ee_class": "engineering", "enforcement": "hard"},
-      {"item": "RF_50 track width min", "value_mm": 0.335, "source": "telemetry-pod.kicad_dru:2-4", "fome_mc_class": "engineering (constraints.json:96-97)", "agent_ee_class": "owner (captured same-stem rule file)", "enforcement": "inert: no RF_50 net class exists, /POD_GNSS_RF is Default"},
+      {"item": "RF_50 track width (min = max)", "value_mm": 0.293, "source": "telemetry-pod.kicad_dru:2-4", "fome_mc_class": "engineering, AGENT-selected CONDITIONAL (agent-529 4cf9d43d v2; constraints.json:96-97 history 0.335)", "agent_ee_class": "owner (captured same-stem rule file)", "enforcement": "active: exact-net selector A.NetName == '/POD_GNSS_RF' (fome-mc AGENTEE-484r); CPW gap clearance min 0.2032 mm on F.Cu (AGENTEE-186)"},
       {"item": "fine-pitch intra-footprint pad clearance U2, U16-U19", "value_mm": 0.15, "source": "telemetry-pod.kicad_dru:5-19", "fome_mc_class": "datasheet (constraints.json:101-102)", "agent_ee_class": "owner (captured same-stem rule file)", "enforcement": "hard; pad-to-pad inside one footprint only, never a routing clearance"}
     ],
     "layers": {
