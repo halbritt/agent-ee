@@ -120,7 +120,9 @@ class StackupMaterialTest(unittest.TestCase):
                     'source_value': None, 'serialized_value': '0.02', 'qualification': 'unqualified',
                     'origin': 'KiCad serialization/tool default', 'used_for_impedance': False})
         (self.root / 'correct-round-trip.json').write_bytes(encoded(trip))
-        self.assertEqual(compare_saved('stackup/1', record, saved_structure(saved))['status'], 'unknown')
+        judgment = compare_saved('stackup/1', record, saved_structure(saved))
+        self.assertEqual((judgment['status'], judgment['defects']), ('unknown', []), judgment)
+        self.assertIs(judgment['impedance_qualified'], False)
         # Native load/save controls use the same accepted source; only saved values change.
         for name, before, after, field in (
                 ('wrong-type', b'(type "prepreg")', b'(type "core")', 'dielectric_type'),
@@ -133,8 +135,15 @@ class StackupMaterialTest(unittest.TestCase):
                 self.assertEqual(next(r for r in comparison['fields']
                     if r['field'] == f'/stackup/layers/1/{field}')['status'], 'mismatch')
                 judgment = compare_saved('stackup/1', record, saved_structure(wrong))
-                self.assertNotEqual(judgment['status'], 'pass')
+                self.assertEqual(judgment['status'], 'defect', judgment)
                 self.assertTrue(any(field in defect for defect in judgment['defects']), judgment)
+                self.assertTrue(any('loss tangent is unknown' in item for item in judgment['unknown']), judgment)
+                self.assertEqual(len(judgment['material_evidence']), 3)
+                self.assertTrue(all(item['source_value'] is None
+                                    and item['qualification'] == 'unqualified'
+                                    and item['used_for_impedance'] is False
+                                    for item in judgment['material_evidence']))
+                self.assertIs(judgment['impedance_qualified'], False)
 
         known = copy.deepcopy(self.envelope)
         for layer in known['stackup']['layers']:
@@ -156,6 +165,37 @@ class StackupMaterialTest(unittest.TestCase):
         self.assertTrue(any('loss_tangent' in defect for defect in judgment['defects']), judgment)
         (self.root / 'known-loss-round-trip.json').write_bytes(encoded(round_trip(encoded(known), known_saved)))
         (self.root / 'wrong-loss-round-trip.json').write_bytes(encoded(loss_trip))
+
+    def test_material_declarations_require_dielectric_type(self):
+        for declaration in ({'epsilon_r': 4.4}, {'loss_tangent': None},
+                            {'loss_tangent': 0}, {'loss_tangent': 0.018},
+                            {'epsilon_r': 4.4, 'loss_tangent': None}):
+            with self.subTest(declaration=declaration):
+                changed = copy.deepcopy(self.envelope)
+                layer = changed['stackup']['layers'][1]
+                for field in ('dielectric_type', 'epsilon_r', 'loss_tangent'):
+                    layer.pop(field)
+                layer.update(declaration)
+                with self.assertRaisesRegex(ValueError, 'material declaration requires dielectric_type'):
+                    self.record(changed)
+
+    def test_native_zero_loss_is_known_and_compared(self):
+        require_toolchain(native=True)
+        declared = copy.deepcopy(self.envelope)
+        for layer in declared['stackup']['layers']:
+            if layer['kind'] == 'dielectric':
+                layer['loss_tangent'] = 0
+        record = self.record(declared)
+        saved = self.native_save(board(record, 'explicit-zero-loss'), 'zero-loss')
+        judgment = compare_saved('stackup/1', record, saved_structure(saved))
+        self.assertEqual((judgment['status'], judgment['unknown'], judgment['material_evidence']),
+                         ('pass', [], []), judgment)
+        self.assertIs(judgment['impedance_qualified'], False)
+        fields = {row['field']: row for row in round_trip(encoded(declared), saved)['fields']}
+        for index in (1, 3, 5):
+            loss = fields[f'/stackup/layers/{index}/loss_tangent']
+            self.assertEqual(loss['status'], 'match')
+            self.assertEqual(loss['detail'], {'declared': '0', 'board': '0'})
 
     def test_material_field_domains_and_copper_refusal(self):
         self.record()
@@ -198,6 +238,10 @@ class StackupMaterialTest(unittest.TestCase):
         self.assertNotIn(b'loss_tangent', generated)
         self.assertEqual([l['type'] for l in board_facts(generated)['stackup'] if l['type'] != 'copper'],
                          ['core', 'core', 'core'])
+        judgment = compare_saved('stackup/1', legacy, saved_structure(generated))
+        self.assertEqual((judgment['status'], judgment['defects'], judgment['unknown']), ('pass', [], []))
+        self.assertNotIn('material_evidence', judgment)
+        self.assertNotIn('impedance_qualified', judgment)
 
 
 if __name__ == '__main__':

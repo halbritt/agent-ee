@@ -89,8 +89,9 @@ new manufacturing authority. Copper layers and envelope/1 refuse them.
 | `epsilon_r` | Positive, finite relative permittivity; emitted as native `epsilon_r` |
 | `loss_tangent` | A finite nonnegative value when explicitly known, or `null` when unknown. Zero is an explicit value, not a synonym for unknown |
 
-These fields are optional independently. Omission preserves legacy envelopes;
-it does not establish a material value. Boolean values, numeric strings,
+Declaring `epsilon_r` or `loss_tangent` requires `dielectric_type`, including
+when loss is `null` or zero. Omitting all material fields preserves legacy
+envelopes; it does not establish a material value. Boolean values, numeric strings,
 nonfinite numbers and negative loss are refused. The producer must cite evidence
 supporting the declared material and its applicability; a thickness-only citation
 does not substantiate permittivity or loss. Source verification checks captured
@@ -106,7 +107,9 @@ emission behavior. A different saved value is still unqualified when the source
 declares unknown loss; it is not necessarily a KiCad default.
 
 `stackup/1` compares supplied type, permittivity and numeric loss exactly with
-saved values. Declared unknown loss produces an unknown result and retains
+saved values. A proven material difference produces a defect even when loss is unknown.
+Without a proven difference, declared unknown loss produces an unknown result.
+Both results retain the unknown-loss reasons and
 `material_evidence` with the source value, serialized value and unqualified
 status. Round-trip evidence marks that loss field `not_compared` and retains
 `serialized_value`; it never substitutes the saved value into the envelope.
