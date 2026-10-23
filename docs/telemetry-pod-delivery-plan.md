@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 1 — owner resumed 2026-10-22 after stopping the campaign.
+Revision 2 — 2026-10-23: first placement attempt recorded; next action is one changed placement-search attempt (agent-521 brief 220a5aa0). Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -22,6 +22,28 @@ Agent-449 selects one existing ordinary-model writer and one compatible local ad
 Preserve all 305 electrical footprints and four mounting holes, reference/net mapping, native design rules, sourced mechanical limits, fixed right-angle AMPSEAL J1 1-776163-1, and the accepted four-layer/1.6 mm stackup. Check source provenance when applying numeric policy constraints: agent-selected packing heuristics are not owner/manufacturer requirements. Do not silently weaken sourced constraints to obtain completion.
 
 Return the saved board and project, immutable hashes, run directory, exact command/runtime, elapsed time, placement completion result, connectivity/footprint preservation checks, and native diagnostic delta. A partial or timed-out placement remains partial. An actual failed attempt is useful evidence; a report describing an unexecuted attempt is not the requested result.
+
+## Placement attempt R1 (revision 2 record)
+
+Status: NOT PLACED. Partial stays partial; there is no placed board and nothing is ready for routing.
+
+- Run: one bounded execution on proximal through native admission, qualified runtime image d96f8e00 with agent-ee 7d5b0d4d, using the campaign's own placement adapter declaration (helper agent-ee.placer/1, timeout 1500 s).
+- Input: fome-mc 881f6fc5 telemetry-pod.kicad_pcb 2f1c9557… and telemetry-pod.kicad_pro 10002b98…, unchanged; the emission-7d5b0d4d design tree was verified file by file.
+- Result (attempt 1c): packing_budget_exhausted after 316.9 s; deterministic step_budget 200000 exhausted with 260 backjumps; peak 283 of 309 placed (9 sourced-fixed plus 274 of 300 movable); first unplaced R19. About 1183 s of the 1500 s bound were unused. The 283-pose plan is diagnostic only. The placer publishes no board on a typed failure.
+- Input defects repaired within the bound:
+  - agent-ee main refuses the project's constraint-provenance witness, which producer 7d5b0d4d emitted before AGENTEE-348 changed geometry defaults; the attempt used the qualified 7d5b0d4d runtime.
+  - The derived request policy fixed C42, D3, L3 and U3 outside the board outline with no source; policy r1 removes only those four from fixed_refs.
+- Native check of the input: 309 footprints (305 electrical plus 4 holes), 235 nets, four copper layers at 1.6 mm, 21 DRC findings and 499 unconnected, matching the historical diagnostic.
+- Constraints applied without a recorded source: the J1, U1 and U2 poses, the H1–H4 insets, the 90 × 65 mm outline and the antenna keepout. They were applied, not weakened.
+- Evidence: fome-mc branch commit 31fe446, telemetry-pod/expansion/placement-r1/ (RESULT.md, SHA256SUMS, input copies, repair policy and diff, run evidence).
+
+## Next action (revision 2)
+
+The same ordinary-model worker, on the same qualified runtime and proximal admission, makes ONE changed placement-search attempt on the same repaired input. Placement priority changes so that R19 and the demonstrated difficult remaining area are placed before space is consumed. The worker first confirms from the actual geometry and policy that this change is meaningful; that check is part of the execution, not a separate proposal or review.
+
+Unchanged: the fixed sourced set, rules, clearances, board outline and stackup, electrical locality requirements and all parts. No numeric constraint changes and no new scorer. The R1 source and provenance repairs stay, and the exact policy delta is documented. Budget: 200000 search steps, at most 1500 s wall time, at most 10 minutes of setup and checks. No unchanged rerun, automatic successor or broad optimization. If the evidence contradicts the ordering hypothesis, the worker returns that evidence and the best concrete alternative before running.
+
+Predicted result: placing the failing remainder first avoids the observed late-search collision and fragmentation and produces a complete saved placement. On success the worker returns the saved board and project, hashes, and the native preservation and DRC delta, for an immediate routing assignment. On failure it returns the new unplaced frontier, partial count, backjumps and geometry evidence, so the approach can change instead of repeating the same search.
 
 ## Decision after that result
 
