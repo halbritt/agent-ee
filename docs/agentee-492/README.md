@@ -83,7 +83,15 @@ no-exceptions policy.
 Reference copper is selected by **net label** and geometric containment. The
 native probe removes every via after filling and saving; all fixture ground pads
 are F.Cu SMD. In1 retains one filled polygon with no conductive path to a terminal.
-`evaluate_cpw` reports reference PASS. The task's connected-In1 requirement is not
+`evaluate_cpw` reports reference PASS. Independent Fable review reproduced this
+with a freshly filled `vias=False` board too: this is not limited to stale fill.
+The existing composed pod-shaped declaration already reports a stitching DEFECT
+when all vias are absent; a CPW-only declaration lacks that safeguard. A reference
+island disconnected from otherwise present stitching vias remains a separate gap.
+Existing documentation describes geometric containment, not verified zone
+connection, so this is a missing requirement for the new contract rather than a
+claim that the existing composed checker accepts the via-free board. The task's
+connected-In1 requirement is not
 an existing invariant that can simply be preserved: it needs implementation.
 
 ## Finite repair, using this checker
@@ -203,3 +211,14 @@ returned admission timeout (exit 75) after 60 seconds; it did **not** run. No re
 or admission bypass was used. `git diff --check` is clean. The diagnostic source
 and this report are the only committed changes; production checker behavior is
 unchanged, so the implementation acceptance gate remains HOLD.
+
+## Follow-up emitter feasibility
+
+The subsequent bounded native emitter experiment is recorded in
+[emitter.md](emitter.md). It demonstrates exact straight-section physical gaps
+without changing the required clearance, and does not implement the pending
+checker repair. Its runs use admitted `ae-ci-exec` on peecee-wsl. Fable's earlier
+G2 process correction is accepted: the original direct Docker invocation lacked
+the wrapper's lease label and resource flags; it must not be reused as the run
+procedure. The reviewer independently reproduced the original results through
+`ae-ci-exec` and completed the previously blocked documentation check.
