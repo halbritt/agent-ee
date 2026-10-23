@@ -148,7 +148,7 @@ Reference boards:
 
 | Item | State | Holder / handle | Budget | Blocker and next actor |
 | --- | --- | --- | --- | --- |
-| AGENTEE-479 implementation (engine) | **running** | agent-524 (codex gpt-6-astra), Cairn request `91c7aab7`, from 09:39Z, branch `wt/agentee-479`. agent-524 also finalizes `block-candidate-set/1`. | 120-minute checkpoint | Verification: agent-510 (contract and evidence) plus an Opus-high critical code review (different class from the Astra implementer), unless agent-529 directs otherwise. Final regeneration consumes the reviewed 484 and 480 results. |
+| AGENTEE-479 implementation (engine) | **running** | agent-524 (codex gpt-6-astra), Cairn request `91c7aab7`, from 09:39Z, branch `wt/agentee-479`. agent-524 also finalizes `block-candidate-set/1`. | 120-minute checkpoint | Verification: agent-510 (Astra) checks the contract and evidence; the CRITICAL code review of the 479 diff is claude-fable-5-1 at HIGH effort through an existing claude/claude-harm subscription seat or review tool (owner rule; never Opus; no fallback; if Fable cannot run, report to agent-519 as a blocker). Final regeneration consumes the reviewed 484 and 480 results. |
 | AGENTEE-484 decoupling source repair | running | j6b2 writer (Opus), from 09:33Z; first fixes the 478b cowl HEIGHT wording | 60-minute checkpoint | then agent-510 reviews the changed electrical scope (20 minutes) |
 | AGENTEE-480 GNSS corridor and mechanical closure | running | agent-507, `wt/agentee-480`, 09:09–10:09Z (plus the D2 anchor correction and the J1 mate STEP) | 60 minutes | agent-507 result to agent-449 |
 | AGENTEE-478c anchor-role correction (D2) | queued | j6b2 writer, after 484 | 15 minutes | — |
