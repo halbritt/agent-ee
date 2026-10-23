@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from agent_ee import final_planes
 from agent_ee.executor import execute
-from agent_ee.storage import read_json
+from agent_ee.storage import read_json, write_json, digest
 from tests.test_add_planes import PlaneFixture
 
 
@@ -17,7 +17,7 @@ class FinalPlanesTests(PlaneFixture, unittest.TestCase):
         self.plan['zones'] = [dict(self.plan['zones'][0],
             outline={'polygon_mm': [[35,11],[49,11],[49,30],[35,30]]})]
         self.save()
-        self.pre = self.run_plan('pre')
+        self.pre = self.run_plan('pre', phase='pre-routing')
         self.assert_ok(self.pre)
         self.assertTrue(self.pre['deferred_connectivity'])
         shutil.copyfile(self.root/'pre/board.kicad_pcb', self.source/self.board)
@@ -65,7 +65,9 @@ assert k.SaveBoard('/work/changed.kicad_pcb',b)
         result=self.grade('after')
         self.assertEqual(result['status'],'PASS',result)
         self.assertGreater(result['facts']['zones'][0]['fill_polygons'],0)
-        context=SimpleNamespace(manifest={'files':{self.plan_path:'captured'}}, inputs=self.source,
+        bindings = bind_fixture(self.source, self.plan_path, self.pre)
+        files = {p.relative_to(self.source).as_posix(): digest(p) for p in self.source.rglob('*') if p.is_file()}
+        context=SimpleNamespace(manifest={'files':files}, inputs=self.source, params=bindings,
             scope={'board':self.board}, work=self.root/'final-drc', result={'details':{}},
             remaining=lambda:180, evidence=lambda *paths:None)
         context.work.mkdir()
@@ -163,3 +165,12 @@ print('native GNSS: covered PASS; uncovered FAIL; stale pose FAIL')
         self.assertEqual(rec['exit_code'],0,(self.root/'gnss/console.log').read_text())
         if os.environ.get('FINAL_PLAN_EVIDENCE'):
             shutil.copytree(self.root,Path(os.environ['FINAL_PLAN_EVIDENCE'])/self._testMethodName,dirs_exist_ok=True)
+
+
+def bind_fixture(root, plan_path, producer):
+    plan_link = {'path': plan_path, 'sha256': digest(root/plan_path)}
+    write_json(root/'producer.json', producer)
+    write_json(root/'composition.json', {'schema': 'pod-capture.scope-composition/4', 'planes': [plan_link]})
+    return {'plane_obligations': [dict(plan=plan_link,
+        producer={'path': 'producer.json', 'sha256': digest(root/'producer.json')},
+        composition={'path': 'composition.json', 'sha256': digest(root/'composition.json')})]}

@@ -147,3 +147,29 @@ reference names or invent a mechanical envelope. Native fill only respects the
 keepouts actually present in the captured board. Full fresh DRC, schematic
 parity, routing checks and pour integrity are still required after routing;
 owner and bench obligations remain open. No fabrication is authorized here.
+
+### Final DRC obligation binding (AGENTEE-487c)
+
+A final full `drc` check declares `params.plane_obligations`, a list of objects
+with `plan`, `producer`, and `composition` links. Each link is
+`{"path": "captured/relative/path", "sha256": "<captured file digest>"}`.
+`plan` names the plane-plan input; `producer` names the existing
+`agent-ee.add-planes/1` report (`out/planes.json`), not a second receipt format.
+`composition` names the captured `pod-capture.scope-composition/*` record,
+whose `planes` list must contain the exact plan path/hash link. Capture all
+three files as immutable inputs. The producer must have succeeded and bind the
+same plan hash and planned UUIDs. Its result is provenance, never final-board
+acceptance. Final DRC still inspects the saved board and native DRC findings.
+
+Plan filenames are unrestricted. Captured plane plans and producer reports
+without these bindings fail final DRC, including renamed files. Missing files,
+stale hashes and declared-but-absent obligations fail. A scope with no plane
+artifacts or declarations keeps its ordinary DRC behavior. Placement DRC
+projections defer this gate to the full DRC check.
+
+The pod composition producer must supply these links before this consumer can
+accept its candidate. Existing composition records without the plane binding
+are deliberately not grandfathered into acceptance. The hardcoded pod reference
+net list and corridor discovery in `plane_reference.py` remain a separate
+follow-up. The empty-fill `UnFill` fixture proves refusal of empty saved fill;
+it does not prove that island removal caused that empty fill.

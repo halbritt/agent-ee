@@ -53,10 +53,88 @@ def validate(inputs, board, plan_path, work, *, drc=None, timeout=180):
 
 
 
+def bound_plans(inputs, files, params):
+    """Resolve explicit scope bindings against captured producer and composition facts.
+
+    The producer report is provenance, not a substitute for saved-board checks.
+    Discovered plan/report schemas require a declaration even after a rename.
+    """
+    from .add_planes import SCHEMA, RESULT
+    from .stage_receipts import _relative
+    inputs = Path(inputs)
+    declarations = params.get('plane_obligations', [])
+    if not isinstance(declarations, list):
+        raise ValueError('plane_obligations must be a list')
+    plans, producers, compositions = set(), set(), set()
+    composition_plans = {}
+
+    def bound(link):
+        if not isinstance(link, dict) or set(link) != {'path', 'sha256'}:
+            raise ValueError('plane binding requires path and sha256')
+        path = _relative(link['path'], 'plane binding')
+        if path not in files or not (inputs/path).is_file():
+            raise ValueError('required plane binding is absent: ' + path)
+        if files[path] != link['sha256'] or digest(inputs/path) != link['sha256']:
+            raise ValueError('stale plane binding: ' + path)
+        return path, read_json(inputs/path)
+
+    for declaration in declarations:
+        if not isinstance(declaration, dict) or set(declaration) != {'plan', 'producer', 'composition'}:
+            raise ValueError('plane obligation requires plan, producer and composition bindings')
+        path, plan = bound(declaration['plan'])
+        producer_path, producer = bound(declaration['producer'])
+        composition_path, composition = bound(declaration['composition'])
+        validate_plan(plan)
+        if path in plans:
+            raise ValueError('duplicate plane obligation: ' + path)
+        if (not isinstance(producer, dict) or producer.get('schema') != RESULT or
+                producer.get('execution') != 'ok' or
+                producer.get('plan_sha256') != declaration['plan']['sha256'] or
+                producer.get('planned_zone_ids') != zone_ids(plan)):
+            raise ValueError('plane producer does not bind the declared plan: ' + producer_path)
+        if (not isinstance(composition, dict) or
+                not str(composition.get('schema', '')).startswith('pod-capture.scope-composition/') or
+                declaration['plan'] not in composition.get('planes', [])):
+            raise ValueError('composition does not bind the declared plane plan: ' + composition_path)
+        plans.add(path)
+        producers.add(producer_path)
+        compositions.add(composition_path)
+        composition_plans[composition_path] = composition['planes']
+
+    declared_links = [d['plan'] for d in declarations]
+    for path, links in composition_plans.items():
+        if not isinstance(links, list) or not links or any(link not in declared_links for link in links):
+            raise ValueError('composition has an undeclared plane obligation: ' + path)
+
+    # Content, not basename, identifies otherwise undeclared plane obligations.
+    # Only JSON objects are read; native KiCad files and binary evidence are skipped.
+    for path in files:
+        with (inputs/path).open('rb') as source:
+            prefix = source.read(128).lstrip()
+        if not prefix.startswith(b'{'):
+            continue
+        try:
+            record = read_json(inputs/path)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        schema = record.get('schema')
+        if ((schema == SCHEMA and path not in plans) or
+                (schema == RESULT and path not in producers) or
+                (str(schema).startswith('pod-capture.scope-composition/') and
+                 record.get('planes') and path not in compositions)):
+            raise ValueError('unbound captured plane obligation: ' + path)
+    return sorted(plans)
+
+
 def check_captured(ctx, drc):
-    """Final DRC re-evaluates captured planes.json, never trusts a pre-route receipt."""
+    """Final DRC consumes every bound planned-plane obligation."""
     from .checks import CheckError
-    paths = sorted(p for p in ctx.manifest['files'] if Path(p).name == 'planes.json')
+    try:
+        paths = bound_plans(ctx.inputs, ctx.manifest['files'], ctx.params)
+    except (ValueError, OSError, TypeError) as exc:
+        raise CheckError('malformed', 'final planned-plane binding failed: ' + str(exc)) from exc
     for index, path in enumerate(paths):
         name = f'final-planes-{index}'
         remaining = ctx.remaining()
