@@ -1044,3 +1044,118 @@ prompt that each profile reviewer receives (the transport is replaced in the tes
 so no model is called) contains every row and no peer's review. A packet is not
 built for an artifact bound to another board, an undeclared or uncaptured path, a
 changed capture or a relabelled enforcement.
+
+## Native face candidate sets (AGENTEE-479)
+
+`agent_ee.block_variants.produce(source, capture, inventory, derivation,
+block_id, policy, eligibility, output_directory, *, heartbeat=None,
+compact=True, member_sides=None)` produces an
+`agent-ee.block-candidate-set/1`. The output directory must be absent. Stage A
+still runs the existing Python block packer; the wrapper contains unchanged
+`agent-ee.block-candidate/2` documents.
+
+The set has exactly these fields:
+
+- `schema`, `block_id`, and `sources`: the original board, native inventory,
+  allocation, derivation and policy bindings used by `/2`.
+- `eligibility`: `record` is the complete side-eligibility document;
+  `record_sha256` hashes its canonical JSON representation, and `eligible_faces`
+  lists the block's permitted anchor faces in F/B order. The record must bind
+  `sources.board_sha256` to the original board. It is also supplied unchanged as
+  `blocks.side_eligibility` in the planning request.
+- `captured_members`: ordered `{ref, uuid, side}` original identities. This
+  retains mixed-side captures without inventing one original face for the block.
+- `variants`: exactly one result for every eligible face, including failed
+  faces. Each result has `status`, `capture`, `capture_sha256`, `board_sha256`,
+  `derivation`, `members`, `candidate`, and `failure`.
+
+For a native-qualified face, `capture` contains the complete native recapture,
+`capture_sha256` hashes its canonical JSON, and `board_sha256` hashes the saved
+board bytes. Its `derivation` differs from the original derivation only in the
+board hash. Each member records `{ref, uuid, source_side, side, flipped,
+pad_inventory_sha256}`; the last hash covers the same native footprint-local
+pad inventory used by the R5 writer. A packed result has its unchanged `/2`
+`candidate` and a null `failure`. A packing failure retains the entire typed
+result in `failure`, with a null `candidate`. A refused native flip has status
+`native_flip_refused`, a reason, and null capture, hashes, derivation and
+candidate. It is never presented as a usable alternative.
+
+The default variant places every member on its face key. Optional
+`member_sides` maps face keys to per-reference overrides for deliberate
+cross-face inputs. The key must remain the anchor's actual face. An explicit
+`eligibility.members[ref].eligible_faces` overrides the block's member face
+permission; otherwise the block's eligible faces apply. This permission alone
+does not establish a deliberate-cross-face relationship or mechanical clearance.
+Those declarations and final saved-coordinate checks remain separate.
+
+The producer flips each required footprint through native
+`pcbnew.Flip(position, FLIP_DIRECTION_LEFT_RIGHT)`, saves a disposable board,
+and extracts its full geometry. It preserves original board bytes when no flip
+is needed. Custom pads, per-layer padstacks and locked-footprint flips retain an
+explicit refusal. Project and custom-rule companions follow each disposable
+copy. Completed face results remain in `candidate-set.json` if later work fails.
+
+Before production planning, the writer recreates every supplied variant from
+the original board and compares the complete native recapture and pad inventory.
+Changing both a supplied geometry record and its declared hash cannot pass this
+check. After planning, `block_arrangement.arranged[].selected_face` and the
+block's selected inner-candidate and whole-set hashes identify the chosen
+alternative. The writer derives the exact existing `agent-ee.side-changes/1`
+record from that selection and eligibility. Explicit side-change authorization,
+if supplied too, must describe exactly the same transitions. The R5 custom-pad,
+UUID, movable-member and saved-pad checks still run. Plain `/2` candidates retain
+their captured sides and existing admission path.
+
+`blocks.contract` supplies the independent final-coordinate contract and is
+required for candidate sets; it remains optional for plain `/2` requests.
+Its eligibility record must equal `blocks.side_eligibility`. After native saving
+and the existing placement/DRC checks, the writer extracts the saved board again
+and writes `block-contract.json`. A required missing measurement or violation
+refuses publication; the complete report and planning execution receipt remain
+in the failure directory. Successful placement results link the report and its
+SHA-256. This check does not establish routing acceptance.
+
+For campaign placement declarations, `blocks.candidates` accepts captured bare
+`/2` or `candidate-set/1` files. Candidate sets also require captured `allocation`,
+`side_eligibility`, and `contract` JSON paths in that declaration. The adapter
+requires every path to be an immutable captured input, records its byte hash,
+and carries the full eligibility and contract records into the runner request.
+It checks each set against the original captured board, native netlist,
+allocation and effective request policy. These package checks do not replace
+the writer's native reproduction or final saved-board judgment.
+
+The offline arrangement CLI accepts `--side-eligibility` and `--contract` paths;
+`--runner-section` retains both full records. Programmatic `request_section`
+accepts the same optional keyword paths; `request_section_from_bytes` accepts
+their already-bound bytes. Missing records for a candidate set are refused.
+
+When a selected block undergoes bounded member refinement, its `/2` candidate
+hash continues to identify the starting layout. The provenance artifact marks
+this explicitly with `candidate_role: "starting-layout"`, records every final
+member position, rotation and side, and retains the complete `member_refinement`
+witness with its canonical JSON hash. The selected native face and candidate-set
+hash are retained even when refinement leaves the layout unchanged. Move records
+bind their starting candidate, before/after capture hashes and guarded metrics;
+the hash chain must end at the witness's final capture and member poses. Review
+input validation compares the complete witness and roster against the published
+plan. These identity checks do not substitute for native save/reload or the
+independent saved-board contract judgment.
+
+Candidate sets enable a post-global member pass. Optional
+`arrangement.refinement: {"step_budget": 64}` sets its separate finite budget
+(default 64; zero disables trial moves). Only search-derived, unlocked,
+non-anchor members move, within their original selected block window and with
+unchanged face and rotation. Contact targets include exact non-ground native
+pad-centroid alignments, with integer neighbors for fractional centers. An
+accepted move must reduce internal HPWL without increasing whole-board HPWL or
+any declared 3D pin distance; all applicable hard placement rules still hold.
+Reference layouts stay unchanged. The plan records refinement steps separately
+from macro and residual search, plus an explicit unavailable routing-feedback
+record. This finite local pass does not establish an optimal placement.
+
+After saving, `block-refinement-verification.json` reconstructs the selected
+starting layout from native coordinates and replays each accepted translation.
+It independently checks the actual request, candidate identity, final poses,
+metrics and hard constraints. Its saved-native capture hashes are distinct from
+the planner witness hashes. Failed replay refuses publication and retains the
+verification failure beside the saved block-contract report.
