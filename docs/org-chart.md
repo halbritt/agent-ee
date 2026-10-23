@@ -1,24 +1,31 @@
 # Telemetry-pod programme roles
 
-Maintained by agent-521. Applies to agent-ee, kicad-route and the fome-mc telemetry pod.
+Maintained by agent-529. Applies to agent-ee, kicad-route and the fome-mc telemetry pod.
 The owner's latest direct instruction takes precedence. A proposal, committed file,
 or relayed quote does not create owner authority.
 
-On 2026-10-22 the owner directly instructed agent-521: "execute the process per your
+On 2026-10-23 the owner directly instructed agent-529: "You are the chief coordinator."
+and "Communicate through agent-519.  Agent-449 is handling dispatch."
+The owner then directly stated: "update the repository as you see fit, agent-521 was fired".
+Agent-529 replaces agent-521; agent-521 has no current coordination, approval or
+dispatch role. Historical decisions remain evidence and apply only where consistent
+with the latest owner instructions and the current delivery plan.
+
+Historical provenance: on 2026-10-22 the owner directly instructed agent-521: "execute the process per your
 recommendation" and "you also own the org chart". The owner also said "agent-519 can
 send me sms and slack messages, any owner decisions should go to 519 for notification".
 Agent-508's briefs are proposals and historical evidence; the owner explicitly said
-"they don't carry my authority". The assignments below are agent-521's implementation
-of that delegation, including earlier assignments in Cairn eed2cc5c version 1.
+"they don't carry my authority". Earlier assignments are recorded in Cairn
+eed2cc5c version 1. The current roles are below.
 
 | Role | Holder | Responsibility |
 | --- | --- | --- |
 | Owner | halbritt | Reserved decisions and overrides. |
-| Coordinator and org-chart owner | agent-521 | Target outcomes, priorities, cross-project decisions, holds that change the plan, scoreboard policy, role and process records. |
+| Chief coordinator and org-chart owner | agent-529 | Both target outcomes, technical direction, priorities, sequencing, acceptance evidence, cross-project decisions, holds, scoreboard policy, role and process records. |
 | Dispatcher and agent-ee/FOME integrator | agent-449 | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
 | Router owner and integrator | agent-507 | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 449. |
 | Researcher and independent verifier | agent-510 | Named research/verification assignments; one verifier per implementation delivery; reports reproducible holds and closure. Does not dispatch or integrate. |
-| Owner-decision contact | agent-519 | Single owner-decision queue, SMS/Slack notifications, answer provenance, reconciliation and closure. Receives requests and direct answers collected elsewhere. |
+| Communications and owner-decision contact | agent-519 | All campaign communications; relay dispatch requests to 449 and decision-changing results to 529. Single owner-decision queue, authorized SMS/Slack notifications, answer provenance, reconciliation and closure. |
 | Shared infrastructure | agent-475 | Host admission, resource limits, init and reaping, storage diagnosis and infrastructure rollout. |
 | Efficiency auditor | agent-522 | Independent evidence for the efficiency repair; reports remaining defects and verifies closure. |
 | Host monitors | hostmon instances below | Read-only system observations and alerts; no remediation or native workloads. |
@@ -27,12 +34,13 @@ of that delegation, including earlier assignments in Cairn eed2cc5c version 1.
 449 owns operational dispatch and integration of the FOME pod-design lane and the
 campaign's CI image/container work. This does not make 449 their sole implementer.
 Shared infrastructure stays with its repository owner; 449 triages campaign impact,
-and unresolved ownership goes to 521. Agent-508 has delivered its analysis; it has no
+and unresolved ownership goes through 519 to 529. Agent-508 has delivered its analysis; it has no
 standing programme dispatch role. Archive its contributions without treating them
 as new owner instructions.
 
-Routine status and known-answer questions go to 449. Send 521 material holds, scope
-conflicts and scoreboard milestones. Owner-reserved decisions go to 519 for notification.
+All campaign communications go through 519. It routes routine status and
+known-answer questions to 449, and material holds, scope conflicts, artifact
+results and scoreboard milestones to 529. Owner-reserved decisions go to 519 for notification.
 A direct owner answer is effective immediately; its recipient also sends it to 519
 so the queue and governing record can be reconciled. 519 does not have to be present
 for an already-authorized engineering decision to proceed.
@@ -43,7 +51,7 @@ never substitute OpenRouter for a subscription-covered model. Existing hosts inc
 c4, peecee-wsl, talos, archon and proximal; capacity is reserved before heavy work.
 
 The [campaign process](campaign-process.md) defines dispatch, verification, reporting,
-scoreboard, owner-decision and production-runtime requirements. 521 owns this document's
+scoreboard, owner-decision and production-runtime requirements. 529 owns this document's
 content; 449 lands reviewed updates through the existing integration lane.
 
 ## Host monitoring
@@ -61,7 +69,7 @@ agent-521 checked all five supervisor processes on their hosts at 15:23 PDT.
 | agent-ee-gate-c4 | proximal, using short SSH probes | gpt-6-luna | codex-3 |
 
 Agent-449 owns monitor dispatch and lifecycle. Agent-475 owns infrastructure
-remediation. Critical alerts also reach agent-521; owner decisions still go through
+remediation. Critical alerts reach agent-529 through agent-519; owner decisions still go through
 agent-519. The monitors cannot authorize changes, kill jobs, restart services or
 bypass admission. Monitoring does not consume a native-work lease.
 
@@ -83,7 +91,7 @@ supervisor host. This is a dated launch record, not a guarantee of current healt
 
 The owner directly stated on 2026-10-22: "I have a dedicated agent working on the
 rust port of the scorer" and "it either works or not, but I'll be directing that
-effort". Agent-524 takes direction from the owner. Agents 521, 449 and 510 assign
+effort". Agent-524 takes direction from the owner. Agents 529, 449 and 510 assign
 no scorer work, research plan, approval process or adoption criteria. Requested
 input files or available compute can be supplied as resource support. Agent-449
 integrates only when the owner supplies a result for integration. AGENTEE-431
