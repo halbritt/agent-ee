@@ -79,6 +79,52 @@ It is not a component-side fit tolerance. The
 nominal value. Version 1 keeps the
 exact shape and sum in the table above and refuses version 2 fields.
 
+Each **dielectric** layer in envelope/2 may also declare these material fields
+(AGENTEE-186). They use that layer's existing `source` citation; adding a value does not supply
+new manufacturing authority. Copper layers and envelope/1 refuse them.
+
+| Field | Meaning |
+| --- | --- |
+| `dielectric_type` | `core` or `prepreg`; emitted as the native stackup layer type |
+| `epsilon_r` | Positive, finite relative permittivity; emitted as native `epsilon_r` |
+| `loss_tangent` | A finite nonnegative value when explicitly known, or `null` when unknown. Zero is an explicit value, not a synonym for unknown |
+
+These fields are optional independently. Omission preserves legacy envelopes;
+it does not establish a material value. Boolean values, numeric strings,
+nonfinite numbers and negative loss are refused. The producer must cite evidence
+supporting the declared material and its applicability; a thickness-only citation
+does not substantiate permittivity or loss. Source verification checks captured
+bytes, hashes and quote presence; it does not interpret the material claim.
+Numeric material values use the same
+exact 32-place decimal limits as copper weights; excess precision is refused.
+
+KiCad may write its default `loss_tangent: 0.02` when an input omits loss or
+declares it `null`. Such a saved value remains a **tool default**, while the
+envelope retains unknown loss. Native load/save with KiCad 10.0.7 confirms this
+behavior. A different saved value is still unqualified when the source declares
+unknown loss; it is not necessarily a KiCad default.
+
+`stackup/1` compares supplied type, permittivity and numeric loss exactly with
+saved values. Declared unknown loss produces an unknown result and retains
+`material_evidence` with the source value, serialized value and unqualified
+status. Round-trip evidence marks that loss field `not_compared` and retains
+`serialized_value`; it never substitutes the saved value into the envelope.
+The existing `compare_stackup` profile thickness and copper-weight comparisons
+are unchanged. Metadata agreement cannot qualify impedance:
+`impedance_qualified` remains false when material fields are declared. Unknown
+loss cannot qualify a material model either.
+
+This extension does not change the selected JLC04161H-7628 architecture:
+four copper layers, nominal 1.6 mm and physical sum 1.5862 mm. The retained
+[fabrication record](../fixtures/telemetry-pod/sources/jlcpcb-stackup.txt)
+specifies 0.035 mm outer copper, 0.0152 mm inner copper, two 0.2104 mm 7628
+prepreg layers and a 1.065 mm core. It contains no loss value. The separate
+[RF capture](../fixtures/telemetry-pod/rf-source-capture.json) records 7628
+prepreg permittivity 4.4; it does not supply a core permittivity or loss.
+The [later RF calculation](telemetry-pod-delivery-plan.md)'s
+`T1 = 0.04064 mm` (1.6 mil) is a calculation input,
+not authority to replace the captured 0.035 mm fabrication copper.
+
 Version 2 also requires `obligations`, a list of `{id, requirement_ids,
 statement, owner_items}`. Each ID list is nonempty and unique. These carry
 requirements whose geometry is a generator decision. Every entry derives an
