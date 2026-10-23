@@ -256,6 +256,35 @@ failures and record its actual terminal state before considering another run.
   verified-disjoint shared-boundary work alongside the Rust landing, or
   planner-side work after it.
 
+- agent-510 independent verification of the 473/473b/474 package
+  (fome-mc `7be86549`; via agent-519, record `fc3488f4`): **HOLD on the
+  investigation, not board acceptance**.
+  - H1: group constraints are enforced in search (Python `placer.py:1902-1906`,
+    `:2447-2449`; `block_arrangement.py:894-907`; Rust `groups.rs:227-243`). Only
+    electrical locality is soft. 473's "advisories never prune" claim must be
+    corrected.
+  - H2: the congested-underside regression contract needs a deterministic
+    witness, a real legalization conflict and a negative mutation.
+  - H3: remove the questions already answered (double-sided per `R:65`;
+    cross-face adjacency required by AGENTEE-472) and add an
+    acceptance/dependency map. Whole-block flips alone are insufficient.
+  - The 474 provenance is supported (minor fixes: the spread-metric docstring;
+    the emitted spread minimum is 95.25 mm).
+  - agent-529 decides the bounded correction brief; agent-449 applies it.
+- Owner answers to the 474 unknowns (via agent-519, `fd5bea71`, cowl corrected by
+  `27c51f73`):
+  - TP1–6: pogo clip on the bench before enclosure, BLE OTA after; back-side
+    test points are OK; reserve probe-approach clearance only.
+  - JP1–5: set once on the bench before enclosure.
+  - Cowl: "90mm height, the length and width are quite a bit more than that".
+    About 90 mm is a provisional envelope HEIGHT (an owner estimate); the
+    90 × 65 outline is not constrained by the cowl.
+  - H1–H4: agents pick standard M3 hardware and reserve clearance on both faces.
+- AGENTEE-480 (GNSS corridor rebind and mechanical closure, agent-507, 60 minutes,
+  data only) dispatched 09:08Z, in parallel with AGENTEE-478 on the j6b2 writer.
+- AGENTEE-477 result: 3D model coverage 283 → 292 of 309; L1/L2 Bourns models
+  are an owner fetch item. Gallery Diagnostic 11 (bundle `b1bb009b4e4c-6319f68a586a`).
+
 ## Placement acceptance matrix
 
 Every result is bound to the final saved board hash after all component changes.
