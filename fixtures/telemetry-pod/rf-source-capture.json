@@ -1005,20 +1005,20 @@
     },
     "dimension_mapping": {
       "constraint_path": "rf-net-constraints.json",
-      "constraint_sha256": "bc12f8bf01a4dcf2a232f24998d24318c53940b1ba5c0f364952a7e67835fcf2",
+      "constraint_sha256": "d0d03633d1b55d59899dfb67c14a44495680dd8b269667624e60413fd1731a7e",
       "net": "/POD_GNSS_RF",
       "netclass": "RF_50",
       "mm_per_mil": 0.0254,
       "lower_width": {
         "result_field": "jBackCalc.W1",
-        "mil": 13.166015625,
-        "mm": 0.334416796875,
+        "mil": 11.5301269531,
+        "mm": 0.29286522460874,
         "constraint_field": "track_width_mm"
       },
       "upper_width": {
         "result_field": "jBackCalc.W2",
-        "mil": 12.666015625,
-        "mm": 0.321716796875,
+        "mil": 11.0301269531,
+        "mm": 0.28016522460874,
         "constraint_field": null,
         "status": "retained_taper_metadata_only"
       },
@@ -1029,7 +1029,7 @@
         "constraint_field": "clearance_mm",
         "status": "selected_input_preserved_in_result"
       },
-      "emitted_min_track_width_mm": 0.335,
+      "emitted_min_track_width_mm": 0.293,
       "impedance_target_ohm": 50,
       "impedance_status": "recorded_not_enforced",
       "rf_maximum_length": {
@@ -1058,6 +1058,36 @@
         ],
         "reason": "RF_IN is the NEO-M9N pin name; pin-allocation.json connects U3 pin 11 to POD_GNSS_RF. prepare_intent.py uses that conductor at the SMA. KiCad root-sheet labels export with a leading slash. Calculator dimensions and raw capture identities are unchanged.",
         "scope": "RF_50 exact native net binding; no geometry or impedance claim"
+      },
+      "adopted_inverse": {
+        "decision": "agent-529 4cf9d43d v2 (ADOPTED 0.293 mm CAD nominal lower/drawn width; AGENT-selected CONDITIONAL)",
+        "result_path": "rf-inverse-50ohm-result.json",
+        "result_sha256": "046d421b7134a6e87de154b2fe80f11bf6f106202bac22416e0a005b74e9feec",
+        "packet": "agent-510 ~/.local/share/agent-ee/reviews/2026-10-23-ee186c-agent510/inverse-50ohm/ (RESULT-inverse.json 00fe444c1d30b5b55d9ecd4795bad72769fa1fa634120123c58207ec88ae56a9, inverse-result.json 046d421b7134a6e87de154b2fe80f11bf6f106202bac22416e0a005b74e9feec)",
+        "impedance_ohm": 50.0087997251,
+        "er_eff": 3.1696914377,
+        "er_eff_pointer": "/impedance_calc_result/dErEff",
+        "basis": {
+          "T1_mm": 0.04064,
+          "T1_note": "JLC calculator 1.6 mil basis; calculator parameter, not the fab copper thickness",
+          "H1_mm": 0.2104,
+          "Er1": 4.4,
+          "mask_C1_mil": 1.2,
+          "mask_C2_mil": 0.6,
+          "CEr": 3.8,
+          "taper_mil": 0.5,
+          "taper_note": "client config; the JLC guide's 0.7 mil is recorded as a difference, NOT merged"
+        },
+        "gap_mm": 0.2032,
+        "gap_flanks": "both",
+        "historical_forward_point": {
+          "impedance_ohm": 47.394,
+          "width_mm": 0.335,
+          "T1_mm": 0.035,
+          "note": "own inputs; no width sensitivity is derived from the pair"
+        },
+        "supporting_reference": "https://jlcpcb.com/help/article/user-guide-to-the-jlcpcb-impedance-calculator (529-read; no new capture)",
+        "not_claimed": "no tolerance band; impedance not verified"
       }
     },
     "additional_calculations_attempted": false,

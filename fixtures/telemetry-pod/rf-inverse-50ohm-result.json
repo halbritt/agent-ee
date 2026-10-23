@@ -1,0 +1,22 @@
+{
+  "accessId": "48f2fbb5-398a-49a1-935a-723d9537239f",
+  "impedance_calc_error_msg": "",
+  "impedance_calc_mark": "W2_CoatedCoplanarWaveguideWithLowerGnd1B",
+  "impedance_calc_result": {
+    "dCer": 118.752100037,
+    "dDelay": 5938.64998771,
+    "dErEff": 3.1696914377,
+    "dImpedance": 50.0087997251,
+    "dInductance": 296.984757873,
+    "dResultValid": 1,
+    "jBackCalc": {
+      "D1": 8,
+      "W1": 11.5301269531,
+      "W2": 11.0301269531
+    }
+  },
+  "impedance_calc_status": 0,
+  "impedance_calc_time": 406,
+  "paramMd5": "414b071bde45750bc7a6657993466c09",
+  "uuid": "5cd80699-4183-4ceb-b1e8-a806b622a49a"
+}

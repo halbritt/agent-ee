@@ -74,13 +74,18 @@ plated-copper default. The model is
 
 | Source field | Result in mil | Converted mm | Declaration |
 | --- | --- | --- | --- |
-| W1, lower width | 13.166015625 | 0.334416796875 | RF_50 `track_width_mm` |
-| W2, upper width | 12.666015625 | 0.321716796875 | Retained taper metadata; no separate KiCad width |
+| W1, lower width (ADOPTED inverse, agent-529 4cf9d43d v2) | 11.5301269531 | 0.29286522460874 | RF_50 `track_width_mm` |
+| W2, upper width | 11.0301269531 | 0.28016522460874 | Retained taper metadata; no separate KiCad width |
 | D1, selected gap preserved in result | 8 | 0.2032 | RF_50 `clearance_mm` |
 
 The unit conversion is exactly 0.0254 mm/mil. KiCad represents planar copper;
 the declaration uses the lower W1 width and retains W2 explicitly. The existing
-emitter rounds the minimum upward to **0.335 mm**, a small difference from the
+emitter rounds the minimum upward to **0.293 mm** (adopted CAD nominal lower/drawn width, AGENT-selected
+CONDITIONAL; it replaces the earlier forward point 0.335 mm / 47.394 ohm at T1 0.035 mm, kept as history with its own
+inputs). The adopted inverse (`rf-inverse-50ohm-result.json`, agent-510 inverse-50ohm packet) reports 50.0087997251 ohm
+and eff Er 3.1696914377 at T1 0.04064 mm (JLC 1.6 mil calculator basis), H1 0.2104 mm, Er1 4.4, mask C1 1.2 / C2 0.6 mil,
+CEr 3.8, taper 0.5 mil (the JLC guide's 0.7 mil is a recorded difference, not merged). No tolerance band; impedance is
+not verified. The rest of this paragraph describes the earlier forward capture. The rounding is a small difference from the
 solver geometry. The server reports 49.6637289254 ohm for its modeled geometry
 within the requested 50 ±0.5 ohm target. This numeric result does not verify the
 rounded KiCad route or actual pod impedance. A minimum clearance also does not
@@ -114,7 +119,7 @@ sealed evidence. U_GNSS and J_SMA are pad labels, not actual device models.
 The source-bound probe starts without tracks. The pinned router receives the
 emitted RF_50 project/rules for `/POD_GNSS_RF` in the networkless sandbox;
 the test verifies its stage receipt and independently checks its unchanged output. Widths at the
-emitted 0.335 mm minimum pass; narrowing one segment to 0.334999 mm produces a
+emitted 0.293 mm width pass; narrowing one segment to 0.292999 mm produces a
 width defect. The recorded 50 ohm target remains `recorded_not_enforced`.
 
 The earlier synthetic controls remain separate:
