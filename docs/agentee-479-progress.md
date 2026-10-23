@@ -30,13 +30,14 @@ and unresolved relationships remain required inputs.
 |---|---|---|
 | Congested six-part board | First A/F+B/F placement cannot fit R1; residual retry changes B to back, then completes | `test_public_planner_moves_block_after_residual_conflict` |
 | Conditional capacity proof | A proof against one fixed arrangement triggers another block arrangement; B/back completes | `test_capacity_proof_of_one_arrangement_does_not_end_global_search` |
-| Same board, side choice disabled | `arrangement_search_exhausted`, outcome unknown; 28 macro steps plus 8 charged residual attempts | `test_same_input_without_side_choice_exhausts_without_claiming_infeasible` |
+| Same board, side choice disabled | `arrangement_search_exhausted`, outcome unknown; retained evidence shows 28 macro steps plus 8 charged residual attempts (the test asserts unknown exhaustion, not the step split) | `test_same_input_without_side_choice_exhausts_without_claiming_infeasible` |
 | Spare front capacity | B stays front with lower inter-block wire cost; no side-balance objective | `test_spare_front_prefers_shorter_inter_block_wire` |
 | Deliberate mixed-face block | U1/front and C1/back remain one membership; declared 3D pin relationships and saved-board contract pass | `test_native_cross_face_members_keep_template_cohesion` |
 | Native three-member chain | C1 moves (3.0, 4.0)→(3.0, 4.2) mm on B after global placement; internal HPWL 2.3→2.1 mm, whole-board HPWL 7.1→6.9 mm; native replay verifies the move | `test_native_chain_refines_member_after_global_arrangement` |
 
-The first and side-disabled cases have byte-identical captured board facts and
-native XML. Their requests differ only in `arrangement.side_choice`. Exhaustion
+Retained evidence shows byte-identical captured board facts and native XML for
+the first and side-disabled cases; the test does not assert that identity. The
+test does assert that their requests differ only in `arrangement.side_choice`. Exhaustion
 is not physical infeasibility: the independent hand-built back-side witness
 passes placement, group, pin and native courtyard checks.
 
@@ -44,9 +45,9 @@ The original five cases retain their literal geometry. The added chain has its
 own asymmetric C2 courtyard geometry, captured 4 mm pin bounds and a hard 3.25 mm C1-to-U1
 origin-distance group; it is not a matched arm of
 the congested six-part comparison. Its members come from actual native Stage-A
-search, with no transplanted layout. The chain uses a separately declared
-20,000-step packing budget, a 1,000-step macro budget and a 64-step member
-refinement budget; the original comparison keeps its 1,000-step limits.
+search, with no transplanted layout. The chain declares a
+20,000-step packing budget and a 1,000-step macro budget, and uses the default
+64-step member refinement budget; the original comparison keeps its 1,000-step limits.
 
 ## Frozen regression contract
 
@@ -169,3 +170,20 @@ physical pin endpoints and bounds, sourced mechanical/face restrictions,
 production request binding, and saved-board acceptance on its own exact bytes.
 Routing feedback remains `unavailable` with an explicit reason. Fixture success,
 branch delivery and integration do not close those obligations.
+
+## Integration record (agent-449, 2026-10-23)
+
+This section reconciles the critical review's "pending" check list (its gap G8) with the completed logs. Only terminal results are listed; earlier invalid or pre-final attempts are not evidence.
+
+- Landed on main as `c4724465` (479 at `09c0076b`) and `a28e80a0` (return-leg proof `1e1d2367`, tests and docs only).
+- Integration gate on `09c0076b`, pinned CI image, `PYTHONPATH=src:tests`: 349 tests OK, exit 0, no import failures. Two earlier attempts were invalid harness invocations (import errors only) and are not results.
+- On the merged result `a28e80a0`: `scripts/check_docs.py` exit 0, `scripts/check_origins.py` exit 0, and `test_block_contract`, `test_file_origins` and `test_tree_hygiene` 63 OK.
+- Runtime identity: the installed engine `agent-ee-placement` sha256 `746693934a3302ce817220bb28bf54999f5d73a67aa136d76457ecf1aa295401` and its receipt `agent-ee-placement.json` sha256 `d9cd854c70e9dbbe30bd2ad5e7b01af12b1a6dd80c7e9950f79b3585568fa733` were extracted from image `agent-ee:exec-149276250b0861ec`. The receipt's `binary_sha256` equals the engine hash, and all 27 receipt source hashes equal `09c0076b`.
+- Evidence archive `agentee-479-1b38922d.tar.gz` (sha256 `a456822183434ff9a39e8160b58848609085fef34e60a384d6cd5ad74d1ea51a`): 1040 of 1040 manifest files match by size and hash.
+- Return-leg probe (review Q4 c–f, corrected second run, exit 0; log sha256 `815cef5003c3b51d…`):
+  - a missing return role is refused;
+  - a named non-ground return passes within bound and is a defect beyond it;
+  - a return without a numeric bound is unknown;
+  - a changed saved return pad is a defect;
+  - a complete check without a return bound is unknown, never pass.
+- Open, outside this increment: AGENTEE-489 mechanical consumption and actual-pod final-coordinate evidence (required before AGENTEE-485); review follow-ups G1, G4, G5 and G6 (agent-524).

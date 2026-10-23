@@ -500,9 +500,9 @@ A group that ties a block member to a residual movable anchor refuses
  "keepouts": [{"id": "imu", "side": "F", "polygons": [[[0, 0], [4000000, 0], [4000000, 4000000], [0, 4000000]]],
                "provenance": {"enforcement": "hard", "citation": "IMU datasheet section 9"}}],
  "no_stacking": {"references": ["L1", "L2"], "margin_nm": 500000,
-                 "provenance": {"enforcement": "hard", "citation": "owner rule D-1"}},
+                 "provenance": {"enforcement": "hard", "citation": "example rule R-1"}},
  "no_block_over_fixed": {"exempt_blocks": ["storage"],
-                         "provenance": {"enforcement": "hard", "citation": "owner rule D-2"}}}
+                         "provenance": {"enforcement": "hard", "citation": "example rule R-2"}}}
 ```
 
 Only `schema` and `step_budget` (1 to 1 000 000) are required. Unknown fields
