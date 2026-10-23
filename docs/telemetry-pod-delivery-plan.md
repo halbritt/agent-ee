@@ -126,7 +126,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 11:00Z)
+### Current state and next actions (agent-449, 2026-10-23 10:55Z)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -154,8 +154,8 @@ Reference boards:
 | AGENTEE-478c/478d anchor roles and U2 orientation | 478c landed with 484; **478d LANDED** fome-mc `d46183ef` | — | — | 478d changes only the U2 entries in side-eligibility.json and fixed-shared-rules.json; SHA256SUMS and validate_coverage.py PASS. U2 per agent-529 `c7adf503`: board F-side faces UP (engineering assumption); face and rotation DERIVED from the package axes plus the board-to-bike transform; agent-507 verifies the package axes in 486. |
 | AGENTEE-486 mechanical closure | running | agent-507 (Sol), Cairn `ddbea5b2`, from 10:14Z | 60-minute checkpoint, then a 20-minute Astra/Fable-HIGH verification | Covers heights rebound to the 484 parts, the J1 mate/harness/tool sweep, iron/card/SMA access, antenna case and metal, the L1/L2 variants, and the J1–H3/H4 and antenna/hardware anchor conflicts. The current poses, hardware and outline are NOT owner-frozen. |
 | AGENTEE-480 GNSS binding and mechanical inputs | landed fome-mc `b389b47a` | agent-507 | — | ROUTE-3 fails F-over-In1 (expected before regeneration). 19 H1–H4 reservation conflicts. |
-| AGENTEE-487 missing copper planes plus the runtime-receipt rebinding | running, from 10:41:24Z | j6b2 writer | 30-minute checkpoint, then a 15-minute Fable/Astra-HIGH review | agent-529 `d1bfc238` and `783ad032` |
-| AGENTEE-488 electrical dispositions (C133 VIO topology for U100 and U21, C18 derating, U5 6.3 V bank) | READ-ONLY research running (agent-529 `b2422ab3` v2): agent-522 (Astra), Cairn request `37523d5e`, phase from 10:46:34Z (449 held it until the move) | research: agent-522; source edits: j6b2 writer after 487 | 45-minute checkpoint about 11:31Z (no reset), then a 20-minute Fable-HIGH or agent-510 verification (a different class from the author) | From agent-510's 484 review. Early recommendation packet first; any part, net or footprint change settles before 485 freezes its inputs. |
+| AGENTEE-487 missing copper planes plus the runtime-receipt rebinding | running under a HOLD correction (agent-529 `76150ac4`): checkpoint `e780472` set /+3V3 In2 island_removal to never, which is REJECTED as final closure; the writer was interrupted at 10:52:19Z and resumed with the correction. Nothing is integrated. | j6b2 writer, from 10:41:24Z | 30-minute checkpoint, then a 15-minute Fable/Astra-HIGH review | agent-529 `d1bfc238` and `783ad032` |
+| AGENTEE-488 electrical dispositions (C133 VIO topology for U100 and U21, C18 derating, U5 6.3 V bank) | READ-ONLY research running (agent-529 `b2422ab3` v2): agent-522 (Astra), Cairn request `37523d5e`, phase from 10:46:34Z (449 held it until the move) | research: agent-522; source edits: j6b2 writer after 487 | 45-minute checkpoint about 11:31Z (no reset), then Fable 5.1 HIGH verifies the critical calculations; agent-510 may check downstream consistency | From agent-510's 484 review. Early recommendation packet first; any part, net or footprint change settles before 485 freezes its inputs. |
 | AGENTEE-483 model assets plus the local vendor store | queued after 488 (optional) | j6b2 writer | 45 minutes | Owner: local only, no licence work |
 | AGENTEE-485 regeneration plus placement acceptance | next stage, not started | — | 60 minutes plus agent-510 (20 minutes) | Needs reviewed 479, 484 (landed; agent-510 accepted the netlist), 484r (landed), 487, 488 (any part changes), 480, **486**, 478b, 478c and 478d (landed) |
 
