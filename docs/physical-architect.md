@@ -85,7 +85,10 @@ It is refused if it:
   example);
 - raises any `max_distance_nm`.
 
-This rule is exact and conservative (review ee389-s2 H1). A second invalid output is final
+Conflicting duplicate IDs (two required obligations, or two locality
+obligations, that share an ID but differ) are refused in either proposal,
+whatever their order. No entry may stand in for another; exact duplicates are
+treated as one. This rule is exact and conservative (review ee389-s2 H1). A second invalid output is final
 (`status: refused`). There is never a third call.
 
 The caller's monotonic `deadline` and `cancellation` bound the whole stage (review
@@ -155,6 +158,8 @@ cover:
   obligation or loosen a bound;
 - corrections that keep a required obligation's ID but change its content, and
   a locality relationship swap;
+- conflicting duplicate required and locality IDs, in both orders, beside an
+  accepted exact duplicate;
 - on-time responses whose validation ends after the deadline, late responses,
   cancellation during the call, and the validation reserve;
 - the strict Codex form of the schema: every object has concrete properties, a

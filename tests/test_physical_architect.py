@@ -349,6 +349,42 @@ class PhysicalArchitectTests(unittest.TestCase):
         self.assertIn('changes locality relationship u1-decoupling', receipt['error'])
         self.assertFalse(out.exists())
 
+    def test_conflicting_duplicate_required_ids_refuse_in_both_orders(self):
+        """H1 delta: a duplicate required ID never lets a weaker entry hide the stronger one."""
+        weak = {**KELVIN, 'kind': 'current_loop', 'terminals': ['u1-canl']}
+        orders = {'strong then weak': [KELVIN_FULL, weak], 'weak then strong': [weak, KELVIN_FULL]}
+        for order, obligations in orders.items():
+            # Each correction keeps one entry; the last one is what a last-wins map retained.
+            for kept in ('last', 'first'):
+                with self.subTest(order=order, kept=kept):
+                    correction = obligations[-1] if kept == 'last' else obligations[0]
+                    transport = Transport({'terminals': CORRECT, 'obligations': copy.deepcopy(obligations)},
+                                          {'terminals': CORRECT, 'obligations': [correction]})
+                    receipt, _, out = self.architect(transport)
+                    self.assertEqual((receipt['status'], len(transport.calls)), ('refused', 2))
+                    self.assertIn('first proposal has conflicting duplicate required obligation can-kelvin',
+                                  receipt['error'])
+                    self.assertFalse(out.exists())
+        # An exact duplicate hides nothing: the correction that keeps its one restriction is accepted.
+        transport = Transport({'terminals': CORRECT, 'obligations': [KELVIN_FULL, copy.deepcopy(KELVIN_FULL)]},
+                              {'terminals': CORRECT, 'obligations': [KELVIN_FULL]})
+        receipt, _, _ = self.architect(transport)
+        self.assertEqual((receipt['status'], receipt['required_unsupported']), ('accepted', ['can-kelvin']))
+
+    def test_conflicting_duplicate_locality_ids_refuse_in_both_orders(self):
+        """H1 delta: the same for locality: a looser duplicate never stands in for the tighter bound."""
+        strong = self.locality(self.pair())[0]
+        weak = self.locality(self.pair(limit=999_000_000))[0]
+        for order, locality in {'strong then weak': [strong, weak], 'weak then strong': [weak, strong]}.items():
+            with self.subTest(order=order):
+                transport = Transport({'terminals': CORRECT, 'locality': copy.deepcopy(locality)},
+                                      {'terminals': CORRECT, 'locality': [locality[-1]]})
+                receipt, _, out = self.architect(transport, self.local)
+                self.assertEqual((receipt['status'], len(transport.calls)), ('refused', 2))
+                self.assertIn('first proposal has conflicting duplicate locality obligation u1-decoupling',
+                              receipt['error'])
+                self.assertFalse(out.exists())
+
     def test_on_time_response_with_late_validation_publishes_nothing(self):
         """H2: the deadline bounds compilation, comparison, verification and publication too."""
         transport = Transport({'terminals': CORRECT})

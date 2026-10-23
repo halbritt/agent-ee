@@ -227,23 +227,45 @@ def _relationship(obligation):
     return {**{key: obligation.get(key) for key in LOCALITY_IDENTITY}, 'roles': roles}
 
 
+def _by_id(entries, label, side, measure, keep=lambda entry: True):
+    """One entry per ID. Conflicting duplicates are refused, never resolved by letting the last one win.
+
+    Review ee389-s2 H1 delta: a dict keyed by ID kept only the last duplicate, so a weaker second
+    entry hid a stronger first one, and a correction matching the weaker one was accepted.
+    """
+    groups, problems = {}, []
+    for entry in entries or []:
+        if isinstance(entry, dict) and isinstance(entry.get('id'), str) and keep(entry):
+            groups.setdefault(entry['id'], []).append(entry)
+    for key, group in sorted(groups.items()):
+        if len({identity(measure(entry)) for entry in group}) > 1:
+            problems.append(f'{side} has conflicting duplicate {label} {key}; no entry may hide another')
+    return {key: group[0] for key, group in groups.items()}, problems
+
+
 def weakened(first, second):
     """A correction keeps every required obligation's content and every locality relationship and bound.
 
     Only a refused proposal is corrected, so a correction may repair what the compiler refused (a
     pin, a pad UUID) but never removes, replaces or relaxes a restriction the first proposal stated.
+    Conflicting duplicate IDs on either side refuse: no entry may silently stand in for another.
     """
-    problems = []
-    required = {o['id']: o for o in first.get('obligations', []) if isinstance(o, dict) and o.get('required') is True}
-    kept = {o['id']: o for o in second.get('obligations', []) if isinstance(o, dict) and o.get('required') is True}
+    def required_only(entry):
+        return entry.get('required') is True
+    required, problems = _by_id(first.get('obligations'), 'required obligation', 'first proposal', _content,
+                                required_only)
+    kept, conflicts = _by_id(second.get('obligations'), 'required obligation', 'correction', _content, required_only)
+    problems += conflicts
     for key in sorted(required):
         if key not in kept:
             problems.append(f'correction drops required obligation {key}')
         elif identity(_content(required[key])) != identity(_content(kept[key])):
             problems.append(f'correction changes required obligation {key}: {_content(required[key])} -> '
                             f'{_content(kept[key])}')
-    before = {o['id']: o for o in first.get('locality') or [] if isinstance(o, dict) and 'id' in o}
-    after = {o['id']: o for o in second.get('locality') or [] if isinstance(o, dict) and 'id' in o}
+    before, conflicts = _by_id(first.get('locality'), 'locality obligation', 'first proposal', lambda entry: entry)
+    problems += conflicts
+    after, conflicts = _by_id(second.get('locality'), 'locality obligation', 'correction', lambda entry: entry)
+    problems += conflicts
     problems += [f'correction drops locality obligation {i}' for i in sorted(before.keys() - after.keys())]
     for key in sorted(before.keys() & after.keys()):
         if identity(_relationship(before[key])) != identity(_relationship(after[key])):
