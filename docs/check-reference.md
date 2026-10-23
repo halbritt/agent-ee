@@ -1,5 +1,9 @@
 # Native and engineering checks
 
+The [strict-suite runner](maintainer-guide.md) accepts `--previous-log` to submit
+modules longest-first from retained timings (AGENTEE-468), with alphabetical
+fallback. This affects scheduling only; check verdicts and skip refusal are unchanged.
+
 [Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
 records environment/default resolution and hashed proposal-local model files.
 Missing model files remain explicit inspection gaps; coverage adds no check

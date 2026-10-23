@@ -39,6 +39,72 @@ def record(module='test_x', exit=0, **result):
     return dict(module=module, exit=exit, seconds=0.1, log='', result=fields)
 
 
+class SchedulingTests(unittest.TestCase):
+    SELECTED = ['test_c', 'test_b', 'test_a', 'test_d']
+
+    def schedule(self, text):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-timings-') as tmp:
+            log = Path(tmp) / 'previous.log'
+            log.write_text(text)
+            return strict_suite.schedule_modules(self.SELECTED, log)
+
+    def test_without_timings_is_alphabetical_even_for_explicit_selection(self):
+        self.assertEqual(strict_suite.schedule_modules(self.SELECTED), sorted(self.SELECTED))
+
+    def test_longest_first_with_alphabetical_ties_and_untimed_modules(self):
+        self.assertEqual(self.schedule(
+            'unittest output\n===== test_b (2.5s, exit 0) [1/4]\n'
+            '===== test_c (9.0s, exit timeout after 30s) [2/4]\n'
+            '===== test_a (2.5s, exit 1) [3/4]\n'
+            '===== test_unselected (99.0s, exit 0) [4/4]\n'),
+            ['test_c', 'test_a', 'test_b', 'test_d'])
+
+    def test_zero_timing_precedes_untimed_modules(self):
+        self.assertEqual(self.schedule('===== test_d (0.0s, exit 0) [1/1]\n'),
+                         ['test_d', 'test_a', 'test_b', 'test_c'])
+
+    def test_missing_unreadable_or_non_utf8_log_falls_back(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-bad-log-') as tmp:
+            log = Path(tmp) / 'previous.log'
+            for path in (log, Path(tmp)):
+                self.assertEqual(strict_suite.schedule_modules(self.SELECTED, path), sorted(self.SELECTED))
+            log.write_bytes(b'\xff')
+            self.assertEqual(strict_suite.schedule_modules(self.SELECTED, log), sorted(self.SELECTED))
+
+    def test_malformed_log_falls_back_without_partial_timings(self):
+        valid = '===== test_c (9.0s, exit 0) [1/2]\n'
+        for invalid in ('', 'unrelated log\n', '===== broken\n',
+                        '===== test_a (oops, exit 0) [2/2]\n',
+                        *(f'===== test_a ({value}s, exit 0) [2/2]\n'
+                          for value in ('NaN', 'inf', '-1', '1e999')),
+                        valid):
+            with self.subTest(invalid=invalid):
+                text = invalid if invalid in ('', 'unrelated log\n') else valid + invalid
+                self.assertEqual(self.schedule(text), sorted(self.SELECTED))
+
+    def test_main_submits_in_scheduled_order_and_keeps_output_formats(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-submit-') as tmp:
+            log, summary = Path(tmp) / 'previous.log', Path(tmp) / 'summary.md'
+            log.write_text('===== test_c (8.0s, exit 0) [1/1]\n')
+            submitted = []
+            def run(module, *args):
+                submitted.append(module)
+                return record(module=module)
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, AGENT_EE_REQUIRE_TOOLCHAIN='1'), \
+                    patch.object(strict_suite, 'modules', return_value=self.SELECTED), \
+                    patch.object(strict_suite, 'run_module', side_effect=run), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = strict_suite.main(['--jobs', '1', '--previous-log', str(log),
+                                          '--summary', str(summary), *self.SELECTED])
+            self.assertEqual(code, 0)
+            self.assertEqual(submitted, ['test_c', 'test_a', 'test_b', 'test_d'])
+            self.assertTrue(out.getvalue().startswith('===== test_c (0.1s, exit 0) [1/4]\n'))
+            records = [record(module=name) for name in sorted(self.SELECTED)]
+            self.assertEqual(summary.read_text(), strict_suite.summary_markdown(records, [], []) + '\n')
+            self.assertEqual(err.getvalue(), strict_suite.verdict(records, [], []) + '\n')
+
+
 class JudgeTests(unittest.TestCase):
     def test_missing_required_input_is_named_and_fails(self):
         records = [record(exit=1, failures=[['test_x.T.t', MISSING]])]

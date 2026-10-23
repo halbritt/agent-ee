@@ -62,6 +62,18 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc \
   /usr/bin/python3 scripts/strict_suite.py --jobs 4 --render-mode run
 ```
 
+To submit slow modules first, retain stdout from a previous strict-suite run and
+pass its path with `--previous-log build/strict-previous.log` (AGENTEE-468).
+The runner reads its existing `===== test_module (Ns, exit ...) [n/total]`
+completion lines before submitting work. Timed modules run longest-first;
+ties and modules without timings sort alphabetically, with untimed modules last.
+Without a log, or with a missing, unreadable or malformed log, submission is
+alphabetical. Duplicate module timings also invalidate the log; use one run per
+file. Keep the previous log separate from the current stdout destination so shell
+redirection does not truncate it before it is read. Timings only guide scheduling:
+all selected modules still execute, skips remain problems, and summary and log
+formats are unchanged. `tests.test_strict_suite` covers these boundaries.
+
 
 | Test module | Protection |
 | --- | --- |

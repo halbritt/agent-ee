@@ -16,6 +16,7 @@ the summary names every test omitted that way. An unknown change base runs them.
 import argparse
 import concurrent.futures
 import json
+import math
 import os
 import re
 import subprocess
@@ -78,6 +79,31 @@ out.write_text(json.dumps(dict(
 
 def modules():
     return sorted(path.stem for path in TESTS.glob('test_*.py'))
+
+
+def schedule_modules(selected, previous_log=None):
+    """Use retained completion-line timings as hints, never as test evidence.
+
+    Missing/malformed logs fall back to alphabetical submission. Untimed modules
+    follow timed modules; equal timings and untimed modules sort by name.
+    """
+    timings = {}
+    if previous_log is not None:
+        try:
+            for line in Path(previous_log).read_text().splitlines():
+                if not line.startswith('===== '):
+                    continue
+                match = re.fullmatch(r'===== (test_\w+) \(([^\s]+)s, exit [^\n]+\) \[\d+/\d+\]', line)
+                if match is None:
+                    raise ValueError('malformed completion line')
+                module, raw_seconds = match.groups()
+                seconds = float(raw_seconds)
+                if not math.isfinite(seconds) or seconds < 0 or module in timings:
+                    raise ValueError('invalid or duplicate timing')
+                timings[module] = seconds
+        except (OSError, UnicodeError, ValueError):
+            timings = {}
+    return sorted(selected, key=lambda module: (module not in timings, -timings.get(module, 0), module))
 
 
 def render_mode_from_change_base(base):
@@ -194,6 +220,8 @@ def main(argv=None):
     parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
     parser.add_argument('--module-timeout', type=int, default=3600)
     parser.add_argument('--summary', type=Path, help='append a Markdown summary to this file')
+    parser.add_argument('--previous-log', type=Path,
+                        help='previous strict-suite stdout log for longest-first scheduling; invalid/missing logs use alphabetical order')
     parser.add_argument('--render-change-base', help='compare this Git commit with HEAD; unknown base runs renders')
     parser.add_argument('--print-render-mode', action='store_true', help='print run or omit for the change base')
     parser.add_argument('--render-mode', choices=('run', 'omit'),
@@ -201,7 +229,7 @@ def main(argv=None):
     parser.add_argument('modules', nargs='*', help='test modules (default: every tests/test_*.py)')
     args = parser.parse_args(argv)
     if args.print_render_mode:
-        if args.modules or args.render_mode or args.summary:
+        if args.modules or args.render_mode or args.summary or args.previous_log:
             parser.error('--print-render-mode only accepts --render-change-base')
         print(render_mode_from_change_base(args.render_change_base))
         return 0
@@ -217,6 +245,7 @@ def main(argv=None):
     unknown = sorted(set(selected).difference(modules()))
     if unknown:
         parser.error('unknown test module(s): ' + ', '.join(unknown))
+    selected = schedule_modules(selected, args.previous_log)
     lock, records = threading.Lock(), []
     with tempfile.TemporaryDirectory(prefix='agent-ee-strict-suite-') as scratch, \
             concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
