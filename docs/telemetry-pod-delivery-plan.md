@@ -154,6 +154,17 @@ Reference boards:
 | AGENTEE-478c anchor-role correction (D2) | queued | j6b2 writer, after 484 | 15 minutes | — |
 | AGENTEE-478b owner-answer rebind | committed on the writer branch (`93adc6c`) | — | — | lands with the 484 cowl HEIGHT fix |
 | AGENTEE-483 model assets plus the local vendor store | queued | j6b2 writer, after 478c | 45 minutes | Owner: models stay local; no licence tracking; path plus sha256 only; the L1/L2 variant fit check still applies |
+| AGENTEE-485 full production regeneration plus saved-coordinate placement acceptance | **next stage, not started** | one existing holder, chosen when dispatched | 60-minute regeneration/evidence checkpoint, then agent-510 verification (20 minutes); no automatic repeat | Prerequisites, all REVIEWED and actual (no placeholders): 479 code, 484 canonical circuit, 480 board constraints, 478b, 478c. agent-449 then freezes the inputs and runtime and dispatches (agent-529 decision `2dc4d4a5`; no owner question). |
+
+AGENTEE-485 acceptance (agent-529 `2dc4d4a5`):
+- The real production path explicitly consumes the allocation, eligibility, relationships and templates.
+- It delivers the final native board and project, plus same-candidate annotated front and back views.
+- It reports complete per-block and critical-pin metrics, and side-choice evidence.
+- Mechanical checks keep unknowns separate.
+- Source and runtime hashes are recorded, including the mounted Python source and the Rust binary and receipt.
+- Native correspondence and checks run.
+- Hand placement as a substitute for the tool repair is NOT allowed, and neither is a frozen 309 count.
+- Passing 485 admits the candidate to ROUTING, not to manufacturing release. The same saved-coordinate checks re-run on the final routed board.
 
 Settled results:
 - The 473/473b traces and the 474 register (fome-mc `4ff731c9`, `d8f6ec09`, `7be86549`). agent-510 put them on HOLD; the correction is AGENTEE-482.
