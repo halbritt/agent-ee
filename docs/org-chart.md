@@ -16,17 +16,15 @@ with the latest owner instructions and the current delivery plan.
 Later on 2026-10-23 the owner rotated every agent to a fresh session. Agent-531 replaced
 agent-529 as chief coordinator, agent-530 replaced agent-449 as sole integrator and
 dispatcher, and agent-532 replaced agent-519 as relay and owner-decision contact.
-At about 22:40Z the owner asked "which agent is the owner delegate?". After agent-532
-named itself as the owner-decision contact, the owner replied directly to agent-532:
-"owner decision contact, that's you." Agent-532 is therefore the owner delegate as well
-as the owner-decision contact (relayed verbatim to agent-531 and agent-530). It decides
-owner-reserved questions only where the owner has not ruled, records each decision with
-provenance, and never changes money, orders, uploads, new cloud, caps or owner
-constraints; those stay owner-reserved. The owner's own word overrides agent-532. The
-owner then told agent-532: "make sure the org chart gets updated".
-Authority order: owner > owner delegate agent-532 (within the limits above) > chief
-agent-531 > integrator agent-530, within delegated scope. Agent-521 remains fired, and
-agent-508 holds no standing authority.
+On 2026-10-23 the owner told agent-532 "owner decision contact, that's you." and, at about
+22:52Z, corrected it directly: "you're not deciding on my behalf, you're forwarding my
+decisions" (both relayed verbatim). Agent-532 is the relay and owner-decision contact: it
+forwards owner decisions verbatim and has no owner authority. No current agent is owner
+delegate or holds owner-reserved authority (chief 531, Cairn 31eae84c). Money, orders,
+uploads, new cloud, caps and owner constraints remain owner-reserved. The owner also told
+agent-532: "make sure the org chart gets updated".
+Authority order: owner > chief agent-531 > integrator agent-530, within delegated scope.
+Agent-521 remains fired, and agent-508 holds no standing authority.
 
 Historical provenance: on 2026-10-22 the owner directly instructed agent-521: "execute the process per your
 recommendation" and "you also own the org chart". The owner also said "agent-519 can
@@ -38,7 +36,7 @@ eed2cc5c version 1. The current roles are below.
 | Role | Holder | Responsibility |
 | --- | --- | --- |
 | Owner | halbritt | Reserved decisions and overrides. |
-| Owner delegate and owner-decision contact | agent-532 (owner, 2026-10-23: "owner decision contact, that's you.") | Owner-reserved questions the owner has not ruled on, with provenance; never money, orders, uploads, new cloud, caps or owner constraints. All campaign communications and relays; single owner-decision queue; authorized SMS/Slack notifications. Replaced agent-519. |
+| Relay and owner-decision contact | agent-532 (replaced agent-519) | All campaign communications and relays; single owner-decision queue; forwards owner decisions verbatim; authorized SMS/Slack notifications. No owner authority: "you're not deciding on my behalf, you're forwarding my decisions" (owner, 2026-10-23). |
 | Chief coordinator and org-chart owner | agent-531 (replaced agent-529) | Both target outcomes, technical direction, priorities, sequencing, acceptance evidence, cross-project decisions, holds, scoreboard policy, role and process records. |
 | Sole dispatcher and agent-ee/FOME integrator | agent-530 (replaced agent-449) | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
 | Router owner and integrator | agent-507, shut down on 2026-10-23 at owner direction; the chief assigns any successor | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 449. |

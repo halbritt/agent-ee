@@ -27,9 +27,9 @@ Chief agent-531 (replaced 529) retains consequential decisions and acceptance;
 integrator agent-530 (replaced 449) dispatches, verifies and lands; detailed
 investigations, implementation, native runs and independent reviews stay with the
 agents it dispatches. Agent-532 (replaced 519) is the relay and owner-decision
-contact; on 2026-10-23 about 22:40Z the owner named it owner delegate ("owner
-decision contact, that's you"), for owner-reserved questions the owner has not
-ruled on, never changing hard limits. The owner's own word overrides 532.
+contact: it forwards owner decisions verbatim and holds no owner authority (owner,
+2026-10-23: "you're not deciding on my behalf, you're forwarding my decisions").
+No current agent is owner delegate or holds owner-reserved authority.
 
 Owner power ruling, 2026-10-23 about 22:42Z, verbatim via 532: "250ma continuous
 is a good target, but I doubt it will draw more than 100ma". The 5 V sensor/ADC
