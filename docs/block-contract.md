@@ -32,6 +32,32 @@ accepted without rewriting their records. The preparation's prose relationship
 catalogue must first be resolved to explicit physical pad endpoints; prose is
 not parsed into inferred hard constraints.
 
+For AGENTEE-488, the preparation producer must emit these physical endpoint
+pairs in the existing `agent-ee.electrical-locality/1` obligations:
+
+| Obligation | Role | `from.reference` / `from.pad` | `to.reference` / `to.pad` | Both endpoints' `net` |
+|---|---|---|---|---|
+| U100 VIO decoupler | `supply` | `U100` / `5` | `C133` / `1` | `/+3V3` |
+| U100 VIO decoupler | `return` | `U100` / `3` | `C133` / `2` | `/+5V_CAN` |
+| U21 VIO decoupler | `supply` | `U21` / `5` | `C84` / `1` | `/+3V3` |
+| U21 VIO decoupler | `return` | `U21` / `3` | `C84` / `2` | `/+5V_CAN` |
+
+Each obligation needs its own `id`, `metric: "pad-centre-to-centre"`, `supply`
+and `return`. Every endpoint names `reference`, `pad` and `net`; a captured pad
+`uuid` is optional. The return is the explicitly named node, with no assumption
+that it is ground. The declared 5 mm return limit is `max_distance_nm: 5000000`;
+carry its existing citation, numeric provenance and captured `source_records`
+so the consumer can verify authority. This table specifies endpoint identity,
+not a new numeric authority. The block contract's relationship document must
+also match the effective policy's `electrical_locality` document exactly.
+
+An omitted `return` is invalid input. A missing, ambiguous, wrong-net or
+unmeasurable named return is unsatisfied: the generic relationship check and
+block check cannot report `pass`. Missing geometry is reported as `unknown`,
+and an exceeded governed distance as `defect`; neither is acceptance. A valid
+supply leg cannot compensate for an unsatisfied return. The producer must not
+translate a missing measurement into a satisfied bound.
+
 `block_contract.membership(capture, allocation)` returns normalized roles,
 anchors and block membership with the original allocation digest.
 `block_contract.judge(saved_capture, contract, original_capture=..., plan=...)`

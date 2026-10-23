@@ -4,7 +4,7 @@ import hashlib
 import json
 import unittest
 
-from agent_ee import block_contract
+from agent_ee import block_contract, electrical_locality
 from test_placement import capture, part, MM
 
 
@@ -58,6 +58,120 @@ def moved(board, ref, dx=0, dy=0, side=None):
         fp['courtyards'] = {side: fp['courtyards'][fp['side']]}
         fp['side'] = side
     return result
+
+
+def explicit_return_fixture(device_ref='U100', capacitor_ref='C133'):
+    """Authored geometry and 5mm test limit, not production endpoint authority."""
+    board, contract = fixture()
+    names = {'U1': device_ref, 'C1': capacitor_ref}
+    nets = ('/+3V3', '/+5V_CAN')
+    for fp in board['footprints'][:2]:
+        fp['ref'] = names[fp['ref']]
+        fp['uuid'] = fp['ref']
+        for pad, number, net in zip(fp['pads'], ('5', '3') if fp['ref'] == device_ref else ('1', '2'), nets):
+            pad.update(number=number, net=net, uuid=f"{fp['ref']}-{number}")
+    block = contract['allocation']['blocks'][0]
+    block.update(references=[device_ref, capacitor_ref], anchor={'member': device_ref})
+    text = 'Original authored regression requirement: 5 mm'
+    source = {'path': 'fixture/explicit-return-5mm.txt', 'sha256': hashlib.sha256(text.encode()).hexdigest(),
+              'locator': 'numeric test requirement', 'quote': text}
+    relationships = contract['relationships']
+    relationships['source_records'] = {source['path']: text}
+    obligation = relationships['obligations'][0]
+    for role, source_pad, target_pad, net in (('supply', '5', '1', '/+3V3'),
+                                              ('return', '3', '2', '/+5V_CAN')):
+        obligation[role] = {
+            'from': {'reference': device_ref, 'pad': source_pad, 'net': net},
+            'to': {'reference': capacitor_ref, 'pad': target_pad, 'net': net},
+            'max_distance_nm': 5*MM, 'citation': source['path'] + ' numeric test requirement',
+            'provenance': {'class': 'datasheet', 'basis': 'authored regression fixture only',
+                'derivation': {'kind': 'numeric', 'value_nm': 5*MM, 'source': source}}}
+    return board, contract
+
+
+class NonGroundReturnContractTest(unittest.TestCase):
+    def test_explicit_non_ground_return_is_measured_by_all_three_checks(self):
+        for device_ref, capacitor_ref in (('U100', 'C133'), ('U21', 'C84')):
+            with self.subTest(device=device_ref, capacitor=capacitor_ref):
+                board, contract = explicit_return_fixture(device_ref, capacitor_ref)
+                before = deepcopy((board, contract))
+                self.assertEqual({p['net'] for fp in board['footprints'] for p in fp['pads']}, {'/+3V3', '/+5V_CAN'})
+                generic = electrical_locality.grade(board, contract['relationships'])
+                complete = block_contract.check_complete(board, contract)
+                saved = block_contract.judge(board, contract, original_capture=board)
+                for label, report, rows, distance_key in (
+                        ('locality', generic, generic['measured'], 'distance_squared_nm'),
+                        ('planning', complete, complete['relationships'], 'distance_squared_nm2'),
+                        ('saved', saved, saved['relationships'], 'distance_squared_nm2')):
+                    with self.subTest(check=label):
+                        self.assertEqual(report['status'], 'pass', report)
+                        self.assertEqual({row['role']: row[distance_key] for row in rows},
+                                         {'supply': 4*MM**2, 'return': 4*MM**2})
+                by_role = {row['role']: row for row in generic['measured']}
+                self.assertEqual(by_role['return']['from'], {'reference': device_ref, 'pad': '3', 'net': '/+5V_CAN'})
+                self.assertEqual(by_role['return']['to'], {'reference': capacitor_ref, 'pad': '2', 'net': '/+5V_CAN'})
+                self.assertEqual((board, contract), before)
+
+    def test_missing_explicit_return_is_rejected_by_all_three_checks(self):
+        board, contract = explicit_return_fixture()
+        del contract['relationships']['obligations'][0]['return']
+        checks = {
+            'locality': lambda: electrical_locality.grade(board, contract['relationships']),
+            'planning': lambda: block_contract.check_complete(board, contract),
+            'saved': lambda: block_contract.judge(board, contract, original_capture=board),
+        }
+        for label, check in checks.items():
+            with self.subTest(check=label), self.assertRaisesRegex(ValueError, 'supply and return'):
+                check()
+
+    def test_missing_wrong_net_or_unmeasurable_return_cannot_pass(self):
+        for change, reason in (('missing_source_pad', 'pad missing'),
+                               ('missing_capacitor_pad', 'pad missing'),
+                               ('historical_ground_net', 'native pad net differs'),
+                               ('missing_centroid', 'native copper centroid unavailable')):
+            board, contract = explicit_return_fixture()
+            altered = deepcopy(board)
+            device, capacitor = altered['footprints'][:2]
+            if change == 'missing_source_pad':
+                device['pads'].pop(1)
+            elif change == 'missing_capacitor_pad':
+                capacitor['pads'].pop(1)
+            elif change == 'historical_ground_net':
+                # The historical /GND endpoint does not satisfy the adopted /+5V_CAN declaration.
+                capacitor['pads'][1]['net'] = '/GND'
+            else:
+                del capacitor['pads'][1]['copper_centroid_offset_nm']
+                capacitor['pads'][1]['copper_centroid_reason'] = 'authored unavailable geometry'
+            generic = electrical_locality.grade(altered, contract['relationships'])
+            complete = block_contract.check_complete(altered, contract)
+            saved = block_contract.judge(altered, contract, original_capture=board)
+            for label, report in (('locality', generic), ('planning', complete), ('saved', saved)):
+                with self.subTest(change=change, check=label):
+                    self.assertNotIn(report['status'], ('pass', 'info'), report)
+                    unavailable = [row for row in report['unknown'] if row.get('role') == 'return']
+                    self.assertEqual(len(unavailable), 1, report)
+                    self.assertIn(reason, unavailable[0]['reason'])
+            self.assertEqual({row['role']: row['distance_squared_nm'] for row in generic['measured']},
+                             {'supply': 4*MM**2})
+
+    def test_far_return_is_a_defect_while_supply_remains_close(self):
+        board, contract = explicit_return_fixture()
+        altered = deepcopy(board)
+        # Only the return endpoint moves: supply remains 2mm, return becomes 6mm against a 5mm limit.
+        altered['footprints'][1]['pads'][1]['position_nm'][0] += 4*MM
+        generic = electrical_locality.grade(altered, contract['relationships'])
+        complete = block_contract.check_complete(altered, contract)
+        saved = block_contract.judge(altered, contract, original_capture=board)
+        for label, report, rows, distance_key, defect_kind in (
+                ('locality', generic, generic['measured'], 'distance_squared_nm', 'electrical_locality_distance'),
+                ('planning', complete, complete['relationships'], 'distance_squared_nm2', 'pin_distance_exceeded'),
+                ('saved', saved, saved['relationships'], 'distance_squared_nm2', 'pin_distance_exceeded')):
+            with self.subTest(check=label):
+                self.assertEqual(report['status'], 'defect', report)
+                self.assertEqual({row['role']: row[distance_key] for row in rows},
+                                 {'supply': 4*MM**2, 'return': 36*MM**2})
+                self.assertEqual([(row['kind'], row.get('role')) for row in report['defects']],
+                                 [(defect_kind, 'return')])
 
 
 class BlockContractTest(unittest.TestCase):
