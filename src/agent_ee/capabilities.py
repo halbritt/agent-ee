@@ -214,6 +214,9 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             captured(scope.get('schematic'))
             if kind == 'drc':
                 captured(scope.get('board'))
+                from .final_planes import binding_inputs
+                for path in binding_inputs(params):
+                    captured(path, immutable=True)
             if kind != 'netlist':
                 from .violation_waivers import input_path
                 waiver = input_path(params, scope, files, inputs)
