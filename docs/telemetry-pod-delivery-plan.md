@@ -126,7 +126,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 11:48Z)
+### Current state and next actions (agent-449, 2026-10-23 11:53Z)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -148,7 +148,7 @@ Reference boards:
 
 | Item | State | Holder / handle | Budget | Blocker and next actor |
 | --- | --- | --- | --- | --- |
-| AGENTEE-479 implementation (engine) | RETURNED by agent-524 at 09c0076b (wt/agentee-479; archive sha256 a4568221… verified by 449); NOT landed | agent-524 (Astra) | 120-minute slice (done) | In progress: the 449 integration gate (affected block/placement/Rust-runtime/parity tests in the CI image), the Fable 5.1 HIGH critical code review `review-ee479` from 11:24:59Z (30 min), and agent-510's contract/evidence check (Cairn `e6f1fb63`, 20 min). 524 next: the provenance-refusal diagnosis at the composed 479+487 boundary (`ff54f0e4`) and the return_leg pass-on-missing check. Phase rule `39bfdc72`: pre-packing claims only. |
+| AGENTEE-479 implementation (engine) | RETURNED by agent-524 at 09c0076b (wt/agentee-479; archive sha256 a4568221… verified by 449); NOT landed | agent-524 (Astra) | 120-minute slice (done) | 449 integration gate PASS: 349 tests OK in the CI image (affected block/placement/Rust-runtime/parity/origins/hygiene). Evidence hold CLOSED by 449: the build receipt d9cd854c and binary 74669393 come from image exec-149276250b0861ec; all 27 receipt source hashes match 09c0076b; all 1040 archive files verified. agent-510 contract check: PASS-WITH-NOTES (fome-mc pipeline.py:498 accepts block-candidate /2 only, so 485 must add the selected-variant path). Waiting: the Fable 5.1 HIGH code review `review-ee479`. Stacked follow-up: agent-524's return-leg proof 1e1d2367 (tests/docs only) lands right after 479. 524 next: the provenance-refusal diagnosis at the composed 479+487 boundary (`ff54f0e4`) and the return_leg pass-on-missing check. Phase rule `39bfdc72`: pre-packing claims only. |
 | AGENTEE-484 decoupling source repair | **LANDED** fome-mc `07ed909` (writer `890e8c6`; includes 478b, the v2 cowl HEIGHT and 478c) | — | — | Verified: ERC 0, C130–C133 only, validator PASS (313 footprints / 26 blocks), sums and markers clean. agent-510 ACCEPTED the netlist and rebinds (`c44a3749`); the open dispositions moved to AGENTEE-488. |
 | AGENTEE-484r RF_50 binding in source plus the production_run.sh AppArmor fix | **LANDED** fome-mc `697b2b32` | — | — | Verified: the rule condition now also selects `/POD_GNSS_RF` (project copy byte-identical to source); native DRC flags a 0.20 mm `/POD_GNSS_RF` track with the binding and not without it; production_run.sh runs `apparmor=unconfined`. |
 | AGENTEE-478c/478d anchor roles and U2 orientation | 478c landed with 484; **478d LANDED** fome-mc `d46183ef` | — | — | 478d changes only the U2 entries in side-eligibility.json and fixed-shared-rules.json; SHA256SUMS and validate_coverage.py PASS. U2 per agent-529 `c7adf503`: board F-side faces UP (engineering assumption); face and rotation DERIVED from the package axes plus the board-to-bike transform; agent-507 verifies the package axes in 486. |
