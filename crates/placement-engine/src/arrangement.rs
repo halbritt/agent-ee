@@ -2163,14 +2163,28 @@ pub fn arrange(
             .iter()
             .flat_map(|p| p.members.iter().map(|f| (f.reference.clone(), f.clone())))
             .collect();
+        let mut native_members = BTreeMap::new();
+        for placed in &search.placed {
+            if let Some(variants) = admitted[&placed.block]
+                .get("variants")
+                .and_then(Value::as_array)
+            {
+                for fp in blocks::rows(&variants[placed.variant]["capture"]["footprints"])? {
+                    if placed.members.iter().any(|p| fp["ref"] == p.reference) {
+                        native_members.insert(blocks::text(&fp["ref"])?.to_owned(), fp);
+                    }
+                }
+            }
+        }
         let mut residual_capture = capture.clone();
         for fp in residual_capture["footprints"].as_array_mut().unwrap() {
             if let Some(p) = poses.get(fp["ref"].as_str().unwrap()) {
-                *fp = if has_variants {
-                    p.to_value()?
-                } else {
-                    footprint::transform_value(fp, &exact::point_value(&p.position), p.rotation)?
-                };
+                let source = native_members.get(&p.reference).copied().unwrap_or(fp);
+                *fp = footprint::transform_value(
+                    source,
+                    &exact::point_value(&p.position),
+                    p.rotation,
+                )?;
             }
         }
         let source_uuids: BTreeMap<_, _> = poses.values().map(|f| (f.uuid.clone(), f)).collect();
@@ -2353,6 +2367,8 @@ pub fn arrange(
                 &p["position_nm"],
                 exact::rotation(&p["rotation_deg"])?,
             )?;
+            // The native input's untouched fixed rotation keeps its JSON identity.
+            fp["rotation_deg"] = p["rotation_deg"].clone();
         }
         if let Some(contract) = contract {
             record["contract_check"] = block_contract::check_complete(&complete, contract)?;
