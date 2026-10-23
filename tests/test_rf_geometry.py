@@ -482,10 +482,15 @@ class NativeGuardTests(NativeBase):
         self.assertEqual((out['status'], guard['status']), ('pass', 'pass'), json.dumps(guard)[:2000])
         self.assertEqual((guard['uncovered_mm2'], guard['corridor_tracks'], guard['width_mm']), (0.0, 5, 1.0))
         self.assertIn('not RF qualification', guard['scope'])
-        # Same native facts: declaring a guard changes no other section.
+        # Same board, separately bound requests: declaring a guard changes no other section.
+        from agent_ee.rf_geometry import extract
         resolved = parse(fx.declaration(guard={'width_mm': 1.0, 'basis': 'owned control'}))
-        native = self.native(resolved)
-        plain = evaluate(parse(fx.declaration()), copy.deepcopy(native))
+        plain_resolved = parse(fx.declaration())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'board.kicad_pcb'
+            fx.make_board(path)
+            native = extract(path, probe_request(resolved))
+            plain = evaluate(plain_resolved, extract(path, probe_request(plain_resolved)))
         self.assertEqual({k: v for k, v in evaluate(resolved, native)['sections'].items() if k != 'guard'},
                          plain['sections'])
         self.assertNotIn('guard', self.native(parse(fx.declaration())))
@@ -617,6 +622,20 @@ class NativeCheckTests(unittest.TestCase):
         self.assertEqual(result['details']['gate_findings'], [])
         self.assertLessEqual({'work/rf/rf-geometry.json', 'work/rf/rf-native.json', 'work/rf/rf-request.json'},
                              set(result['evidence']))
+        freeze_evidence(run, [result])
+        verify_evidence(run, [result], required=True)
+
+    def test_exact_gap_source_capture_runs_through_bound_native_check(self):
+        doc = fx.sourced_declaration()
+        doc['cpw']['gap_tolerance_mm'] = 0
+        run, result = self.run_board(doc)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result['summary'])
+        report = json.loads((run / 'work/rf/rf-geometry.json').read_text())
+        self.assertEqual(report['resolved']['cpw']['gap_nm'], 203200)
+        native = json.loads((run / 'work/rf/rf-native.json').read_text())
+        self.assertEqual(native['schema'], 'agent-ee.rf-geometry-native/2')
+        self.assertEqual(native['request'], json.loads((run / 'work/rf/rf-request.json').read_text()))
+        self.assertTrue(native['exact_cpw']['geometry_sha256'])
         freeze_evidence(run, [result])
         verify_evidence(run, [result], required=True)
 

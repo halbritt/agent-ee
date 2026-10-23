@@ -40,6 +40,8 @@ qualification: no field solver, TDR, VNA or installed measurement is used, and a
 declared guard width is graded only as the geometric guard it declares.
 """
 import argparse
+from decimal import Decimal
+from fractions import Fraction
 import heapq
 import json
 import math
@@ -50,7 +52,7 @@ from .kicad_route_attempt import CLEARANCE_RULE, CONTINUITY_TOLERANCE_MM2, FILLE
 from .storage import digest, write_json
 
 SCHEMA = 'agent-ee.rf-geometry/1'
-NATIVE_SCHEMA = 'agent-ee.rf-geometry-native/1'
+NATIVE_SCHEMA = 'agent-ee.rf-geometry-native/2'
 RESULT_SCHEMA = 'agent-ee.rf-geometry-result/1'
 TOP_KEYS = {'schema', 'net', 'ground_net', 'signal_layer', 'reference_layer'}
 TOP_OPTIONAL = {'source', 'cpw', 'stitching', 'topology', 'electrical_length', 'guard', 'basis'}
@@ -95,6 +97,20 @@ def _number(value, label, *, nullable=False, positive=True):
     if positive and value <= 0:
         raise ValueError(f'{label} must be positive')
     return value
+
+
+def _tolerance(value, label):
+    value = _number(value, label, nullable=True, positive=False)
+    if value is not None and value < 0:
+        raise ValueError(f'{label} must be nonnegative or null')
+    return value
+
+
+def _exact_nm(value, label, scale=1):
+    nm = Fraction(str(value)) * Fraction(str(scale)) * NM
+    if nm.denominator != 1:
+        raise ValueError(f'{label} must be an integer number of nm for zero tolerance')
+    return int(nm)
 
 
 def _text(value, label):
@@ -145,6 +161,7 @@ def parse_declaration(raw, load_source=None):
     """Validate a declaration and resolve its CPW targets; returns (declaration, resolved)."""
     try:
         doc = json.loads(raw)
+        decimal_doc = json.loads(raw, parse_float=Decimal)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f'rf-geometry declaration is not JSON: {exc}') from exc
     _keys(doc, TOP_KEYS, TOP_OPTIONAL, 'rf-geometry declaration')
@@ -190,10 +207,21 @@ def parse_declaration(raw, load_source=None):
             width, gap = cpw['width_mm'], cpw['gap_mm']
         resolved['cpw'] = {
             'width_mm': _number(width, 'cpw width'), 'gap_mm': _number(gap, 'cpw gap'),
-            'width_tolerance_mm': _number(cpw['width_tolerance_mm'], 'width_tolerance_mm', nullable=True),
-            'gap_tolerance_mm': _number(cpw['gap_tolerance_mm'], 'gap_tolerance_mm', nullable=True),
+            'width_tolerance_mm': _tolerance(cpw['width_tolerance_mm'], 'width_tolerance_mm'),
+            'gap_tolerance_mm': _tolerance(cpw['gap_tolerance_mm'], 'gap_tolerance_mm'),
             'sample_step_mm': _number(cpw.get('sample_step_mm', DEFAULT_STEP_MM), 'sample_step_mm'),
             'search_mm': _number(cpw.get('search_mm', DEFAULT_SEARCH_MM), 'search_mm')}
+        for dimension in ('width', 'gap'):
+            if resolved['cpw'][dimension + '_tolerance_mm'] == 0:
+                if 'source' in doc:
+                    # Exact grading needs the captured decimal token, not a rounded float.
+                    if 'decimal_document' not in captured:
+                        raise ValueError('zero-tolerance source requires decimal_document from captured bytes')
+                    value = pointer(captured['decimal_document'], source[dimension + '_pointer'])
+                    scale = SOURCE_UNITS[source.get('unit', 'mm')]
+                else:
+                    value, scale = decimal_doc['cpw'][dimension + '_mm'], 1
+                resolved['cpw'][dimension + '_nm'] = _exact_nm(value, dimension, scale)
     names = []
     if 'topology' in doc:
         topology = doc['topology']
@@ -387,7 +415,8 @@ def capability(params, scope, files, inputs):
             document = json.loads(data)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError(f'source is not JSON: {exc}') from exc
-        return {'document': document, 'sha256': digest(root / rel)}
+        return {'document': document, 'decimal_document': json.loads(data, parse_float=Decimal),
+                'sha256': digest(root / rel)}
 
     doc, resolved = parse_declaration((root / declaration).read_bytes(), load_source)
     return {'immutable_inputs': sorted(set(immutable)), 'predicates': predicates(resolved),
@@ -421,7 +450,7 @@ def extract(board_path, request):
     max_error = int(board.GetDesignSettings().m_MaxError)
     nets = {str(n.GetNetname()) for n in board.GetNetInfo().NetsByNetcode().values()}
     report = {'schema': NATIVE_SCHEMA, 'pcbnew_version': pcbnew.Version(), 'board_sha256': digest(board_path),
-              'max_error_nm': max_error, 'copper_layers': names,
+              'request': dict(request), 'max_error_nm': max_error, 'copper_layers': names,
               'nets_present': {'net': rf in nets, 'ground_net': gnd in nets},
               'arc_sagitta_nm': ARC_SAGITTA_NM}
 
@@ -528,6 +557,8 @@ def extract(board_path, request):
             copper_sets[key] = _polyset(poly)
     report['copper'] = copper_sets
     report['unfilled_zones'] = {k: sorted(v) for k, v in unfilled.items()}
+    from .rf_exact import extract_facts
+    report['exact_cpw'] = extract_facts(pcbnew, board, request, ids)
     return report
 
 
@@ -822,6 +853,8 @@ def _status(statuses):
 def _validate_native(native, resolved):
     if not isinstance(native, dict) or native.get('schema') != NATIVE_SCHEMA:
         raise ValueError('native rf-geometry report schema mismatch')
+    if native.get('request') != probe_request(resolved):
+        raise ValueError('native rf-geometry request does not match declaration')
     for key in ('tracks', 'vias', 'pads', 'rf_zones', 'copper_layers', 'absent_layers'):
         if not isinstance(native.get(key), list):
             raise ValueError(f'native {key} must be a list')
@@ -915,7 +948,8 @@ def _runs(violations):
 def evaluate_cpw(resolved, native):
     spec = resolved['cpw']
     signal, ref_layer = resolved['signal_layer'], resolved['reference_layer']
-    width_nm, gap_nm = spec['width_mm'] * NM, spec['gap_mm'] * NM
+    width_nm = spec.get('width_nm', spec['width_mm'] * NM)
+    gap_nm = spec.get('gap_nm', spec['gap_mm'] * NM)
     wtol, gtol = spec['width_tolerance_mm'], spec['gap_tolerance_mm']
     max_error = native['max_error_nm']
     items = {}
@@ -934,7 +968,8 @@ def evaluate_cpw(resolved, native):
     # Width: exact native track widths.
     width_bad = [] if wtol is None else [
         {'track': t['uuid'], 'width_mm': _mm(t['width_nm'])}
-        for t in on_signal if abs(t['width_nm'] - width_nm) > wtol * NM + 1e-6]
+        for t in on_signal if (t['width_nm'] != width_nm if wtol == 0 else
+                              abs(t['width_nm'] - width_nm) > wtol * NM + 1e-6)]
     items['width'] = ({'status': 'unknown', 'reason': 'width tolerance not declared',
                        'measured_mm': sorted({_mm(t['width_nm']) for t in on_signal})} if wtol is None else
                       {'status': 'defect' if width_bad else 'pass', 'target_mm': spec['width_mm'],
@@ -1068,6 +1103,12 @@ def evaluate_cpw(resolved, native):
         if absent:
             items['reference']['statement'] = (f"no {resolved['ground_net']} copper on {ref_layer} under any RF "
                                                "track strip: the grounded-CPW reference is absent")
+    from .rf_exact import evaluate_exact_gap, reference_binding
+    binding = reference_binding(native.get('exact_cpw'), resolved)
+    if items['reference']['status'] == 'pass' and binding['status'] != 'pass':
+        items['reference'] = binding
+    if gtol == 0 and not signal_unfilled:
+        items['gap'] = evaluate_exact_gap(resolved, native)
     return {'status': _status(i['status'] for i in items.values()), 'items': items}
 
 
@@ -1491,12 +1532,15 @@ def gate_findings(resolved, evaluation):
 
 LIMITATIONS = ('Planar saved-board copper geometry against a declared structure only; this is not RF '
                'qualification. No field solver, TDR, VNA or installed measurement is claimed, and no proxy '
-               '(guard width, image-current fraction) is used. Maximum gap is sampled at the declared step; '
+               '(guard width, image-current fraction) is used. With positive tolerance, maximum gap is sampled at the declared step; '
                'minimum gap and reference-strip containment are exact on pcbnew polygons within max_error. '
                'Edge samples within gap+tolerance of other RF-net copper (bends, junctions, launches) are '
                'transitions exempt from the maximum-gap test. Branch length is routed track length; via '
                'barrels are counted, not measured. Stitching vias are graded by net, layer span and position, '
-               'not by zone connection.')
+               'not by zone connection. Zero-tolerance gaps use integer/rational native primitive certificates only on '
+               'axis-aligned ordinary intervals; launches/junctions, non-axis sections and curves remain UNKNOWN. '
+               'CPW reference membership requires a physical ground-terminal component with a spanning via; '
+               'ambiguous multi-island reference zones remain UNKNOWN.')
 
 
 GUARD_LIMITATIONS = ('The return-corridor guard is a geometric guard result against a declared width and its '
