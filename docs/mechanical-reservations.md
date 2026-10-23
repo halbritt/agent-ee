@@ -98,7 +98,10 @@ that evidence and checks it again after owner moves: pad-local geometry stays
 unchanged under rotation/translation and reflects in local Y on a face change;
 board-space bounds follow the full owner transform. Changed anchors, primitives,
 contours or bounds refuse materialization. Unqualified custom pads still refuse
-binding. This adds no new reservation or binding schema.
+binding. The default Rust planner and Python reference apply the same checks;
+primitive coordinates compare numerically, so a native flip emitting `-10`
+instead of `-1E+1` does not invalidate an unchanged 10 mm coordinate.
+This adds no new reservation or binding schema.
 
 A footprint's captured face is not permission to fix its face or pose. Bound
 footprint and pad rotations must be exact native quarter turns; other pad angles

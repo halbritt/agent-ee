@@ -191,13 +191,15 @@ def _custom_follows(before, after, source, current, flipped):
     from .placer import rotate
     old, new = _custom_geometry(before), _custom_geometry(after)
 
-    def reflected(node):
+    def numeric_primitives(node, reflect=False):
         if not isinstance(node, list):
             return node
         if node and node[0] in ('start', 'end', 'center', 'xy'):
-            y = Decimal(node[2]).copy_negate()
-            return [node[0], node[1], str(y.normalize()) if y else '0']
-        result = [reflected(child) for child in node]
+            y = Decimal(node[2])
+            return [node[0], Decimal(node[1]), y.copy_negate() if reflect else y]
+        if node and node[0] == 'width':
+            return [node[0], Decimal(node[1])]
+        result = [numeric_primitives(child, reflect) for child in node]
         if result and result[0] == 'gr_rect':
             start = next(n for n in result[1:] if n[0] == 'start')
             end = next(n for n in result[1:] if n[0] == 'end')
@@ -225,7 +227,7 @@ def _custom_follows(before, after, source, current, flipped):
     expected_box = [min(p[0] for p in corners), min(p[1] for p in corners),
                     max(p[0] for p in corners), max(p[1] for p in corners)]
     if (old['anchor'] != new['anchor']
-            or (reflected(old['primitives']) if flipped else old['primitives']) != new['primitives']
+            or numeric_primitives(old['primitives'], flipped) != numeric_primitives(new['primitives'])
             or contours(old['merged_polygons_nm'], flipped) != contours(new['merged_polygons_nm'])
             or expected_box != new['bbox_nm']):
         raise ValueError('mechanical native custom-pad geometry changed independently of owner')
