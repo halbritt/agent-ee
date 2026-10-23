@@ -3,8 +3,8 @@ use crate::exact::{self, Int, Point, Rat};
 use crate::footprint::{Keepout, PreparedFootprint};
 use crate::geometry::{Bounds, Polygon};
 use crate::{
-    block_contract, block_variants, blocks, constraints, footprint, geometry, groups, locality,
-    netlist, packing, policy, progress, rank, search,
+    block_contract, block_refinement, block_variants, blocks, constraints, footprint, geometry,
+    groups, locality, netlist, packing, policy, progress, rank, search,
 };
 use anyhow::{Context, Result, ensure};
 use num_integer::Integer;
@@ -61,6 +61,7 @@ pub fn validate(
             "no_stacking",
             "no_block_over_fixed",
             "side_choice",
+            "refinement",
         ],
     )?;
     ensure!(document["schema"] == SCHEMA, "expected {SCHEMA}");
@@ -78,6 +79,15 @@ pub fn validate(
     }
     if let Some(value) = document.get("side_choice") {
         ensure!(value.is_boolean(), "side_choice must be boolean");
+    }
+    if let Some(value) = document.get("refinement") {
+        blocks::keys(value, &["step_budget"], &[])?;
+        ensure!(
+            value["step_budget"]
+                .as_u64()
+                .is_some_and(|n| n <= 1_000_000),
+            "refinement step_budget must be 0..1000000"
+        );
     }
     let mut d = document.clone();
     if d.get("priority_blocks").is_none() {
@@ -2001,6 +2011,10 @@ pub fn arrange(
     let mut levels = Vec::<Level>::new();
     let (mut backjumps, mut peak) = (0u64, 0usize);
     let has_variants = admitted.values().any(|a| a.get("variants").is_some());
+    ensure!(
+        has_variants || arrangement.get("refinement").is_none(),
+        "member refinement requires native candidate sets"
+    );
     let residual_budget = effective["step_budget"]
         .as_u64()
         .context("residual step budget")?;
@@ -2378,6 +2392,41 @@ pub fn arrange(
                 continue;
             }
         }
+        let mut refinement_steps = 0;
+        if has_variants {
+            let contract = contract.context("native candidate sets require a block contract")?;
+            let (refined, witness) = block_refinement::refine(
+                &complete,
+                effective,
+                contract,
+                &record,
+                arrangement["refinement"]["step_budget"]
+                    .as_u64()
+                    .unwrap_or(64),
+            )?;
+            complete = refined;
+            refinement_steps = witness["steps_used"].as_u64().unwrap();
+            record["member_refinement"] = witness;
+            record["routing_feedback"] = json!({"status":"unavailable","reason":"routing feedback has not been implemented"});
+            let final_fps = blocks::board(&complete)?;
+            for placement in plan["placements"].as_array_mut().unwrap() {
+                let fp = &final_fps[placement["ref"].as_str().unwrap()];
+                for key in ["position_nm", "rotation_deg", "side"] {
+                    placement[key] = fp[key].clone();
+                }
+            }
+            let mut judgment =
+                crate::grading::judge(&complete, None, effective.get("fixed_overhangs"))?;
+            judgment["basis"] = json!("transformed-proposal-not-native");
+            plan["judgment"] = judgment;
+            if let Some(g) = effective.get("groups") {
+                plan["group_grading"] = groups::grade(&complete, &groups::validate(g, None)?)?;
+            }
+            if let Some(l) = effective.get("electrical_locality") {
+                plan["locality_grading"] = locality::grade(&complete, l)?;
+            }
+            record["contract_check"] = block_contract::check_complete(&complete, contract)?;
+        }
         record["rules"] = grade_rules(&complete, &arrangement, &search.owner, &fixed)?;
         if let Some(regions) = effective.get("advisory_regions") {
             plan["advisory_regions"] =
@@ -2389,12 +2438,22 @@ pub fn arrange(
             residual_used
         } else {
             plan["steps_used"].as_u64().unwrap()
-        } + search.steps;
+        } + search.steps
+            + refinement_steps;
         plan["steps_used"] = json!(steps);
         plan["policy"] = effective.clone();
-        let failed = blocks::rows(&record["rules"])?
-            .iter()
-            .any(|r| r["enforcement"] == "hard" && r["status"] != "pass")
+        let failed = (has_variants
+            && (plan["judgment"]["verdict"] != "pass"
+                || plan
+                    .get("group_grading")
+                    .is_some_and(|g| !groups::satisfied(g))
+                || plan
+                    .get("locality_grading")
+                    .is_some_and(|g| g["status"] != "pass" && g["status"] != "info")
+                || record["contract_check"]["status"] != "pass"))
+            || blocks::rows(&record["rules"])?
+                .iter()
+                .any(|r| r["enforcement"] == "hard" && r["status"] != "pass")
             || blocks::rows(&record["deferred_grading"])?
                 .iter()
                 .any(|r| r["status"] != "pass" && r["status"] != "info");
