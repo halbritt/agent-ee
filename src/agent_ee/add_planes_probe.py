@@ -6,6 +6,7 @@ import shutil
 from .add_planes import SIBLINGS, validate_plan, zone_ids
 from .catalog import strict_json
 from .storage import write_json
+from .plane_polygon_identity import polygon_digest
 
 _REMOVED = []
 
@@ -107,7 +108,6 @@ def _polygon_evidence(k, board, zone):
     """AGENTEE-487 H2: one record per filled polygon of the SAVED (reloaded) zone fill: index, full identity
     (outline and holes, digest of their exact nm vertices) and isolation from KiCad's native shape collision
     (SHAPE_POLY_SET.Collide(effective shape, 0) against every same-net pad, track, arc and via on the layer)."""
-    import hashlib, json
     layer, net = zone.GetLayer(), zone.GetNetCode()
     fill = zone.GetFilledPolysList(layer)
     shapes = [p.GetEffectiveShape(layer) for fp in board.GetFootprints() for p in fp.Pads()
@@ -121,7 +121,7 @@ def _polygon_evidence(k, board, zone):
         nm = [[[outline.CPoint(n).x, outline.CPoint(n).y] for n in range(outline.PointCount())],
               *[[[c.CPoint(n).x, c.CPoint(n).y] for n in range(c.PointCount())] for c in holes]]
         records.append(dict(index=i, outline_mm=_chain_mm(k, outline), holes_mm=[_chain_mm(k, c) for c in holes],
-                            digest=hashlib.sha256(json.dumps(nm).encode()).hexdigest(),
+                            digest=polygon_digest(nm),
                             isolated=not any(bool(unit.Collide(shape, 0)) for shape in shapes)))
     return records
 

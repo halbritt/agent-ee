@@ -300,6 +300,64 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
             with self.assertRaises(ValueError):planes.validate_plan(plan)
 
 
+class PolygonEvidenceBoundaryTests(PlaneFixture, unittest.TestCase):
+    """Corrupt only the serialized proof after real native saved-board inspection."""
+    def setUp(self):
+        super().setUp()
+        self.plan['zones'] = [dict(self.plan['zones'][0], outline={
+            'polygon_mm': [[25, 21], [35, 21], [35, 29], [25, 29]]})]
+        self.save()
+
+    def assert_refused(self, label, mutate):
+        read = planes.read_json
+        applied = []
+
+        def intercept(path):
+            result = read(path)
+            if Path(path).name == 'facts.json':
+                records = result['zones'][0]['polygon_evidence']
+                self.assertEqual(len(records), 2)
+                mutate(records)
+                applied.append(True)
+            return result
+
+        with patch.object(planes, 'read_json', side_effect=intercept):
+            report = self.run_plan(label, phase=planes.PRE_ROUTING)
+        self.assertEqual(applied, [True], report)
+        actual = (report['execution'], report['outcome'],
+                  (self.root/label/'board.kicad_pcb').exists())
+        print('REQUIRED_REFUSAL', label, 'actual=', actual, flush=True)
+        self.assertEqual(actual, ('failed', 'unknown', False), report)
+
+    def test_nonhex_digest_refuses(self):
+        self.assert_refused('nonhex_digest', lambda r: r[0].update(digest='z'*64))
+
+    def test_changed_geometry_old_digest_refuses(self):
+        def mutate(records):
+            records[0]['outline_mm'][0][0] += 1
+        self.assert_refused('changed_geometry_old_digest', mutate)
+
+    def test_empty_hole_refuses(self):
+        self.assert_refused('empty_hole', lambda r: r[0].update(holes_mm=[[]]))
+
+    def test_duplicate_geometry_distinct_stale_digest_refuses(self):
+        def mutate(records):
+            self.assertNotEqual(records[0]['digest'], records[1]['digest'])
+            for field in ('outline_mm', 'holes_mm'):
+                records[1][field] = copy.deepcopy(records[0][field])
+        self.assert_refused('duplicate_geometry', mutate)
+
+    def test_truthful_saved_native_evidence_publishes(self):
+        report = self.run_plan('truthful', phase=planes.PRE_ROUTING)
+        self.assert_ok(report)
+        facts = read_json(self.root/'truthful/verify/facts.json')
+        self.assertEqual(facts['board_sha256'], digest(self.root/'truthful/board.kicad_pcb'))
+        records = facts['zones'][0]['polygon_evidence']
+        self.assertEqual(len(records), 2)
+        self.assertTrue(all(r['isolated'] is True for r in records))
+        self.assertEqual(len(report['deferred_connectivity']), 1)
+
+
 class PhaseAndAttributionTests(unittest.TestCase):
     """AGENTEE-487 H2 contract (agent-529 a76ba613): deferral only pre-routing, only for a wholly unconnected planned
     always-zone, proven by complete unique native polygon evidence of the VERIFIED SAVED fill. DRC anchor markers are
@@ -310,7 +368,7 @@ class PhaseAndAttributionTests(unittest.TestCase):
 
     def zone(self, isolated=(True, True), records=None, count=None):
         recs = records if records is not None else [
-            dict(index=i, outline_mm=self.SQUARES[i], holes_mm=[], digest=str(i) * 64, isolated=f)
+            dict(index=i, outline_mm=self.SQUARES[i], holes_mm=[], digest=planes.polygon_digest(planes.polygon_nm(self.SQUARES[i], [])), isolated=f)
             for i, f in enumerate(isolated)]
         return dict(uuid=self.UID, fill_polygons=len(isolated) if count is None else count, layer='In2.Cu', net='/+3V3',
                     polygon_evidence=recs)
@@ -347,10 +405,13 @@ class PhaseAndAttributionTests(unittest.TestCase):
                 self.defer(markers, zone=one_record)
 
     def test_duplicate_native_identity_refuses(self):
-        dup_index = [dict(index=0, outline_mm=self.SQUARES[i], holes_mm=[], digest=str(i) * 64, isolated=True) for i in (0, 1)]
-        dup_digest = [dict(index=i, outline_mm=self.SQUARES[i], holes_mm=[], digest='0' * 64, isolated=True) for i in (0, 1)]
-        for recs in (dup_index, dup_digest):
-            with self.subTest(recs=recs[1]), self.assertRaises(ValueError):
+        valid = self.zone()['polygon_evidence']
+        dup_index = copy.deepcopy(valid)
+        dup_index[1]['index'] = 0
+        duplicate_geometry = copy.deepcopy(valid)
+        duplicate_geometry[1] = dict(copy.deepcopy(valid[0]), index=1)
+        for recs in (dup_index, duplicate_geometry):
+            with self.subTest(recs=recs[1]), self.assertRaisesRegex(ValueError, 'missing or duplicate'):
                 self.defer([self.ANCHOR], zone=self.zone(records=recs))
 
     def test_stale_evidence_refuses(self):

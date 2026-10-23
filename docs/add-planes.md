@@ -61,7 +61,15 @@ and via on the zone layer, so edge contact counts as connected), bound to the sa
 board's sha256 (`verify/facts.json`, `polygon_evidence`, `board_sha256`). Every saved
 polygon must be covered exactly once (indexes 0..n-1, n the saved polygon count,
 unique identities) and marked isolated; flags must be exact booleans and vertices
-finite. Missing, duplicate, stale, malformed or contradictory evidence refuses;
+finite. The writer and consumer share `plane_polygon_identity.polygon_digest`:
+SHA256 of `json.dumps([outline_nm, *holes_nm]).encode()`, retaining native vertex
+and hole order and the default JSON separators. The consumer recovers integer
+nanometres from millimetres (allowing only binary-float round-trip error), validates
+nonempty chains with nonzero area (including KiCad's opposite-direction bridges
+for fractured holes), recomputes the digest and requires exact
+lowercase hexadecimal equality. Coverage uniqueness uses these recomputed identities,
+not labels supplied by the evidence. Empty holes, self-intersections and off-grid
+coordinates refuse. Missing, duplicate, stale, malformed or contradictory evidence refuses;
 partial isolation is not deferred. KiCad 10 DRC places every `isolated_copper` marker
 of a zone at the zone anchor, so the markers are ZONE-LEVEL corroboration only (the
 zone must have at least one, each with a finite position); they are never polygon

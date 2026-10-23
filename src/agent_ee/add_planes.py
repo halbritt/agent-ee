@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import math
+import re
 from pathlib import Path
 import shutil
 import uuid
@@ -12,6 +13,7 @@ from .executor import execute
 from .tool_source import snapshot
 from .design_rule_provenance import advisory_numeric, classify_finding, finding_sources, require_evaluated_limits
 from .storage import digest, identity, read_json, write_json
+from .plane_polygon_identity import polygon_digest, polygon_nm
 
 SCHEMA = 'agent-ee.plane-plan/1'
 RESULT = 'agent-ee.add-planes/1'
@@ -201,13 +203,13 @@ def _polygon_coverage(uid, zone, saved_board_sha256, facts_board_sha256):
     indexes, digests = [], []
     for r in records:
         if (not isinstance(r, dict) or type(r.get('index')) is not int or type(r.get('isolated')) is not bool or
-                not isinstance(r.get('digest'), str) or len(r['digest']) != 64 or
-                not isinstance(r.get('outline_mm'), list) or len(r['outline_mm']) < 3 or
-                not isinstance(r.get('holes_mm'), list) or
-                any(not (isinstance(pt, list) and len(pt) == 2 and all(_finite(c) for c in pt))
-                    for chain in [r['outline_mm'], *r['holes_mm']] for pt in (chain if isinstance(chain, list) else [None]))):
+                not isinstance(r.get('digest'), str) or re.fullmatch(r'[0-9a-f]{64}', r['digest']) is None):
             raise ValueError('native polygon evidence is malformed for zone ' + uid)
-        indexes.append(r['index']); digests.append(r['digest'])
+        recomputed = polygon_digest(polygon_nm(r.get('outline_mm'), r.get('holes_mm')))
+        if recomputed != r['digest']:
+            raise ValueError('native polygon geometry and digest disagree for zone ' + uid)
+        indexes.append(r['index'])
+        digests.append(recomputed)
     if sorted(indexes) != list(range(count)) or len(set(digests)) != count:
         raise ValueError('native polygon evidence has missing or duplicate polygons for zone ' + uid)
     return [r['isolated'] for r in sorted(records, key=lambda r: r['index'])]
