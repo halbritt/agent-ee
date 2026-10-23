@@ -179,11 +179,11 @@ LEAKS = ('hidden', 'file:', 'C:', '\\', 'private-', 'Alice', 'localhost')
 # (~/.local/share/agent-ee-render-gallery/artifacts, checked by ~/agent-ee-diag6-stage/SHA256SUMS; lines below):
 #   basenames  REAL_BASENAMES, each from a staged line (served through _basename/_name), plus FIXTURE_BASENAMES:
 #              the exact names this module's own fixtures publish; no other name, so "intranet.corp.step" fails;
-#   counts     integers 0-999999 (D6 manifest "footprints": 309 at bundles/adfb7668ac0c-86b84f0f741e/manifest.json:13);
+#   counts     integers 0-999999 (D6 manifest "footprints": 309 at bundles/adfb7668ac0c-86b84f0f741e/manifest.json:11);
 #              no float has a witness, so none is covered;
-#   designators _DESIGNATOR [A-Z]{1,8}[0-9]{1,6} (D6 warning "TP4: no 3D model is declared", manifest.json:25);
-#   hashes, ids, times _HASH, _ID, _TIME (manifest.json:5,8; index.json:3);
-#   pixel sizes 1-99999 (manifest.json:52 "KiCad produced 2384×1568 for requested 2400×1600").
+#   designators _DESIGNATOR [A-Z]{1,8}[0-9]{1,6} (D6 warning "TP4: no 3D model is declared", manifest.json:23);
+#   hashes, ids, times _HASH, _ID, _TIME (manifest.json:5,7; index.json:3);
+#   pixel sizes 1-99999 (manifest.json:49 "KiCad produced 2384×1568 for requested 2400×1600").
 # The coordinator's controls (example.org URLs, an email, "user@host", ...) are not grammar: they pass only as the
 # exact values a test registers with publication_fixtures() at the place it injects them.
 _DESIGNATOR_RE = r'[A-Z]{1,8}[0-9]{1,6}'
