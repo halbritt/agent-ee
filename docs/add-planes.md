@@ -47,9 +47,13 @@ zone without filled copper is a refusal. Engineering must choose the intended
 policy in the captured plan. In KiCad 10, `always` removes disconnected secondary
 islands when the zone has a connected main pour. A wholly unconnected zone can
 retain its fill and emit native DRC `isolated_copper` warnings instead. The
-producer refuses any `isolated_copper` violation attributed to a planned
+producer refuses an `isolated_copper` violation attributed to a planned
 `always` zone, including warnings and exclusions, and reports the exact zone
-UUIDs. `never` retains disconnected copper; its isolated-copper warnings remain
+UUIDs, unless EVERY filled polygon of that zone is isolated (the zone is wholly
+unconnected, as an inner plane is before routing). Such a zone keeps its
+definition and its `always` policy, and the report lists it under
+`deferred_connectivity`: connected fill under `always` is a post-routing
+obligation (AGENTEE-487). Partial isolation still refuses. `never` retains disconnected copper; its isolated-copper warnings remain
 in the native report without causing this policy refusal.
 
 Zone UUIDs are deterministic from the complete plan and list index. The same

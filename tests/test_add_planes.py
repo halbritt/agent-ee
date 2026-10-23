@@ -126,7 +126,9 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
         self.assertIn('no native filled copper',str(report['findings']))
         self.assertFalse((self.root/'run/board.kicad_pcb').exists())
 
-    def test_wholly_unconnected_zone_refuses_always_but_preserves_never(self):
+    def test_wholly_unconnected_zone_defers_connectivity_under_always_and_preserves_never(self):
+        # AGENTEE-487: before routing a wholly unconnected 'always' zone keeps its definition and final policy, and
+        # its connectivity is an explicit deferred post-routing obligation (previously a refusal).
         before = stage_receipts.file_tree(self.source)
         for policy in ('always', 'never'):
             with self.subTest(policy=policy):
@@ -146,11 +148,13 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
                 self.assertTrue(isolated, native)
                 self.assertTrue(all(v['severity']=='warning' for v in isolated))
                 if policy == 'always':
-                    self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
-                    self.assertEqual(report['drc']['planned_zone_errors'], isolated)
-                    self.assertIn(uid, str(report['findings']))
-                    self.assertFalse((self.root/name/'board.kicad_pcb').exists())
+                    self.assert_ok(report)
+                    self.assertEqual(report['drc']['planned_zone_errors'], [])
+                    self.assertEqual([d['zone'] for d in report['deferred_connectivity']], [uid])
+                    self.assertEqual(report['deferred_connectivity'][0]['island_removal'], 'always')
+                    self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
                 else:
+                    self.assertEqual(report['deferred_connectivity'], [])
                     self.assert_ok(report)
                     self.assertEqual(report['drc']['planned_zone_errors'], [])
                     self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
