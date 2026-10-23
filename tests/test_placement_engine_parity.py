@@ -268,6 +268,81 @@ class WholePlannerParityTest(EngineFixture, unittest.TestCase):
         plan = self.compare(capture([part('U1', 2, 2)]), {'policy': request(gap_nm=-1)})
         self.assertIn('gap', plan['error'])
 
+    def test_candidate_set_contract_and_member_refinement_complete_plan(self):
+        """Pure authored captures cover planning; native reproduction remains a separate gate."""
+        from agent_ee import block_variants
+        from agent_ee.footprint_library import digest
+        from test_block_refinement import declarations, facts as refinement_facts
+        from test_blocks import native_xml
+        from test_block_arrangement import plan_policy
+
+        facts = refinement_facts()
+        policy, contract, _ = declarations(facts)
+        # The standalone refinement helper fixes its anchor in board space;
+        # Stage B moves the block and preserves the anchor only within its frame.
+        policy['fixed_refs'] = []
+        policy['groups'] = [{'id': 'device-region', 'references': ['U1', 'C1'],
+                             'region': {'polygons': [rectangle(0, 0, 12, 8)]}}]
+        allocation = json.dumps({'schema': blocks.ALLOCATION, 'blocks': [
+            {'id': 'device', 'references': ['U1', 'C1'], 'anchor': 'U1'}]})
+        parts = tuple((fp['ref'], '/', 'CONN' if fp['ref'] == 'U1' else 'C', fp['fpid'], fp['value'],
+                       {pad['number']: pad['net'] for pad in fp['pads']}) for fp in facts['footprints'])
+        xml = native_xml(parts=parts, sheets={'/': '/'})
+        with tempfile.TemporaryDirectory(prefix='agent-ee-candidate-set-parity-') as directory:
+            path = Path(directory) / 'native.xml'
+            path.write_bytes(xml)
+            inventory = read_native_inventory(path)
+            derivation = blocks.derive(inventory, read_sheet_names(path), facts,
+                inventory_sha256=hashlib.sha256(xml).hexdigest(), allocation_raw=allocation.encode())
+            packed = blocks._plain(blocks.pack_block(facts, inventory, derivation, 'device', policy,
+                                                    compact=False))
+            self.assertEqual(packed['status'], 'packed', packed)
+            candidate = packed['candidate']
+            members = sorted(facts['footprints'], key=lambda fp: blocks._natural(fp['ref']))
+            # These digest witnesses identify authored input records. They do not
+            # stand in for KiCad reproduction or authorize a native board write.
+            def member_rows(face, successful):
+                return [{'ref': fp['ref'], 'uuid': fp['uuid'], 'source_side': fp['side'], 'side': face,
+                         'flipped': fp['side'] != face,
+                         'pad_inventory_sha256': digest(fp['pads']) if successful else None}
+                        for fp in members]
+            eligibility = contract['eligibility']
+            bundle = {'schema': block_variants.SCHEMA, 'block_id': 'device', 'sources': candidate['sources'],
+                'eligibility': {'record': eligibility, 'record_sha256': digest(eligibility),
+                                'eligible_faces': ['F', 'B']},
+                'captured_members': [{key: fp[key] for key in ('ref', 'uuid', 'side')} for fp in members],
+                'variants': {
+                    'F': {'status': 'packed', 'capture': facts, 'capture_sha256': digest(facts),
+                          'board_sha256': facts['board_sha256'], 'derivation': derivation,
+                          'members': member_rows('F', True), 'candidate': candidate, 'failure': None},
+                    'B': {'status': 'native_flip_refused', 'capture': None, 'capture_sha256': None,
+                          'board_sha256': None, 'derivation': None, 'members': member_rows('B', False),
+                          'candidate': None, 'failure': {'status': 'native_flip_refused', 'outcome': 'unknown',
+                              'reason': 'Authored pure planner fixture supplies no native B reproduction.'}}}}
+            block_variants.validate(bundle, facts, inventory, derivation, policy, eligibility)
+        proposed = {'policy': policy, 'blocks': {'allocation_text': allocation,
+            'arrangement': plan_policy(refinement={'step_budget': 64}), 'side_eligibility': eligibility,
+            'contract': contract, 'candidates': [{'candidate': bundle}]}}
+        plan = self.compare(facts, proposed, netlist_xml=xml.decode())
+        self.assertEqual(plan['status'], 'planned', plan)
+        record = plan['block_arrangement']
+        self.assertEqual(record['contract_check']['status'], 'pass')
+        self.assertEqual(record['deferred_grading'], [{'block': 'device', 'kind': 'group',
+            'id': 'device-region', 'measured': 2, 'status': 'pass'}])
+        self.assertEqual(record['arranged'][0]['selected_face'], 'F')
+        self.assertEqual(record['blocks'][0]['candidate_sha256'], digest(candidate))
+        self.assertEqual(record['blocks'][0]['candidate_set_sha256'], digest(bundle))
+        witness = record['member_refinement']
+        self.assertEqual(witness['schema'], 'agent-ee.block-member-refinement/1')
+        self.assertEqual(witness['step_budget'], 64)
+        self.assertGreater(witness['steps_used'], 0)
+        self.assertEqual(record['routing_feedback']['status'], 'unavailable')
+        placements = {row['ref']: row for row in plan['placements']}
+        self.assertEqual(set(placements), {'U1', 'C1'})
+        for pose in witness['final_member_poses']:
+            self.assertEqual({key: placements[pose['reference']][key] for key in ('position_nm', 'rotation_deg', 'side')},
+                             {key: pose[key] for key in ('position_nm', 'rotation_deg', 'side')})
+
     def test_block_admission_arrangement_residual_and_bound_source_refusal(self):
         from test_blocks import board, native_xml
         from test_block_arrangement import plan_policy, CITE

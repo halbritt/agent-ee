@@ -262,6 +262,71 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                                 classification='deliberate_cross_face')
         self.assertEqual(source.read_bytes(), original)
 
+    def test_native_writer_accepts_exact_explicit_changes_and_refuses_forged_records(self):
+        """Both real validators fix one transition set before the equality guard.
+
+        Derived authorization names exactly every planned source-side change.
+        The explicit validator requires that same complete set: each listed
+        change differs from the native source and matches a movable placement;
+        each unlisted placement must retain its native source side. Thus an
+        unequal mapping cannot pass those earlier checks on a stable source.
+        Do not mock a validator merely to manufacture that unreachable branch.
+        """
+        require_toolchain(native=True)
+        root = self.artifact_root()
+        source, netlist, facts, request = self.inputs(root)
+        originals = {path: path.read_bytes() for path in
+                     (source, netlist, source.with_suffix('.kicad_pro'), source.with_suffix('.kicad_dru'))
+                     if path.is_file()}
+        by_ref = {fp['ref']: fp for fp in facts['footprints']}
+        explicit = {'schema': placer_runner.SIDE_CHANGES, 'source_sha256': facts['board_sha256'],
+                    'changes': [{'ref': ref, 'uuid': by_ref[ref]['uuid'], 'side': 'B'}
+                                for ref in ('C1', 'U1')]}
+        writable = (root / 'explicit-writer').resolve()
+        writable.mkdir()
+        bound = copy.deepcopy(request)
+        bound.update(skip_visuals=True, side_changes=explicit,
+            authorization={'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
+                           'writable_root': str(writable), 'source_sha256': facts['board_sha256']})
+        destination = writable / 'equal'
+        report = placer_runner.place_candidate(source, netlist, destination, bound)
+        self.assertEqual(report['status'], 'placed', report)
+        self.assertEqual(report['block_contract']['status'], 'pass')
+        saved_plan = json.loads((destination / 'placement-plan.json').read_text())
+        selected = next(row for row in saved_plan['block_arrangement']['arranged'] if row['block'] == 'b')
+        self.assertEqual(selected['selected_face'], 'B')
+        saved = extract(destination / 'candidate.kicad_pcb')
+        expected = {fp['uuid']: (fp['ref'], 'B' if fp['ref'] in ('C1', 'U1') else fp['side'])
+                    for fp in facts['footprints']}
+        self.assertEqual({fp['uuid']: (fp['ref'], fp['side']) for fp in saved['footprints']}, expected)
+        evidence = {'schema': 'agent-ee.explicit-side-change-regression/1',
+                    'source_sha256': facts['board_sha256'], 'explicit': explicit,
+                    'control': {'status': report['status'], 'block_contract_status': report['block_contract']['status'],
+                                'selected_face': selected['selected_face'], 'saved_board_sha256': saved['board_sha256']},
+                    'refusals': []}
+        evidence_path = root / 'explicit-side-change-evidence.json'
+        evidence_path.write_text(json.dumps(evidence, indent=2) + '\n')
+        # All inputs remain real native requests. In particular, an empty list
+        # cannot exercise the later equality guard: its schema forbids emptiness.
+        for name, changes, reason in (
+                ('missing-member', explicit['changes'][:1], 'placement U1 side change is not authorized'),
+                ('extra-member', explicit['changes'] + [{'ref': 'J1', 'uuid': by_ref['J1']['uuid'], 'side': 'B'}],
+                 'placement J1 side differs from its authorized side change'),
+                ('no-op-member', [{'ref': 'U1', 'uuid': by_ref['U1']['uuid'], 'side': 'F'}],
+                 'side change for U1 keeps its original side'),
+                ('empty', [], 'side-change authorization must be one agent-ee.side-changes/1 record')):
+            forged = copy.deepcopy(bound)
+            forged['side_changes']['changes'] = changes
+            rejected = writable / name
+            with self.subTest(forgery=name), self.assertRaisesRegex(ValueError, reason) as caught:
+                placer_runner.place_candidate(source, netlist, rejected, forged)
+            self.assertFalse(rejected.exists(), name)
+            self.assertFalse(any(writable.glob('.placement-staging-*')), name)
+            evidence['refusals'].append({'case': name, 'reason': str(caught.exception), 'published': False})
+            evidence_path.write_text(json.dumps(evidence, indent=2) + '\n')
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original, str(path))
+
     def test_native_chain_refines_member_after_global_arrangement(self):
         require_toolchain(native=True)
         root = self.artifact_root()

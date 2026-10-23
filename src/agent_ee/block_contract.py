@@ -408,7 +408,7 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
                 unknown.append({'kind': 'eligibility_requirement_unresolved', 'block': bid,
                                 'requirement': key, 'declaration': deepcopy(entry[key])})
     for label, entry in sorted(eligibility.get('shared', {}).items()):
-        if label not in members['roles'] or entry.get('constraint'):
+        if label not in members['roles'] or entry.get('constraint') is not None:
             unknown.append({'kind': 'shared_eligibility_requirement_unresolved', 'label': label,
                             'declaration': deepcopy(entry)})
     thickness = contract['thickness_nm']
