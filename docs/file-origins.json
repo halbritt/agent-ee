@@ -4077,6 +4077,16 @@
         "AE"
       ],
       "reviewed": "Original Rust planner build, protocol, runtime and parity documentation."
+    },
+    {
+      "paths": [
+        "docs/benchmarks/scorer-four-way-2026-10-22.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Original benchmark measurement receipt: timing, tool versions, input and output hashes, and validation metadata. The rights notice is the retained GCC --version banner, not copied compiler source. No captured board or library bytes."
     }
   ]
 }
