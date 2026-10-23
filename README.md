@@ -1007,8 +1007,8 @@ The [file digest contract](docs/result-reference.md) has mmap regressions that
 keep metadata observations fixed while hashing real changed bytes; kernel
 writeback timing cannot invalidate their stat-unchanged precondition.
 Project CI is defined to build the image and run the suite, documentation check
-and both RC fixtures there on pushes to `main`; those steps have been run locally
-in the image, not yet on a hosted runner.
+and both RC fixtures there once a day and on manual dispatch (per-push runs were
+dropped by owner decision on 2026-10-22; see [Project CI](docs/container.md#project-ci)).
 
 ```sh
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v

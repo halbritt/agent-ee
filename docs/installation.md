@@ -174,8 +174,8 @@ jobs:
 
 Inside an agent-ee checkout, `uses: ./` runs the local copy, as an agent-ee
 checkout's own workflow would. For a real board, use your own scope and requirements; the fixture's
-limits apply only to that filter. agent-ee's own CI runs on pushes to `main` and
-manual dispatch. It runs the RC fixtures directly in the image and judges them
+limits apply only to that filter. agent-ee's own CI runs once a day (scheduled) and on
+manual dispatch (owner decision 2026-10-22; see the [container reference](container.md#project-ci)). It runs the RC fixtures directly in the image and judges them
 with the same gate, but it does not call the action and uploads no run directory.
 A run directory of the seeded scope contains the captured stock KiCad library files, so keep it local.
 Inputs, verdicts and the local evidence for this behavior
