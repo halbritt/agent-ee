@@ -99,7 +99,8 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                             and first in row['before'] and final in row['after'] for row in record['adjustments']))
         self.assertEqual({row['ref'] for row in plan['placements']}, set(fixture.WITNESS))
         self.assertEqual(record['contract_check']['status'], 'pass')
-        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual_budget']['steps_used'])
+        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual_budget']['steps_used']
+                         + record.get('member_refinement', {}).get('steps_used', 0))
         self.saved_board_checks(root, source, netlist, facts, request, candidates, plan)
         self.assertEqual(source.read_bytes(), original)
 
@@ -164,7 +165,8 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                             for row in failure['arranged']))
         self.assertLessEqual(record['search']['steps_used'], fixture.STEP_BUDGET)
         self.assertLessEqual(record['residual_budget']['steps_used'], fixture.STEP_BUDGET)
-        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual_budget']['steps_used'])
+        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual_budget']['steps_used']
+                         + record.get('member_refinement', {}).get('steps_used', 0))
         del request['blocks']['arrangement']['side_choice']
         self.assertIsNone(first_difference(original, request))
 
@@ -182,7 +184,7 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         self.assertEqual(record['contract_check']['status'], 'pass')
         charged = sum(max(1, row['steps_used']) for row in record['residual_failures']) + record['residual']['steps_used']
         self.assertEqual(record['residual_budget']['steps_used'], charged)
-        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + charged)
+        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + charged + record['member_refinement']['steps_used'])
 
     def test_spare_front_prefers_shorter_inter_block_wire(self):
         require_toolchain(native=True)

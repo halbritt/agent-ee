@@ -40,7 +40,7 @@ PROVENANCE_AUTHORITY = ('review input only: each placed block keeps its candidat
 DEFAULT_OBJECTIVE = {'terms': list(TERMS), 'provenance': {
     'enforcement': 'advisory', 'reason': 'default lexicographic order; no sourced objective weights'}}
 POLICY_KEYS = frozenset(('schema', 'step_budget', 'search_timeout_s', 'priority_blocks', 'objective', 'thermal',
-                         'keepouts', 'no_stacking', 'no_block_over_fixed', 'side_choice'))
+                         'keepouts', 'no_stacking', 'no_block_over_fixed', 'side_choice', 'refinement'))
 
 
 def _provenance(value, label):
@@ -83,6 +83,10 @@ def validate_policy(document, block_ids, refs):
         raise ValueError('arrangement step budget must be 1..1000000')
     if type(document.get('side_choice', True)) is not bool:
         raise ValueError('side_choice must be a boolean')
+    if 'refinement' in document:
+        refinement = blocks._keys(document['refinement'], {'step_budget'}, label='refinement')
+        if type(refinement['step_budget']) is not int or not 0 <= refinement['step_budget'] <= 1_000_000:
+            raise ValueError('refinement step_budget must be 0..1000000')
     timeout = document.get('search_timeout_s')
     if 'search_timeout_s' in document and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                                            or not 0 < timeout <= 86400):
@@ -1156,6 +1160,8 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         raise ValueError('arrangement candidates must be a list')
     has_sets = any(isinstance(entry, dict) and isinstance(entry.get('candidate'), dict)
                    and entry['candidate'].get('schema') == block_variants.SCHEMA for entry in entries)
+    if 'refinement' in arrangement and not has_sets:
+        raise ValueError('member refinement requires native candidate sets')
     if has_sets:
         roles, _, _ = block_contract._contract(capture, contract)
         if contract['eligibility'] != side_eligibility:
@@ -1366,6 +1372,17 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
             placer.transform(fp, *next(([p['position_nm'], p['rotation_deg']] for p in plan['placements']
                                         if p['ref'] == fp['ref'])))
             for fp in copy.deepcopy((residual_capture if has_sets else capture)['footprints'])]}
+        if has_sets:
+            complete['rule_areas'] = copy.deepcopy(residual_capture.get('rule_areas', []))
+            source_owners = {fp['uuid']: fp for fp in residual_capture['footprints']}
+            final_owners = {fp['uuid']: fp for fp in complete['footprints']}
+            for area in complete['rule_areas']:
+                if area.get('owner') in source_owners:
+                    source_fp, final_fp = source_owners[area['owner']], final_owners[area['owner']]
+                    area['outline'] = placer.transform(
+                        {'position_nm': source_fp['position_nm'], 'rotation_deg': source_fp['rotation_deg'],
+                         'pads': [], 'courtyards': {'zone': area['outline']}},
+                        final_fp['position_nm'], final_fp['rotation_deg'])['courtyards']['zone']
         if contract is not None:
             record['contract_check'] = block_contract.check_complete(complete, contract)
             if record['contract_check']['status'] == 'unknown':
@@ -1381,6 +1398,26 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
                 record.setdefault('contract_failures', []).append({'arranged': copy.deepcopy(record['arranged']),
                                                                   'check': copy.deepcopy(record['contract_check'])})
                 return {**plan, 'status': 'block_contract_rejected', 'block_arrangement': record}
+        refinement_steps = 0
+        if has_sets:
+            from .block_refinement import refine
+            complete, witness = refine(complete, effective, contract, record,
+                                       step_budget=arrangement.get('refinement', {}).get('step_budget', 64))
+            record['member_refinement'] = witness
+            record['routing_feedback'] = {'status': 'unavailable',
+                                          'reason': 'routing feedback has not been implemented'}
+            refinement_steps = witness['steps_used']
+            final = {fp['ref']: fp for fp in complete['footprints']}
+            plan['placements'] = [{**p, **{key: final[p['ref']][key]
+                                           for key in ('position_nm', 'rotation_deg', 'side')}}
+                                  for p in plan['placements']]
+            plan['judgment'] = placer.judge(complete, overhangs=effective.get('fixed_overhangs'))
+            plan['judgment']['basis'] = 'transformed-proposal-not-native'
+            if 'groups' in effective:
+                plan['group_grading'] = placement_groups.grade(complete, effective['groups'])
+            if 'electrical_locality' in effective:
+                plan['locality_grading'] = electrical_locality.grade(complete, effective['electrical_locality'])
+            record['contract_check'] = block_contract.check_complete(complete, contract)
         rows = grade_rules(complete, arrangement, {r: search.owner[r] for r in members}, fixed)
         record['rules'] = rows
         if 'advisory_regions' in effective:
@@ -1388,11 +1425,15 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
             plan['advisory_regions'] = advisory_regions.grade(complete, effective['advisory_regions'], fixed)
         record['deferred_grading'] = _deferred_grading(plan, selected)
         record['residual']['steps_used'] = plan['steps_used']
-        plan['steps_used'] = search.steps + (residual_used if has_sets else plan['steps_used'])
+        plan['steps_used'] = search.steps + (residual_used if has_sets else plan['steps_used']) + refinement_steps
         plan['policy'] = copy.deepcopy(effective)
         plan['block_arrangement'] = record
         failed = [r for r in rows if r['enforcement'] == 'hard' and r['status'] != 'pass']
-        if failed or any(d['status'] not in ('pass', 'info') for d in record['deferred_grading']):
+        if (failed or any(d['status'] not in ('pass', 'info') for d in record['deferred_grading'])
+                or has_sets and (plan['judgment']['verdict'] != 'pass'
+                    or 'group_grading' in plan and not placement_groups.satisfied(plan['group_grading'])
+                    or plan.get('locality_grading', {}).get('status', 'pass') not in ('pass', 'info')
+                    or record['contract_check']['status'] != 'pass')):
             return failure('judge_rejected', 'complete plan failed a hard block rule or a deferred obligation',
                            plan['steps_used'])
         return plan
