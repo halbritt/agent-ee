@@ -15,6 +15,7 @@ disabled modes keep the S1 behaviour. Runtime activation remains gated by
 KICADROUTE-91.
 """
 import json
+import math
 import shutil
 import time
 import uuid
@@ -22,26 +23,65 @@ from pathlib import Path
 
 from .baseline import load_baseline
 from .candidate import safe_relative
-from .physical_intent import (SCHEMA as INTENT_SCHEMA, IntentRefused, compile_and_publish, compile_plan,
-                              native_board, publish, verify_receipt)
+from . import locality_provenance, topology_rules
+from .physical_intent import (DIAGNOSTIC_KINDS, DIAGNOSTIC_STATUSES, LOCALITY_METRICS, MOVES, SCHEMA as INTENT_SCHEMA,
+                              UNSUPPORTED_KINDS, IntentRefused, compile_and_publish, compile_plan, native_board,
+                              publish, verify_receipt)
 from .profiles import validate_definition
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, identity, read_json, rename_noreplace, write_json
 
 MODES = ('manual', 'architect', 'disabled')
 RECEIPT_SCHEMA = 'agent-ee.physical-architect-receipt/1'
 ROLE = 'architect'
 # One proposal plus at most one correction for deterministic validation findings.
 CORRECTIONS = 1
+# Seconds of the caller's deadline kept for compilation, comparison, verification and publication;
+# no call launches into it, and nothing publishes once the deadline itself has passed.
+RESERVE_S = 5.0
+# A required obligation's semantic restriction; a correction keeps all of it (review ee389-s2 H1).
+OBLIGATION_CONTENT = ('kind', 'requirement', 'terminals', 'joins', 'forbidden_shared', 'proxy')
+LOCALITY_IDENTITY = ('metric', 'kind', 'ic', 'inductor', 'return_net')
 ASSERTIONS = ('terminals', 'blocks', 'residual', 'moves', 'locality', 'obligations', 'diagnostics')
-PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['terminals'], 'properties': {
-    'terminals': {'type': 'array', 'items': {'type': 'object'}},
-    'blocks': {'type': 'array', 'items': {'type': 'object'}},
-    'residual': {'type': 'array', 'items': {'type': 'string'}},
-    'moves': {'type': 'array', 'items': {'type': 'object'}},
-    'locality': {'type': 'array', 'items': {'type': 'object'}},
-    'obligations': {'type': 'array', 'items': {'type': 'object'}},
-    'diagnostics': {'type': 'array', 'items': {'type': 'object'}},
-    'records': {'type': 'array', 'items': {'type': 'string'}}}}
+# Concrete nested shapes for every admitted assertion (review ee389-s2 H3). harnesses.strict_schema
+# closes each object for Codex and turns each optional property into a nullable one; compose drops
+# those nulls, since no intent field is ever null. Only shapes the S1 compiler can admit are offered.
+TEXT, TEXTS = {'type': 'string'}, {'type': 'array', 'items': {'type': 'string'}}
+
+
+def _object(required, optional=None):
+    properties = {**required, **(optional or {})}
+    return {'type': 'object', 'additionalProperties': False, 'required': list(required), 'properties': properties}
+
+
+_SOURCE = {'path': TEXT, 'sha256': TEXT, 'locator': TEXT, 'quote': TEXT}
+_ENDPOINT = _object({'reference': TEXT, 'pad': TEXT, 'net': TEXT, 'uuid': TEXT})
+_PROVENANCE = _object({'class': {'type': 'string', 'enum': sorted(locality_provenance.CLASSES)}, 'basis': TEXT}, {
+    'decision_reference': _object({**_SOURCE, 'owner': TEXT}),
+    'derivation': _object({'kind': {'type': 'string', 'enum': ['numeric']}, 'value_nm': {'type': 'integer'},
+                           'source': _object(_SOURCE)})})
+_PAIR = _object({'from': _ENDPOINT, 'to': _ENDPOINT, 'max_distance_nm': {'type': 'integer'}, 'citation': TEXT},
+                {'provenance': _PROVENANCE})
+ASSERTION_SCHEMAS = {
+    'terminals': _object({key: TEXT for key in ('id', 'reference', 'pin', 'pad_uuid', 'function', 'fact', 'net',
+                                                 'requirement')}
+                         | {'class': {'type': 'string', 'enum': sorted(topology_rules.CLASSES)}}),
+    'blocks': _object({'id': TEXT, 'references': TEXTS}, {'anchor': TEXT}),
+    'residual': TEXT,
+    'moves': _object({'reference': TEXT, 'allow': {'type': 'array', 'items': {'type': 'string', 'enum': sorted(MOVES)}}}),
+    'locality': _object({'id': TEXT, 'metric': {'type': 'string', 'enum': sorted(LOCALITY_METRICS)},
+                         'supply': _PAIR, 'return': _PAIR},
+                        {'switch': _PAIR, 'kind': {'type': 'string', 'enum': ['buck-output-loop']}, 'ic': TEXT,
+                         'inductor': TEXT, 'return_net': TEXT}),
+    'obligations': _object({'id': TEXT, 'kind': {'type': 'string', 'enum': sorted(UNSUPPORTED_KINDS)},
+                            'required': {'type': 'boolean'}, 'requirement': TEXT, 'terminals': TEXTS,
+                            'statement': TEXT},
+                           {'joins': TEXTS, 'forbidden_shared': {'type': 'array', 'items': TEXTS}, 'proxy': TEXT}),
+    'diagnostics': _object({'id': TEXT, 'kind': {'type': 'string', 'enum': sorted(DIAGNOSTIC_KINDS)},
+                            'status': {'type': 'string', 'enum': sorted(DIAGNOSTIC_STATUSES)}, 'statement': TEXT}),
+}
+PROPOSAL_SCHEMA = _object({'terminals': {'type': 'array', 'items': ASSERTION_SCHEMAS['terminals']}},
+                          {**{key: {'type': 'array', 'items': ASSERTION_SCHEMAS[key]}
+                              for key in ASSERTIONS if key != 'terminals'}, 'records': TEXTS})
 STAGE_COPIES = ('inputs', 'checks', 'work', 'baseline.json', 'candidate.json')
 INSTRUCTIONS = (
     'You are the semantic architect for one sealed electronics review run. Propose only the assertions '
@@ -108,8 +148,18 @@ def context(run, bound):
             'captured_records': sorted(manifest['files'])}
 
 
+def _present(value):
+    """Drop the nulls a strict (Codex) schema uses for absent optional properties."""
+    if isinstance(value, dict):
+        return {k: _present(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_present(v) for v in value]
+    return value
+
+
 def compose(proposal, bound, files):
     """The intent the compiler grades: proposed assertions under coordinator source hashes."""
+    proposal = _present(proposal)
     if not isinstance(proposal, dict) or not set(proposal) <= {*ASSERTIONS, 'records'}:
         raise ValueError(f'architect proposal may contain only {[*ASSERTIONS, "records"]}')
     records = proposal.get('records', [])
@@ -139,6 +189,8 @@ def _keyed(intent):
         keyed[f'move:{m["reference"]}'] = {**m, 'allow': sorted(m['allow'])}
     for o in intent.get('obligations', []):
         keyed[o['id']] = o
+    for d in intent.get('diagnostics', []):
+        keyed[d['id']] = d
     return keyed
 
 
@@ -154,19 +206,51 @@ def compare(proposed, reference):
     return result
 
 
+def _content(obligation):
+    """A required obligation's semantic restriction, with order-free lists canonical."""
+    value = {key: obligation.get(key) for key in OBLIGATION_CONTENT}
+    for key in ('terminals', 'joins'):
+        if isinstance(value[key], list) and all(isinstance(x, str) for x in value[key]):
+            value[key] = sorted(value[key])
+    if isinstance(value['forbidden_shared'], list) and all(
+            isinstance(e, list) and all(isinstance(x, str) for x in e) for e in value['forbidden_shared']):
+        value['forbidden_shared'] = sorted(sorted(e) for e in value['forbidden_shared'])
+    return value
+
+
+def _relationship(obligation):
+    """A locality obligation's identity: metric, loop fields and each role's endpoint pads and nets."""
+    def endpoint(value):
+        return [value.get(k) for k in ('reference', 'pad', 'net')] if isinstance(value, dict) else value
+    roles = {role: {side: endpoint(pair.get(side)) for side in ('from', 'to')} if isinstance(pair, dict) else pair
+             for role in ('supply', 'return', 'switch') if (pair := obligation.get(role)) is not None}
+    return {**{key: obligation.get(key) for key in LOCALITY_IDENTITY}, 'roles': roles}
+
+
 def weakened(first, second):
-    """A correction never drops a required obligation or a locality obligation, nor loosens a bound."""
+    """A correction keeps every required obligation's content and every locality relationship and bound.
+
+    Only a refused proposal is corrected, so a correction may repair what the compiler refused (a
+    pin, a pad UUID) but never removes, replaces or relaxes a restriction the first proposal stated.
+    """
     problems = []
-    required = {o['id'] for o in first.get('obligations', []) if o.get('required') is True}
-    kept = {o['id'] for o in second.get('obligations', []) if o.get('required') is True}
-    problems += [f'correction drops required obligation {i}' for i in sorted(required - kept)]
+    required = {o['id']: o for o in first.get('obligations', []) if isinstance(o, dict) and o.get('required') is True}
+    kept = {o['id']: o for o in second.get('obligations', []) if isinstance(o, dict) and o.get('required') is True}
+    for key in sorted(required):
+        if key not in kept:
+            problems.append(f'correction drops required obligation {key}')
+        elif identity(_content(required[key])) != identity(_content(kept[key])):
+            problems.append(f'correction changes required obligation {key}: {_content(required[key])} -> '
+                            f'{_content(kept[key])}')
     before = {o['id']: o for o in first.get('locality') or [] if isinstance(o, dict) and 'id' in o}
     after = {o['id']: o for o in second.get('locality') or [] if isinstance(o, dict) and 'id' in o}
     problems += [f'correction drops locality obligation {i}' for i in sorted(before.keys() - after.keys())]
     for key in sorted(before.keys() & after.keys()):
+        if identity(_relationship(before[key])) != identity(_relationship(after[key])):
+            problems.append(f'correction changes locality relationship {key}')
         for role in ('supply', 'return', 'switch'):
-            old = before[key].get(role, {}).get('max_distance_nm')
-            new = after[key].get(role, {}).get('max_distance_nm')
+            old, new = (o.get(role) if isinstance(o.get(role), dict) else {} for o in (before[key], after[key]))
+            old, new = old.get('max_distance_nm'), new.get('max_distance_nm')
             if isinstance(old, int) and (not isinstance(new, int) or new > old):
                 problems.append(f'correction loosens {key} {role} max_distance_nm {old} -> {new}')
     return problems
@@ -198,12 +282,16 @@ def _stage(run, stage):
             shutil.copyfile(source, stage / name)
 
 
-def propose(run, out, *, definition, deadline, stage, reference=None, cancellation=None, launch_environment=None):
+def propose(run, out, *, definition, deadline, stage, reference=None, cancellation=None, launch_environment=None,
+            reserve_s=RESERVE_S):
     """One architect proposal plus at most one correction; publish only an accepted, fully bound package.
 
     ``stage`` is the architect's own directory: a read-only evidence copy for the call, every launch
-    and attempt record, and the stage receipt. ``deadline`` is the caller's monotonic deadline; both
-    calls share it. ``reference`` is a captured manual intent to compare against.
+    and attempt record, and the stage receipt. ``deadline`` is the caller's monotonic deadline and
+    ``cancellation`` its stop; both bound the whole stage. Calls launch only before ``deadline -
+    reserve_s``; validation, comparison, verification and publication must finish before
+    ``deadline`` itself, or the stage stops and publishes nothing. ``reference`` is a captured
+    manual intent to compare against.
     """
     from .cli import policy_files, runtime_files
     from .preflight import capture_expectation
@@ -212,6 +300,15 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
 
     run, out, stage = Path(run), Path(out), Path(stage)
     definition = {**validate_definition(definition), 'tool_mode': 'fixed_packet'}
+    if (isinstance(reserve_s, bool) or not isinstance(reserve_s, (int, float)) or not math.isfinite(reserve_s)
+            or reserve_s < 0):
+        raise IntentRefused('reserve_s must be finite, nonnegative seconds')
+    launch_deadline = deadline - reserve_s
+
+    def stopped():
+        if cancellation is not None and cancellation.cancelled.is_set():
+            return 'cancelled'
+        return 'deadline_exhausted' if time.monotonic() >= deadline else None
     if out.exists() or out.is_symlink():
         raise IntentRefused(f'compiled package destination exists: {out}')
     bound = sources(run)
@@ -231,6 +328,9 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
 
     def validate(value):
         proposals.append(value)
+        if (why := stopped()):
+            state['stop'] = f'{why} before validation'  # no compilation starts after a stop
+            return value
         intent = compose(value, bound, manifest['files'])
         intents.append((len(proposals), intent))
         if len(proposals) > 1 and intents[0][0] == 1:
@@ -239,14 +339,16 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
                 raise IntentRefused('; '.join(problems))
         compiled = compile_plan(run, intent)
         state.update(intent=intent, compiled=compiled, bindings=bindings(compiled, intent))
+        if (why := stopped()):
+            state['stop'] = f'{why} during validation'
         return value
 
     started = time.monotonic()
     record, response = structured_call(
         stage, ROLE, prompt, PROPOSAL_SCHEMA,
         lambda supplied: reviewer_call(stage, ROLE, definition, supplied, PROPOSAL_SCHEMA,
-            min(definition['timeout_s'], max(.001, deadline - time.monotonic())), cancellation=cancellation,
-            launch_context={'expected': expected, 'boundary': ROLE, 'deadline': deadline}),
+            min(definition['timeout_s'], max(.001, launch_deadline - time.monotonic())), cancellation=cancellation,
+            launch_context={'expected': expected, 'boundary': ROLE, 'deadline': launch_deadline}),
         validate, limit=CORRECTIONS, execution_path=stage / 'architect-execution.json')
     model_s = time.monotonic() - started
     verify_role_call(stage, record, expected, ROLE, ROLE, limit=CORRECTIONS)
@@ -254,15 +356,16 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
                'expectation_id': expected['identity'], 'sources': bound,
                'execution': record['execution'], 'error': record.get('error'),
                'attempts': len(record['attempts']), 'corrections_used': record['resubmissions_used'],
-               'max_corrections': CORRECTIONS, 'model_stage_s': model_s,
+               'max_corrections': CORRECTIONS, 'model_stage_s': model_s, 'reserve_s': reserve_s,
                'model_usage': record.get('model_usage'),
                'proposals': [identity(p) for p in proposals], 'fallback': None}
     if record['execution'] != 'ok' or response is None:
         # Execution, auth and quota failures stop here; a refused correction is final. Nothing publishes.
         receipt['status'] = 'refused' if record['execution'] == 'malformed' else 'stopped'
+    elif state.get('stop'):
+        receipt.update(status='stopped', error=state['stop'])
     else:
         compiled, intent = state['compiled'], state['intent']
-        write_json(stage / 'proposed-intent.json', intent)
         receipt.update(intent_sha256=identity(intent), package_id=compiled['receipt.json']['package_id'],
                        artifacts=compiled['receipt.json']['artifacts'], bindings=state['bindings'],
                        semantic_completion=compiled['receipt.json']['semantic_completion'],
@@ -271,13 +374,31 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
             receipt['comparison'] = compare(intent, reference)
         if receipt.get('comparison', {}).get('unresolved'):
             receipt['status'] = 'unresolved'
+            write_json(stage / 'proposed-intent.json', intent)
         else:
-            publish(compiled, out)
-            verify_receipt(out, run, intent)
-            receipt.update(status='accepted', package=out.name)
+            receipt.update(_publish(compiled, out, run, intent, stopped))
+            if receipt['status'] == 'accepted':
+                write_json(stage / 'proposed-intent.json', intent)
     receipt['receipt_id'] = identity(receipt)
     write_json(stage / 'architect-receipt.json', receipt)
     return receipt
+
+
+def _publish(compiled, out, run, intent, stopped):
+    """Stage and verify the package beside ``out``; rename it into place only if the stage is not stopped."""
+    if (why := stopped()):
+        return {'status': 'stopped', 'error': f'{why} before publication'}
+    staging = out.parent / f'.{out.name}.{uuid.uuid4().hex}'
+    try:
+        publish(compiled, staging)
+        verify_receipt(staging, run, intent)
+        if (why := stopped()):
+            return {'status': 'stopped', 'error': f'{why} before publication'}
+        rename_noreplace(staging, out)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return {'status': 'accepted', 'package': out.name}
 
 
 def verify_stage(stage, run, out=None):
@@ -301,4 +422,3 @@ def verify_stage(stage, run, out=None):
         if package['package_id'] != receipt['package_id']:
             raise IntentRefused('published package differs from the architect receipt')
     return receipt
-

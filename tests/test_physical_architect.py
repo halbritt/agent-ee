@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from agent_ee import physical_architect, physical_intent
 from agent_ee.executor import Cancellation
+from agent_ee.harnesses import strict_schema
 from agent_ee.physical_architect import compare, produce, propose, verify_stage
 from agent_ee.physical_intent import IntentRefused, compile_plan
 from agent_ee.review_run import input_identity
@@ -30,6 +31,50 @@ SWAPPED = [pi.terminal('u1-canl', '7', 'CANL', 'canl', pad_uuid=pi.PAD['7'], net
 KELVIN = {'id': 'can-kelvin', 'kind': 'kelvin', 'required': True, 'requirement': 'pins',
           'terminals': ['u1-canl', 'u1-canh'], 'statement': 'fixture-only force/sense obligation'}
 
+# Review ee389-s2 H1: a required obligation's full semantic restriction, not only its ID.
+KELVIN_FULL = {**KELVIN, 'joins': [pi.PAD['6']], 'forbidden_shared': [['u1-canl', 'u1-canh']]}
+
+
+def conforms(value, schema, path='$'):
+    """The JSON Schema subset the proposal schemas use, as a provider enforcing it would apply it."""
+    if 'anyOf' in schema:
+        errors = [conforms(value, branch, path) for branch in schema['anyOf']]
+        return [] if any(not e for e in errors) else [e for group in errors for e in group]
+    kinds = {'object': dict, 'array': list, 'string': str, 'boolean': bool, 'null': type(None)}
+    kind = schema.get('type')
+    if kind == 'integer':
+        if type(value) is not int:
+            return [f'{path}: not an integer']
+    elif kind and not isinstance(value, kinds[kind]):
+        return [f'{path}: not {kind}']
+    if 'enum' in schema and value not in schema['enum']:
+        return [f'{path}: {value!r} not in enum']
+    errors = []
+    if kind == 'object':
+        properties = schema.get('properties', {})
+        errors += [f'{path}: missing {k}' for k in schema.get('required', []) if k not in value]
+        if schema.get('additionalProperties') is False:
+            errors += [f'{path}: unexpected {k}' for k in value if k not in properties]
+        for key, item in value.items():
+            if key in properties:
+                errors += conforms(item, properties[key], f'{path}.{key}')
+    if kind == 'array':
+        for i, item in enumerate(value):
+            errors += conforms(item, schema.get('items', {}), f'{path}[{i}]')
+    return errors
+
+
+def wire(value, schema):
+    """The Codex wire form: every optional property the strict schema closes is present as null."""
+    if 'anyOf' in schema:
+        branch = next(b for b in schema['anyOf'] if b.get('type') != 'null')
+        return None if value is None else wire(value, branch)
+    if schema.get('type') == 'object':
+        return {key: wire(value.get(key), item) for key, item in schema.get('properties', {}).items()}
+    if schema.get('type') == 'array':
+        return [wire(item, schema.get('items', {})) for item in value]
+    return value
+
 
 class Transport:
     """A scripted provider: each call returns the next (record, value); no harness, network or model runs."""
@@ -43,6 +88,8 @@ class Transport:
         self.calls.append({'label': label, 'definition': definition, 'prompt': prompt, 'timeout': timeout})
         if self.sleep_until is not None:
             time.sleep(max(0, self.sleep_until - time.monotonic()) + .05)
+        if getattr(self, 'on_call', None):
+            self.on_call()
         reply = self.replies.pop(0)
         if isinstance(reply, tuple):
             return copy.deepcopy(reply)
@@ -85,20 +132,20 @@ class PhysicalArchitectTests(unittest.TestCase):
         self.slot = self.root / self.id().rsplit('.', 1)[-1]
         self.slot.mkdir()
 
-    def architect(self, transport, run=None, *, deadline=60, **kwargs):
+    def architect(self, transport, run=None, *, deadline=60, definition=DEFINITION, **kwargs):
         run = run or self.control
         before = input_identity(run)
         transport.deadline = time.monotonic() + deadline
         name = f'{len(list(self.slot.glob("stage-*")))}'
         stage, out = self.slot / f'stage-{name}', self.slot / f'package-{name}'
         with patch('agent_ee.reviewers.dispatch', side_effect=transport):
-            receipt = propose(run, out, definition=dict(DEFINITION), deadline=transport.deadline, stage=stage,
+            receipt = propose(run, out, definition=dict(definition), deadline=transport.deadline, stage=stage,
                               **kwargs)
         # The run is evidence: no net, pin, board or schematic byte changes in any outcome.
         self.assertEqual(input_identity(run), before)
         self.assertEqual(read_json(stage / 'architect-receipt.json'), receipt)
         self.assertIsNone(receipt['fallback'])
-        self.assertTrue(all(c['label'] == 'architect' and c['definition'] == {**DEFINITION, 'tool_mode': 'fixed_packet'}
+        self.assertTrue(all(c['label'] == 'architect' and c['definition'] == {**definition, 'tool_mode': 'fixed_packet'}
                             for c in transport.calls), 'only the configured route is ever dispatched')
         if receipt['status'] == 'accepted':
             self.assertTrue(out.is_dir())
@@ -203,7 +250,9 @@ class PhysicalArchitectTests(unittest.TestCase):
 
     def test_correction_shares_the_original_deadline(self):
         transport = Transport({'terminals': SWAPPED}, {'terminals': CORRECT})
-        transport.sleep_until = time.monotonic() + 10
+        # The refused first response returns inside the 5 s validation reserve (RESERVE_S) of the 10 s
+        # deadline: it is still validated, but the correction may no longer launch.
+        transport.sleep_until = time.monotonic() + 7
         receipt, _, _ = self.architect(transport, deadline=10)
         self.assertEqual(len(transport.calls), 1, 'no correction launches after the deadline')
         self.assertEqual((receipt['status'], receipt['execution']), ('stopped', 'not_run'))
@@ -233,6 +282,10 @@ class PhysicalArchitectTests(unittest.TestCase):
         self.assertEqual((missing['missing'], missing['unresolved']), (['u1-decoupling'], ['u1-decoupling']))
         extra = compare(reference, self.intent(self.local))
         self.assertEqual(extra['extra'], ['u1-decoupling'])
+        # Review ee389-s2 gap: a dropped reference diagnostic is unresolved too.
+        access = {'id': 'u1-access', 'kind': 'access', 'status': 'unknown', 'statement': 'fixture access'}
+        dropped = compare(self.intent(self.local), self.intent(self.local, diagnostics=[access]))
+        self.assertEqual((dropped['missing'], dropped['unresolved']), (['u1-access'], ['u1-access']))
 
     def test_correction_cannot_weaken_obligations(self):
         stale = self.pair()
@@ -259,6 +312,124 @@ class PhysicalArchitectTests(unittest.TestCase):
                                        'obligations': [KELVIN]})
         receipt, _, _ = self.architect(transport, self.local)
         self.assertEqual((receipt['status'], receipt['semantic_completion']), ('accepted', 'unsupported'))
+
+    # ------------------------------------------------ review ee389-s2 H1-H3
+
+    def test_correction_preserves_required_obligation_content(self):
+        """H1: a correction may fix the refused pins, not replace a required obligation's restrictions."""
+        first = {'terminals': SWAPPED, 'obligations': [KELVIN_FULL]}
+        mutations = {
+            'kelvin to current_loop, one terminal, no forbidden_shared': {
+                **KELVIN, 'kind': 'current_loop', 'terminals': ['u1-canl']},
+            'drops forbidden_shared': {k: v for k, v in KELVIN_FULL.items() if k != 'forbidden_shared'},
+            'drops joins': {k: v for k, v in KELVIN_FULL.items() if k != 'joins'},
+            'drops a terminal': {**KELVIN_FULL, 'terminals': ['u1-canl'], 'forbidden_shared': []},
+        }
+        for name, replaced in mutations.items():
+            with self.subTest(name):
+                transport = Transport(first, {'terminals': CORRECT, 'obligations': [replaced]})
+                receipt, _, out = self.architect(transport)
+                self.assertEqual((receipt['status'], len(transport.calls)), ('refused', 2))
+                self.assertIn('changes required obligation can-kelvin', receipt['error'])
+                self.assertFalse(out.exists())
+        transport = Transport(first, {'terminals': CORRECT, 'obligations': [KELVIN_FULL]})
+        receipt, _, _ = self.architect(transport)
+        self.assertEqual((receipt['status'], receipt['required_unsupported']), ('accepted', ['can-kelvin']))
+
+    def test_correction_preserves_locality_relationship_identity(self):
+        """H1: the supply/return relationship keeps its endpoints, not only its numeric bound."""
+        stale = self.pair()
+        stale['to']['uuid'] = pi.C1_GND
+        broken = {'terminals': CORRECT, 'locality': self.locality(stale)}
+        right = self.locality(self.pair())[0]
+        swapped = [{**right, 'supply': right['return'], 'return': right['supply']}]
+        transport = Transport(broken, {'terminals': CORRECT, 'locality': swapped})
+        receipt, _, out = self.architect(transport, self.local)
+        self.assertEqual((receipt['status'], len(transport.calls)), ('refused', 2))
+        self.assertIn('changes locality relationship u1-decoupling', receipt['error'])
+        self.assertFalse(out.exists())
+
+    def test_on_time_response_with_late_validation_publishes_nothing(self):
+        """H2: the deadline bounds compilation, comparison, verification and publication too."""
+        transport = Transport({'terminals': CORRECT})
+        transport.sleep_until = time.monotonic() + 10 - .15  # returns about 0.1 s before the deadline
+        receipt, stage, out = self.architect(transport, deadline=10)
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual((receipt['status'], receipt['execution']), ('stopped', 'ok'))
+        self.assertIn('deadline_exhausted', receipt['error'])
+        self.assertFalse(out.exists())
+        self.assertEqual([p.name for p in out.parent.iterdir() if p.name.startswith(f'.{out.name}.')], [])
+        self.assertFalse((stage / 'proposed-intent.json').exists())
+
+    def test_late_response_or_cancellation_publishes_nothing(self):
+        """H2: a response after the deadline, or a stop during the call, never publishes."""
+        transport = Transport({'terminals': CORRECT})
+        transport.sleep_until = time.monotonic() + 10 + .2
+        receipt, _, out = self.architect(transport, deadline=10)
+        self.assertEqual((receipt['status'], len(transport.calls)), ('stopped', 1))
+        self.assertIn('deadline_exhausted', receipt['error'])
+        self.assertFalse(out.exists())
+        cancellation = Cancellation()
+        transport = Transport({'terminals': CORRECT})
+        transport.on_call = cancellation.cancel
+        receipt, _, out = self.architect(transport, cancellation=cancellation)
+        self.assertEqual((receipt['status'], len(transport.calls)), ('stopped', 1))
+        self.assertIn('cancelled', receipt['error'])
+        self.assertFalse(out.exists())
+
+    def test_launch_reserves_validation_time(self):
+        """H2: each call's timeout leaves the validation reserve inside the caller deadline."""
+        transport = Transport({'terminals': CORRECT})
+        receipt, _, _ = self.architect(transport, deadline=30, reserve_s=12)
+        self.assertEqual(receipt['status'], 'accepted')
+        self.assertTrue(10 < transport.calls[0]['timeout'] <= 18)
+
+    def test_codex_strict_schema_expresses_compiler_valid_proposals(self):
+        """H3: the strict (Codex) form of the wire schema admits every compiler-valid assertion shape."""
+        strict = strict_schema(physical_architect.PROPOSAL_SCHEMA)
+
+        def objects(node):
+            if isinstance(node, dict):
+                if node.get('type') == 'object':
+                    yield node
+                for value in node.values():
+                    yield from objects(value)
+            elif isinstance(node, list):
+                for value in node:
+                    yield from objects(value)
+        for node in objects(strict):
+            self.assertTrue(node.get('properties'), f'bare object closed by strict conversion: {node}')
+        datasheet = {'class': 'datasheet', 'basis': 'L-2', 'derivation': {'kind': 'numeric', 'value_nm': 3_000_000,
+                     'source': {'path': 'layout-notes.md', 'sha256': '0' * 64, 'locator': 'L-2', 'quote': 'within 3 mm'}}}
+        owner = {'class': 'owner', 'basis': 'D-1', 'decision_reference': {
+            'path': 'owner-decisions.md', 'sha256': '0' * 64, 'locator': 'D-1', 'quote': 'within 3 mm', 'owner': 'o'}}
+        right = self.locality(self.pair(datasheet))[0]
+        loop = {**right, 'return': {**right['return'], 'provenance': owner}, 'kind': 'buck-output-loop', 'ic': 'U1',
+                'inductor': 'L1', 'return_net': 'GND', 'switch': self.pair()}
+        full = {'terminals': CORRECT, 'blocks': [{'id': 'can', 'references': ['U1', 'C1'], 'anchor': 'U1'}],
+                'residual': ['H1'], 'moves': [{'reference': 'C1', 'allow': ['rotate', 'translate']}],
+                'locality': [right, loop], 'obligations': [KELVIN_FULL | {'proxy': 'u1-decoupling'}],
+                'diagnostics': [{'id': 'u1-access', 'kind': 'access', 'status': 'unknown', 'statement': 's'}],
+                'records': ['layout-notes.md']}
+        self.assertEqual(conforms(full, physical_architect.PROPOSAL_SCHEMA), [])
+        self.assertEqual(conforms(wire(full, strict), strict), [])
+        extra = wire({'terminals': [CORRECT[0]]}, strict)
+        extra['terminals'][0]['extra'] = 1
+        self.assertTrue(conforms(extra, strict))
+        self.assertTrue(conforms({'terminals': [{**CORRECT[0], 'extra': 1}]}, physical_architect.PROPOSAL_SCHEMA))
+        # The Codex wire form, nulls included, compiles end to end through the scripted transport.
+        codex = {'harness': 'codex', 'model': 'scripted-architect', 'effort': 'high', 'timeout_s': 60}
+        proposal = {'terminals': CORRECT, 'locality': self.locality(self.pair()), 'obligations': [KELVIN],
+                    'diagnostics': [{'id': 'u1-access', 'kind': 'access', 'status': 'unknown', 'statement': 's'}]}
+        sent = wire(proposal, strict)
+        self.assertIsNone(sent['records'])
+        self.assertIsNone(sent['obligations'][0]['joins'])
+        self.assertEqual(conforms(sent, strict), [])
+        transport = Transport(sent)
+        receipt, stage, out = self.architect(transport, self.local, definition=codex)
+        self.assertEqual(receipt['status'], 'accepted')
+        self.assertEqual(read_json(stage / 'proposed-intent.json')['obligations'], [KELVIN])
+
 
     # ------------------------------------------------------- mode and scope
 

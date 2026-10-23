@@ -57,7 +57,14 @@ The prompt carries the captured evidence: the baseline requirement IDs, the
 run's `facts.json` and `pin-map.json`, the native footprints with pad numbers,
 UUIDs and nets, and the captured input paths. The model returns only assertion
 lists (`terminals`, `blocks`, `residual`, `moves`, `locality`, `obligations`,
-`diagnostics`) and optional `records`, which are captured input paths. The
+`diagnostics`) and optional `records`, which are captured input paths.
+`PROPOSAL_SCHEMA` gives every assertion a concrete nested shape. It covers the
+locality endpoints, pairs, provenance (`decision_reference` and a `numeric`
+derivation) and loop fields, with enums for the classes, metrics, moves, kinds
+and statuses the compiler admits. For Codex, `harnesses.strict_schema` closes
+every object and makes each optional property nullable. The producer drops those
+nulls before composing the intent, because no intent field is ever null (review
+ee389-s2 H3). The
 coordinator composes the intent. The schema, `mode` and every source hash come
 from the run itself. A `sources` key or any other key in the output is invalid.
 A `records` path that is not a captured input is invalid.
@@ -65,14 +72,31 @@ A `records` path that is not a captured input is invalid.
 The S1 `compile_plan` then grades the composed intent. A compiler refusal, or an
 invalid output, is fed back once as `OUTPUT VALIDATION ERROR:` with the exact
 finding, such as `verified CANL fact binds U1 pin 6, not proposed pin 7`. A
-correction must not weaken the first proposal. If it drops a required
-obligation, sets one to `required: false`, drops a locality obligation or raises
-any `max_distance_nm`, it is refused. A second invalid output is final
+correction must not weaken the first proposal. It may repair what the compiler
+refused, such as a pin or a pad UUID, but nothing the first proposal restricted.
+It is refused if it:
+
+- drops a required obligation or sets one to `required: false`;
+- changes a required obligation's `kind`, `requirement`, `terminals`, `joins`,
+  `forbidden_shared` or `proxy` (list order aside). Keeping the ID alone is not
+  enough;
+- drops a locality obligation, or changes its relationship: metric, loop fields
+  and each role's endpoint reference, pad and net (a supply/return swap, for
+  example);
+- raises any `max_distance_nm`.
+
+This rule is exact and conservative (review ee389-s2 H1). A second invalid output is final
 (`status: refused`). There is never a third call.
 
-Both calls share the caller's monotonic `deadline`. Each call's timeout is the
-smaller of `timeout_s` and the time left. A correction that would start after
-the deadline is not launched (`deadline_exhausted`).
+The caller's monotonic `deadline` and `cancellation` bound the whole stage (review
+ee389-s2 H2). Calls launch only before `deadline - reserve_s` (`RESERVE_S`,
+5 s by default). Each call's timeout is the smaller of `timeout_s` and the time
+left before that point. Validation does not start once the deadline has passed
+or the stage is cancelled. Compilation that ends after either is discarded. The
+package is written to a hidden sibling of `out` and verified with
+`verify_receipt`. The deadline and cancellation are checked again, and only then
+is it renamed into place. Any stop, even after an on-time response, gives
+`status: stopped` with its reason, and nothing is published.
 
 ## Failure and stop
 
@@ -95,7 +119,7 @@ published atomically and checked with `verify_receipt`. The receipt copies
 obligation stays visible.
 
 With a `reference` (a captured manual intent, itself compiled first), `compare`
-checks the proposal one assertion at a time. Any assertion that differs, is
+checks the proposal one assertion at a time, diagnostics included. Any assertion that differs, is
 missing or is extra is listed in `comparison.unresolved`. The stage is then
 `unresolved` and publishes nothing. On the locality fixture, a proposal that
 swaps the supply and return pairs compiles under S1 alone, because both pairs
@@ -129,6 +153,13 @@ cover:
   missing and extra assertions;
 - corrections that drop or unrequire a Kelvin obligation, drop a locality
   obligation or loosen a bound;
+- corrections that keep a required obligation's ID but change its content, and
+  a locality relationship swap;
+- on-time responses whose validation ends after the deadline, late responses,
+  cancellation during the call, and the validation reserve;
+- the strict Codex form of the schema: every object has concrete properties, a
+  full compiler-shaped proposal and its null-filled wire form conform, extra keys
+  are refused, and the wire form compiles end to end;
 - the manual and disabled modes, and isolation.
 
 Not in this slice:
