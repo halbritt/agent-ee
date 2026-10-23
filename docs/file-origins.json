@@ -3831,6 +3831,16 @@
     },
     {
       "paths": [
+        "evidence/k91-native-positive-c/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "note": "AGENTEE-442 positive-c refusal record: an agent-ee runtime identity probe, its JSON output, two kicad-route usage-refusal records it caused and their refusal-latest.json, a note and SHA256SUMS; no router run, no design file bytes."
+    },
+    {
+      "paths": [
         ".uipass-gallery.yaml",
         "deployment/agent-ee-render-gallery.service",
         "src/agent_ee/render_gallery.py"

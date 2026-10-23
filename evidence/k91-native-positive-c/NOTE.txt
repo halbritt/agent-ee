@@ -1,0 +1,27 @@
+AGENTEE-442 ee442-native-positive-c: the one authorized native K91 positive was NOT RUN (refused before any router run).
+
+Composition: 1274245ce36b3019008e9f7f470ff7d9613e94b1 (tree 1b56784922a96a2c351b7be7d7b542296bf65804),
+merge of d2a25162d0263955864d64996da8a285cd73c88f (442b v2 harness) into efb77f64 + worker marker 1c175eea.
+
+runtime-probe.json is runtime_probe.py run once inside `ae-ci-exec . --` on proximal (image
+agent-ee:exec-758b370fecf753c0, id sha256:e977faff65f2f0bb8a6f080d0bcf2c173a7873f1892cd22b02ad49bc3a9eff39);
+exit=0. It never routes. Recomputed selected runtime: commit b5774496d8466b67ffa0362b6665fee2108155a3,
+source 9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2, generation null, drift [],
+Python 3.12.3, packages 0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae,
+extension 03806afa07ad635cf4c4416628c7edde1bc67c308992acec837c939f0a1b85a1.
+
+Refusal reasons (either one alone stops the attempt):
+1. Selected extension 03806afa... is not the AGENTEE-466-qualified ec5fb733d321343456917b2925ec275af233e3a44d34b2f332800d51352b2cd9
+   (that digest belongs to the 466 review's image, config sha256:d96f8e00...; ae-ci-exec builds and selects a
+   different image for this worktree). The brief: "If the selected runtime is not exactly that, REFUSE".
+2. b5774496 has no routability-experiment/1 producer: no src/kicad_route/experiment.py, and the selected
+   src/kicad_route/cli.py (sha256 d43569e4d81a4355712d356efec35ec40167f3318c9155c8172792164dcd01b1, equal to
+   PINNED_CODE) contains no "experiment" string, so no --experiment-policy flag. The v2 positive contract needs
+   experiment.status == "retained"; at this pin a declared policy can only be a refused attempt with no record.
+
+The probe's cli_help / cli_experiment_policy_flag fields used the wrong subcommand ("route"; the CLI's is "run")
+and are NOT evidence about the flag; probe-refusals/ are the two refusal records (and its refusal-latest.json) that mistake made kicad-route
+write (moved here from the worktree's build/ so the tree stays clean). Reason 2 rests on the cli.py bytes above.
+
+No router run, no receipt, no result.json, no adapter-report, no controls, no adoption of any kind.
+evidence/k91-native-positive/ (receipt 9352b0f1) and scripts/k91_native_positive.py are unchanged.
