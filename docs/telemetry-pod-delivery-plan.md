@@ -126,7 +126,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 10:36Z)
+### Current state and next actions (agent-449, 2026-10-23 10:45Z)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -150,14 +150,14 @@ Reference boards:
 | --- | --- | --- | --- | --- |
 | AGENTEE-479 implementation (engine) | running | agent-524 (Astra), Cairn `91c7aab7`, from 09:39Z, `wt/agentee-479`; agent-524 also finalizes `block-candidate-set/1` | 120-minute checkpoint | Then the critical code review: claude-fable-5-1 HIGH (owner rule), with agent-510 on contract and evidence. Phase rule `39bfdc72`: pre-packing claims only; post-routing items never pass early. |
 | AGENTEE-484 decoupling source repair | **LANDED** fome-mc `07ed909` (writer `890e8c6`; includes 478b, the v2 cowl HEIGHT and 478c) | — | — | Verified: ERC 0, C130–C133 only, validator PASS (313 footprints / 26 blocks), sums and markers clean. agent-510 ACCEPTED the netlist and rebinds (`c44a3749`); the open dispositions moved to AGENTEE-488. |
-| AGENTEE-484r RF_50 binding in source plus the production_run.sh AppArmor fix | running | j6b2 writer, from 10:16:49Z | 40 minutes | Prove the net is selected and a narrow track is rejected (agent-529 `39bfdc72`). The reconcile already happened in 478c. |
-| AGENTEE-478c/478d anchor roles and U2 orientation | 478c landed with 484; 478d queued (5 minutes) | j6b2 writer | — | U2 answered by agent-529 `c7adf503`: the board F-side faces UP (engineering assumption). U2's face and rotation are DERIVED from the package axes plus the board-to-bike transform; the final record waits for agent-507's package-axis verification in 486. |
+| AGENTEE-484r RF_50 binding in source plus the production_run.sh AppArmor fix | **LANDED** fome-mc `697b2b32` | — | — | Verified: the rule condition now also selects `/POD_GNSS_RF` (project copy byte-identical to source); native DRC flags a 0.20 mm `/POD_GNSS_RF` track with the binding and not without it; production_run.sh runs `apparmor=unconfined`. |
+| AGENTEE-478c/478d anchor roles and U2 orientation | 478c landed with 484; **478d LANDED** fome-mc `d46183ef` | — | — | 478d changes only the U2 entries in side-eligibility.json and fixed-shared-rules.json; SHA256SUMS and validate_coverage.py PASS. U2 per agent-529 `c7adf503`: board F-side faces UP (engineering assumption); face and rotation DERIVED from the package axes plus the board-to-bike transform; agent-507 verifies the package axes in 486. |
 | AGENTEE-486 mechanical closure | running | agent-507 (Sol), Cairn `ddbea5b2`, from 10:14Z | 60-minute checkpoint, then a 20-minute Astra/Fable-HIGH verification | Covers heights rebound to the 484 parts, the J1 mate/harness/tool sweep, iron/card/SMA access, antenna case and metal, the L1/L2 variants, and the J1–H3/H4 and antenna/hardware anchor conflicts. The current poses, hardware and outline are NOT owner-frozen. |
 | AGENTEE-480 GNSS binding and mechanical inputs | landed fome-mc `b389b47a` | agent-507 | — | ROUTE-3 fails F-over-In1 (expected before regeneration). 19 H1–H4 reservation conflicts. |
-| AGENTEE-487 missing copper planes plus the runtime-receipt rebinding | queued after 478d | j6b2 writer | 30-minute checkpoint, then a 15-minute Fable/Astra-HIGH review | agent-529 `d1bfc238` and `783ad032` |
+| AGENTEE-487 missing copper planes plus the runtime-receipt rebinding | running, from 10:41:24Z | j6b2 writer | 30-minute checkpoint, then a 15-minute Fable/Astra-HIGH review | agent-529 `d1bfc238` and `783ad032` |
 | AGENTEE-488 electrical dispositions (C133 VIO topology, C18 derating, U5 6.3 V bank) | queued after 487 | j6b2 writer (exclusive source writer) | 45-minute checkpoint, then a 20-minute Fable/Astra-HIGH verification | From agent-510's 484 review. Any part or net change settles before 485 freezes its inputs. |
 | AGENTEE-483 model assets plus the local vendor store | queued after 488 (optional) | j6b2 writer | 45 minutes | Owner: local only, no licence work |
-| AGENTEE-485 regeneration plus placement acceptance | next stage, not started | — | 60 minutes plus agent-510 (20 minutes) | Needs reviewed 479, 484 (landed; agent-510 accepted the netlist), 484r, 487, 488 (any part changes), 480, **486**, 478b, 478c and 478d |
+| AGENTEE-485 regeneration plus placement acceptance | next stage, not started | — | 60 minutes plus agent-510 (20 minutes) | Needs reviewed 479, 484 (landed; agent-510 accepted the netlist), 484r (landed), 487, 488 (any part changes), 480, **486**, 478b, 478c and 478d (landed) |
 
 AGENTEE-485 acceptance (agent-529 `2dc4d4a5`):
 - The real production path explicitly consumes the allocation, eligibility, relationships and templates.
