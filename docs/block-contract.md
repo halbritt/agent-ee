@@ -169,3 +169,24 @@ including pad identities, geometry, owned rule areas, and metadata. Only private
 footprint `_packing_*` caches are excluded; finite native-range quarter-turn
 footprint and pad angles use integral JSON spelling. Capture outputs and strict
 plan comparison retain their original representation.
+
+The stage-owned block-variant producer runs independent blocks in at most eight
+spawned worker processes (bounded further by block count and CPU count). Each
+worker uses the unchanged native side transform, packer/compaction search and
+candidate validation. Its full captures and result stay in private `variants/`
+artifacts. The parent waits for every block, independently validates all sets,
+and checks all source bytes before publishing any candidate path and the final
+producer report. Failure or interruption leaves no consumable partial set.
+The admitted stage sandbox's CPU/memory/process limits and timeout own the pool;
+workers do not launch independent unadmitted jobs.
+
+Diagnostic artifacts under `variants/` include `production.json` (worker count
+and completed slots), each block's `worker.json` (whole-job elapsed seconds,
+worker RSS high-water mark and per-variant advisory counts/rows), and
+`timing.json` (side elapsed/native/packing seconds and unfinished side state).
+`source-contract-advisories.json` reports the original-coordinate contract's
+status alongside advisory and exceeded-advisory counts and rows. It is labelled
+as pre-placement evidence, not final candidate acceptance. These diagnostics do
+not alter canonical candidate-set bytes or the decided `pass` semantics for
+advisory-only block checks. Full planning/saved reports continue to carry their
+advisory rows; internal Boolean legality decisions still use the decided status.

@@ -7,6 +7,11 @@ board-bound report before the ordinary placement consumer can use them.
 import argparse
 import copy
 import json
+import multiprocessing
+import os
+import time
+import resource
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import subprocess
 
@@ -119,6 +124,70 @@ def consume(section, manifest, inputs, mutable_inputs, declaration, *, require_p
     return stable, True
 
 
+# Spawned workers own independent native KiCad state. The enclosing stage's
+# admitted sandbox/cgroup and process-group timeout own the entire pool.
+MAX_BLOCK_WORKERS = 8
+_WORKER_INPUTS = None
+
+
+def _worker_inputs(arguments):
+    global _WORKER_INPUTS
+    _WORKER_INPUTS = arguments
+
+
+def _produce_block(job):
+    index, block_id, directory = job
+    source, capture, inventory, derivation, policy, eligibility = _WORKER_INPUTS
+    started = time.monotonic()
+    record = {'block': block_id, 'pid': os.getpid(), 'status': 'running'}
+    try:
+        document = block_variants.produce(source, capture, inventory, derivation, block_id, policy, eligibility, directory)
+        record['status'] = 'completed'
+        record['variants'] = {face: advisory_summary(variant['candidate']['grade']['electrical_locality'])
+                              for face, variant in document['variants'].items()
+                              if variant['status'] == 'packed' and variant['candidate']['grade'].get('electrical_locality')}
+        return index
+    except BaseException as exc:
+        record.update(status='failed', error=f'{type(exc).__name__}: {exc}')
+        raise
+    finally:
+        record.update(elapsed_s=time.monotonic() - started,
+                      peak_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        write_json(Path(directory) / 'worker.json', record)
+
+
+def _produce_blocks(source, capture, inventory, derivation, policy, eligibility, directory):
+    """Complete every private set before the caller publishes any campaign output."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=False)
+    jobs = [(i, block['id'], directory / str(i)) for i, block in enumerate(derivation['blocks'])]
+    workers = min(MAX_BLOCK_WORKERS, max(1, os.cpu_count() or 1), len(jobs))
+    if not workers:
+        raise ValueError('block producer needs at least one derived block')
+    started = time.monotonic()
+    summary = {'workers': workers, 'blocks': len(jobs), 'status': 'running', 'completed': []}
+    write_json(directory / 'production.json', summary)
+    with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn'),
+            initializer=_worker_inputs, initargs=((str(source), capture, inventory, derivation, policy, eligibility),)) as pool:
+        futures = [pool.submit(_produce_block, job) for job in jobs]
+        for future in as_completed(futures):
+            summary['completed'].append(future.result())
+            summary['completed'].sort()
+            summary['elapsed_s'] = time.monotonic() - started
+            write_json(directory / 'production.json', summary)
+    summary.update(status='completed', elapsed_s=time.monotonic() - started)
+    write_json(directory / 'production.json', summary)
+    return summary
+
+
+def advisory_summary(check):
+    """A passing decision is distinct from satisfying every engineering target."""
+    rows = copy.deepcopy(check.get('advisories', []))
+    return {'status': check['status'], 'advisory_count': len(rows),
+            'exceeded_advisory_count': sum(row.get('exceeded') is True for row in rows), 'advisories': rows}
+
+
 def produce_stage(inputs, work, ctx):
     """Run inside the ordinary stage sandbox; publish only declared output files."""
     from . import placement_adapter as adapter
@@ -178,14 +247,25 @@ def produce_stage(inputs, work, ctx):
         target = out / section[key]
         target.parent.mkdir(parents=True, exist_ok=True)
         write_json(target, value)
-    for index, (block, path) in enumerate(zip(derivation['blocks'], section['candidates'])):
-        document = block_variants.produce(inputs / bound['board'], capture, inventory, derivation,
-                                          block['id'], policy, eligibility, work / 'variants' / str(index))
-        target = out / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        write_json(target, document)
+    variants = work / 'variants'
+    _produce_blocks(inputs / bound['board'], capture, inventory, derivation, policy, eligibility, variants)
+    # The parent independently admits every completed set. No partially finished
+    # worker file is installed at a campaign output path.
+    for index, block in enumerate(derivation['blocks']):
+        document = read_json(variants / str(index) / 'candidate-set.json')
+        block_variants.validate(document, capture, inventory, derivation, policy, eligibility)
+        if document['block_id'] != block['id']:
+            raise ValueError('parallel block result identity differs from its declared slot')
     if stage_receipts.file_tree(inputs) != (files, []):
         raise ValueError('block producer source inputs changed during production')
+    from .block_contract import check_complete
+    write_json(variants / 'source-contract-advisories.json', {
+        'scope': 'source coordinates before placement; not candidate acceptance',
+        **advisory_summary(check_complete(capture, contract))})
+    for index, path in enumerate(section['candidates']):
+        target = out / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_json(target, read_json(variants / str(index) / 'candidate-set.json'))
     report = {'schema': REPORT, 'status': 'produced', 'context_sha256': identity(ctx),
               'inputs': dependencies(manifest, mutable),
               'board': {'path': bound['board'], 'sha256': files[bound['board']]},

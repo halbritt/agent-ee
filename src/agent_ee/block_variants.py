@@ -5,6 +5,10 @@ native transform retains a complete recapture; the writer reproduces that native
 transform before trusting it. A failed eligible face remains an explicit result.
 """
 import copy
+import datetime
+import os
+import resource
+import time
 from pathlib import Path
 import shutil
 import tempfile
@@ -175,7 +179,21 @@ def produce(source, capture, inventory, derivation, block_id, policy, eligibilit
               'eligibility': {'record': copy.deepcopy(eligibility), 'record_sha256': digest(eligibility),
                               'eligible_faces': faces},
               'captured_members': _capture_members(members), 'variants': {}}
+    started = time.monotonic()
+    timing = {'block': block_id, 'pid': os.getpid(), 'status': 'running',
+              'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'sides': {}}
+    def record_timing():
+        timing['elapsed_s'] = time.monotonic() - started
+        timing['peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        temporary = output / 'timing.json.new'
+        temporary.write_bytes(canonical(timing) + b'\n')
+        temporary.replace(output / 'timing.json')
+    record_timing()
     for face in faces:
+        side_started = time.monotonic()
+        side_timing = {'status': 'running', 'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        timing['sides'][face] = side_timing
+        record_timing()
         variant = dict.fromkeys(VARIANT_KEYS)
         try:
             native_capture, rows = _native_variant(source, output / face / source.name, members, requested[face])
@@ -186,20 +204,27 @@ def produce(source, capture, inventory, derivation, block_id, policy, eligibilit
                 'pad_inventory_sha256': None} for fp in members],
                 failure={'status': 'native_flip_refused', 'outcome': 'unknown', 'reason': str(exc)})
         else:
+            side_timing['native_s'] = time.monotonic() - side_started
+            pack_started = time.monotonic()
             native_derivation = {**copy.deepcopy(derivation), 'board_sha256': native_capture['board_sha256']}
             packed = blocks._plain(blocks.pack_block(native_capture, inventory, native_derivation, block_id, policy,
                                                      heartbeat=heartbeat, compact=compact))
+            side_timing['pack_s'] = time.monotonic() - pack_started
             variant.update(status=packed['status'], capture=native_capture, capture_sha256=digest(native_capture),
                            board_sha256=native_capture['board_sha256'], derivation=native_derivation, members=rows,
                            candidate=packed['candidate'] if packed['status'] == 'packed' else None,
                            failure=None if packed['status'] == 'packed' else packed)
             (output / face / 'capture.json').write_bytes(canonical(native_capture) + b'\n')
+        side_timing.update(status=variant['status'], elapsed_s=time.monotonic() - side_started)
+        record_timing()
         result['variants'][face] = variant
         # Retain completed faces if a later native operation or search raises.
         (output / 'candidate-set.json').write_bytes(canonical(result) + b'\n')
     if file_digest(source) != original_hash:
         raise ValueError('native source changed during variant production')
     validate(result, capture, inventory, derivation, policy, eligibility)
+    timing.update(status='completed')
+    record_timing()
     return result
 
 
