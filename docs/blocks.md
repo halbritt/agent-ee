@@ -1105,3 +1105,11 @@ record from that selection and eligibility. Explicit side-change authorization,
 if supplied too, must describe exactly the same transitions. The R5 custom-pad,
 UUID, movable-member and saved-pad checks still run. Plain `/2` candidates retain
 their captured sides and existing admission path.
+
+An optional `blocks.contract` supplies the independent final-coordinate contract.
+Its eligibility record must equal `blocks.side_eligibility`. After native saving
+and the existing placement/DRC checks, the writer extracts the saved board again
+and writes `block-contract.json`. A required missing measurement or violation
+refuses publication; the complete report and planning execution receipt remain
+in the failure directory. Successful placement results link the report and its
+SHA-256. This check does not establish routing acceptance.

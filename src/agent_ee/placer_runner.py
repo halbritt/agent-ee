@@ -774,6 +774,17 @@ def _saved_judgment(output, plan):
     return facts, judgment
 
 
+def _saved_block_contract(output, contract, original_capture, plan):
+    """Independently re-extract and judge the saved board before publication."""
+    from .block_contract import judge as judge_contract
+    record = judge_contract(extract(output), contract, original_capture=original_capture, plan=plan)
+    path = output.parent / 'block-contract.json'
+    write_json(path, record)
+    if record['status'] not in ('pass', 'info'):
+        raise ValueError('saved-board block contract has required missing evidence or a violation')
+    return {'path': path.name, 'sha256': digest(path), 'status': record['status']}
+
+
 def _board_only(board):
     return frozenset(fp.GetReference() for fp in board.GetFootprints() if fp.IsBoardOnly())
 
@@ -853,7 +864,7 @@ def _retain_failure(root, name, scratch, error):
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
              'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json',
-             'native-drc-restamp.json', 'project-models.json')
+             'native-drc-restamp.json', 'project-models.json', 'planning-execution.json', 'block-contract.json')
     for name in names:
         path = scratch / name
         if path.is_file():
@@ -956,6 +967,10 @@ def place_candidate(source, netlist, destination, request):
         from . import block_variants
         native_sets = (block_variants.verify_request(source, facts, request['blocks'])
                        if 'blocks' in request else [])
+        contract = request.get('blocks', {}).get('contract')
+        if contract is not None and (not isinstance(contract, dict)
+                or contract.get('eligibility') != request['blocks'].get('side_eligibility')):
+            raise ValueError('block contract and candidate sets must use the same side eligibility')
         planning_execution = {}
         plan = _plan(facts, request, policy, netlist, execution=planning_execution)
         placement_trace.phase('native_checks')
@@ -985,6 +1000,8 @@ def place_candidate(source, netlist, destination, request):
             try:
                 report = _evaluate_proposal(board, output, plan, netlist_bytes, facts, source,
                                             side_changes)
+                if contract is not None:
+                    report['block_contract'] = _saved_block_contract(output, contract, facts, plan)
                 report['planning_execution'] = {
                     'path': 'planning-execution.json', 'sha256': digest(scratch / 'planning-execution.json'),
                     'implementation': planning_execution['implementation']}
