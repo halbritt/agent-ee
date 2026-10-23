@@ -1832,6 +1832,42 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                                                   {'implementation': 1, 'receipt_index': 1})
                 self.assertIsNotNone(receipt['execution'])
 
+    def test_a_capture_run_inputs_layout_is_refused_and_its_neutral_copy_runs(self):
+        # ee442 composition: an agent-ee capture run (runs/N holding result.json, candidate.json
+        # and inputs/<project>) puts a run record two levels above inputs/<project>, the layout
+        # kicad-route bd1e633 experiment._origin reads as a missing predecessor. The adapter
+        # cannot tell whose run record it is, so routing straight from runs/N/inputs refuses,
+        # with and without a declared policy, before any receipt exists; the same tree copied
+        # to a neutral path is an original and runs.
+        boundary = ExperimentBoundaryTest('setUp')
+        boundary.setUp()
+        self.addCleanup(boundary.doCleanups)
+        record = json.loads((self.run_copy / 'attempt.json').read_text())
+        project = PurePosixPath(record['candidate_dir']).name
+        capture = self.root / 'campaign/runs/2'
+        shutil.copytree(self.run_copy / 'candidate' / project, capture / 'inputs' / project, symlinks=True)
+        (capture / 'result.json').write_text(json.dumps({'candidate_id': 'captured', 'findings': []}))
+        (capture / 'candidate.json').write_text(json.dumps({'candidate_id': 'captured', 'files': {}}))
+        neutral = self.root / 'neutral-capture'
+        shutil.copytree(capture / 'inputs', neutral, symlinks=True)
+        request = dict(project=project, board=record['board'], schematic=record['schematic'], name=project)
+        for label, policy in (('capture run inputs', self.policy), ('capture run inputs, no policy', None)):
+            with self.subTest(label):
+                root = self.root / f'consumer-{label.replace(" ", "-").replace(",", "")}'
+                spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
+                receipt_dir = root / 'receipts/1-kicad-route-builtin'
+                with self.assertRaisesRegex(ValueError, 'without a readable owning run'):
+                    stage_receipts.run_step(receipt_dir, capture / 'inputs', spec,
+                                            {'implementation': 1, 'receipt_index': 1})
+                self.assertFalse(os.path.lexists(receipt_dir))
+        for label, policy in (('neutral copy', self.policy), ('neutral copy, no policy', None)):
+            with self.subTest(label):
+                root = self.root / f'consumer-{label.replace(" ", "-").replace(",", "")}'
+                spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
+                receipt = stage_receipts.run_step(root / 'receipts/1-kicad-route-builtin', neutral, spec,
+                                                  {'implementation': 1, 'receipt_index': 1})
+                self.assertIsNotNone(receipt['execution'])
+
     def test_the_real_receipt_as_an_adapter_execution_is_refused_and_not_adopted(self):
         # The same receipt delivered by a router the adapter ran is not that execution: its
         # request, input directory and run are the producer's. Through step, run_step,

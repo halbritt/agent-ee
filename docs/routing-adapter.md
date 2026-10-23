@@ -1162,6 +1162,21 @@ Experiment evidence is never dropped and is never qualified.
   consumer. `tests/test_k91_control_matrix.py` runs it, and
   `tests/test_k91_reason_probe.py` is the round-3 reviewer's probe.
 
+  The round-1 record predates the staged original. The matrix replays its
+  committed `not_run` report under the verifier of its own era: the adapter at
+  `7552f6db`, which wrote and committed it, loaded from git objects. That
+  verifier must reproduce the recorded value and refuse an edited copy. Today's
+  verifier must refuse the same report, for its missing staged original at the
+  report's own pin and as stale evidence at the production pin. The committed
+  bytes are never rewritten or re-graded.
+
+  An agent-ee capture run (`runs/N` holding `result.json` beside
+  `inputs/<project>`) has the layout that kicad-route reads as a missing
+  predecessor. So the adapter refuses `runs/N/inputs` as a routing input. A
+  caller that routes a captured candidate copies its inputs to a neutral path
+  first. The production campaign routes the implementation design copy, which
+  has no run record beside it.
+
   Anything missing or malformed is incomplete. A skipped adoption is never a
   refusal. The bare `stage_receipts.adopt` runs on another design copy as a
   diagnostic (`direct_adopt`), and its result stays visible: it accepts a

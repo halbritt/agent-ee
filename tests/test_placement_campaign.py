@@ -382,7 +382,16 @@ class HelperCampaignTest(PlacementCampaignFixture):
             schematic='rc_filter.kicad_sch', name='rc_filter', label='cluster-seed',
             checkout=require_kicad_route(), budget=120)
         receipt_dir = self.root / 'cluster-route'
-        receipt = stage_receipts.run_step(receipt_dir, self.out / 'runs/2/inputs', route,
+        # runs/2 holds the capture's result.json two levels above inputs/project, which the
+        # adapter refuses as a missing predecessor (kicad-route experiment._origin's layout
+        # rule); the router reads a neutral copy of the captured inputs instead.
+        with self.assertRaisesRegex(ValueError, 'without a readable owning run'):
+            stage_receipts.run_step(receipt_dir, self.out / 'runs/2/inputs', route,
+                                    {'implementation': 1, 'receipt_index': 1})
+        self.assertFalse(receipt_dir.exists())
+        routed = self.root / 'cluster-input'
+        shutil.copytree(self.out / 'runs/2/inputs', routed)
+        receipt = stage_receipts.run_step(receipt_dir, routed, route,
                                          {'implementation': 1, 'receipt_index': 1})
         self.assertIn(receipt['exit_code'], (0, 2), receipt)
         self.assertEqual(receipt['violations'], [])
