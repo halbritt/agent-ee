@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Compare complete Rust plans with the independent Python implementation.
+"""Historical extended fixture generator and complete-plan comparison driver.
 
 Fixture generation and checking are separate: the Rust process receives only
 captured inputs. Expected plans stay in the test driver, outside that process.
+Some extended generators predate source authority enforcement and install
+process-local synthetic owner pins. Generation refuses that unequal authority;
+tests/test_placement_engine_parity.py is the supported current regression gate.
+Existing frozen corpora remain historical evidence for their recorded sources.
 """
 import argparse
 import copy
@@ -87,10 +91,20 @@ def all_fixtures(seed_count, suites):
 
 def generate(directory, seed_count, suites):
     from agent_ee.placer_runner import _plan_local
+    from agent_ee import source_authority
+
+    def require_production_authority():
+        if source_authority.OWNER_DECISIONS:
+            raise ValueError('historical fixture generation refuses process-local owner authority pins; '
+                             'use tests/test_placement_engine_parity.py for the current parity gate')
+
+    require_production_authority()
     directory.mkdir(parents=True, exist_ok=False)
     manifest = []
     names = set()
     for name, facts, request, netlist_xml in all_fixtures(seed_count, suites):
+        # Fixture construction itself can register Python-only owner pins.
+        require_production_authority()
         if name in names:
             raise ValueError(f'duplicate fixture name: {name}')
         names.add(name)
