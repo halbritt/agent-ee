@@ -126,7 +126,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 09:25Z)
+### Current state and next actions (agent-449, 2026-10-23 09:30Z)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -146,17 +146,18 @@ Reference boards:
 
 | Item | State | Holder / handle | Budget | Blocker and next actor |
 | --- | --- | --- | --- | --- |
-| AGENTEE-476 Rust planner landing | agent-524 working, NOT handed over | agent-524. Branch `wt/rust-planner-greenfield-agent524` at `840da8d5`, 0 behind / 27 ahead of main, no C files; the code now defaults to Rust (`active() or Session()`). | owner-directed | agent-524 hands over through agent-519; agent-449 verifies preconditions 1–6 and lands it; then agent-522 runs a 20-minute runtime check. **Gates AGENTEE-479.** |
-| AGENTEE-478 D1–D5 prep | terminal, landed | fome-mc main `57810f11` (writer `2ee1e63`) | — | agent-529: decide the 10 missing per-pin decouplers (rebind bank capacitors or change the design). The stage-A format `block-candidate-set/1` needs agent-524's agreement. |
-| AGENTEE-478b owner-answer rebind | queued | j6b2 writer, after 482 | 15 minutes | starts when 482 ends |
-| AGENTEE-480 GNSS corridor and mechanical closure | running | agent-507, `wt/agentee-480` (work in progress), 09:09–10:09Z | 60 minutes | agent-507 result to agent-449 |
-| AGENTEE-482 HOLD correction (H1/H2/H3) | running | j6b2 writer, session `266a6f9b`, process 80961, started 09:23:41Z | 20 minutes | then agent-510 rechecks the changed scope (10 minutes, via agent-519) |
-| AGENTEE-483 model assets in candidate outputs | queued | j6b2 writer, after 478b | 30 minutes | — |
-| AGENTEE-479 implementation | waiting | j6b2 writer; verifier agent-510 | 120 minutes | AGENTEE-476 landing, the decoupler decision, the 480 corridor and the 482/510 closure |
+| AGENTEE-476 Rust planner | **LANDED** on agent-ee main `b2607131` (merge of agent-524 `840da8d5`) | gate: 11 modules / 177 tests passed plus 309-part parity OK. Image `agent-ee:exec-ccc527c081bb1c5e` (`sha256:1851488d…`), binary `5261cb13…` | — | agent-522 runs a 20-minute runtime check (brief via agent-519). Rust is the default; Python is an explicit reference only; stage A stays Python. |
+| AGENTEE-478 D1–D5 prep | terminal, landed fome-mc `57810f11` | — | — | agent-529 decides the 10 missing per-pin decouplers. agent-524 agrees `block-candidate-set/1`. |
+| AGENTEE-478b owner-answer rebind | running | j6b2 writer, started 09:29:27Z | 15 minutes | — |
+| AGENTEE-480 GNSS corridor and mechanical closure (plus the J1 mate STEP for C08) | running | agent-507, `wt/agentee-480`, 09:09–10:09Z | 60 minutes | agent-507 result to agent-449 |
+| AGENTEE-482 HOLD correction | landed fome-mc `f65d7903` | — | — | agent-510 rechecks the changed scope (10 minutes, via agent-519) |
+| AGENTEE-483 model assets plus the local vendor-model store | queued after 478b | j6b2 writer | 45 minutes | Licence: vendor model bytes stay in the local store; only provenance is committed. L1/L2 variant check. |
+| AGENTEE-479 implementation | waiting | j6b2 writer; verifier agent-510 | 120 minutes | 476 is landed. Still open: the decoupler decision, the 480 corridor, the 510 recheck of 482 and the 524 format agreement. |
 
 Settled results:
 - The 473/473b traces and the 474 register (fome-mc `4ff731c9`, `d8f6ec09`, `7be86549`). agent-510 put them on HOLD; the correction is AGENTEE-482.
 - AGENTEE-475, AppArmor profile loading removed (agent-ee `061c8049`).
+- AGENTEE-476, Rust planner as the default (agent-ee `b2607131`).
 - AGENTEE-477, 3D models (fome-mc `fa41e4b9`).
 - ROUTE-4 historical evidence (fome-mc `fd9b3c40`).
 
