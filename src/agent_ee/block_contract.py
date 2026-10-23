@@ -300,6 +300,48 @@ def _cohesion_allowed(members, source, support):
     return False
 
 
+def _pose_constraints(original, saved, plan, report):
+    """Logical fixed roles never create pose constraints; native locks and policy do."""
+    policy = plan.get('policy') if isinstance(plan, dict) else None
+    declared = policy.get('fixed_refs') if isinstance(policy, dict) else None
+    report['pose_authority_inputs'] = {
+        'native_locked': 'original native capture',
+        'explicit_fixed_refs': 'captured plan policy' if declared is not None else 'not supplied',
+        'policy_sha256': digest(policy) if policy is not None else None}
+    report['pose_constraints'] = []
+    if declared is None:
+        declared = []
+    if (not isinstance(declared, list) or any(not isinstance(ref, str) for ref in declared)
+            or len(declared) != len(set(declared))):
+        report['unknown'].append({'kind': 'pose_authority_missing', 'reason': 'malformed policy fixed_refs'})
+        declared = []
+    references = set(declared) | {ref for ref, fp in original.items() if fp.get('locked') is True}
+    for ref in sorted(references):
+        authority = ([] if ref not in declared else ['explicit_request_fixed_refs'])
+        if original.get(ref, {}).get('locked') is True:
+            authority.append('native_locked')
+        row = {'reference': ref, 'authority': authority, 'status': 'unknown'}
+        report['pose_constraints'].append(row)
+        try:
+            if ref not in original or ref not in saved:
+                raise ValueError('fixed reference missing from original or saved capture')
+            for name, fp in (('original', original[ref]), ('saved', saved[ref])):
+                rotation = fp.get('rotation_deg')
+                if (type(rotation) not in (int, float) or not math.isfinite(rotation)
+                        or fp.get('side') not in ('F', 'B')):
+                    raise ValueError('native fixed pose unavailable')
+                row[name] = {'position_nm': _position(fp), 'rotation_deg': rotation, 'side': fp['side']}
+            unchanged = (row['original']['position_nm'] == row['saved']['position_nm']
+                         and (row['original']['rotation_deg'] - row['saved']['rotation_deg']) % 360 == 0
+                         and row['original']['side'] == row['saved']['side'])
+            row['status'] = 'pass' if unchanged else 'defect'
+            if not unchanged:
+                report['defects'].append({'kind': 'fixed_pose_changed', **row})
+        except ValueError as exc:
+            row['reason'] = str(exc)
+            report['unknown'].append({'kind': 'fixed_pose_evidence_missing', **row})
+
+
 def judge(saved_capture, contract, *, original_capture, plan=None):
     """Judge final native geometry; a defect survives unrelated missing evidence.
 
@@ -331,6 +373,7 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
     if set(saved) != set(original):
         defects.append({'kind': 'saved_membership_changed', 'missing': sorted(original.keys()-saved.keys()),
                         'extra': sorted(saved.keys()-original.keys())})
+    _pose_constraints(original, saved, plan, report)
     for ref in sorted(saved.keys() & original.keys()):
         if saved[ref]['uuid'] != original[ref]['uuid']:
             defects.append({'kind': 'saved_identity_changed', 'reference': ref})

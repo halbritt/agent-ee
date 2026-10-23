@@ -1,6 +1,8 @@
 """Member changes must improve guarded metrics without losing native block evidence."""
 from copy import deepcopy
 import hashlib
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -106,33 +108,54 @@ class BlockRefinementTest(unittest.TestCase):
         require_toolchain(native=True)
         import pcbnew as k
         import underside_fixture
-        with tempfile.TemporaryDirectory(prefix='agent-ee-member-refinement-') as directory:
-            root = Path(directory)
-            source, _ = underside_fixture.write_board(root / 'inputs', witness=True)
-            board = k.LoadBoard(str(source))
-            for fp in list(board.GetFootprints()):
-                if fp.GetReference() not in ('U1', 'C1'):
-                    board.Remove(fp)
-                else:
-                    fp.SetPosition(k.VECTOR2I((2 if fp.GetReference() == 'U1' else 7)*MM, 1500000))
-            self.assertTrue(k.SaveBoard(str(source), board))
-            initial = extract(source)
-            policy, contract, record = declarations(initial)
-            final, witness = block_refinement.refine(initial, policy, contract, record, step_budget=64)
-            self.assertEqual(witness['status'], 'refined', witness)
-            initial_by_ref = {fp['ref']: fp for fp in initial['footprints']}
-            final_by_ref = {fp['ref']: fp for fp in final['footprints']}
-            self.assertEqual(final_by_ref['U1'], initial_by_ref['U1'])
-            self.assertNotEqual(final_by_ref['C1']['position_nm'], initial_by_ref['C1']['position_nm'])
-            output = root / 'candidate.kicad_pcb'
-            plan = {'placements': [{'ref': fp['ref'], 'uuid': fp['uuid'], 'position_nm': fp['position_nm'],
-                                    'rotation_deg': fp['rotation_deg'], 'fixed': fp['ref'] == 'U1'}
-                                   for fp in final['footprints']]}
-            placer_runner._apply_plan(board, plan, output)
-            saved = extract(output)
-            report = block_contract.judge(saved, contract, original_capture=initial, plan=plan)
-            self.assertEqual(report['status'], 'pass', report)
-            self.assertEqual({fp['ref']: fp['position_nm'] for fp in saved['footprints']},
-                             {fp['ref']: fp['position_nm'] for fp in final['footprints']})
-            drc = placer_runner._native_drc(output, root)
-            self.assertEqual([r for r in drc['violations'] if r['type'] in placer_runner.DRC_COURTYARDS], [])
+        retained = os.environ.get('AGENT_EE_479_TEST_OUTPUT')
+        if retained:
+            root = Path(retained).resolve() / self._testMethodName
+            root.mkdir(parents=True, exist_ok=False)
+        else:
+            temporary = tempfile.TemporaryDirectory(prefix='agent-ee-member-refinement-')
+            self.addCleanup(temporary.cleanup)
+            root = Path(temporary.name)
+        def retain(name, value):
+            (root / name).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+        source, _ = underside_fixture.write_board(root / 'inputs', witness=True)
+        board = k.LoadBoard(str(source))
+        for fp in list(board.GetFootprints()):
+            if fp.GetReference() not in ('U1', 'C1'):
+                board.Remove(fp)
+            else:
+                fp.SetPosition(k.VECTOR2I((2 if fp.GetReference() == 'U1' else 7)*MM, 1500000))
+        self.assertTrue(k.SaveBoard(str(source), board))
+        initial = extract(source)
+        policy, contract, record = declarations(initial)
+        retain('before-capture.json', initial)
+        retain('policy.json', policy)
+        retain('contract.json', contract)
+        retain('starting-block-records.json', record)
+        final, witness = block_refinement.refine(initial, policy, contract, record, step_budget=64)
+        retain('after-capture.json', final)
+        retain('member-refinement.json', witness)
+        self.assertEqual(witness['status'], 'refined', witness)
+        initial_by_ref = {fp['ref']: fp for fp in initial['footprints']}
+        final_by_ref = {fp['ref']: fp for fp in final['footprints']}
+        self.assertEqual(final_by_ref['U1'], initial_by_ref['U1'])
+        self.assertNotEqual(final_by_ref['C1']['position_nm'], initial_by_ref['C1']['position_nm'])
+        output = root / 'candidate.kicad_pcb'
+        plan = {'policy': policy, 'placements': [{'ref': fp['ref'], 'uuid': fp['uuid'], 'position_nm': fp['position_nm'],
+                                'rotation_deg': fp['rotation_deg'], 'fixed': fp['ref'] == 'U1'}
+                               for fp in final['footprints']]}
+        retain('plan.json', plan)
+        placer_runner._apply_plan(board, plan, output)
+        saved = extract(output)
+        report = block_contract.judge(saved, contract, original_capture=initial, plan=plan)
+        retain('saved-capture.json', saved)
+        retain('saved-block-contract.json', report)
+        self.assertEqual(report['status'], 'pass', report)
+        self.assertEqual({fp['ref']: fp['position_nm'] for fp in saved['footprints']},
+                         {fp['ref']: fp['position_nm'] for fp in final['footprints']})
+        drc = placer_runner._native_drc(output, root)
+        retain('native-drc.json', drc)
+        retain('evidence-scope.json', {'scope': 'standalone native member-refinement vertical test',
+            'native_save_reload': True, 'native_courtyard_drc': True, 'full_placer_runner': False,
+            'netlist_gate': False, 'unused_fixture_netlist': 'inputs/native.xml'})
+        self.assertEqual([r for r in drc['violations'] if r['type'] in placer_runner.DRC_COURTYARDS], [])

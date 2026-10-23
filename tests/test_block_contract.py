@@ -134,6 +134,24 @@ class BlockContractTest(unittest.TestCase):
         final = moved(board, 'H1', MM, 2*MM, 'B')
         self.assertEqual(block_contract.judge(final, contract, original_capture=board)['status'], 'pass')
 
+    def test_actual_fixed_and_native_locked_pose_authority_is_independent(self):
+        board, contract = fixture()
+        final = moved(board, 'H1', MM, 0, 'B')
+        # The logical role alone permits this same mutation, as tested above.
+        for authority in ('request', 'native'):
+            original = deepcopy(board)
+            plan = {'policy': {'fixed_refs': ['H1']}} if authority == 'request' else None
+            if authority == 'native': original['footprints'][2]['locked'] = True
+            with self.subTest(authority=authority):
+                report = block_contract.judge(final, contract, original_capture=original, plan=plan)
+                self.assertEqual(report['status'], 'defect', report)
+                self.assertEqual(report['pose_constraints'][0]['status'], 'defect')
+                self.assertTrue(any(d['kind'] == 'fixed_pose_changed' for d in report['defects']))
+        report = block_contract.judge(board, contract, original_capture=board,
+                                       plan={'policy': {'fixed_refs': ['U1']}})
+        self.assertEqual(report['pose_constraints'][0]['authority'], ['explicit_request_fixed_refs'])
+        self.assertEqual(report['pose_constraints'][0]['status'], 'pass')
+
     def test_missing_or_changed_saved_member_is_typed_defect(self):
         board, contract = fixture()
         for change in ('removed', 'uuid', 'pad_net', 'pad_duplicate'):

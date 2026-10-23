@@ -64,3 +64,10 @@ Sheet selectors must be resolved into references before this strict boundary.
 `agent-ee.block-contract-check/1` decision record in both implementations. It
 checks each complete macro/residual placement before search accepts it; the
 writer then uses the richer independent report after saving and reloading.
+
+The saved report separately lists actual pose constraints from the original native
+`locked` flag and from `plan.policy.fixed_refs`, with their original and saved
+position, rotation and face. These are explicit pose authorities, not sourced
+numeric electrical limits. A logical allocation `fixed` role alone does not enter
+this list. If no plan policy is supplied, the report labels that input unavailable
+and reports only native locks; it never guesses pose authority from membership.
