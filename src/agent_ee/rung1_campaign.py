@@ -150,7 +150,7 @@ def envelope_record(params):
                               'insertion': 'from_top', 'tolerance_mm': 0.5}]}
 
 
-def scaffold_files(envelope_raw, root, template_dir):
+def scaffold_files(envelope_raw, root, template_dir, *, captured=None):
     """The empty native project and builder template, by scaffold path.
 
     The schematic, board and project come from agent_ee.scaffold.native_files, main's one
@@ -160,7 +160,7 @@ def scaffold_files(envelope_raw, root, template_dir):
     from .scaffold import native_files
     template_dir = Path(template_dir)
     try:
-        record = validate(envelope_raw)
+        record = validate(envelope_raw, captured=captured)
         project = json.loads((template_dir / 'rc_filter.kicad_pro').read_bytes())
         seed = identity({'envelope': g.sha256_bytes(envelope_raw), 'root': root})
         native = native_files(record, f'project/{NAME}.kicad_sch', project, root, seed)
@@ -186,12 +186,15 @@ def scaffold_main(argv=None):
     root.add_argument('--resolved', type=Path, help='resolved record: agent_ee.schematic_emit root sheet')
     root.add_argument('--layout', type=Path, help='schematic layout: agent_ee.schematic_emitter root sheet')
     parser.add_argument('--template', required=True, type=Path)
+    parser.add_argument('--sources', type=Path, help='captured envelope source root')
     parser.add_argument('--out', required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         sheet = (root_sheet_uuid(json.loads(args.resolved.read_text())) if args.resolved else
                  layout_root_uuid(json.loads(args.layout.read_text())))
-        files = scaffold_files(args.envelope.read_bytes(), sheet, args.template)
+        from .board_envelope import source_inventory
+        files = scaffold_files(args.envelope.read_bytes(), sheet, args.template,
+                               captured=source_inventory(args.sources) if args.sources else None)
     except (PrepareFailure, ValueError, KeyError, TypeError) as exc:
         print(f'write-scaffold refused: {type(exc).__name__}: {exc}', file=sys.stderr)
         return 3
@@ -217,7 +220,8 @@ def scaffold_step(source_root, steps_dir, template_dir, *, envelope=BOARD_ENVELO
     from .tool_source import snapshot
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'scaffold', 'step': 'write-scaffold',
             'argv': ['/usr/bin/python3', '-B', '-P', f'{MOUNT_STEPS}/scaffold.py', f'/candidate/{envelope}',
-                     root[0], f'/candidate/{root[1]}', '--template', MOUNT_TEMPLATE, '--out', '/work/out'],
+                     root[0], f'/candidate/{root[1]}', '--template', MOUNT_TEMPLATE,
+                     '--sources', '/candidate', '--out', '/work/out'],
             'mounts': [{'source': str(Path(steps_dir)), 'at': MOUNT_STEPS},
                        {'source': str(snapshot(source_root)), 'at': MOUNT_SOURCE},
                        {'source': str(Path(template_dir)), 'at': MOUNT_TEMPLATE}],

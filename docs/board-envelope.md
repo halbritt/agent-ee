@@ -1053,7 +1053,12 @@ baseline like any reference, but adds no envelope record or obligation.
 
 ## Board round trip
 
-`--board` (or `round_trip(envelope, board)`) compares the fields a saved
+The Python keyword arguments `profile` and `captured=(files, inputs)` carry the
+same authenticated source context as `validate`. Mechanical reservations still
+require that capture. The CLI forwards `--profile` and `--sources` to both
+derivation and round-trip validation.
+
+`--board` (or `round_trip(envelope, board, profile=None, captured=None)`) compares the fields a saved
 `.kicad_pcb` can show, parsed from its bytes with the shared S-expression
 reader. It checks:
 
