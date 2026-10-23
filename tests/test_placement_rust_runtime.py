@@ -19,7 +19,8 @@ class RustRuntimeTest(unittest.TestCase):
         try:
             cls.binary = placement_rust_runtime.resolve_executable()
         except placement_runtime.PlanningProcessError:
-            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+            if (os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1'
+                    or 'AGENT_EE_RUST_PLANNER' in os.environ):
                 raise
             raise unittest.SkipTest('install the standalone Rust planner or set AGENT_EE_RUST_PLANNER')
 
