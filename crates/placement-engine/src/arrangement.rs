@@ -2325,6 +2325,27 @@ pub fn arrange(
         } else {
             capture.clone()
         };
+        if has_variants {
+            let owners: BTreeMap<_, _> = blocks::rows(&residual_capture["footprints"])?
+                .iter()
+                .map(|fp| (fp["uuid"].as_str().unwrap(), fp))
+                .collect();
+            if let Some(areas) = complete.get_mut("rule_areas").and_then(Value::as_array_mut) {
+                for area in areas {
+                    if let Some(fp) = area["owner"].as_str().and_then(|uuid| owners.get(uuid)) {
+                        let pose = complete_poses[fp["ref"].as_str().unwrap()];
+                        let placeholder = json!({"position_nm":fp["position_nm"], "rotation_deg":fp["rotation_deg"],
+                            "pads":[], "courtyards":{"zone":area["outline"]}});
+                        let transformed = footprint::transform_value(
+                            &placeholder,
+                            &pose["position_nm"],
+                            exact::rotation(&pose["rotation_deg"])?,
+                        )?;
+                        area["outline"] = transformed["courtyards"]["zone"].clone();
+                    }
+                }
+            }
+        }
         for fp in complete["footprints"].as_array_mut().unwrap() {
             let p = complete_poses[fp["ref"].as_str().unwrap()];
             *fp = footprint::transform_value(
