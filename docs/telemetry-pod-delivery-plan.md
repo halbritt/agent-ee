@@ -126,7 +126,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 09:30Z)
+### Current state and next actions (agent-449, 2026-10-23 09:40Z)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -136,6 +136,8 @@ Owner directions (relayed by agent-519, verbatim quotes kept separate from inter
 - "Once, on the bench": JP1–5 get soldering-iron access before enclosure.
 - "90mm height, the length and width are quite a bit more than that": about 90 mm is a provisional HEIGHT envelope for the full stack. It is an estimate, not a cap; the outline is not cowl-constrained.
 - "Agents pick M3 hardware".
+- "leave the files in local"; "fuck trakcing the licenses": vendor models stay local, with no licence tracking.
+- "try not to block on anything waiting for me.": use engineering defaults within authority, recorded as assumptions; hard limits still apply.
 - These answers settle usage and selection only. They never establish a clearance PASS.
 - The inductor variants are exact: L1 SRP7050TA-150M, L2 SRP7050WA-6R8M (`47f9ef50`).
 
@@ -146,18 +148,19 @@ Reference boards:
 
 | Item | State | Holder / handle | Budget | Blocker and next actor |
 | --- | --- | --- | --- | --- |
-| AGENTEE-476 Rust planner | **LANDED** on agent-ee main `b2607131` (merge of agent-524 `840da8d5`) | gate: 11 modules / 177 tests passed plus 309-part parity OK. Image `agent-ee:exec-ccc527c081bb1c5e` (`sha256:1851488d…`), binary `5261cb13…` | — | agent-522 runs a 20-minute runtime check (brief via agent-519). Rust is the default; Python is an explicit reference only; stage A stays Python. |
-| AGENTEE-478 D1–D5 prep | terminal, landed fome-mc `57810f11` | — | — | agent-529 decides the 10 missing per-pin decouplers. agent-524 agrees `block-candidate-set/1`. |
-| AGENTEE-478b owner-answer rebind | running | j6b2 writer, started 09:29:27Z | 15 minutes | — |
-| AGENTEE-480 GNSS corridor and mechanical closure (plus the J1 mate STEP for C08) | running | agent-507, `wt/agentee-480`, 09:09–10:09Z | 60 minutes | agent-507 result to agent-449 |
-| AGENTEE-482 HOLD correction | landed fome-mc `f65d7903` | — | — | agent-510 rechecks the changed scope (10 minutes, via agent-519) |
-| AGENTEE-483 model assets plus the local vendor-model store | queued after 478b | j6b2 writer | 45 minutes | Licence: vendor model bytes stay in the local store; only provenance is committed. L1/L2 variant check. |
-| AGENTEE-479 implementation | waiting | j6b2 writer; verifier agent-510 | 120 minutes | 476 is landed. Still open: the decoupler decision, the 480 corridor, the 510 recheck of 482 and the 524 format agreement. |
+| AGENTEE-479 implementation (engine) | **running** | agent-524 (codex gpt-6-astra), Cairn request `91c7aab7`, from 09:39Z, branch `wt/agentee-479`. agent-524 also finalizes `block-candidate-set/1`. | 120-minute checkpoint | Verification: agent-510 (contract and evidence) plus an Opus-high critical code review (different class from the Astra implementer), unless agent-529 directs otherwise. Final regeneration consumes the reviewed 484 and 480 results. |
+| AGENTEE-484 decoupling source repair | running | j6b2 writer (Opus), from 09:33Z; first fixes the 478b cowl HEIGHT wording | 60-minute checkpoint | then agent-510 reviews the changed electrical scope (20 minutes) |
+| AGENTEE-480 GNSS corridor and mechanical closure | running | agent-507, `wt/agentee-480`, 09:09–10:09Z (plus the D2 anchor correction and the J1 mate STEP) | 60 minutes | agent-507 result to agent-449 |
+| AGENTEE-478c anchor-role correction (D2) | queued | j6b2 writer, after 484 | 15 minutes | — |
+| AGENTEE-478b owner-answer rebind | committed on the writer branch (`93adc6c`) | — | — | lands with the 484 cowl HEIGHT fix |
+| AGENTEE-483 model assets plus the local vendor store | queued | j6b2 writer, after 478c | 45 minutes | Owner: models stay local; no licence tracking; path plus sha256 only; the L1/L2 variant fit check still applies |
 
 Settled results:
 - The 473/473b traces and the 474 register (fome-mc `4ff731c9`, `d8f6ec09`, `7be86549`). agent-510 put them on HOLD; the correction is AGENTEE-482.
 - AGENTEE-475, AppArmor profile loading removed (agent-ee `061c8049`).
-- AGENTEE-476, Rust planner as the default (agent-ee `b2607131`).
+- AGENTEE-476, Rust planner as the default (agent-ee `b2607131`). agent-522 found no mismatch (the timing figures are historical only).
+- AGENTEE-482, HOLD correction (fome-mc `f65d7903`); agent-510 ACCEPTED the investigation package.
+- AGENTEE-478, D1–D5 prep (fome-mc `57810f11`).
 - AGENTEE-477, 3D models (fome-mc `fa41e4b9`).
 - ROUTE-4 historical evidence (fome-mc `fd9b3c40`).
 
