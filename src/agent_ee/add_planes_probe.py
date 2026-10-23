@@ -122,24 +122,27 @@ def apply(board_path, plan, output):
         board.BuildConnectivity()
         if not k.ZONE_FILLER(board).Fill(planned):
             raise ValueError('native zone fill failed')
-        # AGENTEE-487 H2: native per-polygon connectivity of the fresh fill, one record per planned zone. A fill
-        # polygon is connected when a same-net pad present on the zone layer, or a same-net via or track endpoint on
-        # that layer, lies inside that polygon's outline; otherwise it is an island.
+        # AGENTEE-487 H2: per-polygon connectivity of the fresh fill from KiCad's native shape collision. Each filled
+        # polygon (with its holes) is connected when it collides (clearance 0: overlap or edge contact) with the
+        # effective copper shape of any same-net pad, track, arc or via on the zone layer; otherwise it is an island.
+        # The native outline vertices are recorded so each isolated_copper finding maps to one polygon.
         islands = {}
         for uid, zone in zip(zone_ids(plan), planned):
             layer, net = zone.GetLayer(), zone.GetNetCode()
             fill = zone.GetFilledPolysList(layer)
-            points = [p.GetPosition() for fp in board.GetFootprints() for p in fp.Pads()
+            shapes = [p.GetEffectiveShape(layer) for fp in board.GetFootprints() for p in fp.Pads()
                       if p.GetNetCode() == net and p.IsOnLayer(layer)]
-            for t in board.GetTracks():
-                if t.GetNetCode() == net and t.IsOnLayer(layer):
-                    points += [t.GetStart(), t.GetEnd()]
-            flags = []
+            shapes += [t.GetEffectiveShape(layer) for t in board.GetTracks() if t.GetNetCode() == net and t.IsOnLayer(layer)]
+            flags, outlines = [], []
             for i in range(fill.OutlineCount()):
-                outline = fill.COutline(i)
-                flags.append(not any(outline.PointInside(pt) for pt in points))
+                unit = fill.UnitSet(i)
+                flags.append(not any(bool(unit.Collide(shape, 0)) for shape in shapes))
+                chain = fill.COutline(i)
+                outlines.append([[k.ToMM(chain.CPoint(n).x), k.ToMM(chain.CPoint(n).y)] for n in range(chain.PointCount())])
+            anchor = zone.GetPosition()  # where KiCad 10 DRC places every isolated_copper marker of the zone
             islands[uid] = dict(layer=board.GetLayerName(layer), polygons=fill.OutlineCount(), islands=flags,
-                                method='same-net pad/via/track point inside fill outline')
+                                outlines_mm=outlines, anchor_mm=[k.ToMM(anchor.x), k.ToMM(anchor.y)],
+                                method='native SHAPE_POLY_SET.Collide(effective shape, 0) per filled polygon')
         write_json(output.with_name('islands.json'), islands)
         if not k.SaveBoard(str(copied), board):
             raise ValueError('native plane save failed')

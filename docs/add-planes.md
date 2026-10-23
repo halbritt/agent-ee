@@ -52,11 +52,19 @@ producer refuses an `isolated_copper` violation attributed to a planned
 UUIDs. Exception (AGENTEE-487): only when the caller declares the pre-routing
 phase (`step(..., phase='pre-routing')`, argv `--phase pre-routing`, as the
 routing-turn step does) may a wholly unconnected planned `always` zone be
-deferred. Wholly unconnected means the native fill marks EVERY polygon an island
-(`native/islands.json`, `ZONE.IsIsland`) and the `isolated_copper` findings
-attribute one-to-one to those polygons (distinct positions, count equal to the
-saved polygon count). Duplicate or position-less attribution or a missing
-native record fails closed; partial isolation is not deferred. A deferred zone
+deferred. Wholly unconnected means EVERY filled polygon is an island by KiCad's
+native shape collision (`native/islands.json`: per polygon,
+`SHAPE_POLY_SET.Collide(effective shape, 0)` against every same-net pad, track,
+arc and via on the zone layer, so edge contact counts as connected), and each
+`isolated_copper` finding is accounted for: KiCad 10 DRC places every isolated-copper
+marker of a zone at the zone anchor (recorded as `anchor_mm`), which carries no
+polygon identity, so anchored findings are counted; any other finding must map
+(inside or on the boundary of the recorded native outline) to exactly one DISTINCT
+polygon. The finding count must equal the native polygon count. Per-polygon
+identity is the native inventory, not the DRC marker. Flags must be
+exact booleans and positions/vertices finite numbers; duplicate, unmappable,
+ambiguous or non-finite evidence and a malformed or missing native record fail
+closed; partial isolation is not deferred. A deferred zone
 keeps its definition and `always` policy and is listed in
 `deferred_connectivity` as `{zone, net, layer, island_removal: "always",
 obligation}`; the report also records `phase`. Without the phase input (any

@@ -171,6 +171,21 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
         after = stage_receipts.file_tree(self.source)
         self.assertEqual({p for p in before[0] if before[0][p]!=after[0][p]}, {self.plan_path})
 
+    def test_pad_edge_contact_is_native_connectivity(self):
+        # AGENTEE-487 H2 (Astra delta probe): the GND pad centred at (20,20) touches a fill that starts at x=20.5;
+        # its centre lies outside the polygon, but native shape collision must report the polygon connected.
+        self.plan['zones'] = [dict(self.plan['zones'][0], island_removal='always',
+                                   outline={'polygon_mm': [[20.5, 11], [30, 11], [30, 30], [20.5, 30]]})]
+        self.save()
+        report = self.run_plan('pad-edge', phase=planes.PRE_ROUTING)
+        self.assert_ok(report)
+        uid = planes.zone_ids(self.plan)[0]
+        native = read_json(self.root/'pad-edge'/'native/islands.json')[uid]
+        self.assertTrue(native['islands'])
+        self.assertTrue(all(flag is False for flag in native['islands']), native)
+        self.assertIn('Collide', native['method'])
+        self.assertEqual(report['deferred_connectivity'], [])
+
     def test_split_zone_removes_secondary_island_only_under_always(self):
         prepare = r"""
 import pcbnew as k
@@ -283,55 +298,73 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
 
 
 class PhaseAndAttributionTests(unittest.TestCase):
-    """AGENTEE-487 H1/H2 contract: phase-bound deferral and one-to-one native island attribution."""
+    """AGENTEE-487 H1/H2 contract: phase-bound deferral, strict native evidence, distinct polygon attribution."""
     UID = '10000000-0000-0000-0000-000000000001'
+    SQUARES = [[[0, 0], [1, 0], [1, 1], [0, 1]], [[5, 0], [6, 0], [6, 1], [5, 1]]]
 
-    def evidence(self, positions, polygons=2, islands=None):
+    def evidence(self, positions, islands=None, outlines=None, polygons=2):
         errors = [dict(type='isolated_copper', severity='warning', items=[dict(uuid=self.UID, pos=p)]) for p in positions]
-        zones = [dict(uuid=self.UID, fill_polygons=polygons)]
-        native = {self.UID: dict(layer='In2.Cu', polygons=polygons, islands=islands if islands is not None else [True]*polygons)}
+        zones = [dict(uuid=self.UID, fill_polygons=polygons, layer='In2.Cu')]
+        native = {self.UID: dict(layer='In2.Cu', polygons=polygons,
+                                 islands=islands if islands is not None else [True] * polygons,
+                                 outlines_mm=outlines if outlines is not None else self.SQUARES[:polygons],
+                                 anchor_mm=[9.0, 9.0])}
         return errors, zones, native
 
+    def defer(self, *args, **kwargs):
+        errors, zones, native = self.evidence(*args, **kwargs)
+        return planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING)
+
     def test_step_declares_phase_only_when_given(self):
-        root = Path(tempfile.mkdtemp())
-        try:
-            (root/'src'/'agent_ee').mkdir(parents=True)
-            plain = planes._phase_argv(None)
-            self.assertEqual(plain, [])
-            self.assertEqual(planes._phase_argv(planes.PRE_ROUTING), ['--phase', 'pre-routing'])
-            with self.assertRaises(ValueError):
-                planes._phase_argv('post-routing')
-        finally:
-            shutil.rmtree(root)
+        self.assertEqual(planes._phase_argv(None), [])
+        self.assertEqual(planes._phase_argv(planes.PRE_ROUTING), ['--phase', 'pre-routing'])
+        with self.assertRaises(ValueError):
+            planes._phase_argv('post-routing')
 
     def test_no_phase_never_defers(self):
-        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=2, y=2)])
+        errors, zones, native = self.evidence([dict(x=0, y=0), dict(x=5, y=0)])
         self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, None), set())
         self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, 'post-routing'), set())
 
-    def test_pre_routing_defers_one_to_one_native_islands(self):
-        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=2, y=2)])
-        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING), {self.UID})
+    def test_pre_routing_defers_one_finding_per_distinct_polygon(self):
+        self.assertEqual(self.defer([dict(x=0, y=0), dict(x=5.5, y=0.5)]), {self.UID})
 
     def test_duplicate_finding_fails_closed(self):
-        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=1, y=1)])
         with self.assertRaises(ValueError):
-            planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING)
+            self.defer([dict(x=0, y=0), dict(x=0, y=0)])
 
-    def test_unknown_position_or_missing_native_record_fails_closed(self):
-        errors, zones, native = self.evidence([dict(x=1, y=1), None])
+    def test_anchored_findings_are_counted_against_native_polygons(self):
+        # KiCad 10 reports every isolated_copper marker at the zone anchor (observed on the R5 pod board: 13 at (90,65))
+        self.assertEqual(self.defer([dict(x=9.0, y=9.0), dict(x=9.0, y=9.0)]), {self.UID})
+        self.assertEqual(self.defer([dict(x=9.0, y=9.0)]), set())
         with self.assertRaises(ValueError):
-            planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING)
-        errors, zones, _ = self.evidence([dict(x=1, y=1), dict(x=2, y=2)])
+            self.defer([dict(x=9.0, y=9.0)] * 3)
+
+    def test_two_findings_in_one_polygon_fail_closed(self):
+        with self.assertRaises(ValueError):
+            self.defer([dict(x=0, y=0), dict(x=0.5, y=0.5)])
+
+    def test_unmappable_or_non_finite_positions_fail_closed(self):
+        for bad in (dict(x=3, y=3), dict(x=float('nan'), y=0), dict(x=float('inf'), y=0), dict(x='0', y=0),
+                    dict(x=True, y=0), None):
+            with self.subTest(pos=bad), self.assertRaises(ValueError):
+                self.defer([dict(x=0, y=0), bad])
+
+    def test_malformed_native_flags_fail_closed(self):
+        for flags in (['false', 'false'], [1, 2], [True], [True, True, True], [None, True]):
+            with self.subTest(flags=flags), self.assertRaises(ValueError):
+                self.defer([dict(x=0, y=0), dict(x=5, y=0)], islands=flags)
+
+    def test_malformed_native_outlines_or_missing_record_fail_closed(self):
+        with self.assertRaises(ValueError):
+            self.defer([dict(x=0, y=0), dict(x=5, y=0)], outlines=[self.SQUARES[0], [[float('nan'), 0], [1, 0], [1, 1]]])
+        errors, zones, _ = self.evidence([dict(x=0, y=0), dict(x=5, y=0)])
         with self.assertRaises(ValueError):
             planes.wholly_unconnected(errors, zones, {self.UID}, {}, planes.PRE_ROUTING)
 
     def test_partial_isolation_is_not_deferred(self):
-        # one connected polygon natively, or fewer distinct findings than polygons: the refusal stands
-        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=2, y=2)], islands=[True, False])
-        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING), set())
-        errors, zones, native = self.evidence([dict(x=1, y=1)], polygons=2)
-        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING), set())
+        self.assertEqual(self.defer([dict(x=0, y=0), dict(x=5, y=0)], islands=[True, False]), set())
+        self.assertEqual(self.defer([dict(x=0, y=0)]), set())
 
 
 class PlannedZoneClassificationTests(unittest.TestCase):
