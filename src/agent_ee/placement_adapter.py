@@ -167,7 +167,7 @@ def validate_blocks(value):
     The netlist is the captured native export every candidate was packed against; the
     helper uses it only while a fresh in-sandbox export has the same stamp-masked identity."""
     if (not isinstance(value, dict) or not BLOCKS_KEYS <= set(value)
-            or set(value) - BLOCKS_KEYS - set(BLOCKS_OPTIONAL_FILES)):
+            or set(value) - BLOCKS_KEYS - set(BLOCKS_OPTIONAL_FILES) - {'stage_owned'}):
         raise ValueError(f'placement blocks must have exactly {sorted(BLOCKS_KEYS)} '
                          f'and optionally {", ".join(BLOCKS_OPTIONAL_FILES)}')
     def captured(rel, label, suffix):
@@ -184,8 +184,17 @@ def validate_blocks(value):
     for key in BLOCKS_OPTIONAL_FILES:
         if key in value:
             normalized[key] = captured(value[key], 'block ' + key, '.json')
+    if 'stage_owned' in value:
+        owner = value['stage_owned']
+        if not isinstance(owner, dict) or set(owner) != {'eligibility', 'contract', 'report'}:
+            raise ValueError('stage_owned requires immutable eligibility/contract templates and a report path')
+        if not {'allocation', 'side_eligibility', 'contract'} <= set(normalized):
+            raise ValueError('stage-owned blocks require allocation, side_eligibility and contract')
+        normalized['stage_owned'] = {key: captured(rel, 'block producer ' + key, '.json')
+                                     for key, rel in owner.items()}
     paths = [normalized['netlist'], normalized['arrangement'], *normalized['candidates']]
     paths += [normalized[key] for key in BLOCKS_OPTIONAL_FILES if key in normalized]
+    paths += list(normalized.get('stage_owned', {}).values())
     if len(set(paths)) != len(paths):
         raise ValueError('placement block files must be distinct')
     return normalized
@@ -270,6 +279,16 @@ def bind_declaration(declaration, manifest, mutable_inputs):
             raise ValueError('sub-boards must be captured immutable inputs')
     section = declaration.get('blocks')
     if section is not None:
+        if 'stage_owned' in section:
+            from .block_variant_stage import output_paths, immutable_paths
+            for rel in output_paths(section):
+                if rel not in files or rel not in mutable_inputs:
+                    raise ValueError(f'stage-owned block output {rel} needs a captured mutable placeholder')
+            for rel in immutable_paths(section):
+                if rel not in files or rel in mutable_inputs:
+                    raise ValueError(f'block producer input {rel} must be a captured immutable input')
+            section = {**section, 'netlist_sha256': files[section['netlist']]}
+            return {**declaration, 'blocks': section, 'board': board, 'schematic': schematic}
         for rel in [section['netlist'], section['arrangement'], *section['candidates'],
                     *(section[key] for key in BLOCKS_OPTIONAL_FILES if key in section)]:
             if rel not in files or rel in mutable_inputs:
@@ -529,7 +548,7 @@ def _mechanical_capture(inputs, files, board):
         return facts
 
 
-def binding(declaration, manifest, inputs, mutable_inputs):
+def binding(declaration, manifest, inputs, mutable_inputs, *, require_produced=False):
     """Coordinator binding of the declaration to one captured candidate's immutable inputs.
 
     Returns (binding record, bound declaration, policy, protected UUIDs, protected references).
@@ -576,8 +595,16 @@ def binding(declaration, manifest, inputs, mutable_inputs):
     if bound.get('sublayout') is not None:
         record['sublayout'] = sublayout_binding(bound['sublayout'], manifest, inputs, mutable_inputs)
     if 'blocks' in bound:
-        record['blocks'], policy['blocks'] = blocks_binding(bound['blocks'], manifest, inputs,
-                                                            request_policy(policy, protected_refs))
+        if 'stage_owned' in bound['blocks']:
+            from .block_variant_stage import consume
+            record['blocks'], produced = consume(bound['blocks'], manifest, inputs, mutable_inputs,
+                                                  declaration, require_produced=require_produced)
+            if produced:
+                _, policy['blocks'] = blocks_binding(bound['blocks'], manifest, inputs,
+                                                      request_policy(policy, protected_refs))
+        else:
+            record['blocks'], policy['blocks'] = blocks_binding(bound['blocks'], manifest, inputs,
+                                                                request_policy(policy, protected_refs))
     return record, bound, policy, protected, protected_refs
 
 
@@ -1690,7 +1717,7 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
     if not is_placement_iteration(state, manifest):
         raise ValueError('placement adapter runs only when the earliest failing stage is placement')
     binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs,
-                                                             state['mutable_inputs'])
+                                                             state['mutable_inputs'], require_produced=True)
     board = bound['board']
     record = _record(work, manifest, declaration, binding_record, bound, protected, refs)
     ran = False
@@ -1813,7 +1840,7 @@ def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, m
     stored = _stored(work, 'a proposed placement iteration')
     if stored['status'] != 'proposed' or stored['error'] is not None:
         raise ValueError('placement record is not a proposed placement iteration')
-    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs)
+    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs, require_produced=True)
     copper = group_admission(source_inputs, bound)
     scope = proposal_scope(source_inputs, proposal_inputs, bound['board'], protected, copper)
     if scope['status'] != 'allowed' or scope['violations']:
@@ -1865,7 +1892,7 @@ def verify_attempt(work, source_inputs, design, manifest, declaration, mutable_i
     if (stored['status'] not in ATTEMPT_STATUSES or not isinstance(stored['error'], str) or
             not stored['error'] or (stored['status'] == 'cancelled') != (stored['error'] == 'KeyboardInterrupt')):
         raise ValueError('placement record is not an incomplete placement attempt')
-    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs)
+    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs, require_produced=True)
     expected = {**_record(work, manifest, declaration, binding_record, bound, protected, refs),
                 'status': stored['status'], 'error': stored['error']}
     admission = []

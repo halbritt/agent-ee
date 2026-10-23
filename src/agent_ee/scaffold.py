@@ -230,7 +230,7 @@ def emission_paths(inputs, intent_rel, layout_rel, document):
 
 def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent_rel=None,
                            layout_rel=None, imu_reference=None, antenna_facts_rel=None,
-                           captured_rule_areas_rel=None):
+                           captured_rule_areas_rel=None, captured=None):
     """Stage three, in place on a run_step copy; no nets or schematic hole symbols.
 
     Parts and emitter inputs are captured authority for identities, not component
@@ -244,7 +244,10 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
 
     inputs = Path(inputs)
     raw = read_captured(inputs, envelope_rel)
-    record = board_envelope.validate(raw)
+    captured = board_envelope.source_inventory(inputs) if captured is None else captured
+    if Path(captured[1]).resolve() != inputs.resolve():
+        raise ValueError('envelope content capture root differs from inputs')
+    record = board_envelope.validate(raw, captured=captured)
     document = load_manifest(inputs, parts_rel)
     from .copper_features import require_purchased
     fixed_refs = {item['reference'] for item in record['fixed_footprints']}
@@ -262,7 +265,7 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
     if board_rel in qualification['dependencies'] or board_rel in {
             envelope_rel, parts_rel, intent_rel, layout_rel, antenna_facts_rel}:
         raise ValueError('board content output collides with a planning input')
-    trip = board_envelope.round_trip(raw, source)
+    trip = board_envelope.round_trip(raw, source, captured=captured)
     if any(f['status'] == 'mismatch' for f in trip['fields'] if not f['field'].startswith('/fixed_footprints/')):
         raise ValueError('board outline or stackup differs from the envelope')
     native = pcbnew.LoadBoard(str(inputs / board_rel))
@@ -693,7 +696,7 @@ def produced_project(inputs, template_rel, rules, netclass):
     return project
 
 
-def produced_netclasses(plan, inputs, envelope_rel, project, rules):
+def produced_netclasses(plan, inputs, envelope_rel, project, rules, *, captured=None):
     """Reuse the net-constraint emitter, then enforce the captured fabrication floors."""
     from .net_constraints import emit, parse_document
     raw = read_captured(inputs, plan['net_constraints'])
@@ -707,7 +710,8 @@ def produced_netclasses(plan, inputs, envelope_rel, project, rules):
         for field in ('gap_mm', 'via_gap_mm'):
             if field in spec.get('diff_pair', {}) and spec['diff_pair'][field] < minima['min_clearance_mm']:
                 raise ValueError(f"net class {spec['name']} {field} is below fab minimum min_clearance_mm")
-    artifacts = emit(raw, json_bytes(project), envelope_raw=read_captured(inputs, envelope_rel))
+    artifacts = emit(raw, json_bytes(project), envelope_raw=read_captured(inputs, envelope_rel),
+                     captured=captured)
     report = strict_json(artifacts['record'])
     if report['outcome'] != 'pass':
         raise ValueError('net constraints unresolved: ' + str(report['findings']))
@@ -735,7 +739,8 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
     project = produced_project(inputs, plan['template'], rules, netclass)
     net_artifacts, net_report = {}, None
     if 'net_constraints' in plan:
-        project, net_artifacts, net_report = produced_netclasses(plan, inputs, envelope_rel, project, rules)
+        project, net_artifacts, net_report = produced_netclasses(
+            plan, inputs, envelope_rel, project, rules, captured=(files, inputs))
     native = plan['native_requirement']
     ids = [native['id'], PARTS_REQUIREMENT, fab_requirement]
     if len(set(ids)) != len(ids):
@@ -886,7 +891,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 raise ValueError('input changed during scaffolding: ' + rel)
         plan = scope if plan_path is not None else None
         if plan is None:
-            record = board_envelope.validate(read_captured(inputs, envelope_rel))
+            record = board_envelope.validate(read_captured(inputs, envelope_rel), captured=(files, inputs))
         document = load_manifest(inputs, parts_rel)
         qualification = qualify_manifest(document, inputs)
         protected = set(qualification['dependencies']) | {parts_rel, envelope_rel}

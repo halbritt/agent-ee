@@ -9,7 +9,7 @@ from fractions import Fraction
 import math
 import json
 
-from . import electrical_locality, locality_provenance
+from . import electrical_locality, locality_provenance, source_authority
 from .footprint_library import digest
 from .placement import box, courtyard_bounds, edges, validate_capture
 from .placement_predicates import point_segment2
@@ -114,7 +114,8 @@ def _faces(value, label):
 
 def _contract(original, contract):
     if (not isinstance(contract, dict) or contract.get('schema') != SCHEMA
-            or set(contract) != {'schema', 'allocation', 'eligibility', 'relationships', 'templates', 'thickness_nm'}):
+            or set(contract) - {'schema', 'allocation', 'eligibility', 'relationships', 'templates', 'thickness_nm', 'routing_obligations'}
+            or not {'schema', 'allocation', 'eligibility', 'relationships', 'templates', 'thickness_nm'} <= contract.keys()):
         raise ValueError('block contract needs schema, allocation, eligibility, relationships, templates and thickness_nm')
     result = membership(original, contract['allocation'])
     eligibility = contract['eligibility']
@@ -155,7 +156,49 @@ def _contract(original, contract):
         if key not in pairs or key in templates:
             raise ValueError('template instance is duplicate or names an unknown relationship/role')
         templates[key] = row['template']
+    routing_obligations(contract, original)
     return result, document, templates
+
+
+# Placement can carry these requirements but cannot claim routed evidence. The
+# contract digest covers the declarations; each source is independently checked.
+ROUTING_EVIDENCE = {
+    'no-via': ['final-native-connectivity', 'terminal-path-via-count'],
+    'rf-corridor': ['final-native-connectivity', 'rf-geometry'],
+    'controlled-impedance': ['final-native-connectivity', 'rf-geometry', 'impedance-qualification'],
+}
+
+
+def routing_obligations(contract, capture):
+    rows, ids = [], set()
+    for row in _list(contract.get('routing_obligations', []), 'routing_obligations'):
+        if (not isinstance(row, dict) or set(row) != {
+                'id', 'stage', 'kind', 'pairs', 'requirement', 'source'}
+                or row.get('stage') != 'routing' or not isinstance(row.get('kind'), str)
+                or row['kind'] not in ROUTING_EVIDENCE):
+            raise ValueError('routing obligation needs id, routing stage, supported kind, pairs, requirement and source')
+        identity = _text(row['id'], 'routing obligation id')
+        if identity in ids:
+            raise ValueError('duplicate routing obligation id')
+        ids.add(identity)
+        pairs = _list(row['pairs'], 'routing pairs')
+        if not pairs or any(not isinstance(pair, dict) or set(pair) != {'from', 'to'} for pair in pairs):
+            raise ValueError('routing pairs need nonempty explicit from/to endpoints')
+        electrical_locality.validate({'schema': electrical_locality.SCHEMA, 'obligations': [
+            {'id': str(i), 'kind': 'single-leg', 'metric': 'pad-centre-to-centre', 'leg': pair}
+            for i, pair in enumerate(pairs)]})
+        for pair in pairs:
+            if pair['from']['net'] != pair['to']['net']:
+                raise ValueError('routing endpoints must declare the same net')
+            for endpoint in pair.values():
+                electrical_locality.resolve(capture['footprints'], endpoint)
+        _text(row['requirement'], 'routing requirement')
+        verification = source_authority.verified_reference(row['source'], contract['relationships'].get('source_records'))
+        if verification['enforcement'] != 'verified':
+            raise ValueError('routing obligation source is not verified: ' + verification['reason'])
+        rows.append({**deepcopy(row), 'status': 'pending',
+                     'evidence_required': ROUTING_EVIDENCE[row['kind']][:]})
+    return rows
 
 
 def validate(capture, section, effective_policy):
@@ -359,7 +402,8 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
               'membership': members, 'eligibility_sha256': digest(contract['eligibility']),
               'plan_sha256': digest(plan) if plan is not None else None,
               'measurement_source': 'saved native capture', 'blocks': [], 'relationships': [],
-              'roles': [], 'defects': [], 'unknown': [], 'advisories': []}
+              'roles': [], 'defects': [], 'unknown': [], 'advisories': [],
+              'routing_obligations': routing_obligations(contract, original_capture)}
     defects, unknown, advisories = (report[k] for k in ('defects', 'unknown', 'advisories'))
 
     def finish():
@@ -471,8 +515,6 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
                         defects.append({'kind': 'pin_distance_exceeded', **row})
                 else:
                     advisories.append({'kind': 'ungoverned_numeric_bound', **row})
-                    unknown.append({'kind': 'required_numeric_authority_missing', 'relationship': key[0], 'role': role,
-                                    'reason': authority['reason']})
                 if not cross_face:
                     row['classification'] = 'same_face'
                     continue
@@ -484,12 +526,12 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
                     row['classification'] = 'lost_cohesion'
                     defects.append({'kind': 'cross_face_template_missing' if key not in templates else 'same_face_required', **row})
                     continue
-                if row['exceeded'] or bound**2 < dz**2:
+                if authority['enforcement'] == 'hard' and (row['exceeded'] or bound**2 < dz**2):
                     row['classification'] = 'lost_cohesion'
                     continue
-                if authority['enforcement'] != 'hard':
-                    continue
-                allowance2 = bound**2 - dz**2
+                # An advisory radius cannot enlarge or invalidate a required
+                # under-device template. Its qualitative region is the courtyard.
+                allowance2 = bound**2 - dz**2 if authority['enforcement'] == 'hard' else 0
                 outer, inner = courtyard_bounds(device.get('courtyards', {}).get(device['side']))
                 lower = _distance_to_region2(b, outer)
                 upper = _distance_to_region2(b, inner)
@@ -552,8 +594,13 @@ def check_complete(capture, contract):
                                 'requirement': key, 'declaration': deepcopy(entry[key])})
     unknown.extend(u for u in report['unknown'] if u['kind'] == 'shared_eligibility_requirement_unresolved')
     unknown.extend(u for u in report['unknown'] if u['kind'] in (
-        'required_numeric_authority_missing', 'relationship_requirement_missing', 'block_pin_relationships_missing'))
+        'relationship_requirement_missing', 'block_pin_relationships_missing'))
     return {'schema': 'agent-ee.block-contract-check/1',
             'status': 'defect' if defects else 'unknown' if unknown else 'pass',
             'contract_sha256': digest(contract), 'board_sha256': capture['board_sha256'],
-            'defects': defects, 'unknown': unknown, 'relationships': rows}
+            'routing_obligations': report['routing_obligations'],
+            'defects': defects, 'unknown': unknown, 'relationships': rows,
+            'advisories': [{'kind': 'engineering_target', 'relationship': row['relationship'],
+                            'role': row['role'], 'exceeded': row['exceeded']}
+                           for row in rows if row.get('constraint_provenance', {}).get('enforcement') == 'advisory'
+                           and 'exceeded' in row]}

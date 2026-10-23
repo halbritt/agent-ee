@@ -22,7 +22,7 @@ Required fields:
   enforcement still uses `locality_provenance.classify`; an engineering estimate
   or uncommitted owner label does not become a hard bound.
 - `templates`: explicit instances with `relationship`, `role` (`supply`,
-  `return`, or `switch`), and `template` (`same-face-only` or
+  `return`, `switch`, or explicit single-leg `leg`), and `template` (`same-face-only` or
   `decoupler-under-device`). The relationship's `from` endpoint is the device;
   `to` is its support. No template is inferred from a net or reference name.
 - `thickness_nm`: positive integer board thickness, or null when unresolved.
@@ -71,13 +71,78 @@ are not routed lengths, inductances, or routing acceptance. Physical pin distanc
 use exact rational native copper centroids and add thickness squared for opposite
 mounting faces. Display millimetres do not decide acceptance.
 
-A deliberate split requires a declared template, compatible logical membership,
-a governed numeric bound, the 3D bound satisfied, and the support endpoint within
-the device courtyard expanded by `sqrt(bound² - thickness²)`. Curved-courtyard
-uncertainty is retained. Missing templates or forbidden splits report lost
-cohesion; missing geometry, authority, thickness or unresolved preparation
-constraints remain explicit requirements. Defects take precedence over unrelated
-unknowns. Ungoverned numbers remain advisory and cannot establish acceptance.
+A deliberate split requires a declared template and compatible logical membership.
+For a governed numeric bound, the 3D bound must be satisfied and the support
+endpoint must lie within the device courtyard expanded by
+`sqrt(bound² - thickness²)`. For an advisory engineering target, the support
+endpoint must lie **within the device courtyard itself**: an advisory radius
+cannot expand this qualitative under-device permission or veto a legal split.
+Curved-courtyard uncertainty is retained. Missing templates or forbidden splits
+report lost cohesion; missing geometry, numeric measurement targets, thickness
+or unresolved preparation constraints remain explicit requirements. Defects take
+precedence over unrelated unknowns. An advisory target is measured, scored and
+reported with its provenance and `exceeded` flag; exceeding it is an explicit
+reported relaxation, never a manufacturer gate or an UNKNOWN solely for lacking
+numeric authority. Planning checks return `pass` with `advisories`; the richer
+saved report returns `info` when advisories are its only findings. Neither status
+qualifies routing, impedance or mechanical access.
+
+AGENTEE-503 adds the explicit single-leg alternative to `relationships`:
+
+```json
+{"id": "signal-to-support", "kind": "single-leg",
+ "metric": "pad-centre-to-centre",
+ "leg": {"from": {"reference": "U1", "pad": "3", "net": "/SIGNAL"},
+         "to": {"reference": "R1", "pad": "1", "net": "/SIGNAL"},
+         "max_distance_nm": 5000000,
+         "provenance": {"class": "engineering", "basis": "Declared placement target"}}}
+```
+
+This is a schema example, not a pod limit. Exactly one nonempty `leg` is required;
+`supply`, `return`, `switch` and buck-loop fields cannot be mixed into this form.
+Its endpoints retain all existing native reference/pad/net/UUID and centroid
+checks. Templates use `role: "leg"`. Packing, refinement, candidate-policy hashes,
+and final native-coordinate reports carry that role. Legacy paired obligations
+still require both supply and return; deleting a return never creates a single
+leg. The entire relationship document must still equal effective policy.
+
+An optional `routing_obligations` array carries stage-scoped requirements without
+claiming they were proved by placement. Each row has exactly `id`,
+`stage: "routing"`, `kind` (`no-via`, `rf-corridor`, or `controlled-impedance`),
+nonempty `pairs`, nonempty `requirement`, and `source`. Every pair has exactly
+`from` and `to`, using the single-leg endpoint format; native pad identity, net
+and centroid must resolve before placement. This binds the future evidence to
+specific terminals without pretending that unrouted pads prove a routed path.
+The source has `path`, `sha256`, `locator`, and `quote`; its bytes and quote must
+verify against `relationships.source_records`. The contract hash binds the
+whole declaration. Both planning and saved reports repeat each row as `pending`
+with required final evidence:
+
+| Kind | Required routed evidence |
+|---|---|
+| `no-via` | Final native connectivity and terminal-path via count |
+| `rf-corridor` | Final native connectivity and RF geometry |
+| `controlled-impedance` | Final native connectivity, RF geometry and impedance qualification |
+
+These rows never accept an asserted `status: pass`. Untyped eligibility
+`material_unknowns` remain blocking; the producer must explicitly migrate only
+identified routing clauses, preserving their source quotes and identities.
+For the 485 A2 packet, the eight no-via clauses and three RF corridor/50-ohm
+records remain routing obligations, not waived placement constraints.
+
+The remaining implementation boundary is the routing-stage bridge. Existing
+`routing_rules` supports a net-wide `via_count` with `max_count: 0`; it does not
+select a path between two declared terminals. Applying that rule to an entire
+shared supply net would silently expand a path-scoped requirement. No terminal-
+path no-via checker or automatic discharge of this array exists. The existing
+`rf_geometry` check can measure routed topology/CPW/corridor geometry when given
+its captured `agent-ee.rf-geometry/1` declaration, but it does not consume this
+array and explicitly does not qualify impedance. After placement, the next
+stage must bind terminal paths and RF declarations to the final routed board,
+run native connectivity/via and RF geometry checks, and obtain separate
+impedance qualification evidence for controlled-impedance rows. Pending records
+must remain pending until that evidence is implemented and linked; a placement
+`pass` cannot serve as that evidence.
 
 This report does not itself implement routing feedback, a legalization search,
 or mechanical qualification. Those remain separate obligations in AGENTEE-479.

@@ -75,7 +75,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `spec`, `spec_record` | Candidate-relative canonical pod spec and exact `spec_record` capture |
 | `requirement_source` | Name of a pinned authoritative source in `pod_driver.SOURCES`; the spec and capture must be its pinned bytes; see [requirement set](#requirement-set-agentee-197) |
 | `writer_inputs` | Exactly `{intent: PATH, deviations: PATH}`; both captured JSON paths |
-| `implementation_steps` | Existing stage-step declarations for the five producers listed below |
+| `implementation_steps` | Existing stage-step declarations for the producers listed below |
 | `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command/pin/exit semantics remain owned by that adapter |
 | `placement_adapter` | Optional existing `agent-ee.placement-adapter/1` declaration for the owned placer; replaces the generic `place-board` step |
 | `net_constraints` | Optional captured constraint document; applies project/rules under receipt and registers native assignment verification; see [application](#net-constraint-application) |
@@ -175,18 +175,86 @@ The ordered generic producers are:
 | schematic | `binding-fill` | Declared derived binding outputs |
 | schematic | `emit-schematic` | Native schematic output |
 | schematic | `forward-annotate` | Native board output |
+| schematic | `block-variants` | Stage-owned native candidate sets; required only with `placement_adapter.blocks.stage_owned` |
 | placement | `place-board` | Native board output; omitted when `placement_adapter` is declared |
 | routing | `add-planes` | Only the native board; exit 0 only |
 
 The owned placer is a campaign adapter, not a generic step, and the campaign
 refuses an adapter combined with placement steps. With `placement_adapter` the
-driver therefore requires the four other steps, validates the declaration with
+driver therefore requires the other declared steps, validates the declaration with
 `placement_adapter.validate_declaration`, binds it to the scaffolded candidate
 with `bind_declaration` (captured immutable policy, mutable board), and copies
 it unchanged into `campaign.json`. Placement semantics, helper pin and receipts
 remain owned by that adapter. The owned `binding_fill.configuration` producer
 must use its separate `output` form: the writer intent is its declared input and
 the bound intent is the coordinator output that emission reads.
+
+### Stage-owned block variants (AGENTEE-499)
+
+When forward annotation creates the first native board, opt into the producer
+with `placement_adapter.blocks.stage_owned`. Historical immutable block requests
+keep their existing behavior. The new step runs last in the schematic stage,
+right after `forward-annotate`; placement remains the owned adapter on the next
+placement turn.
+
+Example `blocks` section (all paths are candidate-relative):
+
+```json
+{
+  "netlist": "blocks/native.xml",
+  "allocation": "blocks/allocation.json",
+  "arrangement": "blocks/arrangement.json",
+  "candidates": ["blocks/power.json", "blocks/sensor.json"],
+  "side_eligibility": "blocks/eligibility.json",
+  "contract": "blocks/contract.json",
+  "stage_owned": {
+    "eligibility": "blocks/eligibility-template.json",
+    "contract": "blocks/contract-template.json",
+    "report": "blocks/producer.json"
+  }
+}
+```
+
+Capture the allocation (`agent-ee.block-allocation/1`), arrangement, eligibility
+template and contract template as immutable inputs. The eligibility template
+has the ordinary supported side-eligibility schema and explicit permitted faces,
+but its `sources.board_sha256` is absent or null. The contract template is an
+ordinary `agent-ee.block-contract/1`; its embedded eligibility must equal that
+template, its allocation's `board_sha256` is absent or null, and its relationships
+must equal the locality document bound by the placement policy. A historical
+board-bound template is refused, even when it names the current board. No
+historical `/2` candidate is converted or relabelled.
+
+Capture empty-byte placeholders for the netlist, bound eligibility, bound
+contract and every candidate output. Capture the report placeholder as
+`{"schema":"agent-ee.block-variant-producer/1","status":"pending"}`.
+These paths are coordinator-owned mutable outputs, never writer-editable files.
+The candidate list must have one path per derived block, in derivation order.
+
+Create the step with `agent_ee.block_variant_stage.step(source_root, scope=scope,
+declaration=placement_adapter, mutable_inputs=final_mutable_inputs)` and insert
+it after forward annotation. `source_root` is the agent-ee `src` directory.
+The final mutable set includes native mutable paths, writer inputs and all
+coordinator output paths. The driver checks the step's exact context, argv and
+write map against the scope and placement declaration. The step uses the same
+policy binding function as placement, exports the current native schematic's
+netlist, recaptures the board, binds copies of the templates to its SHA256, and
+calls `block_variants.produce` for every block and every eligible face. It adds
+no fixed poses or side locks. Native flip refusals remain explicit variant
+results, and failed steps are not adopted.
+
+The `agent-ee.block-variant-producer/1` report records the immutable input hash
+map, policy-context hash, board and schematic paths/hashes, and every generated
+output hash. The ordinary stage receipt records source/tool identity, input and
+output hashes and adoption. `placement_adapter.binding` keeps the campaign's
+frozen binding tied to immutable inputs. At placement consumption,
+`block_variant_stage.consume` checks the report against the captured manifest,
+current native inputs and output bytes; `placement_adapter.blocks_binding`
+checks candidate-set, eligibility, contract, allocation and exact request-policy
+bindings. The helper then checks fresh netlist identity and reproduces native
+variant evidence. A pending report or a move, rotation or flip after production
+refuses before launching placement; regeneration is required. These provenance
+checks do not grant placement or board acceptance.
 
 When the `binding-fill` step passes `--ratings` and the scope has an
 `assembly_readiness` check, the driver records `rating_provenance:

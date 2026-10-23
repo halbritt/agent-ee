@@ -2062,8 +2062,10 @@ predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
 Locality documents and copied index snapshots require exact built-in JSON types;
 subclasses and other Python objects refuse before schema or net-binding checks
-(AGENTEE-356). Supply and return are mandatory and switch/inductor pairs
-optional. The native copper-land centroid metric preserves proved defects
+(AGENTEE-356). Legacy paired obligations require supply and return, with
+switch/inductor pairs optional. AGENTEE-503 also accepts explicit
+`kind: single-leg` with exactly one nonempty `leg`; it never infers this form
+from an omitted return. See the [single-leg contract](block-contract.md). The native copper-land centroid metric preserves proved defects
 alongside unknowns; missing limits stay unknown; hard enforcement also requires
 a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate

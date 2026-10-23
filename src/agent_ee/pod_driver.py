@@ -22,7 +22,8 @@ from .storage import digest, identity, json_bytes, read_json, write_json
 SCHEMA = 'agent-ee.pod-plan/1'
 ORDER = ['schematic', 'placement', 'routing', 'verification']
 STEPS = [('binding-fill', 'schematic'), ('emit-schematic', 'schematic'),
-         ('forward-annotate', 'schematic'), ('place-board', 'placement'),
+         ('forward-annotate', 'schematic'), ('block-variants', 'schematic'),
+         ('place-board', 'placement'),
          ('add-planes', 'routing')]
 # Coordinator capture directory of the adopted binding-fill --ratings receipt (AGENTEE-256).
 RATING_PROVENANCE = 'rating-provenance'
@@ -243,7 +244,9 @@ def validate_configuration(plan, scope, files, inputs):
     normalized = [stage_receipts.validate_step(s) for s in raw_steps]
     # The owned placement adapter replaces the generic placement step; the campaign forbids both.
     placer = 'placement_adapter' in plan
-    expected = [s for s in STEPS if not (placer and s[0] == 'place-board')]
+    stage_blocks = 'stage_owned' in plan.get('placement_adapter', {}).get('blocks', {})
+    expected = [s for s in STEPS if not (placer and s[0] == 'place-board')
+                and not (s[0] == 'block-variants' and not stage_blocks)]
     if [(s['step'], s['stage']) for s in normalized] != expected:
         raise ValueError('pod requires ' + ', '.join(name for name, _ in expected) + ' in that order; '
                          'routing uses the owned routing_adapter' +
@@ -281,6 +284,10 @@ def validate_configuration(plan, scope, files, inputs):
             _validate_policy(policy, set(declaration['subjects'].get('placement', {}).get('references', [])))
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise ValueError(f'invalid pod placement policy {placement["policy"]}: {exc}') from exc
+    if stage_blocks:
+        from .block_variant_stage import validate_step_contract
+        validate_step_contract(next(s for s in normalized if s['step'] == 'block-variants'),
+                               scope, plan['placement_adapter'], sorted(mutable))
     rating = _rating_provenance(scope, normalized)
     from .routing_adapter import campaign_spec, validate_campaign_step
     from .campaign import validate_routing_predecessors
@@ -363,7 +370,7 @@ def _content_step(plan, scope):
         SOURCE.parent, plan['envelope'], plan['parts'], scope['board'], **plan['envelope_content']))
 
 
-def _validate_content(plan, scope, sources):
+def _validate_content(plan, scope, sources, *, captured):
     """Every declared content input is captured, distinct from native outputs, and sufficient."""
     content = plan['envelope_content']
     natives = {scope['board'], scope['schematic']}
@@ -372,8 +379,8 @@ def _validate_content(plan, scope, sources):
             raise ValueError(f'uncaptured pod envelope_content {key}: {content[key]}')
         if content[key] in natives:
             raise ValueError(f'envelope_content {key} collides with a native output')
-    from .board_envelope import validate as envelope_record
-    record = envelope_record(Path(sources[plan['envelope']]).read_bytes())
+    from .board_envelope import validate as envelope_record, captured_bytes
+    record = envelope_record(captured_bytes(*captured, plan['envelope'], 'envelope'), captured=captured)
     if record['fixed_footprints'] and not {'intent', 'layout'} <= content.keys():
         raise ValueError('envelope fixed footprints require declared envelope_content intent and layout')
     if any('antenna' in area for area in record['keepouts']) and 'antenna_facts' not in content:
@@ -389,11 +396,13 @@ def _constraint_paths(scope):
 def _apply_constraints(plan, scope, inputs, out):
     """Apply after scaffold metadata; preserve emitter record bytes without hash rewriting."""
     from .net_constraints import emit
+    from .board_envelope import source_inventory
     project, rules, record = _constraint_paths(scope)
     rules_path = inputs / rules
     artifacts = emit((inputs / plan['net_constraints']).read_bytes(), (inputs / project).read_bytes(),
                      envelope_raw=(inputs / plan['envelope']).read_bytes(),
-                     rules_raw=rules_path.read_bytes() if rules_path.exists() else b'(version 1)\n')
+                     rules_raw=rules_path.read_bytes() if rules_path.exists() else b'(version 1)\n',
+                     captured=source_inventory(inputs))
     if 'project' not in artifacts:
         raise ValueError('net constraints could not be applied: ' + artifacts['record'].decode())
     for key, rel in (('project', project), ('rules', rules), ('record', record)):
@@ -454,7 +463,6 @@ def build(plan_path, out, *, dry_run=False):
     for key in ('envelope', 'parts', 'spec', 'spec_record', *(['net_constraints'] if 'net_constraints' in plan else [])):
         if plan[key] not in sources:
             raise ValueError(f'uncaptured pod {key}: {plan[key]}')
-    content_spec = _validate_content(plan, scope, sources) if 'envelope_content' in plan else None
     if out.exists() or out.is_symlink():
         raise ValueError('pod output must not exist')
     out = out.resolve()
@@ -472,6 +480,8 @@ def build(plan_path, out, *, dry_run=False):
         initial = read_json(preview / 'scope.json')
         prepared_scope = _final_scope(initial, plan, preview / 'inputs')
         files, _, _ = candidate.source_manifest(prepared_scope, preview)
+        content_spec = (_validate_content(plan, scope, sources, captured=(files, preview / 'inputs'))
+                        if 'envelope_content' in plan else None)
         outputs = sorted(p for p in files if before.get(p) != files[p])
         if not {scope['schematic'], scope['board']} <= set(outputs):
             # Empty input placeholders may already equal the scaffold; still receipt-own both outputs.

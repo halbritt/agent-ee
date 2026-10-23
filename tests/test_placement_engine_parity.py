@@ -310,6 +310,12 @@ class WholePlannerParityTest(EngineFixture, unittest.TestCase):
         self.assertIn('gap', plan['error'])
 
     def test_candidate_set_contract_and_member_refinement_complete_plan(self):
+        self._candidate_set_contract()
+
+    def test_single_leg_advisory_and_pending_routing_contract_parity(self):
+        self._candidate_set_contract(single=True)
+
+    def _candidate_set_contract(self, single=False):
         """Pure authored captures cover planning; native reproduction remains a separate gate."""
         from agent_ee import block_variants
         from agent_ee.footprint_library import digest
@@ -319,6 +325,18 @@ class WholePlannerParityTest(EngineFixture, unittest.TestCase):
 
         facts = refinement_facts()
         policy, contract, _ = declarations(facts)
+        if single:
+            from test_single_leg_contract import singles
+            contract['relationships'] = singles(contract['relationships'])
+            policy['electrical_locality'] = copy.deepcopy(contract['relationships'])
+            contract['templates'] = [{'relationship': o['id'], 'role': 'leg', 'template': 'same-face-only'}
+                                     for o in contract['relationships']['obligations']]
+            source = next(iter(contract['relationships']['source_records'].items()))
+            contract['routing_obligations'] = [{'id': 'route-later', 'stage': 'routing', 'kind': 'no-via',
+                'pairs': [{k: copy.deepcopy(contract['relationships']['obligations'][0]['leg'][k]) for k in ('from', 'to')}],
+                'requirement': 'Authored no-via test clause',
+                'source': {'path': source[0], 'sha256': hashlib.sha256(source[1].encode()).hexdigest(),
+                           'locator': 'authored test source', 'quote': source[1]}}]
         # The standalone refinement helper fixes its anchor in board space;
         # Stage B moves the block and preserves the anchor only within its frame.
         policy['fixed_refs'] = []
@@ -368,6 +386,9 @@ class WholePlannerParityTest(EngineFixture, unittest.TestCase):
         self.assertEqual(plan['status'], 'planned', plan)
         record = plan['block_arrangement']
         self.assertEqual(record['contract_check']['status'], 'pass')
+        if single:
+            self.assertEqual(record['contract_check']['routing_obligations'][0]['status'], 'pending')
+            self.assertTrue(all(r['exceeded'] for r in record['contract_check']['advisories']))
         self.assertEqual(record['deferred_grading'], [{'block': 'device', 'kind': 'group',
             'id': 'device-region', 'measured': 2, 'status': 'pass'}])
         self.assertEqual(record['arranged'][0]['selected_face'], 'F')

@@ -86,6 +86,8 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
                       'routing':dict(path=self.scope['board'],kind='tracks',minimum=1)},finding_retry_limit=3)
         steps=[]
         for name,stage in pod.STEPS:
+            if name == 'block-variants':
+                continue  # This legacy plan does not opt into stage-owned block production.
             output = ('bindings.json' if name == 'binding-fill' else self.scope['schematic']
                       if name == 'emit-schematic' else self.scope['board'])
             step=dict(schema='agent-ee.stage-step/1',step=name,stage=stage,
@@ -591,6 +593,40 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.plan['placement_adapter']=dict(schema='agent-ee.placement-adapter/1',helper='agent-ee.placer/1',
             policy=policy,fixed_footprints=[],timeout_s=900)
         self.save()
+
+    def test_stage_owned_blocks_are_prepared_after_forward_annotation(self):
+        from agent_ee import block_variant_stage as producer
+        self.use_placement_adapter()
+        section = {'netlist': 'blocks/native.xml', 'arrangement': 'blocks/arrangement.json',
+                   'allocation': 'blocks/allocation.json', 'candidates': ['blocks/main.json'],
+                   'side_eligibility': 'blocks/eligibility.json', 'contract': 'blocks/contract.json',
+                   'stage_owned': {'eligibility': 'blocks/eligibility-template.json',
+                                   'contract': 'blocks/contract-template.json', 'report': 'blocks/producer.json'}}
+        self.plan['placement_adapter']['blocks'] = section
+        (self.source/'blocks').mkdir()
+        for path in producer.immutable_paths(section):
+            write_json(self.source/path, {'test': 'configuration boundary only; no native variants claimed'})
+        for path in producer.output_paths(section):
+            (self.source/path).write_bytes(b'')
+        write_json(self.source/section['stage_owned']['report'], {'schema': producer.REPORT, 'status': 'pending'})
+        mutable = sorted(set(self.scope['mutable_inputs']) | set(self.plan['writer_inputs'].values()) |
+                         {path for step in self.plan['implementation_steps'] for path in step['writes']} |
+                         set(producer.output_paths(section)))
+        spec = producer.step(ROOT/'src', scope=self.scope, declaration=self.plan['placement_adapter'],
+                             mutable_inputs=mutable)
+        index = next(i for i, step in enumerate(self.plan['implementation_steps']) if step['step']=='forward-annotate')
+        self.plan['implementation_steps'].insert(index+1, spec)
+        self.save()
+        receipt = self.build()
+        config = read_json(self.root/'run/campaign.json')
+        names = [step['step'] for step in config['implementation_steps']]
+        self.assertEqual(names[names.index('forward-annotate')+1], 'block-variants')
+        self.assertEqual(receipt['validation']['placement_adapter']['blocks']['stage_owned'], section['stage_owned'])
+        # The producer is mandatory exactly for this opt-in declaration.
+        self.plan['implementation_steps'].remove(spec)
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'block-variants'):
+            pod.build(self.plan_path, self.root/'missing-producer')
 
     def test_owned_placement_adapter_replaces_generic_placement_step(self):
         self.use_placement_adapter()

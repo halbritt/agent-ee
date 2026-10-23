@@ -113,6 +113,24 @@ class PlaneBindingTests(unittest.TestCase):
                     if version == 3:
                         self.assertIn(path, baseline['coverage']['checks']['drc']['immutable_inputs'])
 
+    def test_late_producer_prepares_without_a_report_hash_and_freezes_only_sources(self):
+        from agent_ee.baseline import load_baseline
+        params = copy.deepcopy(self.params)
+        params['plane_obligations'][0]['producer'] = {'path': 'producer.json', 'stage': 'add-planes'}
+        (self.root/'producer.json').write_bytes(b'')
+        scope = fixture(self.root, 'drc')
+        scope['checks'][0]['params'] = params
+        scope['mutable_inputs'] = [scope['schematic'], scope['board'], 'producer.json']
+        for path in (self.path, 'producer.json', 'composition.json'):
+            scope['inputs'].append({'path': str(self.root/path), 'at': path})
+        run, manifest = capture(self.root, scope)
+        baseline = load_baseline(run)
+        self.assertNotIn('producer.json', baseline['files'])
+        for path in (self.path, 'composition.json'):
+            self.assertEqual(baseline['files'][path], manifest['files'][path])
+        with self.assertRaisesRegex(ValueError, 'no authenticated stage receipt'):
+            final_planes.bound_plans(run/'inputs', manifest['files'], params)
+
     def test_composition_cannot_hide_second_required_plan(self):
         path = self.root/'composition.json'
         record = read_json(path)

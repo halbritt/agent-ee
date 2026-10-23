@@ -199,13 +199,19 @@ placer's inventory binding then refuses it.
 
 ### Captured blocks requests (AGENTEE-439)
 
+For boards first generated inside a campaign, the opt-in
+[stage-owned producer](pod-driver.md#stage-owned-block-variants-agentee-499)
+binds immutable templates at preparation and verifies generated `/1` sets at
+placement consumption. The historical captured-input path below is unchanged.
+
 A `blocks` declaration lets the campaign helper run a
 [block-arrangement request](blocks.md#runner-request) instead of `pack`. At
 binding time the coordinator reads every declared file and checks it against
 its captured digest. It then refuses the binding, before any iteration is spent,
 unless:
 
-- every candidate is a valid bare `agent-ee.block-candidate/2`;
+- every candidate is a valid bare `agent-ee.block-candidate/2` or a native
+  `agent-ee.block-candidate-set/1` with its bound eligibility and contract;
 - no block appears in more than one candidate;
 - every candidate's `sources` name:
   - the captured netlist bytes (`inventory_sha256`);

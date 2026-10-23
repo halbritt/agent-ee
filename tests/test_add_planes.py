@@ -278,7 +278,7 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
                 self.assertIn('malformed', str(report['findings']))
                 self.assertFalse((self.root/('missing-'+missing)/'board.kicad_pcb').exists())
 
-    def test_declared_step_receipt_adopts_only_board(self):
+    def test_declared_step_receipt_adopts_board_and_producer_report(self):
         spec=planes.step(Path(planes.__file__).resolve().parents[1],board=self.board,plan=self.plan_path)
         before=stage_receipts.file_tree(self.source)[0]
         receipt=stage_receipts.run_step(self.root/'receipt',self.source,spec,{'test':'planes'})
@@ -289,6 +289,9 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
         stage_receipts.validate_receipt(self.root/'receipt')
         report=read_json(self.root/'receipt/run/out/planes.json')
         self.assertEqual(report['plan_sha256'],digest(self.source/self.plan_path))
+        producer = planes.report_path(self.plan_path)
+        self.assertEqual(after[producer], receipt['outputs'][producer])
+        self.assertEqual(read_json(self.source/producer), report)
 
     def test_malformed_plan_refuses_before_output(self):
         for mutate in (lambda p:p['zones'][0].update(clearance_mm=float('nan')),

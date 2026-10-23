@@ -14,7 +14,7 @@ import math
 from pathlib import Path
 import re
 
-from .board_envelope import validate as validate_envelope
+from .board_envelope import validate as validate_envelope, source_inventory
 from .net_binding import board_net_names, exact_pattern, require_nets
 from .netclass_completeness import DEFAULT_KEYS, evaluate as default_gaps, load_json
 from .routing_rules import NET, number, rule_text
@@ -173,14 +173,14 @@ def governing_copper(envelope):
     return min(layers, key=lambda l: Decimal(l['effective_thickness_mm'])), layers
 
 
-def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None, board_raw=None):
+def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None, board_raw=None, captured=None):
     """Return {name: bytes}; refuse malformed inputs with ValueError."""
     rise, classes = parse_document(constraints_raw)
     if board_raw is not None:
         require_nets((n for c in classes for n in c["nets"]), board_net_names(board_raw))
     project = template_project(project_raw)
     base_rules = template_rules(rules_raw) if rules_raw is not None else None
-    envelope = validate_envelope(envelope_raw) if envelope_raw is not None else None
+    envelope = validate_envelope(envelope_raw, captured=captured) if envelope_raw is not None else None
     governing, copper = governing_copper(envelope) if envelope else (None, [])
     default = next(c for c in project['net_settings']['classes'] if c['name'] == 'Default')
     findings, records, emitted, rules = [], [], [], []
@@ -300,6 +300,7 @@ def main():
     parser.add_argument('--board', required=True, type=Path, help='native board whose exact nets must bind')
     parser.add_argument('--rules', type=Path, help='template .kicad_dru to extend')
     parser.add_argument('--envelope', type=Path, help='agent-ee.envelope/1 stackup source')
+    parser.add_argument('--sources', type=Path, help='captured source root for envelope citations and reservations')
     parser.add_argument('--out', required=True, type=Path)
     args = parser.parse_args()
     try:
@@ -307,7 +308,8 @@ def main():
             raise ValueError('--project must be a .kicad_pro')
         artifacts = emit(args.constraints.read_bytes(), args.project.read_bytes(), board_raw=args.board.read_bytes(),
                          envelope_raw=args.envelope.read_bytes() if args.envelope else None,
-                         rules_raw=args.rules.read_bytes() if args.rules else None)
+                         rules_raw=args.rules.read_bytes() if args.rules else None,
+                         captured=source_inventory(args.sources) if args.sources else None)
         args.out.mkdir(parents=False, exist_ok=False)
         names = {'project': args.project.name, 'rules': args.project.with_suffix('.kicad_dru').name,
                  'record': 'net-constraints.record.json'}

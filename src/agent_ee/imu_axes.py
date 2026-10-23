@@ -49,7 +49,8 @@ def captured_declaration(ctx):
     from .storage import read_json
     from .checks import CheckError
     try:
-        validation = validate(_captured(ctx, ctx.params['envelope']))
+        validation = validate(_captured(ctx, ctx.params['envelope']),
+                              captured=(ctx.manifest['files'], ctx.inputs))
         fixed = envelope_declaration(validation, ctx.params)
         path = prerequisite(ctx, ctx.params['facts_check'], 'datasheet_facts', 'facts.json',
                             allow_unsupported=True)
