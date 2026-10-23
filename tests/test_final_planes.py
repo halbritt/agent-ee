@@ -65,6 +65,10 @@ assert k.SaveBoard('/work/changed.kicad_pcb',b)
         result=self.grade('after')
         self.assertEqual(result['status'],'PASS',result)
         self.assertGreater(result['facts']['zones'][0]['fill_polygons'],0)
+        # The native consumer must also run for a bound non-default filename.
+        renamed = 'ground-plan.data'
+        (self.source/self.plan_path).rename(self.source/renamed)
+        self.plan_path = renamed
         bindings = bind_fixture(self.source, self.plan_path, self.pre)
         files = {p.relative_to(self.source).as_posix(): digest(p) for p in self.source.rglob('*') if p.is_file()}
         context=SimpleNamespace(manifest={'files':files}, inputs=self.source, params=bindings,

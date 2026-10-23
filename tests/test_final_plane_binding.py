@@ -121,3 +121,11 @@ class PlaneBindingTests(unittest.TestCase):
         self.params['plane_obligations'][0]['composition']['sha256'] = digest(path)
         with self.assertRaisesRegex(ValueError, 'undeclared plane obligation'):
             final_planes.bound_plans(self.root, self.files(), self.params)
+
+    def test_whitespace_prefix_does_not_hide_unbound_plan(self):
+        path = self.root/self.path
+        path.write_bytes(b' ' * 256 + path.read_bytes())
+        (self.root/'producer.json').unlink()
+        (self.root/'composition.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'unbound captured plane obligation'):
+            final_planes.bound_plans(self.root, self.files(), {})

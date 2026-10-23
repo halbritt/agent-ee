@@ -130,6 +130,8 @@ def bound_plans(inputs, files, params):
     for path in files:
         with (inputs/path).open('rb') as source:
             prefix = source.read(128).lstrip()
+            while not prefix and source.tell() < (inputs/path).stat().st_size:
+                prefix = source.read(128).lstrip()
         if not prefix.startswith(b'{'):
             continue
         try:
