@@ -311,8 +311,12 @@ pub fn validate(capture: &Value, section: &Value, effective_policy: &Value) -> R
         section.get("side_eligibility") == Some(&contract["eligibility"]),
         "contract eligibility differs from section side_eligibility"
     );
+    let empty = json!({"schema":"agent-ee.electrical-locality/1","obligations":[]});
     ensure!(
-        effective_policy.get("electrical_locality") == Some(&contract["relationships"]),
+        effective_policy
+            .get("electrical_locality")
+            .unwrap_or(&empty)
+            == &contract["relationships"],
         "contract relationships differ from effective policy electrical_locality"
     );
     let raw = section["allocation_text"]
@@ -636,7 +640,13 @@ pub fn check_complete(capture: &Value, contract: &Value) -> Result<Value> {
         let references = blocks::refs(&block["references"])?;
         let missing: Vec<_> = references
             .iter()
-            .filter(|r| !covered.contains(*r))
+            .filter(|r| {
+                !covered.contains(*r)
+                    && board[*r]["pads"].as_array().is_some_and(|pads| {
+                        pads.iter()
+                            .any(|p| p["net"].as_str().is_some_and(|net| !net.is_empty()))
+                    })
+            })
             .collect();
         if references.len() > 1 && !missing.is_empty() {
             unknown.push(json!({"kind":"block_pin_relationships_missing","block":block["id"],"references":missing}));

@@ -234,6 +234,18 @@ class BlockContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'exceeds default'):
             block_contract.judge(board, contract, original_capture=board)
 
+    def test_mechanical_members_need_no_pin_obligations(self):
+        board, contract = fixture()
+        for fp in board['footprints']:
+            fp['pads'] = []
+        contract['relationships'] = {'schema': 'agent-ee.electrical-locality/1', 'obligations': []}
+        self.assertEqual(block_contract.judge(board, contract, original_capture=board)['status'], 'pass')
+        self.assertEqual(block_contract.check_complete(board, contract)['status'], 'pass')
+        section = {'contract': contract, 'side_eligibility': contract['eligibility'], 'candidates': [],
+                   'allocation_text': json.dumps({'schema': 'agent-ee.block-allocation/1', 'blocks': [
+                       {'id': 'device', 'references': ['U1', 'C1'], 'anchor': 'U1'}]})}
+        self.assertIsNotNone(block_contract.validate(board, section, {}))
+
     def test_exact_fractional_pad_centroid_does_not_round_into_bound(self):
         board, contract = fixture()
         final = moved(board, 'C1', MM)

@@ -170,7 +170,8 @@ def validate(capture, section, effective_policy):
     members, _, _ = _contract(capture, contract)
     if digest(section.get('side_eligibility')) != digest(contract['eligibility']):
         raise ValueError('contract eligibility differs from section side_eligibility')
-    if digest(effective_policy.get('electrical_locality')) != digest(contract['relationships']):
+    empty = {'schema': electrical_locality.SCHEMA, 'obligations': []}
+    if digest(effective_policy.get('electrical_locality', empty)) != digest(contract['relationships']):
         raise ValueError('contract relationships differ from effective policy electrical_locality')
     raw = section.get('allocation_text')
     if not isinstance(raw, str):
@@ -461,7 +462,9 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
                for role in electrical_locality.roles(o) for p in (o[role],) for k in ('from', 'to')}
     for block in members['blocks']:
         if len(block['references']) > 1:
-            missing = sorted(set(block['references']) - covered)
+            electrical = {ref for ref in block['references'] if ref in saved
+                          and any(p.get('net') for p in saved[ref].get('pads', []))}
+            missing = sorted(electrical - covered)
             if missing:
                 unknown.append({'kind': 'block_pin_relationships_missing', 'block': block['id'], 'references': missing})
     return finish()
