@@ -1570,6 +1570,17 @@ fn deferred_grading(plan: &Value, admitted: &BTreeMap<String, Value>) -> Value {
                 .flatten()
                 .filter(|m| m["group"] == *id)
                 .count();
+            let measured = if measured == 0 {
+                grade["groups"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|g| g["id"] == *id && g.get("region").is_some())
+                    .map(|g| g["references"].as_array().map_or(0, Vec::len))
+                    .sum()
+            } else {
+                measured
+            };
             let bad = groups::violations(grade).iter().any(|r| r["group"] == *id);
             out.push(json!({"block":b,"kind":"group","id":id,"measured":measured,"status":if measured>0&&!bad{"pass"}else if bad{"defect"}else{"unknown"}}));
         }
