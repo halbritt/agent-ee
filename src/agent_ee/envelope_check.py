@@ -291,15 +291,23 @@ def compare_saved(criterion, record, facts):
         if reason:
             unknown.append(reason)
         material_fields = ('dielectric_type', 'epsilon_r', 'loss_tangent')
-        saved_materials = {row['name']: row for row in facts.get('stackup_material', [])}
+        saved_materials = ({row['name']: row for row in facts.get('stackup_material', [])}
+                           if 'unavailable' not in source else {})
         for layer in record['stackup']['layers']:
             if layer['kind'] != 'dielectric' or not any(key in layer for key in material_fields):
                 continue
             material_declared = True
-            actual = saved_materials.get(layer['name'], {})
+            actual = saved_materials.get(layer['name'])
+            if actual is None:
+                if 'unavailable' not in source:
+                    unknown.append(f"saved material data unavailable for layer {layer['name']}")
+                actual = {}
             for key in material_fields:
-                if key in layer and layer[key] is not None and actual.get(key) != layer[key]:
-                    material_defects.append(f"saved layer {layer['name']} {key} differs from sourced envelope")
+                if key in layer and layer[key] is not None and actual:
+                    if key not in actual:
+                        unknown.append(f"saved layer {layer['name']} {key} is unavailable")
+                    elif actual[key] != layer[key]:
+                        material_defects.append(f"saved layer {layer['name']} {key} differs from sourced envelope")
             if layer.get('loss_tangent') is None:
                 serialized = actual.get('loss_tangent')
                 material_evidence.append({'name': layer['name'], 'source_value': None,
@@ -434,7 +442,12 @@ def check_board_envelope(ctx):
             result['unknown'].append('native load did not retain an explicit stackup')
         if native.get('thickness_nm') != envelope.length(Decimal(facts['stackup']['thickness_mm']), 'total'):
             result['unknown'].append('native thickness differs from saved board thickness')
-    if result['unknown']:
+    # compare_saved has already distinguished a proven material defect from
+    # unknown loss. Preserve that outcome through the public check and artifact;
+    # legacy no-material and unrelated criteria keep their unknown precedence.
+    material_defect = (criterion == 'stackup/1' and 'material_evidence' in result
+                       and result['status'] == 'defect')
+    if result['unknown'] and not material_defect:
         result['status'] = 'unknown'
     judgment = {'schema': 'agent-ee.envelope-judgment/1', 'candidate_id': ctx.manifest['candidate_id'],
                 'board_sha256': native['board_sha256'], 'pcbnew_version': native['pcbnew_version'],
