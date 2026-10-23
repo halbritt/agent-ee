@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 3 — 2026-10-23: placement attempt R2 recorded; next action is one targeted constructive placement of the 22 missing parts from the best R2 partial (agent-521 brief 99e8ab55). Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 4 — 2026-10-23: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -57,7 +57,7 @@ Status: NOT PLACED. There is no saved board and nothing is ready for routing.
 - Input board and project re-hashed unchanged after the run; native DRC of the input unchanged at 21 findings and 499 unconnected.
 - Evidence: fome-mc writer branch commit 1c90cf47, telemetry-pod/expansion/placement-r2/ (SHA256SUMS, request, step, placement-result, checks), with policy r2 and its diff under telemetry-pod/expansion/placement-r1/repair/.
 
-## Next action (revision 3)
+## Action R3 (revision 3, executed)
 
 Observation: a 2.8-fold increase in search effort placed four more parts and left the same 22 small parts unplaced. Further global packing with the unchanged search is not authorized.
 
@@ -78,6 +78,36 @@ Return either:
 - the specific geometric obstruction (references, positions and bounds, required space, blocking constraints and their source provenance) and one concrete best alternative. A partial diagnostic board or render is marked incomplete and never passed to routing.
 
 R1 and R2 evidence is preserved; only relevant placement artifacts are integrated.
+
+## Placement attempt R3 (revision 4 record)
+
+Status: BLOCKED. There is no saved board and nothing is ready for routing.
+
+- Run: one 30-minute task (05:56Z to about 06:20Z) on proximal native admission, with image d96f8e00 and agent-ee 7d5b0d4d, on an isolated copy of the R2 candidate tree. The existing placer_runner applied the 287 R2 diagnostic poses, then the existing place_candidate (ranked-first-fit-backjump/1, step_budget 200000) searched only the released parts. No new placer, scorer or search.
+- Stage 1 (R2 arrangement held, only the 22 searched): packing_search_exhausted, "no candidate for R7 in the finite search; infeasibility unproved", after 2954 steps and 0 backjumps. This is no finite candidate for R7 only. It is not proof that all 22 have no legal pose, nor that the board is infeasible.
+- Inspection: all 22 have front-side courtyards only and need about 154 mm². The front had 391.5 mm² free in 69 fragments; the back had about 4976 mm² in one region. That map omits native keepouts and copper reservations.
+- Stage 2 (explicit neighbour release): release v1 (28 parts) was refused before the search, because group anchors U20, U21 and U3 cannot be released while their members stay fixed. Release v2 (25 movable neighbours, anchors held) ended in packing_search_exhausted, "every backjump for C80 revisits a part order; infeasibility unproved". The primary search used 166009 steps and 219 backjumps, and the existing copper-aligned fallback used the remaining 33991; no new run was authorized by that internal fallback. Peak: 262 held + 26 of 47 movable = 288 of 309 (corrected from the 286 heartbeat figure first reported).
+- Evidence: fome-mc writer branch commit 7b7ed93, telemetry-pod/expansion/placement-r3/ (SHA256SUMS; free-space PNGs marked INCOMPLETE).
+
+## Next action (revision 4)
+
+Authority: fome-mc telemetry-pod/REQUIREMENTS.md:65 records the owner decision of 2026-10-19 permitting double-sided component placement ("a double-sided part seems fine"), preserving the ESP32 module antenna keep-out, the F.Cu over In1.Cu GNSS RF path and connector mechanical constraints. The same text is in the retained emission-7d5b0d4d requirements-source and requirements-map specs. The R3 instruction to keep component sides unchanged was a coordinator task restriction, not an owner prohibition. This decision lifts it only for R7, R70–R84 and TP1–TP6.
+
+Observation: the remaining free front area is fragmented, and neither a held search nor a local neighbour repair placed the 22 parts. The back side is largely free.
+
+Hypothesis (agent-521 prediction): using the owner-permitted back side removes the front-space fragmentation bottleneck and lets all 22 remaining parts be placed without repacking the existing 287.
+
+Action: ONE 30-minute task. Same ordinary-model writer, qualified 7d5b0d4d runtime and proximal native admission. Starting from the best retained R2 diagnostic arrangement, on an isolated copy, native pcbnew flip and move operations place those 22 references on B.Cu in verified usable space; the other 287 poses are retained.
+
+- Positions suit their actual net connections and test-point access, not a remote corner.
+- Actual keepout and reservation geometry is checked before positions are chosen.
+- Courtyard side is not treated as an intrinsic front-only restriction. Any actual side-specific package or test-access limitation is recorded.
+
+Preserved: all 309 footprints, identities, pad numbering, nets and connectivity, project and rules bytes, board outline, holes, fixed connector and module poses and permitted overhang, four copper layers at 1.6 mm, all-layer antenna exclusions, RF and reference-plane restrictions, courtyard, clearance and edge constraints, and current locality bounds. Only the 22 declared side changes and their positions and orientations are authorized. No new placer or scorer, extra agents, global search, review campaign, cloud execution or unrelated queue resumption.
+
+Verification: a legal flip mirrors pad coordinates and layers. It is verified as the explicit declared transform against the original, not by requiring unchanged raw coordinates, and no preservation check is disabled. All 309 final placements are checked under original policy r1 plus the explicit side-change authorization. If existing admission or judge tooling cannot represent this transform, the writer returns the precise interface refusal and the minimum required correction before writing new tool code; no bypass, relabelled partial or silently weakened gate.
+
+Return: the saved complete board and paired project with hashes, the exact scripts and runtime, the 22-reference transform list with pose rationale, and whole-board placement, native DRC and schematic-parity results. Also the unconnected count, the delta from the original baseline with new findings distinguished, full reference/net/pad and fixed-pose preservation evidence, and a candidate-bound render. No claim of release qualification; routing is the next action once the artifact passes its placement checks. Diagnostic partials stay clearly labelled. If it fails: the exact observed obstruction and one concrete alternative, with no automatic retry.
 
 ## Decision after that result
 
