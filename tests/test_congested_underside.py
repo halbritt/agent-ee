@@ -285,6 +285,7 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         record = plan['block_arrangement']
         witness = record['member_refinement']
         self.assertEqual(witness['status'], 'refined', witness)
+        self.assertTrue(placement_groups.satisfied(plan['group_grading']))
         self.assertTrue(witness['moves'])
         self.assertEqual(record['contract_check']['status'], 'pass')
         self.assertLessEqual(witness['steps_used'], witness['step_budget'])
@@ -334,6 +335,7 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         self.assertIsNone(first_difference(normalized(plan), normalized(saved_plan)))
         saved = destination / 'candidate.kicad_pcb'
         saved_facts = extract(saved)
+        self.assertTrue(placement_groups.satisfied(placement_groups.grade(saved_facts, request['policy']['groups'])))
         checked = block_contract.judge(saved_facts, request['blocks']['contract'], original_capture=facts, plan=saved_plan)
         self.assertEqual((checked['status'], checked['unknown'], checked['defects']), ('pass', [], []))
         block = next(row for row in checked['blocks'] if row['id'] == 'b')

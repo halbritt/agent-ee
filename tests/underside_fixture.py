@@ -129,8 +129,15 @@ def chain_policy():
                 'provenance': {'class': 'datasheet', 'basis': 'Authored chain numeric relationship',
                     'derivation': {'kind': 'numeric', 'value_nm': 4 * MM, 'source': source}}}
 
+    cohesion_path = 'fixture-sources/chain-cohesion.txt'
+    cohesion_text = 'Authored chain C1 origin must remain within 3.25 mm of the U1 origin.'
+    cohesion_hash = hashlib.sha256(cohesion_text.encode()).hexdigest()
+    result['groups'].append({'id': 'chain-cohesion', 'references': ['C1'],
+        'anchor': {'reference': 'U1'}, 'max_distance_nm': 3250000,
+        'constraint_provenance': {'max_distance_nm': {'class': 'fixture_author', 'enforcement': 'hard',
+            'value_nm': 3250000, 'citation': f'{cohesion_path} sha256:{cohesion_hash}: {cohesion_text}'}}})
     result['electrical_locality'] = {'schema': 'agent-ee.electrical-locality/1',
-        'source_records': {SOURCE_PATH: SOURCE_TEXT, path: text}, 'obligations': [
+        'source_records': {SOURCE_PATH: SOURCE_TEXT, path: text, cohesion_path: cohesion_text}, 'obligations': [
             {'id': 'device-support', 'metric': 'pad-centre-to-centre',
              'supply': pair('U1', '1', 'C2', '1', 'VCC'), 'return': pair('U1', '2', 'C2', '2', 'GND')},
             {'id': 'chain-support', 'metric': 'pad-centre-to-centre',
@@ -201,10 +208,10 @@ def write_board(directory, *, witness=False, spare_front=False, chain=False):
         for i, start in enumerate(corners):
             line(fp, k.F_CrtYd, start, corners[(i + 1) % 4], f'{ref}-courtyard-{i}')
         if ref not in ('H1', 'H2'):
-            # Equal .8-mm output/return pitch on C2 and C1 makes an inward
-            # alignment improve both declared relationships together. All native
-            # pad edges stay separated by at least .2 mm within the same court.
-            pins = (('1', 'VCC', -0.8), ('2', 'GND', -0.4), ('3', 'OUT', 0), ('4', 'GND', 0.8)) if ref == 'C2' else (
+            # Equal .8-mm output/return pitch allows a pad alignment that
+            # improves both declared relationships. Native pad edge gaps remain
+            # at least .2 mm within the unchanged authored courtyard.
+            pins = (('1', 'VCC', -0.6), ('2', 'GND', -0.2), ('3', 'OUT', 0.2), ('4', 'GND', 1.0)) if ref == 'C2' else (
                 ('1', 'OUT' if chain and ref == 'C1' else 'VCC', -0.4), ('2', 'GND', 0.4))
             for number, net, y in pins:
                 pad = k.PAD(fp)
