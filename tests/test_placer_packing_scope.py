@@ -9,7 +9,6 @@ a mutant control without the gate.
 """
 import copy
 import json
-import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -633,27 +632,19 @@ class NativePadKeepoutPublicationTest(NativeBoard, unittest.TestCase):
         source = self.source(['F.Cu'])
         rule, = extract(source)['rule_areas']
         self.assertEqual((rule['owner'], rule['forbid']['pads'], rule['forbid']['footprints']), ('board', True, False))
-        report = self.place(source, 'gated')
-        self.assertEqual((report['status'], report['outcome'], report['open_defects']), ('placed', 'info', []), report)
-        lands = self.saved_lands(self.scratch / 'gated' / 'candidate.kicad_pcb')
-        self.assertTrue(all(x0 >= 3 * MM for x0, _, _, _ in lands), lands)
-        self.assertEqual(self.not_allowed(self.scratch / 'gated'), [])
-        # Courtyard-only gating saves a land in the keep-out (independent native geometry), which
-        # native DRC reports as items_not_allowed.
-        patches = courtyard_only()
-        for p in patches:
-            p.start()
-        try:
-            with self.assertRaisesRegex(ValueError, 'introduced native DRC') as caught:
-                self.place(source, 'legacy')
-        finally:
-            for p in patches:
-                p.stop()
-        self.assertFalse((self.scratch / 'legacy').exists())
-        retained = Path(re.search(r'diagnostics retained at (\S+): ', str(caught.exception)).group(1))
-        lands = self.saved_lands(retained / 'failed-candidate.kicad_pcb')
-        self.assertTrue(any(x0 < 3 * MM for x0, _, _, _ in lands), lands)
-        self.assertEqual(self.not_allowed(retained), ['Pad 1 [SIGNAL] of C1 on F.Cu'])
+        for engine in ('rust', 'python-reference'):
+            with self.subTest(engine=engine):
+                name = 'gated-' + engine
+                report = self.place(source, name, engine)
+                self.assertEqual((report['status'], report['outcome'], report['open_defects']),
+                                 ('placed', 'info', []), report)
+                lands = self.saved_lands(self.scratch / name / 'candidate.kicad_pcb')
+                self.assertTrue(all(x0 >= 3 * MM for x0, _, _, _ in lands), lands)
+                self.assertEqual(self.not_allowed(self.scratch / name), [])
+                failed = self.refused(source, 'bad-write-' + engine, engine, 'items_not_allowed')
+                lands = self.saved_lands(failed)
+                self.assertTrue(any(x0 < 3 * MM for x0, _, _, _ in lands), lands)
+                self.assertEqual(self.not_allowed(failed.parent), ['Pad 1 [SIGNAL] of C1 on F.Cu'])
 
     def not_allowed(self, root):
         report = json.loads((root / 'native-drc.json').read_text())
