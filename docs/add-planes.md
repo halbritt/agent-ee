@@ -49,11 +49,19 @@ islands when the zone has a connected main pour. A wholly unconnected zone can
 retain its fill and emit native DRC `isolated_copper` warnings instead. The
 producer refuses an `isolated_copper` violation attributed to a planned
 `always` zone, including warnings and exclusions, and reports the exact zone
-UUIDs, unless EVERY filled polygon of that zone is isolated (the zone is wholly
-unconnected, as an inner plane is before routing). Such a zone keeps its
-definition and its `always` policy, and the report lists it under
-`deferred_connectivity`: connected fill under `always` is a post-routing
-obligation (AGENTEE-487). Partial isolation still refuses. `never` retains disconnected copper; its isolated-copper warnings remain
+UUIDs. Exception (AGENTEE-487): only when the caller declares the pre-routing
+phase (`step(..., phase='pre-routing')`, argv `--phase pre-routing`, as the
+routing-turn step does) may a wholly unconnected planned `always` zone be
+deferred. Wholly unconnected means the native fill marks EVERY polygon an island
+(`native/islands.json`, `ZONE.IsIsland`) and the `isolated_copper` findings
+attribute one-to-one to those polygons (distinct positions, count equal to the
+saved polygon count). Duplicate or position-less attribution or a missing
+native record fails closed; partial isolation is not deferred. A deferred zone
+keeps its definition and `always` policy and is listed in
+`deferred_connectivity` as `{zone, net, layer, island_removal: "always",
+obligation}`; the report also records `phase`. Without the phase input (any
+other caller and every post-routing use) the zone is refused as before. The
+post-routing consumer that discharges the obligation is a separate component. `never` retains disconnected copper; its isolated-copper warnings remain
 in the native report without causing this policy refusal.
 
 Zone UUIDs are deterministic from the complete plan and list index. The same

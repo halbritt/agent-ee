@@ -65,8 +65,8 @@ class PlaneFixture:
     def save(self):
         write_json(self.source/self.plan_path,self.plan)
 
-    def run_plan(self,name='run'):
-        return planes.generate(self.source,self.board,self.plan_path,self.root/name)
+    def run_plan(self,name='run',phase=None):
+        return planes.generate(self.source,self.board,self.plan_path,self.root/name,phase=phase)
 
     def assert_ok(self,report):
         self.assertEqual(report['execution'],'ok',report)
@@ -126,19 +126,19 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
         self.assertIn('no native filled copper',str(report['findings']))
         self.assertFalse((self.root/'run/board.kicad_pcb').exists())
 
-    def test_wholly_unconnected_zone_defers_connectivity_under_always_and_preserves_never(self):
-        # AGENTEE-487: before routing a wholly unconnected 'always' zone keeps its definition and final policy, and
-        # its connectivity is an explicit deferred post-routing obligation (previously a refusal).
+    def test_wholly_unconnected_zone_defers_only_with_pre_routing_phase_and_preserves_never(self):
+        # AGENTEE-487 H1: a wholly unconnected 'always' zone is DEFERRED only when the caller declares the
+        # pre-routing phase (the routing-turn step); without it the zone is refused exactly as before.
         before = stage_receipts.file_tree(self.source)
-        for policy in ('always', 'never'):
-            with self.subTest(policy=policy):
+        cases = (('always', None), ('always', planes.PRE_ROUTING), ('never', None), ('never', planes.PRE_ROUTING))
+        for policy, phase in cases:
+            with self.subTest(policy=policy, phase=phase):
                 self.plan['zones'] = [dict(self.plan['zones'][0], island_removal=policy,
                     outline={'polygon_mm': [[35,11],[49,11],[49,30],[35,30]]})]
                 self.save()
-                name = 'isolated-' + policy
-                report = self.run_plan(name)
+                name = f'isolated-{policy}-{phase or "nophase"}'
+                report = self.run_plan(name, phase=phase)
                 uid = planes.zone_ids(self.plan)[0]
-                # The producer's inspect child reloads the saved fill in a fresh process.
                 facts = read_json(self.root/name/'verify/facts.json')
                 self.assertEqual(facts['zones'][0]['uuid'], uid)
                 self.assertGreater(facts['zones'][0]['filled_area_mm2'], 0)
@@ -147,18 +147,27 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
                             and any(i['uuid']==uid for i in v['items'])]
                 self.assertTrue(isolated, native)
                 self.assertTrue(all(v['severity']=='warning' for v in isolated))
-                if policy == 'always':
+                self.assertEqual(report['phase'], phase)
+                if policy == 'always' and phase is None:
+                    self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+                    self.assertEqual(report['drc']['planned_zone_errors'], isolated)
+                    self.assertIn(uid, str(report['findings']))
+                    self.assertEqual(report['deferred_connectivity'], [])
+                    self.assertFalse((self.root/name/'board.kicad_pcb').exists())
+                elif policy == 'always':
                     self.assert_ok(report)
                     self.assertEqual(report['drc']['planned_zone_errors'], [])
-                    self.assertEqual([d['zone'] for d in report['deferred_connectivity']], [uid])
-                    self.assertEqual(report['deferred_connectivity'][0]['island_removal'], 'always')
+                    islands = read_json(self.root/name/'native/islands.json')[uid]
+                    self.assertTrue(islands['islands'] and all(islands['islands']), islands)
+                    self.assertEqual(report['deferred_connectivity'], [dict(
+                        zone=uid, net=facts['zones'][0]['net'], layer=facts['zones'][0]['layer'], island_removal='always',
+                        obligation='connected fill under island_removal always after routing')])
                     self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
                 else:
-                    self.assertEqual(report['deferred_connectivity'], [])
                     self.assert_ok(report)
                     self.assertEqual(report['drc']['planned_zone_errors'], [])
+                    self.assertEqual(report['deferred_connectivity'], [])
                     self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
-        # Only the explicitly rewritten plan changes in the captured inputs.
         after = stage_receipts.file_tree(self.source)
         self.assertEqual({p for p in before[0] if before[0][p]!=after[0][p]}, {self.plan_path})
 
@@ -271,6 +280,58 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
                        lambda p:p['zones'][0].update(island_removal='guess')):
             plan=copy.deepcopy(self.plan);mutate(plan)
             with self.assertRaises(ValueError):planes.validate_plan(plan)
+
+
+class PhaseAndAttributionTests(unittest.TestCase):
+    """AGENTEE-487 H1/H2 contract: phase-bound deferral and one-to-one native island attribution."""
+    UID = '10000000-0000-0000-0000-000000000001'
+
+    def evidence(self, positions, polygons=2, islands=None):
+        errors = [dict(type='isolated_copper', severity='warning', items=[dict(uuid=self.UID, pos=p)]) for p in positions]
+        zones = [dict(uuid=self.UID, fill_polygons=polygons)]
+        native = {self.UID: dict(layer='In2.Cu', polygons=polygons, islands=islands if islands is not None else [True]*polygons)}
+        return errors, zones, native
+
+    def test_step_declares_phase_only_when_given(self):
+        root = Path(tempfile.mkdtemp())
+        try:
+            (root/'src'/'agent_ee').mkdir(parents=True)
+            plain = planes._phase_argv(None)
+            self.assertEqual(plain, [])
+            self.assertEqual(planes._phase_argv(planes.PRE_ROUTING), ['--phase', 'pre-routing'])
+            with self.assertRaises(ValueError):
+                planes._phase_argv('post-routing')
+        finally:
+            shutil.rmtree(root)
+
+    def test_no_phase_never_defers(self):
+        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=2, y=2)])
+        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, None), set())
+        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, 'post-routing'), set())
+
+    def test_pre_routing_defers_one_to_one_native_islands(self):
+        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=2, y=2)])
+        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING), {self.UID})
+
+    def test_duplicate_finding_fails_closed(self):
+        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=1, y=1)])
+        with self.assertRaises(ValueError):
+            planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING)
+
+    def test_unknown_position_or_missing_native_record_fails_closed(self):
+        errors, zones, native = self.evidence([dict(x=1, y=1), None])
+        with self.assertRaises(ValueError):
+            planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING)
+        errors, zones, _ = self.evidence([dict(x=1, y=1), dict(x=2, y=2)])
+        with self.assertRaises(ValueError):
+            planes.wholly_unconnected(errors, zones, {self.UID}, {}, planes.PRE_ROUTING)
+
+    def test_partial_isolation_is_not_deferred(self):
+        # one connected polygon natively, or fewer distinct findings than polygons: the refusal stands
+        errors, zones, native = self.evidence([dict(x=1, y=1), dict(x=2, y=2)], islands=[True, False])
+        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING), set())
+        errors, zones, native = self.evidence([dict(x=1, y=1)], polygons=2)
+        self.assertEqual(planes.wholly_unconnected(errors, zones, {self.UID}, native, planes.PRE_ROUTING), set())
 
 
 class PlannedZoneClassificationTests(unittest.TestCase):

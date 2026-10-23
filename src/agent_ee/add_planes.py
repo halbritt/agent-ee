@@ -72,15 +72,30 @@ def zone_ids(plan):
     return [str(uuid.uuid5(NAMESPACE, f'{identity(plan)}/{i}')) for i in range(len(plan['zones']))]
 
 
-def step(source_root, *, board, plan):
+# AGENTEE-487 phase interface (stable): the routing-turn add-planes step declares phase 'pre-routing'
+# (argv --phase pre-routing; report field 'phase'). Only then may a wholly unconnected planned 'always' zone be
+# DEFERRED; it is listed in report['deferred_connectivity'] as {zone, net, layer, island_removal: 'always',
+# obligation}. Without the phase input (any other caller, any post-routing use) the zone is refused as before.
+PRE_ROUTING = 'pre-routing'
+
+
+def step(source_root, *, board, plan, phase=None):
     for path in (board, plan):
         stage_receipts._relative(path, 'plane input')
     return stage_receipts.validate_step(dict(schema='agent-ee.stage-step/1', step='add-planes', stage='routing',
         argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P', '-m',
-              'agent_ee.add_planes', '--board', board, '--plan', plan],
+              'agent_ee.add_planes', '--board', board, '--plan', plan, *_phase_argv(phase)],
         mounts=[dict(source=str(snapshot(source_root)), at='/tool/agent-ee')], source='/tool/agent-ee',
         version_argv=['/usr/bin/kicad-cli', 'version'], writes={board:'out/board.kicad_pcb'},
         artifacts=['out'], adoptable_exits=[0], timeout_s=600))
+
+
+def _phase_argv(phase):
+    if phase is None:
+        return []
+    if phase != PRE_ROUTING:
+        raise ValueError(f'unsupported plane phase {phase!r}')
+    return ['--phase', PRE_ROUTING]
 
 
 def splice_zones(original, generated, planned):
@@ -170,19 +185,41 @@ def _planned_zone_errors(checks, planned, always_ids=(), sources=None):
     return errors
 
 
-def wholly_unconnected(zone_errors, zones, always_ids):
-    """Planned 'always' zones whose isolated_copper findings cover every filled polygon (pre-routing, no connection)."""
-    counts = {}
+def wholly_unconnected(zone_errors, zones, always_ids, islands=None, phase=None):
+    """Planned 'always' zones that may be DEFERRED (AGENTEE-487): only in phase 'pre-routing', and only when the
+    native fill marks EVERY polygon of the zone an island AND the isolated_copper findings attribute one-to-one to
+    those polygons (distinct positions, count equal to the saved polygon count). Duplicate or unknown evidence
+    fails closed (ValueError); any other mismatch is simply not deferred, so the refusal stands."""
+    if phase != PRE_ROUTING:
+        return set()
+    positions = {}
     for violation in zone_errors:
-        if violation['type'] == 'isolated_copper':
-            for item in violation['items']:
-                if item['uuid'] in always_ids:
-                    counts[item['uuid']] = counts.get(item['uuid'], 0) + 1
-    polygons = {z.get('uuid'): z.get('fill_polygons') for z in zones}
-    return {uid for uid, n in counts.items() if isinstance(polygons.get(uid), int) and polygons[uid] > 0 and n == polygons[uid]}
+        if violation['type'] != 'isolated_copper':
+            continue
+        for item in violation['items']:
+            if item['uuid'] in always_ids:
+                pos = item.get('pos')
+                if not (isinstance(pos, dict) and isinstance(pos.get('x'), (int, float)) and isinstance(pos.get('y'), (int, float))):
+                    raise ValueError('isolated-copper attribution has no position')
+                key = (pos['x'], pos['y'])
+                seen = positions.setdefault(item['uuid'], [])
+                if key in seen:
+                    raise ValueError('duplicate isolated-copper attribution for planned zone ' + item['uuid'])
+                seen.append(key)
+    saved = {z.get('uuid'): z.get('fill_polygons') for z in zones}
+    deferred = set()
+    for uid, seen in positions.items():
+        native = (islands or {}).get(uid)
+        if native is None:
+            raise ValueError('no native island record for planned zone ' + uid)
+        count = saved.get(uid)
+        if (isinstance(count, int) and count > 0 and native.get('polygons') == count and
+                len(native.get('islands', [])) == count and all(native['islands']) and len(seen) == count):
+            deferred.add(uid)
+    return deferred
 
 
-def generate(candidate, board, plan_path, out):
+def generate(candidate, board, plan_path, out, *, phase=None):
     candidate, out = Path(candidate).resolve(), Path(out).absolute()
     for path in (board, plan_path):
         stage_receipts._relative(path, 'plane input')
@@ -192,7 +229,8 @@ def generate(candidate, board, plan_path, out):
         raise ValueError('plane output must be new and outside captured inputs')
     out.mkdir(parents=True)
     report = dict(schema=RESULT, execution='failed', outcome='unknown', plan_sha256=digest(candidate/plan_path),
-                  board_before=hashlib.sha256(original).hexdigest(), planned_zone_ids=zone_ids(plan), findings=[])
+                  board_before=hashlib.sha256(original).hexdigest(), planned_zone_ids=zone_ids(plan), findings=[],
+                  phase=phase, deferred_connectivity=[])
     try:
         _child(candidate, out/'native', ['apply', '/candidate/'+board, '/candidate/'+plan_path, '/work/board.kicad_pcb'])
         raw = (out/'native/board.kicad_pcb').read_text(encoding='utf-8')
@@ -219,7 +257,8 @@ def generate(candidate, board, plan_path, out):
         # EVERY filled polygon is reported isolated is wholly unconnected: its definition is kept with the final
         # 'always' policy and its connectivity becomes an explicit post-routing obligation, not a refusal. Partial
         # isolation (some fill connected) and every other planned-zone error still refuse.
-        deferred = wholly_unconnected(zone_errors, facts['zones'], always_ids)
+        islands = read_json(out/'native/islands.json') if phase == PRE_ROUTING else None
+        deferred = wholly_unconnected(zone_errors, facts['zones'], always_ids, islands, phase)
         zone_errors = [v for v in zone_errors if not (v['type'] == 'isolated_copper' and
                                                       {i['uuid'] for i in v['items']} & deferred)]
         classified = [classify_finding(dict(v), sources) for v in checks['violations']]
@@ -238,9 +277,9 @@ def generate(candidate, board, plan_path, out):
             raise ValueError('captured plane inputs changed during production')
         (out/'board.kicad_pcb').write_bytes(proposed.encode('utf-8'))
         report.update(execution='ok', outcome='info', board_after=digest(out/'board.kicad_pcb'),
-                      deferred_connectivity=[dict(zone=uid, island_removal='always',
+                      deferred_connectivity=[dict(zone=z['uuid'], net=z['net'], layer=z['layer'], island_removal='always',
                                                   obligation='connected fill under island_removal always after routing')
-                                             for uid in sorted(deferred)],
+                                             for z in facts['zones'] if z['uuid'] in deferred],
                       limitation='Plane production is not electrical acceptance; full post-routing DRC and pour integrity remain required.')
     except (OSError, ValueError) as exc:
         report['findings'].append(dict(code='plane_production_refused', message=str(exc)))
@@ -252,8 +291,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--board', required=True)
     parser.add_argument('--plan', required=True)
+    parser.add_argument('--phase', choices=(PRE_ROUTING,), default=None,
+                        help='declared by the routing-turn step only; enables pre-routing deferral')
     args = parser.parse_args(argv)
-    report = generate('/candidate', args.board, args.plan, '/work/out')
+    report = generate('/candidate', args.board, args.plan, '/work/out', phase=args.phase)
     return 0 if report['execution'] == 'ok' else 1
 
 
