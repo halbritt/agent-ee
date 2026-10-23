@@ -1164,8 +1164,14 @@ Experiment evidence is never dropped and is never qualified.
 
   The round-1 record predates the staged original. The matrix replays its
   committed `not_run` report under the verifier of its own era: the adapter at
-  `7552f6db`, which wrote and committed it, loaded from git objects. That
-  verifier must reproduce the recorded value and refuse an edited copy. Today's
+  `7552f6db`, which wrote and committed it. Its modules are committed
+  byte-exact under `tests/fixtures/k91-era-7552f6db/`, with a manifest of each
+  git blob id and sha256, so the gate image (built without `.git`) needs no git
+  history. The matrix loads only fixture files whose sha256 matches the
+  manifest. `tests/test_k91_era_fixture.py` checks the files against
+  `git show 7552f6db:<path>` when history is present. Without history it
+  checks each file's git blob id, computed in Python. That verifier must
+  reproduce the recorded value and refuse an edited copy. Today's
   verifier must refuse the same report, for its missing staged original at the
   report's own pin and as stale evidence at the production pin. The committed
   bytes are never rewritten or re-graded.

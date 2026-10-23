@@ -1,0 +1,22 @@
+{
+  "schema": "agent-ee.k91-era-fixture/1",
+  "commit": "7552f6db72ed53d5439144d145835160c206f0cb",
+  "note": "Byte-exact copies of agent-ee's own src/agent_ee modules at commit, the adapter that wrote and committed evidence/k91-native-positive (round 1). scripts/k91_control_matrix.py loads its era verifier only from these files.",
+  "modules": {
+    "routing_adapter": {
+      "path": "src/agent_ee/routing_adapter.py",
+      "git_blob": "f3034939b5151721302bef14fc5c7cc4b3924dee",
+      "sha256": "e496169a1fd0321df807f553ada4291ee8336f9b5b3efa4af293db36e312eda3"
+    },
+    "kicad_route_attempt": {
+      "path": "src/agent_ee/kicad_route_attempt.py",
+      "git_blob": "59eef63e41184d71e7ea8392698978f256273761",
+      "sha256": "d15ca0ad63f4966701c22bca1b59737060b672cd4f21156ea0f7ec31e4bbb8f7"
+    },
+    "storage": {
+      "path": "src/agent_ee/storage.py",
+      "git_blob": "b72110656b95eea4a7b8f6e28649ebdf555876fe",
+      "sha256": "5ba698800db3612c8f99e650ab4d11d28a711c0aa8201e6c2f08e934560cc87e"
+    }
+  }
+}

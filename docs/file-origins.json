@@ -3920,6 +3920,16 @@
     },
     {
       "paths": [
+        "tests/fixtures/k91-era-7552f6db/"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "note": "agent-ee's own src/agent_ee routing_adapter.py, kicad_route_attempt.py and storage.py at 7552f6db72ed53d5439144d145835160c206f0cb, byte-exact git blobs (manifest.json records each blob id and sha256), plus that manifest; the K91 control matrix's era verifier (AGENTEE-442). License: the project's (MIT, LICENSE)."
+    },
+    {
+      "paths": [
         "evidence/k91-native-positive/"
       ],
       "kind": "retained-output",

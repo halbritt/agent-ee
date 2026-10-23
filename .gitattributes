@@ -15,3 +15,6 @@ fixtures/catalog-legacy/snapshot/** -text
 
 # The captured W2 solver result (AGENTEE-264) must keep its committed bytes; rf-source-capture.json records its SHA-256.
 fixtures/telemetry-pod/rf-w2-calc-4-result.json -text -whitespace
+
+# The K91 era verifier fixture is byte-exact git blobs of agent-ee at 7552f6db; its manifest records their ids and SHA-256.
+tests/fixtures/k91-era-7552f6db/*.py -text -whitespace
