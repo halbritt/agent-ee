@@ -337,7 +337,8 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                 fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
             k.SaveBoard(str(output), board)
             with self.assertRaisesRegex(ValueError, 'saved-board block contract'):
-                placer_runner._saved_block_contract(output, request['blocks']['contract'], facts, saved_plan)
+                placer_runner._saved_block_contract(output, request['blocks']['contract'], facts, saved_plan,
+                                                    request['policy'], request['blocks'])
             rejection = json.loads((mutated / 'block-contract.json').read_text())
             self.assertEqual(rejection['status'], 'defect')
             self.assertIn('pin_distance_exceeded' if label == 'pin-bound' else 'forbidden_side',
