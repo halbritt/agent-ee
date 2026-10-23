@@ -980,7 +980,8 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 protected.discard(owner_rules)
                 scope['requirements'] = sorted({*scope.get('requirements', []), owner_copy, owner_rules})
         if owner_rules in files and owner_copy is None:
-            owner_names = {str(n[1]) for n in rule_forms(read_captured(inputs, owner_rules), native=True)
+            composed_rules = read_captured(inputs, owner_rules)
+            owner_names = {str(n[1]) for n in rule_forms(composed_rules, native=True)
                            if len(n) > 1 and n[0] == 'rule'}
             require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
         plans = sheet_plan(document, sch)
