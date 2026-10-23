@@ -26,6 +26,7 @@ def fixture():
     def pair(pad, net):
         return {'from': {'reference': 'U1', 'pad': pad, 'net': net},
                 'to': {'reference': 'C1', 'pad': pad, 'net': net}, 'max_distance_nm': 3*MM,
+                'citation': 'fixture/limits.txt numeric requirement',
                 'provenance': {'class': 'datasheet', 'basis': 'authored numeric fixture',
                     'derivation': {'kind': 'numeric', 'value_nm': 3*MM, 'source': source}}}
     contract = {'schema': block_contract.SCHEMA, 'allocation': allocation,
@@ -245,6 +246,14 @@ class BlockContractTest(unittest.TestCase):
                    'allocation_text': json.dumps({'schema': 'agent-ee.block-allocation/1', 'blocks': [
                        {'id': 'device', 'references': ['U1', 'C1'], 'anchor': 'U1'}]})}
         self.assertIsNotNone(block_contract.validate(board, section, {}))
+
+    def test_missing_hard_pair_citation_remains_unknown(self):
+        board, contract = fixture()
+        del contract['relationships']['obligations'][0]['supply']['citation']
+        report = block_contract.check_complete(board, contract)
+        self.assertEqual(report['status'], 'unknown')
+        self.assertTrue(any(row.get('reason') == 'declared numeric limit and citation required'
+                            for row in report['unknown']))
 
     def test_exact_fractional_pad_centroid_does_not_round_into_bound(self):
         board, contract = fixture()

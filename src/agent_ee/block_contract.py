@@ -415,6 +415,8 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
                 bound = pair.get('max_distance_nm')
                 if bound is None:
                     raise ValueError('numeric relationship bound missing')
+                if authority['enforcement'] == 'hard' and 'citation' not in pair:
+                    raise ValueError('declared numeric limit and citation required')
                 row['exceeded'] = squared > bound**2
                 if authority['enforcement'] == 'integrity':
                     raise ValueError(authority['reason'])

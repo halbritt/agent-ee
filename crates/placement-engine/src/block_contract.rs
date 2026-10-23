@@ -571,6 +571,10 @@ pub fn check_complete(capture: &Value, contract: &Value) -> Result<Value> {
                     pair.get("max_distance_nm")
                         .context("numeric relationship bound missing")?,
                 )?;
+                ensure!(
+                    authority["enforcement"] != "hard" || pair.get("citation").is_some(),
+                    "declared numeric limit and citation required"
+                );
                 let exceeded = squared > Rat::from_integer(&bound * &bound);
                 row["exceeded"] = json!(exceeded);
                 ensure!(
@@ -677,7 +681,7 @@ mod tests {
         let quote = "Original synthetic numeric requirement: 3 mm";
         let source = json!({"path":"fixture/limits.txt","sha256":format!("{:x}",Sha256::digest(quote.as_bytes())),"locator":"numeric row","quote":quote});
         let pair = |pad, net| {
-            json!({"from":{"reference":"U1","pad":pad,"net":net},"to":{"reference":"C1","pad":pad,"net":net},"max_distance_nm":3000000,
+            json!({"from":{"reference":"U1","pad":pad,"net":net},"to":{"reference":"C1","pad":pad,"net":net},"max_distance_nm":3000000,"citation":"fixture/limits.txt numeric requirement",
             "provenance":{"class":"datasheet","basis":"authored numeric fixture","derivation":{"kind":"numeric","value_nm":3000000,"source":source}}})
         };
         let contract = json!({"schema":SCHEMA,"allocation":{"schema":"agent-ee.block-allocation/2","board_sha256":capture["board_sha256"],
