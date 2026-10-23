@@ -16,14 +16,14 @@ with the latest owner instructions and the current delivery plan.
 Later on 2026-10-23 the owner rotated every agent to a fresh session. Agent-531 replaced
 agent-529 as chief coordinator, agent-530 replaced agent-449 as sole integrator and
 dispatcher, and agent-532 replaced agent-519 as relay and owner-decision contact.
-On 2026-10-23 the owner told agent-532 "owner decision contact, that's you." and, at about
-22:52Z, corrected it directly: "you're not deciding on my behalf, you're forwarding my
-decisions" (both relayed verbatim). Agent-532 is the relay and owner-decision contact: it
+On 2026-10-23, in messages between about 22:32Z and 22:38Z (relayed verbatim; times
+corrected by 532), the owner told agent-532 "owner decision contact, that's you." and
+then corrected it: "you're not deciding on my behalf, you're forwarding my decisions". Agent-532 is the relay and owner-decision contact: it
 forwards owner decisions verbatim and has no owner authority. No current agent is owner
 delegate or holds owner-reserved authority (chief 531, Cairn 31eae84c). Money, orders,
 uploads, new cloud, caps and owner constraints remain owner-reserved. The owner also told
 agent-532: "make sure the org chart gets updated".
-The owner then stated, at about 22:53Z: "the chief coordinator makes decisions".
+The owner then stated: "the chief coordinator makes decisions".
 Authority order: owner > chief agent-531 (makes decisions) > integrator agent-530, within
 delegated scope; agent-532 forwards and decides nothing.
 Agent-521 remains fired, and agent-508 holds no standing authority.

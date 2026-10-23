@@ -31,7 +31,7 @@ contact: it forwards owner decisions verbatim and holds no owner authority (owne
 2026-10-23: "you're not deciding on my behalf, you're forwarding my decisions").
 No current agent is owner delegate or holds owner-reserved authority.
 
-Owner power ruling, 2026-10-23 about 22:42Z, verbatim via 532: "250ma continuous
+Owner power ruling, 2026-10-23 (about 22:32-22:38Z), verbatim via 532: "250ma continuous
 is a good target, but I doubt it will draw more than 100ma". The 5 V sensor/ADC
 rail design target is 250 mA continuous, with an expected draw of 100 mA or less.
 It replaces the agent-chosen 350 mA (150 mA AUX + 200 mA direct). Chief 531 engineering allocation (252b5ec4, not owner text): 100 mA AUX continuous
