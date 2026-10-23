@@ -492,6 +492,32 @@ class ContractRulesTest(unittest.TestCase):
                     edit(record)
                     self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
 
+    def test_an_incomplete_exception_chain_is_incomplete(self):
+        # Review round 4 H1: completeness is part of the schema; a contract match on an incomplete chain
+        # is never a refusal.
+        def unterminated(chain):
+            chain[-1]['link'] = 'context'
+
+        def dangling(chain):
+            chain[-1]['link'] = 'cause'
+
+        def cyclic(chain):
+            again = copy.deepcopy(chain[0])
+            chain[-1]['link'] = 'context'
+            again['link'] = None
+            chain.append(again)
+        for name in classify.CONTRACTS:
+            for label, change in (('unterminated', unterminated), ('dangling', dangling), ('cyclic', cyclic)):
+                with self.subTest(name=name, chain=label):
+                    record = self.record(name)
+                    change(record['consumer']['exception'])
+                    self.assertIsNone(classify.chain_of(record['consumer']))
+                    self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+        board = self.record('b_tampered_candidate')
+        self.assertEqual([link['link'] for link in board['consumer']['exception']], ['context', None])
+        board['consumer']['exception'][0]['link'] = None  # interior null: the chain ends early
+        self.assertEqual(classify.consumer_state(board, 'b_tampered_candidate'), classify.INCOMPLETE)
+
     def test_a_consumer_that_returned_adopted_or_changed_the_design_is_not_refused(self):
         for name in classify.CONTRACTS:
             for label, edit in {'returned': lambda r: r.update(consumer=observed()),

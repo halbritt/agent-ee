@@ -222,6 +222,7 @@ class Matrix:
             controls = {**self.intended, **{slot: self.attacks[slot, mode] for slot in REQUIRED}}
             self.check_row(f'aggregate: {mode} in every required slot blocks controls_refused', False,
                            self.verdict(controls=controls)['controls_refused'], 'agent-510 e5c23190 (2)')
+        self.chain_completeness()
         self.slot_row('b_tampered_candidate: candidate file missing, no tamper shown', 'b_tampered_candidate',
                       self.replayed(None, 'missing_candidate_file'), INCOMPLETE,
                       'round-3 adjudicate-r3.py missing actual file')
@@ -255,6 +256,67 @@ class Matrix:
         self.check_row('sidecar bare adoption success stays visible', True,
                        self.intended['b_tampered_sidecar']['direct_adopt']['accepted'] is True, 'ruling a01d6f91')
         return self.rows
+
+    def chain_completeness(self):
+        """Review round 4 H1: a truncated, dangling, prematurely ended or cyclic exception chain is INCOMPLETE.
+
+        The truncated-tail case is the round-4 Sol reviewer's (reviews/ee442-native-positive-b-sol-r4.md, H1;
+        probe root-review/own_probes.py): the actual controls are run while a real unrelated PermissionError
+        is being handled, so every chain ends in that captured context; then only that unrelated tail is
+        removed. The remaining links are genuine contract refusals, but the last kept link still names a
+        context, so the chain is incomplete. The other malformations are built on the intended records."""
+        source = 'round-4 H1; root-review/own_probes.py (Sol reviewer)'
+        try:
+            raise PermissionError('review unrelated outer operation')
+        except PermissionError:
+            contextual = self.k.run_controls(self.root / 'contextual', self.work, self.decl, self.bind,
+                                             self.mismatch, self.make, BOARD)
+        truncated_all = {}
+        for slot in SLOTS:
+            full = contextual[slot]
+            self.slot_row(f'{slot}: full chain with captured unrelated context', slot, full, INCOMPLETE, source)
+            truncated = copy.deepcopy(full)
+            for key in ('consumer', 'consumer_run_step', 'consumer_verify', 'consumer_adopt', 'direct_adopt',
+                        'host_binding'):
+                chain = (truncated.get(key) or {}).get('exception') or []
+                if chain and chain[-1]['type'] == 'PermissionError':
+                    chain.pop()
+            truncated_all[slot] = truncated
+            self.check_row(f'{slot}: truncated chain keeps a non-null last link', 'context',
+                           (truncated['consumer'].get('exception') or [{}])[-1].get('link'), source)
+            self.slot_row(f'{slot}: truncated chain (unrelated context tail removed)', slot, truncated,
+                          INCOMPLETE, source)
+            for label, change in (('dangling link (terminal names a cause)', self.dangling),
+                                  ('missing terminal null', self.unterminated),
+                                  ('interior null ends the chain early', self.interior_null),
+                                  ('cyclic chain', self.cyclic)):
+                record = copy.deepcopy(full if label.startswith('interior') else self.intended[slot])
+                chain = record['consumer'].get('exception')  # absent in trees that recorded no chain (57083ef8)
+                if chain:
+                    change(chain)
+                self.slot_row(f'{slot}: {label}', slot, record, INCOMPLETE, 'round-4 H1')
+        controls = {**self.intended, **{slot: truncated_all[slot] for slot in REQUIRED}}
+        self.check_row('aggregate: truncated chains in every required slot block controls_refused', False,
+                       self.verdict(controls=controls)['controls_refused'], source)
+
+    @staticmethod
+    def dangling(chain):
+        chain[-1]['link'] = 'cause'
+
+    @staticmethod
+    def unterminated(chain):
+        chain[-1]['link'] = 'context'
+
+    @staticmethod
+    def interior_null(chain):
+        chain[0]['link'] = None
+
+    @staticmethod
+    def cyclic(chain):
+        again = copy.deepcopy(chain[0])
+        chain[-1]['link'] = 'context'
+        again['link'] = None
+        chain.append(again)
 
     def mismatch_replay(self, manifest):
         from agent_ee import routing_adapter

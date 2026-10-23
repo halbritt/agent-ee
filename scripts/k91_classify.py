@@ -136,7 +136,14 @@ LINK_KEYS = {'type', 'message', 'origin', 'frames', 'link'}
 
 
 def chain_of(outcome):
-    """The schema-valid exception chain of a refused observation, outermost first, or None."""
+    """The schema-valid, COMPLETE exception chain of a refused observation, outermost first, or None.
+
+    Completeness (review round 4, H1): every non-terminal link names how the next link is attached
+    ('cause' or 'context'), the terminal link is null-terminated, and no link repeats an earlier one.
+    So a truncated chain (its last kept link still names a context), a dangling link, an interior
+    null that ends the chain early, or a cycle is malformed: the observation is invalid and the
+    control INCOMPLETE, whatever contract the remaining links would match. k91_consumer records a
+    real cycle by stopping at the repeated exception, which leaves a non-null terminal link."""
     chain = outcome.get('exception') if isinstance(outcome, dict) else None
     if not isinstance(chain, list) or not chain:
         return None
@@ -148,6 +155,11 @@ def chain_of(outcome):
                 or not isinstance(origin['function'], str) or not isinstance(link['frames'], list)
                 or not all(isinstance(f, str) for f in link['frames']) or link['link'] not in (None, 'cause', 'context')):
             return None
+    if any(link['link'] not in ('cause', 'context') for link in chain[:-1]) or chain[-1]['link'] is not None:
+        return None
+    seen = [{k: v for k, v in link.items() if k != 'link'} for link in chain]
+    if any(link in seen[:position] for position, link in enumerate(seen)):
+        return None
     if outcome.get('error') != f"{chain[0]['type']}: {chain[0]['message']}":
         return None
     return chain

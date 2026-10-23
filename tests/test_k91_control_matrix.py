@@ -52,6 +52,17 @@ class ControlMatrixTest(unittest.TestCase):
             self.assertIn(f'{slot}: wrong_replay_binding outer error is the finalization mask', ids)
         for mode in self.matrix.ATTACKS:
             self.assertIn(f'aggregate: {mode} in every required slot blocks controls_refused', ids)
+        # Review round 4 H1: chain completeness in every slot, and the aggregate.
+        for slot in self.matrix.SLOTS:
+            for case in ('full chain with captured unrelated context', 'truncated chain (unrelated context tail removed)',
+                         'dangling link (terminal names a cause)', 'missing terminal null',
+                         'interior null ends the chain early', 'cyclic chain'):
+                with self.subTest(slot=slot, chain=case):
+                    row = next(r for r in self.rows if r['id'] == f'{slot}: {case}')
+                    self.assertEqual(row['actual'], 'incomplete')
+                    if slot in self.matrix.REQUIRED:
+                        self.assertIs(row['actual_controls_refused'], False)
+        self.assertIn('aggregate: truncated chains in every required slot block controls_refused', ids)
         # Only the intended rows refuse; every plumbing row is incomplete and keeps controls_refused false.
         refused = sorted(row['id'] for row in self.rows if row['slot'] and row['actual'] == 'refused')
         self.assertEqual(refused, sorted(f'{slot}: intended refusal' for slot in self.matrix.SLOTS))

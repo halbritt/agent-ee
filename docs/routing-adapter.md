@@ -1085,6 +1085,12 @@ Experiment evidence is never dropped and is never qualified.
   incomplete: unrelated exceptions, replay or plumbing failures, other
   finalization errors.
 
+  The chain must also be complete (review round 4, H1). Every non-terminal
+  link names its `cause` or `context`, the last link is null-terminated, and
+  no link repeats. A truncated, dangling, prematurely ended or cyclic chain is
+  malformed, so the control is incomplete even when the remaining links match
+  the contract.
+
   `scripts/k91_control_matrix.py` is the lane's regression gate. It runs the
   positives, every intended control, each plumbing failure in each control
   slot, and every round-1 to round-3 counterexample through the actual
