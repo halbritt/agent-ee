@@ -2,7 +2,6 @@
 import os
 from pathlib import Path
 import shutil
-import time
 import unittest
 from types import SimpleNamespace
 
@@ -72,10 +71,6 @@ assert k.SaveBoard('/work/changed.kicad_pcb',b)
         context.work.mkdir()
         final_planes.check_captured(context,read_json(self.root/'after/drc.json'))
         self.assertEqual(context.result['details']['final_planes'][0]['status'],'PASS')
-        plan=[dict(kind='step',spec=dict(step='add-planes',argv=['tool','--plan',self.plan_path]))]
-        work=self.root/'campaign';work.mkdir()
-        final_planes.consume_routing(work,self.source,dict(files={self.plan_path:'captured'},scope={'board':self.board}),plan,time.monotonic()+180)
-        self.assertEqual(read_json(work/'final-planes/result.json')['status'],'PASS')
         if os.environ.get('FINAL_PLAN_EVIDENCE'):
             shutil.copytree(self.root,Path(os.environ['FINAL_PLAN_EVIDENCE'])/self._testMethodName,dirs_exist_ok=True)
 

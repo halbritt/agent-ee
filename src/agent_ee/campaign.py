@@ -437,9 +437,6 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
                 expected_files = after_tree(receipt)
         if routing_turn and file_tree(design) != (expected_files, []):
             raise ValueError('routing delivered tree differs from adopted receipt chain')
-        if routing_turn:
-            from .final_planes import consume_routing
-            consume_routing(work, design, manifest, plan, deadline)
     finally:
         state["stage_receipts"][work.name] = bind_implementation(work, design, number, manifest["candidate_id"])
 

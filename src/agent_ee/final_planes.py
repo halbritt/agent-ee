@@ -52,32 +52,6 @@ def validate(inputs, board, plan_path, work, *, drc=None, timeout=180):
     return result
 
 
-def consume_routing(work, design, manifest, plan, deadline):
-    """Called only after the production router's adopted, refilled receipt chain."""
-    for entry in plan:
-        spec = entry.get('spec', {})
-        if spec.get('step') != 'add-planes':
-            continue
-        argv = spec['argv']
-        if argv.count('--plan') != 1:
-            raise ValueError('add-planes requires one explicit --plan for final consumption')
-        index = argv.index('--plan') + 1
-        if index == len(argv):
-            raise ValueError('add-planes --plan has no path')
-        from .stage_receipts import _relative
-        path = argv[index]
-        _relative(path, 'final plane plan')
-        if path not in manifest['files']:
-            raise ValueError('final plane plan was not captured')
-        remaining = deadline - time.monotonic()
-        if remaining <= 1:
-            raise ValueError('deadline exhausted before final plane validation')
-        result = validate(design, manifest['scope']['board'], path, Path(work)/'final-planes',
-                          timeout=min(180, remaining))
-        if result['status'] != 'PASS':
-            raise ValueError('post-routing plane obligation failed: ' + '; '.join(result['errors']))
-
-
 
 def check_captured(ctx, drc):
     """Final DRC re-evaluates captured planes.json, never trusts a pre-route receipt."""
