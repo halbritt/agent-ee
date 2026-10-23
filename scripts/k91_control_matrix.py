@@ -42,6 +42,7 @@ REQUIRED = ('a_mismatched_runtime', 'b_tampered_candidate', 'c_stale_input')
 BOARD = 'project/rc.kicad_pcb'
 SIDECAR = 'routing/attempt/routability-experiment.json'
 REFUSED, NOT_REFUSED, INCOMPLETE = 'refused', 'not_refused', 'incomplete'
+OBSERVATIONS = ('consumer', 'consumer_run_step', 'consumer_verify', 'consumer_adopt', 'direct_adopt', 'host_binding')
 ATTACKS = ('wrong_replay_binding', 'invalid_receipt_json', 'missing_receipt')
 PLUMBING = ('wrong_replay_binding', 'invalid_receipt_json', 'missing_receipt', 'finalization_error',
             'unrelated_exception')
@@ -271,17 +272,30 @@ class Matrix:
         except PermissionError:
             contextual = self.k.run_controls(self.root / 'contextual', self.work, self.decl, self.bind,
                                              self.mismatch, self.make, BOARD)
-        truncated_all = {}
+        truncated_all, interior_all = {}, {}
         for slot in SLOTS:
             full = contextual[slot]
             self.slot_row(f'{slot}: full chain with captured unrelated context', slot, full, INCOMPLETE, source)
             truncated = copy.deepcopy(full)
-            for key in ('consumer', 'consumer_run_step', 'consumer_verify', 'consumer_adopt', 'direct_adopt',
-                        'host_binding'):
+            for key in OBSERVATIONS:
                 chain = (truncated.get(key) or {}).get('exception') or []
                 if chain and chain[-1]['type'] == 'PermissionError':
                     chain.pop()
             truncated_all[slot] = truncated
+            # agent-510 f7b88794 (a): the inverse of the truncated tail, on the same captured-context record.
+            # Every observation keeps all its links, but its first link is null-terminated while further
+            # links follow (an interior null). The chain is incomplete, so the control is INCOMPLETE.
+            interior = copy.deepcopy(full)
+            for key in OBSERVATIONS:
+                chain = (interior.get(key) or {}).get('exception') or []
+                if len(chain) > 1:
+                    chain[0]['link'] = None
+            interior_all[slot] = interior
+            consumer_chain = interior['consumer'].get('exception') or []
+            self.check_row(f'{slot}: interior-null chain has a null link before further links', True,
+                           len(consumer_chain) > 1 and consumer_chain[0]['link'] is None, 'agent-510 f7b88794 (a)')
+            self.slot_row(f'{slot}: interior null in the captured-context chain (every observation)', slot,
+                          interior, INCOMPLETE, 'agent-510 f7b88794 (a)')
             self.check_row(f'{slot}: truncated chain keeps a non-null last link', 'context',
                            (truncated['consumer'].get('exception') or [{}])[-1].get('link'), source)
             self.slot_row(f'{slot}: truncated chain (unrelated context tail removed)', slot, truncated,
@@ -298,6 +312,20 @@ class Matrix:
         controls = {**self.intended, **{slot: truncated_all[slot] for slot in REQUIRED}}
         self.check_row('aggregate: truncated chains in every required slot block controls_refused', False,
                        self.verdict(controls=controls)['controls_refused'], source)
+        # The same inverse case where every link is a genuine contract refusal: the board's two-link
+        # verify-plus-finalization chain ['context', None] with its first link null-terminated early.
+        board = copy.deepcopy(self.intended['b_tampered_candidate'])
+        chain = board['consumer'].get('exception')
+        if chain and len(chain) > 1:
+            chain[0]['link'] = None
+        self.slot_row('b_tampered_candidate: interior null on the intended two-link refusal chain',
+                      'b_tampered_candidate', board, INCOMPLETE, 'agent-510 f7b88794 (a)')
+        self.check_row('aggregate: interior null on the intended board chain blocks controls_refused', False,
+                       self.verdict(controls={**self.intended, 'b_tampered_candidate': board})['controls_refused'],
+                       'agent-510 f7b88794 (a)')
+        controls = {**self.intended, **{slot: interior_all[slot] for slot in REQUIRED}}
+        self.check_row('aggregate: interior-null chains in every required slot block controls_refused', False,
+                       self.verdict(controls=controls)['controls_refused'], 'agent-510 f7b88794 (a)')
 
     @staticmethod
     def dangling(chain):

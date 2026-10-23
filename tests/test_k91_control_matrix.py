@@ -63,6 +63,18 @@ class ControlMatrixTest(unittest.TestCase):
                     if slot in self.matrix.REQUIRED:
                         self.assertIs(row['actual_controls_refused'], False)
         self.assertIn('aggregate: truncated chains in every required slot block controls_refused', ids)
+        # agent-510 f7b88794 (a): the inverse interior-null case beside the truncated tail, every slot and aggregate.
+        for slot in self.matrix.SLOTS:
+            with self.subTest(slot=slot, chain='interior null, captured context'):
+                row = next(r for r in self.rows
+                           if r['id'] == f'{slot}: interior null in the captured-context chain (every observation)')
+                self.assertEqual(row['actual'], 'incomplete')
+                if slot in self.matrix.REQUIRED:
+                    self.assertIs(row['actual_controls_refused'], False)
+                self.assertIn(f'{slot}: interior-null chain has a null link before further links', ids)
+        row = next(r for r in self.rows
+                   if r['id'] == 'aggregate: interior-null chains in every required slot block controls_refused')
+        self.assertIs(row['actual'], False)
         # Only the intended rows refuse; every plumbing row is incomplete and keeps controls_refused false.
         refused = sorted(row['id'] for row in self.rows if row['slot'] and row['actual'] == 'refused')
         self.assertEqual(refused, sorted(f'{slot}: intended refusal' for slot in self.matrix.SLOTS))
