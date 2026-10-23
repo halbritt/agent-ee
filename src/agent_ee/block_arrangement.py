@@ -1414,7 +1414,8 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
             plan['judgment'] = placer.judge(complete, overhangs=effective.get('fixed_overhangs'))
             plan['judgment']['basis'] = 'transformed-proposal-not-native'
             if 'groups' in effective:
-                plan['group_grading'] = placement_groups.grade(complete, effective['groups'])
+                plan['group_grading'] = placement_groups.grade(
+                    complete, placement_groups.validate(effective['groups']))
             if 'electrical_locality' in effective:
                 plan['locality_grading'] = electrical_locality.grade(complete, effective['electrical_locality'])
             record['contract_check'] = block_contract.check_complete(complete, contract)

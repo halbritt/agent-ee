@@ -204,6 +204,36 @@ class BlockContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'require block contract'):
             block_contract.validate(board, {'candidates': [{'candidate': {'schema': 'agent-ee.block-candidate-set/1'}}]}, policy)
 
+    def test_shared_non_null_constraint_stays_unresolved_even_when_empty(self):
+        # No shared-constraint evaluator exists: an explicit declaration cannot
+        # become permission merely because its JSON value is falsey.
+        for value in ({}, [], '', False, 0, {'same_face_as': 'U1'}):
+            board, contract = fixture()
+            entry = contract['eligibility']['shared']['TP1']
+            entry['constraint'] = deepcopy(value)
+            before = deepcopy((board, contract))
+            for check, report in (
+                    ('planning', block_contract.check_complete(board, contract)),
+                    ('saved', block_contract.judge(board, contract, original_capture=board))):
+                with self.subTest(value=value, check=check):
+                    self.assertEqual(report['status'], 'unknown', report)
+                    self.assertEqual(report['defects'], [])
+                    self.assertEqual(report['unknown'], [{
+                        'kind': 'shared_eligibility_requirement_unresolved',
+                        'label': 'TP1', 'declaration': entry}])
+            self.assertEqual((board, contract), before)
+
+        for explicit_null in (False, True):
+            board, contract = fixture()
+            if explicit_null:
+                contract['eligibility']['shared']['TP1']['constraint'] = None
+            for check, report in (
+                    ('planning', block_contract.check_complete(board, contract)),
+                    ('saved', block_contract.judge(board, contract, original_capture=board))):
+                with self.subTest(explicit_null=explicit_null, check=check):
+                    self.assertEqual(report['status'], 'pass', report)
+                    self.assertEqual(report['unknown'], [])
+
     def test_minimal_planning_check_retains_exact_final_distance(self):
         board, contract = fixture()
         result = block_contract.check_complete(moved(board, 'C1', 10*MM), contract)

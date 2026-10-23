@@ -1543,10 +1543,17 @@ pub fn grade_rules(
     }
     Ok(json!(rows))
 }
-fn deferred_grading(plan: &Value, admitted: &BTreeMap<String, Value>) -> Value {
+fn deferred_grading(plan: &Value, selected_blocks: &Value) -> Value {
     let mut out = Vec::new();
-    for b in blocks::natural(admitted.keys().cloned().collect()) {
-        let d = &admitted[&b]["deferred"];
+    // Provenance carries the selected packed variant. Its order follows the
+    // allocation; deferred grades retain Python's natural block ordering.
+    let mut selected: Vec<_> = selected_blocks.as_array().unwrap().iter().collect();
+    selected.sort_by(|a, b| {
+        blocks::natural_cmp(a["block"].as_str().unwrap(), b["block"].as_str().unwrap())
+    });
+    for block in selected {
+        let b = &block["block"];
+        let d = &block["deferred"];
         for id in d["obligations"].as_array().unwrap() {
             let grade = &plan["locality_grading"];
             let measured = grade["measured"]
@@ -2340,6 +2347,9 @@ pub fn arrange(
             capture.clone()
         };
         if has_variants {
+            if complete.get("rule_areas").is_none() {
+                complete["rule_areas"] = json!([]);
+            }
             let owners: BTreeMap<_, _> = blocks::rows(&residual_capture["footprints"])?
                 .iter()
                 .map(|fp| (fp["uuid"].as_str().unwrap(), fp))
@@ -2469,7 +2479,7 @@ pub fn arrange(
             plan["advisory_regions"] =
                 crate::grading::advisory_regions(&complete, regions, &fixed)?;
         }
-        record["deferred_grading"] = deferred_grading(&plan, &admitted);
+        record["deferred_grading"] = deferred_grading(&plan, &record["blocks"]);
         record["residual"]["steps_used"] = plan["steps_used"].clone();
         let steps = if has_variants {
             residual_used
