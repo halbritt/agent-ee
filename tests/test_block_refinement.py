@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from agent_ee import block_contract, block_refinement, placement, placer_runner
+from agent_ee import block_contract, block_refinement, placement, placer, placer_runner
 from agent_ee.placement_probe import extract
 from test_blocks import footprint
 from test_placement import capture, rectangle, MM
@@ -49,6 +50,28 @@ def facts():
     return board
 
 
+def verification_entries(board, record):
+    """Minimal authored candidate pose records; production admits complete /2 upstream."""
+    by_ref = {fp['ref']: fp for fp in board['footprints']}
+    block = record['blocks'][0]
+    anchor = by_ref[block['anchor']]
+    rotation = int(anchor['rotation_deg']) % 360
+    members = []
+    for ref in block['references']:
+        fp = by_ref[ref]
+        offset = [p-a for p, a in zip(fp['position_nm'], anchor['position_nm'])]
+        members.append({'reference': ref, 'side': fp['side'], 'pose': {
+            'position_nm': list(placer.rotate(offset, -rotation//90)),
+            'rotation_deg': (int(fp['rotation_deg'])-rotation) % 360}})
+    candidate = {'schema': 'agent-ee.block-candidate/2', 'block_id': block['block'],
+                 'frame': {'anchor': block['anchor']}, 'members': members,
+                 'provenance': deepcopy(block['provenance'])}
+    block['candidate_sha256'] = block_refinement.digest(candidate)
+    record['arranged'] = [{'block': block['block'], 'position_nm': anchor['position_nm'],
+                          'rotation_deg': rotation}]
+    return [{'candidate': candidate}]
+
+
 class BlockRefinementTest(unittest.TestCase):
     def test_capture_digest_preserves_public_facts_without_private_cache_or_angle_spelling(self):
         board = facts()
@@ -68,6 +91,44 @@ class BlockRefinementTest(unittest.TestCase):
             else: del changed['footprints'][0]['rotation_deg']
             with self.subTest(change=change):
                 self.assertNotEqual(block_refinement.capture_digest(changed), expected)
+
+    def test_saved_metric_replay_binds_actual_context_and_rejects_forged_improvement(self):
+        board = facts()
+        policy, contract, record = declarations(board)
+        entries = verification_entries(board, record)
+        final, witness = block_refinement.refine(board, policy, contract, record, step_budget=64)
+        record['member_refinement'] = witness
+        saved = deepcopy(final)
+        saved['board_sha256'] = 'f'*64  # Saved bytes have a distinct identity from planned capture records.
+        verification = block_refinement.verify_saved(saved, policy, contract, record, entries)
+        self.assertEqual((verification['status'], verification['moves_verified']), ('pass', len(witness['moves'])))
+        self.assertEqual(verification['capture_digest_basis'], block_refinement.CAPTURE_DIGEST_BASIS)
+        self.assertEqual(verification['saved_public_capture_sha256'], block_refinement.capture_digest(saved))
+        self.assertNotEqual(verification['saved_capture_sha256'], witness['final_capture_sha256'])
+        with patch('agent_ee.placer_runner.extract', return_value=saved):
+            with self.assertRaisesRegex(ValueError, 'returned plan policy'):
+                placer_runner._saved_block_contract(Path('not-written.kicad_pcb'), contract, board,
+                    {'policy': {**policy, 'gap_nm': 1}}, policy, {})
+        with self.assertRaisesRegex(ValueError, 'actual effective policy'):
+            block_refinement.verify_saved(saved, {**policy, 'gap_nm': 1}, contract, record, entries)
+        with self.assertRaisesRegex(ValueError, 'requested block contract'):
+            block_refinement.verify_saved(saved, policy, {**contract, 'thickness_nm': 2}, record, entries)
+        for field in ('before', 'after'):
+            forged = deepcopy(record)
+            forged['member_refinement']['moves'][0][field]['whole_board_hpwl_nm'] += 1
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'metrics differ'):
+                block_refinement.verify_saved(saved, policy, contract, forged, entries)
+        forged = deepcopy(record)
+        forged['member_refinement']['moves'][0]['before_position_nm'][0] += 1
+        with self.assertRaisesRegex(ValueError, 'selected starting candidate geometry'):
+            block_refinement.verify_saved(saved, policy, contract, forged, entries)
+        forged = deepcopy(record)
+        forged['blocks'][0]['references'] = ['C1']
+        with self.assertRaisesRegex(ValueError, 'membership differs'):
+            block_refinement.verify_saved(saved, policy, contract, forged, entries)
+        altered = block_refinement._move(saved, 'C1', [4500001, 2000000])
+        with self.assertRaisesRegex(ValueError, 'final member pose differs'):
+            block_refinement.verify_saved(altered, policy, contract, record, entries)
 
     def test_one_member_moves_inside_window_while_anchor_and_original_stay_exact(self):
         board = facts()
@@ -148,6 +209,7 @@ class BlockRefinementTest(unittest.TestCase):
         self.assertTrue(k.SaveBoard(str(source), board))
         initial = extract(source)
         policy, contract, record = declarations(initial)
+        entries = verification_entries(initial, record)
         retain('before-capture.json', initial)
         retain('policy.json', policy)
         retain('contract.json', contract)
@@ -167,6 +229,10 @@ class BlockRefinementTest(unittest.TestCase):
         retain('plan.json', plan)
         placer_runner._apply_plan(board, plan, output)
         saved = extract(output)
+        record['member_refinement'] = witness
+        verification = block_refinement.verify_saved(saved, policy, contract, record, entries)
+        retain('saved-refinement-verification.json', verification)
+        self.assertEqual(verification['status'], 'pass', verification)
         report = block_contract.judge(saved, contract, original_capture=initial, plan=plan)
         retain('saved-capture.json', saved)
         retain('saved-block-contract.json', report)

@@ -774,14 +774,35 @@ def _saved_judgment(output, plan):
     return facts, judgment
 
 
-def _saved_block_contract(output, contract, original_capture, plan):
+def _saved_block_contract(output, contract, original_capture, plan, effective_policy, section):
     """Independently re-extract and judge the saved board before publication."""
     from .block_contract import judge as judge_contract
-    record = judge_contract(extract(output), contract, original_capture=original_capture, plan=plan)
+    saved = extract(output)
+    if plan.get('policy') != effective_policy:
+        raise ValueError('returned plan policy differs from actual effective request policy')
+    record = judge_contract(saved, contract, original_capture=original_capture, plan=plan)
     path = output.parent / 'block-contract.json'
     write_json(path, record)
     if record['status'] not in ('pass', 'info'):
         raise ValueError('saved-board block contract has required missing evidence or a violation')
+    if 'member_refinement' in plan['block_arrangement']:
+        from .block_arrangement import validate_policy
+        from .block_refinement import verify_saved
+        expected = validate_policy(section['arrangement'], {b['id'] for b in contract['allocation']['blocks']},
+                                   {f['ref'] for f in original_capture['footprints']})
+        if plan['block_arrangement']['arrangement'] != expected:
+            raise ValueError('refinement arrangement differs from actual request')
+        verification_path = output.parent / 'block-refinement-verification.json'
+        try:
+            verification = verify_saved(saved, effective_policy, contract, plan['block_arrangement'], section['candidates'])
+        except ValueError as exc:
+            write_json(verification_path, {'schema': 'agent-ee.block-member-refinement-verification/1',
+                'status': 'refused', 'board_sha256': saved['board_sha256'], 'reason': str(exc)})
+            raise
+        write_json(verification_path, verification)
+        record['member_refinement_verification'] = {'path': verification_path.name,
+            'sha256': digest(verification_path), 'status': verification['status']}
+        write_json(path, record)
     return {'path': path.name, 'sha256': digest(path), 'status': record['status']}
 
 
@@ -864,7 +885,8 @@ def _retain_failure(root, name, scratch, error):
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
              'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json',
-             'native-drc-restamp.json', 'project-models.json', 'planning-execution.json', 'block-contract.json')
+             'native-drc-restamp.json', 'project-models.json', 'planning-execution.json', 'block-contract.json',
+             'block-refinement-verification.json')
     for name in names:
         path = scratch / name
         if path.is_file():
@@ -1001,7 +1023,8 @@ def place_candidate(source, netlist, destination, request):
                 report = _evaluate_proposal(board, output, plan, netlist_bytes, facts, source,
                                             side_changes)
                 if contract is not None:
-                    report['block_contract'] = _saved_block_contract(output, contract, facts, plan)
+                    report['block_contract'] = _saved_block_contract(output, contract, facts, plan, policy,
+                                                                    request['blocks'])
                 report['planning_execution'] = {
                     'path': 'planning-execution.json', 'sha256': digest(scratch / 'planning-execution.json'),
                     'implementation': planning_execution['implementation']}

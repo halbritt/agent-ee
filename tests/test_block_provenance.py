@@ -388,6 +388,7 @@ class RefinementProvenanceTests(unittest.TestCase):
         metrics = lambda wire: {'internal_hpwl_nm': wire, 'whole_board_hpwl_nm': wire,
             'declared_pair_distance_squared_nm2': [wire**2], 'thermal_minimum_distance_squared_nm2': None}
         witness = {'schema': 'agent-ee.block-member-refinement/1',
+            'capture_digest_basis': 'public-capture-integral-angles/1',
             'source_capture_sha256': '1'*64, 'final_capture_sha256': '2'*64,
             'policy_sha256': blocks.digest(policy), 'contract_sha256': '3'*64,
             'step_budget': 64, 'steps_used': 2, 'status': 'refined', 'termination': 'complete',
@@ -421,6 +422,10 @@ class RefinementProvenanceTests(unittest.TestCase):
         self.assertEqual(row['final_member_poses'], artifact['member_refinement']['final_member_poses'])
         self.assertEqual(artifact['member_refinement_sha256'], blocks.digest(plan['block_arrangement']['member_refinement']))
         self.assertEqual(arrangement.check_roster(artifact, plan), artifact)
+        forged_policy = copy.deepcopy(plan)
+        forged_policy['block_arrangement']['member_refinement']['policy_sha256'] = '0'*64
+        with self.assertRaisesRegex(ValueError, 'policy differs'):
+            self.artifact(forged_policy)
         changed = copy.deepcopy(plan)
         changed['placements'][0]['position_nm'] = [4500001, 2000000]
         with self.assertRaisesRegex(ValueError, 'row .* differs'):
@@ -444,6 +449,8 @@ class RefinementProvenanceTests(unittest.TestCase):
             lambda a: a['member_refinement']['final_member_poses'][0]['position_nm'].__setitem__(0, 42),
             lambda a: a['blocks'][0].pop('candidate_role'),
             lambda a: a['blocks'][0].update(selected_face='unknown'),
+            lambda a: a['member_refinement'].pop('capture_digest_basis'),
+            lambda a: a['member_refinement'].update(capture_digest_basis='raw-capture/unknown'),
         ]
         for index, mutate in enumerate(mutations):
             changed = copy.deepcopy(artifact)

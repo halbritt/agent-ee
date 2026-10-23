@@ -1588,7 +1588,7 @@ def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256, res
     if 'member_refinement' in record:
         document['member_refinement'] = copy.deepcopy(record['member_refinement'])
         document['member_refinement_sha256'] = digest(document['member_refinement'])
-    return validate_provenance(document)
+    return check_roster(document, plan)
 
 
 def check_roster(document, plan):
@@ -1663,11 +1663,14 @@ def _validate_refinement(document):
     _sha256(document['member_refinement_sha256'], 'member refinement hash')
     if digest(witness) != document['member_refinement_sha256']:
         raise ValueError('member refinement canonical hash mismatch')
-    blocks._keys(witness, {'schema', 'source_capture_sha256', 'final_capture_sha256', 'policy_sha256',
+    blocks._keys(witness, {'schema', 'capture_digest_basis', 'source_capture_sha256', 'final_capture_sha256', 'policy_sha256',
                           'contract_sha256', 'step_budget', 'steps_used', 'moves', 'rejected', 'skipped',
                           'status', 'termination', 'final_member_poses'}, label='member refinement')
     if witness['schema'] != 'agent-ee.block-member-refinement/1':
         raise ValueError('unknown member refinement schema')
+    from .block_refinement import CAPTURE_DIGEST_BASIS
+    if witness['capture_digest_basis'] != CAPTURE_DIGEST_BASIS:
+        raise ValueError('unknown member refinement capture digest basis')
     for key in ('source_capture_sha256', 'final_capture_sha256', 'policy_sha256', 'contract_sha256'):
         _sha256(witness[key], 'member refinement ' + key)
     if (any(type(witness[key]) is not int or witness[key] < 0 for key in ('steps_used', 'step_budget'))

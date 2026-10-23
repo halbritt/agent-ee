@@ -213,3 +213,169 @@ def refine(capture, policy, contract, block_records, *, step_budget):
 def blocks_key(value):
     from .blocks import _natural
     return _natural(value)
+
+
+def verify_saved(saved_capture, policy, contract, block_records, entries):
+    """Recompute accepted-move metrics from saved native geometry without search.
+
+    Planner capture hashes describe transformed planning records. Replay hashes
+    below describe the separate saved-native coordinate records and do not assert
+    equality between those captures or between a capture and native board bytes.
+    """
+    witness = block_records.get('member_refinement')
+    if not isinstance(witness, dict) or witness.get('schema') != SCHEMA:
+        raise ValueError('saved refinement verification needs the complete witness')
+    if witness.get('capture_digest_basis') != CAPTURE_DIGEST_BASIS:
+        raise ValueError('saved refinement verification needs the explicit public capture digest basis')
+    if witness.get('policy_sha256') != digest(policy):
+        raise ValueError('refinement witness differs from actual effective policy')
+    if witness.get('contract_sha256') != digest(contract):
+        raise ValueError('refinement witness differs from requested block contract')
+    identity_capture = {**saved_capture, 'board_sha256': contract['allocation']['board_sha256']}
+    membership = block_contract.membership(identity_capture, contract['allocation'])
+    expected = {b['id']: set(b['references']) for b in membership['blocks']}
+    rows = block_records.get('blocks')
+    if (not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows)
+            or len({row.get('block') for row in rows}) != len(rows)
+            or {row.get('block'): set(row.get('references', [])) for row in rows} != expected):
+        raise ValueError('refinement block membership differs from requested allocation')
+    blocks = {row['block']: row for row in rows}
+    for bid, anchor in membership['anchors'].items():
+        if 'member' in anchor and blocks[bid]['anchor'] != anchor['member']:
+            raise ValueError('refinement anchor differs from requested member anchor')
+    refs = set().union(*expected.values())
+    saved = {fp['ref']: fp for fp in saved_capture['footprints']}
+    final = witness.get('final_member_poses')
+    if (not isinstance(final, list) or any(not isinstance(p, dict) for p in final)
+            or len({p.get('reference') for p in final}) != len(final)
+            or {p.get('reference') for p in final} != refs):
+        raise ValueError('refinement final poses do not cover allocated members')
+
+    def pose_matches(fp, position, side, rotation):
+        return (fp['position_nm'] == position and fp['side'] == side
+                and type(rotation) is int and (fp['rotation_deg'] - rotation) % 360 == 0)
+
+    for pose in final:
+        if not pose_matches(saved[pose['reference']], pose.get('position_nm'), pose.get('side'), pose.get('rotation_deg')):
+            raise ValueError('refinement final member pose differs from native saved board')
+    moves = witness.get('moves')
+    if not isinstance(moves, list):
+        raise ValueError('refinement witness moves must be a list')
+    fixed = placer._fixed_refs(saved_capture, policy)
+    current = deepcopy(saved_capture)
+    for move in reversed(moves):
+        if not isinstance(move, dict):
+            raise ValueError('refinement move must be an object')
+        bid, ref = move.get('block'), move.get('reference')
+        block = blocks.get(bid)
+        if (block is None or ref not in expected[bid] or ref in fixed or ref == block['anchor']
+                or block['provenance']['class'] != 'search-derived'
+                or move.get('starting_candidate_sha256') != block['candidate_sha256']):
+            raise ValueError('refinement move lacks movable starting-candidate identity')
+        fp = next(fp for fp in current['footprints'] if fp['ref'] == ref)
+        if not pose_matches(fp, move.get('after_position_nm'), move.get('side'), move.get('rotation_deg')):
+            raise ValueError('refinement reverse replay pose chain is broken')
+        position = move.get('before_position_nm')
+        if not isinstance(position, list) or len(position) != 2 or any(type(n) is not int for n in position):
+            raise ValueError('refinement before position must be integer [x, y]')
+        current = _move(current, ref, position)
+    reconstructed_sha256 = capture_digest(current)
+    arranged_rows = block_records.get('arranged')
+    if (not isinstance(arranged_rows, list) or any(not isinstance(a, dict) for a in arranged_rows)
+            or len({a.get('block') for a in arranged_rows}) != len(arranged_rows)
+            or {a.get('block') for a in arranged_rows} != set(expected)):
+        raise ValueError('refinement starting arrangement needs each block exactly once')
+    arranged = {a['block']: a for a in arranged_rows}
+    starting = {fp['ref']: fp for fp in current['footprints']}
+    windows = {}
+    if not isinstance(entries, list):
+        raise ValueError('refinement verification requires original request candidates')
+    for bid, row in blocks.items():
+        matches = []
+        for entry in entries:
+            candidate = entry.get('candidate') if isinstance(entry, dict) else None
+            if not isinstance(candidate, dict):
+                raise ValueError('refinement request candidate must be an object')
+            if candidate.get('schema') == 'agent-ee.block-candidate-set/1':
+                if candidate.get('block_id') != bid:
+                    continue
+                face = arranged[bid].get('selected_face')
+                variant = candidate.get('variants', {}).get(face)
+                if (row.get('selected_face') != face or digest(candidate) != row.get('candidate_set_sha256')
+                        or not isinstance(variant, dict) or variant.get('status') != 'packed'):
+                    raise ValueError('refinement selected native candidate set differs from request')
+                candidate, mapping = variant['candidate'], {}
+            else:
+                mapping = entry.get('mapping', {})
+            if not isinstance(mapping, dict):
+                raise ValueError('refinement candidate mapping must be an object')
+            if digest(candidate) != row['candidate_sha256']:
+                continue
+            members = candidate.get('members')
+            if not isinstance(members, list):
+                raise ValueError('refinement starting candidate needs members')
+            references = [mapping.get(m['reference'], m['reference']) for m in members]
+            if len(references) == len(set(references)) and set(references) == expected[bid]:
+                matches.append((candidate, mapping))
+        if len(matches) != 1:
+            raise ValueError('refinement starting candidate is missing or ambiguous')
+        candidate, mapping = matches[0]
+        if candidate.get('provenance') != row.get('provenance') or mapping != row.get('mapping', {}):
+            raise ValueError('refinement starting candidate provenance or mapping differs from request')
+        anchor = candidate['frame']['anchor']
+        if mapping.get(anchor, anchor) != row['anchor']:
+            raise ValueError('refinement starting candidate anchor differs from arrangement')
+        pose = arranged[bid]
+        rotation = pose['rotation_deg']
+        if type(rotation) is not int or rotation not in (0, 90, 180, 270):
+            raise ValueError('refinement starting macro rotation must be a quarter turn')
+        for member in candidate['members']:
+            ref = mapping.get(member['reference'], member['reference'])
+            dx, dy = placer.rotate(member['pose']['position_nm'], rotation // 90)
+            position = [pose['position_nm'][0] + dx, pose['position_nm'][1] + dy]
+            angle = (member['pose']['rotation_deg'] + rotation) % 360
+            if not pose_matches(starting[ref], position, member['side'], angle):
+                raise ValueError('refinement reverse replay differs from selected starting candidate geometry')
+        windows[bid] = box([p for ref in expected[bid] for c in starting[ref]['courtyards'].values()
+                            for p in courtyard_bounds(c)[0]])
+    if (judge(current, overhangs=policy.get('fixed_overhangs'))['verdict'] != 'pass'
+            or block_contract.check_complete(current, contract)['status'] != 'pass'):
+        raise ValueError('refinement reconstructed starting capture fails placement or block contract')
+    verified = []
+    for move in moves:
+        bid, ref = move['block'], move['reference']
+        fp = next(fp for fp in current['footprints'] if fp['ref'] == ref)
+        if not pose_matches(fp, move['before_position_nm'], move['side'], move['rotation_deg']):
+            raise ValueError('refinement forward replay pose chain is broken')
+        before = _metrics(current, policy, contract, block_records, expected[bid])
+        proposed = _move(current, ref, move['after_position_nm'])
+        after = _metrics(proposed, policy, contract, block_records, expected[bid])
+        if _record_metrics(before) != move.get('before') or _record_metrics(after) != move.get('after'):
+            raise ValueError('refinement witness metrics differ from saved native replay')
+        if not _improves(before, after):
+            raise ValueError('refinement native replay does not improve every required objective')
+        bounds = _bbox(next(fp for fp in proposed['footprints'] if fp['ref'] == ref))
+        window = windows[bid]
+        if (move.get('block_window_nm') != list(window)
+                or not (window[0] <= bounds[0] <= bounds[2] <= window[2]
+                        and window[1] <= bounds[1] <= bounds[3] <= window[3])):
+            raise ValueError('refinement replay escapes its selected starting block window')
+        if not _admitted(proposed, ref, policy, contract, block_records):
+            raise ValueError('refinement native replay violates a hard placement constraint')
+        verified.append({'block': bid, 'reference': ref, 'before': _record_metrics(before),
+                         'after': _record_metrics(after), 'before_native_replay_sha256': capture_digest(current),
+                         'after_native_replay_sha256': capture_digest(proposed)})
+        current = proposed
+    if capture_digest(current) != capture_digest(saved_capture):
+        raise ValueError('refinement forward replay does not restore the complete saved capture')
+    return {'schema': 'agent-ee.block-member-refinement-verification/1', 'status': 'pass',
+            'measurement_source': 'saved native capture with exact translation replay',
+            'capture_digest_basis': CAPTURE_DIGEST_BASIS,
+            'board_sha256': saved_capture['board_sha256'], 'saved_capture_sha256': digest(saved_capture),
+            'saved_public_capture_sha256': capture_digest(saved_capture),
+            'reconstructed_start_capture_sha256': reconstructed_sha256,
+            'policy_sha256': digest(policy), 'contract_sha256': digest(contract),
+            'witness_sha256': digest(witness), 'moves_verified': len(verified), 'moves': verified,
+            'starting_layout_binding': 'selected request /2 member poses transformed by recorded macro pose',
+            'limitations': ['Macro placement is checked against the plan, not independently selected again.',
+                            'Planner capture hashes and saved-native replay hashes identify distinct records.']}
