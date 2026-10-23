@@ -1050,10 +1050,16 @@ One pod-preparation dry run ran under native-admit in this image, using the prod
 stages were accepted, as in the retained 81e387ee run. The read-once path executed in the
 actual pipeline: each of the 90 `parts_manifest.dependency_closure` and 22 `qualify_manifest`
 calls read about 128.3 MB, against about 31.3 GB per call in the AGENTEE-454 "before"
-measurement. Of the retained run's 211 mapped output files, 200 emitted design files are
-byte-identical. The other 11 are identity records that differ only in run time and stock age,
-paths, the agent-ee identity and the digests derived from it, and the AGENTEE-450
-`krt`-to-`builtin` step name. Three new 7d5b0d4d policy modules are also bound. The pod pin
+measurement. Of the retained run's 211 mapped files, 200 emitted design files are
+byte-identical. Eleven mapped records differ. The actual 27 bounded check outcomes remain
+execution `ok`, outcome `defect`, and the final blocking obligations remain open. The repinned
+baseline additionally records AGENTEE-448 J1 nominal component-thickness screening and
+source/current obligation statements; this is a semantic baseline addition, and the accepted
+policy is unchanged. All 18 source-revision annotations become null in the exported non-Git
+context. Source, run, path, stock-age and policy identities also change. Of the separately
+compared 114 emission receipt files, 92 are byte-identical and 22 differ. This proves the
+stated design-byte and observed-check equivalence on these inputs, not byte or semantic
+identity of every baseline, receipt or metadata record. The pod pin
 itself (`AGENT_EE_PIN` in fome-mc `production-capture/pipeline.py`) is fome-mc's and is still
 81e387ee on the j6 and j6b2 branches; it moves only in fome-mc. This qualifies execution
 identity and the read-once path on these inputs. It is not a latency claim, a routing campaign
