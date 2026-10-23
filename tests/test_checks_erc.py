@@ -16,6 +16,7 @@ from agent_ee.harnesses import evidence_mounts
 from agent_ee.storage import digest, identity, read_json, write_json
 from agent_ee import violation_waivers as waivers
 from tests.toolchain import require_toolchain
+from owner_fixture import cite
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = 'owner/waivers.json'
@@ -55,10 +56,12 @@ def fixture(root, kind='erc'):
         # A default limit is advisory (AGENTEE-331), so the fixture declares its own
         # sourced track-width minimum; its native violations then stay hard defects.
         limits = project / 'drc-waiver-limits.json'
-        write_json(limits, {'schema': provenance.SCHEMA, 'board_setup_rules': {'min_track_width': {
+        declared = {'schema': provenance.SCHEMA, 'board_setup_rules': {'min_track_width': {
             'value_mm': 0.9, 'class': 'owner',
             'basis': 'Synthetic test fixture: authored track-width minimum for the native DRC waiver '
-                     'contract; not a real design rule'}}})
+                     'contract; not a real design rule'}}}
+        cite(declared, declared['board_setup_rules']['min_track_width'])  # AGENTEE-348 cited form keeps it hard
+        write_json(limits, declared)
         pro = project / 'rc_filter.kicad_pro'
         data, record = provenance.import_constraints(read_json(pro), limits.read_bytes(),
                                                      'project/' + limits.name, digest(limits))

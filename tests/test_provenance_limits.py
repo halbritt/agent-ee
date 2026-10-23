@@ -8,6 +8,7 @@ from agent_ee.design_rule_provenance import (
     advisory_numeric, bind_project, classify_finding, finding_sources, import_constraints)
 from agent_ee.placer_runner import _drc_comparison
 from agent_ee.storage import json_bytes, write_json
+from owner_fixture import bind_owner_rules, cite, owner_rules
 
 
 def source(field, value, cls):
@@ -64,6 +65,7 @@ class ProvenanceLimitsTest(unittest.TestCase):
             board.with_suffix('.kicad_dru').write_text(
                 '(version 1) (rule "scoped count" (layer "F.Cu") '
                 '(constraint thermal_spoke_count (min 3)))')
+            bind_owner_rules(board)  # AGENTEE-348 H1 migration: the owner count is declared and cited
             sources = finding_sources(board)
             self.assertEqual(sources['conditional_spoke_rules'], ['scoped count'])
             self.assertFalse(any(s['setting'].startswith('native_rules.') for s in sources['settings']))
@@ -210,8 +212,11 @@ class ProvenanceLimitsTest(unittest.TestCase):
             for cls in ('default', 'manufacturer', 'datasheet', 'engineering', 'owner'):
                 document = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {},
                     'custom_rules': {'b.kicad_dru': [{'rule': 'owner_gap', 'class': cls, 'basis': 'test claim'}]}}
+                raw = board.with_suffix('.kicad_dru').read_bytes()
+                if cls == 'owner':  # AGENTEE-348 H1 migration: a committed, value-bound owner decision
+                    owner_rules(document, raw, 'b.kicad_dru')
                 project, record = import_constraints({}, json_bytes(document), 'limits.json', 'test')
-                bind_project(project, record)
+                bind_project(project, record, raw)
                 write_json(board.with_suffix('.kicad_pro'), project)
                 if cls == 'owner':
                     sources = finding_sources(board)
@@ -314,6 +319,7 @@ class NativeLimitsTest(unittest.TestCase):
                 'net_settings': {'meta': {'version': 5}, 'classes': [{'name': 'Default', 'clearance': .2}]}}
             doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                 'min_clearance': {'value_mm': .09, 'class': 'manufacturer', 'basis': 'original probe minimum'}}}
+            cite(doc, doc['board_setup_rules']['min_clearance'])  # AGENTEE-348 cited form keeps it hard
             project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
             bind_project(project, record); write_json(path.with_suffix('.kicad_pro'), project)
             for x, refuses in ((3.65, False), (3.55, True)):
@@ -373,6 +379,8 @@ class NativeLimitsTest(unittest.TestCase):
             for cls in ('default', 'manufacturer'):
                 doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_text_height': {'value_mm': 8, 'class': cls, 'basis': 'original text probe'}}}
+                if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                    cite(doc, doc['board_setup_rules']['min_text_height'])
                 template = copy.deepcopy(original)
                 template['board']['design_settings']['rules']['min_text_height'] = 8
                 project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
@@ -402,6 +410,8 @@ class NativeLimitsTest(unittest.TestCase):
         for cls in ('default', 'manufacturer'):
             doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                 'min_text_height': {'value_mm': 8, 'class': cls, 'basis': 'original row text probe'}}}
+            if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                cite(doc, doc['board_setup_rules']['min_text_height'])
             project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
             bind_project(project, record); write_json(template_path, project)
             out = fixture.root/('row-'+cls); out.mkdir()
@@ -463,6 +473,8 @@ class NativePlaneLimitsTest(plane_fixture.PlaneFixture, unittest.TestCase):
                     'net_settings': {'meta': {'version': 5}, 'classes': [{'name': 'Default', 'clearance': .2}]}}
                 doc = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_clearance': {'value_mm': .09, 'class': cls, 'basis': 'original plane probe'}}}
+                if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                    cite(doc, doc['board_setup_rules']['min_clearance'])
                 project, record = import_constraints(template, json_bytes(doc), 'limits.json', 'probe')
                 bind_project(project, record)
                 write_json((self.source/self.board).with_suffix('.kicad_pro'), project)
@@ -495,6 +507,7 @@ class NativePlaneLimitsTest(plane_fixture.PlaneFixture, unittest.TestCase):
             if owned:
                 (self.source/self.board).with_suffix('.kicad_dru').write_text(
                     '(version 1)\n(rule "owned spoke count" (constraint thermal_spoke_count (min 3)))\n')
+                bind_owner_rules(self.source/self.board)  # AGENTEE-348 H1 migration
             with patch.object(add_planes, 'splice_zones', side_effect=one_spoke):
                 report = self.run_plan('owned-spokes' if owned else 'default-spokes')
             self.assertEqual(report['execution'], 'failed' if owned else 'ok', report)
@@ -509,6 +522,7 @@ class NativePlaneLimitsTest(plane_fixture.PlaneFixture, unittest.TestCase):
         (self.source/self.board).with_suffix('.kicad_dru').write_text(
             '(version 1)\n(rule "conditional owned count" (condition "A.Type == \'Pad\'") '
             '(constraint thermal_spoke_count (min 2)))\n')
+        bind_owner_rules(self.source/self.board)  # AGENTEE-348 H1 migration
         with patch.object(add_planes, 'splice_zones', side_effect=one_spoke):
             conditional = self.run_plan('conditional-spokes')
         self.assertEqual((conditional['execution'], conditional['outcome']), ('failed', 'unknown'), conditional)

@@ -352,7 +352,10 @@ class PhysicalIntentTests(unittest.TestCase):
 
     def test_sourced_locality_compiles_unchanged_without_guessed_semantics(self):
         records = ('layout-notes.md', 'owner-decisions.md')
-        manufacturer = {'class': 'manufacturer', 'basis': 'captured JLCPCB record'}
+        # AGENTEE-348 H4 migration: a manufacturer bound is a feasibility limit only when cited.
+        manufacturer = {'class': 'manufacturer', 'basis': 'captured JLCPCB record', 'citation': {
+            'kind': 'manufacturer_source', 'manufacturer': 'Original fixture fabricator', 'path': 'layout-notes.md',
+            'sha256': sha(LAYOUT_TEXT), 'locator': 'L-2', 'quote': 'within 3 mm'}}
         for provenance, expected in ((self.datasheet(), 'hard'), (None, 'advisory'), (manufacturer, 'feasibility')):
             with self.subTest(provenance=provenance and provenance['class']):
                 authored = self.locality(self.pair(provenance))
@@ -591,10 +594,10 @@ class PhysicalIntentTests(unittest.TestCase):
                      "unverifiable derivation kind 'layout'")
         document = {'schema': electrical_locality.SCHEMA, 'obligations': invented,
                     'source_records': {'layout-notes.md': LAYOUT_TEXT}}
-        # The shared classifier still grants it hard authority (existing locality_provenance
-        # contract), which is exactly what the compiler must not publish.
+        # AGENTEE-348 round-2 H3 (was 'hard'): the shared classifier no longer grants an
+        # authored layout scale authority; the captured quote does not state 1 nm.
         self.assertEqual(locality_provenance.classify(invented[0]['supply'], document['source_records'])['enforcement'],
-                         'hard')
+                         'advisory')
         self.stale_package(self.local, self.intent(self.local, records=records,
                                                    locality=self.locality(self.pair(self.datasheet()))),
                            bad, 'contracts/electrical-locality.json', document, "derivation kind 'layout'")
@@ -721,9 +724,14 @@ class PhysicalIntentTests(unittest.TestCase):
             bad = self.intent(self.local, records=records,
                               locality=self.locality(self.pair(self.noted(locator, value), limit=value)))
             with self.subTest(locator=locator):
-                # The inherited classifier still certifies it; the compiler seam must not.
+                # AGENTEE-348 round-2 H1 (was 'hard' for every line): the shared classifier now reads
+                # whole literals, so signed, grouped and fractional lines (N-1..N-4) no longer certify
+                # a suffix. Third-HOLD grammar (was 'hard' for N-5): '999 yd' is outside the closed
+                # grammar, so the whole quote fails closed. N-6 states 3 mm and 4 mm, both in grammar;
+                # the compiler seam still refuses it.
                 self.assertEqual(locality_provenance.classify(bad['locality'][0]['supply'],
-                                                              {'datasheet-notes.md': DATASHEET_TEXT})['enforcement'], 'hard')
+                                                              {'datasheet-notes.md': DATASHEET_TEXT})['enforcement'],
+                                 'advisory' if locator in ('N-1', 'N-2', 'N-3', 'N-4', 'N-5') else 'hard')
                 self.refused(self.local, bad, f'numeric mismatch: record {locator} states .*{pattern}')
                 document = {'schema': electrical_locality.SCHEMA, 'obligations': bad['locality'],
                             'source_records': {'datasheet-notes.md': DATASHEET_TEXT}}

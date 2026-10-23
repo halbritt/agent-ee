@@ -1,7 +1,10 @@
 """Import declared board limits without promoting template defaults to authority."""
 import copy
 import hashlib
+import re
+from fractions import Fraction
 
+from . import source_authority
 from .catalog import strict_json
 from .routing_rules import number
 
@@ -16,10 +19,19 @@ NET_FIELDS = {'clearance_mm': 'clearance', 'track_width_mm': 'track_width',
 
 
 def declaration(raw):
-    """Read the design lane's existing document; a basis is its citation text."""
+    """Read the design lane's existing document.
+
+    A basis is prose. Only a declaration's ``citation`` can make it hard
+    (``source_authority.cite``); ``source_records`` maps cited paths to their
+    captured UTF-8 text, as in electrical-locality/1.
+    """
     document = strict_json(raw)
     if not isinstance(document, dict) or document.get('schema') != SCHEMA:
         raise ValueError('constraint source must use ' + SCHEMA)
+    records = document.get('source_records', {})
+    if not isinstance(records, dict) or any(not isinstance(k, str) or not isinstance(v, str)
+                                            for k, v in records.items()):
+        raise ValueError('constraint source_records must map source paths to captured UTF-8 text')
     rules = document.get('board_setup_rules')
     if not isinstance(rules, dict):
         raise ValueError('constraint source needs board_setup_rules')
@@ -91,12 +103,13 @@ def import_constraints(project, raw, path, sha256):
 def inventory(project, document=None, path=None):
     """Every emitted numeric setting has an explicit class, including defaults."""
     document = document or {}
+    sources = document.get('source_records', {})
     records = []
     rules = project.get('board', {}).get('design_settings', {}).get('rules', {})
     for name, value in sorted(rules.items()):
         spec = document.get('board_setup_rules', {}).get(name, {})
         records.append(_record('board.design_settings.rules.' + name, value, spec, path,
-                               '/board_setup_rules/' + name, 'value_mm'))
+                               '/board_setup_rules/' + name, 'value_mm', sources))
     for netclass in project.get('net_settings', {}).get('classes', []):
         for name, value in sorted(netclass.items()):
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -104,16 +117,109 @@ def inventory(project, document=None, path=None):
             spec = (document.get('net_class_default') or {}) if netclass.get('name') == 'Default' else {}
             key = next((key for key, field in NET_FIELDS.items() if field == name), None)
             records.append(_record('net_settings.classes.' + netclass['name'] + '.' + name,
-                                   value, spec, path, '/net_class_default', key))
+                                   value, spec, path, '/net_class_default', key, sources))
     return records
 
 
-def _record(setting, value, spec, path, locator, key):
+# Dimensionless native constraints whose bounds are integer counts.
+COUNT_CONSTRAINTS = frozenset(('thermal_spoke_count', 'via_count'))
+
+
+def rule_payload(node):
+    """The numeric payload of one native rule form (AGENTEE-348 H1/H3).
+
+    Returns exact millimetre lengths and typed counts ``(constraint, n)`` from every
+    constraint's min/max/opt bound, or None when a bound is not an exact value with a
+    known unit. A count is qualified only by a stated count of the same kind.
+    """
+    lengths, counts = [], []
+    for constraint in node[2:]:
+        if not (isinstance(constraint, list) and len(constraint) > 1
+                and str(constraint[0]).lower() == 'constraint'):
+            continue
+        for bound in constraint[2:]:
+            if not (isinstance(bound, list) and bound and str(bound[0]).lower() in ('min', 'max', 'opt')):
+                continue
+            value = re.fullmatch(r'([0-9]+(?:\.[0-9]+)?)(mm|nm|um|mil|in)?', ''.join(str(t) for t in bound[1:]))
+            if value is None:
+                return None
+            if value[2]:
+                lengths.append(Fraction(value[1]) * source_authority.UNITS[value[2]])
+            elif str(constraint[1]).lower() in COUNT_CONSTRAINTS and value[1].isdigit():
+                counts.append((str(constraint[1]).lower(), int(value[1])))
+            else:
+                return None
+    return lengths, counts
+
+
+def rule_authority(spec, node, records):
+    """A custom-rule declaration resolves against its emitted rule's actual numeric payload."""
+    payload = rule_payload(node)
+    if payload is None:
+        return source_authority.advisory('native rule payload is not an exact numeric value')
+    result = source_authority.cite(spec['class'], spec.get('citation'), records, *payload)
+    if result['enforcement'] == 'integrity':
+        raise ValueError('constraint source record integrity: ' + result['reason'])
+    return result
+
+
+def native_rule_source(node, record, capture=None):
+    """Authority of a captured native custom rule: never from the file's path or hash alone.
+
+    The file hash is retained as capture identity. Only a single declaration of the rule
+    whose citation resolves against the rule's payload makes it hard; every other native
+    form stays advisory and is disclosed with its reason (AGENTEE-348 H1).
+    """
+    name = str(node[1])
+    source = {'class': 'default', 'citation': None}
+    if capture is not None:
+        source['capture'] = {**capture, 'rule': name}
+    document = record.get('document') or {}
+    specs = [spec for rules in document.get('custom_rules', {}).values() for spec in rules if spec['rule'] == name]
+    if len(specs) != 1:
+        source['unsourced_reason'] = ('captured native rule has no owner decision or provenance declaration'
+                                      if not specs else 'captured native rule is declared more than once')
+        return source
+    spec = specs[0]
+    source['class'] = spec['class']
+    if spec['class'] == 'default':
+        source['unsourced_reason'] = 'default class is never hard'
+        return source
+    resolved = rule_authority(spec, node, document.get('source_records', {}))
+    if resolved['enforcement'] == 'hard':
+        source['citation'] = {**(capture or {}), 'rule': name, 'basis': spec['basis'],
+                              'source': copy.deepcopy(spec['citation'])}
+    else:
+        source['unsourced_reason'] = resolved['reason']
+    return source
+
+
+def authority(spec, records):
+    """One declaration's resolved authority (AGENTEE-348); corrupt evidence refuses."""
+    values = [v for k, v in spec.items() if k == 'value_mm' or k in NET_FIELDS]
+    result = source_authority.cite(spec['class'], spec.get('citation'), records, values)
+    if result['enforcement'] == 'integrity':
+        raise ValueError('constraint source record integrity: ' + result['reason'])
+    return result
+
+
+def _record(setting, value, spec, path, locator, key, records=None):
     sourced = key is not None and key in spec and spec[key] == value
-    return {'setting': setting, 'value': value,
-            'class': spec['class'] if sourced else 'default',
-            'citation': {'path': path, 'locator': locator, 'basis': spec['basis']} if sourced else None,
-            'enforcement': 'hard' if sourced and spec['class'] != 'default' else 'advisory'}
+    record = {'setting': setting, 'value': value, 'class': spec['class'] if sourced else 'default',
+              'citation': None, 'enforcement': 'advisory'}
+    if sourced and spec['class'] == 'default':
+        # Located, never hard: the default class carries no authority.
+        record['citation'] = {'path': path, 'locator': locator, 'basis': spec['basis']}
+    elif sourced:
+        resolved = authority(spec, records)
+        if resolved['enforcement'] == 'hard':
+            record.update(enforcement='hard', citation={
+                'path': path, 'locator': locator, 'basis': spec['basis'],
+                'source': copy.deepcopy(spec['citation'])})
+        else:
+            # The label stays visible for disclosure; without a citation it is never hard.
+            record['unsourced_reason'] = resolved['reason']
+    return record
 
 
 # This binding travels with the immutable project into each native staging area.
@@ -164,10 +270,13 @@ def geometry_defaults(project, record, rules_raw=None):
         source = source or sources.get(setting, {})
         if source.get('class') in sourced_classes and source.get('citation'):
             return
-        result.append({'setting': setting, 'value': copy.deepcopy(value),
-                       'consumers': list(consumers), 'class': source.get('class', 'default'),
-                       'citation': copy.deepcopy(source.get('citation')),
-                       'enforcement': 'advisory', 'native_enforcement': 'retained'})
+        row = {'setting': setting, 'value': copy.deepcopy(value),
+               'consumers': list(consumers), 'class': source.get('class', 'default'),
+               'citation': copy.deepcopy(source.get('citation')),
+               'enforcement': 'advisory', 'native_enforcement': 'retained'}
+        if 'unsourced_reason' in source:
+            row['unsourced_reason'] = source['unsourced_reason']
+        result.append(row)
 
     def leaves(value, setting, consumers):
         if isinstance(value, dict):
@@ -224,11 +333,11 @@ def geometry_defaults(project, record, rules_raw=None):
             if not isinstance(node, list) or len(node) < 2 or node[0] != 'rule':
                 continue
             name = str(node[1])
-            # Captured owner forms retain the existing owner-file authority;
-            # only generated forms can be unsourced in this composition path.
+            # A captured native form has no authority from the file itself (H1): unless its
+            # declaration resolves, it is disclosed like an unsourced generated form.
             source = shadowed.get(index, record.get('generated_rules', {}).get(name))
             if source is None:
-                continue
+                source = native_rule_source(node, record)
             for ordinal, constraint in enumerate(node[2:]):
                 if isinstance(constraint, list) and constraint and constraint[0] == 'constraint':
                     router_only = len(constraint) > 1 and constraint[1] in {
@@ -363,6 +472,7 @@ def finding_sources(board, findings=()):
         for derived in record.get('derived_settings', []):
             if (setting['setting'] == derived['setting'] and setting['value'] == derived['value']
                     and setting['citation'] is None):
+                setting.pop('unsourced_reason', None)
                 setting.update(copy.deepcopy(derived))
     if PROJECT_KEY in project:
         bound = record.get('settings')
@@ -395,8 +505,8 @@ def finding_sources(board, findings=()):
                 if any(isinstance(c, list) and len(c) > 1 and str(c[0]).lower() == 'severity'
                        and str(c[1]).lower() == 'ignore' for c in node[2:]):
                     ignored_rules.append(name)
-                owner = record.get('owner_rules', {'path': str(path), 'sha256': digest(path)})
-                rules[name] = {'class': 'owner', 'citation': {**owner, 'rule': name}}
+                capture = record.get('owner_rules', {'path': str(path), 'sha256': digest(path)})
+                rules[name] = native_rule_source(node, record, capture)
         generated = record.get('generated_rules', {})
         require_owner_rule_classes(record, path.name, rules.keys() - generated.keys())
         for name, source in record.get('generated_rules', {}).items():
@@ -601,7 +711,7 @@ def require_evaluated_limits(report, sources):
     numeric = set(NATIVE_CONSTRAINT_TYPES.values())
     for name in sources.get('ignored_rules', []):
         source = sources['rules'][name]
-        if (source['class'] in CLASSES - {'default'} and
+        if (source['class'] in CLASSES - {'default'} and source.get('citation') and
                 numeric.intersection(sources['rule_constraints'][name])):
             raise ValueError('native DRC evaluation explicitly ignored by sourced rule '
                              + name + ': ' + str(source))
@@ -613,7 +723,8 @@ def require_evaluated_limits(report, sources):
         hard = [s for s in sources['settings'] if s['setting'].rsplit('.', 1)[-1] in fields
                 and s['class'] in CLASSES - {'default'} and s['citation']]
         hard_rules = [dict(rule=name, **source) for name, source in sources['rules'].items()
-                      if source['class'] in CLASSES - {'default'} and key in NATIVE_CONSTRAINT_TYPES
+                      if source['class'] in CLASSES - {'default'} and source.get('citation')
+                      and key in NATIVE_CONSTRAINT_TYPES
                       and NATIVE_CONSTRAINT_TYPES[key] in sources['rule_constraints'].get(name, [])]
         if hard or hard_rules:
             raise ValueError('native DRC evaluation explicitly ignored for sourced '

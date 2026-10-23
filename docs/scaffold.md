@@ -646,12 +646,110 @@ A producer plan may name a captured `constraint_source`, for example
 `"constraint_source": "design-rules/constraints.json"`. Stage-one Python callers
 can pass `constraint_source=Path(...)` to `scaffold`. The document uses the design
 lane's existing `fome-mc.constraint-provenance/1` format. `board_setup_rules`
-entries contain `value_mm`, `class` and a nonempty citation `basis`.
+entries contain `value_mm`, `class` and a nonempty prose `basis`.
 `net_class_default` can declare clearance, track width, via diameter and via drill
 in millimetres. Classes are `owner`, `manufacturer`, `datasheet`, `engineering`
 and `default`. Importing a citation does not certify its applicability. A declared
 non-default net-class setting requires one explicit native `Default` class in
 the project template; the importer refuses an implicit or ambiguous class.
+
+**Citation model (AGENTEE-348 G4).** A class label and its prose `basis` never
+grant hard authority. A declaration (board rule, `net_class_default` or
+`custom_rules` entry) is hard only when its `citation` resolves, through
+`source_authority.cite`, the same functions that grade
+[locality provenance](placer.md#locality-provenance-agentee-337):
+
+| Class | Resolving `citation` |
+| --- | --- |
+| `owner` | `kind: owner_decision`, with `path`, `sha256`, `locator`, `quote`, a non-agent `owner`, `repository` and a 40-hex `commit`. `(repository, commit, path)` must be pinned in `source_authority.OWNER_DECISIONS` with the same SHA-256. |
+| `manufacturer` | `kind: manufacturer_capture`: `capture` names a source in the hash-pinned `data/jlcpcb-locality.json`, with its `sha256`, that record's own `locator`, and a `fact` it transcribes (`pcb`: `different_net_clearance_nm`). Every declared value must equal that fact. Or `kind: manufacturer_source`: a captured manufacturer document (`manufacturer`, `path`, `sha256`, `locator`, `quote`) verified against `source_records`. |
+| `datasheet` | `kind: captured_source`, with `path`, `sha256`, `locator` and `quote` verified against the document's `source_records`. |
+| `engineering` | Any of the citation forms above, under the same checks. |
+
+`source_records` maps cited paths to captured UTF-8 text, as in
+electrical-locality/1. Authority binds the governed numeric payload (AGENTEE-348
+review H2/H3/H5). Every quoted citation must state each governed value under the
+closed quantity grammar of `agent_ee.quantity`, the third-HOLD redesign. It is one
+implementation for every consumer, and its module docstring defines the grammar.
+
+The parser reads the COMPLETE quantity expression:
+
+- an exact literal with an explicit sign (`+`, `-`, U+2212) and exponent;
+- unit terms from an allow-list: length `nm um µm μm mm mil`; time
+  `s ms us µs ns second(s)`, which exists only so a rate parses to its own
+  dimension;
+- count nouns `spoke(s)`/`via(s)`;
+- products and ratios (`/ * · ×`, `per`) and integer powers (`^n`, `²`, `³`).
+
+Each quantity becomes a fact: a dimension vector and an exact canonical SI value.
+A governed value qualifies only by exact dimension-vector equality and exact
+rational value equality. A declared JSON number is read as its shortest
+round-trip decimal; there is no float tolerance.
+
+So:
+
+- `3 mm/s`, `3 mm^2` and `3 spokes per mm` have other dimensions than a 3 mm
+  length or a count of 3;
+- `1e-3 mm` is 0.001 mm and `-3 mm` is −3 mm;
+- a count needs an unsigned integer literal, with no denominator. The parser
+  records denominators before cancellation, so `3 spokes/mm*mm` is refused with
+  `count fact has a denominator`.
+
+The parser consumes or rejects every token (post-redesign conformance round 1,
+449 ruling). Outside a quantity, only prose words, allow-listed prose
+punctuation and word-joining `-`/`/` are consumed. A spaced sign (`- 3 mm`,
+`− 3 mm`), a superscript outside a unit power (`3 mm ⁻¹`) or any other stray
+character rejects the quote; nothing is skipped.
+
+Anything outside the grammar fails the WHOLE quote closed, with the reason
+`quote has a quantity outside the closed grammar: …`. That includes:
+
+- `±` (no tolerance facts exist);
+- ranges;
+- grouped or juxtaposed numerals (`3,000`, `3 000`, `1’3`);
+- an unknown word directly after a numeral (`cm`, `mils`, `mm2`, `yd`,
+  `capacitors`);
+- a unit after a designator (`x-3 mm`);
+- stray punctuation on a numeral.
+
+The lane's regression gate is `tests/test_quantity_matrix.py`, which runs every
+review case through both consumers. A citation with no
+value to bind is advisory (`no declared value to bind to the citation`). The
+governed values are:
+
+- for a board rule or net-class default, its declared millimetre values;
+- for a `custom_rules` entry, the emitted or captured native rule's own
+  `min`/`max`/`opt` bounds, read exactly by `design_rule_provenance.rule_payload`.
+
+A bound without an exact value and known unit is advisory with the reason
+`native rule payload is not an exact numeric value`.
+
+A captured native `.kicad_dru` rule has no authority from its path or hash
+(review H1). Its hash is kept as `capture` identity. It is hard only when exactly
+one `custom_rules` declaration names it and that citation resolves against its
+payload. Otherwise it is `default` or its declared class, uncited, with
+`unsourced_reason`. For example, it may read
+`captured native rule has no owner decision or provenance declaration`. It is
+also listed in `unsourced_geometry`. Board-build binding passes the copied rule
+file, so these native forms are disclosed there too.
+
+A declaration without a resolving citation
+keeps its class label and its value is still emitted. It has no citation, is
+`advisory`, and records `unsourced_reason`, for example
+`free-text owner label without a resolvable citation`,
+`owner decision is not cited at a commit (uncommitted)`,
+`owner decision commit does not resolve to a pinned owner commit`,
+`owner decision bytes differ from the pinned owner commit (stale)` or
+`owner decision names no owner, or names an agent or the design-owner role`.
+A cited record whose captured text hashes differently refuses the import, so
+present corrupt evidence never becomes advisory.
+
+`OWNER_DECISIONS` ships empty. An entry is added only by a reviewed agent-ee
+change that traced the commit and bytes to the owner's repository;
+`source_authority.verify_committed` checks the commit and bytes read-only.
+Until then, no design-rule owner declaration is hard. The
+`fome-mc.constraint-provenance/1` documents that cite JLCPCB by URL alone are
+advisory. They become hard by citing the pinned capture.
 
 The importer applies declared non-default values. A declared default does not
 replace the template value. The captured source is immutable. The receipt's
@@ -818,8 +916,10 @@ candidate inputs, not an independent signature or owner evidence store.
 
 This is an inventory of emitted project/rule settings, not of KiCad or router
 implementation constants, nor of explicit pad, zone or footprint geometry.
-It does not certify citations' engineering applicability; verified reference
-authority remains the separate owner item G4. No router code changes; valid
+It does not certify citations' engineering applicability. Exclusion requires the
+resolving citation of the AGENTEE-348 G4 citation model above. A free-text
+owner, manufacturer or datasheet label stays in the inventory with its
+`unsourced_reason`. No router code changes; valid
 inventories preserve existing acceptance verdicts.
 
 Thermal-spoke counts are dimensionless numeric limits. A native

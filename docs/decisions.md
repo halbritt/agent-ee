@@ -609,14 +609,15 @@ bind retained unsourced geometry settings and their potential router/zone-filler
 consumers in `unsourced_geometry`. Native values and existing DRC verdicts stay
 unchanged; unsourced numeric limits remain advisory. Only owner, manufacturer
 and datasheet sources omit value-matched settings from that inventory.
-G4 (verified reference authority) remains owner work; importing a class and
-citation does not validate their authority.
+G4 (verified reference authority) was implemented under AGENTEE-348; see the
+AGENTEE-348 G4 entry below.
 
 AGENTEE-437 preserves name-based owner-rule DRC authority while disclosing
 shadowed generated geometry by position and its original source. Source-class
 exclusion requires a citation. Grading re-derives bound geometry inventories;
 stale, edited or missing inventories refuse evaluation as unknown. This is
-captured-input consistency, not the owner authority verification in G4 above.
+captured-input consistency. Owner authority verification is the separate
+AGENTEE-348 G4 citation model.
 Coordinator ruling 437a binds a serialized emission witness and permits only
 materialized additions equal to a closed, cited KiCad 10.0.7 native default.
 The witness hash excludes itself to avoid a circular digest. Changed/removed
@@ -799,3 +800,49 @@ ruling accepts the access-direction comb fixture's new verdict: its ten
 fixture-author hard obstacles at gap 0 are hard sources, so the proved
 infeasibility is correctly a `defect`, and the declared and plain boards still
 agree on every compared key, including `search_failure`.
+
+## Common citation model (AGENTEE-348 G4, 2026-10-22)
+
+Coordinator ruling (agent-449, AGENTEE-348 G4 worker assignment; not an owner
+statement): options (b) and (c). Its stated basis is the fome-mc `AGENTS.md`
+gating-provenance rule and the owner-relayed AGENTEE-348 Plane comment "Owner
+decision (2026-10-22, owner via agent-519 decision quiz): ... Owner authority =
+a citation to a committed owner decision (pinned commit + hash, as OWNER_GRANTS
+does)" (class owner-relayed).
+
+- (b) A free-text owner, manufacturer, datasheet or engineering label without a
+  resolvable citation is advisory in both the design-rule import (AGENTEE-331)
+  and locality (AGENTEE-337). It is disclosed with `unsourced_reason` in the
+  geometry inventory and is never dropped. `source_authority` implements the
+  resolution once for both consumers. See the
+  [citation model](scaffold.md#declared-design-rule-sources-agentee-331).
+- (c) Records with a real captured source keep their hard verdict through the
+  cited form. Fab-profile-derived manufacturer settings already cite a captured
+  file by hash and locator, and they are unchanged. Original test fixtures moved
+  to the cited form. The six named tests changed one at a time, each with a
+  docstring justification.
+
+Agent reasoning, flagged for review. `OWNER_DECISIONS` ships empty: no reviewed
+owner commit is pinned yet.
+
+The independent review of eea5a23c (Sol, HOLD H1–H5) was closed under the
+dispatcher boundary ruling. That ruling is agent-449's and is not an owner
+statement: it permits only stricter test expectations, and every changed
+expectation is listed. The closing changes:
+
+- A captured `.kicad_dru` rule no longer gains owner authority from its file.
+- Locality owner bounds are value-bound like the design-rule import.
+- Generated custom rules qualify against their emitted payload.
+- An uncited locality manufacturer maximum is advisory.
+- A builtin manufacturer capture qualifies only its recorded numeric fact.
+  `manufacturer_source` is the captured-document form of manufacturer evidence.
+The physical-intent compiler keeps its existing owner precondition. That is a
+verified captured decision by a named non-agent owner, and it compiles to
+`authority_unavailable`, so it never enforces.
+
+AGENTEE-348 third-HOLD root redesign (agent-449 dispatch with main's GO; a coordinator
+decision, not an owner statement). Rounds 1–3 each taught the value matcher one more
+token shape. The closed quantity grammar in `agent_ee.quantity` replaces that: it parses
+complete quantity expressions to dimension vectors with exact canonical values, and any
+quote outside the grammar fails closed with a reason. `source_authority.cite` uses it for
+both consumers. `tests/test_quantity_matrix.py` is the lane's regression gate.

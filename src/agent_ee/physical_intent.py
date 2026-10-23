@@ -21,7 +21,7 @@ from pathlib import Path
 from collections import Counter
 from fractions import Fraction
 
-from . import blocks, electrical_locality, executor, locality_provenance, placement, topology_rules
+from . import blocks, electrical_locality, executor, locality_provenance, placement, source_authority, topology_rules
 from .baseline import load_baseline, verify_evidence
 from .candidate import safe_relative, verify_snapshot
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -60,9 +60,9 @@ LOCALITY_METRICS = frozenset(('pad-centre-to-centre',))
 LAYOUT_SCALE = ('a layout measurement\'s distance_units, scale_nm_per_unit and scale_reference are authored, '
                 'not captured evidence, so arbitrary scale prose could establish any bound; only a numeric '
                 'derivation whose verified quote states the declared maximum compiles')
-OWNER_AUTHORITY = ('owner and manufacturer authors cannot be authenticated in-process: agents run as the '
-                   "owner's Unix user and no signing boundary exists until AGENTEE-348, so a sourced owner "
-                   'maximum is published as authority_unavailable and never enforces')
+OWNER_AUTHORITY = ('this compiler does not resolve owner commits: AGENTEE-348 dropped signing and makes '
+                   'owner authority a committed decision pinned in source_authority.OWNER_DECISIONS, so a '
+                   'sourced owner maximum is published as authority_unavailable and never enforces')
 CONTRACTS = {'topology': 'contracts/topology-rules.json', 'locality': 'contracts/electrical-locality.json',
              'allocation': 'contracts/block-allocation.json'}
 LIMITATIONS = (
@@ -679,12 +679,20 @@ def _locality(intent, src, board):
             declared = pair.get('provenance', {}).get('class', 'default')
             if authority['enforcement'] == 'integrity':
                 _refuse(f'{label}: stale source record: {authority["reason"]}')
-            if declared == 'owner' and authority['enforcement'] != 'hard':
+            # A captured, verified decision by a named owner compiles; it publishes as
+            # authority_unavailable below whether or not its commit resolves (AGENTEE-348).
+            if declared == 'owner' and source_authority.owner_reference(
+                    pair['provenance'].get('decision_reference'), src['records'])['enforcement'] != 'verified':
                 _refuse(f'{label}: owner authority not established by a captured, verified owner decision')
+            if declared == 'datasheet':
+                # Diagnose the captured record line first; the shared classifier's exact-literal
+                # model (AGENTEE-348) already withholds authority from the same malformed lines.
+                derivation = pair['provenance'].get('derivation')
+                source = derivation.get('source') if isinstance(derivation, dict) else None
+                if source_authority.verified_reference(source, src['records'])['enforcement'] == 'verified':
+                    _datasheet_value(pair, src['records'], label)
             if declared == 'datasheet' and authority['enforcement'] != 'hard':
                 _refuse(f'{label}: numeric mismatch: sourced derivation does not equal declared max_distance_nm')
-            if declared == 'datasheet':
-                _datasheet_value(pair, src['records'], label)
             entry = {'obligation': obligation['id'], 'role': role, 'class': authority['class'],
                      'enforcement': authority['enforcement'], 'reason': authority['reason']}
             if declared == 'owner':

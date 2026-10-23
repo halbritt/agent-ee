@@ -16,6 +16,7 @@ from test_scaffold import ScaffoldFixture
 from test_scaffold_producer import ProducerFixture
 from toolchain import require_toolchain
 from test_add_planes import PlaneFixture
+from owner_fixture import cite, citation, owner_rules
 
 
 def document():
@@ -55,15 +56,31 @@ class ConstraintImportTest(unittest.TestCase):
         self.assertEqual(project, before)
 
     def test_geometry_sources_require_allowed_class_and_exact_value(self):
-        for source in ('owner', 'manufacturer', 'datasheet', 'engineering', 'default'):
-            with self.subTest(source=source):
+        """AGENTEE-348 ruling (b): only a cited owner/manufacturer/datasheet value leaves the inventory.
+
+        A free-text label of those classes was previously excluded as sourced; it is now
+        disclosed as unsourced geometry, labelled, uncited and with its reason, never dropped.
+        """
+        for source, cited in (('owner', True), ('manufacturer', True), ('datasheet', True),
+                              ('owner', False), ('manufacturer', False), ('datasheet', False),
+                              ('engineering', True), ('engineering', False), ('default', False)):
+            with self.subTest(source=source, cited=cited):
                 declared = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_clearance': {'class': source, 'basis': 'Original fixture limit', 'value_mm': 0.17}},
                     'net_class_default': {'class': source, 'basis': 'Original fixture target', 'track_width_mm': 0.29}}
+                if cited:
+                    cite(declared, declared['board_setup_rules']['min_clearance'], declared['net_class_default'])
                 project, record = import_constraints({'net_settings': {'classes': [
                     {'name': 'Default', 'track_width': 0.4}]}}, json_bytes(declared), 'source.json', 'fixture')
                 records = geometry_defaults(project, record)
-                if source in ('owner', 'manufacturer', 'datasheet'):
+                if not cited and source != 'default':
+                    self.assertEqual(sorted((r['setting'], r['value'], r['class'], r['citation'], r['enforcement'])
+                                            for r in records),
+                                     [('board.design_settings.rules.min_clearance', 0.17, source, None, 'advisory'),
+                                      ('net_settings.classes.Default.track_width', 0.29, source, None, 'advisory')])
+                    self.assertTrue(all(r['unsourced_reason'] ==
+                                        f'free-text {source} label without a resolvable citation' for r in records))
+                elif source in ('owner', 'manufacturer', 'datasheet'):
                     self.assertEqual(records, [])
                     self.assertEqual(project['board']['design_settings']['rules']['min_clearance'], 0.17)
                     self.assertEqual(project['net_settings']['classes'][0]['track_width'], 0.29)
@@ -83,8 +100,11 @@ class ConstraintImportTest(unittest.TestCase):
         for source in ('owner', 'manufacturer', 'datasheet'):
             record['generated_rules']['generated'] = {'class': source, 'citation': {'path': 'source.json'}}
             self.assertEqual(geometry_defaults({}, record, raw), [])
-        # Captured owner rules are sourced by the immutable file, not the template.
-        self.assertEqual(geometry_defaults({}, {}, raw), [])
+        # AGENTEE-348 H1 (was []): a captured native form is not sourced by the file itself;
+        # without a resolving declaration it is disclosed with its reason.
+        row, = geometry_defaults({}, {}, raw)
+        self.assertEqual((row['class'], row['citation'], row['unsourced_reason']),
+                         ('default', None, 'captured native rule has no owner decision or provenance declaration'))
         with self.assertRaises(ValueError):
             geometry_defaults({}, {}, b'(rule')
 
@@ -110,9 +130,11 @@ class ConstraintImportTest(unittest.TestCase):
         raw = b'(version 1)\n(rule "same" (constraint clearance (min 0.2mm)))\n(rule "same" (constraint clearance (min 0.4mm)))\n'
         source = dict(index=1, name='same', **{'class': 'default', 'citation': None})
         rows = geometry_defaults({}, {'shadowed_generated_rules': [source]}, raw)
-        self.assertEqual(len(rows), 1)
+        # AGENTEE-348 H1 (was 1 row): the unshadowed captured native form is disclosed too.
+        self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]['setting'], 'native_rules.1.same.0')
         self.assertEqual(rows[0]['value'][-1], ['min', '0.2mm'])
+        self.assertEqual((rows[1]['setting'], rows[1]['citation']), ('native_rules.2.same.0', None))
         for bad in (None, {}, [None], [{}], [dict(source, index=True)],
                     [dict(source, index=-1)], [dict(source, index=99)],
                     [dict(source, name='wrong')], [source, source]):
@@ -126,21 +148,36 @@ class ConstraintImportTest(unittest.TestCase):
                          ('board.design_settings.defaults.future_geometry_limit', 0.41, ['router', 'zone_filler']))
 
     def test_every_class_and_missing_source_classification(self):
+        """AGENTEE-348 ruling (b): a free-text class label is advisory; its cited form is hard.
+
+        Previously every non-default label with prose was hard. The label stays visible,
+        with no citation and the recorded reason, and the value is still emitted.
+        """
         project = {'board': {'design_settings': {'rules': {'min_clearance': 0.2, 'min_track_width': 0.2}}},
                    'net_settings': {'classes': [{'name': 'Default', 'clearance': 0.2, 'via_drill': 0.3}]}}
         original = copy.deepcopy(project)
-        for provenance in ('owner', 'manufacturer', 'datasheet', 'engineering', 'default'):
+        for provenance, cited in (('owner', False), ('manufacturer', False), ('datasheet', False),
+                                  ('engineering', False), ('default', False), ('owner', True),
+                                  ('manufacturer', True), ('datasheet', True), ('engineering', True)):
             declared = document()
             declared['board_setup_rules']['min_clearance']['class'] = provenance
+            if cited:
+                cite(declared, declared['board_setup_rules']['min_clearance'])
             imported, record = import_constraints(project, json_bytes(declared), 'constraints.json', 'test-digest')
             expected = 0.2 if provenance == 'default' else 0.15
             self.assertEqual(imported['board']['design_settings']['rules']['min_clearance'], expected)
             by_setting = {r['setting']: r for r in record['settings']}
             result = by_setting['board.design_settings.rules.min_clearance']
             self.assertEqual(result['class'], provenance)
-            self.assertEqual(result['enforcement'], 'advisory' if provenance == 'default' else 'hard')
-            if provenance != 'default':
+            self.assertEqual(result['enforcement'], 'hard' if cited else 'advisory')
+            if cited:
                 self.assertEqual(result['citation']['path'], 'constraints.json')
+                self.assertEqual(result['citation']['source'],
+                                 declared['board_setup_rules']['min_clearance']['citation'])
+            elif provenance != 'default':
+                self.assertIsNone(result['citation'])
+                self.assertEqual(result['unsourced_reason'],
+                                 f'free-text {provenance} label without a resolvable citation')
             self.assertEqual(by_setting['net_settings.classes.Default.via_drill']['class'], 'default')
             self.assertEqual(project, original)
         self.assertTrue(all(r['class'] == 'default' and r['enforcement'] == 'advisory'
@@ -656,11 +693,18 @@ class NativeFindingSourceTest(unittest.TestCase):
                 if fp.GetReference() == 'C1':
                     fp.SetPosition(k.VECTOR2I(15000000, 3000000))
             k.SaveBoard(str(original), board)
-            for cls in ('default', 'owner', 'manufacturer', 'datasheet', 'engineering', 'legacy-null', 'unrelated-class'):
-                source = root / (cls + '.kicad_pcb')
+            # AGENTEE-348 ruling (b): a declared class gates only in its cited form; the same
+            # free-text labels ('uncited-*', formerly blocking) are now advisory.
+            for case in ('default', 'owner', 'manufacturer', 'datasheet', 'engineering', 'legacy-null',
+                         'unrelated-class', 'uncited-owner', 'uncited-manufacturer', 'uncited-datasheet',
+                         'uncited-engineering'):
+                cls = case.removeprefix('uncited-')
+                source = root / (case + '.kicad_pcb')
                 source.write_bytes(original.read_bytes())
                 declared = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_clearance': {'value_mm': 4, 'class': cls, 'basis': 'original test limit'}}}
+                if case in ('owner', 'manufacturer', 'datasheet', 'engineering'):
+                    cite(declared, declared['board_setup_rules']['min_clearance'])
                 if cls in ('legacy-null', 'unrelated-class'):
                     project = {'board': {'design_settings': {'rules': {'min_clearance': None}}},
                                'net_settings': {'meta': {'version': 5},
@@ -689,15 +733,15 @@ class NativeFindingSourceTest(unittest.TestCase):
                 geometry = extract(source)['footprints'][0]['packing_pad_geometry']
                 self.assertEqual(geometry['status'], 'proven', geometry)
                 if cls not in ('legacy-null', 'unrelated-class'):
-                    self.assertEqual(geometry['clearance_nm'], 0 if cls == 'default' else 4000000)
+                    self.assertEqual(geometry['clearance_nm'], 0 if cls == 'default' or cls != case else 4000000)
                 self.assertEqual(source.with_suffix('.kicad_pro').read_bytes(), original_project)
-                work = root / cls
+                work = root / case
                 work.mkdir()
                 output = work / 'candidate.kicad_pcb'
                 candidate = k.LoadBoard(str(source))
                 next(f for f in candidate.GetFootprints() if f.GetReference() == 'C1').SetPosition(k.VECTOR2I(9000000, 3000000))
                 k.SaveBoard(str(output), candidate)
-                advisory = cls in ('default', 'legacy-null', 'unrelated-class')
+                advisory = cls in ('default', 'legacy-null', 'unrelated-class') or cls != case
                 expected_class = 'default' if advisory else cls
                 if advisory:
                     _proposal_drc(source, output)
@@ -729,11 +773,16 @@ class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
         record = receipt['constraint_provenance']
         rows = record['unsourced_geometry']
         native = [r for r in rows if r['setting'].startswith('native_rules.')]
-        self.assertEqual(len(native), 3)
-        shadowed, = [r for r in native if '.agent_ee_netclass_RF_50.' in r['setting']]
+        # AGENTEE-348 H1 (was 3 rows and an 'owner' RF_50 rule): the captured owner file confers
+        # no authority without a declaration, so its RF_50 form is disclosed and not owner.
+        self.assertEqual(len(native), 4)
+        shadowed, owner_form = sorted((r for r in native if '.agent_ee_netclass_RF_50.' in r['setting']),
+                                      key=lambda r: int(r['setting'].split('.')[1]))
         self.assertEqual((shadowed['class'], shadowed['citation']), ('default', None))
+        self.assertEqual((owner_form['class'], owner_form['citation'], owner_form['unsourced_reason']),
+                         ('default', None, 'captured native rule has no owner decision or provenance declaration'))
         self.assertEqual(rows, geometry_defaults(project, record, board.with_suffix('.kicad_dru').read_bytes()))
-        self.assertEqual(finding_sources(board)['rules']['agent_ee_netclass_RF_50']['class'], 'owner')
+        self.assertEqual(finding_sources(board)['rules']['agent_ee_netclass_RF_50']['class'], 'default')
         self.assertEqual((board.parent / 'design.owner.kicad_dru').read_bytes(), raw)
 
     def test_generated_geometry_is_disclosed_in_receipt_and_project(self):
@@ -751,15 +800,49 @@ class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
         self.assertTrue(all(r['class'] == 'default' and r['enforcement'] == 'advisory' for r in native))
         self.assertEqual({r['value'][1] for r in native}, {'track_width'})
 
+    def test_declared_generated_rule_is_hard_only_in_its_cited_form(self):
+        """AGENTEE-348: a labelled custom_rules declaration resolves through the same citation model."""
+        from agent_ee.design_rule_provenance import finding_sources
+        self.use_net_constraints()
+        name = 'agent_ee_netclass_PWR'
+        for cited in (False, True):
+            with self.subTest(cited=cited):
+                declared = document()
+                spec = {'rule': name, 'class': 'datasheet', 'basis': 'Original fixture power width'}
+                declared['custom_rules'] = {'design.kicad_dru': [spec]}
+                if cited:  # H3: the captured text states the emitted rule's 1.012 mm payload
+                    text = 'Original fixture power width: 1.012 mm'
+                    declared['source_records'] = {'fixture-sources/pwr.txt': text}
+                    spec['citation'] = citation('datasheet', text, 'fixture-sources/pwr.txt')
+                write_json(self.source / 'rule-sources.json', declared)
+                self.plan['constraint_source'] = 'rule-sources.json'
+                self.write()
+                receipt = self.build('cited' if cited else 'uncited')
+                board = self.root / ('cited' if cited else 'uncited') / 'inputs/project/design.kicad_pcb'
+                source = finding_sources(board)['rules'][name]
+                rows = [r for r in receipt['constraint_provenance']['unsourced_geometry']
+                        if '.' + name + '.' in r['setting']]
+                self.assertEqual(source['class'], 'datasheet')
+                if cited:
+                    self.assertEqual(source['citation']['source'], spec['citation'])
+                    self.assertEqual(rows, [])
+                else:
+                    self.assertIsNone(source['citation'])
+                    self.assertEqual(source['unsourced_reason'], 'free-text datasheet label without a resolvable citation')
+                    self.assertTrue(rows)
+                    self.assertTrue(all(r['class'] == 'datasheet' and r['citation'] is None and
+                                        r['unsourced_reason'] == source['unsourced_reason'] for r in rows))
+
     def test_declared_sources_compose_net_rules_and_preserve_owner_bytes(self):
         from agent_ee.design_rule_provenance import finding_sources
         self.use_net_constraints()
-        write_json(self.source / 'rule-sources.json', document())
-        self.plan['constraint_source'] = 'rule-sources.json'
         rule = self.source / 'project/design.kicad_dru'
         rule.parent.mkdir(exist_ok=True)
         raw = b'(version 1)\n# Original owner comment with a decoy (version 1)\n(rule "agent_ee_netclass_RF_50" (constraint track_width (min 0.35mm)))\n(rule "original owner gap" (constraint clearance (min 0.15mm)))\n'
         rule.write_bytes(raw)
+        # AGENTEE-348 H1 migration: the owner rules carry committed, value-bound owner decisions.
+        write_json(self.source / 'rule-sources.json', owner_rules(document(), raw, 'design.kicad_dru'))
+        self.plan['constraint_source'] = 'rule-sources.json'
         self.write()
         receipt = self.build()
         inputs = self.root / 'produced/inputs'
@@ -876,6 +959,8 @@ class NativeCapturedDrcSourceTest(unittest.TestCase):
             for cls in ('default', 'manufacturer'):
                 declared = {'schema': 'fome-mc.constraint-provenance/1', 'board_setup_rules': {
                     'min_text_height': {'value_mm': 8, 'class': cls, 'basis': 'original native text test'}}}
+                if cls != 'default':  # AGENTEE-348 cited form keeps the sourced limit hard.
+                    cite(declared, declared['board_setup_rules']['min_text_height'])
                 project = copy.deepcopy(original)
                 project.setdefault('board', {}).setdefault('design_settings', {}).setdefault('rules', {})['min_text_height'] = 8
                 project, record = import_constraints(project, json_bytes(declared), 'limits.json', 'test-source')

@@ -887,7 +887,8 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb)
             validate_scope(scope)
             protected |= extra
-        from .design_rule_provenance import import_constraints, inventory, bind_project, require_owner_rule_classes
+        from .design_rule_provenance import (import_constraints, inventory, bind_project,
+                                             require_owner_rule_classes, rule_authority)
         constraint_record = {'settings': inventory(project)}
         if constraint_rel is not None:
             project, constraint_record = import_constraints(
@@ -904,6 +905,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 for item in [*derivation['rules'], *derivation['netclasses']]:
                     if (emitted['setting'] == item['setting'] and emitted['value'] == item['value']
                             and emitted['citation'] is None):
+                        emitted.pop('unsourced_reason', None)
                         emitted.update({'class': 'manufacturer', 'enforcement': 'hard',
                             'citation': dict(path=plan['fab_profile'], sha256=files[plan['fab_profile']],
                                              locator=item['locator'], basis='Source-verified fabricator limit')})
@@ -914,18 +916,30 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
         composed_rules = None
         owner_copy = None
         if 'rules' in net_artifacts:
-            generated_names = [str(n[1]) for n in rule_forms(net_artifacts['rules'])
-                               if n[0] == 'rule']
+            generated_forms = {str(n[1]): n for n in rule_forms(net_artifacts['rules']) if n[0] == 'rule'}
+            generated_names = list(generated_forms)
             declared = {spec['rule']: spec for spec in
                         constraint_record.get('document', {}).get('custom_rules', {}).get(
                             PurePosixPath(owner_rules).name, [])}
             constraint_record['generated_rules'] = {}
+            records = constraint_record.get('document', {}).get('source_records', {})
             for name in generated_names:
                 spec = declared.get(name)
-                constraint_record['generated_rules'][name] = {
-                    'class': spec['class'] if spec else 'default',
-                    'citation': dict(path=constraint_rel, sha256=files[constraint_rel],
-                                     rule=name, basis=spec['basis']) if spec else None}
+                source = {'class': spec['class'] if spec else 'default', 'citation': None}
+                # H3: qualify the emitted rule's actual numeric payload, not the empty declaration.
+                resolved = (rule_authority(spec, generated_forms[name], records)
+                            if spec and spec['class'] != 'default' else None)
+                if spec and spec['class'] == 'default':
+                    # Located but never hard: the default class carries no authority.
+                    source['citation'] = dict(path=constraint_rel, sha256=files[constraint_rel],
+                                              rule=name, basis=spec['basis'])
+                elif resolved and resolved['enforcement'] == 'hard':
+                    source['citation'] = dict(path=constraint_rel, sha256=files[constraint_rel], rule=name,
+                                              basis=spec['basis'], source=copy.deepcopy(spec['citation']))
+                elif resolved:
+                    # A label without a resolvable citation is disclosed, never hard (AGENTEE-348).
+                    source['unsourced_reason'] = resolved['reason']
+                constraint_record['generated_rules'][name] = source
             composed_rules = net_artifacts['rules']
             if owner_rules in files:
                 raw = read_captured(inputs, owner_rules)

@@ -155,14 +155,14 @@ without a bound published, passed `verify_receipt` and then crashed
   `scale_nm_per_unit` and `scale_reference` are authored values, not captured
   evidence. Before this refusal, a captured `within 3 mm` quote with an invented
   1 nm-per-unit scale compiled to a hard 1 nm datasheet maximum (verification 510
-  R2). The shared `locality_provenance.classify` still grades such a manually
-  authored layout derivation `hard`. That existing contract is outside this
-  compiler, and changing it would alter existing locality verdicts.
+  R2). Since AGENTEE-348 round-2 H3, the shared `locality_provenance.classify`
+  also grades such a layout `advisory` unless the captured source states the
+  derived distance.
 
-**Owner maxima never enforce.** Agents run as the owner's Unix user, so no
-in-process check can authenticate an owner or manufacturer author until
-AGENTEE-348 provides a signing boundary (coordinator ruling, consistent with the
-AGENTEE-342 trust-boundary ruling). A bound owner maximum is therefore published
+**Owner maxima never enforce.** AGENTEE-348 dropped signing (owner-relayed
+decision, 2026-10-22). Owner authority there is a committed decision pinned in
+`source_authority.OWNER_DECISIONS`. This compiler does not resolve owner
+commits, so a bound owner maximum is still published
 as `authority_unavailable`. In the emitted contract, its provenance keeps
 `class: owner` and the declared limit. It gains `authority:
 authority_unavailable` and `authority_reason`, and the cited decision moves from

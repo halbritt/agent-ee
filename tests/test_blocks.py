@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 
 from agent_ee import blocks, electrical_locality, placement_groups, placer
 from agent_ee.native_netlist import read_native_inventory, read_sheet_names
+from owner_fixture import citation, module_command, owner_bound
 from test_placement import MM, capture, part, rectangle
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,19 +90,15 @@ def board(parts=PARTS):
     return b
 
 
-FIXTURE_DECISION = 'Original fixture author: EE339 parameters define numerical locality requirements.'
-FIXTURE_SOURCES = {'fixture-decisions/EE339.txt': FIXTURE_DECISION}
+# AGENTEE-348 H2: each EE339 bound is stated by its own committed fixture decision.
+FIXTURE_SOURCES = {}
 
 
 def obligations(limit=6 * MM):
     def pair(a, b, net, cite='Owned fixture requirement EE339: authored test limit.'):
         return {'from': dict(zip(('reference', 'pad', 'net'), a + (net,))),
                 'to': dict(zip(('reference', 'pad', 'net'), b + (net,))), 'max_distance_nm': limit, 'citation': cite,
-                'provenance': {'class': 'owner', 'basis': 'Explicit original fixture requirement',
-                    'decision_reference': {'path': 'fixture-decisions/EE339.txt',
-                        'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
-                        'locator': 'EE339 test parameter contract', 'quote': FIXTURE_DECISION,
-                        'owner': 'Original fixture author'}}}
+                'provenance': owner_bound('EE339', limit, FIXTURE_SOURCES)}
     return {'schema': electrical_locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': [
         {'id': 'input-C1', 'metric': 'pad-centre-to-centre', 'supply': pair(('U1', '1'), ('C1', '1'), 'VIN'),
          'return': pair(('U1', '2'), ('C1', '2'), 'GND')},
@@ -425,9 +422,13 @@ class PackingTests(Fixture, unittest.TestCase):
 
     def test_manufacturer_record_unknown_is_not_usable_evidence(self):
         doc = obligations()
+        # AGENTEE-348 H4: only a cited manufacturer bound is a feasibility limit.
+        text = 'Original fixture fabricator limit: 6 mm'
+        doc['source_records'] = {**doc['source_records'], 'fixture-sources/fab-6mm.txt': text}
         for obligation in doc['obligations']:
             for role in electrical_locality.roles(obligation):
-                obligation[role]['provenance'] = {'class': 'manufacturer', 'basis': 'fixture manufacturing floor'}
+                obligation[role]['provenance'] = {'class': 'manufacturer', 'basis': 'fixture manufacturing floor',
+                                                  'citation': citation('manufacturer', text, 'fixture-sources/fab-6mm.txt')}
         cand = json.loads(json.dumps(self.pack(electrical_locality=doc)['candidate']))
         grade = cand['grade']['electrical_locality']
         for row in (grade['measured'][0], grade['advisories'][0]):
@@ -1461,7 +1462,8 @@ class NativeHierarchyTests(unittest.TestCase):
 
 class CliTests(Fixture, unittest.TestCase):
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, '-m', 'agent_ee.blocks', *map(str, args)], capture_output=True,
+        # AGENTEE-348: the child keeps the committed fixture decision pinned in this process.
+        return subprocess.run([*module_command('agent_ee.blocks'), *map(str, args)], capture_output=True,
                               text=True, env={'PYTHONPATH': str(ROOT / 'src')}, timeout=120)
 
     def test_derive_pack_match(self):

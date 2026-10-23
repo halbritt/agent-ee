@@ -10,7 +10,7 @@ import json
 import math
 import re
 
-from .candidate import safe_relative
+from . import source_authority
 
 CLASSES = frozenset(('datasheet', 'manufacturer', 'owner', 'engineering', 'default'))
 RECORD_SHA256 = '92561871360fe5652778275ab31009e80e70b2e15af3d905a8d16eaa67aa063d'
@@ -27,33 +27,8 @@ def manufacturing_record():
     return json.loads(raw)
 
 
-def reference(value):
-    if not isinstance(value, dict):
-        return False
-    if any(not isinstance(value.get(k), str) or not value[k].strip()
-           for k in ('path', 'sha256', 'locator')):
-        return False
-    try:
-        safe_relative(value['path'])
-    except ValueError:
-        return False
-    return re.fullmatch('[0-9a-f]{64}', value['sha256']) is not None
-
-
-def verified_reference(value, records):
-    """Return typed verification, distinguishing absent evidence from corruption."""
-    advisory = {'enforcement': 'advisory', 'reason': 'unsourced numeric locality bound'}
-    if not reference(value):
-        return advisory
-    text = records.get(value['path'])
-    if not isinstance(text, str):
-        return advisory
-    if hashlib.sha256(text.encode('utf-8')).hexdigest() != value['sha256']:
-        return {'enforcement': 'integrity', 'reason': 'source record sha256 mismatch'}
-    quote = value.get('quote')
-    if not isinstance(quote, str) or not quote.strip() or quote not in text:
-        return advisory
-    return {'enforcement': 'verified', 'reason': 'source record and quote verified'}
+# One citation model with the design-rule import (AGENTEE-348).
+reference, verified_reference = source_authority.reference, source_authority.verified_reference
 
 
 def classify(pair, records=None):
@@ -66,37 +41,46 @@ def classify(pair, records=None):
         return {**result, 'class': 'default'}
     if not isinstance(provenance.get('basis'), str) or not provenance['basis'].strip():
         return result
+    # The same citation model and value binding as the design-rule import (AGENTEE-348):
+    # the declared maximum, in exact millimetres, must be the governed value.
+    bound = pair.get('max_distance_nm')
+    values = [Fraction(bound, 10 ** 6)] if type(bound) is int and bound >= 0 else []
     if result['class'] == 'manufacturer':
+        # A captured manufacturing floor never qualifies an unsourced maximum: only a
+        # resolving manufacturer citation of this bound makes it a feasibility limit.
+        resolved = source_authority.cite('manufacturer', provenance.get('citation'), records, values)
+        if resolved['enforcement'] == 'integrity':
+            return {**result, **resolved}
+        if resolved['enforcement'] != 'hard':
+            return {**result, 'reason': resolved['reason']}
         return {**result, 'enforcement': 'feasibility',
                 'reason': 'Captured manufacturing minimum cannot establish an electrical maximum'}
     if result['class'] == 'owner':
+        # Hard only at a pinned owner commit whose decision states this bound; a verified but
+        # uncommitted, stale, unresolvable or value-mismatched decision is advisory with its reason.
         decision = provenance.get('decision_reference')
-        verification = verified_reference(decision, records)
+        verification = source_authority.cite('owner', {**decision, 'kind': 'owner_decision'}
+                                             if isinstance(decision, dict) else None, records, values)
         if verification['enforcement'] == 'integrity':
             return {**result, **verification}
-        if (verification['enforcement'] == 'verified' and isinstance(decision.get('owner'), str)
-                and decision['owner'].strip() and not re.search(
-                    r'\bagent(?:[- _]?\d+)?\b|design[-_ ]?owner', decision['owner'], re.I)):
+        if verification['enforcement'] == 'hard':
             return {**result, 'enforcement': 'hard', 'reason': 'explicit owner decision reference'}
+        if source_authority.reference(decision):
+            return {**result, 'reason': verification['reason']}
     if result['class'] == 'datasheet':
         derivation = provenance.get('derivation', {})
         if not isinstance(derivation, dict):
             return result
-        verification = verified_reference(derivation.get('source'), records)
+        source = derivation.get('source')
+        verification = verified_reference(source, records)
         if verification['enforcement'] == 'integrity':
             return {**result, **verification}
         if verification['enforcement'] != 'verified':
             return result
+        # The derivation may only restrict: its declared value must equal the bound.
         if derivation.get('kind') == 'numeric':
             value = derivation.get('value_nm')
             valid = type(value) is int and value >= 0
-            if valid:
-                quote = derivation['source']['quote']
-                # Exact original numeric records in nm or mm. Prose-only citations
-                # and values elsewhere on the page cannot establish this limit.
-                tokens = re.findall(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*(nm|mm)\b', quote)
-                valid = any(Fraction(n) * (1000000 if unit == 'mm' else 1) == value
-                            for n, unit in tokens)
         elif derivation.get('kind') == 'layout':
             distance, scale = (derivation.get(k) for k in ('distance_units', 'scale_nm_per_unit'))
             valid = (type(distance) is int and distance >= 0 and type(scale) is int and scale > 0
@@ -105,8 +89,16 @@ def classify(pair, records=None):
             value = distance * scale if valid else None
         else:
             valid, value = False, None
-        if valid and value == pair.get('max_distance_nm'):
+        if not valid or value != bound:
+            return result
+        # Round-2 H3: authority comes only from the common exact-unit qualification. The
+        # captured source must state the derived distance itself, so an authored layout
+        # scale or a prose diagram never establishes the limit.
+        resolved = source_authority.cite('datasheet', {**source, 'kind': 'captured_source'}, records, values)
+        if resolved['enforcement'] == 'hard':
             return {**result, 'enforcement': 'hard', 'reason': 'numeric derivation equals declared bound'}
+        return {**result, 'reason': ('layout derivation scale is not validated by the captured source'
+                                     if derivation['kind'] == 'layout' else resolved['reason'])}
     return result
 
 

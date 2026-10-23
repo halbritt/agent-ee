@@ -10,19 +10,17 @@ from agent_ee.placer import pack, transform
 from agent_ee.placement_check import parameters, predicate_names
 from test_placement import capture, part, MM
 from test_placer import request
+from owner_fixture import owner_bound, rebind
 
 
 
-FIXTURE_DECISION = 'Original fixture author: test parameters define EE322 numerical requirements.'
-FIXTURE_SOURCES = {'fixture-decisions/EE322.txt': FIXTURE_DECISION}
+# AGENTEE-348 H2: each EE322 bound is stated by its own committed fixture decision. Every
+# document built here shares this record map, which grows as new bounds are cited.
+FIXTURE_SOURCES = {}
 
 
-def fixture_provenance():
-    return {'class': 'owner', 'basis': 'Explicit original fixture requirement',
-            'decision_reference': {'path': 'fixture-decisions/EE322.txt',
-                'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
-                'locator': 'EE322 test parameter contract', 'quote': FIXTURE_DECISION,
-                'owner': 'Original fixture author'}}
+def fixture_provenance(limit=5*MM):
+    return owner_bound('EE322', limit, FIXTURE_SOURCES)
 
 
 def endpoint(ref, pad, net):
@@ -32,7 +30,7 @@ def endpoint(ref, pad, net):
 def declaration(ic='U1', cap='C1', supply='VCC', ground='GND', limit=5*MM):
     def pair(a, b, net):
         return {'from': endpoint(ic, a, net), 'to': endpoint(cap, b, net),
-                'provenance': fixture_provenance(), 'max_distance_nm': limit, 'citation': 'Owned fixture requirement EE322: declared test limit.'}
+                'provenance': fixture_provenance(limit), 'max_distance_nm': limit, 'citation': 'Owned fixture requirement EE322: declared test limit.'}
     return dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id=cap, metric='pad-centre-to-centre',
                 supply=pair('1', '1', supply), **{'return': pair('2', '2', ground)})])
 
@@ -65,7 +63,7 @@ def output_loop():
     row['supply']['from'] = endpoint('L1', '2', 'VCC')
     row['switch'] = dict(**{'from': endpoint('U1', '1', 'SW'),
                            'to': endpoint('L1', '1', 'SW')},
-                         provenance=fixture_provenance(), max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
+                         provenance=fixture_provenance(20*MM), max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
     return facts, doc
 
 
@@ -149,6 +147,7 @@ class BoundOutputLoopTests(unittest.TestCase):
             facts, doc = bound_output_loop()
             for role in locality.roles(doc['obligations'][0]):
                 doc['obligations'][0][role]['max_distance_nm'] = 4*MM
+            rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bound
             plan = pack(facts, request(priority_refs=list(priority), electrical_locality=doc))
             self.assertEqual(plan['status'], 'planned', plan)
             self.assertEqual(plan['locality_grading']['status'], 'pass')
@@ -156,6 +155,7 @@ class BoundOutputLoopTests(unittest.TestCase):
         doc['obligations'][0]['supply'].pop('citation')
         self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
         doc['obligations'][0]['return']['max_distance_nm'] = 0
+        rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bound
         result = locality.grade(facts, doc)
         self.assertEqual(result['status'], 'defect')
         self.assertEqual([d['role'] for d in result['defects']], ['return'])
@@ -245,6 +245,7 @@ class OutputLoopTests(unittest.TestCase):
         facts, doc = output_loop()
         for role in locality.roles(doc['obligations'][0]):
             doc['obligations'][0][role]['max_distance_nm'] = 4*MM
+        rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bound
         self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
         for priority in itertools.permutations(['U1', 'L1', 'C1']):
             with self.subTest(priority=priority):
@@ -277,6 +278,7 @@ class OutputLoopTests(unittest.TestCase):
                 plan = pack(facts, request(electrical_locality=doc))
                 self.assertEqual((plan['outcome'], plan['placements']), ('unknown', []))
                 row['supply']['max_distance_nm'] = 0
+                rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bound
                 result = locality.grade(facts, doc)
                 self.assertEqual(result['status'], 'defect')
                 self.assertEqual([d['role'] for d in result['defects']], ['supply'])
@@ -362,6 +364,7 @@ class LocalityTests(unittest.TestCase):
         self.assertEqual((plan['status'], plan['outcome'], plan['placements']), ('fixed_conflict', 'unknown', []))
         for p in doc['obligations'][0].values():
             if isinstance(p, dict): p['max_distance_nm'] = 0
+        rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bound
         plan = pack(b, request(electrical_locality=doc))
         self.assertEqual((plan['outcome'], plan['placements']), ('unknown', []))
 
@@ -432,7 +435,7 @@ class LocalityTests(unittest.TestCase):
             b['footprints'].append(inductor)
             doc['obligations'][0]['switch'] = dict(
                 **{'from': endpoint(ic,'8','SW'), 'to':endpoint(ind,'1','SW')},
-                provenance=fixture_provenance(), max_distance_nm=7*MM, citation='Owned counterexample fixture: switch centres within 7 mm.')
+                provenance=fixture_provenance(7*MM), max_distance_nm=7*MM, citation='Owned counterexample fixture: switch centres within 7 mm.')
             self.assertEqual([d['role'] for d in locality.grade(b,doc)['defects']], ['switch'])
             inductor['pads'][0]['position_nm'] = [after,0]
             self.assertEqual(locality.grade(b,doc)['status'], 'pass')
@@ -470,7 +473,8 @@ class NativeLocalityTests(unittest.TestCase):
             shared = [(a, b) for a in fps['J1']['pads'] for b in fps['C1']['pads'] if a['net'] and a['net']==b['net']]
             a, b = shared[0]
             pair = {'from': endpoint('J1', a['number'], a['net']), 'to': endpoint('C1', b['number'], b['net']),
-                    'provenance': fixture_provenance(), 'citation': 'Owned RC diagnostic distance requirement.'}
+                    'provenance': fixture_provenance(limit if limit is not None else 0),
+                    'citation': 'Owned RC diagnostic distance requirement.'}
             if limit is not None: pair['max_distance_nm'] = limit
             if expected == 'info': pair.pop('provenance')
             cap_ground = next(p for p in fps['C1']['pads'] if p['net'] != a['net'])
@@ -515,7 +519,7 @@ class NativeLocalityTests(unittest.TestCase):
             pad = next(p for p in fps[ref]['pads'] if p['net'] == target['net'])
             return dict(**{'from': {**endpoint(ref, pad['number'], pad['net']), 'uuid': pad['uuid']},
                            'to': {**endpoint('C1', target['number'], target['net']), 'uuid': target['uuid']}},
-                        provenance=fixture_provenance(), max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
+                        provenance=fixture_provenance(100*MM), max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
         doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
                    supply=pair('R1', supply), **{'return': pair('J1', ground)})])
         if bound:
@@ -565,7 +569,7 @@ class NativeLocalityTests(unittest.TestCase):
         self.assertTrue(pairs)
         a,b = pairs[0]
         pair = {'from': endpoint('U1', a['number'], a['net']), 'to': endpoint('C1', b['number'], b['net']),
-                'provenance': fixture_provenance(), 'max_distance_nm': 5*MM, 'citation': 'Owned native geometry fixture: 5 mm diagnostic limit.'}
+                'provenance': fixture_provenance(5*MM), 'max_distance_nm': 5*MM, 'citation': 'Owned native geometry fixture: 5 mm diagnostic limit.'}
         doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='native', metric='pad-centre-to-centre',
                    supply=pair, **{'return': {**pair, 'from': endpoint('U1', '2', 'GND'),
                                                       'to': endpoint('C1', '2', 'GND')}})])
@@ -1212,6 +1216,7 @@ class LocalityIndexTests(unittest.TestCase):
         for i, obligation in enumerate(doc['obligations']):
             for role in ('supply', 'return'):
                 obligation[role]['max_distance_nm'] = (i+1)*MM
+        rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bound
         result = pack(board(), request(electrical_locality=doc))
         self.assertEqual((result['status'], result['outcome'], result['placements']),
                          ('packing_budget_exhausted', 'unknown', []))

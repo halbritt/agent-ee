@@ -1638,13 +1638,19 @@ owner authorship. Do not publish third-party source text without rights approval
 original numeric transcription records can retain source identities instead.
 
 For `datasheet`, `derivation.kind: numeric` requires `value_nm` equal to
-`max_distance_nm` and an equal explicit nm or mm number in the source quote.
+`max_distance_nm`. The source quote must then state that distance through the
+common closed quantity grammar (`agent_ee.quantity`, through
+`source_authority.cite`). That is the same qualification as the design-rule
+import: `1000 um` states 1 mm in both, and a rate, area or out-of-grammar quote
+states nothing.
 `derivation.source` carries the source reference above. A prose citation such as
 “as close as possible” cannot qualify. A measured recommended/reference layout
 uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a
 nonempty `scale_reference`, and the same source reference. The check recomputes
-the product exactly. This is a declared measurement with a recorded scale;
-it does not automatically interpret a PDF image.
+the product exactly. The product only restricts: the layout bound is hard only
+when the captured source itself states the derived distance. Otherwise it is
+advisory with `layout derivation scale is not validated by the captured source`
+(round-2 H3). It does not automatically interpret a PDF image.
 Because the scale is authored rather than captured, the
 [manual physical intent compiler](physical-intent.md) refuses `kind: layout`
 and compiles a hard datasheet maximum only from a `numeric` derivation.
@@ -1653,9 +1659,27 @@ For `owner`, `decision_reference` carries the same verified source reference
 plus a nonempty `owner` identity. An agent identity or a case-insensitive
 `design-owner`, `design_owner`, `design owner` or `designowner` label is
 not admitted. An owner label without the recorded decision stays advisory.
+Under AGENTEE-348 the decision must also name a `repository` and a 40-hex
+`commit` pinned in `source_authority.OWNER_DECISIONS` with the same SHA-256.
+An uncommitted, unresolvable or stale decision is advisory, and its `reason`
+says which. The decision `quote` must also state `max_distance_nm` exactly, as an
+`nm` or `mm` token (review H2). Otherwise the bound is advisory with
+`cited quote does not state the declared value`, exactly as in the design-rule
+import. These are the same functions the
+[design-rule import](scaffold.md#declared-design-rule-sources-agentee-331) uses.
 This checks the retained decision reference, not authenticated authorship.
 Original tests use explicit fixture-author decisions to retain their numerical
-contracts; those decisions establish no real hardware requirements.
+contracts; those decisions establish no real hardware requirements. A test
+commits each one to a private temporary repository, checks the commit and bytes
+with `verify_committed` and pins it only in the test process
+(`tests/owner_fixture.py`).
+
+A `manufacturer` pair is a feasibility limit only when its `provenance.citation`
+resolves through `source_authority.cite` against `max_distance_nm` (review H4).
+A label and basis alone are advisory, with the reason
+`free-text manufacturer label without a resolvable citation`. The captured floor
+is still computed and reported as `below_floor`. The floor never qualifies an
+unsourced maximum.
 
 For `manufacturer`, the pinned original numeric records in
 `src/agent_ee/data/jlcpcb-locality.json` retain host capture URLs, timestamps,

@@ -497,7 +497,9 @@ def write_project(name, files, template_project, destination):
                 else:
                     merged.pop(key, None)
             record = copy.deepcopy(merged.get(PROJECT_KEY, {'settings': inventory(merged)}))
-            bind_project(merged, record)
+            # Captured native rules are disclosed unless sourced (AGENTEE-348 H1).
+            rules = next((p.read_bytes() for p in files if p.suffix == '.kicad_dru'), None)
+            bind_project(merged, record, rules)
             if merged == project:
                 shutil.copyfile(path, target)
             else:

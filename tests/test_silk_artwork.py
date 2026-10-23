@@ -8,6 +8,7 @@ from agent_ee.placement_adapter import write_scope
 from agent_ee.placer_runner import _proposal_drc, _native_drc
 from agent_ee.silk_artwork import relocate, movable_names
 from toolchain import require_toolchain
+from owner_fixture import cite
 import test_placement_native as native_fixture
 
 
@@ -449,6 +450,8 @@ class SilkArtworkTest(unittest.TestCase):
                 declared = {'schema': 'fome-mc.constraint-provenance/1',
                             'board_setup_rules': {'min_text_height': {
                                 'value_mm': 0.8, 'class': cls, 'basis': 'Original artwork test limit'}}}
+                if cls != 'default':  # AGENTEE-348 cited form keeps it hard
+                    cite(declared, declared['board_setup_rules']['min_text_height'])
                 project, record = import_constraints({'board': {'design_settings': {
                     'rules': {'min_text_height': 0.8}}}}, json_bytes(declared),
                     'original-limits.json', 'original-test-source')

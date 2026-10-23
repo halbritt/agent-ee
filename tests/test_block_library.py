@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from agent_ee import block_library as bl, blocks, placer
+from owner_fixture import module_command
 from test_blocks import Fixture, MM, PARTS, SHEETS, board, captured_at, native_capture, native_xml, policy
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1316,7 +1317,8 @@ class CatalogueTests(LibraryFixture, unittest.TestCase):
 
 class CliTests(LibraryFixture, unittest.TestCase):
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, '-m', 'agent_ee.block_library', *map(str, args)], capture_output=True,
+        # AGENTEE-348: the child keeps the committed fixture decision pinned in this process.
+        return subprocess.run([*module_command('agent_ee.block_library'), *map(str, args)], capture_output=True,
                               text=True, env={'PYTHONPATH': str(ROOT / 'src')}, timeout=120, cwd=ROOT)
 
     def test_region_copper_refusals_write_no_output(self):
