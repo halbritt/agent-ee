@@ -320,7 +320,8 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
         record = validate(path.read_bytes(), captured=(manifest['files'], inputs))
         mutable = sorted(set(record['constraint_provenance']['source_paths']) & set(mutable_inputs))
         if mutable:
-            raise ValueError(f'placement envelope {rel!r} cites owner quotes in mutable inputs: {mutable}')
+            sources = 'sources' if 'mechanical_reservations' in record else 'owner quotes'
+            raise ValueError(f'placement envelope {rel!r} cites {sources} in mutable inputs: {mutable}')
         found[rel] = {'path': rel, 'sha256': manifest['files'][rel], 'envelope_id': record['envelope_id'],
                       'references': envelope_references(record)}
         overhangs = envelope_overhangs(record)
@@ -329,6 +330,8 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
         provenance = envelope_provenance(record)
         if provenance:
             found[rel]['provenance'] = provenance
+        if 'mechanical_reservations' in record:
+            found[rel]['mechanical_reservations'] = record['mechanical_reservations']
     return [found[rel] for rel in sorted(found)]
 
 
@@ -469,6 +472,8 @@ def refuse_policy_sources(policy):
     caller qualify its own obstacles and regions, so either is refused rather than
     accepted as a source; the unsourced geometry stays advisory (AGENTEE-361/365).
     """
+    if 'mechanical_reservations' in policy:
+        raise ValueError('mechanical_reservations comes only from a captured envelope, never from the packing policy')
     if 'fixed_overhangs' in policy:
         raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
     if 'constraint_provenance' in policy:
@@ -506,6 +511,18 @@ def binding(declaration, manifest, inputs, mutable_inputs):
         raise ValueError('several envelopes declare a courtyard overhang for the same reference')
     if overhangs:
         policy['fixed_overhangs'] = overhangs
+    mechanical = [e['mechanical_reservations'] for e in envelopes if 'mechanical_reservations' in e]
+    if mechanical:
+        if any(item != mechanical[0] for item in mechanical[1:]):
+            raise ValueError('several envelopes declare different mechanical reservations')
+        from . import mechanical_reservations
+        from .placement_probe import extract
+        source = mechanical[0]
+        facts = extract(board)
+        if facts['board_sha256'] != manifest['files'][bound['board']] or digest(board) != facts['board_sha256']:
+            raise ValueError('captured placement board changed during mechanical binding')
+        policy['mechanical_reservations'] = mechanical_reservations.bind(
+            source['document'], facts, source_sha256=source['sha256'])
     refs = sorted(set(policy['fixed_refs']) | {r for e in envelopes for r in e['references']})
     protected, protected_refs = protected_footprints(board.read_bytes(), bound['fixed_footprints'], refs)
     record = {'schema': BINDING_SCHEMA, 'declaration_sha256': identity(validate_declaration(declaration)),

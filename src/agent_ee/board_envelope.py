@@ -43,11 +43,13 @@ CHECK_KINDS = {'outline': ['placement', 'board_envelope'],
                'stackup': ['fab_package', 'board_envelope'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement', 'board_envelope'], 'keepouts': ['placement', 'board_envelope'],
                'fixed_footprints': ['placement'], 'obligations': ['board_envelope'],
+               'mechanical_reservations': ['placement'],
                'max_component_height_mm': ['board_envelope']}
 # Why a field without a binding has unknown coverage; reported, never assumed.
 UNBOUND = {
     'max_component_height_mm': 'needs a native component-height/1 check with sourced per-footprint heights',
     'obligations': 'generator mechanics require qualified checks from AGENTEE-177/179',
+    'mechanical_reservations': 'needs one placement mechanical-access/1 check over these captured envelope bytes',
     'outline': 'needs an exact native board_envelope outline/1 check',
     'layer_count': 'needs an exact native board_envelope layers/1 check',
     'stackup': 'needs native stackup facts and qualified captured copper_weight_oz authority',
@@ -1140,6 +1142,38 @@ def validate_provenance(envelope, vertices, captured):
             'owner_confirmation': [e['locator'] for e in constraints if e['enforcement'] == 'soft']}
 
 
+def mechanical_reservations(value, captured):
+    """Load a captured engineering declaration without upgrading its source authority."""
+    from .mechanical_reservations import validate as validate_mechanical
+
+    fields(value, 'mechanical_reservations', ['path', 'sha256'])
+    if captured is None:
+        raise ValueError('mechanical_reservations requires captured immutable inputs')
+    files, inputs = captured
+
+    def verified(path, sha256, label):
+        if not isinstance(path, str) or not path:
+            raise ValueError(f'{label} path must be nonempty text')
+        relative = str(safe_relative(path))
+        if relative != path:
+            raise ValueError(f'{label} path must be canonical candidate-relative')
+        if not isinstance(sha256, str) or not SHA256.fullmatch(sha256):
+            raise ValueError(f'{label} sha256 must be 64 lowercase hex digits')
+        if files.get(relative) != sha256:
+            raise ValueError(f'{label} is not bound to the captured sha256')
+        return captured_bytes(files, inputs, relative, label)
+
+    raw = verified(value['path'], value['sha256'], 'mechanical_reservations document')
+    document = validate_mechanical(load(raw))
+    source = document['source']
+    verified(source['path'], source['sha256'], 'mechanical_reservations source')
+    verified(document['original_board_path'], document['original_board_sha256'],
+             'mechanical_reservations original board')
+    return {'path': value['path'], 'sha256': value['sha256'], 'document': document,
+            'source': dict(source), 'source_paths': sorted({value['path'], source['path'],
+                                                          document['original_board_path']})}
+
+
 def validate(raw, *, profile=None, captured=None):
     """Return the validator record or raise ValueError; never a partial pass.
 
@@ -1151,7 +1185,8 @@ def validate(raw, *, profile=None, captured=None):
     schema = envelope.get('schema') if isinstance(envelope, dict) else None
     fields(envelope, 'envelope', ['schema', 'id', 'outline', 'layer_count', 'stackup', 'fab_profile',
                                   'mounting_holes', 'keepouts', 'fixed_footprints']
-           + (['obligations'] if schema == SCHEMAS[1] else []), ['max_component_height_mm', 'constraint_provenance'])
+           + (['obligations'] if schema == SCHEMAS[1] else []),
+           ['max_component_height_mm', 'constraint_provenance', 'mechanical_reservations'])
     if schema not in SCHEMAS:
         raise ValueError(f'schema must be one of {SCHEMAS}')
     eid = name(envelope['id'], 'envelope id', ENVELOPE_ID)
@@ -1183,6 +1218,15 @@ def validate(raw, *, profile=None, captured=None):
                                                           f"{', '.join(item['owner_items'])}."}
                       for item in obligations if 'coverage' in item for entry in item['coverage']['open'])
     provenance = validate_provenance(envelope, vertices, captured)
+    mechanical = (mechanical_reservations(envelope['mechanical_reservations'], captured)
+                  if 'mechanical_reservations' in envelope else None)
+    if mechanical is not None:
+        provenance['source_paths'] = sorted(set(provenance['source_paths']) | set(mechanical['source_paths']))
+        unresolved.extend({'predicate': 'mechanical_access', 'reservation': row['id'],
+                           'reason': 'required mechanical geometry, height or access coverage is unresolved'}
+                          for row in mechanical['document']['reservations'] if row['required'] and (
+                              row['geometry']['polygons_nm'] is None or row['height_nm'] is None
+                              or any(row['coverage'][key] != 'covered' for key in ('height', 'access'))))
     return {'schema': 'agent-ee.envelope-validation/1', 'envelope_id': eid,
             'envelope_sha256': hashlib.sha256(raw).hexdigest(),
             'structural': 'pass', 'outcome': 'unknown' if unresolved or staged else 'pass',
@@ -1191,6 +1235,7 @@ def validate(raw, *, profile=None, captured=None):
             'outline': outline, 'layer_count': envelope['layer_count'], 'copper_layers': copper,
             'stackup': stackup, 'fab_profile': fab,
             **height,
+            **({'mechanical_reservations': mechanical} if mechanical is not None else {}),
             **({'obligations': obligations} if schema == SCHEMAS[1] else {}),
             # Recorded only while staging: an unstaged contracted envelope's record is unchanged.
             **({'obligation_contract': contract} if contract and contract['required'] else {}),
@@ -1234,6 +1279,15 @@ def derive_requirements(record, source_path):
         out.append(obligation(eid, 'component-height', '/max_component_height_mm', height,
                               f'every footprint has sourced installed height at most {height} mm.',
                               source_path, CHECK_KINDS['max_component_height_mm']))
+    if 'mechanical_reservations' in record:
+        mechanical = record['mechanical_reservations']
+        out.append(obligation(eid, 'mechanical-access', '/mechanical_reservations',
+                              {'path': mechanical['path'], 'sha256': mechanical['sha256']},
+                              'all required captured mechanical reservations are clear at the saved native '
+                              'footprint and pad poses, on every declared assembly phase, with complete '
+                              'height and access coverage; engineering declarations do not establish '
+                              'owner or manufacturer authority.',
+                              source_path, CHECK_KINDS['mechanical_reservations']))
     layers = '; '.join(f"{l['name']} {l['kind']} {l['thickness_mm']} mm" +
                        (f" {l['copper_weight_oz']} oz" if 'copper_weight_oz' in l else '')
                        for l in record['stackup']['layers'])
@@ -1288,6 +1342,10 @@ def derive_requirements(record, source_path):
                               f"checks pending {', '.join(item['owner_items'])}." + staged,
                               source_path, CHECK_KINDS['obligations']))
     by_locator = {e['locator']: e for e in record.get('constraint_provenance', {}).get('constraints', [])}
+    if 'mechanical_reservations' in record:
+        # A required check of a selected engineering declaration is distinct from
+        # declaring its dimensions to be owner or manufacturer requirements.
+        by_locator['/mechanical_reservations'] = {'class': 'engineering', 'enforcement': 'hard'}
     provenance = {}
     for item in out:
         entry = by_locator.get(item['source']['locator'], {'class': 'unknown', 'enforcement': 'hard'})
@@ -1386,6 +1444,25 @@ def bind_connector_edge(item, spec, record, files, others):
     return None
 
 
+def bind_mechanical_access(item, spec, record, files, others):
+    """One complete reservation document, one saved-coordinate check."""
+    params = spec.get('params')
+    fields(params, 'mechanical-access/1 params', ['criterion', 'drc_check', 'envelope'])
+    if params['criterion'] != 'mechanical-access/1':
+        raise ValueError('mechanical reservation obligation needs mechanical-access/1')
+    if not isinstance(params['drc_check'], str) or not params['drc_check']:
+        raise ValueError('mechanical-access/1 needs a native DRC check id')
+    if not isinstance(params['envelope'], str) or str(safe_relative(params['envelope'])) != params['envelope']:
+        raise ValueError('mechanical-access/1 envelope must be a canonical captured path')
+    if files.get(params['envelope']) != record['envelope_sha256']:
+        raise ValueError('mechanical-access/1 does not bind these captured envelope bytes')
+    if 'mechanical_reservations' not in record:
+        raise ValueError('mechanical-access/1 needs a captured reservation document')
+    if others:
+        raise ValueError(f"mechanical-access/1 check {spec['id']} also mapped by {others}")
+    return None
+
+
 def stackup_authority_reason(record):
     if record['fab_profile'].get('stackup', {}).get('execution') != 'ready':
         return 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
@@ -1420,6 +1497,7 @@ def bind_native_envelope(item, spec, record, files, others):
 # item to add a validator here; registering a kind or criterion is not enough.
 BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile,
             ('fixed_footprints', 'placement'): bind_connector_edge,
+            ('mechanical_reservations', 'placement'): bind_mechanical_access,
             **{(field, 'board_envelope'): bind_native_envelope
                for field in ('outline', 'layer_count', 'stackup', 'mounting_holes', 'keepouts',
                              'max_component_height_mm')}}
