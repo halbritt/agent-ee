@@ -257,51 +257,8 @@ pub fn resolve(footprints: &[Value], e: &Value) -> Result<[Rat; 2]> {
     let y = exact::rational(&off[1]).map_err(|_| anyhow::anyhow!(reason.clone()))?;
     Ok([Rat::from_integer(pos.x) + x, Rat::from_integer(pos.y) + y])
 }
-fn reference(v: &Value) -> bool {
-    if !v.is_object()
-        || ["path", "sha256", "locator"]
-            .iter()
-            .any(|k| v[k].as_str().is_none_or(|s| s.trim().is_empty()))
-    {
-        return false;
-    }
-    let p = v["path"].as_str().unwrap();
-    let parts: Vec<_> = p
-        .split('/')
-        .filter(|s| !s.is_empty() && *s != ".")
-        .collect();
-    !p.starts_with('/')
-        && !parts.is_empty()
-        && !parts.contains(&"..")
-        && v["sha256"].as_str().is_some_and(|s| {
-            s.len() == 64
-                && s.chars()
-                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-        })
-}
-fn verified(v: &Value, records: &Value) -> (&'static str, &'static str) {
-    let fallback = ("advisory", "unsourced numeric locality bound");
-    if !reference(v) {
-        return fallback;
-    }
-    let Some(text) = records
-        .get(v["path"].as_str().unwrap())
-        .and_then(Value::as_str)
-    else {
-        return fallback;
-    };
-    if format!("{:x}", Sha256::digest(text.as_bytes())) != v["sha256"].as_str().unwrap() {
-        return ("integrity", "source record sha256 mismatch");
-    }
-    if !v["quote"]
-        .as_str()
-        .is_some_and(|s| !s.trim().is_empty() && text.contains(s))
-    {
-        return fallback;
-    }
-    ("verified", "source record and quote verified")
-}
 pub fn classify(pair: &Value, records: &Value) -> Value {
+    use crate::source_authority as authority;
     let p = &pair["provenance"];
     let class = p.get("class").and_then(Value::as_str).unwrap_or("default");
     let mut out =
@@ -318,77 +275,60 @@ pub fn classify(pair: &Value, records: &Value) -> Value {
         out["class"] = json!("default");
         return out;
     }
-    if !p["basis"].as_str().is_some_and(|s| !s.trim().is_empty()) {
+    if !authority::text(&p["basis"]) {
         return out;
     }
+    let values = authority::bound_mm(pair);
     if class == "manufacturer" {
+        let resolved = authority::cite(class, &p["citation"], records, &values, &[]);
+        if resolved["enforcement"] == "integrity" {
+            out["enforcement"] = resolved["enforcement"].clone();
+        }
+        if resolved["enforcement"] != "hard" {
+            out["reason"] = resolved["reason"].clone();
+            return out;
+        }
         out["enforcement"] = json!("feasibility");
         out["reason"] =
             json!("Captured manufacturing minimum cannot establish an electrical maximum");
         return out;
     }
     if class == "owner" {
-        let d = &p["decision_reference"];
-        let (status, reason) = verified(d, records);
-        if status == "integrity" {
-            out["enforcement"] = json!(status);
-            out["reason"] = json!(reason);
-            return out;
+        let decision = &p["decision_reference"];
+        let mut citation = decision.clone();
+        if let Some(citation) = citation.as_object_mut() {
+            citation.insert("kind".into(), json!("owner_decision"));
         }
-        static OWNER: OnceLock<Regex> = OnceLock::new();
-        let re = OWNER
-            .get_or_init(|| Regex::new(r"(?i)\bagent(?:[- _]?\d+)?\b|design[-_ ]?owner").unwrap());
-        if status == "verified"
-            && d["owner"]
-                .as_str()
-                .is_some_and(|s| !s.trim().is_empty() && !re.is_match(s))
-        {
+        let verification = authority::cite(class, &citation, records, &values, &[]);
+        if verification["enforcement"] == "integrity" {
+            out["enforcement"] = verification["enforcement"].clone();
+            out["reason"] = verification["reason"].clone();
+        } else if verification["enforcement"] == "hard" {
             out["enforcement"] = json!("hard");
             out["reason"] = json!("explicit owner decision reference");
+        } else if authority::reference(decision) {
+            out["reason"] = verification["reason"].clone();
         }
+        return out;
     }
     if class == "datasheet" {
         let d = &p["derivation"];
         if !d.is_object() {
             return out;
         }
-        let (status, reason) = verified(&d["source"], records);
-        if status == "integrity" {
-            out["enforcement"] = json!(status);
-            out["reason"] = json!(reason);
+        let verification = authority::verified_reference(&d["source"], records);
+        if verification["enforcement"] == "integrity" {
+            out["enforcement"] = verification["enforcement"].clone();
+            out["reason"] = verification["reason"].clone();
             return out;
         }
-        if status != "verified" {
+        if verification["enforcement"] != "verified" {
             return out;
         }
         let value = if d["kind"] == "numeric" {
             exact::integer(&d["value_nm"])
                 .ok()
                 .filter(|n| n >= &Int::zero())
-                .filter(|n| {
-                    static TOKENS: OnceLock<Regex> = OnceLock::new();
-                    let re = TOKENS
-                        .get_or_init(|| Regex::new(r"([0-9]+(?:\.[0-9]+)?)\s*(nm|mm)\b").unwrap());
-                    let quote = d["source"]["quote"].as_str().unwrap_or("");
-                    re.captures_iter(quote).any(|cap| {
-                        let m = cap.get(0).unwrap();
-                        if quote[..m.start()]
-                            .chars()
-                            .next_back()
-                            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
-                        {
-                            return false;
-                        }
-                        let Ok(v) = exact::decimal(&json!(&cap[1])) else {
-                            return false;
-                        };
-                        v * Rat::from_integer(if &cap[2] == "mm" {
-                            1_000_000.into()
-                        } else {
-                            1.into()
-                        }) == Rat::from_integer(n.clone())
-                    })
-                })
         } else if d["kind"] == "layout" {
             match (
                 exact::integer(&d["distance_units"]),
@@ -397,9 +337,7 @@ pub fn classify(pair: &Value, records: &Value) -> Value {
                 (Ok(n), Ok(scale))
                     if n >= Int::zero()
                         && scale > Int::zero()
-                        && d["scale_reference"]
-                            .as_str()
-                            .is_some_and(|s| !s.trim().is_empty()) =>
+                        && authority::text(&d["scale_reference"]) =>
                 {
                     Some(n * scale)
                 }
@@ -408,14 +346,26 @@ pub fn classify(pair: &Value, records: &Value) -> Value {
         } else {
             None
         };
-        if value.is_some() && value == exact::integer(&pair["max_distance_nm"]).ok() {
+        if value.is_none() || value != exact::integer(&pair["max_distance_nm"]).ok() {
+            return out;
+        }
+        let mut citation = d["source"].clone();
+        citation["kind"] = json!("captured_source");
+        let resolved = authority::cite(class, &citation, records, &values, &[]);
+        if resolved["enforcement"] == "hard" {
             out["enforcement"] = json!("hard");
             out["reason"] = json!("numeric derivation equals declared bound");
+        } else {
+            out["reason"] = if d["kind"] == "layout" {
+                json!("layout derivation scale is not validated by the captured source")
+            } else {
+                resolved["reason"].clone()
+            };
         }
     }
     out
 }
-fn manufacturing_record() -> Result<&'static Value> {
+pub(crate) fn manufacturing_record() -> Result<&'static Value> {
     static RECORD: OnceLock<Result<Value, String>> = OnceLock::new();
     let r = RECORD.get_or_init(|| {
         let bytes = include_bytes!("../../../src/agent_ee/data/jlcpcb-locality.json");
@@ -1036,8 +986,31 @@ mod tests {
         );
         p["provenance"]["decision_reference"]["owner"] = json!("Hal");
         assert_eq!(
-            classify(&p, &json!({"owner.txt":quote}))["enforcement"],
-            "hard"
+            classify(&p, &json!({"owner.txt":quote})),
+            json!({"class":"owner","enforcement":"advisory","reason":"owner decision is not cited at a commit (uncommitted)"})
+        );
+        p["provenance"]["decision_reference"]["commit"] = json!("a".repeat(40));
+        p["provenance"]["decision_reference"]["repository"] = json!("owner/repository");
+        assert_eq!(
+            classify(&p, &json!({"owner.txt":quote}))["reason"],
+            "owner decision commit does not resolve to a pinned owner commit"
+        );
+    }
+    #[test]
+    fn authored_layout_scale_and_manufacturer_labels_are_not_authority() {
+        let quote = "Layout diagram.";
+        let sha = format!("{:x}", Sha256::digest(quote));
+        let pair = json!({"max_distance_nm":1_000_000,"provenance":{"class":"datasheet","basis":"layout",
+            "derivation":{"kind":"layout","distance_units":10,"scale_nm_per_unit":100_000,"scale_reference":"authored scale",
+                "source":{"path":"source.txt","locator":"figure 1","quote":quote,"sha256":sha}}}});
+        assert_eq!(
+            classify(&pair, &json!({"source.txt":quote}))["reason"],
+            "layout derivation scale is not validated by the captured source"
+        );
+        let pair = json!({"max_distance_nm":1_000_000,"provenance":{"class":"manufacturer","basis":"vendor label"}});
+        assert_eq!(
+            classify(&pair, &json!({})),
+            json!({"class":"manufacturer","enforcement":"advisory","reason":"free-text manufacturer label without a resolvable citation"})
         );
     }
     #[test]

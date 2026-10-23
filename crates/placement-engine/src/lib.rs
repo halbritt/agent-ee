@@ -12,6 +12,8 @@ pub mod netlist;
 pub mod packing;
 pub mod policy;
 pub mod progress;
+pub mod quantity;
+pub mod source_authority;
 mod rank;
 mod search;
 pub mod targeted;
