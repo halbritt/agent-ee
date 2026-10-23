@@ -46,7 +46,8 @@ def eligible_faces(record, block_id, ref=None):
     faces = _faces(entry.get('eligible_faces'), f'block {block_id} eligibility')
     if not set(faces) <= set(default):
         raise ValueError(f'block {block_id}: eligible faces exceed the default permission')
-    if set(faces) != set(default) and not entry.get('face_restrictions'):
+    restrictions = entry.get('face_restrictions')
+    if set(faces) != set(default) and (not isinstance(restrictions, list) or not restrictions):
         raise ValueError(f'block {block_id}: narrowed faces need explicit face restrictions')
     members = record.get('members', {})
     if not isinstance(members, dict):
