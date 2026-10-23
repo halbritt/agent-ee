@@ -45,6 +45,8 @@ def using(executable):
 
 
 class Session:
+    implementation = 'rust'
+
     def __init__(self, executable=None):
         self.executable = resolve_executable() if executable is None else Path(executable).resolve(strict=True)
         self.calls = []
@@ -65,9 +67,22 @@ class Session:
             record['input_sha256'] = hashlib.sha256(encoded).hexdigest()
             executable_hash = hashlib.sha256(self.executable.read_bytes()).hexdigest()
             record['executable_sha256'] = executable_hash
+            receipt_path = self.executable.with_name(self.executable.name + '.json')
+            receipt_bytes = receipt_path.read_bytes() if receipt_path.is_file() else None
+            if receipt_bytes is not None:
+                try:
+                    receipt = json.loads(receipt_bytes)
+                except (ValueError, UnicodeError) as exc:
+                    raise placement_runtime.PlanningProcessError('invalid Rust build receipt') from exc
+                if (not isinstance(receipt, dict) or receipt.get('schema') != 'agent-ee.placement-engine-install/1'
+                        or receipt.get('binary_sha256') != executable_hash):
+                    raise placement_runtime.PlanningProcessError('Rust executable differs from its build receipt')
+                record['build_receipt_sha256'] = hashlib.sha256(receipt_bytes).hexdigest()
             response = _exchange([str(self.executable), '--events'], encoded, heartbeat, record)
             if hashlib.sha256(self.executable.read_bytes()).hexdigest() != executable_hash:
                 raise placement_runtime.PlanningProcessError('Rust executable changed during planning')
+            if receipt_bytes is not None and receipt_path.read_bytes() != receipt_bytes:
+                raise placement_runtime.PlanningProcessError('Rust build receipt changed during planning')
             if 'error' in response:
                 if not isinstance(response['error'], str):
                     raise placement_runtime.PlanningProcessError('invalid Rust planning error record')

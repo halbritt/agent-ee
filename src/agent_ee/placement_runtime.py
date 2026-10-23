@@ -30,6 +30,8 @@ def python_reference():
 
 
 class _PythonReference:
+    implementation = 'python-reference'
+
     def plan(self, facts, request, policy, netlist, *, heartbeat):
         from .placer_runner import _plan_local
         return _plan_local(facts, request, policy, netlist, heartbeat=heartbeat)

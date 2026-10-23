@@ -884,13 +884,16 @@ def _heartbeat(record):
     print(json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), file=sys.stderr, flush=True)
 
 
-def _plan(facts, request, policy=None, netlist=None):
+def _plan(facts, request, policy=None, netlist=None, *, execution=None):
     from .placement_runtime import active
-    runtime = active()
-    if runtime is not None:
-        return runtime.plan(facts, request, policy, netlist, heartbeat=_heartbeat)
     from .placement_rust_runtime import Session
-    return Session().plan(facts, request, policy, netlist, heartbeat=_heartbeat)
+    runtime = active() or Session()
+    plan = runtime.plan(facts, request, policy, netlist, heartbeat=_heartbeat)
+    if execution is not None:
+        execution.update(schema='agent-ee.planning-execution/1', implementation=runtime.implementation)
+        if runtime.implementation == 'rust':
+            execution.update(runtime.calls[-1])
+    return plan
 
 
 def _plan_local(facts, request, policy=None, netlist=None, *, heartbeat=None):
@@ -950,7 +953,8 @@ def place_candidate(source, netlist, destination, request):
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = reserve_imu_markings(board, _effective_policy(request))
         placement_trace.phase(None)  # Planning records its own prep, Stage-A and Stage-B time.
-        plan = _plan(facts, request, policy, netlist)
+        planning_execution = {}
+        plan = _plan(facts, request, policy, netlist, execution=planning_execution)
         placement_trace.phase('native_checks')
         # A per-layer padstack also leaves its copper extent unproven (AGENTEE-366):
         # the padstack refusal names the cause either way.
@@ -963,9 +967,14 @@ def place_candidate(source, netlist, destination, request):
             scratch = Path(temporary)
             output = scratch / 'candidate.kicad_pcb'
             write_json(scratch / 'placement-plan.json', plan)
+            planning_execution['plan_sha256'] = digest(scratch / 'placement-plan.json')
+            write_json(scratch / 'planning-execution.json', planning_execution)
             try:
                 report = _evaluate_proposal(board, output, plan, netlist_bytes, facts, source,
                                             request.get('side_changes'))
+                report['planning_execution'] = {
+                    'path': 'planning-execution.json', 'sha256': digest(scratch / 'planning-execution.json'),
+                    'implementation': planning_execution['implementation']}
                 from .placement_adapter import write_scope
                 protected = ([p['uuid'] for p in plan['placements'] if p['fixed']]
                              if targeted else ())

@@ -26,10 +26,14 @@ class RustRuntimeTest(unittest.TestCase):
     def test_default_dispatch_runs_rust_without_a_reference_fallback(self):
         facts, policy = promotion_case()
         expected = placer_runner._plan_local(facts, {'policy': policy}, heartbeat=lambda _: None)
+        execution = {}
         with mock.patch.dict(os.environ, {'AGENT_EE_RUST_PLANNER': str(self.binary)}), \
                 mock.patch.object(placer_runner, '_plan_local', side_effect=AssertionError('Python planner called')):
-            actual = placer_runner._plan(facts, {'policy': policy})
+            actual = placer_runner._plan(facts, {'policy': policy}, execution=execution)
         self.assertEqual(actual, expected)
+        self.assertEqual((execution['implementation'], execution['status']), ('rust', 'ok'))
+        self.assertEqual(len(execution['executable_sha256']), 64)
+        self.assertNotIn('implementation', actual)
 
     def test_reference_context_is_explicit_and_restored(self):
         facts, policy = promotion_case()
@@ -129,6 +133,18 @@ class RustRuntimeTest(unittest.TestCase):
 
 
 class RustTransportTest(unittest.TestCase):
+    def test_stale_build_receipt_fails_before_starting_child(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'planner'
+            binary.write_bytes(b'changed planner')
+            binary.with_name('planner.json').write_text(json.dumps({
+                'schema': 'agent-ee.placement-engine-install/1',
+                'binary_sha256': hashlib.sha256(b'original planner').hexdigest()}))
+            with mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=AssertionError('child started')):
+                with self.assertRaisesRegex(placement_runtime.PlanningProcessError, 'differs from its build receipt'):
+                    placement_rust_runtime.Session(binary).plan({}, {}, None, None, heartbeat=self.fail)
+
     def test_bad_explicit_binary_never_uses_installed_binary_or_python(self):
         with tempfile.TemporaryDirectory() as directory:
             missing = str(Path(directory) / 'missing')

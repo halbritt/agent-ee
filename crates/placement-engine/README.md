@@ -5,7 +5,11 @@ operation behind `placer_runner._plan_local`. It handles capture qualification,
 policy and provenance checks, supplied block admission and arrangement, residual
 packing, targeted placement and selection, exact geometry, electrical locality,
 candidate ranking, search budgets, feasibility proofs, and final plan grading.
-It does not invoke Python or another planner.
+It does not invoke Python or another planner. For block requests, the caller still
+uses Python `blocks.pack_block` to produce Stage-A candidates before this boundary.
+Rust admits those supplied candidates, arranges them in Stage B, and packs the
+residual parts. The end-to-end pipeline therefore still includes Python Stage A,
+KiCad capture, board writing and validation.
 
 The existing runner still uses KiCad to capture a board, apply the proposed
 placements, and independently validate the resulting board. Those operations
