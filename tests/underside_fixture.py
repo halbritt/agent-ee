@@ -184,7 +184,11 @@ def write_board(directory, *, witness=False, spare_front=False, chain=False):
             identity(field, f'{ref}-field-{field.GetName()}')
             field.SetVisible(False)
         half_width = 2.25 if ref == 'R1' else 1
-        corners = [(-half_width, -1), (half_width, -1), (half_width, 1), (-half_width, 1)]
+        # The chain's bridge has authored room beyond its far edge. This
+        # supplies a real initial block window for an electrical member move;
+        # the near edge and every sourced gap remain unchanged.
+        far_y = 1.5 if chain and ref == 'C2' else 1
+        corners = [(-half_width, -1), (half_width, -1), (half_width, far_y), (-half_width, far_y)]
         for i, start in enumerate(corners):
             line(fp, k.F_CrtYd, start, corners[(i + 1) % 4], f'{ref}-courtyard-{i}')
         if ref not in ('H1', 'H2'):

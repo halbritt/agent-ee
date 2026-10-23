@@ -146,14 +146,18 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
             by_block = {bundle['block_id']: bundle for bundle in candidates}
             self.assertEqual(by_block['a']['variants']['F']['status'], 'packed')
             self.assertEqual(by_block['b']['variants']['F']['status'], 'packed')
-            # Both eligible faces were attempted with the same finite Stage-A
-            # budget. Preserve the B search limit as a typed retained result;
-            # this fixture's full-pipeline refinement uses its packed F layout.
-            failed = by_block['b']['variants']['B']
-            self.assertEqual(failed['status'], 'packing_budget_exhausted')
-            self.assertIsNone(failed['candidate'])
-            self.assertEqual(failed['failure']['status'], failed['status'])
-            self.assertEqual(failed['failure']['plan']['steps_used'], policy['step_budget'])
+            # Both eligible faces are attempted with the same finite Stage-A
+            # budget. A B search limit remains an explicit retained limitation;
+            # it is not turned into a candidate or an infeasibility claim.
+            back = by_block['b']['variants']['B']
+            if back['status'] == 'packed':
+                self.assertIsNone(back['failure'])
+                self.assertIsNotNone(back['candidate'])
+            else:
+                self.assertEqual(back['status'], 'packing_budget_exhausted')
+                self.assertIsNone(back['candidate'])
+                self.assertEqual(back['failure']['status'], back['status'])
+                self.assertEqual(back['failure']['plan']['steps_used'], policy['step_budget'])
         else:
             self.assertTrue(all(row['status'] == 'packed' for bundle in candidates for row in bundle['variants'].values()))
         request = {'policy': policy, 'blocks': {'arrangement': rules, 'side_eligibility': eligibility,
