@@ -201,7 +201,10 @@ def write_board(directory, *, witness=False, spare_front=False, chain=False):
         for i, start in enumerate(corners):
             line(fp, k.F_CrtYd, start, corners[(i + 1) % 4], f'{ref}-courtyard-{i}')
         if ref not in ('H1', 'H2'):
-            pins = (('1', 'VCC', -0.6), ('2', 'GND', -0.2), ('3', 'OUT', 0.2), ('4', 'GND', 0.6)) if ref == 'C2' else (
+            # Equal .8-mm output/return pitch on C2 and C1 makes an inward
+            # alignment improve both declared relationships together. All native
+            # pad edges stay separated by at least .2 mm within the same court.
+            pins = (('1', 'VCC', -0.8), ('2', 'GND', -0.4), ('3', 'OUT', 0), ('4', 'GND', 0.8)) if ref == 'C2' else (
                 ('1', 'OUT' if chain and ref == 'C1' else 'VCC', -0.4), ('2', 'GND', 0.4))
             for number, net, y in pins:
                 pad = k.PAD(fp)
