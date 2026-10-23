@@ -1,0 +1,15 @@
+{
+  "allowed_trace_layers": [
+    "F.Cu",
+    "B.Cu"
+  ],
+  "allowed_via_spans": [
+    [
+      "F.Cu",
+      "B.Cu"
+    ]
+  ],
+  "experiment_class": "current-policy",
+  "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "schema": "routability-policy/1"
+}

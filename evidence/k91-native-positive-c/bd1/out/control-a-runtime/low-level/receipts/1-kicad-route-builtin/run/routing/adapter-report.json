@@ -1,0 +1,178 @@
+{
+  "adapter": {
+    "compatibility": "kicad-route@bd1e633f2e585f4fc931ceab001299b78d0d8bb7"
+  },
+  "backend": {
+    "reason": "no result.json",
+    "status": "unknown",
+    "value": null
+  },
+  "candidate": null,
+  "candidate_editor_state": {},
+  "candidate_files": {},
+  "discovery": null,
+  "identity": "0bdb4a667536794d2b748f4ff939373aa6afe7655dd23f1113e7ba1561776983",
+  "identity_after": null,
+  "identity_before": {
+    "code": {
+      "bin": {
+        "entries": 1,
+        "sha256": "54d9faaeb14d438e470794b227a5fde156a2470819257ddc5eb3f6a559c935db"
+      },
+      "src": {
+        "entries": 332,
+        "sha256": "320bfe069610307ac2dd9112afecb01e18dcf3b7d0d9f0fb3812b98e21bb92c3"
+      }
+    },
+    "state": {
+      ".venv-krt": {
+        "entries": 2929,
+        "sha256": "28fe6022d1f4bb8a32bb2e5312f54458d9bab281871f5cec4c923c9ac3cfb0c6"
+      }
+    },
+    "state_manifest": "34a74cd0eb7b26b9c793a8d86094d1240586ae55dd7af627bebee0de6b9fd8d0"
+  },
+  "inputs": {
+    "files": {
+      "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+      "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+      "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+      "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+      "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+    },
+    "sha256": "e8e4c33e3917e6f250d0adaf667071a87f3c63f43c2c734150589dd6af0dc561",
+    "staged": null,
+    "staged_after": null
+  },
+  "missing_artifacts": [],
+  "omitted_design_files": {},
+  "process": null,
+  "rejected_candidate_sha256": null,
+  "reproducibility": "deterministic backend, repeatability not qualified by this attempt",
+  "request": {
+    "backend": "builtin",
+    "board": "rc_filter.kicad_pcb",
+    "budget_s": 300,
+    "experiment_policy": {
+      "allowed_trace_layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "allowed_via_spans": [
+        [
+          "F.Cu",
+          "B.Cu"
+        ]
+      ],
+      "experiment_class": "current-policy",
+      "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "schema": "routability-policy/1"
+    },
+    "label": "k91-native-positive",
+    "name": "rc_filter",
+    "project": "project",
+    "schematic": "rc_filter.kicad_sch",
+    "state": "checkout",
+    "timeout_s": 900
+  },
+  "retained": {},
+  "schema": "agent-ee.kicad-route-attempt/1",
+  "semantics": {
+    "adapter_exit": 64,
+    "classification": "not_run",
+    "coverage": "unknown",
+    "exit_code": null,
+    "experiment": {
+      "contract": "agent-ee/AGENTEE-442: routability-experiment/1 as written by kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 (unpinned, not qualified); routability-policy/1 five fields",
+      "policy": {
+        "declared": {
+          "allowed_trace_layers": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "allowed_via_spans": [
+            [
+              "F.Cu",
+              "B.Cu"
+            ]
+          ],
+          "experiment_class": "current-policy",
+          "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "schema": "routability-policy/1"
+        },
+        "policy_sha256": "3899a9eeac2ab4027c50454e4b2d1ea73b4620fd7b928fbb8cb6f0051abc37bd",
+        "sha256": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056"
+      },
+      "policy_copy": null,
+      "policy_file": "attempt/agent-ee-experiment-policy.json",
+      "qualified": false,
+      "reason": "no result.json: the router reported no experiment",
+      "status": "absent"
+    },
+    "pair_coverage": {
+      "acceptance_ready": false,
+      "limitations": [
+        "Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.",
+        "Differential pair routing was not requested; pair geometry is unqualified"
+      ],
+      "pairs": [],
+      "status": "unknown"
+    },
+    "proposal": "none",
+    "reasons": [
+      "checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+      "tool file differs from pin: src/kicad_route/cli.py",
+      "tool file differs from pin: src/kicad_route/common.py",
+      "tool file differs from pin: src/kicad_route/configuration_evidence.py",
+      "tool file differs from pin: src/kicad_route/copper_ownership.py",
+      "tool file differs from pin: src/kicad_route/corpus.py",
+      "tool file differs from pin: src/kicad_route/evidence.py",
+      "pinned file missing: src/kicad_route/experiment.py",
+      "pinned file missing: src/kicad_route/kicad/emit_additions.py",
+      "pinned file missing: src/kicad_route/repair_child.py",
+      "pinned file missing: src/kicad_route/repair_trial.py",
+      "tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py"
+    ]
+  },
+  "state_write_probe": [
+    {
+      "directory": "/opt/kicad-route",
+      "errno": "EROFS",
+      "refused": true
+    },
+    {
+      "directory": "/opt/kicad-route/.venv-krt",
+      "errno": "EROFS",
+      "refused": true
+    }
+  ],
+  "tool": {
+    "commit": "b5774496d8466b67ffa0362b6665fee2108155a3",
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "resolved": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+    },
+    "kicad_route": {
+      "path": "/opt/kicad-route/bin/kicad-route",
+      "resolved": "/opt/kicad-route/bin/kicad-route",
+      "sha256": "4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9"
+    },
+    "kicad_share_templates": {
+      "fp-lib-table": "4042e1c92709d4f872d4cdeaddfa7ec0f6bd49be240e0d9668b76e89888b1e77",
+      "sym-lib-table": "70d7bba56bcfd2f59d98e2354a8979661f2c49f3686d13e989b20202514654c3"
+    },
+    "pin": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "python": {
+      "path": "/usr/bin/python3",
+      "resolved": "/usr/bin/python3.12",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    }
+  },
+  "tool_version": {
+    "reason": "kicad-route at the pin has no --version; identity is the pinned code",
+    "status": "unknown",
+    "value": null
+  }
+}

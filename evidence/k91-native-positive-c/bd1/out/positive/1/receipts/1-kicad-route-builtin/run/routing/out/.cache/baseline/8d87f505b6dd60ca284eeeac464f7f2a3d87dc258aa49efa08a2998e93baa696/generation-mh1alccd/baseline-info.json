@@ -1,0 +1,107 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--refill-zones",
+        "--save-board",
+        "--format",
+        "json",
+        "-o",
+        "/work/routing/out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/drc/baseline-refill.json",
+        "/work/routing/out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/project/project/rc_filter.kicad_pcb"
+      ],
+      "cwd": "out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/project/project",
+      "log": "out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/drc/baseline-refill.log",
+      "exit_code": 0,
+      "duration_s": 2.319
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/routing/out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/drc/baseline-drc.json",
+        "/work/routing/out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/project/project/rc_filter.kicad_pcb"
+      ],
+      "cwd": "out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/project/project",
+      "log": "out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/drc/baseline-drc.log",
+      "exit_code": 0,
+      "duration_s": 1.839
+    }
+  ],
+  "reasons": [],
+  "refill": {
+    "board_sha256_before": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "board_sha256_after": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232"
+  },
+  "board_sha256_graded": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+  "board_sha256_checked": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+  "parity_performed": true,
+  "report": "out/.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/.building-z3um1ts1/drc/baseline-drc.json",
+  "cached": false,
+  "identity": {
+    "schema": 2,
+    "input": "4ab84fd41abbb88649747b2e48c499c13fab81637b308848a9cd8bd7d7f4fcfa",
+    "board": "rc_filter.kicad_pcb",
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "version": "10.0.7",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+    },
+    "pcbnew": "10.0.7-10.0.7~ubuntu24.04.1",
+    "pour_schema": 1,
+    "native_terminals": {
+      "schema": 1,
+      "producer": {
+        "native_components.py": "fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0",
+        "kicad/native_components.py": "071b5624884586e9a8ea83b7b253c292267b352623f58c3291ddd1ae7ec14fb6",
+        "kicad/facts.py": "d47a3fd2eb40518b7beba5457b679b901150c64e3988f86537d67f373bef8c52"
+      },
+      "tool": {
+        "version": "10.0.7-10.0.7~ubuntu24.04.1",
+        "module": {
+          "path": "/usr/bin/_pcbnew.kiface",
+          "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8"
+        },
+        "binding": {
+          "path": "/usr/lib/python3/dist-packages/pcbnew.py",
+          "sha256": "50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458"
+        },
+        "python": {
+          "path": "/usr/bin/python3.12",
+          "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+        }
+      }
+    },
+    "grading": {
+      "baselinecache.py": "3a36d87ddcdc19fdae6c330e51202ca091bf59e4b1ee583a9c8b4ff9c8eb202f",
+      "cli.py": "5170f5e203544dd446a409dedcade8134b76d666bf075e0e47c4a91bddef6b72",
+      "pour.py": "1583883ee1682bf0f72d709b1e146384d37b481a423584de9bd564ac18f1b6b7",
+      "kicad/pour.py": "a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14",
+      "contract.py": "5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698"
+    },
+    "result_schemas": {
+      "result-1.json": "7f23d6a7495edfdf7cbe5e238a5548bc8e2c81ec63d987e863f5562f2c17dd55",
+      "result-2.json": "cafaab23c9a0ee379f54f03436243193ef41dbf2a1b51b52f15c9df18895ed7f",
+      "result-campaign-2.json": "2ca7cbf0beb2c2d86f6d21a3598dedf623ebd122eef85888a145825f71e9cf35"
+    }
+  },
+  "generation": null,
+  "source": {
+    "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "rules": {
+      "rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+      "rc_filter.kicad_dru": null
+    }
+  }
+}

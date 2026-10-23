@@ -1,0 +1,878 @@
+{
+  "schema": "agent-ee.k91-native-positive/2",
+  "classifier": "agent-ee.k91-native-positive/verdict-2r4",
+  "item": "AGENTEE-442",
+  "boundary": "campaign.run_implementation_steps (coordinator boundary ruling a01d6f91)",
+  "agent_ee_head": "1e9255632668ebfa97ca2c0cbd1105c9d1fe5b6a",
+  "harness_sha256": "d6b2cadd9bae70a1bfb21688663662e037c0b035fe2e21cf83bd67d5063fce3c",
+  "classifier_sha256": "55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706",
+  "consumer_sha256": "5bc18b6e305d25dcad284c5fa64839960cc1a2cb8cc421df82c7eb073470b5d0",
+  "base_harness_sha256": "97d6055d148ef40ae110a09ab6c906f28d0ceea65afc4949f44ca531242e600f",
+  "production_adapter_sha256": "a1704d4d39c93eaef0cd5a513d5177ac066996d7ff7b022f6beeb931bca96e18",
+  "production_pin": "b5774496d8466b67ffa0362b6665fee2108155a3",
+  "limits": {
+    "router_s": 900,
+    "total_s": 2400,
+    "budget_s": 300
+  },
+  "qualified": false,
+  "runtime": {
+    "description": "proposed pin source + copied existing venv, private checkout-mode layout; not an installed router generation",
+    "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+    "frozen_source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+    "extension_sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8",
+    "packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae",
+    "python_version": "3.12.3",
+    "manifest_drift": [],
+    "manifest": {
+      "sha256": "33cd344e95733941590ffc6cc63e6002ca638077450c0568d3a6ae30f82a3212",
+      "state_dir": "/opt/kicad-route",
+      "generation": null,
+      "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+      "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+      "extension_sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8",
+      "packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae"
+    },
+    "interpreter": {
+      "lexical": "/opt/agent-ee/build/k91-isolated-bd1/runtime-L/.venv-krt/bin/python",
+      "link": "/usr/bin/python3",
+      "resolved": "/usr/bin/python3.12"
+    }
+  },
+  "input": {
+    "project_dir": "/opt/agent-ee/fixtures/rc/control",
+    "requirements_dir": "/opt/agent-ee/fixtures/rc/requirements",
+    "board": "rc_filter.kicad_pcb",
+    "tree_sha256": "0fdad94e4d260be007b438926d80e7d7ad087a4792b93aae3a0ab4a38d7d87b9",
+    "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "pin": {
+    "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "code_files": 313,
+    "code_sha256": "63939cc4e806e458c2afe5ce7935c49490b15dbf5ae6f1a9c846eb4ab2d331b1"
+  },
+  "policy": {
+    "declared": {
+      "schema": "routability-policy/1",
+      "experiment_class": "current-policy",
+      "allowed_trace_layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "allowed_via_spans": [
+        [
+          "F.Cu",
+          "B.Cu"
+        ]
+      ],
+      "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "canonical_sha256": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056"
+  },
+  "pinned_adapter": {
+    "path": "/opt/agent-ee/build/k91-positive-c-out/pinned-adapter/kicad_route_attempt.py",
+    "sha256": "214696fbe3127a92f400e8f1433720ea25674bd228c0591a0097214e9e7ecdee"
+  },
+  "positive": {
+    "consumer": {
+      "attempted": true,
+      "accepted": true,
+      "value": null
+    },
+    "run_step": "executed",
+    "consumer_run_step": {
+      "attempted": true,
+      "accepted": true,
+      "value": "6458705d-1932-4d07-9571-d49c5c5eed32"
+    },
+    "consumer_verify": {
+      "attempted": true,
+      "accepted": true,
+      "value": {
+        "classification": "complete",
+        "proposal": "eligible",
+        "coverage": "routing_complete",
+        "pair_coverage": {
+          "status": "unknown",
+          "pairs": [],
+          "limitations": [
+            "Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.",
+            "Differential pair routing was not requested; pair geometry is unqualified"
+          ],
+          "acceptance_ready": false
+        },
+        "router_exit": 0,
+        "candidate_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+        "backend": {
+          "status": "reported",
+          "value": {
+            "name": "builtin",
+            "version": "0.23.1",
+            "build": "owned-cb003b30f75f",
+            "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+            "source": "https://github.com/halbritt/kicad-route",
+            "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+            "upstream": {
+              "project": "KiCadRoutingTools",
+              "license": "MIT",
+              "upstream": "https://github.com/drandyhaas/KiCadRoutingTools",
+              "upstream_base": "295f9ee197517e8323726853361eb137cc08ba9e",
+              "upstream_release": "v0.23.1",
+              "fork": "https://github.com/halbritt/KiCadRoutingTools",
+              "fork_commit": "0494a05e30063b849c9cf1b9ac02098073d82216",
+              "fork_tree": "288b2baca668892c812c82f0e7db4c2b2b0a50c1",
+              "fixes": {
+                "KICADROUTE-64": "4b316ba",
+                "KICADROUTE-63": "0494a05"
+              },
+              "source_inventory": "reports/routing-engine/source-closure.json",
+              "additional_license_notices": [
+                "py_router/stage3d/vendor/three/LICENSE"
+              ],
+              "ownership": "Maintained as part of kicad-route; upstream is provenance, not a runtime source selector.",
+              "selective_adoptions": {
+                "KICADROUTE-83": {
+                  "commits": [
+                    "fd59a050e258581d5938c4d9456bbfeb13240e67"
+                  ],
+                  "scope": "pass-rules"
+                },
+                "KICADROUTE-84": {
+                  "commits": [
+                    "8c3e833179615dbe5e3cd205e68b03e25a6f73e8",
+                    "29be549c9747855315957ccc160d69746a3d66cb",
+                    "20a8e1b83b00e410f2adf60861ee536d3e57dabc",
+                    "0e0029f450fa609447bcb62d16a9381cbc9d9d5d",
+                    "ca96bc28f39d3c5e5f014950e8ed9664a755a8f1"
+                  ],
+                  "scope": "layer-stub-safety"
+                },
+                "KICADROUTE-85": {
+                  "commits": [
+                    "a0489b30621460e35f9d390f929fab215f7cc7f3"
+                  ],
+                  "scope": "pair-keepouts"
+                },
+                "KICADROUTE-86": {
+                  "commits": [
+                    "9ac916bc16d6edcd554bf4dc8640f30379386447",
+                    "ed17b29f7eaec4822ba12178a65eca5c3a452e40"
+                  ],
+                  "scope": "obstacle-lifecycle"
+                },
+                "KICADROUTE-87": {
+                  "commits": [
+                    "0b3b6a2d19666c3411252f314d3ca8d12f1766fa"
+                  ],
+                  "scope": "rescue-custody"
+                },
+                "KICADROUTE-88": {
+                  "commits": [
+                    "2ddfc187a1bd4aa0f33263de3d5194a4c6205809"
+                  ],
+                  "scope": "parser-lifecycle"
+                }
+              },
+              "adoption_review_head": "0b3b6a2d19666c3411252f314d3ca8d12f1766fa",
+              "adoption_note": "Selected headless fixes only; extraction baseline above is unchanged. Parser caches use parse-local context rather than upstream global memo. Owned quote-aware copper-preserving writer, unsupported-copper refusal and tap/weld repairs remain authoritative.",
+              "adoption_inventory": "reports/upstream-fixes-20261021/source-closure.json"
+            },
+            "runtime": {
+              "source": "/opt/kicad-route/src/kicad_route/router",
+              "venv": "/opt/kicad-route/.venv-krt",
+              "generation": null
+            },
+            "rust_router": "0.23.1",
+            "execution_identity": {
+              "name": "builtin",
+              "tag": "owned-cb003b30f75f",
+              "version": "0.23.1",
+              "grid_router_version": "0.23.1",
+              "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+              "extension_module_sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8",
+              "venv_python_version": "3.12.3",
+              "venv_packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae"
+            },
+            "reproducible": null,
+            "reproducible_basis": "no determinism record for this build in the state manifest (kicad-route determinism --record)"
+          },
+          "reason": null
+        },
+        "tool_version": {
+          "status": "unknown",
+          "value": null,
+          "reason": "kicad-route at the pin has no --version; identity is the pinned code"
+        },
+        "reproducibility": "deterministic backend, repeatability not qualified by this attempt",
+        "experiment": {
+          "status": "retained",
+          "qualified": false,
+          "contract": "agent-ee/AGENTEE-442: routability-experiment/1 as written by kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 (unpinned, not qualified); routability-policy/1 five fields",
+          "policy": {
+            "declared": {
+              "allowed_trace_layers": [
+                "F.Cu",
+                "B.Cu"
+              ],
+              "allowed_via_spans": [
+                [
+                  "F.Cu",
+                  "B.Cu"
+                ]
+              ],
+              "experiment_class": "current-policy",
+              "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "schema": "routability-policy/1"
+            },
+            "sha256": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056",
+            "policy_sha256": "3899a9eeac2ab4027c50454e4b2d1ea73b4620fd7b928fbb8cb6f0051abc37bd"
+          },
+          "policy_file": "attempt/agent-ee-experiment-policy.json",
+          "policy_copy": {
+            "path": "attempt/experiment-policy.json",
+            "sha256": "8293aa91c6470510dec55f3fda6d24bc75808324b96562174da3d3279a280cf6"
+          },
+          "schema": "routability-experiment/1",
+          "reference": {
+            "path": "routability-experiment.json",
+            "sha256": "0fafa49a16058ef45dabb3bb474cd5de07858286c35e661096297cc9cda7ec19",
+            "schema": "routability-experiment/1"
+          },
+          "path": "attempt/routability-experiment.json",
+          "sha256": "0fafa49a16058ef45dabb3bb474cd5de07858286c35e661096297cc9cda7ec19",
+          "identity_sha256": "ed8fc44e5f97f651227ebf56ba12df7174642c057a7c41936081d94607b7b134",
+          "comparison_eligible": true,
+          "ineligible_reasons": []
+        }
+      }
+    },
+    "consumer_adopt": {
+      "attempted": true,
+      "accepted": true,
+      "value": null
+    },
+    "consumer_design": "/opt/agent-ee/build/k91-positive-c-out/positive/design",
+    "design_before": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+    "design_after": "1e96471a6cf083de1d1236e1c056d81a3323a7d38030736d8aa41e12e896dfb2",
+    "receipt_id": "6458705d-1932-4d07-9571-d49c5c5eed32",
+    "receipt_sha256": "e78941b30b2c1f305cfff7ae4fbc9cc526f1172f6a7461f0bfc5295970adccb0",
+    "exit_code": 0,
+    "status": "completed",
+    "duration_s": 25.542,
+    "delivered_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232"
+  },
+  "wall_s": 42.3,
+  "controls": {
+    "a_mismatched_runtime": {
+      "consumer": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py",
+            "origin": {
+              "file": "routing_adapter.py",
+              "function": "validate_campaign_step",
+              "line": 228
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "campaign.py:run_implementation_steps",
+              "routing_adapter.py:validate_live_binding",
+              "routing_adapter.py:validate_campaign_step"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "run_step": "executed",
+      "consumer_run_step": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_verify": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_adopt": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_design": "/opt/agent-ee/build/k91-positive-c-out/control-a-runtime/design",
+      "design_before": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+      "design_after": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+      "direct_design": "/opt/agent-ee/build/k91-positive-c-out/control-a-runtime/direct-design",
+      "direct_adopt": {
+        "attempted": false,
+        "reason": "no receipt was retained"
+      },
+      "host_binding": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py",
+            "origin": {
+              "file": "routing_adapter.py",
+              "function": "validate_campaign_step",
+              "line": 228
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "k91_consumer.py:binding",
+              "routing_adapter.py:validate_campaign_step"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "low_level": {
+        "run_step": {
+          "attempted": true,
+          "accepted": true,
+          "value": "40c54d09-f2c6-48b5-89a7-ca19fbd561a3"
+        },
+        "host_step": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py",
+              "origin": {
+                "file": "routing_adapter.py",
+                "function": "validate_campaign_step",
+                "line": 228
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "k91_consumer.py:binding",
+                "routing_adapter.py:validate_campaign_step"
+              ],
+              "link": null
+            }
+          ]
+        },
+        "verify": {
+          "attempted": true,
+          "accepted": true,
+          "value": {
+            "classification": "not_run",
+            "proposal": "none",
+            "coverage": "unknown",
+            "pair_coverage": {
+              "status": "unknown",
+              "pairs": [],
+              "limitations": [
+                "Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.",
+                "Differential pair routing was not requested; pair geometry is unqualified"
+              ],
+              "acceptance_ready": false
+            },
+            "router_exit": null,
+            "candidate_sha256": null,
+            "backend": {
+              "status": "unknown",
+              "value": null,
+              "reason": "no result.json"
+            },
+            "tool_version": {
+              "status": "unknown",
+              "value": null,
+              "reason": "kicad-route at the pin has no --version; identity is the pinned code"
+            },
+            "reproducibility": "deterministic backend, repeatability not qualified by this attempt",
+            "experiment": {
+              "status": "absent",
+              "qualified": false,
+              "contract": "agent-ee/AGENTEE-442: routability-experiment/1 as written by kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 (unpinned, not qualified); routability-policy/1 five fields",
+              "policy": {
+                "declared": {
+                  "allowed_trace_layers": [
+                    "F.Cu",
+                    "B.Cu"
+                  ],
+                  "allowed_via_spans": [
+                    [
+                      "F.Cu",
+                      "B.Cu"
+                    ]
+                  ],
+                  "experiment_class": "current-policy",
+                  "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "schema": "routability-policy/1"
+                },
+                "sha256": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056",
+                "policy_sha256": "3899a9eeac2ab4027c50454e4b2d1ea73b4620fd7b928fbb8cb6f0051abc37bd"
+              },
+              "policy_file": "attempt/agent-ee-experiment-policy.json",
+              "policy_copy": null,
+              "reason": "no result.json: the router reported no experiment"
+            }
+          }
+        },
+        "adopt": {
+          "attempted": false,
+          "reason": "the low-level observation makes no consumer adoption"
+        },
+        "direct_adopt": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: stage step kicad-route-builtin failed; no output adopted or substituted",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "stage step kicad-route-builtin failed; no output adopted or substituted",
+              "origin": {
+                "file": "stage_receipts.py",
+                "function": "adopt",
+                "line": 1445
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "stage_receipts.py:adopt"
+              ],
+              "link": null
+            }
+          ]
+        },
+        "sandbox": {
+          "classification": "not_run",
+          "reasons": [
+            "checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+            "tool file differs from pin: src/kicad_route/cli.py",
+            "tool file differs from pin: src/kicad_route/common.py",
+            "tool file differs from pin: src/kicad_route/configuration_evidence.py",
+            "tool file differs from pin: src/kicad_route/copper_ownership.py",
+            "tool file differs from pin: src/kicad_route/corpus.py",
+            "tool file differs from pin: src/kicad_route/evidence.py",
+            "pinned file missing: src/kicad_route/experiment.py",
+            "pinned file missing: src/kicad_route/kicad/emit_additions.py",
+            "pinned file missing: src/kicad_route/repair_child.py",
+            "pinned file missing: src/kicad_route/repair_trial.py",
+            "tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py"
+          ],
+          "candidate": null
+        }
+      }
+    },
+    "b_tampered_candidate": {
+      "consumer": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: stage receipt outputs changed",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "stage receipt outputs changed",
+            "origin": {
+              "file": "stage_receipts.py",
+              "function": "validate_receipt",
+              "line": 1376
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "campaign.py:run_implementation_steps",
+              "stage_receipts.py:bind_implementation",
+              "stage_receipts.py:build_index",
+              "stage_receipts.py:validate_receipt"
+            ],
+            "link": "context"
+          },
+          {
+            "type": "ValueError",
+            "message": "stage receipt outputs changed",
+            "origin": {
+              "file": "stage_receipts.py",
+              "function": "validate_receipt",
+              "line": 1376
+            },
+            "frames": [
+              "campaign.py:run_implementation_steps",
+              "k91_consumer.py:observer",
+              "routing_adapter.py:verify_campaign_receipt",
+              "stage_receipts.py:validate_receipt"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "run_step": "replayed",
+      "consumer_run_step": {
+        "attempted": true,
+        "accepted": true,
+        "value": "6458705d-1932-4d07-9571-d49c5c5eed32"
+      },
+      "consumer_verify": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: stage receipt outputs changed",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "stage receipt outputs changed",
+            "origin": {
+              "file": "stage_receipts.py",
+              "function": "validate_receipt",
+              "line": 1376
+            },
+            "frames": [
+              "k91_consumer.py:observer",
+              "routing_adapter.py:verify_campaign_receipt",
+              "stage_receipts.py:validate_receipt"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "consumer_adopt": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_design": "/opt/agent-ee/build/k91-positive-c-out/control-b_tampered_candidate/design",
+      "design_before": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+      "design_after": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+      "direct_design": "/opt/agent-ee/build/k91-positive-c-out/control-b_tampered_candidate/direct-design",
+      "direct_adopt": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: stage receipt outputs changed",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "stage receipt outputs changed",
+            "origin": {
+              "file": "stage_receipts.py",
+              "function": "validate_receipt",
+              "line": 1376
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "stage_receipts.py:validate_receipt"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "file": "routing/candidate/project/rc_filter.kicad_pcb",
+      "offset": 9859,
+      "sha256_before": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+      "sha256_after": "0c7ba42116c85cf4465b4b58e683af56c5a0b50bc71b2e1ebfe4669afe2ff446",
+      "low_level": {
+        "verify": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: stage receipt outputs changed",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "stage receipt outputs changed",
+              "origin": {
+                "file": "stage_receipts.py",
+                "function": "validate_receipt",
+                "line": 1376
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "stage_receipts.py:validate_receipt"
+              ],
+              "link": null
+            }
+          ]
+        },
+        "adopt": {
+          "attempted": false,
+          "reason": "the low-level observation makes no consumer adoption"
+        },
+        "direct_adopt": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: stage receipt outputs changed",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "stage receipt outputs changed",
+              "origin": {
+                "file": "stage_receipts.py",
+                "function": "validate_receipt",
+                "line": 1376
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "stage_receipts.py:validate_receipt"
+              ],
+              "link": null
+            }
+          ]
+        }
+      }
+    },
+    "b_tampered_sidecar": {
+      "consumer": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: retained routing artifacts differ from the adapter report",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "retained routing artifacts differ from the adapter report",
+            "origin": {
+              "file": "routing_adapter.py",
+              "function": "_verify",
+              "line": 360
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "campaign.py:run_implementation_steps",
+              "k91_consumer.py:observer",
+              "routing_adapter.py:verify_campaign_receipt",
+              "routing_adapter.py:verify",
+              "routing_adapter.py:_verify"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "run_step": "replayed",
+      "consumer_run_step": {
+        "attempted": true,
+        "accepted": true,
+        "value": "6458705d-1932-4d07-9571-d49c5c5eed32"
+      },
+      "consumer_verify": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: retained routing artifacts differ from the adapter report",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "retained routing artifacts differ from the adapter report",
+            "origin": {
+              "file": "routing_adapter.py",
+              "function": "_verify",
+              "line": 360
+            },
+            "frames": [
+              "k91_consumer.py:observer",
+              "routing_adapter.py:verify_campaign_receipt",
+              "routing_adapter.py:verify",
+              "routing_adapter.py:_verify"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "consumer_adopt": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_design": "/opt/agent-ee/build/k91-positive-c-out/control-b_tampered_sidecar/design",
+      "design_before": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+      "design_after": "511739fbd57b3549e5af631a78a6ac6f9732abedcebea3bb559cb535f201bd60",
+      "direct_design": "/opt/agent-ee/build/k91-positive-c-out/control-b_tampered_sidecar/direct-design",
+      "direct_adopt": {
+        "attempted": true,
+        "accepted": true,
+        "value": null
+      },
+      "file": "routing/attempt/routability-experiment.json",
+      "offset": 9458,
+      "sha256_before": "0fafa49a16058ef45dabb3bb474cd5de07858286c35e661096297cc9cda7ec19",
+      "sha256_after": "e5e5d7becd3dede988823899be71bbec485d6f74a938854b699c7eeedb796fa7",
+      "low_level": {
+        "verify": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: retained routing artifacts differ from the adapter report",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "retained routing artifacts differ from the adapter report",
+              "origin": {
+                "file": "routing_adapter.py",
+                "function": "_verify",
+                "line": 360
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "routing_adapter.py:verify",
+                "routing_adapter.py:_verify"
+              ],
+              "link": null
+            }
+          ]
+        },
+        "adopt": {
+          "attempted": false,
+          "reason": "the low-level observation makes no consumer adoption"
+        },
+        "direct_adopt": {
+          "attempted": true,
+          "accepted": true,
+          "value": null
+        }
+      }
+    },
+    "c_stale_input": {
+      "consumer": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: routing receipt chain input differs from preceding adopted output",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "routing receipt chain input differs from preceding adopted output",
+            "origin": {
+              "file": "campaign.py",
+              "function": "run_implementation_steps",
+              "line": 406
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "campaign.py:run_implementation_steps"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "run_step": "replayed",
+      "consumer_run_step": {
+        "attempted": true,
+        "accepted": true,
+        "value": "6458705d-1932-4d07-9571-d49c5c5eed32"
+      },
+      "consumer_verify": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_adopt": {
+        "attempted": false,
+        "reason": "not called by campaign.run_implementation_steps"
+      },
+      "consumer_design": "/opt/agent-ee/build/k91-positive-c-out/control-c-stale/design",
+      "design_before": "cfb53222674ca9e55092bef4f2f8c38c25fd54cbbdb26a7a05c28d98e7db8fc5",
+      "design_after": "cfb53222674ca9e55092bef4f2f8c38c25fd54cbbdb26a7a05c28d98e7db8fc5",
+      "direct_design": "/opt/agent-ee/build/k91-positive-c-out/control-c-stale/direct-design",
+      "direct_adopt": {
+        "attempted": true,
+        "accepted": false,
+        "error": "ValueError: design changed during stage step kicad-route-builtin",
+        "exception": [
+          {
+            "type": "ValueError",
+            "message": "design changed during stage step kicad-route-builtin",
+            "origin": {
+              "file": "stage_receipts.py",
+              "function": "adopt",
+              "line": 1451
+            },
+            "frames": [
+              "k91_consumer.py:observe",
+              "k91_consumer.py:<lambda>",
+              "stage_receipts.py:adopt"
+            ],
+            "link": null
+          }
+        ]
+      },
+      "board_sha256": "b03a501b8d1bc18531466e59d673e86530031d522c57063cb608ff7692c46bb0",
+      "receipt_board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "low_level": {
+        "verify": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: routing attempt inputs differ from the captured pre-step candidate",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "routing attempt inputs differ from the captured pre-step candidate",
+              "origin": {
+                "file": "routing_adapter.py",
+                "function": "_verify",
+                "line": 349
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "routing_adapter.py:verify",
+                "routing_adapter.py:_verify"
+              ],
+              "link": null
+            }
+          ]
+        },
+        "adopt": {
+          "attempted": false,
+          "reason": "the low-level observation makes no consumer adoption"
+        },
+        "direct_adopt": {
+          "attempted": true,
+          "accepted": false,
+          "error": "ValueError: design changed during stage step kicad-route-builtin",
+          "exception": [
+            {
+              "type": "ValueError",
+              "message": "design changed during stage step kicad-route-builtin",
+              "origin": {
+                "file": "stage_receipts.py",
+                "function": "adopt",
+                "line": 1451
+              },
+              "frames": [
+                "k91_consumer.py:observe",
+                "k91_consumer.py:<lambda>",
+                "stage_receipts.py:adopt"
+              ],
+              "link": null
+            }
+          ]
+        }
+      }
+    }
+  },
+  "verdict": {
+    "classifier": "agent-ee.k91-native-positive/verdict-2r4",
+    "positive_accepted": true,
+    "controls": {
+      "a_mismatched_runtime": "incomplete",
+      "b_tampered_candidate": "refused",
+      "b_tampered_sidecar": "refused",
+      "c_stale_input": "refused"
+    },
+    "required": [
+      "a_mismatched_runtime",
+      "b_tampered_candidate",
+      "c_stale_input"
+    ],
+    "controls_refused": false,
+    "not_refused_because": {
+      "a_mismatched_runtime": [
+        "root exception is not the contract refusal: ValueError: kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py at routing_adapter.py:validate_campaign_step",
+        "precondition not shown: host_binding_refused"
+      ]
+    },
+    "low_level": {
+      "a_mismatched_runtime": "refused",
+      "b_tampered_candidate": "refused",
+      "b_tampered_sidecar": "incomplete",
+      "c_stale_input": "refused"
+    }
+  }
+}

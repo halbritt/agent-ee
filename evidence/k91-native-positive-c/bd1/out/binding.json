@@ -1,0 +1,114 @@
+{
+  "spec": {
+    "schema": "agent-ee.stage-step/1",
+    "stage": "routing",
+    "step": "kicad-route-builtin",
+    "argv": [
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "/opt/agent-ee-routing/kicad_route_attempt.py",
+      "--project",
+      "project",
+      "--board",
+      "rc_filter.kicad_pcb",
+      "--schematic",
+      "rc_filter.kicad_sch",
+      "--name",
+      "rc_filter",
+      "--label",
+      "k91-native-positive",
+      "--budget",
+      "300",
+      "--timeout",
+      "900",
+      "--backend",
+      "builtin",
+      "--state",
+      "checkout",
+      "--experiment-policy",
+      "{\"allowed_trace_layers\":[\"F.Cu\",\"B.Cu\"],\"allowed_via_spans\":[[\"F.Cu\",\"B.Cu\"]],\"experiment_class\":\"current-policy\",\"rule_areas_sha256\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema\":\"routability-policy/1\"}"
+    ],
+    "mounts": [
+      {
+        "source": "/opt/agent-ee/build/k91-positive-c-out/pinned-adapter/kicad_route_attempt.py",
+        "at": "/opt/agent-ee-routing/kicad_route_attempt.py"
+      },
+      {
+        "source": "/opt/agent-ee/build/k91-isolated-bd1/runtime-L",
+        "at": "/opt/kicad-route"
+      },
+      {
+        "source": "/opt/agent-ee/src/agent_ee/net_binding.py",
+        "at": "/opt/agent-ee-routing/net_binding.py"
+      },
+      {
+        "source": "/opt/agent-ee/src/agent_ee/symbol_library.py",
+        "at": "/opt/agent-ee-routing/symbol_library.py"
+      }
+    ],
+    "version_argv": null,
+    "source": "/opt/kicad-route/src",
+    "backend_report": {
+      "artifact": "routing/attempt/result.json",
+      "key": "backend"
+    },
+    "writes": {
+      "project/rc_filter.kicad_pcb": "routing/candidate/project/rc_filter.kicad_pcb"
+    },
+    "artifacts": [
+      "routing/adapter-report.json",
+      "routing/kicad-route.stdout",
+      "routing/kicad-route.stderr",
+      "routing/attempt/result.json",
+      "routing/attempt/attempt.json",
+      "routing/attempt/RESULT.md",
+      "routing/attempt/snapshot.json",
+      "routing/attempt/validate",
+      "routing/attempt/facts",
+      "routing/attempt/work",
+      "routing/agent-ee-original"
+    ],
+    "adoptable_exits": [
+      0,
+      2
+    ],
+    "timeout_s": 1200
+  },
+  "tool": {
+    "executable": {
+      "path": "/usr/bin/python3",
+      "host_path": "/usr/bin/python3.12",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    "mounts": [
+      {
+        "at": "/opt/agent-ee-routing/kicad_route_attempt.py",
+        "sha256": "c15dad0ffcb3f5cb123d002af538c1eed33e26fcf48636799fac40d325a14049",
+        "files": 1
+      },
+      {
+        "at": "/opt/kicad-route",
+        "sha256": "f9fd01211d7f5f8647ea56a1b5960dbdf6fb9341483e1d56b2f29940408012a1",
+        "files": 14557
+      },
+      {
+        "at": "/opt/agent-ee-routing/net_binding.py",
+        "sha256": "971cebb9c55e092c115a1c98d0b54c00746432ae72da981d0e9aeace96bbb2d6",
+        "files": 1
+      },
+      {
+        "at": "/opt/agent-ee-routing/symbol_library.py",
+        "sha256": "c4e0dce3c6ca532313f83292f07b5f4090f1f2e9bd8c262821b307ccd408f492",
+        "files": 1
+      }
+    ],
+    "source_tree": {
+      "path": "/opt/kicad-route/src",
+      "sha256": "24782098ee9417548c7282798547969b99bb790b6ba54c6126edffa0fbcedd14",
+      "files": 317
+    }
+  },
+  "pin": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+  "adapter_sha256": "214696fbe3127a92f400e8f1433720ea25674bd228c0591a0097214e9e7ecdee"
+}

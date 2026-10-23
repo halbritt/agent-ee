@@ -1,0 +1,23 @@
+{
+  "delivered": {
+    "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+    "project/rc_filter.kicad_pcb": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+    "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "identity": "c138dad32f78996e01deaddc2829a0ae77fb92c0a820339c414eb89044b2028d",
+  "implementation": 1,
+  "receipts": [
+    {
+      "applicability": "applicable",
+      "differences": [],
+      "path": "receipts/1-kicad-route-builtin/receipt.json",
+      "receipt_id": "6458705d-1932-4d07-9571-d49c5c5eed32",
+      "sha256": "e78941b30b2c1f305cfff7ae4fbc9cc526f1172f6a7461f0bfc5295970adccb0"
+    }
+  ],
+  "schema": "agent-ee.stage-receipt-index/1",
+  "source_candidate_id": "k91-native-positive"
+}

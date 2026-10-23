@@ -1,0 +1,40 @@
+{
+  "code_entries": 313,
+  "code_canonical": {
+    "sort_keys_default": "63939cc4e806e458c2afe5ce7935c49490b15dbf5ae6f1a9c846eb4ab2d331b1",
+    "sort_keys_compact": "9a45f3a3b4a1de4843c549c648975558ac6eae3942ac6c85d1fa06b49633f39f"
+  },
+  "code_disk_mismatch": [],
+  "head": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+  "code_blob_mismatch": [],
+  "git_status_porcelain": [],
+  "alternates": false,
+  "git_is_dir": true,
+  "venv_entries": 4293,
+  "venv_files_json_sha256": "48df7e0789aa54eaa278e0768bd2eee9aae11ac82d4c709c1939724964408320",
+  "venv_found": 4293,
+  "venv_mismatch": [],
+  "venv_symlinks": {
+    ".venv-krt/lib64": "lib",
+    ".venv-krt/bin/python": "/usr/bin/python3",
+    ".venv-krt/bin/python3": "python",
+    ".venv-krt/bin/python3.12": "python"
+  },
+  "manifest_sha256": "33cd344e95733941590ffc6cc63e6002ca638077450c0568d3a6ae30f82a3212",
+  "manifest": {
+    "state_dir": "/opt/kicad-route",
+    "generation": null,
+    "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+    "extension": {
+      "path": ".venv-krt/lib/python3.12/site-packages/grid_router.so",
+      "sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8"
+    },
+    "packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae"
+  },
+  "producer": {
+    "experiment.py": "2fe4ed96615e0b8a5e321b647fd71b0a54408a941d3e72bcca1c1887a521ef23",
+    "cli_mentions_experiment_policy": true
+  },
+  "problems": []
+}

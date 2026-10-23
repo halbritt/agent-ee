@@ -1,0 +1,5 @@
+native-admit: admitted after 5s (lease 640e4eebdb32, weight 4)
+
+harness-exit=1
+
+outer-exit=0
