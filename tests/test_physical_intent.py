@@ -984,7 +984,10 @@ class PhysicalIntentTests(unittest.TestCase):
             compile_plan(self.control, intent, mode='architect')
         users = [p.name for p in (ROOT / 'src/agent_ee').glob('*.py')
                  if p.name != 'physical_intent.py' and 'physical_intent' in p.read_text()]
-        self.assertEqual(users, [], 'S1 must not be wired into a default, runtime, campaign or routing path')
+        # AGENTEE-389: the opt-in S2 producer is the compiler's only caller; it is itself unwired
+        # (tests.test_physical_architect), so S1 still has no default, runtime, campaign or routing path.
+        self.assertEqual(users, ['physical_architect.py'],
+                         'S1 must not be wired into a default, runtime, campaign or routing path')
 
     def test_fixture_dispositions_are_typed_and_tested(self):
         dispositions = physical_intent.FIXTURE_DISPOSITIONS

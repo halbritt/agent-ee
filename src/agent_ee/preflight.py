@@ -115,7 +115,7 @@ def guard(run, role, definition, context, cancellation=None):
         receipt.update(expectation_id=expected['identity'], run_id=expected['run_id'],
                        candidate_id=expected['candidate_id'], baseline_id=expected['baseline_id'],
                        definition=definition)
-        if context['boundary'] not in ('initial', 'adjudicator', 'implementation'):
+        if context['boundary'] not in ('initial', 'adjudicator', 'implementation', 'architect'):
             raise ValueError('malformed_boundary')
         if definition not in expected['definitions']:
             raise ValueError('definition_drift')

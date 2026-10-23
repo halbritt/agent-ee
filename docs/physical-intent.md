@@ -7,11 +7,13 @@ existing executable contracts. It is the S1 slice of the
 
 **Status: manual, opt-in and isolated.** It is a Python API only. No CLI,
 profile, campaign step, placement adapter or routing consumer calls it, and
-`tests.test_physical_intent` fails if any other module under `src/agent_ee/`
-names it. Runtime activation and deployment remain gated by KICADROUTE-91. The
-kicad-route pin is unchanged. There is no `architect` mode and no model call:
-`mode` is `manual` or `disabled`, and `disabled` returns nothing and publishes
-nothing, so existing manually captured contracts are untouched.
+`tests.test_physical_intent` fails if any module under `src/agent_ee/` other
+than the equally unwired [S2 architect producer](physical-architect.md) names it. Runtime activation and deployment remain gated by KICADROUTE-91. The
+kicad-route pin is unchanged. The compiler has no `architect` mode and makes no
+model call: `mode` is `manual` or `disabled`, and `disabled` returns nothing and
+publishes nothing, so existing manually captured contracts are untouched. The S2
+producer composes an intent from a model proposal and hands it to this compiler
+unchanged.
 
 ```python
 from agent_ee.physical_intent import compile_and_publish, verify_receipt
@@ -374,7 +376,7 @@ captured pod run above. Together they cover:
 Not in this slice:
 
 - TPS25982 controls on that device (see the dispositions above);
-- the S2 architect producer;
+- the S2 architect producer (see [physical-architect.md](physical-architect.md));
 - any campaign, profile or placement-adapter binding.
 
 Citation verification remains textual (see [datasheet facts](datasheet-facts.md)).
