@@ -341,8 +341,7 @@ class RenderChangeSelectionTests(unittest.TestCase):
                 self.assertEqual(strict_suite.render_mode_from_change_base(base), 'run')
                 git('commit', '-qam', 'renderer')
                 self.assertEqual(strict_suite.render_mode_from_change_base(base), 'run')
-                for path in ('Dockerfile', 'docker/kicad-10.0-releases.asc', 'docker/apt-retry.sh',
-                             'docker/agent-ee.apparmor', '.dockerignore', 'scripts/container_apparmor.sh'):
+                for path in ('Dockerfile', 'docker/kicad-10.0-releases.asc', 'docker/apt-retry.sh', '.dockerignore'):
                     with self.subTest(path=path):
                         previous = git('rev-parse', 'HEAD')
                         changed = root / path

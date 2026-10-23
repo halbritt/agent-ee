@@ -408,7 +408,7 @@ def container_command(name, image, source, mounts, args):
     command = ['docker','run','--rm','--init','--name',name,
         '--network','none','--user',f'{os.getuid()}:{os.getgid()}','-e','HOME=/tmp',
         '-e','AGENT_EE_REQUIRE_TOOLCHAIN=1','--security-opt','seccomp=unconfined',
-        '--security-opt','apparmor=agent-ee-container','--security-opt','systempaths=unconfined',
+        '--security-opt','apparmor=unconfined','--security-opt','systempaths=unconfined',
         '-v',f'{source}:/opt/agent-ee:ro']
     for path,readonly in mounts:
         command += ['-v',f'{path}:{path}'+(':ro' if readonly else '')]

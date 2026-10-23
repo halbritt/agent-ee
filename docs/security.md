@@ -25,6 +25,20 @@ could reach inside the container, compared with default Docker confinement. The
 each one exposes. The documented commands also disable the container's network
 for checks-only work.
 
+## Outer container confinement
+
+The outer container runs with an explicit `--security-opt apparmor=unconfined`;
+agent-ee ships, loads and names no AppArmor profile. Owner direction, dated
+2026-10-23: "remove the apparmor profiles like I asked", relayed by agent-519 via
+agent-475 (Cairn 2a14037f; AGENTEE-475). Agent-475 removed the former
+`agent-ee-container` profile from the project hosts, set
+`kernel.apparmor_restrict_unprivileged_userns=0` there, and runs `ae-ci-exec`
+with `apparmor=unconfined` on all hosts (infra `78cb811`). The repository loader
+script and profile file were deleted. Native EDA validation is unchanged: every
+native check still runs inside agent-ee's own Bubblewrap sandbox. On a runner that
+restricts unprivileged user namespaces, project CI and the action set that sysctl
+to `0`, as on the project hosts; see [container](container.md#bubblewrap-inside-the-container).
+
 The parent CLI performs capture and record writes on the host under the owner's
 permissions. Bubblewrap does not constrain the owner, another host process with
 sufficient access, a compromised kernel/provider, or a malicious change to the

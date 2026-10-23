@@ -38,14 +38,16 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Prepare container AppArmor profile
-      id: apparmor
+    - name: Permit unprivileged user namespaces as on the project hosts
+      # Bubblewrap inside the unconfined container needs unprivileged user
+      # namespaces. The project hosts run kernel.apparmor_restrict_unprivileged_userns=0
+      # (docs/container.md); a runner that restricts them gets the same setting.
+      # No AppArmor profile is loaded.
       shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
       run: |
-        profile=$(bash "$ACTION_PATH/scripts/container_apparmor.sh")
-        printf 'profile=%s\n' "$profile" >> "$GITHUB_OUTPUT"
+        if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" != 0 ]; then
+          sudo -n sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        fi
 
     - name: Build agent-ee image
       id: image
@@ -70,7 +72,6 @@ runs:
         INPUT_SCOPE: ${{ inputs.scope }}
         INPUT_OUT: ${{ inputs.output-directory }}
         INPUT_MAX_SECONDS: ${{ inputs.max-seconds }}
-        APPARMOR_PROFILE: ${{ steps.apparmor.outputs.profile }}
       run: |
         # GitHub runs bash with -e; exit statuses here are recorded, not fatal.
         set +e -uo pipefail
@@ -102,11 +103,12 @@ runs:
         fi
         printf 'run=%s\n' "$out" >> "$GITHUB_OUTPUT"
         # Bubblewrap inside the container needs the three --security-opt
-        # relaxations; see docs/container.md. The container user is the runner's
-        # unprivileged UID, and checks-only work needs no network at all.
+        # relaxations; see docs/container.md (apparmor=unconfined: the project
+        # profile was removed by owner direction). The container user is the
+        # runner's unprivileged UID, and checks-only work needs no network at all.
         run_image() {
           docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
-            --security-opt seccomp=unconfined --security-opt "apparmor=$APPARMOR_PROFILE" \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
             --security-opt systempaths=unconfined \
             -v "$workspace:$workspace" -w "$workspace" "$IMAGE" "$@"
         }

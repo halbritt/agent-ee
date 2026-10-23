@@ -1,7 +1,0 @@
-abi <abi/4.0>,
-include <tunables/global>
-
-# Outer container policy; agent-ee still applies its own Bubblewrap sandbox.
-profile agent-ee-container flags=(unconfined) {
-  userns,
-}

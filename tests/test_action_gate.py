@@ -292,7 +292,7 @@ class ActionReviewStepTests(unittest.TestCase):
         self.output.write_text("")
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", GITHUB_WORKSPACE=str(self.workspace),
                    GITHUB_OUTPUT=str(self.output), IMAGE="agent-ee:test", INPUT_SCOPE=scope, INPUT_OUT=out,
-                   INPUT_MAX_SECONDS="60", APPARMOR_PROFILE="unconfined")
+                   INPUT_MAX_SECONDS="60")
         subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", str(self.script)],
                        cwd=self.workspace, env=env, check=True, capture_output=True, text=True)
         return self.output.read_text().splitlines()
@@ -328,13 +328,17 @@ class ActionReviewStepTests(unittest.TestCase):
 class ActionDocumentationTests(unittest.TestCase):
     """Installation instructions grant the container what the action grants it, and no more."""
 
-    def test_installation_guide_uses_the_action_apparmor_profile(self):
+    def test_installation_guide_and_action_run_unconfined_without_a_profile(self):
+        # The project AppArmor profile was removed by owner direction (2026-10-23,
+        # docs/security.md): the action and the guide grant the same explicit
+        # apparmor=unconfined and load no profile.
         action = ACTION.read_text()
         guide = (SCRIPT.parents[1] / "docs" / "installation.md").read_text()
-        self.assertIn('--security-opt "apparmor=$APPARMOR_PROFILE"', action)
-        self.assertIn("scripts/container_apparmor.sh", action)
-        self.assertIn("scripts/container_apparmor.sh", guide)
-        self.assertNotIn("--security-opt apparmor=unconfined", guide)
+        for text in (action, guide):
+            self.assertIn("--security-opt apparmor=unconfined", text)
+            self.assertNotIn("container_apparmor.sh", text)
+            self.assertNotIn("agent-ee-container", text)
+            self.assertNotIn("apparmor_parser", text)
 
 
 SAMPLE_SCRIPT = SCRIPT.parent / "consumer_sample.py"

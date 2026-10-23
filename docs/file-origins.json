@@ -587,7 +587,6 @@
         "Dockerfile",
         "action.yml",
         "bin/",
-        "docker/agent-ee.apparmor",
         "docker/apt-retry.sh",
         "docker/image-context.json",
         "docker/kicad-route/",

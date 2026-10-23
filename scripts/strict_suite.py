@@ -30,8 +30,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / 'tests'
 RENDER_CHANGE_PATHS = {
     '.github/workflows/ci.yml', '.dockerignore', 'Dockerfile',
-    'docker/agent-ee.apparmor', 'docker/apt-retry.sh', 'docker/kicad-10.0-releases.asc',
-    'scripts/container_apparmor.sh', 'scripts/strict_suite.py', 'tests/toolchain.py',
+    'docker/apt-retry.sh', 'docker/kicad-10.0-releases.asc',
+    'scripts/strict_suite.py', 'tests/toolchain.py',
     'src/agent_ee/candidate_visuals.py', 'src/agent_ee/cli.py',
     'src/agent_ee/models3d.py',
     'src/agent_ee/placer_runner.py', 'src/agent_ee/viewer.py',

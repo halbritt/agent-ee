@@ -163,8 +163,8 @@ commit mounted read-only at `/opt/agent-ee`. The chosen image has the strict
 [qualified toolchain](container.md); the archive pins the newer benchmark source
 without rebuilding or changing that toolchain. The execution request records both
 identities, prepared-file inventory and command. The container uses `--init`, an
-AGENTEE-21-specific name, `--network none`, and the documented outer AppArmor
-profile. Native tools still execute through the ordinary networkless sandbox.
+AGENTEE-21-specific name, `--network none`, and the documented outer confinement
+(`apparmor=unconfined`; no project AppArmor profile). Native tools still execute through the ordinary networkless sandbox.
 No model credentials or model passes are needed.
 
 ```sh

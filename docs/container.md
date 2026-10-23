@@ -17,7 +17,7 @@ corrections, which have been replayed locally in the image but not yet observed
 on a hosted runner. The workflow now provisions the
 [required external inputs](#required-external-inputs) on the runner; a hosted run
 with them has not yet been observed. Other architectures and container engines have not been demonstrated. The first
-hosted run exposed an AppArmor user-namespace requirement, handled below.
+hosted run exposed a user-namespace requirement, handled below.
 
 ## Pinned toolchain
 
@@ -227,13 +227,14 @@ runs under Bubblewrap with a read-only candidate, separate PID/IPC/UTS/network
 namespaces and a minimal filesystem view, exactly as described in
 [security](security.md#candidate-permissions). Docker's default confinement
 prevents Bubblewrap from creating those namespaces. Running the image requires
-three explicit changes to Docker's confinement plus a host AppArmor profile
-when AppArmor restricts unprivileged user namespaces:
+three explicit changes to Docker's confinement. On a host that restricts
+unprivileged user namespaces, that restriction must also be off
+(`kernel.apparmor_restrict_unprivileged_userns=0`), as on the project hosts:
 
 | `docker run` option | Why Bubblewrap needs it | What it grants the container |
 | --- | --- | --- |
 | `--security-opt seccomp=unconfined` | Docker's default seccomp filter rejects `unshare`/`clone` with namespace flags for processes without `CAP_SYS_ADMIN`; without it Bubblewrap reports "No permissions to create new namespace" | Removes Docker's syscall filter. Kernel permission and capability checks still apply; a non-root container user gains no capabilities in the host namespace |
-| `--security-opt apparmor=agent-ee-container` | Docker's default profile denies mounts; Ubuntu also restricts capabilities after unprivileged user-namespace creation without an explicit allowance | Selects the named permissive outer profile with `userns,`; inner Bubblewrap restrictions remain in force |
+| `--security-opt apparmor=unconfined` | Docker's default `docker-default` profile denies the mounts Bubblewrap makes | Runs the container without an outer AppArmor profile; inner Bubblewrap restrictions remain in force |
 | `--security-opt systempaths=unconfined` | Docker overmounts parts of `/proc`, and the kernel refuses a fresh `proc` mount in a user namespace while those overmounts exist ("Can't mount proc") | Unmasks paths such as `/proc/kcore`, `/proc/keys`, `/proc/timer_list` and makes `/proc/sys` writable to processes privileged enough to write it. The non-root container user still lacks that privilege; root-only files stay root-only |
 
 Run as the image's non-root user (default `agentee`, UID 10001) or as your own
@@ -245,24 +246,26 @@ it creates an unprivileged user namespace. Do not use these instead:
 - Running as container root without `--privileged` fails, because a non-setuid
   Bubblewrap started as UID 0 needs `CAP_SYS_ADMIN` rather than a user namespace.
   Adding `--cap-add SYS_ADMIN` would hand the container that capability.
-- Disabling the host's `kernel.apparmor_restrict_unprivileged_userns` sysctl
-  changes every unconfined application. The image and action do not do this.
+### No project AppArmor profile (owner direction, 2026-10-23)
 
-Before using the image on an AppArmor host, run
-`bash scripts/container_apparmor.sh`. It uses `sudo -n apparmor_parser -r` to
-load or replace the project-owned [named profile](../docker/agent-ee.apparmor) and prints the name to pass
-to Docker. It requires AppArmor 4 syntax support and passwordless permission for that
-command; otherwise it
-fails. The profile is managed by this helper, remains installed for later runs, and applies only to
-containers that select it. It does not modify other profiles or global sysctls.
-When host AppArmor is disabled, the helper prints `unconfined` instead. The
-helper assumes a local Linux Docker daemon, not a remote daemon.
+The project no longer ships, loads or names an AppArmor profile. On 2026-10-23
+the owner directed: "remove the apparmor profiles like I asked" (relayed by
+agent-519 to agent-475, Cairn 2a14037f; AGENTEE-475). Agent-475 removed the
+former `agent-ee-container` profile from the project hosts (proximal and talos),
+set `kernel.apparmor_restrict_unprivileged_userns=0` there, and runs `ae-ci-exec`
+with `apparmor=unconfined` on every host (infra `78cb811`). The repository
+helper and profile file that loaded it were deleted. See
+[security](security.md#outer-container-confinement).
 
-Project CI and the reusable action perform this preparation explicitly. A
-self-hosted runner administrator must authorize it. Ubuntu can otherwise deny
-loopback setup with `Failed RTM_NEWADDR: Operation not permitted`, even when
-Docker uses `apparmor=unconfined`. That was the first hosted CI failure; strict
-mode correctly failed rather than skipping those tests.
+Every documented `docker run` therefore passes `apparmor=unconfined`
+explicitly. On a host that restricts unprivileged user namespaces, Ubuntu denies
+Bubblewrap's loopback setup (`Failed RTM_NEWADDR: Operation not permitted`) even
+with `apparmor=unconfined`; that was the first hosted CI failure, and strict mode
+correctly failed rather than skipping. Project CI and the reusable action
+therefore set `kernel.apparmor_restrict_unprivileged_userns=0` on a runner where
+it is still `1` (`sudo -n sysctl -w`), matching the project hosts. That sysctl
+applies to every unconfined application on the runner, so a self-hosted runner
+administrator must authorize it.
 
 Checks-only work needs no network, so the documented commands also pass
 `--network none`. Bubblewrap still unshares the network for native tools; the
@@ -276,9 +279,8 @@ is incomplete, and the action's gate reports `coverage_incomplete`.
 A typical run, with the review directory created under the mounted workspace:
 
 ```sh
-profile=$(bash scripts/container_apparmor.sh)
 docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  --security-opt seccomp=unconfined --security-opt "apparmor=$profile" \
+  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
   --security-opt systempaths=unconfined \
   -v "$PWD:$PWD" -w "$PWD" agent-ee:local \
   agent-ee review fixtures/rc/seeded.scope.json --out build/seeded --checks-only
@@ -309,7 +311,8 @@ daily run is a defect to fix. One job:
 
 1. Builds the image from the checkout.
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
-   executor before the suite. Failed setup also records host AppArmor diagnostics.
+   executor before the suite. Failed setup also records the host's user-namespace
+   sysctl and kernel log (read-only diagnostics).
 3. Provisions the [required external inputs](#required-external-inputs) on the
    runner: an anonymous clone of the public fome-mc repository at the
    pinned commit, verified before use, and the J1 manufacturer drawing, checked

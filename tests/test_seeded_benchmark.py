@@ -1260,7 +1260,8 @@ class ContainerCommandTests(unittest.TestCase):
         command = container_command('agent-ee-21-x',image,Path('/src'),[(Path('/in'),True),(Path('/out'),False)],['_execute','/in','/out/runs'])
         self.assertEqual(command[:6],['docker','run','--rm','--init','--name','agent-ee-21-x'])
         self.assertEqual(command[command.index('--network')+1],'none')
-        self.assertIn('apparmor=agent-ee-container',command)
+        self.assertIn('apparmor=unconfined',command)
+        self.assertNotIn('apparmor=agent-ee-container',command)
         volumes = [command[i+1] for i,a in enumerate(command) if a=='-v']
         self.assertEqual(volumes,['/src:/opt/agent-ee:ro','/in:/in:ro','/out:/out'])
         self.assertEqual(command[command.index(image)+1:],['/opt/agent-ee/scripts/seeded_benchmark.py','_execute','/in','/out/runs'])
