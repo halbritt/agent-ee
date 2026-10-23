@@ -298,7 +298,7 @@ class CapacityDiagnosticTest(unittest.TestCase):
         fake = {'kind': 'board_capacity_gap', 'side': 'F', 'gap_nm': 0, 'blocked_by': [], 'square_nm': 0,
                 'references': ['C1'], 'required_grown_courtyard_area_nm2': [1, 1], 'available_area_upper_nm2': [0, 1]}
         original = placer._capacity_impossibility, placer.judge
-        placer.judge = lambda capture, overhangs=None: {'verdict': 'defect'}
+        placer.judge = lambda capture, overhangs=None, mechanical=None: {'verdict': 'defect'}
         try:
             rejected = pack(source, dict(policy, capacity_proof=False))
             self.assertEqual(rejected['status'], 'judge_rejected')
