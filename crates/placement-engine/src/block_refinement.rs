@@ -259,7 +259,7 @@ fn admitted(
     {
         return Ok(false);
     }
-    if grading::judge(proposed, None, policy.get("fixed_overhangs"))?["verdict"] != "pass" {
+    if grading::judge_mechanical(proposed, None, policy.get("fixed_overhangs"), policy.get("mechanical_reservations"))?["verdict"] != "pass" {
         return Ok(false);
     }
     if let Some(g) = policy

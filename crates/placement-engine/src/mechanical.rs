@@ -1,0 +1,848 @@
+//! Conservative source-bound mechanical projections. Python authenticates the
+//! accepted envelope and constructs the binding; native search rechecks identity
+//! and current geometry without delegating planning or granting source authority.
+use crate::blocks::{digest, keys, rows, text};
+use crate::exact::{
+    Point, Rat, decimal, integer, point, point_value, rational, rational_value, rotate,
+};
+use crate::geometry::{courtyard_bounds, intersection_area, simple_polygon};
+use anyhow::{Context, Result, ensure};
+use num_traits::{ToPrimitive, Zero};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+
+const SCHEMA: &str = "agent-ee.mechanical-reservations/1";
+const BINDING_SCHEMA: &str = "agent-ee.mechanical-reservation-binding/1";
+
+fn sha(value: &Value) -> Result<()> {
+    let value = text(value)?;
+    ensure!(
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)),
+        "mechanical SHA-256 required"
+    );
+    Ok(())
+}
+
+fn relative(value: &Value) -> Result<()> {
+    let value = text(value)?;
+    ensure!(
+        !value.starts_with('/')
+            && value
+                .split('/')
+                .all(|p| !p.is_empty() && p != "." && p != ".."),
+        "mechanical source path must be a captured relative path"
+    );
+    Ok(())
+}
+
+fn strings(value: &Value, choices: &[&str], empty: bool) -> Result<Vec<String>> {
+    let values = rows(value)?;
+    ensure!(
+        empty || !values.is_empty(),
+        "mechanical list must not be empty"
+    );
+    let result = values
+        .iter()
+        .map(|v| text(v).map(str::to_owned))
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        result.iter().collect::<BTreeSet<_>>().len() == result.len(),
+        "duplicate mechanical list value"
+    );
+    ensure!(
+        choices.is_empty() || result.iter().all(|s| choices.contains(&s.as_str())),
+        "unsupported mechanical list value"
+    );
+    Ok(result)
+}
+
+fn angle(value: &Value) -> Result<i64> {
+    let value = decimal(value)?;
+    ensure!(
+        value.is_integer(),
+        "mechanical frame requires an exact native quarter-turn angle"
+    );
+    let value = value
+        .to_integer()
+        .to_i64()
+        .context("mechanical angle out of range")?;
+    ensure!(
+        value % 90 == 0,
+        "mechanical frame requires an exact native quarter-turn angle"
+    );
+    Ok(value.rem_euclid(360))
+}
+
+fn document(value: &Value) -> Result<()> {
+    keys(
+        value,
+        &[
+            "schema",
+            "original_board_path",
+            "original_board_sha256",
+            "source",
+            "reservations",
+        ],
+        &[],
+    )?;
+    ensure!(
+        value["schema"] == SCHEMA,
+        "unsupported mechanical reservation schema"
+    );
+    sha(&value["original_board_sha256"])?;
+    relative(&value["original_board_path"])?;
+    let source = &value["source"];
+    keys(
+        source,
+        &["path", "sha256", "locator", "classification", "author"],
+        &[],
+    )?;
+    relative(&source["path"])?;
+    sha(&source["sha256"])?;
+    text(&source["locator"])?;
+    text(&source["author"])?;
+    ensure!(
+        source["classification"] == "engineering",
+        "mechanical choices must retain engineering classification"
+    );
+    let entries = rows(&value["reservations"])?;
+    ensure!(entries.len() <= 1024, "too many mechanical reservations");
+    let mut ids = BTreeSet::new();
+    for row in entries {
+        keys(
+            row,
+            &[
+                "id",
+                "required",
+                "kind",
+                "frame",
+                "geometry",
+                "faces",
+                "height_nm",
+                "phases",
+                "self_exclusion",
+                "coverage",
+                "uncertainty",
+            ],
+            &["owner"],
+        )?;
+        ensure!(
+            ids.insert(text(&row["id"])?),
+            "duplicate mechanical reservation id"
+        );
+        ensure!(
+            row["required"].is_boolean() && row["self_exclusion"].is_boolean(),
+            "mechanical booleans required"
+        );
+        ensure!(
+            matches!(row["kind"].as_str(), Some("solid" | "access")),
+            "unsupported mechanical kind"
+        );
+        let frame = text(&row["frame"])?;
+        if frame == "board" {
+            ensure!(
+                row.get("owner").is_none() && row["self_exclusion"] == false,
+                "fixed mechanical owner invalid"
+            );
+            strings(&row["faces"], &["F", "B"], false)?;
+        } else {
+            ensure!(
+                frame == "footprint" || frame == "pad",
+                "unsupported mechanical frame"
+            );
+            let required = if frame == "pad" {
+                vec!["ref", "uuid", "pad"]
+            } else {
+                vec!["ref", "uuid"]
+            };
+            keys(&row["owner"], &required, &[])?;
+            text(&row["owner"]["ref"])?;
+            text(&row["owner"]["uuid"])?;
+            if frame == "pad" {
+                keys(&row["owner"]["pad"], &["number", "uuid"], &[])?;
+                text(&row["owner"]["pad"]["number"])?;
+                text(&row["owner"]["pad"]["uuid"])?;
+            }
+            strings(&row["faces"], &["same", "opposite"], false)?;
+        }
+        keys(&row["geometry"], &["polygons_nm"], &[])?;
+        if !row["geometry"]["polygons_nm"].is_null() {
+            let polygons = rows(&row["geometry"]["polygons_nm"])?;
+            ensure!(
+                !polygons.is_empty() && polygons.len() <= 64,
+                "mechanical polygons missing or excessive"
+            );
+            for polygon in polygons {
+                simple_polygon(polygon)?;
+            }
+        }
+        if !row["height_nm"].is_null() {
+            let interval = rows(&row["height_nm"])?;
+            ensure!(interval.len() == 2, "mechanical height interval invalid");
+            let low = integer(&interval[0])?;
+            let high = integer(&interval[1])?;
+            ensure!(
+                low >= 0.into() && low < high,
+                "mechanical height interval invalid"
+            );
+        }
+        strings(&row["phases"], &[], false)?;
+        strings(&row["uncertainty"], &[], true)?;
+        let coverage = &row["coverage"];
+        keys(coverage, &["projection", "height", "access", "basis"], &[])?;
+        ensure!(
+            coverage["projection"] == "conservative-per-face",
+            "unsupported mechanical projection coverage"
+        );
+        for key in ["height", "access"] {
+            ensure!(
+                matches!(coverage[key].as_str(), Some("covered" | "unknown")),
+                "unsupported mechanical coverage"
+            );
+        }
+        text(&coverage["basis"])?;
+    }
+    Ok(())
+}
+
+fn native_owner(fp: &Value) -> Result<()> {
+    text(&fp["ref"])?;
+    text(&fp["uuid"])?;
+    ensure!(
+        matches!(fp["side"].as_str(), Some("F" | "B")),
+        "mechanical footprint side is unknown"
+    );
+    point(&fp["position_nm"])?;
+    angle(&fp["rotation_deg"])?;
+    let mut seen = BTreeSet::new();
+    for pad in rows(&fp["pads"])? {
+        ensure!(
+            pad["shape"] != 6 && pad.get("custom_geometry").is_none(),
+            "mechanical attachments do not support custom-pad geometry"
+        );
+        ensure!(
+            seen.insert(text(&pad["uuid"])?),
+            "mechanical pad identity missing or ambiguous"
+        );
+        ensure!(
+            pad["number"].is_string() && pad["net"].is_string(),
+            "mechanical pad identity missing or ambiguous"
+        );
+        point(&pad["position_nm"])?;
+        angle(&pad["rotation_deg"])?;
+        for key in ["copper_centroid_offset_nm", "copper_land_offset_nm"] {
+            if pad.get(key).is_some() {
+                offset(pad, key)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn binding(value: &Value) -> Result<BTreeMap<String, &Value>> {
+    keys(
+        value,
+        &[
+            "schema",
+            "document",
+            "document_sha256",
+            "canonical_document_sha256",
+            "source_board_sha256",
+            "owners",
+        ],
+        &[],
+    )?;
+    ensure!(
+        value["schema"] == BINDING_SCHEMA,
+        "unsupported mechanical binding schema"
+    );
+    document(&value["document"])?;
+    sha(&value["document_sha256"])?;
+    ensure!(
+        digest(&value["document"]) == text(&value["canonical_document_sha256"])?
+            && value["source_board_sha256"] == value["document"]["original_board_sha256"],
+        "mechanical binding document identity changed"
+    );
+    let mut owners = BTreeMap::new();
+    for fp in rows(&value["owners"])? {
+        native_owner(fp)?;
+        ensure!(
+            owners.insert(text(&fp["uuid"])?.to_owned(), fp).is_none(),
+            "duplicate mechanical bound owner"
+        );
+    }
+    let expected = rows(&value["document"]["reservations"])?
+        .iter()
+        .filter_map(|row| row.get("owner"))
+        .map(|owner| text(&owner["uuid"]).map(str::to_owned))
+        .collect::<Result<BTreeSet<_>>>()?;
+    ensure!(
+        owners.keys().cloned().collect::<BTreeSet<_>>() == expected,
+        "mechanical bound owner coverage differs"
+    );
+    Ok(owners)
+}
+
+fn moved(p: &Point, origin: &Point, rotation: i64, flipped: bool) -> Point {
+    let local = Point {
+        x: p.x.clone(),
+        y: if flipped { -&p.y } else { p.y.clone() },
+    };
+    rotate(&local, rotation / 90).plus(origin)
+}
+
+fn offset(pad: &Value, key: &str) -> Result<[Rat; 2]> {
+    if key == "copper_land_offset_nm" {
+        let p = point(&pad[key])?;
+        return Ok([Rat::from_integer(p.x), Rat::from_integer(p.y)]);
+    }
+    let pair = rows(&pad[key])?;
+    ensure!(
+        pair.len() == 2,
+        "mechanical copper centroid offset must be exact rational nanometres"
+    );
+    Ok([rational(&pair[0])?, rational(&pair[1])?])
+}
+
+fn rotate_offset(mut p: [Rat; 2], turns: i64) -> [Rat; 2] {
+    for _ in 0..turns.rem_euclid(4) {
+        p = [p[1].clone(), -&p[0]];
+    }
+    p
+}
+
+fn current_owner(source: &Value, current: &Value) -> Result<()> {
+    native_owner(current)?;
+    for key in ["ref", "uuid", "fpid", "value"] {
+        ensure!(
+            source.get(key) == current.get(key),
+            "mechanical native owner identity changed"
+        );
+    }
+    let old = rows(&source["pads"])?
+        .iter()
+        .map(|p| Ok((text(&p["uuid"])?, p)))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let new = rows(&current["pads"])?
+        .iter()
+        .map(|p| Ok((text(&p["uuid"])?, p)))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    ensure!(
+        old.keys().collect::<Vec<_>>() == new.keys().collect::<Vec<_>>(),
+        "mechanical native pad UUID inventory changed"
+    );
+    let flipped = current["side"] != source["side"];
+    let source_position = point(&source["position_nm"])?;
+    let current_position = point(&current["position_nm"])?;
+    let source_angle = angle(&source["rotation_deg"])?;
+    let current_angle = angle(&current["rotation_deg"])?;
+    for (uuid, before) in old {
+        let after = new[uuid];
+        for key in [
+            "number",
+            "net",
+            "shape",
+            "size_nm",
+            "drill_size_nm",
+            "attribute",
+            "copper_centroid_reason",
+        ] {
+            ensure!(
+                before.get(key) == after.get(key),
+                "mechanical native pad signature changed"
+            );
+        }
+        if let Some(layers) = before.get("layers") {
+            let mut expected = strings(layers, &[], true)?
+                .into_iter()
+                .map(|layer| {
+                    if flipped {
+                        if let Some(tail) = layer.strip_prefix("F.") {
+                            return format!("B.{tail}");
+                        }
+                        if let Some(tail) = layer.strip_prefix("B.") {
+                            return format!("F.{tail}");
+                        }
+                    }
+                    layer
+                })
+                .collect::<Vec<_>>();
+            expected.sort();
+            ensure!(
+                json!(expected) == after["layers"],
+                "mechanical native pad layers changed"
+            );
+        }
+        let local = rotate(
+            &point(&before["position_nm"])?.minus(&source_position),
+            -source_angle / 90,
+        );
+        let expected = moved(&local, &current_position, current_angle, flipped);
+        let relative = (angle(&before["rotation_deg"])? - source_angle).rem_euclid(360);
+        let expected_angle =
+            (current_angle + if flipped { -relative } else { relative }).rem_euclid(360);
+        ensure!(
+            expected == point(&after["position_nm"])?
+                && expected_angle == angle(&after["rotation_deg"])?,
+            "mechanical native pad pose changed independently of owner"
+        );
+        for key in ["copper_centroid_offset_nm", "copper_land_offset_nm"] {
+            ensure!(
+                before.get(key).is_some() == after.get(key).is_some(),
+                "mechanical native pad copper offset coverage changed"
+            );
+            if before.get(key).is_some() {
+                let mut local = rotate_offset(offset(before, key)?, -source_angle / 90);
+                if flipped {
+                    local[1] = -&local[1];
+                }
+                let expected = rotate_offset(local, current_angle / 90);
+                ensure!(
+                    expected == offset(after, key)?,
+                    "mechanical native pad copper offset changed independently of owner"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn add_issue(result: &mut Value, required: bool, issue: Value) {
+    result[if required { "unknown" } else { "advisories" }]
+        .as_array_mut()
+        .unwrap()
+        .push(issue);
+}
+
+/// Evaluate all declared phases. Initial source authentication is exclusively at
+/// the accepted-envelope boundary; partial captures contain placed members only.
+pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
+    let owners = binding(bound)?;
+    let doc = &bound["document"];
+    let entries = rows(&doc["reservations"])?;
+    let phases = entries
+        .iter()
+        .map(|r| strings(&r["phases"], &[], false))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<BTreeSet<_>>();
+    let mut result = json!({"schema":"agent-ee.mechanical-reservation-grade/1", "phase":null,
+        "phases":phases, "reservations":[], "unknown":[], "advisories":[], "status":"pass", "defects":[]});
+    let capture_check = if partial && capture["footprints"] == json!([]) {
+        if capture["schema"] == "agent-ee.placement-probe/1" {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("invalid partial mechanical capture"))
+        }
+    } else {
+        crate::footprint::validate_capture(capture)
+    };
+    if let Err(error) = capture_check {
+        add_issue(
+            &mut result,
+            true,
+            json!({"reservation":null,"kind":"capture","reason":error.to_string()}),
+        );
+        result["status"] = json!("unknown");
+        return Ok(result);
+    }
+    let current = rows(&capture["footprints"])?
+        .iter()
+        .map(|fp| Ok((text(&fp["uuid"])?.to_owned(), fp)))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let mut verified: BTreeMap<String, std::result::Result<(), String>> = BTreeMap::new();
+    for row in entries {
+        let mut problems: Vec<String> = Vec::new();
+        if row["geometry"]["polygons_nm"].is_null() {
+            problems.push("geometry is unresolved".into());
+        }
+        if row["height_nm"].is_null() || row["coverage"]["height"] != "covered" {
+            problems.push("height coverage is unresolved".into());
+        }
+        if row["coverage"]["access"] != "covered" {
+            problems.push("access coverage is unresolved".into());
+        }
+        let mut origin = Point::zero();
+        let mut rotation = 0;
+        let mut flipped = false;
+        let mut native = None;
+        if let Some(owner) = row.get("owner") {
+            let uuid = text(&owner["uuid"])?;
+            let source = owners[uuid];
+            if source["ref"] != owner["ref"] {
+                problems.push("bound owner reference differs".into());
+            } else if let Some(fp) = current.get(uuid) {
+                let verification = verified
+                    .entry(uuid.to_owned())
+                    .or_insert_with(|| current_owner(source, fp).map_err(|e| e.to_string()));
+                if let Err(error) = verification {
+                    problems.push(error.clone());
+                } else {
+                    native = Some(*fp);
+                    let frame = if row["frame"] == "pad" {
+                        let matches = rows(&fp["pads"])?
+                            .iter()
+                            .filter(|p| {
+                                p["uuid"] == owner["pad"]["uuid"]
+                                    && p["number"] == owner["pad"]["number"]
+                            })
+                            .collect::<Vec<_>>();
+                        if matches.len() != 1 {
+                            problems.push("mechanical pad frame is missing or stale".into());
+                            None
+                        } else {
+                            Some(matches[0])
+                        }
+                    } else {
+                        Some(*fp)
+                    };
+                    if let Some(frame) = frame {
+                        origin = point(&frame["position_nm"])?;
+                        rotation = angle(&frame["rotation_deg"])?;
+                        flipped = fp["side"] != source["side"];
+                    }
+                }
+            } else {
+                let stale_ref = current.values().any(|fp| fp["ref"] == owner["ref"]);
+                if partial && problems.is_empty() && !stale_ref {
+                    continue;
+                }
+                problems.push("required native owner is missing".into());
+            }
+        }
+        if !problems.is_empty() {
+            add_issue(
+                &mut result,
+                row["required"] == true,
+                json!({"reservation":row["id"],"kind":"unresolved","reason":problems.join("; ")}),
+            );
+            continue;
+        }
+        let faces = strings(&row["faces"], &[], false)?
+            .into_iter()
+            .map(|face| {
+                if let Some(fp) = native {
+                    if face == "same" {
+                        fp["side"].clone()
+                    } else if fp["side"] == "F" {
+                        json!("B")
+                    } else {
+                        json!("F")
+                    }
+                } else {
+                    json!(face)
+                }
+            })
+            .collect::<Vec<_>>();
+        let polygons = rows(&row["geometry"]["polygons_nm"])?
+            .iter()
+            .map(|polygon| {
+                rows(polygon)?
+                    .iter()
+                    .map(|p| Ok(point_value(&moved(&point(p)?, &origin, rotation, flipped))))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        result["reservations"].as_array_mut().unwrap().push(json!({"id":row["id"],"kind":row["kind"],
+            "required":row["required"],"owner_uuid":row["owner"]["uuid"],"owner_ref":row["owner"]["ref"],
+            "faces":faces,"polygons_nm":polygons,"height_nm":row["height_nm"],"phases":row["phases"],
+            "self_exclusion":row["self_exclusion"],"source":doc["source"],"coverage":row["coverage"],
+            "uncertainty":row["uncertainty"]}));
+    }
+    let projected = result["reservations"].as_array().unwrap().clone();
+    let mut footprints = rows(&capture["footprints"])?.iter().collect::<Vec<_>>();
+    footprints.sort_by(|a, b| a["ref"].as_str().cmp(&b["ref"].as_str()));
+    for row in &projected {
+        let polygons = rows(&row["polygons_nm"])?
+            .iter()
+            .map(simple_polygon)
+            .collect::<Result<Vec<_>>>()?;
+        for fp in &footprints {
+            if row["self_exclusion"] == true && fp["uuid"] == row["owner_uuid"] {
+                continue;
+            }
+            for side in strings(&row["faces"], &[], false)? {
+                let record = &fp["courtyards"][&side];
+                if record.is_null() && fp["side"] != side {
+                    continue;
+                }
+                match courtyard_bounds(record) {
+                    Err(error) => add_issue(
+                        &mut result,
+                        row["required"] == true,
+                        json!({"reservation":row["id"],
+                        "kind":"courtyard","ref":fp["ref"],"side":side,"reason":error.to_string()}),
+                    ),
+                    Ok((outer, inner)) => {
+                        let inner_area: Rat = polygons
+                            .iter()
+                            .flat_map(|a| inner.iter().map(move |b| intersection_area(a, b)))
+                            .sum();
+                        let outer_area: Rat = polygons
+                            .iter()
+                            .flat_map(|a| outer.iter().map(move |b| intersection_area(a, b)))
+                            .sum();
+                        if !inner_area.is_zero() {
+                            result[if row["required"] == true {"defects"} else {"advisories"}].as_array_mut().unwrap().push(json!({
+                                "kind":"mechanical_reservation_overlap","reservation":row["id"],"ref":fp["ref"],"uuid":fp["uuid"],
+                                "side":side,"overlap_area_nm2":rational_value(&inner_area)}));
+                        } else if !outer_area.is_zero() {
+                            add_issue(
+                                &mut result,
+                                row["required"] == true,
+                                json!({"reservation":row["id"],"kind":"courtyard_approximation",
+                                "ref":fp["ref"],"side":side,"reason":"mechanical overlap lies only between native curve bounds"}),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (index, left) in projected.iter().enumerate() {
+        for right in &projected[index + 1..] {
+            if left["kind"] == "access" && right["kind"] == "access" {
+                continue;
+            }
+            if !left["owner_uuid"].is_null()
+                && left["owner_uuid"] == right["owner_uuid"]
+                && left["self_exclusion"] == true
+                && right["self_exclusion"] == true
+            {
+                continue;
+            }
+            let left_phases = strings(&left["phases"], &[], false)?
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let right_phases = strings(&right["phases"], &[], false)?
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let phases = left_phases
+                .intersection(&right_phases)
+                .cloned()
+                .collect::<Vec<_>>();
+            if phases.is_empty() {
+                continue;
+            }
+            let left_faces = strings(&left["faces"], &[], false)?
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let right_faces = strings(&right["faces"], &[], false)?
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let a = rows(&left["polygons_nm"])?
+                .iter()
+                .map(simple_polygon)
+                .collect::<Result<Vec<_>>>()?;
+            let b = rows(&right["polygons_nm"])?
+                .iter()
+                .map(simple_polygon)
+                .collect::<Result<Vec<_>>>()?;
+            for side in left_faces.intersection(&right_faces) {
+                let area: Rat = a
+                    .iter()
+                    .flat_map(|x| b.iter().map(move |y| intersection_area(x, y)))
+                    .sum();
+                if !area.is_zero() {
+                    let required = left["required"] == true || right["required"] == true;
+                    result[if required { "defects" } else { "advisories" }]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(json!({
+                        "kind":"mechanical_reservation_pair_overlap","reservation":left["id"],
+                        "other_reservation":right["id"],"side":side,"phases":phases,
+                        "overlap_area_nm2":rational_value(&area)}));
+                }
+            }
+        }
+    }
+    result["status"] = json!(if !rows(&result["defects"])?.is_empty() {
+        "defect"
+    } else if !rows(&result["unknown"])?.is_empty() {
+        "unknown"
+    } else {
+        "pass"
+    });
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn footprint(reference: &str, x: i64) -> Value {
+        json!({"ref":reference,"uuid":format!("fp-{reference}"),"side":"F", "position_nm":[x,0],
+            "rotation_deg":0,"pads":[{"uuid":format!("pad-{reference}"),"number":"1","net":"N",
+                "position_nm":[x+2,3],"rotation_deg":0}],
+            "courtyards":{"F":{"status":"proven","polygons":[[[x-1,-1],[x+1,-1],[x+1,1],[x-1,1]]]}}})
+    }
+
+    fn reservation(reference: &str, polygon: Value) -> Value {
+        json!({"id":format!("body-{reference}"),"required":true,"kind":"solid","frame":"footprint",
+            "owner":{"ref":reference,"uuid":format!("fp-{reference}")},"geometry":{"polygons_nm":[polygon]},
+            "faces":["same"],"height_nm":[0,20],"phases":["installed"],"self_exclusion":true,
+            "coverage":{"projection":"conservative-per-face","height":"covered","access":"covered",
+                "basis":"authored unit-test projection covers the declared height"},"uncertainty":[]})
+    }
+
+    fn fixture() -> (Value, Value) {
+        let fp = footprint("U1", 0);
+        let capture = json!({"schema":"agent-ee.placement-probe/1","board_sha256":"a".repeat(64),
+            "footprints":[fp.clone()]});
+        let doc = json!({"schema":SCHEMA,"original_board_path":"original.kicad_pcb",
+            "original_board_sha256":"a".repeat(64),"source":{"path":"engineering.json","sha256":"b".repeat(64),
+                "locator":"/body","classification":"engineering","author":"authored unit test"},
+            "reservations":[reservation("U1",json!([[0,0],[4,0],[4,2],[0,2]]))]});
+        let bound = json!({"schema":BINDING_SCHEMA,"document":doc,"document_sha256":"c".repeat(64),
+            "canonical_document_sha256":digest(&doc),"source_board_sha256":"a".repeat(64),"owners":[fp]});
+        (capture, bound)
+    }
+
+    fn reseal(bound: &mut Value) {
+        bound["canonical_document_sha256"] = json!(digest(&bound["document"]));
+    }
+
+    #[test]
+    fn declarations_cover_full_board_inventory_with_finite_cap() {
+        let (_, bound) = fixture();
+        let mut doc = bound["document"].clone();
+        let template = doc["reservations"][0].clone();
+        let inventory = (0..1024)
+            .map(|index| {
+                let mut row = template.clone();
+                row["id"] = json!(format!("reservation-{index}"));
+                if index >= 313 {
+                    row["required"] = json!(false);
+                    row["geometry"]["polygons_nm"] = Value::Null;
+                }
+                row
+            })
+            .collect::<Vec<_>>();
+        doc["reservations"] = json!(&inventory[..313]);
+        document(&doc).unwrap();
+        doc["reservations"] = json!(inventory);
+        document(&doc).unwrap();
+        let mut extra = template;
+        extra["id"] = json!("reservation-1024");
+        doc["reservations"].as_array_mut().unwrap().push(extra);
+        assert!(document(&doc).unwrap_err().to_string().contains("too many"));
+    }
+
+    #[test]
+    fn required_unknown_geometry_never_passes() {
+        let (capture, mut bound) = fixture();
+        bound["document"]["reservations"][0]["geometry"]["polygons_nm"] = Value::Null;
+        reseal(&mut bound);
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(report["unknown"][0]["reason"], "geometry is unresolved");
+        assert_eq!(report["reservations"], json!([]));
+    }
+
+    #[test]
+    fn current_native_angle_and_face_transform_attached_geometry() {
+        let (mut capture, bound) = fixture();
+        let fp = &mut capture["footprints"][0];
+        fp["position_nm"] = json!([10, 20]);
+        fp["rotation_deg"] = json!(90.0);
+        fp["side"] = json!("B");
+        fp["pads"][0]["position_nm"] = json!([7, 18]);
+        fp["pads"][0]["rotation_deg"] = json!(90.0);
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "pass");
+        assert_eq!(report["phases"], json!(["installed"]));
+        assert_eq!(report["reservations"][0]["faces"], json!(["B"]));
+        assert_eq!(
+            report["reservations"][0]["polygons_nm"],
+            json!([[[10, 20], [10, 16], [8, 16], [8, 20]]])
+        );
+    }
+
+    #[test]
+    fn missing_pad_and_stale_partial_owner_are_unknown() {
+        let (mut capture, bound) = fixture();
+        capture["footprints"][0]["pads"] = json!([]);
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(
+            report["unknown"][0]["reason"],
+            "mechanical native pad UUID inventory changed"
+        );
+        capture["footprints"][0]["uuid"] = json!("replacement");
+        assert_eq!(grade(&capture, &bound, true).unwrap()["status"], "unknown");
+        capture["footprints"] = json!([]);
+        assert_eq!(grade(&capture, &bound, true).unwrap()["status"], "pass");
+        assert_eq!(grade(&capture, &bound, false).unwrap()["status"], "unknown");
+    }
+
+    #[test]
+    fn custom_pads_refuse_and_exact_copper_offsets_follow_native_transform() {
+        let (mut capture, mut bound) = fixture();
+        let source = &mut bound["owners"][0]["pads"][0];
+        source["copper_centroid_offset_nm"] = json!([[1, 2], [3, 4]]);
+        source["copper_land_offset_nm"] = json!([2, 3]);
+        let fp = &mut capture["footprints"][0];
+        fp["side"] = json!("B");
+        fp["position_nm"] = json!([10, 20]);
+        fp["rotation_deg"] = json!(90);
+        fp["pads"][0]["position_nm"] = json!([7, 18]);
+        fp["pads"][0]["rotation_deg"] = json!(90);
+        fp["pads"][0]["copper_centroid_offset_nm"] = json!([[-3, 4], [-1, 2]]);
+        fp["pads"][0]["copper_land_offset_nm"] = json!([-3, -2]);
+        assert_eq!(grade(&capture, &bound, false).unwrap()["status"], "pass");
+        capture["footprints"][0]["pads"][0]["copper_centroid_offset_nm"] = json!([[3, 4], [-1, 2]]);
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(
+            report["unknown"][0]["reason"],
+            "mechanical native pad copper offset changed independently of owner"
+        );
+        capture["footprints"][0]["pads"][0]["custom_geometry"] = json!({"status":"proven"});
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(
+            report["unknown"][0]["reason"],
+            "mechanical attachments do not support custom-pad geometry"
+        );
+        bound["owners"][0]["pads"][0]["shape"] = json!(6);
+        assert!(
+            grade(&capture, &bound, false)
+                .unwrap_err()
+                .to_string()
+                .contains("custom-pad")
+        );
+    }
+
+    #[test]
+    fn body_overlap_outside_courtyards_is_detected_and_phase_qualified() {
+        let (mut capture, mut bound) = fixture();
+        let other = footprint("U2", 10);
+        capture["footprints"]
+            .as_array_mut()
+            .unwrap()
+            .push(other.clone());
+        bound["owners"].as_array_mut().unwrap().push(other);
+        bound["document"]["reservations"] = json!([
+            reservation("U1", json!([[2, -1], [6, -1], [6, 1], [2, 1]])),
+            reservation("U2", json!([[-6, -1], [-2, -1], [-2, 1], [-6, 1]]))
+        ]);
+        reseal(&mut bound);
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "defect");
+        assert_eq!(report["defects"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            report["defects"][0]["kind"],
+            "mechanical_reservation_pair_overlap"
+        );
+        assert_eq!(report["defects"][0]["overlap_area_nm2"], json!([4, 1]));
+        bound["document"]["reservations"][1]["phases"] = json!(["bench"]);
+        reseal(&mut bound);
+        let report = grade(&capture, &bound, false).unwrap();
+        assert_eq!(report["status"], "pass");
+        assert_eq!(report["phases"], json!(["bench", "installed"]));
+    }
+}

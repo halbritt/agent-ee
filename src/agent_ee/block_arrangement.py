@@ -617,6 +617,7 @@ class _Arrangement:
     def __init__(self, work, policy, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat,
                  pad_keepouts=()):
         self.policy, self.arrangement, self.heartbeat = policy, arrangement, heartbeat
+        self.capture = work
         self.outline, self.keepouts, self.pad_keepouts = outline, keepouts, list(pad_keepouts)
         self.margin = placer._edge_margin_nm(policy)
         self.gap, self.grounds = policy['gap_nm'], set(policy['ground_nets'])
@@ -908,6 +909,10 @@ class _Arrangement:
 
     def blockers(self, bid, proposed, members):
         """None when every hard predicate admits the macro, else (predicate, blocking blocks)."""
+        mechanics = placer._mechanical({**self.capture, 'footprints': self.placed_fps + members},
+                                       self.policy, partial=True)
+        if mechanics is not None and mechanics['status'] != 'pass':
+            return 'mechanical_reservations', {self.owner.get(fp['ref']) for fp in self.placed_fps} - {None, bid}
         hits, reach = set(), _reach(proposed)
         for fp in self.placed_fps:
             if not _apart(reach, self.reach[fp['ref']]) and placer._hole_conflict(proposed, fp):
@@ -983,7 +988,9 @@ class _Arrangement:
             face = self.faces[bid][face_index]
             at_origin, members = self.rotated[bid, rotation, face]
             proposed = _shift(at_origin, x, y)
-            members = [_shift(fp, x, y) for fp in members]
+            members = (self.members_at(bid, [x, y], rotation, face)
+                       if self.policy.get('mechanical_reservations') is not None
+                       else [_shift(fp, x, y) for fp in members])
             hit = self.blockers(bid, proposed, members)
             if hit is None:
                 yield [x, y], rotation, proposed, face
@@ -1194,6 +1201,10 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
     if locality and electrical_locality.grade(capture, locality)['unknown']:
         return failure('electrical_locality_unavailable', 'pad locality needs unambiguous native pads, limits and citations')
     work = copy.deepcopy(capture)
+    mechanics = placer._mechanical(work, effective)
+    if mechanics is not None and mechanics['unknown']:
+        return failure('mechanical_geometry_unavailable', 'required mechanical geometry or identity is unresolved',
+                       mechanical_reservations=mechanics)
     try:
         outline = placer._qualified(work)
         for fp in work['footprints']:
@@ -1411,7 +1422,8 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
             plan['placements'] = [{**p, **{key: final[p['ref']][key]
                                            for key in ('position_nm', 'rotation_deg', 'side')}}
                                   for p in plan['placements']]
-            plan['judgment'] = placer.judge(complete, overhangs=effective.get('fixed_overhangs'))
+            plan['judgment'] = placer.judge(complete, overhangs=effective.get('fixed_overhangs'),
+                                               mechanical=effective.get('mechanical_reservations'))
             plan['judgment']['basis'] = 'transformed-proposal-not-native'
             if 'groups' in effective:
                 plan['group_grading'] = placement_groups.grade(complete, effective['groups'])

@@ -122,7 +122,8 @@ def _admitted(proposed, reference, policy, contract, record):
                    or placer._in_keepouts(peer, fp.get('packing_keepouts', [])) for peer in peers)
             or placer._copper_escapes(fp, outline, keepouts, peers, pad_keepouts) is not None):
         return False
-    if judge(proposed, overhangs=policy.get('fixed_overhangs'))['verdict'] != 'pass':
+    if judge(proposed, overhangs=policy.get('fixed_overhangs'),
+             mechanical=policy.get('mechanical_reservations'))['verdict'] != 'pass':
         return False
     if policy.get('groups') and not placement_groups.satisfied(placement_groups.grade(proposed, policy['groups'])):
         return False
@@ -359,7 +360,8 @@ def verify_saved(saved_capture, policy, contract, block_records, entries):
                 raise ValueError('refinement reverse replay differs from selected starting candidate geometry')
         windows[bid] = box([p for ref in expected[bid] for c in starting[ref]['courtyards'].values()
                             for p in courtyard_bounds(c)[0]])
-    if (judge(current, overhangs=policy.get('fixed_overhangs'))['verdict'] != 'pass'
+    if (judge(current, overhangs=policy.get('fixed_overhangs'),
+             mechanical=policy.get('mechanical_reservations'))['verdict'] != 'pass'
             or block_contract.check_complete(current, contract)['status'] != 'pass'):
         raise ValueError('refinement reconstructed starting capture fails placement or block contract')
     verified = []

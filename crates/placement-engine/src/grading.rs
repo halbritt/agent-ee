@@ -70,6 +70,26 @@ fn parse_polygons(v: &Value) -> Result<Vec<Polygon>> {
         .map(geometry::simple_polygon)
         .collect()
 }
+pub fn judge_mechanical(capture: &Value, scoring: Option<&Value>, overhangs: Option<&Value>, mechanical: Option<&Value>) -> Result<Value> {
+    let mut result = judge(capture, scoring, overhangs)?;
+    if let Some(binding) = mechanical {
+        let mechanics = crate::mechanical::grade(capture, binding, false)?;
+        result["hard_failures"].as_array_mut().context("judge failures missing")?
+            .extend(mechanics["defects"].as_array().context("mechanical defects missing")?.iter().cloned());
+        result["unknown"].as_array_mut().context("judge coverage missing")?
+            .extend(mechanics["unknown"].as_array().context("mechanical coverage missing")?.iter().cloned());
+        let (verdict, outcome) = if !result["hard_failures"].as_array().unwrap().is_empty() {
+            ("hard_fail", "defect")
+        } else if !result["unknown"].as_array().unwrap().is_empty() {
+            ("unknown", "unknown")
+        } else { ("pass", "pass") };
+        result["verdict"] = json!(verdict);
+        result["outcome"] = json!(outcome);
+        result["mechanical_reservations"] = mechanics;
+    }
+    Ok(result)
+}
+
 pub fn judge(capture: &Value, scoring: Option<&Value>, overhangs: Option<&Value>) -> Result<Value> {
     validate_capture(capture)?;
     let (access, access_unknown) = crate::constraints::grade_access(capture)?;

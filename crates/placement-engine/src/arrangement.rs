@@ -1107,6 +1107,14 @@ impl<'a> Search<'a> {
         members: &[PreparedFootprint],
     ) -> Result<Option<(String, BTreeSet<String>)>> {
         let placed = self.placed_fps();
+        if let Some(binding) = self.policy.get("mechanical_reservations") {
+            let mut current = self.prepared.capture.raw.clone();
+            current["footprints"] = json!(placed.iter().chain(members.iter()).map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?);
+            if crate::mechanical::grade(&current, binding, true)?["status"] != "pass" {
+                let blockers = placed.iter().filter_map(|fp| self.owner.get(&fp.reference).cloned()).filter(|owner| owner != bid).collect();
+                return Ok(Some(("mechanical_reservations".into(), blockers)));
+            }
+        }
         let gap = exact::integer(&self.policy["gap_nm"])?;
         let no = BTreeSet::new();
         let mut hit = BTreeSet::new();
@@ -1752,6 +1760,14 @@ pub fn arrange(
                 "pad locality needs unambiguous native pads, limits and citations",
                 0,
             );
+        }
+    }
+    if let Some(binding) = effective.get("mechanical_reservations") {
+        let mechanics = crate::mechanical::grade(capture, binding, false)?;
+        if !mechanics["unknown"].as_array().context("mechanical coverage missing")?.is_empty() {
+            record["mechanical_reservations"] = mechanics;
+            return failure(capture, effective, &record, "mechanical_geometry_unavailable",
+                "required mechanical geometry or identity is unresolved", 0);
         }
     }
     let qualified = match footprint::qualify_capture(capture) {
@@ -2453,7 +2469,7 @@ pub fn arrange(
                 }
             }
             let mut judgment =
-                crate::grading::judge(&complete, None, effective.get("fixed_overhangs"))?;
+                crate::grading::judge_mechanical(&complete, None, effective.get("fixed_overhangs"), effective.get("mechanical_reservations"))?;
             judgment["basis"] = json!("transformed-proposal-not-native");
             plan["judgment"] = judgment;
             if let Some(g) = effective.get("groups") {

@@ -488,6 +488,47 @@ def refuse_policy_sources(policy):
             raise ValueError(reason)
 
 
+def _mechanical_capture(inputs, files, board):
+    """Probe sealed bytes with the existing bounded, networkless native executor."""
+    from .executor import execute
+    from .routing_rules import captured_file
+
+    related = [board] + [str(PurePosixPath(board).with_suffix(suffix))
+                         for suffix in ('.kicad_pro', '.kicad_dru')
+                         if str(PurePosixPath(board).with_suffix(suffix)) in files]
+    snapshots = {rel: captured_file(inputs, files, rel).read_bytes() for rel in related}
+    if any(hashlib.sha256(raw).hexdigest() != files[rel] for rel, raw in snapshots.items()):
+        raise ValueError('captured mechanical probe input changed')
+    with tempfile.TemporaryDirectory(prefix='agent-ee-mechanical-bind-') as tmp:
+        root = Path(tmp)
+        source, work = root / 'inputs', root / 'work'
+        source.mkdir()
+        for rel, raw in snapshots.items():
+            target = source / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        record = execute(source, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe',
+                                       '/candidate/' + board, '--out', '/work/mechanical-probe.json'], timeout=60)
+        if record['execution'] != 'ok':
+            console = work / 'console.log'
+            detail = console.read_text(errors='replace')[-2000:] if console.is_file() else record['execution']
+            raise ValueError('mechanical native probe failed: ' + detail)
+        output = work / 'mechanical-probe.json'
+        if output.is_symlink() or not output.is_file():
+            raise ValueError('mechanical native probe output missing')
+        try:
+            facts = read_json(output)
+        except (OSError, ValueError) as exc:
+            raise ValueError('mechanical native probe output invalid') from exc
+        if (not isinstance(facts, dict) or facts.get('schema') != 'agent-ee.placement-probe/1'
+                or facts.get('board_sha256') != files[board]):
+            raise ValueError('mechanical native probe belongs to another board')
+        if any((source / rel).read_bytes() != raw
+               or captured_file(inputs, files, rel).read_bytes() != raw for rel, raw in snapshots.items()):
+            raise ValueError('captured mechanical probe input changed during extraction')
+        return facts
+
+
 def binding(declaration, manifest, inputs, mutable_inputs):
     """Coordinator binding of the declaration to one captured candidate's immutable inputs.
 
@@ -516,11 +557,8 @@ def binding(declaration, manifest, inputs, mutable_inputs):
         if any(item != mechanical[0] for item in mechanical[1:]):
             raise ValueError('several envelopes declare different mechanical reservations')
         from . import mechanical_reservations
-        from .placement_probe import extract
         source = mechanical[0]
-        facts = extract(board)
-        if facts['board_sha256'] != manifest['files'][bound['board']] or digest(board) != facts['board_sha256']:
-            raise ValueError('captured placement board changed during mechanical binding')
+        facts = _mechanical_capture(inputs, manifest['files'], source['document']['original_board_path'])
         policy['mechanical_reservations'] = mechanical_reservations.bind(
             source['document'], facts, source_sha256=source['sha256'])
     refs = sorted(set(policy['fixed_refs']) | {r for e in envelopes for r in e['references']})

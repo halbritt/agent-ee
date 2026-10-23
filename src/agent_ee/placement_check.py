@@ -15,12 +15,12 @@ from .placement import judge, validate_capture
 from .storage import digest, read_json, write_json
 
 COMMON = {'criterion', 'drc_check', 'policy', 'routing_feedback'}
-EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm', 'constraint_provenance'}, 'connector-edge/1': {'envelope', 'reference'},
+EXTRA = {'mechanical-access/1': {'envelope'}, 'edge-clearance/1': {'min_courtyard_edge_mm', 'constraint_provenance'}, 'connector-edge/1': {'envelope', 'reference'},
          'ratsnest-mst/1': {'max_manhattan_mm', 'max_euclidean_mm'},
          'imu-axes/1': {'envelope', 'imu_ref', 'graphic_id', 'marker_ref', 'forward_axis', 'side',
                         'max_distance_mm', 'marker_rotation_deg', 'facts_check', 'axis_fact'},
          'outline-containment/1': {'envelope'}, 'placement-groups/1': {'groups'}, 'electrical-locality/1': {'locality'}}
-REQUIRED = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope'},
+REQUIRED = {'mechanical-access/1': {'envelope'}, 'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope'},
             'placement-groups/1': {'groups'}, 'electrical-locality/1': {'locality'}}
 MAXIMA = {'max_manhattan_mm': 'manhattan', 'max_euclidean_mm': 'euclidean'}
 
@@ -154,7 +154,12 @@ def _envelope_declarations(ctx, criterion):
         raise CheckError('unsupported', 'AGENTEE-85 envelope validator is not integrated') from exc
     raw = _captured(ctx, ctx.params['envelope'])
     try:
-        validation = validate(raw)
+        validation = validate(raw, captured=(ctx.manifest['files'], ctx.inputs))
+        if criterion == 'mechanical-access/1':
+            declaration = validation.get('mechanical_reservations')
+            if declaration is None:
+                raise ValueError('mechanical-access/1 requires captured mechanical reservations')
+            return declaration, validation
         if criterion == 'outline-containment/1':
             return predicates.envelope_overhangs(validation), validation
         return connector_declarations(validation, ctx.params), validation
@@ -197,6 +202,8 @@ def _routing(ctx, facts):
 
 
 def evaluate(criterion, facts, report, params, declarations=None):
+    if criterion == 'mechanical-access/1':
+        return predicates.mechanical_access(facts, declarations)
     if criterion == 'keep-apart/1':
         return predicates.keep_apart(facts, params['policy'])
     if criterion == 'imu-axes/1':
@@ -246,6 +253,18 @@ def check_placement(ctx):
             declarations = electrical_locality.validate(electrical_locality.load_json(_captured(ctx, ctx.params['locality'])))
         except (ValueError, UnicodeDecodeError) as exc:
             raise CheckError('malformed', f'electrical locality refused: {exc}') from exc
+    if criterion == 'mechanical-access/1':
+        from .mechanical_reservations import bind
+        document = declarations['document']
+        original = ctx.candidate_path(document['original_board_path'])
+        ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', original,
+                     '--out', '/work/mechanical-source-probe.json'], timeout=600)
+        ctx.evidence('mechanical-source-probe.json')
+        original_facts = ctx.load_json('mechanical-source-probe.json', 'mechanical source probe')
+        try:
+            declarations = bind(document, original_facts, source_sha256=declarations['sha256'])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise CheckError('unsupported', f'mechanical source binding unavailable: {exc}') from exc
     board = ctx.candidate_path(ctx.scope['board'])
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', board,
                  '--out', '/work/placement-probe.json'], timeout=600)
