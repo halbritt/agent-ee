@@ -146,7 +146,8 @@ def owner_rules(document, raw, filename):
         values = [format((Decimal(v.numerator) / Decimal(v.denominator)).normalize(), 'f') + ' mm' for v in lengths]
         # Round-2 H2: a count is stated as an explicit count of its kind, never a bare integer.
         nouns = {'thermal_spoke_count': 'thermal spokes', 'via_count': 'vias'}
-        text = f'Original fixture owner rule {name}: ' + ', '.join(values + [f'{n} {nouns[k]}' for k, n in counts])
+        # Third-HOLD grammar: the quoted rule name is prose, never a count head ('spoke count:').
+        text = f'Original fixture owner rule [{name}] states ' + ', '.join(values + [f'{n} {nouns[k]}' for k, n in counts])
         path = 'fixture-decisions/rule-' + hashlib.sha256(text.encode('utf-8')).hexdigest()[:16] + '.txt'
         records[path] = text
         declared[:] = [spec for spec in declared if spec['rule'] != name]

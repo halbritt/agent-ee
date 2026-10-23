@@ -740,3 +740,10 @@ expectation is listed. The closing changes:
 The physical-intent compiler keeps its existing owner precondition. That is a
 verified captured decision by a named non-agent owner, and it compiles to
 `authority_unavailable`, so it never enforces.
+
+AGENTEE-348 third-HOLD root redesign (agent-449 dispatch with main's GO; a coordinator
+decision, not an owner statement). Rounds 1–3 each taught the value matcher one more
+token shape. The closed quantity grammar in `agent_ee.quantity` replaces that: it parses
+complete quantity expressions to dimension vectors with exact canonical values, and any
+quote outside the grammar fails closed with a reason. `source_authority.cite` uses it for
+both consumers. `tests/test_quantity_matrix.py` is the lane's regression gate.

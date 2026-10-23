@@ -668,22 +668,44 @@ grant hard authority. A declaration (board rule, `net_class_default` or
 
 `source_records` maps cited paths to captured UTF-8 text, as in
 electrical-locality/1. Authority binds the governed numeric payload (AGENTEE-348
-review H2/H3/H5). Every quoted citation must state each governed value as a typed
-fact, compared exactly. `source_authority.numeric_literals` reads each complete
-numeric literal, with its sign and exponent, never a suffix of a longer literal
-(round-2 H1). For example, `1e-3 mm` is 0.001 mm and `-3 mm` is −3 mm, so neither
-states 3 mm. A literal containing a separator, fraction or range (`1,000`, `1/3`,
-`1-3`) states nothing.
+review H2/H3/H5). Every quoted citation must state each governed value under the
+closed quantity grammar of `agent_ee.quantity`, the third-HOLD redesign. It is one
+implementation for every consumer, and its module docstring defines the grammar.
 
-The typed facts are:
+The parser reads the COMPLETE quantity expression:
 
-- a **length**: a literal with `mm`, `nm`, `um`, `µm` or `mil`, attached or after
-  one space;
-- a **count**: an unsigned integer literal that explicitly counts its kind, as in
-  `3 thermal spokes`, `3 spokes` or `spoke count: 3`, and likewise for vias.
+- an exact literal with an explicit sign (`+`, `-`, U+2212) and exponent;
+- unit terms from an allow-list: length `nm um µm μm mm mil`; time
+  `s ms us µs ns second(s)`, which exists only so a rate parses to its own
+  dimension;
+- count nouns `spoke(s)`/`via(s)`;
+- products and ratios (`/ * · ×`, `per`) and integer powers (`^n`, `²`, `³`).
 
-A length never qualifies a count, a bare or unrelated integer never qualifies a
-count (round-2 H2), and a number never qualifies a length. A citation with no
+Each quantity becomes a fact: a dimension vector and an exact canonical SI value.
+A governed value qualifies only by exact dimension-vector equality and exact
+rational value equality. A declared JSON number is read as its shortest
+round-trip decimal; there is no float tolerance.
+
+So:
+
+- `3 mm/s`, `3 mm^2` and `3 spokes per mm` have other dimensions than a 3 mm
+  length or a count of 3;
+- `1e-3 mm` is 0.001 mm and `-3 mm` is −3 mm;
+- a count needs an unsigned integer literal, with no denominator.
+
+Anything outside the grammar fails the WHOLE quote closed, with the reason
+`quote has a quantity outside the closed grammar: …`. That includes:
+
+- `±` (no tolerance facts exist);
+- ranges;
+- grouped or juxtaposed numerals (`3,000`, `3 000`, `1’3`);
+- an unknown word directly after a numeral (`cm`, `mils`, `mm2`, `yd`,
+  `capacitors`);
+- a unit after a designator (`x-3 mm`);
+- stray punctuation on a numeral.
+
+The lane's regression gate is `tests/test_quantity_matrix.py`, which runs every
+review case through both consumers. A citation with no
 value to bind is advisory (`no declared value to bind to the citation`). The
 governed values are:
 

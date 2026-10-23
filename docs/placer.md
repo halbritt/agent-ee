@@ -1618,8 +1618,10 @@ original numeric transcription records can retain source identities instead.
 
 For `datasheet`, `derivation.kind: numeric` requires `value_nm` equal to
 `max_distance_nm`. The source quote must then state that distance through the
-common exact-unit model, `source_authority.cite` (round-2 H3). That is the same
-qualification as the design-rule import, so `1000 um` states 1 mm in both.
+common closed quantity grammar (`agent_ee.quantity`, through
+`source_authority.cite`). That is the same qualification as the design-rule
+import: `1000 um` states 1 mm in both, and a rate, area or out-of-grammar quote
+states nothing.
 `derivation.source` carries the source reference above. A prose citation such as
 “as close as possible” cannot qualify. A measured recommended/reference layout
 uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a

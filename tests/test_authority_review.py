@@ -21,6 +21,7 @@ from test_scaffold_producer import ProducerFixture
 from toolchain import require_toolchain
 
 SCHEMA = 'fome-mc.constraint-provenance/1'
+OUTSIDE = 'quote has a quantity outside the closed grammar: '
 RULE = b'(version 1)\n(rule "uncited template" (constraint clearance (min 4mm)))\n'
 FINDING = {'type': 'clearance',
            'description': "Clearance violation (rule 'uncited template' min 4.0000 mm; actual 0.1000 mm)"}
@@ -240,8 +241,10 @@ class TypedLiteralTest(unittest.TestCase):
                       'Captured length: 1,3 mm'):
             with self.subTest(quote=quote):
                 setting, rows = self.setting(quote)
-                self.assertEqual((setting['enforcement'], setting['unsourced_reason']),
-                                 ('advisory', 'cited quote does not state the declared value'))
+                # Third-HOLD grammar: an in-grammar mismatch or an out-of-grammar quote, never hard.
+                self.assertEqual(setting['enforcement'], 'advisory')
+                self.assertTrue(setting['unsourced_reason'] == 'cited quote does not state the declared value'
+                                or setting['unsourced_reason'].startswith(OUTSIDE), setting)
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(self.locality(quote, 3000000)['enforcement'], 'advisory')
         for quote in ('Captured length: 3 mm', 'Captured length: 3mm', 'Captured length: +3 mm'):
@@ -284,7 +287,9 @@ class CountFactTest(unittest.TestCase):
             with self.subTest(quote=quote), tempfile.TemporaryDirectory() as root:
                 rule, hard, rows = self.sources(root, quote)
                 self.assertIsNone(rule['citation'])
-                self.assertEqual(rule['unsourced_reason'], 'cited quote does not state the declared value')
+                # Third-HOLD grammar: a non-integer count literal is outside the closed grammar.
+                self.assertTrue(rule['unsourced_reason'] == 'cited quote does not state the declared value'
+                                or rule['unsourced_reason'].startswith(OUTSIDE), rule)
                 self.assertEqual(hard, [])
                 self.assertEqual([r['unsourced_reason'] for r in rows], [rule['unsourced_reason']])
         for quote in ('Captured: 3 thermal spokes', 'Captured: spoke count: 3', 'Captured: 3 spokes'):

@@ -135,71 +135,17 @@ def manufacturer_capture(citation, values_mm=()):
     return {'enforcement': 'hard', 'reason': 'captured manufacturer fact verified by hash'}
 
 
-# A quoted numeric literal (AGENTEE-348 round-2 H1-H3): the COMPLETE run of digits,
-# decimal point, sign, exponent and grouping characters (apostrophes, '_', a space between
-# digits) is one literal, never a suffix of one. It may not start inside a word, another literal or after a sign or operator.
-LITERAL = re.compile("(?<![\\w.,/+\\-\u2212\u00b1'\u2019\u2018\u02bc])(?<![0-9][ \u00a0\u2009\u202f])"
-                     "[+\\-\u2212\u00b1]?[0-9](?:[0-9.,/'\u2019\u2018\u02bc_]|[ \u00a0\u2009\u202f](?=[0-9]))*"
-                     "(?:[eE][+\\-\u2212]?[0-9]+)?")
-DECIMAL = re.compile(r'[+\-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+\-]?[0-9]+)?')
-# Length units a quote may state; each converts exactly to millimetres.
-QUOTE_UNITS = {'mm': Fraction(1), 'nm': Fraction(1, 10 ** 6), 'um': Fraction(1, 1000),
-               'µm': Fraction(1, 1000), 'μm': Fraction(1, 1000), 'mil': Fraction(254, 10000)}
-UNIT = re.compile(r'[ \t]?(mm|nm|um|µm|μm|mil)(?![\w])')
-# Explicit count facts: a dimensionless integer bound to the noun it counts.
-COUNT_NOUNS = {'thermal_spoke_count': ('spoke', 'spokes'), 'via_count': ('via', 'vias')}
-
-
-def numeric_literals(quote):
-    """Typed facts from a quote: ('length', mm) or ('number', value), with their spans.
-
-    A literal is read whole and parsed exactly, sign and exponent included. A literal with
-    a separator, fraction or range character is unsupported and yields no fact.
-    """
-    facts = []
-    for match in LITERAL.finditer(quote):
-        text = match[0].rstrip('.,')
-        end = match.start() + len(text)
-        if DECIMAL.fullmatch(text.replace('−', '-')) is None:
-            continue
-        value = Fraction(text.replace('−', '-'))
-        unit = UNIT.match(quote, end)
-        if unit:
-            facts.append(('length', value * QUOTE_UNITS[unit[1]], match.start(), unit.end()))
-        elif re.match(r'[\wµμ]', quote[end:end + 1]):
-            continue  # a literal run into a word ('3x', '3rd') states nothing
-        elif not re.match(r'[ \t]?[A-Za-zµμ]', quote[end:]) or COUNT_TAIL.match(quote, end):
-            facts.append(('number', value, match.start(), end))
-    return facts
-
-
-COUNT_TAIL = re.compile(r'[ \t]+(?:thermal[ \t]+)?(spokes?|vias?)(?![\w])', re.I)
-COUNT_HEAD = re.compile(r'(spoke|via)[ \t]+count[ \t]*(?:of|is|=|:)?[ \t]*$', re.I)
-
-
-def counted(quote, fact):
-    """The count kind an integer fact explicitly counts, or None."""
-    kind, value, start, end = fact
-    if kind != 'number' or not quote[start:end].isdigit():  # an unsigned integer literal only
-        return None
-    tail, head = COUNT_TAIL.match(quote, end), COUNT_HEAD.search(quote[:start])
-    noun = (tail[1] if tail else head[1] if head else '').lower()
-    return next((count for count, nouns in COUNT_NOUNS.items() if noun in nouns or noun + 's' in nouns), None)
+def governed(values_mm=(), counts=()):
+    """The typed facts a citation must state: lengths in exact mm, counts ``(kind, n)``."""
+    from . import quantity
+    return ([quantity.length_mm(millimetres(v)) for v in values_mm]
+            + [quantity.count(*c) if isinstance(c, tuple) and len(c) == 2 else None for c in counts])
 
 
 def states(quote, values_mm, counts=()):
-    """Every governed value is an explicit typed fact of the quote, compared exactly.
-
-    A length matches only a stated length of equal exact value; a count ``(kind, n)``
-    matches only an integer explicitly counting that kind. A length never qualifies a
-    count, and a number never qualifies a length.
-    """
-    facts = numeric_literals(quote)
-    lengths = {value for kind, value, _, _ in facts if kind == 'length'}
-    stated = {(counted(quote, fact), fact[1]) for fact in facts}
-    return (all(millimetres(v) in lengths for v in values_mm)
-            and all(isinstance(c, tuple) and len(c) == 2 and type(c[1]) is int
-                    and (c[0], Fraction(c[1])) in stated for c in counts))
+    """Every governed value is a fact of the quote under the closed quantity grammar."""
+    from . import quantity
+    return quantity.unqualified(quote, governed(values_mm, counts)) is None
 
 
 def cite(cls, citation, records, values_mm=(), counts=()):
@@ -227,8 +173,13 @@ def cite(cls, citation, records, values_mm=(), counts=()):
         result = {'enforcement': 'hard', 'reason': 'captured source record verified'}
     elif kind != 'owner_decision' and result['enforcement'] == 'advisory':
         result = advisory('captured source record, locator or quote not verified')
-    if result['enforcement'] == 'hard' and not states(citation['quote'], values_mm, counts):
-        return advisory('cited quote does not state the declared value')
+    if result['enforcement'] == 'hard':
+        # One implementation for every consumer: the closed grammar (quantity.py) parses the
+        # complete quote; anything outside it fails closed with its reason (third-HOLD redesign).
+        from . import quantity
+        reason = quantity.unqualified(citation['quote'], governed(values_mm, counts))
+        if reason is not None:
+            return advisory(reason)
     return result
 
 
