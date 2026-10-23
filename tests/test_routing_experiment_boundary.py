@@ -1501,7 +1501,9 @@ def disposable_copy(src, dst):
     external receipt stores are deployed read-only (:ro mounts, a-w byte copies) and copytree keeps
     their modes, so the test could not edit, reseal or remove its own copy. Only entries of dst are
     changed: a symlink is copied as a link and never chmodded or followed, so its target (the
-    original, or external evidence) keeps its mode. The source is never written."""
+    original, or external evidence) keeps its mode. The chmod never follows a link either: one
+    swapped in after the lstat check is refused (NotImplementedError here), not followed. The
+    source is never written."""
     shutil.copytree(src, dst, symlinks=True)
     # os.walk never descends through a link; a linked directory is listed and skipped below.
     entries = [Path(dst)]
@@ -1511,7 +1513,8 @@ def disposable_copy(src, dst):
         info = entry.lstat()
         if stat.S_ISLNK(info.st_mode):
             continue
-        os.chmod(entry, stat.S_IMODE(info.st_mode) | (0o700 if stat.S_ISDIR(info.st_mode) else 0o600))
+        os.chmod(entry, stat.S_IMODE(info.st_mode) | (0o700 if stat.S_ISDIR(info.st_mode) else 0o600),
+                 follow_symlinks=False)
     return dst
 
 
@@ -1559,6 +1562,33 @@ class DisposableCopyTest(unittest.TestCase):
         shutil.rmtree(copy)
         self.assertEqual({path: (stat.S_IMODE(path.lstat().st_mode), path.read_bytes() if path.is_file() else None)
                           for path in read_only}, before)
+
+    def test_a_link_swapped_in_after_the_lstat_check_is_refused_not_followed(self):
+        # Review H1 (ee442-compose-stack): a copied file replaced by a link to a read-only
+        # target between disposable_copy's lstat and its chmod. The chmod must not follow
+        # it: the target keeps 0444, and the copy is refused, never silently made.
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-k91-swap-')
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        store, target = root / 'store', root / 'target.json'
+        store.mkdir()
+        (store / 'snapshot.json').write_text('{}')
+        target.write_text('target')
+        os.chmod(target, 0o444)
+        self.addCleanup(os.chmod, target, 0o644)
+        swapped, real_lstat = root / 'copy/snapshot.json', Path.lstat
+
+        def lstat_then_swap(path, *args, **kwargs):
+            info = real_lstat(path, *args, **kwargs)
+            if path == swapped and not os.path.islink(swapped):
+                os.unlink(swapped)
+                os.symlink(target, swapped)
+            return info
+        with patch.object(Path, 'lstat', lstat_then_swap):
+            with self.assertRaises((NotImplementedError, OSError)):
+                disposable_copy(store, root / 'copy')
+        self.assertTrue(swapped.is_symlink())
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o444)
 
 
 class NativeReceiptCase:
