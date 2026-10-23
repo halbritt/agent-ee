@@ -5,7 +5,11 @@ import unittest
 import test_placer_native as native
 
 
-class SideTransformTest(native.NativePlacerTest):
+class SideTransformTest(unittest.TestCase):
+    # The native placer fixture's setup only; its own tests are not inherited.
+    setUpClass = classmethod(native.NativePlacerTest.setUpClass.__func__)
+    setUp = native.NativePlacerTest.setUp
+
     def plan(self, side=None, fixed_c1=False, ref='C1'):
         import pcbnew as k
         placements = []
