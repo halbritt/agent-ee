@@ -42,24 +42,27 @@ def _locality(text='Original synthetic maximum: 1 mm.', limit=MM, provenance=Non
             'obligations': [{'id': 'distance', 'metric': 'pad-centre-to-centre', **pairs}]}
 
 
-def _captured_block_limits(document):
-    """Keep the authored block limits; cite captured quotes in both processes.
+def _captured_block_limits():
+    """Authored block limits shared by both processes, without owner-table mutation."""
+    limit = 6 * MM
+    text = f'Original synthetic block maximum: {limit} nm.'
+    source = _source(text, 'fixture-sources/block.txt')
 
-    owner_fixture registers test-only Python pins. They are not production
-    authority and must not be transmitted as authority to the Rust process.
-    """
-    document = copy.deepcopy(document)
-    document['source_records'] = {}
-    for obligation in document['obligations']:
-        for role in electrical_locality.roles(obligation):
-            pair = obligation[role]
-            limit = pair['max_distance_nm']
-            text = f'Original synthetic block maximum: {limit} nm.'
-            source = _source(text, f'fixture-sources/block-{limit}.txt')
-            document['source_records'][source['path']] = text
-            pair['provenance'] = {'class': 'datasheet', 'basis': 'Authored block regression limit',
-                'derivation': {'kind': 'numeric', 'value_nm': limit, 'source': source}}
-    return document
+    def pair(a, b, net):
+        return {'from': dict(zip(('reference', 'pad', 'net'), a + (net,))),
+                'to': dict(zip(('reference', 'pad', 'net'), b + (net,))),
+                'max_distance_nm': limit, 'citation': 'Authored block regression distance',
+                'provenance': {'class': 'datasheet', 'basis': 'Authored block regression limit',
+                    'derivation': {'kind': 'numeric', 'value_nm': limit, 'source': source}}}
+
+    return {'schema': electrical_locality.SCHEMA, 'source_records': {source['path']: text}, 'obligations': [
+        {'id': 'input-C1', 'metric': 'pad-centre-to-centre', 'supply': pair(('U1', '1'), ('C1', '1'), 'VIN'),
+         'return': pair(('U1', '2'), ('C1', '2'), 'GND')},
+        {'id': 'output-C3', 'metric': 'pad-centre-to-centre', 'kind': 'buck-output-loop', 'ic': 'U1',
+         'inductor': 'L1', 'return_net': 'GND', 'supply': pair(('L1', '2'), ('C3', '1'), 'VOUT'),
+         'return': pair(('U1', '2'), ('C3', '2'), 'GND'), 'switch': pair(('U1', '3'), ('L1', '1'), 'SW')},
+        {'id': 'cross-C2', 'metric': 'pad-centre-to-centre', 'supply': pair(('U1', '4'), ('C2', '1'), 'VOUT'),
+         'return': pair(('U1', '2'), ('C2', '2'), 'GND')}]}
 
 
 class EngineFixture:
@@ -266,11 +269,11 @@ class WholePlannerParityTest(EngineFixture, unittest.TestCase):
         self.assertIn('gap', plan['error'])
 
     def test_block_admission_arrangement_residual_and_bound_source_refusal(self):
-        from test_blocks import board, native_xml, obligations
+        from test_blocks import board, native_xml
         from test_block_arrangement import plan_policy, CITE
         facts, raw = board(), native_xml()
         policy = request(fixed_refs=['H1'], step_budget=20000, gap_nm=250000,
-                         electrical_locality=_captured_block_limits(obligations()))
+                         electrical_locality=_captured_block_limits())
         with tempfile.TemporaryDirectory(prefix='agent-ee-block-parity-') as directory:
             path = Path(directory) / 'native.xml'
             path.write_bytes(raw)
