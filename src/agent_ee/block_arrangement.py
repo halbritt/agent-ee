@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import advisory_regions, blocks, electrical_locality, placement_groups, placement_trace, placer
+from . import advisory_regions, blocks, block_variants, block_contract, electrical_locality, placement_groups, placement_trace, placer
 from .catalog import strict_json
 from .footprint_library import digest
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -40,7 +40,7 @@ PROVENANCE_AUTHORITY = ('review input only: each placed block keeps its candidat
 DEFAULT_OBJECTIVE = {'terms': list(TERMS), 'provenance': {
     'enforcement': 'advisory', 'reason': 'default lexicographic order; no sourced objective weights'}}
 POLICY_KEYS = frozenset(('schema', 'step_budget', 'search_timeout_s', 'priority_blocks', 'objective', 'thermal',
-                         'keepouts', 'no_stacking', 'no_block_over_fixed'))
+                         'keepouts', 'no_stacking', 'no_block_over_fixed', 'side_choice', 'refinement'))
 
 
 def _provenance(value, label):
@@ -81,6 +81,12 @@ def validate_policy(document, block_ids, refs):
                  label='arrangement policy')
     if type(document['step_budget']) is not int or not 1 <= document['step_budget'] <= 1_000_000:
         raise ValueError('arrangement step budget must be 1..1000000')
+    if type(document.get('side_choice', True)) is not bool:
+        raise ValueError('side_choice must be a boolean')
+    if 'refinement' in document:
+        refinement = blocks._keys(document['refinement'], {'step_budget'}, label='refinement')
+        if type(refinement['step_budget']) is not int or not 0 <= refinement['step_budget'] <= 1_000_000:
+            raise ValueError('refinement step_budget must be 0..1000000')
     timeout = document.get('search_timeout_s')
     if 'search_timeout_s' in document and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                                            or not 0 < timeout <= 86400):
@@ -271,6 +277,48 @@ def admit_entry(entry, capture, inventory, derivation, policy):
     return {'block': block['id'], 'anchor': mapping[document['frame']['anchor']], 'poses': poses,
             'mapping': mapping, 'mapped': 'mapping' in entry, 'binding': binding['roles'],
             'candidate_sha256': digest(document), 'provenance': document['provenance'], 'deferred': deferred}, []
+
+
+
+def _admit_set(entry, capture, inventory, derivation, policy, eligibility):
+    """Admit each native face, preserving its own captured geometry and identities."""
+    blocks._keys(entry, {'candidate'}, set(), label='native arrangement candidate')
+    document = entry['candidate']
+    block_variants.validate(document, capture, inventory, derivation, policy, eligibility)
+    variants, problems = {}, []
+    for face in ('F', 'B'):
+        native = document['variants'].get(face)
+        if native is None or native['status'] != 'packed':
+            continue
+        result, found = admit_entry({'candidate': native['candidate']}, native['capture'], inventory,
+                                   native['derivation'], policy)
+        if found:
+            problems.append({'face': face, 'problems': found})
+        else:
+            result['capture'] = native['capture']
+            result['selected_face'] = face
+            variants[face] = result
+    if problems or not variants:
+        return None, problems or [{'kind': 'no_packed_native_variant'}]
+    result = dict(next(iter(variants.values())))
+    result.update(variants=variants, candidate_set_sha256=digest(document))
+    return result, []
+
+
+def _block_record(bid, entry, *, selected=False):
+    return {'block': bid, 'provenance': entry['provenance'],
+            'candidate_sha256': entry['candidate_sha256'], 'anchor': entry['anchor'],
+            'references': sorted(entry['poses'], key=blocks._natural), 'boundary': entry['binding'],
+            'deferred': entry['deferred'],
+            **({'mapping': dict(sorted(entry['mapping'].items(), key=lambda item: blocks._natural(item[0])))}
+               if entry['mapped'] else {}),
+            **({key: entry[key] for key in ('candidate_set_sha256', 'selected_face')}
+               if selected and 'candidate_set_sha256' in entry else {})}
+
+
+def _arranged_rows(search):
+    return [{key: p[key] for key in ('block', 'position_nm', 'rotation_deg', 'selected_face') if key in p}
+            for p in search.placed_blocks]
 
 
 def _opposite(side):
@@ -598,12 +646,17 @@ class _Arrangement:
         # Incremental ranking cache (AGENTEE-355): rotation-only geometry per (block, rotation),
         # and blocked rectangles per (block, rotation, placed owner, owner pose).
         self.static, self.owned, self.geometry = {}, collections.OrderedDict(), {}
+        self.faces = {}
         for bid, entry in admitted.items():
-            members = [placer.transform(self.by_ref[r], entry['poses'][r]['position_nm'],
-                                        entry['poses'][r]['rotation_deg'])
-                       for r in sorted(entry['poses'], key=blocks._natural)]
-            self.frames[bid] = members
-            self.macros[bid] = _macro(bid, members)
+            variants = entry.get('variants', {None: entry})
+            self.faces[bid] = list(variants)
+            for face, variant in variants.items():
+                source = variant.get('qualified', self.by_ref)
+                members = [placer.transform(source[r], variant['poses'][r]['position_nm'],
+                                            variant['poses'][r]['rotation_deg'])
+                           for r in sorted(variant['poses'], key=blocks._natural)]
+                self.frames[bid, face] = members
+                self.macros[bid, face] = _macro(bid, members)
         groups = placement_groups.validate(policy['groups']) if 'groups' in policy else []
         self.groups = placement_groups.membership(groups)
         self.anchored = {}
@@ -650,20 +703,20 @@ class _Arrangement:
             if pad.get('net'):
                 self.peers.setdefault(pad['net'], []).append(tuple(pad['position_nm']))
 
-    def members_at(self, bid, position, rotation):
+    def members_at(self, bid, position, rotation, face=None):
         turns = rotation // 90
         members = [placer.transform(fp, [position[0] + p[0], position[1] + p[1]],
                                     (fp['rotation_deg'] + rotation) % 360)
-                   for fp in self.frames[bid] for p in [placer.rotate(fp['position_nm'], turns)]]
+                   for fp in self.frames[bid, face] for p in [placer.rotate(fp['position_nm'], turns)]]
         for fp in members:
             placer._cache_copper_extent(fp)
         return members
 
-    def push(self, bid, position, rotation, proposed):
-        members = self.members_at(bid, position, rotation)
+    def push(self, bid, position, rotation, proposed, face=None):
+        members = self.members_at(bid, position, rotation, face)
         self.placed_blocks.append({'block': bid, 'position_nm': list(position), 'rotation_deg': rotation,
-                                   'members': members})
-        geometry = {'pose': (position[0], position[1], rotation), 'boxes': [], 'slabs': [], 'holes': [],
+                                   'members': members, **({'selected_face': face} if face is not None else {})})
+        geometry = {'pose': (position[0], position[1], rotation, face), 'boxes': [], 'slabs': [], 'holes': [],
                     'shaded': []}
         self.geometry[bid] = geometry
         for fp in members:
@@ -729,15 +782,15 @@ class _Arrangement:
                 points += [(p[0] - fp['position_nm'][0], p[1] - fp['position_nm'][1]) for p in poly]
         return points
 
-    def rotated_static(self, bid, rotation):
+    def rotated_static(self, bid, rotation, face=None):
         """Geometry of a block turned at the origin; it depends on nothing placed (cached)."""
-        key = (bid, rotation)
+        key = (bid, rotation, face)
         if key not in self.static:
-            members = self.members_at(bid, [0, 0], rotation)
+            members = self.members_at(bid, [0, 0], rotation, face)
             boxes = [(side, box) for fp in members for side, box in sorted(placer.boxes(fp).items())]
             slabs = [(side, slab) for fp in members for side, c in sorted(fp['courtyards'].items())
                      for poly in c['polygons'] for slab in placer._slabs(poly) or ()]
-            at_origin = placer.transform(self.macros[bid], [0, 0], rotation)
+            at_origin = placer.transform(self.macros[bid, face], [0, 0], rotation)
             holes = [('*', square) for _, poly in at_origin.get('_packing_holes', ()) for square in [_inscribed(poly)]
                      if square]
             shadows = [(shadow['side'], placer.boxes({'courtyards': {shadow['side']: shadow}})[shadow['side']])
@@ -754,14 +807,14 @@ class _Arrangement:
                                          max(b[2] for _, b in boxes), max(b[3] for _, b in boxes))}
         return self.static[key]
 
-    def entries(self, bid, rotation, owner):
+    def entries(self, bid, rotation, owner, face=None):
         """Blocked rectangles of a block turned at the origin against one placed block (cached)."""
         placed = self.geometry[owner]
-        key = (bid, rotation, owner, placed['pose'])
+        key = (bid, rotation, face, owner, placed['pose'])
         if key in self.owned:
             self.owned.move_to_end(key)
             return self.owned[key]
-        own = self.rotated_static(bid, rotation)
+        own = self.rotated_static(bid, rotation, face)
         entries = (_gapped(own['boxes'], placed['boxes'] + placed['shaded'], self.gap, owner)
                    + _gapped(own['shadows'], placed['boxes'], self.gap, owner)
                    + _gapped(own['holes'], placed['slabs'], 0, owner)
@@ -773,9 +826,17 @@ class _Arrangement:
         return entries
 
     def ranked(self, bid, conflicts):
+        ranked = [row for face in self.faces[bid]
+                  if self.arrangement.get('side_choice', True) or all(
+                      fp['side'] == self.by_ref[fp['ref']]['side'] for fp in self.frames[bid, face])
+                  for row in self._ranked_face(bid, conflicts, face)]
+        ranked.sort()
+        return ranked
+
+    def _ranked_face(self, bid, conflicts, face):
         """Admissible-by-box candidates in rank order; box blockers join ``conflicts``."""
         self.checkpoint()
-        macro = self.macros[bid]
+        macro = self.macros[bid, face]
         anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
         anchors += self.solid
         anchors += placer._keepout_boxes(self.keepouts + [a for f in self.placed_fps for a in f.get('packing_keepouts', [])])
@@ -783,9 +844,9 @@ class _Arrangement:
         lo_x, lo_y, hi_x, hi_y = window['box']
         ranked = []
         for rotation in (0, 90, 180, 270):
-            own = self.rotated_static(bid, rotation)
+            own = self.rotated_static(bid, rotation, face)
             members, at_origin = own['members'], own['at_origin']
-            self.rotated[bid, rotation] = at_origin, members
+            self.rotated[bid, rotation, face] = at_origin, members
             evaluator = self._locality(members)
             targets = evaluator.targets() + self._group_targets(members)
             access_overhang = any(placer.access_direction.overhangs_courtyard(fp) for fp in members)
@@ -807,7 +868,7 @@ class _Arrangement:
             cx, cy = _copper_axes(members, self.outline, own['bbox'], window['box'])
             xs, ys = sorted(set(xs) | cx), sorted(set(ys) | cy)
             entries = own['entries'] + [e for placed in self.placed_blocks for e in self.entries(
-                bid, rotation, placed['block'])]
+                bid, rotation, placed['block'], face)]
             # One term per net shared with placed parts: the block's pad centroid on that net.
             on_net = {}
             for fp in members:
@@ -839,7 +900,8 @@ class _Arrangement:
                           'thermal-spread': -min((((sx + x - a) ** 2 + (sy + y - b) ** 2) for sx, sy in sources
                                                   for a, b in placed_sources), default=0)}
                 values['pad-locality'] = local_cost
-                ranked.append((*(values[t] for t in self.terms), x, y, rotation, (x, y) in doomed))
+                ranked.append((*(values[t] for t in self.terms), x, y, rotation,
+                               self.faces[bid].index(face), (x, y) in doomed))
             self.checkpoint()
         ranked.sort()
         return ranked
@@ -883,6 +945,9 @@ class _Arrangement:
             if fp['ref'] in self.stacking:
                 shadow = _shadow(fp, self.stack_margin)
                 own = {'courtyards': {shadow['side']: {'polygons': shadow['polygons']}}}
+                if self.faces[bid] != [None] and any(peer is not fp and placer._near(
+                        peer, [placer._exact(shadow['side'], shadow['polygons'])], self.gap) for peer in members):
+                    return 'no_stacking', set()
                 if placer._near(own, self.fixed_courtyards, self.gap):
                     return 'no_stacking', set()
                 hits |= {owner for owner, entry in self.member_exact if placer._near(own, [entry], self.gap)}
@@ -908,19 +973,20 @@ class _Arrangement:
 
     def candidates(self, bid, conflicts):
         """Proposed macros in rank order; rejections add their blocking blocks to ``conflicts``."""
-        for *_, x, y, rotation, doomed in self.ranked(bid, conflicts):
+        for *_, x, y, rotation, face_index, doomed in self.ranked(bid, conflicts):
             self.checkpoint()
             if self.steps == self.budget:
                 raise _Stopped('arrangement_budget_exhausted', 'deterministic arrangement candidate budget exhausted')
             self.steps += 1
             if doomed:
                 continue
-            at_origin, members = self.rotated[bid, rotation]
+            face = self.faces[bid][face_index]
+            at_origin, members = self.rotated[bid, rotation, face]
             proposed = _shift(at_origin, x, y)
             members = [_shift(fp, x, y) for fp in members]
             hit = self.blockers(bid, proposed, members)
             if hit is None:
-                yield [x, y], rotation, proposed
+                yield [x, y], rotation, proposed, face
             else:
                 self.rejected[hit[0]] = self.rejected.get(hit[0], 0) + 1
                 conflicts |= hit[1]
@@ -1040,12 +1106,18 @@ def _deferred_grading(plan, admitted):
         for gid in deferred['groups']:
             measured = [m for m in groups.get('measured', []) if m.get('group') == gid]
             bad = [d for d in placement_groups.violations(groups) if d.get('group') == gid]
-            out.append({'block': bid, 'kind': 'group', 'id': gid, 'measured': len(measured),
-                        'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
+            # The group judge emits distance rows only for anchored groups. A
+            # region-only group still evaluated every declared member; failures
+            # and missing geometry remain in the same violations collection.
+            count = len(measured) or sum(len(g['references']) for g in groups.get('groups', [])
+                                        if g['id'] == gid and 'region' in g)
+            out.append({'block': bid, 'kind': 'group', 'id': gid, 'measured': count,
+                        'status': 'pass' if count and not bad else 'defect' if bad else 'unknown'})
     return out
 
 
-def arrange(capture, inventory, derivation, policy, arrangement, entries, *, heartbeat=None, effective_policy=None):
+def arrange(capture, inventory, derivation, policy, arrangement, entries, *, heartbeat=None, effective_policy=None,
+            side_eligibility=None, contract=None):
     """Arrange every derived block, pack the residual parts, grade the complete plan.
 
     ``policy`` is the captured packing policy the candidates were packed and are
@@ -1058,16 +1130,16 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     trace = placement_trace.active()
     if trace is None:
         return _arrange(capture, inventory, derivation, policy, arrangement, entries, heartbeat=heartbeat,
-                        effective_policy=effective_policy)
+                        effective_policy=effective_policy, side_eligibility=side_eligibility, contract=contract)
     started = placement_trace.now()
     try:
         return _arrange(capture, inventory, derivation, policy, arrangement, entries, heartbeat=heartbeat,
-                        effective_policy=effective_policy)
+                        effective_policy=effective_policy, side_eligibility=side_eligibility, contract=contract)
     finally:
         trace.add('stage_b.arrange', placement_trace.now() - started)
 
 
-def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, heartbeat, effective_policy):
+def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, heartbeat, effective_policy, side_eligibility, contract):
     effective = policy if effective_policy is None else effective_policy
     refs = {fp['ref'] for fp in capture['footprints']}
     placer._validate_policy(policy, refs)
@@ -1086,9 +1158,26 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
                 'block_arrangement': {**record, **extra}}
     if not isinstance(entries, list):
         raise ValueError('arrangement candidates must be a list')
+    has_sets = any(isinstance(entry, dict) and isinstance(entry.get('candidate'), dict)
+                   and entry['candidate'].get('schema') == block_variants.SCHEMA for entry in entries)
+    if 'refinement' in arrangement and not has_sets:
+        raise ValueError('member refinement requires native candidate sets')
+    if has_sets:
+        roles, _, _ = block_contract._contract(capture, contract)
+        if contract['eligibility'] != side_eligibility:
+            raise ValueError('block contract and request side eligibility differ')
+        expected_relationships = policy.get('electrical_locality', {'schema': electrical_locality.SCHEMA, 'obligations': []})
+        if contract['relationships'] != expected_relationships:
+            raise ValueError('block contract relationships differ from the captured policy')
+        declared = {b['id']: set(b['references']) for b in roles['blocks']}
+        derived = {b['id']: set(b['references']) for b in derivation['blocks']}
+        if declared != derived:
+            raise ValueError('block contract allocation differs from explicit block derivation')
     admitted, problems = {}, []
     for index, entry in enumerate(entries):
-        result, found = admit_entry(entry, capture, inventory, derivation, policy)
+        is_set = isinstance(entry, dict) and isinstance(entry.get('candidate'), dict) and entry['candidate'].get('schema') == block_variants.SCHEMA
+        result, found = (_admit_set(entry, capture, inventory, derivation, policy, side_eligibility) if is_set
+                         else admit_entry(entry, capture, inventory, derivation, policy))
         if found:
             problems.append({'candidate': index, 'block': entry['candidate'].get('block_id'), 'problems': found})
         elif result['block'] in admitted:
@@ -1100,15 +1189,7 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         problems.append({'kind': 'block_candidate_missing', 'blocks': missing})
     if problems:
         return failure('arrangement_refused', 'block candidates not admitted for arrangement', problems=problems)
-    record['blocks'] = [{'block': b, 'provenance': admitted[b]['provenance'],
-                         'candidate_sha256': admitted[b]['candidate_sha256'], 'anchor': admitted[b]['anchor'],
-                         'references': sorted(admitted[b]['poses'], key=blocks._natural),
-                         'boundary': admitted[b]['binding'],
-                         'deferred': admitted[b]['deferred'],
-                         # A library or reused layout keeps its source-to-board reference mapping.
-                         **({'mapping': dict(sorted(admitted[b]['mapping'].items(),
-                                                    key=lambda item: blocks._natural(item[0])))}
-                            if admitted[b]['mapped'] else {})} for b in block_ids]
+    record['blocks'] = [_block_record(b, admitted[b]) for b in block_ids]
     locality = effective.get('electrical_locality')
     if locality and electrical_locality.grade(capture, locality)['unknown']:
         return failure('electrical_locality_unavailable', 'pad locality needs unambiguous native pads, limits and citations')
@@ -1121,6 +1202,15 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         labels, pad_keepouts = {}, []
         keepouts = placer._keepouts(work, labels, pad_keepouts)
         bands = overhang_bands(effective.get('fixed_overhangs', []), outline)
+        for entry in admitted.values():
+            for variant in entry.get('variants', {}).values():
+                native = copy.deepcopy(variant['capture'])
+                placer._qualified(native)
+                placer._keepouts(native)
+                for fp in native['footprints']:
+                    if placer.access_direction.hard(fp):
+                        placer.access_direction.geometry(fp)
+                variant['qualified'] = {fp['ref']: fp for fp in native['footprints']}
     except ValueError as exc:
         return failure('unsupported_geometry', str(exc))
     by_ref = {fp['ref']: fp for fp in work['footprints']}
@@ -1142,6 +1232,8 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         obstacles += [_obstacle(stacking, _shadow(by_ref[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
                       for r in stacking['references'] if r in fixed]
         for bid, entry in admitted.items():
+            if 'variants' in entry:
+                continue  # Each native face is checked in blockers, retaining other legal faces.
             frame = [placer.transform(by_ref[r], entry['poses'][r]['position_nm'], entry['poses'][r]['rotation_deg'])
                      for r in entry['poses']]
             for fp in frame:
@@ -1192,119 +1284,238 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         trace.counters['stage_b.arrangements'] += 1
         searching = placement_trace.now()
 
+    traced_steps = 0
+
     def searched():
+        nonlocal searching, traced_steps
         # Stage-B block search time and steps (AGENTEE-430); residual packing is traced as Stage A.
         if trace is not None:
             trace.add('stage_b.search', placement_trace.now() - searching)
-            trace.counters['stage_b.steps'] += search.steps
+            trace.counters['stage_b.steps'] += search.steps - traced_steps
+            traced_steps = search.steps
+            searching = placement_trace.now()
 
     def stopped(status, reason, unplaced=None):
         searched()
         if search.access_rejections:
             reason += '; access direction rejected poses for ' + ', '.join(sorted(search.access_rejections))
-        partial = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
-                   for p in search.placed_blocks]
-        return failure(status, reason, search.steps, search={
+        partial = _arranged_rows(search)
+        return failure(status, reason, search.steps + residual_used, search={
             'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget, 'backjumps': backjumps,
             'placed_peak': peak, 'rejected': dict(sorted(search.rejected.items())),
             **({'access_rejections': dict(sorted(search.access_rejections.items()))} if search.access_rejections else {}),
             **({'unplaced': unplaced} if unplaced else {}),
             'partial': {'authority': 'diagnostic-only-unvalidated-partial-arrangement', 'blocks': partial}})
-    try:
-        while len(search.placed_blocks) < len(order):
-            i = len(search.placed_blocks)
-            if len(levels) == i:
-                conflicts = set()
-                levels.append({'block': order[i], 'conflicts': conflicts,
-                               'candidates': search.candidates(order[i], conflicts)})
-            level = levels[i]
-            search.current = level['block']
-            found = next(level['candidates'], None)
-            if found is not None:
-                search.push(level['block'], found[0], found[1], found[2])
-                peak = max(peak, len(search.placed_blocks))
-                continue
-            index = {p['block']: k for k, p in enumerate(search.placed_blocks)}
-            culprits = sorted({index[b] for b in level['conflicts'] if b in index}, reverse=True)
-            if not culprits:
-                return stopped('arrangement_search_exhausted',
-                               f"no candidate for block {level['block']} in the finite search; infeasibility unproved",
-                               level['block'])
-            j = culprits[0]
-            if backjumps == search.budget:
-                return stopped('arrangement_budget_exhausted', 'deterministic backjump budget exhausted',
-                               level['block'])
-            backjumps += 1
-            search.backjumps = backjumps
-            while len(search.placed_blocks) > j:
-                search.pop()
-            levels[j]['conflicts'] |= level['conflicts'] - {levels[j]['block']}
-            del levels[j + 1:]
-    except _Stopped as stop:
-        return stopped(stop.status, stop.reason, order[len(search.placed_blocks)])
-    except electrical_locality.TargetBudgetExhausted:
-        return stopped('arrangement_budget_exhausted', 'locality target budget exhausted',
-                       order[len(search.placed_blocks)])
-    except BaseException:
-        searched()  # A raising search still accounts its traced time (AGENTEE-430).
-        raise
-    searched()
-    elapsed = time.monotonic() - search.started
-    poses = {fp['ref']: fp for p in search.placed_blocks for fp in p['members']}
-    record['search'] = {'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget,
-                        'backjumps': backjumps, 'rejected': dict(sorted(search.rejected.items())), 'elapsed_s': elapsed}
-    record['arranged'] = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
-                          for p in search.placed_blocks]
-    # Residual packing: the unchanged placer with every block member fixed at its arranged pose.
-    residual_capture = copy.deepcopy(capture)
-    residual_capture['footprints'] = [
-        _strip(placer.transform(fp, poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg']))
-        if fp['ref'] in poses else fp for fp in residual_capture['footprints']]
-    # An arranged member's own rule areas move with it, exactly once from the source pose,
-    # so residual packing and its final land check bind them where the member stands (ruling 418b).
-    sources = {fp['uuid']: fp for fp in capture['footprints'] if fp['ref'] in poses}
-    try:
-        for area in residual_capture.get('rule_areas', []):
-            if area.get('owner') in sources:
-                fp = sources[area['owner']]
-                pose = poses[fp['ref']]
-                area['outline'] = placer.transform(
-                    {'position_nm': fp['position_nm'], 'rotation_deg': fp['rotation_deg'], 'pads': [],
-                     'courtyards': {'zone': area['outline']}},
-                    list(pose['position_nm']), pose['rotation_deg'])['courtyards']['zone']
-    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
-        return failure('unsupported_geometry', 'an arranged member rule area cannot be moved to its pose')
-    residual_policy = {**copy.deepcopy(effective), 'obstacles': obstacles + [
-        _obstacle(stacking, _shadow(poses[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
-        for r in (stacking['references'] if _hard(stacking) else ()) if r in poses]}
-    residual_policy['fixed_refs'] = sorted(set(effective['fixed_refs']) | members, key=blocks._natural)
-    record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
-                          'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
-    # Block members are re-posed, so only parts unchanged from the capture stay seed facts.
-    # Members at exactly their admitted poses passed the arrangement copper gate (ruling 371d).
-    plan = placer._pack_gated(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture, arranged=poses)
-    if plan['status'] != 'planned':
-        return {**plan, 'block_arrangement': record}
-    plan['placements'] = [{**p, 'fixed': p['ref'] in fixed} for p in plan['placements']]
-    complete = {**capture, 'footprints': [
-        placer.transform(fp, *next(([p['position_nm'], p['rotation_deg']] for p in plan['placements']
-                                    if p['ref'] == fp['ref'])))
-        for fp in copy.deepcopy(capture['footprints'])]}
-    rows = grade_rules(complete, arrangement, {r: search.owner[r] for r in members}, fixed)
-    record['rules'] = rows
-    if 'advisory_regions' in effective:
-        # The residual pass graded members as fixed; report the complete plan's own fixed parts.
-        plan['advisory_regions'] = advisory_regions.grade(complete, effective['advisory_regions'], fixed)
-    record['deferred_grading'] = _deferred_grading(plan, admitted)
-    record['residual']['steps_used'] = plan['steps_used']
-    plan['steps_used'] += search.steps
-    plan['policy'] = copy.deepcopy(effective)
-    plan['block_arrangement'] = record
-    failed = [r for r in rows if r['enforcement'] == 'hard' and r['status'] != 'pass']
-    if failed or any(d['status'] not in ('pass', 'info') for d in record['deferred_grading']):
-        return failure('judge_rejected', 'complete plan failed a hard block rule or a deferred obligation',
-                       plan['steps_used'])
-    return plan
+    def finish():
+        nonlocal residual_used
+        elapsed = time.monotonic() - search.started
+        poses = {fp['ref']: fp for p in search.placed_blocks for fp in p['members']}
+        selected = {bid: admitted[bid].get('variants', {}).get(
+            placed.get('selected_face'), admitted[bid]) for placed in search.placed_blocks for bid in [placed['block']]}
+        if has_sets:
+            record['blocks'] = [_block_record(b, {**selected[b], **({'candidate_set_sha256': admitted[b]['candidate_set_sha256']}
+                                 if 'candidate_set_sha256' in admitted[b] else {})}, selected=True) for b in block_ids]
+        record['search'] = {'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget,
+                            'backjumps': backjumps, 'rejected': dict(sorted(search.rejected.items())), 'elapsed_s': elapsed}
+        record['arranged'] = _arranged_rows(search)
+        # Residual packing: the unchanged placer with every block member fixed at its arranged pose.
+        residual_capture = copy.deepcopy(capture)
+        if has_sets:
+            native_members = {fp['ref']: fp for entry in selected.values() if 'capture' in entry
+                              for fp in entry['capture']['footprints'] if fp['ref'] in entry['poses']}
+            residual_capture['footprints'] = [copy.deepcopy(native_members.get(fp['ref'], fp))
+                                               for fp in residual_capture['footprints']]
+            native_areas = {area['uuid']: area for entry in selected.values() if 'capture' in entry
+                            for area in entry['capture'].get('rule_areas', [])
+                            if area.get('owner') in {fp['uuid'] for fp in entry['capture']['footprints']
+                                                     if fp['ref'] in entry['poses']}}
+            residual_capture['rule_areas'] = [copy.deepcopy(native_areas.get(area['uuid'], area))
+                                              for area in residual_capture.get('rule_areas', [])]
+        native_sources = {fp['uuid']: copy.deepcopy(fp) for fp in residual_capture['footprints'] if fp['ref'] in poses}
+        residual_capture['footprints'] = [
+            _strip(placer.transform(fp, poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg']))
+            if fp['ref'] in poses else fp for fp in residual_capture['footprints']]
+        # An arranged member's own rule areas move with it, exactly once from the source pose,
+        # so residual packing and its final land check bind them where the member stands (ruling 418b).
+        sources = native_sources
+        try:
+            for area in residual_capture.get('rule_areas', []):
+                if area.get('owner') in sources:
+                    fp = sources[area['owner']]
+                    pose = poses[fp['ref']]
+                    area['outline'] = placer.transform(
+                        {'position_nm': fp['position_nm'], 'rotation_deg': fp['rotation_deg'], 'pads': [],
+                         'courtyards': {'zone': area['outline']}},
+                        list(pose['position_nm']), pose['rotation_deg'])['courtyards']['zone']
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            return failure('unsupported_geometry', 'an arranged member rule area cannot be moved to its pose')
+        residual_policy = {**copy.deepcopy(effective), 'obstacles': obstacles + [
+            _obstacle(stacking, _shadow(poses[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
+            for r in (stacking['references'] if _hard(stacking) else ()) if r in poses]}
+        residual_policy['fixed_refs'] = sorted(set(effective['fixed_refs']) | members, key=blocks._natural)
+        if has_sets:
+            residual_policy['step_budget'] = effective['step_budget'] - residual_used
+        record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
+                              'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
+        # Block members are re-posed, so only parts unchanged from the capture stay seed facts.
+        # Members at exactly their admitted poses passed the arrangement copper gate (ruling 371d).
+        plan = placer._pack_gated(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture, arranged=poses)
+        if has_sets:
+            residual_used += max(0 if plan['status'] == 'planned' else 1, plan['steps_used'])
+            record['residual_budget'] = {'step_budget': effective['step_budget'], 'steps_used': residual_used}
+        if plan['status'] != 'planned':
+            return {**plan, 'block_arrangement': record}
+        plan['placements'] = [{**p, 'fixed': p['ref'] in fixed,
+                               **({'side': poses[p['ref']]['side']} if has_sets and p['ref'] in poses else {})}
+                              for p in plan['placements']]
+        complete = {**(residual_capture if has_sets else capture), 'footprints': [
+            placer.transform(fp, *next(([p['position_nm'], p['rotation_deg']] for p in plan['placements']
+                                        if p['ref'] == fp['ref'])))
+            for fp in copy.deepcopy((residual_capture if has_sets else capture)['footprints'])]}
+        if has_sets:
+            complete['rule_areas'] = copy.deepcopy(residual_capture.get('rule_areas', []))
+            source_owners = {fp['uuid']: fp for fp in residual_capture['footprints']}
+            final_owners = {fp['uuid']: fp for fp in complete['footprints']}
+            for area in complete['rule_areas']:
+                if area.get('owner') in source_owners:
+                    source_fp, final_fp = source_owners[area['owner']], final_owners[area['owner']]
+                    area['outline'] = placer.transform(
+                        {'position_nm': source_fp['position_nm'], 'rotation_deg': source_fp['rotation_deg'],
+                         'pads': [], 'courtyards': {'zone': area['outline']}},
+                        final_fp['position_nm'], final_fp['rotation_deg'])['courtyards']['zone']
+        if contract is not None:
+            record['contract_check'] = block_contract.check_complete(complete, contract)
+            if record['contract_check']['status'] == 'unknown':
+                return failure('block_contract_unavailable', 'complete plan has unresolved required block constraints',
+                               search.steps + residual_used)
+            if record['contract_check']['status'] != 'pass':
+                if not has_sets or not search.placed_blocks:
+                    return failure('judge_rejected', 'complete plan failed block constraints',
+                                   search.steps + residual_used)
+                if plan['steps_used'] == 0:
+                    residual_used += 1
+                record['residual_budget']['steps_used'] = residual_used
+                record.setdefault('contract_failures', []).append({'arranged': copy.deepcopy(record['arranged']),
+                                                                  'check': copy.deepcopy(record['contract_check'])})
+                return {**plan, 'status': 'block_contract_rejected', 'block_arrangement': record}
+        refinement_steps = 0
+        if has_sets:
+            from .block_refinement import refine
+            complete, witness = refine(complete, effective, contract, record,
+                                       step_budget=arrangement.get('refinement', {}).get('step_budget', 64))
+            record['member_refinement'] = witness
+            record['routing_feedback'] = {'status': 'unavailable',
+                                          'reason': 'routing feedback has not been implemented'}
+            refinement_steps = witness['steps_used']
+            final = {fp['ref']: fp for fp in complete['footprints']}
+            plan['placements'] = [{**p, **{key: final[p['ref']][key]
+                                           for key in ('position_nm', 'rotation_deg', 'side')}}
+                                  for p in plan['placements']]
+            plan['judgment'] = placer.judge(complete, overhangs=effective.get('fixed_overhangs'))
+            plan['judgment']['basis'] = 'transformed-proposal-not-native'
+            if 'groups' in effective:
+                plan['group_grading'] = placement_groups.grade(complete, effective['groups'])
+            if 'electrical_locality' in effective:
+                plan['locality_grading'] = electrical_locality.grade(complete, effective['electrical_locality'])
+            record['contract_check'] = block_contract.check_complete(complete, contract)
+        rows = grade_rules(complete, arrangement, {r: search.owner[r] for r in members}, fixed)
+        record['rules'] = rows
+        if 'advisory_regions' in effective:
+            # The residual pass graded members as fixed; report the complete plan's own fixed parts.
+            plan['advisory_regions'] = advisory_regions.grade(complete, effective['advisory_regions'], fixed)
+        record['deferred_grading'] = _deferred_grading(plan, selected)
+        record['residual']['steps_used'] = plan['steps_used']
+        plan['steps_used'] = search.steps + (residual_used if has_sets else plan['steps_used']) + refinement_steps
+        plan['policy'] = copy.deepcopy(effective)
+        plan['block_arrangement'] = record
+        failed = [r for r in rows if r['enforcement'] == 'hard' and r['status'] != 'pass']
+        if (failed or any(d['status'] not in ('pass', 'info') for d in record['deferred_grading'])
+                or has_sets and (plan['judgment']['verdict'] != 'pass'
+                    or 'group_grading' in plan and not placement_groups.satisfied(plan['group_grading'])
+                    or plan.get('locality_grading', {}).get('status', 'pass') not in ('pass', 'info')
+                    or record['contract_check']['status'] != 'pass')):
+            return failure('judge_rejected', 'complete plan failed a hard block rule or a deferred obligation',
+                           plan['steps_used'])
+        return plan
+
+    residual_used = 0
+    previous_failure = None
+    if has_sets:
+        record.update(adjustments=[], residual_failures=[])
+    while True:
+        try:
+            while len(search.placed_blocks) < len(order):
+                i = len(search.placed_blocks)
+                if len(levels) == i:
+                    conflicts = set()
+                    levels.append({'block': order[i], 'conflicts': conflicts,
+                                   'candidates': search.candidates(order[i], conflicts)})
+                level = levels[i]
+                search.current = level['block']
+                found = next(level['candidates'], None)
+                if found is not None:
+                    search.push(level['block'], found[0], found[1], found[2], found[3])
+                    peak = max(peak, len(search.placed_blocks))
+                    continue
+                index = {p['block']: k for k, p in enumerate(search.placed_blocks)}
+                culprits = sorted({index[b] for b in level['conflicts'] if b in index}, reverse=True)
+                if not culprits:
+                    return stopped('arrangement_search_exhausted',
+                                   f"no candidate for block {level['block']} in the finite search; infeasibility unproved",
+                                   level['block'])
+                j = culprits[0]
+                if backjumps == search.budget:
+                    return stopped('arrangement_budget_exhausted', 'deterministic backjump budget exhausted',
+                                   level['block'])
+                backjumps += 1
+                search.backjumps = backjumps
+                while len(search.placed_blocks) > j:
+                    search.pop()
+                levels[j]['conflicts'] |= level['conflicts'] - {levels[j]['block']}
+                del levels[j + 1:]
+        except _Stopped as stop:
+            return stopped(stop.status, stop.reason, order[len(search.placed_blocks)])
+        except electrical_locality.TargetBudgetExhausted:
+            return stopped('arrangement_budget_exhausted', 'locality target budget exhausted',
+                           order[len(search.placed_blocks)])
+        except BaseException:
+            searched()  # A raising search still accounts its traced time (AGENTEE-430).
+            raise
+        searched()
+        current = _arranged_rows(search)
+        if has_sets:
+            record.setdefault('first_arranged', copy.deepcopy(current))
+            if previous_failure is not None:
+                record['adjustments'].append({'reason': previous_failure['adjustment_reason'],
+                    'before': previous_failure['arranged'], 'after': copy.deepcopy(current),
+                    'residual_status': previous_failure['status']})
+        plan = finish()
+        if not has_sets:
+            return plan
+        if plan['status'] == 'planned':
+            return plan
+        retryable = (*placer.SEARCH_FAILURES, 'fixed_conflict', 'packing_infeasible', 'block_contract_rejected')
+        if plan['status'] not in retryable or not search.placed_blocks:
+            return plan
+        if plan['status'] == 'block_contract_rejected':
+            previous_failure = {'arranged': copy.deepcopy(current), 'status': 'block_contract_rejected',
+                                'adjustment_reason': 'block_contract_failed'}
+        else:
+            attempt = {'arranged': copy.deepcopy(current), 'status': plan['status'],
+                       'reason': plan['reason'], 'steps_used': plan['steps_used'],
+                       **{key: copy.deepcopy(plan[key]) for key in ('proof', 'binding_constraints', 'search_failure')
+                          if key in plan}}
+            record['residual_failures'].append(attempt)
+            previous_failure = {**attempt, 'adjustment_reason': 'residual_packing_failed'}
+        if trace is not None:
+            searching = placement_trace.now()
+        if residual_used >= effective['step_budget']:
+            return failure('arrangement_budget_exhausted', 'residual candidate budget exhausted across block adjustments',
+                           search.steps + residual_used)
+        # Retain this level's candidate iterator, and every earlier block as a possible
+        # culprit: a residual failure is a conflict with the complete arrangement.
+        search.pop()
+        levels[len(search.placed_blocks)]['conflicts'].update(p['block'] for p in search.placed_blocks)
 
 
 def _roster(plan):
@@ -1331,6 +1542,7 @@ def _roster(plan):
     if len(listed) != len(set(listed)) or set(listed) != members:
         raise ValueError('arranged plan provenance records do not cover exactly the placed block members')
     poses = {a['block']: a for a in record['arranged']}
+    members_by_ref = {p['ref']: p for p in plan['placements']}
     rows = []
     for block in record['blocks']:
         provenance, pose = block['provenance'], poses[block['block']]
@@ -1341,6 +1553,15 @@ def _roster(plan):
                      'reuse': 'mapped' if 'mapping' in block else 'own-board',
                      **({'mapping': block['mapping']} if 'mapping' in block else {}),
                      'position_nm': pose['position_nm'], 'rotation_deg': pose['rotation_deg']})
+        if 'candidate_set_sha256' in block:
+            if block.get('selected_face') != pose.get('selected_face'):
+                raise ValueError('selected native face differs between block provenance and arranged pose')
+            rows[-1].update(candidate_set_sha256=block['candidate_set_sha256'], selected_face=pose['selected_face'])
+        if 'member_refinement' in record:
+            rows[-1].update(candidate_role='starting-layout', final_member_poses=[{
+                'reference': ref, 'position_nm': members_by_ref[ref]['position_nm'],
+                'rotation_deg': members_by_ref[ref]['rotation_deg'], 'side': members_by_ref[ref]['side']}
+                for ref in sorted(block['references'], key=blocks._natural)])
     return rows
 
 
@@ -1364,7 +1585,10 @@ def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256, res
                           for r in (record['rules'] if rules is None else rules)]}
     if reserved_area is not None:
         document['reserved_area'] = reserved_area
-    return validate_provenance(document)
+    if 'member_refinement' in record:
+        document['member_refinement'] = copy.deepcopy(record['member_refinement'])
+        document['member_refinement_sha256'] = digest(document['member_refinement'])
+    return check_roster(document, plan)
 
 
 def check_roster(document, plan):
@@ -1373,7 +1597,13 @@ def check_roster(document, plan):
     Every block, its references, anchor, candidate hash, class, enforcement, citation,
     mapping and pose must equal the plan's, and every rule keeps the plan's enforcement.
     """
+    validate_provenance(document)
     expected = {r['block']: r for r in _roster(plan)}
+    witness = plan['block_arrangement'].get('member_refinement')
+    if document.get('member_refinement') != witness:
+        raise ValueError('block provenance member refinement differs from the placement plan')
+    if witness is not None and witness['policy_sha256'] != digest(plan['policy']):
+        raise ValueError('member refinement policy differs from the placement plan')
     for key, value in (('source_sha256', plan['board_sha256']),
                        ('derivation_sha256', plan['block_arrangement']['derivation_sha256']),
                        ('policy_sha256', plan['block_arrangement']['policy_sha256'])):
@@ -1399,10 +1629,117 @@ def _sha256(value, label):
         raise ValueError(f'{label} must be a lowercase SHA-256')
 
 
+def _refinement_point(value):
+    if not isinstance(value, list) or len(value) != 2 or any(type(n) is not int for n in value):
+        raise ValueError('member refinement position must be integer [x, y]')
+
+
+def _refinement_poses(value):
+    if not isinstance(value, list):
+        raise ValueError('final member poses must be a list')
+    found = {}
+    for pose in value:
+        blocks._keys(pose, {'reference', 'position_nm', 'rotation_deg', 'side'}, label='final member pose')
+        ref = blocks._text(pose['reference'], 'final member reference')
+        if ref in found or pose['side'] not in ('F', 'B'):
+            raise ValueError('final member poses need unique references and F/B sides')
+        _refinement_point(pose['position_nm'])
+        rotation = pose['rotation_deg']
+        if (type(rotation) not in (int, float)
+                or type(rotation) is float and not math.isfinite(rotation)
+                or rotation % 90 != 0):
+            raise ValueError('final member rotation must be a finite quarter turn')
+        found[ref] = pose
+    return found
+
+
+def _validate_refinement(document):
+    """Check retained witness identity and its move chain, not physical acceptance."""
+    present = {'member_refinement', 'member_refinement_sha256'} & set(document)
+    if not present:
+        if any('candidate_role' in row or 'final_member_poses' in row for row in document['blocks']):
+            raise ValueError('final member poses require the full refinement witness')
+        return
+    if len(present) != 2:
+        raise ValueError('member refinement needs its full witness and canonical hash')
+    witness = document['member_refinement']
+    _sha256(document['member_refinement_sha256'], 'member refinement hash')
+    if digest(witness) != document['member_refinement_sha256']:
+        raise ValueError('member refinement canonical hash mismatch')
+    blocks._keys(witness, {'schema', 'capture_digest_basis', 'source_capture_sha256', 'final_capture_sha256', 'policy_sha256',
+                          'contract_sha256', 'step_budget', 'steps_used', 'moves', 'rejected', 'skipped',
+                          'status', 'termination', 'final_member_poses'}, label='member refinement')
+    if witness['schema'] != 'agent-ee.block-member-refinement/1':
+        raise ValueError('unknown member refinement schema')
+    from .block_refinement import CAPTURE_DIGEST_BASIS
+    if witness['capture_digest_basis'] != CAPTURE_DIGEST_BASIS:
+        raise ValueError('unknown member refinement capture digest basis')
+    for key in ('source_capture_sha256', 'final_capture_sha256', 'policy_sha256', 'contract_sha256'):
+        _sha256(witness[key], 'member refinement ' + key)
+    if (any(type(witness[key]) is not int or witness[key] < 0 for key in ('steps_used', 'step_budget'))
+            or witness['steps_used'] > witness['step_budget']
+            or witness['termination'] not in ('complete', 'budget_exhausted')
+            or not isinstance(witness['moves'], list)
+            or len(witness['moves']) > witness['steps_used']
+            or witness['status'] != ('refined' if witness['moves'] else 'unchanged')):
+        raise ValueError('member refinement status or finite budget is inconsistent')
+    if (not isinstance(witness['rejected'], dict)
+            or any(type(n) is not int or n < 0 for n in witness['rejected'].values())
+            or sum(witness['rejected'].values()) + len(witness['moves']) != witness['steps_used']
+            or not isinstance(witness['skipped'], list)):
+        raise ValueError('member refinement attempt accounting is inconsistent')
+    rows = {row['block']: row for row in document['blocks']}
+    for skipped in witness['skipped']:
+        blocks._keys(skipped, {'block', 'reason'}, label='skipped member refinement')
+        if skipped['block'] not in rows or skipped['reason'] != 'reference_layout_immutable':
+            raise ValueError('unknown skipped member refinement block or reason')
+    final = _refinement_poses(witness['final_member_poses'])
+    roster = {}
+    for row in rows.values():
+        if row.get('candidate_role') != 'starting-layout' or 'final_member_poses' not in row:
+            raise ValueError('refined provenance must distinguish each starting candidate from final member poses')
+        own = _refinement_poses(row['final_member_poses'])
+        if set(own) != set(row['references']):
+            raise ValueError('final member poses must cover exactly their block')
+        roster.update(own)
+    if final != roster:
+        raise ValueError('refinement final poses differ from the block roster')
+    last_hash, last_poses = witness['source_capture_sha256'], {}
+    for move in witness['moves']:
+        blocks._keys(move, {'block', 'reference', 'starting_candidate_sha256', 'before_position_nm',
+                           'after_position_nm', 'side', 'rotation_deg', 'block_window_nm',
+                           'before_capture_sha256', 'after_capture_sha256', 'before', 'after'},
+                     label='member refinement move')
+        row, ref = rows.get(move['block']), move['reference']
+        if (row is None or ref not in row['references'] or ref == row['anchor']
+                or row['class'] != 'search-derived' or move['starting_candidate_sha256'] != row['candidate_sha256']):
+            raise ValueError('refinement move differs from its movable starting block candidate')
+        for key in ('before_position_nm', 'after_position_nm'):
+            _refinement_point(move[key])
+        after_pose = {key: move[key] for key in ('reference', 'side', 'rotation_deg')}
+        after_pose['position_nm'] = move['after_position_nm']
+        _refinement_poses([after_pose])
+        if ref in last_poses and {**after_pose, 'position_nm': move['before_position_nm']} != last_poses[ref]:
+            raise ValueError('member refinement pose chain is broken')
+        if move['before_position_nm'] == move['after_position_nm'] or move['before_capture_sha256'] != last_hash:
+            raise ValueError('member refinement capture chain is broken')
+        _sha256(move['after_capture_sha256'], 'refinement move capture')
+        if not isinstance(move['before'], dict) or not isinstance(move['after'], dict):
+            raise ValueError('member refinement must retain both metric records')
+        window = move['block_window_nm']
+        if (not isinstance(window, list) or len(window) != 4 or any(type(n) is not int for n in window)
+                or window[0] > window[2] or window[1] > window[3]):
+            raise ValueError('member refinement block window must be ordered integer bounds')
+        last_hash, last_poses[ref] = move['after_capture_sha256'], after_pose
+    if last_hash != witness['final_capture_sha256'] or any(final[ref] != pose for ref, pose in last_poses.items()):
+        raise ValueError('member refinement does not end at its recorded final capture and poses')
+
+
 def validate_provenance(document):
     """Refuse a block provenance artifact whose classes, enforcement or identities are inconsistent."""
     blocks._keys(document, {'schema', 'authority', 'source_sha256', 'board_sha256', 'derivation_sha256',
-                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, {'reserved_area'}, label='block provenance')
+                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'},
+                 {'reserved_area', 'member_refinement', 'member_refinement_sha256'}, label='block provenance')
     if document['schema'] != PROVENANCE_ARTIFACT or document['authority'] != PROVENANCE_AUTHORITY:
         raise ValueError(f'block provenance must be {PROVENANCE_ARTIFACT} with its fixed authority statement')
     for key in ('source_sha256', 'board_sha256', 'derivation_sha256', 'policy_sha256', 'plan_sha256'):
@@ -1416,7 +1753,8 @@ def validate_provenance(document):
     seen, references = set(), set()
     for row in document['blocks']:
         blocks._keys(row, {'block', 'references', 'anchor', 'candidate_sha256', 'class', 'enforcement', 'citation',
-                           'reuse', 'position_nm', 'rotation_deg'}, {'method', 'source', 'mapping'},
+                           'reuse', 'position_nm', 'rotation_deg'}, {'method', 'source', 'mapping', 'selected_face',
+                           'candidate_set_sha256', 'candidate_role', 'final_member_poses'},
                      label='block provenance row')
         label = f"block provenance row {row['block']!r}"
         if not isinstance(row['block'], str) or not row['block'].strip() or row['block'] in seen:
@@ -1433,6 +1771,10 @@ def validate_provenance(document):
                 or type(row['rotation_deg']) is not int or row['rotation_deg'] not in (0, 90, 180, 270)):
             raise ValueError(f'{label}: pose needs integer position_nm [x, y] and a rotation of 0, 90, 180 or 270')
         _sha256(row['candidate_sha256'], label + ' candidate_sha256')
+        if 'candidate_set_sha256' in row or 'selected_face' in row:
+            _sha256(row.get('candidate_set_sha256'), label + ' candidate_set_sha256')
+            if row.get('selected_face') not in ('F', 'B'):
+                raise ValueError('native candidate set provenance needs its selected F/B face')
         # Fail closed: an unknown class, or a class whose enforcement was relabelled, refuses.
         if row['class'] not in blocks.PROVENANCE or row['enforcement'] != blocks.PROVENANCE[row['class']]:
             raise ValueError(f"{label}: class {row['class']!r} does not carry enforcement {row['enforcement']!r}")
@@ -1447,6 +1789,7 @@ def validate_provenance(document):
         blocks._keys(rule, {'rule', 'enforcement', 'status'}, {'id'}, label='block provenance rule')
         if rule['enforcement'] not in ('hard', 'advisory') or rule['status'] not in ('pass', 'defect'):
             raise ValueError(f"block provenance rule {rule['rule']!r} has an unknown enforcement or status")
+    _validate_refinement(document)
     return document
 
 
@@ -1481,9 +1824,10 @@ def review_input(run_dir, manifest):
 
 def _candidate_file(path, raw=None):
     """A bare candidate file; a ``block_library materialize`` record is refused, not unwrapped."""
+    from .block_variants import SCHEMA as CANDIDATE_SET
     document = strict_json(Path(path).read_bytes() if raw is None else raw)
-    if not isinstance(document, dict) or document.get('schema') != blocks.CANDIDATE:
-        raise ValueError(f'{path}: expected a bare {blocks.CANDIDATE} file '
+    if not isinstance(document, dict) or document.get('schema') not in (blocks.CANDIDATE, CANDIDATE_SET):
+        raise ValueError(f'{path}: expected a bare {blocks.CANDIDATE} or {CANDIDATE_SET} file '
                          '(block_library materialize --out writes one; its result record is not a candidate)')
     return document
 
@@ -1492,7 +1836,7 @@ def load_entries(paths):
     return [{'candidate': _candidate_file(p)} for p in paths]
 
 
-def request_section(allocation, arrangement, candidates):
+def request_section(allocation, arrangement, candidates, *, side_eligibility=None, contract=None):
     """The ``blocks`` section of a placer_runner request from file paths.
 
     ``allocation`` is the same allocation file every candidate was packed or
@@ -1501,29 +1845,48 @@ def request_section(allocation, arrangement, candidates):
     """
     return request_section_from_bytes(None if allocation is None else Path(allocation).read_bytes(),
                                       Path(arrangement).read_bytes(), [Path(c).read_bytes() for c in candidates],
-                                      names=list(map(str, candidates)))
+                                      names=list(map(str, candidates)),
+                                      side_eligibility=None if side_eligibility is None else Path(side_eligibility).read_bytes(),
+                                      contract=None if contract is None else Path(contract).read_bytes())
 
 
-def request_section_from_bytes(allocation, arrangement, candidates, names=None):
+def request_section_from_bytes(allocation, arrangement, candidates, names=None, *, side_eligibility=None,
+                               contract=None):
     """The same section from bytes a caller has already bound by digest (AGENTEE-439)."""
     names = names or [f'candidate {i + 1}' for i in range(len(candidates))]
-    return {'allocation_text': None if allocation is None else allocation.decode('utf-8'),
-            'arrangement': strict_json(arrangement),
-            'candidates': [{'candidate': _candidate_file(name, raw)} for name, raw in zip(names, candidates)]}
+    if len(names) != len(candidates):
+        raise ValueError('candidate names and records must have equal lengths')
+    section = {'allocation_text': None if allocation is None else allocation.decode('utf-8'),
+               'arrangement': strict_json(arrangement),
+               'candidates': [{'candidate': _candidate_file(name, raw)} for name, raw in zip(names, candidates)]}
+    for key, raw in (('side_eligibility', side_eligibility), ('contract', contract)):
+        if raw is not None:
+            section[key] = strict_json(raw)
+    if any(entry['candidate']['schema'] == 'agent-ee.block-candidate-set/1' for entry in section['candidates']):
+        if allocation is None or side_eligibility is None or contract is None:
+            raise ValueError('candidate sets require captured allocation, side_eligibility and contract')
+    return section
 
 
 def plan_from_request(facts, section, policy, effective, netlist, heartbeat=None):
     """placer_runner entry: derive from the captured netlist, admit, arrange, pack."""
-    blocks._keys(section, {'arrangement', 'candidates'}, {'allocation_text'}, label='blocks request')
+    blocks._keys(section, {'arrangement', 'candidates'}, {'allocation_text', 'side_eligibility', 'contract'}, label='blocks request')
+    block_contract.validate(facts, section, effective)
     raw = Path(netlist).read_bytes()
     allocation = section.get('allocation_text')
     if allocation is not None and not isinstance(allocation, str):
         raise ValueError('allocation_text must be the allocation file text')
+    has_sets = isinstance(section['candidates'], list) and any(
+        isinstance(entry, dict) and isinstance(entry.get('candidate'), dict)
+        and entry['candidate'].get('schema') == block_variants.SCHEMA for entry in section['candidates'])
+    if has_sets and allocation is None:
+        raise ValueError('native candidate sets require explicit allocation_text')
     derivation = blocks.derive(read_native_inventory(netlist), read_sheet_names(netlist), facts,
                                inventory_sha256=hashlib.sha256(raw).hexdigest(),
                                allocation_raw=None if allocation is None else allocation.encode('utf-8'))
     return arrange(facts, read_native_inventory(netlist), derivation, policy, section['arrangement'],
-                   section['candidates'], heartbeat=heartbeat, effective_policy=effective)
+                   section['candidates'], heartbeat=heartbeat, effective_policy=effective,
+                   side_eligibility=section.get('side_eligibility'), contract=section.get('contract'))
 
 
 OFFLINE_RESERVE = ('offline arrangement writes no native board and has no fabrication inventory; '
@@ -1538,6 +1901,8 @@ def main(argv=None):
     parser.add_argument('--policy', required=True, type=Path, help='agent-ee.packing-policy/1')
     parser.add_argument('--arrangement', required=True, type=Path, help=f'{POLICY} JSON')
     parser.add_argument('--candidate', required=True, type=Path, action='append', help='admitted block candidate')
+    parser.add_argument('--side-eligibility', type=Path, help='captured original-board-bound face eligibility JSON')
+    parser.add_argument('--contract', type=Path, help='captured saved-board block contract JSON')
     parser.add_argument('--out', required=True, type=Path, help='new output JSON file')
     parser.add_argument('--provenance', type=Path, help=f'new {PROVENANCE_ARTIFACT} file, written when planned')
     parser.add_argument('--runner-section', type=Path,
@@ -1545,9 +1910,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         capture, inventory, derivation = blocks._load(args)
-        result = arrange(capture, inventory, derivation, strict_json(args.policy.read_bytes()),
-                         strict_json(args.arrangement.read_bytes()), load_entries(args.candidate),
-                         heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
+        section = request_section(args.allocation, args.arrangement, args.candidate,
+                                  side_eligibility=args.side_eligibility, contract=args.contract)
+        policy = strict_json(args.policy.read_bytes())
+        block_contract.validate(capture, section, policy)
+        options = {key: section[key] for key in ('side_eligibility', 'contract') if key in section}
+        result = arrange(capture, inventory, derivation, policy, section['arrangement'], section['candidates'],
+                         heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True), **options)
         blocks._write(args.out, result)
         if args.provenance is not None and result['status'] == 'planned':
             # No saved board or fabrication inventory exists offline; the reserve stays a
@@ -1557,7 +1926,7 @@ def main(argv=None):
                 result, plan_sha256=hashlib.sha256(args.out.read_bytes()).hexdigest(),
                 reserved_area=unmeasured(result['board_sha256'], 'offline_unsaved_plan', OFFLINE_RESERVE)))
         if args.runner_section is not None and result['status'] == 'planned':
-            blocks._write(args.runner_section, request_section(args.allocation, args.arrangement, args.candidate))
+            blocks._write(args.runner_section, section)
     except (OSError, ValueError) as exc:
         print(json.dumps({'status': 'refused', 'reason': str(exc)}))
         return 1

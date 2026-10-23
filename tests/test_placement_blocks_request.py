@@ -104,6 +104,12 @@ class BlocksDeclarationTest(unittest.TestCase):
         self.assertNotIn('blocks', pa.validate_declaration(plain))
         allocation = {**self.BLOCKS, 'allocation': 'project/blocks/allocation.json'}
         self.assertEqual(pa.validate_declaration(self.declaration(blocks=allocation))['blocks'], allocation)
+        variant_files = {**allocation, 'side_eligibility': 'project/blocks/sides.json',
+                         'contract': 'project/blocks/contract.json'}
+        self.assertEqual(pa.validate_declaration(self.declaration(blocks=variant_files))['blocks'], variant_files)
+        for key in ('side_eligibility', 'contract'):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'relative'):
+                pa.validate_declaration(self.declaration(blocks={**variant_files, key: '../outside.json'}))
         for name, changes, message in (
                 ('without helper', {'helper': None, 'policy': None}, 'require a placement helper'),
                 ('with targeted plans', {'targeted_plans': 'project/plans.json'}, 'cannot be combined'),
@@ -140,6 +146,22 @@ class BlocksDeclarationTest(unittest.TestCase):
         blocks_bound = {**bound, 'blocks': {**self.BLOCKS, 'netlist_sha256': 'f' * 64}}
         self.assertEqual(pa.step_declaration('/step', blocks_bound)['argv'],
                          plain + ['--netlist', f"/candidate/{self.BLOCKS['netlist']}", '--netlist-sha256', 'f' * 64])
+
+    def test_variant_evidence_files_must_be_captured_immutable_inputs(self):
+        section = {**self.BLOCKS, 'allocation': 'blocks/allocation.json',
+                   'side_eligibility': 'blocks/eligibility.json', 'contract': 'blocks/contract.json'}
+        paths = [section['netlist'], section['arrangement'], *section['candidates'],
+                 section['allocation'], section['side_eligibility'], section['contract']]
+        files = {BOARD: 'a', SCHEMATIC: 'b', POLICY: 'c', **{p: 'd' for p in paths}}
+        manifest = {'scope': {'board': BOARD, 'schematic': SCHEMATIC}, 'files': files}
+        declaration = self.declaration(blocks=section)
+        self.assertEqual(pa.bind_declaration(declaration, manifest, [BOARD])['blocks']['contract'], section['contract'])
+        for key in ('side_eligibility', 'contract'):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'captured immutable input'):
+                pa.bind_declaration(declaration, manifest, [BOARD, section[key]])
+            missing = {**manifest, 'files': {p: h for p, h in files.items() if p != section[key]}}
+            with self.subTest(missing=key), self.assertRaisesRegex(ValueError, 'captured immutable input'):
+                pa.bind_declaration(declaration, missing, [BOARD])
 
     def test_request_carries_blocks_beside_the_exact_request_policy(self):
         section = {'allocation_text': None, 'arrangement': {'schema': block_arrangement.POLICY}, 'candidates': []}
@@ -246,6 +268,81 @@ class BlocksBindingTest(unittest.TestCase):
         (self.inputs / self.NETLIST).write_bytes(native_xml())
         with self.assertRaisesRegex(ValueError, 'no stamp-masked identity'):
             self.bind()
+
+    def test_candidate_set_package_preserves_full_evidence_and_refuses_stale_bindings(self):
+        from agent_ee import block_variants
+        from copy import deepcopy
+        # These are owned pure package fixtures, not evidence of native flip qualification.
+        source = self.inputs / 'source.kicad_pcb'
+        source.write_bytes(b'original owned package identity fixture')
+        self.board['board_sha256'] = digest(source)
+        for block, path in zip(('Power', 'Sensor'), self.candidates):
+            self.pack(block, path)
+        candidate = read_json(self.inputs / self.candidates[0])
+        inventory = self.inputs / self.NETLIST
+        derivation = blocks.derive(read_native_inventory(inventory), read_sheet_names(inventory), self.board,
+                                   inventory_sha256=digest(inventory),
+                                   allocation_raw=(self.inputs / self.ALLOCATION).read_bytes())
+        refs = {row['reference'] for row in candidate['members']}
+        members = sorted((fp for fp in self.board['footprints'] if fp['ref'] in refs),
+                         key=lambda fp: blocks._natural(fp['ref']))
+        eligibility = {'schema': 'fome-mc.side-eligibility/1',
+            'sources': {'board_sha256': self.board['board_sha256']}, 'default': {'faces': ['F', 'B']},
+            'blocks': {'Power': {'eligible_faces': ['F', 'B']}, 'Sensor': {'eligible_faces': ['F', 'B']}}}
+        rows = lambda face, sha: [{'ref': fp['ref'], 'uuid': fp['uuid'], 'source_side': fp['side'],
+                                  'side': face, 'flipped': fp['side'] != face, 'pad_inventory_sha256': sha}
+                                 for fp in members]
+        document = {'schema': block_variants.SCHEMA, 'block_id': 'Power', 'sources': candidate['sources'],
+            'eligibility': {'record': eligibility, 'record_sha256': blocks.digest(eligibility),
+                            'eligible_faces': ['F', 'B']},
+            'captured_members': [{k: fp[k] for k in ('ref', 'uuid', 'side')} for fp in members],
+            'variants': {
+                'F': {'status': 'packed', 'capture': self.board, 'capture_sha256': blocks.digest(self.board),
+                      'board_sha256': self.board['board_sha256'], 'derivation': derivation,
+                      'members': rows('F', 'a'*64), 'candidate': candidate, 'failure': None},
+                'B': {'status': 'native_flip_refused', 'capture': None, 'capture_sha256': None,
+                      'board_sha256': None, 'derivation': None, 'members': rows('B', None), 'candidate': None,
+                      'failure': {'status': 'native_flip_refused', 'outcome': 'unknown',
+                                  'reason': 'owned explicit failed-face fixture'}}}}
+        contract = {'schema': 'agent-ee.block-contract/1', 'allocation': {
+            'schema': 'agent-ee.block-allocation/2', 'board_sha256': self.board['board_sha256'],
+            'blocks': [{'id': b['id'], 'references': b['references'], 'anchor': {'none': 'centroid of members'},
+                        'interfaces_to_fixed': None} for b in derivation['blocks']],
+            'fixed': [{'reference': 'H1'}], 'shared': [{'reference': 'J1', 'role': 'residual'}]},
+            'eligibility': eligibility, 'relationships': self.policy['electrical_locality'],
+            'templates': [], 'thickness_nm': 1600000}
+        section = {**self.section, 'side_eligibility': 'blocks/eligibility.json', 'contract': 'blocks/contract.json'}
+        self.write_json(self.candidates[0], document)
+        self.write_json(section['side_eligibility'], eligibility)
+        self.write_json(section['contract'], contract)
+        manifest = {**self.manifest(), 'scope': {'board': source.name}}
+        record, request = pa.blocks_binding(section, manifest, self.inputs, self.policy)
+        self.assertEqual(request['candidates'][0]['candidate'], document)
+        self.assertEqual(request['side_eligibility'], eligibility)
+        self.assertEqual(request['contract'], contract)
+        for key in ('side_eligibility', 'contract'):
+            self.assertEqual(record[key], {'path': section[key], 'sha256': manifest['files'][section[key]]})
+        self.assertEqual(request, block_arrangement.request_section(self.inputs / self.ALLOCATION,
+            self.inputs / self.ARRANGEMENT, [self.inputs / c for c in self.candidates],
+            side_eligibility=self.inputs / section['side_eligibility'], contract=self.inputs / section['contract']))
+        for key in ('side_eligibility', 'contract'):
+            with self.subTest(missing=key), self.assertRaisesRegex(ValueError, 'candidate sets require captured'):
+                pa.blocks_binding({k: v for k, v in section.items() if k != key}, manifest, self.inputs, self.policy)
+        changed = deepcopy(manifest)
+        changed['files'][source.name] = '0'*64
+        with self.assertRaisesRegex(ValueError, 'another captured board'):
+            pa.blocks_binding(section, changed, self.inputs, self.policy)
+        self.write_json(section['contract'], {**contract, 'relationships': None})
+        with self.assertRaisesRegex(ValueError, 'captured placement block file .* changed'):
+            pa.blocks_binding(section, manifest, self.inputs, self.policy)
+        with self.assertRaisesRegex(ValueError, 'contract differs'):
+            pa.blocks_binding(section, {**self.manifest(), 'scope': manifest['scope']}, self.inputs, self.policy)
+        self.write_json(section['contract'], contract)
+        forged = deepcopy(document)
+        forged['variants']['F']['capture']['footprints'][0]['value'] = 'forged geometry record'
+        self.write_json(self.candidates[0], forged)
+        with self.assertRaisesRegex(ValueError, 'capture hash mismatch'):
+            pa.blocks_binding(section, {**self.manifest(), 'scope': manifest['scope']}, self.inputs, self.policy)
 
 
 class PinnedPackageDataTest(unittest.TestCase):

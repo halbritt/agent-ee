@@ -3,13 +3,13 @@ use crate::exact::{self, Int, Point, Rat};
 use crate::footprint::{Keepout, PreparedFootprint};
 use crate::geometry::{Bounds, Polygon};
 use crate::{
-    blocks, constraints, footprint, geometry, groups, locality, netlist, packing, policy, progress,
-    rank, search,
+    block_contract, block_refinement, block_variants, blocks, constraints, footprint, geometry,
+    groups, locality, netlist, packing, policy, progress, rank, search,
 };
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -60,6 +60,8 @@ pub fn validate(
             "keepouts",
             "no_stacking",
             "no_block_over_fixed",
+            "side_choice",
+            "refinement",
         ],
     )?;
     ensure!(document["schema"] == SCHEMA, "expected {SCHEMA}");
@@ -73,6 +75,18 @@ pub fn validate(
         ensure!(
             t.as_f64().is_some_and(|n| n > 0.0 && n <= 86400.0),
             "search_timeout_s must be positive and at most 86400 seconds"
+        );
+    }
+    if let Some(value) = document.get("side_choice") {
+        ensure!(value.is_boolean(), "side_choice must be boolean");
+    }
+    if let Some(value) = document.get("refinement") {
+        blocks::keys(value, &["step_budget"], &[])?;
+        ensure!(
+            value["step_budget"]
+                .as_u64()
+                .is_some_and(|n| n <= 1_000_000),
+            "refinement step_budget must be 0..1000000"
         );
     }
     let mut d = document.clone();
@@ -163,11 +177,7 @@ pub fn check_effective(captured: &Value, effective: &Value) -> Result<()> {
     Ok(())
 }
 fn opposite(side: &str) -> &str {
-    if side == "F" {
-        "B"
-    } else {
-        "F"
-    }
+    if side == "F" { "B" } else { "F" }
 }
 fn shadow(fp: &PreparedFootprint, margin: &Int) -> Keepout {
     Keepout {
@@ -344,6 +354,8 @@ struct Rotated {
 #[derive(Clone)]
 struct Placed {
     block: String,
+    variant: usize,
+    selected_face: Option<String>,
     position: Point,
     rotation: i64,
     members: Vec<PreparedFootprint>,
@@ -354,7 +366,11 @@ struct Placed {
 }
 impl Placed {
     fn record(&self) -> Value {
-        json!({"block":self.block,"position_nm":exact::point_value(&self.position),"rotation_deg":self.rotation})
+        let mut row = json!({"block":self.block,"position_nm":exact::point_value(&self.position),"rotation_deg":self.rotation});
+        if let Some(face) = &self.selected_face {
+            row["selected_face"] = json!(face);
+        }
+        row
     }
 }
 #[derive(Eq, PartialEq, Ord, PartialOrd)]
@@ -362,6 +378,7 @@ struct Ranked {
     terms: Vec<rank::Fraction>,
     position: (rank::Integer, rank::Integer),
     rotation: i64,
+    variant: usize,
     doomed: bool,
 }
 #[derive(Debug)]
@@ -375,8 +392,10 @@ impl std::error::Error for Stopped {}
 struct Search<'a> {
     prepared: &'a packing::Prepared,
     policy: &'a Value,
-    frames: BTreeMap<String, Vec<PreparedFootprint>>,
-    rotated: BTreeMap<(String, i64), Arc<Rotated>>,
+    frames: BTreeMap<String, Vec<Vec<PreparedFootprint>>>,
+    faces: BTreeMap<String, Vec<Option<String>>>,
+    disabled_variants: BTreeSet<(String, usize)>,
+    rotated: BTreeMap<(String, usize, i64), Arc<Rotated>>,
     owner: BTreeMap<String, String>,
     placed: Vec<Placed>,
     fixed_exact: Vec<Keepout>,
@@ -420,19 +439,55 @@ impl<'a> Search<'a> {
             .map(|f| (f.reference.clone(), f))
             .collect();
         let mut frames = BTreeMap::new();
+        let mut faces = BTreeMap::new();
         let mut owner = BTreeMap::new();
         for (b, a) in admitted {
-            let poses = a["poses"].as_object().context("admitted poses")?;
-            let mut members = Vec::new();
-            for r in blocks::natural(poses.keys().cloned().collect()) {
-                let pose = &poses[&r];
-                members.push(by[&r].at(
-                    &exact::point(&pose["position_nm"])?,
-                    exact::rotation(&pose["rotation_deg"])?,
-                )?);
-                owner.insert(r, b.clone());
+            let variants = a
+                .get("variants")
+                .and_then(Value::as_array)
+                .map(|v| v.iter().collect::<Vec<_>>())
+                .unwrap_or_else(|| vec![a]);
+            let mut block_frames = Vec::new();
+            let mut block_faces = Vec::new();
+            for variant in variants {
+                let native = variant
+                    .get("capture")
+                    .map(footprint::qualify_capture)
+                    .transpose()?;
+                let native_by: BTreeMap<_, _> = native
+                    .as_ref()
+                    .map(|c| {
+                        c.footprints
+                            .iter()
+                            .map(|f| (f.reference.clone(), f))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| by.clone());
+                let poses = variant["poses"].as_object().context("admitted poses")?;
+                let mut members = Vec::new();
+                for r in blocks::natural(poses.keys().cloned().collect()) {
+                    let pose = &poses[&r];
+                    members.push(native_by[&r].at(
+                        &exact::point(&pose["position_nm"])?,
+                        exact::rotation(&pose["rotation_deg"])?,
+                    )?);
+                    owner.insert(r, b.clone());
+                }
+                block_frames.push(members);
+                block_faces.push(variant["selected_face"].as_str().map(str::to_owned));
             }
-            frames.insert(b.clone(), members);
+            frames.insert(b.clone(), block_frames);
+            faces.insert(b.clone(), block_faces);
+        }
+        let mut disabled_variants = BTreeSet::new();
+        if arrangement["side_choice"] == false {
+            for (bid, variants) in &frames {
+                for (index, members) in variants.iter().enumerate() {
+                    if members.iter().any(|f| f.side != by[&f.reference].side) {
+                        disabled_variants.insert((bid.clone(), index));
+                    }
+                }
+            }
         }
         let fixed_exact = prepared.placed.iter().flat_map(courtyard_entries).collect();
         let solid: SideBoxes = prepared
@@ -519,6 +574,8 @@ impl<'a> Search<'a> {
             prepared,
             policy,
             frames,
+            faces,
+            disabled_variants,
             rotated: BTreeMap::new(),
             owner,
             placed: Vec::new(),
@@ -566,8 +623,14 @@ impl<'a> Search<'a> {
         }
         Ok(())
     }
-    fn members_at(&self, bid: &str, p: &Point, rotation: i64) -> Result<Vec<PreparedFootprint>> {
-        self.frames[bid]
+    fn members_at(
+        &self,
+        bid: &str,
+        variant: usize,
+        p: &Point,
+        rotation: i64,
+    ) -> Result<Vec<PreparedFootprint>> {
+        self.frames[bid][variant]
             .iter()
             .map(|f| {
                 f.at(
@@ -577,12 +640,12 @@ impl<'a> Search<'a> {
             })
             .collect()
     }
-    fn rotated(&mut self, bid: &str, rotation: i64) -> Result<Arc<Rotated>> {
-        let key = (bid.to_owned(), rotation);
+    fn rotated(&mut self, bid: &str, variant: usize, rotation: i64) -> Result<Arc<Rotated>> {
+        let key = (bid.to_owned(), variant, rotation);
         if let Some(r) = self.rotated.get(&key) {
             return Ok(r.clone());
         }
-        let members = self.members_at(bid, &Point::zero(), rotation)?;
+        let members = self.members_at(bid, variant, &Point::zero(), rotation)?;
         let mut macro_fp = macro_fp(bid, &members)?;
         macro_fp.rotation = rotation;
         macro_fp.rotation_json = json!(rotation);
@@ -639,8 +702,8 @@ impl<'a> Search<'a> {
             .cloned()
             .collect()
     }
-    fn push(&mut self, bid: &str, p: Point, rotation: i64) -> Result<()> {
-        let members = self.members_at(bid, &p, rotation)?;
+    fn push(&mut self, bid: &str, variant: usize, p: Point, rotation: i64) -> Result<()> {
+        let members = self.members_at(bid, variant, &p, rotation)?;
         let boxes = members
             .iter()
             .flat_map(|f| f.boxes.iter().map(|(s, b)| (s.clone(), b.clone())))
@@ -669,6 +732,8 @@ impl<'a> Search<'a> {
             .collect::<Result<_>>()?;
         self.placed.push(Placed {
             block: bid.into(),
+            variant,
+            selected_face: self.faces[bid][variant].clone(),
             position: p,
             rotation,
             members,
@@ -740,291 +805,297 @@ impl<'a> Search<'a> {
                 .collect::<Result<SideBoxes>>()?,
         );
         let mut ranked = Vec::new();
-        for rotation in [0, 90, 180, 270] {
-            let own = self.rotated(bid, rotation)?;
-            let mut evaluator = locality::CandidateLocality::default();
-            if let Some(index) = &index {
+        for variant in 0..self.frames[bid].len() {
+            if self.disabled_variants.contains(&(bid.to_owned(), variant)) {
+                continue;
+            }
+            for rotation in [0, 90, 180, 270] {
+                let own = self.rotated(bid, variant, rotation)?;
+                let mut evaluator = locality::CandidateLocality::default();
+                if let Some(index) = &index {
+                    for f in &own.members {
+                        evaluator.pairs.extend(index.prepare(&f.to_value()?)?.pairs);
+                    }
+                }
+                let mut targets = evaluator.targets()?;
                 for f in &own.members {
-                    evaluator.pairs.extend(index.prepare(&f.to_value()?)?.pairs);
-                }
-            }
-            let mut targets = evaluator.targets()?;
-            for f in &own.members {
-                if let Some(g) = self.groups.get(&f.reference) {
-                    let anchor = g
-                        .anchor_point
-                        .as_ref()
-                        .or_else(|| g.anchor_ref.as_ref().and_then(|r| positions.get(r)));
-                    if let Some(a) = anchor {
-                        for (dx, dy) in [
-                            (Int::zero(), Int::zero()),
-                            (-&g.limit, Int::zero()),
-                            (g.limit.clone(), Int::zero()),
-                            (Int::zero(), -&g.limit),
-                            (Int::zero(), g.limit.clone()),
-                        ] {
-                            targets.push(Point {
-                                x: &a.x - &f.position.x + dx,
-                                y: &a.y - &f.position.y + dy,
-                            });
+                    if let Some(g) = self.groups.get(&f.reference) {
+                        let anchor = g
+                            .anchor_point
+                            .as_ref()
+                            .or_else(|| g.anchor_ref.as_ref().and_then(|r| positions.get(r)));
+                        if let Some(a) = anchor {
+                            for (dx, dy) in [
+                                (Int::zero(), Int::zero()),
+                                (-&g.limit, Int::zero()),
+                                (g.limit.clone(), Int::zero()),
+                                (Int::zero(), -&g.limit),
+                                (Int::zero(), g.limit.clone()),
+                            ] {
+                                targets.push(Point {
+                                    x: &a.x - &f.position.x + dx,
+                                    y: &a.y - &f.position.y + dy,
+                                });
+                            }
+                        }
+                        for p in g.region.iter().flatten() {
+                            targets.push(p.minus(&f.position));
                         }
                     }
-                    for p in g.region.iter().flatten() {
-                        targets.push(p.minus(&f.position));
-                    }
                 }
-            }
-            let overhang = own
-                .members
-                .iter()
-                .map(constraints::access_overhangs)
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .any(|v| v);
-            let (xs, ys) = search::candidate_axes(
-                &own.macro_fp,
-                outline,
-                &anchors,
-                &gap,
-                &margin,
-                &targets,
-                if overhang { None } else { Some(&window) },
-            )?;
-            let (mut xs, mut ys): (BTreeSet<Int>, BTreeSet<Int>) =
-                (xs.into_iter().collect(), ys.into_iter().collect());
-            let in_x = |x: &Int| window.x0 <= &own.bbox.x0 + x && &own.bbox.x1 + x <= window.x1;
-            let in_y = |y: &Int| window.y0 <= &own.bbox.y0 + y && &own.bbox.y1 + y <= window.y1;
-            for f in &own.members {
-                let (ax, ay) = constraints::access_axes(f, outline)?;
-                xs.extend(ax.into_iter().filter(|x| overhang || in_x(x)));
-                ys.extend(ay.into_iter().filter(|y| overhang || in_y(y)));
-                for poly in &f.copper_outline {
-                    let b = geometry::bounds(std::slice::from_ref(poly))?;
-                    if let Some(s) = &f.setback {
-                        for p in outline {
-                            for x in [&p.x + s - &b.x0, &p.x - s - &b.x1] {
-                                if in_x(&x) {
-                                    xs.insert(x);
+                let overhang = own
+                    .members
+                    .iter()
+                    .map(constraints::access_overhangs)
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .any(|v| v);
+                let (xs, ys) = search::candidate_axes(
+                    &own.macro_fp,
+                    outline,
+                    &anchors,
+                    &gap,
+                    &margin,
+                    &targets,
+                    if overhang { None } else { Some(&window) },
+                )?;
+                let (mut xs, mut ys): (BTreeSet<Int>, BTreeSet<Int>) =
+                    (xs.into_iter().collect(), ys.into_iter().collect());
+                let in_x = |x: &Int| window.x0 <= &own.bbox.x0 + x && &own.bbox.x1 + x <= window.x1;
+                let in_y = |y: &Int| window.y0 <= &own.bbox.y0 + y && &own.bbox.y1 + y <= window.y1;
+                for f in &own.members {
+                    let (ax, ay) = constraints::access_axes(f, outline)?;
+                    xs.extend(ax.into_iter().filter(|x| overhang || in_x(x)));
+                    ys.extend(ay.into_iter().filter(|y| overhang || in_y(y)));
+                    for poly in &f.copper_outline {
+                        let b = geometry::bounds(std::slice::from_ref(poly))?;
+                        if let Some(s) = &f.setback {
+                            for p in outline {
+                                for x in [&p.x + s - &b.x0, &p.x - s - &b.x1] {
+                                    if in_x(&x) {
+                                        xs.insert(x);
+                                    }
                                 }
-                            }
-                            for y in [&p.y + s - &b.y0, &p.y - s - &b.y1] {
-                                if in_y(&y) {
-                                    ys.insert(y);
+                                for y in [&p.y + s - &b.y0, &p.y - s - &b.y1] {
+                                    if in_y(&y) {
+                                        ys.insert(y);
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            for (side, m) in &own.frontier.0 {
-                for (other, a) in &anchors {
-                    if side == other {
-                        let x = &a.x1 + &gap - &m.x0;
-                        if in_x(&x) {
-                            xs.insert(x);
+                for (side, m) in &own.frontier.0 {
+                    for (other, a) in &anchors {
+                        if side == other {
+                            let x = &a.x1 + &gap - &m.x0;
+                            if in_x(&x) {
+                                xs.insert(x);
+                            }
                         }
                     }
                 }
-            }
-            for (side, m) in &own.frontier.1 {
-                for (other, a) in &anchors {
-                    if side == other {
-                        let x = &a.x0 - &gap - &m.x1;
-                        if in_x(&x) {
-                            xs.insert(x);
+                for (side, m) in &own.frontier.1 {
+                    for (other, a) in &anchors {
+                        if side == other {
+                            let x = &a.x0 - &gap - &m.x1;
+                            if in_x(&x) {
+                                xs.insert(x);
+                            }
                         }
                     }
                 }
-            }
-            let mut entries = own.entries.clone();
-            for p in &self.placed {
-                let mut reserved = p.boxes.clone();
-                reserved.extend(p.shadows.clone());
-                entries.extend(gapped(&own.boxes, &reserved, &gap, Some(&p.block)));
-                entries.extend(gapped(&own.shadows, &p.boxes, &gap, Some(&p.block)));
-                entries.extend(gapped(&own.holes, &p.slabs, &Int::zero(), Some(&p.block)));
-                entries.extend(gapped(&own.slabs, &p.holes, &Int::zero(), Some(&p.block)));
-            }
-            let mut on_net = BTreeMap::<String, Vec<Point>>::new();
-            for f in &own.members {
-                for p in &f.pads {
-                    if !p.net.is_empty()
-                        && !self.grounds.contains(&p.net)
-                        && peers.contains_key(&p.net)
-                    {
-                        on_net
-                            .entry(p.net.clone())
-                            .or_default()
-                            .push(p.position.clone());
-                    }
+                let mut entries = own.entries.clone();
+                for p in &self.placed {
+                    let mut reserved = p.boxes.clone();
+                    reserved.extend(p.shadows.clone());
+                    entries.extend(gapped(&own.boxes, &reserved, &gap, Some(&p.block)));
+                    entries.extend(gapped(&own.shadows, &p.boxes, &gap, Some(&p.block)));
+                    entries.extend(gapped(&own.holes, &p.slabs, &Int::zero(), Some(&p.block)));
+                    entries.extend(gapped(&own.slabs, &p.holes, &Int::zero(), Some(&p.block)));
                 }
-            }
-            let pads: Vec<_> = on_net
-                .into_iter()
-                .map(|(n, ps)| {
-                    let count = Int::from(ps.len());
-                    (
-                        n,
-                        Point {
-                            x: ps
-                                .iter()
-                                .map(|p| p.x.clone())
-                                .sum::<Int>()
-                                .div_floor(&count),
-                            y: ps
-                                .iter()
-                                .map(|p| p.y.clone())
-                                .sum::<Int>()
-                                .div_floor(&count),
-                        },
-                    )
-                })
-                .collect();
-            let sources: Vec<_> = own
-                .members
-                .iter()
-                .filter(|f| self.sources.contains(&f.reference))
-                .map(|f| f.position.clone())
-                .collect();
-            let placed_sources: Vec<_> = self
-                .sources
-                .iter()
-                .filter_map(|r| positions.get(r).map(|p| (r, p)))
-                .collect();
-            let limit2 = self.thermal_min.as_ref().map(|n| n * n);
-            let contacts = (&window.y0 - &own.bbox.y0, &window.y1 - &own.bbox.y1);
-            let low = ys
-                .first()
-                .cloned()
-                .unwrap_or_else(|| contacts.0.clone())
-                .min(contacts.0.clone())
-                .min(contacts.1.clone());
-            let high = ys
-                .last()
-                .cloned()
-                .unwrap_or_else(|| contacts.1.clone())
-                .max(contacts.0.clone())
-                .max(contacts.1.clone());
-            entries.retain(|e| &e.y1 + &gap >= low && &e.y0 - &gap <= high);
-            entries.sort_by(|a, b| a.x0.cmp(&b.x0));
-            let (mut plain, mut dooms, mut cursor): (Vec<usize>, Vec<usize>, usize) =
-                (Vec::new(), Vec::new(), 0);
-            for x in xs {
-                self.checkpoint()?;
-                while cursor < entries.len() && entries[cursor].x0 < x {
-                    if entries[cursor].doom.is_none() {
-                        plain.push(cursor);
-                    } else {
-                        dooms.push(cursor);
-                    }
-                    cursor += 1;
-                }
-                plain.retain(|i| entries[*i].x1 > x);
-                dooms.retain(|i| entries[*i].x1 > x);
-                plain.sort_by(|i, j| entries[*i].y0.cmp(&entries[*j].y0));
-                let mut runs = Vec::<(Int, Int)>::new();
-                for i in &plain {
-                    let e = &entries[*i];
-                    if let Some(last) = runs.last_mut() {
-                        if e.y0 < last.1 {
-                            last.1 = last.1.clone().max(e.y1.clone());
-                            continue;
-                        }
-                    }
-                    runs.push((e.y0.clone(), e.y1.clone()));
-                }
-                let mut here = ys.clone();
-                for (lo, hi) in &runs {
-                    for y in [lo, hi] {
-                        if contacts.0 <= *y && *y <= contacts.1 {
-                            here.insert(y.clone());
-                        }
-                    }
-                }
-                for i in &plain {
-                    let e = &entries[*i];
-                    if let Some(owner) = &e.owner {
-                        if here
-                            .range((
-                                std::ops::Bound::Excluded(&e.y0),
-                                std::ops::Bound::Excluded(&e.y1),
-                            ))
-                            .next()
-                            .is_some()
+                let mut on_net = BTreeMap::<String, Vec<Point>>::new();
+                for f in &own.members {
+                    for p in &f.pads {
+                        if !p.net.is_empty()
+                            && !self.grounds.contains(&p.net)
+                            && peers.contains_key(&p.net)
                         {
-                            conflicts.insert(owner.clone());
+                            on_net
+                                .entry(p.net.clone())
+                                .or_default()
+                                .push(p.position.clone());
                         }
                     }
                 }
-                for y in here {
-                    if runs.iter().any(|(lo, hi)| *lo < y && y < *hi) {
-                        continue;
+                let pads: Vec<_> = on_net
+                    .into_iter()
+                    .map(|(n, ps)| {
+                        let count = Int::from(ps.len());
+                        (
+                            n,
+                            Point {
+                                x: ps
+                                    .iter()
+                                    .map(|p| p.x.clone())
+                                    .sum::<Int>()
+                                    .div_floor(&count),
+                                y: ps
+                                    .iter()
+                                    .map(|p| p.y.clone())
+                                    .sum::<Int>()
+                                    .div_floor(&count),
+                            },
+                        )
+                    })
+                    .collect();
+                let sources: Vec<_> = own
+                    .members
+                    .iter()
+                    .filter(|f| self.sources.contains(&f.reference))
+                    .map(|f| f.position.clone())
+                    .collect();
+                let placed_sources: Vec<_> = self
+                    .sources
+                    .iter()
+                    .filter_map(|r| positions.get(r).map(|p| (r, p)))
+                    .collect();
+                let limit2 = self.thermal_min.as_ref().map(|n| n * n);
+                let contacts = (&window.y0 - &own.bbox.y0, &window.y1 - &own.bbox.y1);
+                let low = ys
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| contacts.0.clone())
+                    .min(contacts.0.clone())
+                    .min(contacts.1.clone());
+                let high = ys
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| contacts.1.clone())
+                    .max(contacts.0.clone())
+                    .max(contacts.1.clone());
+                entries.retain(|e| &e.y1 + &gap >= low && &e.y0 - &gap <= high);
+                entries.sort_by(|a, b| a.x0.cmp(&b.x0));
+                let (mut plain, mut dooms, mut cursor): (Vec<usize>, Vec<usize>, usize) =
+                    (Vec::new(), Vec::new(), 0);
+                for x in xs {
+                    self.checkpoint()?;
+                    while cursor < entries.len() && entries[cursor].x0 < x {
+                        if entries[cursor].doom.is_none() {
+                            plain.push(cursor);
+                        } else {
+                            dooms.push(cursor);
+                        }
+                        cursor += 1;
                     }
-                    let mut doomed = false;
-                    for i in &dooms {
+                    plain.retain(|i| entries[*i].x1 > x);
+                    dooms.retain(|i| entries[*i].x1 > x);
+                    plain.sort_by(|i, j| entries[*i].y0.cmp(&entries[*j].y0));
+                    let mut runs = Vec::<(Int, Int)>::new();
+                    for i in &plain {
                         let e = &entries[*i];
-                        let (lo, hi) = e.doom.as_ref().unwrap();
-                        let dx = Int::zero().max(lo - &x).max(&x - hi);
-                        if dx >= gap {
+                        if let Some(last) = runs.last_mut() {
+                            if e.y0 < last.1 {
+                                last.1 = last.1.clone().max(e.y1.clone());
+                                continue;
+                            }
+                        }
+                        runs.push((e.y0.clone(), e.y1.clone()));
+                    }
+                    let mut here = ys.clone();
+                    for (lo, hi) in &runs {
+                        for y in [lo, hi] {
+                            if contacts.0 <= *y && *y <= contacts.1 {
+                                here.insert(y.clone());
+                            }
+                        }
+                    }
+                    for i in &plain {
+                        let e = &entries[*i];
+                        if let Some(owner) = &e.owner {
+                            if here
+                                .range((
+                                    std::ops::Bound::Excluded(&e.y0),
+                                    std::ops::Bound::Excluded(&e.y1),
+                                ))
+                                .next()
+                                .is_some()
+                            {
+                                conflicts.insert(owner.clone());
+                            }
+                        }
+                    }
+                    for y in here {
+                        if runs.iter().any(|(lo, hi)| *lo < y && y < *hi) {
                             continue;
                         }
-                        let reach = exact::isqrt(&(&gap * &gap - &dx * &dx - 1));
-                        if &e.y0 - &reach <= y && y <= &e.y1 + &reach {
-                            doomed = true;
-                            break;
+                        let mut doomed = false;
+                        for i in &dooms {
+                            let e = &entries[*i];
+                            let (lo, hi) = e.doom.as_ref().unwrap();
+                            let dx = Int::zero().max(lo - &x).max(&x - hi);
+                            if dx >= gap {
+                                continue;
+                            }
+                            let reach = exact::isqrt(&(&gap * &gap - &dx * &dx - 1));
+                            if &e.y0 - &reach <= y && y <= &e.y1 + &reach {
+                                doomed = true;
+                                break;
+                            }
                         }
-                    }
-                    let position = Point { x: x.clone(), y };
-                    let (hit, local_cost) = evaluator.constraint(&position);
-                    if !hit.is_empty() {
-                        conflicts.extend(self.owners(hit, bid));
-                        continue;
-                    }
-                    if let Some(limit2) = &limit2 {
-                        let hit: BTreeSet<_> = sources
-                            .iter()
-                            .flat_map(|p| {
-                                placed_sources.iter().filter_map(|(r, q)| {
-                                    (exact::squared_distance(&p.plus(&position), q) < *limit2)
-                                        .then(|| (*r).clone())
-                                })
-                            })
-                            .collect();
+                        let position = Point { x: x.clone(), y };
+                        let (hit, local_cost) = evaluator.constraint(&position);
                         if !hit.is_empty() {
                             conflicts.extend(self.owners(hit, bid));
                             continue;
                         }
-                    }
-                    let wire = search::wire_cost(&pads, &peers, &position.x, &position.y);
-                    let thermal = -sources
-                        .iter()
-                        .flat_map(|p| {
-                            placed_sources
+                        if let Some(limit2) = &limit2 {
+                            let hit: BTreeSet<_> = sources
                                 .iter()
-                                .map(|(_, q)| exact::squared_distance(&p.plus(&position), q))
-                        })
-                        .min()
-                        .unwrap_or_default();
-                    let terms = self
-                        .terms
-                        .iter()
-                        .map(|term| match term.as_str() {
-                            "pad-locality" => local_cost.clone(),
-                            "inter-block-wire" => Rat::from_integer(wire.clone()),
-                            "thermal-spread" => Rat::from_integer(thermal.clone()),
-                            _ => unreachable!(),
-                        })
-                        .map(rank::Fraction::from)
-                        .collect();
-                    ranked.push(Ranked {
-                        terms,
-                        position: (position.x.into(), position.y.into()),
-                        rotation,
-                        doomed,
-                    });
+                                .flat_map(|p| {
+                                    placed_sources.iter().filter_map(|(r, q)| {
+                                        (exact::squared_distance(&p.plus(&position), q) < *limit2)
+                                            .then(|| (*r).clone())
+                                    })
+                                })
+                                .collect();
+                            if !hit.is_empty() {
+                                conflicts.extend(self.owners(hit, bid));
+                                continue;
+                            }
+                        }
+                        let wire = search::wire_cost(&pads, &peers, &position.x, &position.y);
+                        let thermal = -sources
+                            .iter()
+                            .flat_map(|p| {
+                                placed_sources
+                                    .iter()
+                                    .map(|(_, q)| exact::squared_distance(&p.plus(&position), q))
+                            })
+                            .min()
+                            .unwrap_or_default();
+                        let terms = self
+                            .terms
+                            .iter()
+                            .map(|term| match term.as_str() {
+                                "pad-locality" => local_cost.clone(),
+                                "inter-block-wire" => Rat::from_integer(wire.clone()),
+                                "thermal-spread" => Rat::from_integer(thermal.clone()),
+                                _ => unreachable!(),
+                            })
+                            .map(rank::Fraction::from)
+                            .collect();
+                        ranked.push(Ranked {
+                            terms,
+                            position: (position.x.into(), position.y.into()),
+                            rotation,
+                            variant,
+                            doomed,
+                        });
+                    }
                 }
+                self.checkpoint()?;
             }
-            self.checkpoint()?;
         }
         ranked.sort();
         Ok(ranked)
@@ -1126,6 +1197,12 @@ impl<'a> Search<'a> {
         for f in members {
             if self.stacking.contains(&f.reference) {
                 let shape = shadow(f, &self.stack_margin);
+                if members.iter().any(|other| {
+                    other.reference != f.reference
+                        && constraints::near(other, std::slice::from_ref(&shape), &gap)
+                }) {
+                    return Ok(Some(("no_stacking".into(), no)));
+                }
                 let mut own = f.clone();
                 own.courtyards = [(shape.side.clone(), shape.polygons.clone())]
                     .into_iter()
@@ -1207,7 +1284,7 @@ impl<'a> Search<'a> {
         bid: &str,
         ranked: &mut std::vec::IntoIter<Ranked>,
         conflicts: &mut BTreeSet<String>,
-    ) -> Result<Option<(Point, i64)>> {
+    ) -> Result<Option<(Point, i64, usize)>> {
         for row in ranked {
             self.checkpoint()?;
             if self.steps == self.budget {
@@ -1225,7 +1302,7 @@ impl<'a> Search<'a> {
                 x: row.position.0.exact(),
                 y: row.position.1.exact(),
             };
-            let own = self.rotated(bid, row.rotation)?;
+            let own = self.rotated(bid, row.variant, row.rotation)?;
             let proposed = own.macro_fp.at(&position, row.rotation)?;
             let members = own
                 .members
@@ -1236,7 +1313,7 @@ impl<'a> Search<'a> {
                 *self.rejected.entry(reason).or_default() += 1;
                 conflicts.extend(hit);
             } else {
-                return Ok(Some((position, row.rotation)));
+                return Ok(Some((position, row.rotation, row.variant)));
             }
         }
         Ok(None)
@@ -1366,10 +1443,11 @@ fn net_counts(
     rows.sort_by(|((a, b), _), ((c, d), _)| {
         blocks::natural_cmp(a, c).then(blocks::natural_cmp(b, d))
     });
-    json!(rows
-        .into_iter()
-        .map(|((a, b), n)| json!({"between":[a,b],"nets":n}))
-        .collect::<Vec<_>>())
+    json!(
+        rows.into_iter()
+            .map(|((a, b), n)| json!({"between":[a,b],"nets":n}))
+            .collect::<Vec<_>>()
+    )
 }
 pub fn grade_rules(
     capture: &Value,
@@ -1502,6 +1580,17 @@ fn deferred_grading(plan: &Value, admitted: &BTreeMap<String, Value>) -> Value {
                 .flatten()
                 .filter(|m| m["group"] == *id)
                 .count();
+            let measured = if measured == 0 {
+                grade["groups"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|g| g["id"] == *id && g.get("region").is_some())
+                    .map(|g| g["references"].as_array().map_or(0, Vec::len))
+                    .sum()
+            } else {
+                measured
+            };
             let bad = groups::violations(grade).iter().any(|r| r["group"] == *id);
             out.push(json!({"block":b,"kind":"group","id":id,"measured":measured,"status":if measured>0&&!bad{"pass"}else if bad{"defect"}else{"unknown"}}));
         }
@@ -1548,7 +1637,11 @@ fn stopped(
     if !search.access_rejections.is_empty() {
         record["search"]["access_rejections"] = json!(search.access_rejections);
     }
-    failure(capture, policy, &record, status, &reason, search.steps)
+    let steps = search.steps
+        + record["residual_budget"]["steps_used"]
+            .as_u64()
+            .unwrap_or(0);
+    failure(capture, policy, &record, status, &reason, steps)
 }
 
 pub fn plan(
@@ -1561,8 +1654,9 @@ pub fn plan(
     blocks::keys(
         section,
         &["arrangement", "candidates"],
-        &["allocation_text"],
+        &["allocation_text", "side_eligibility", "contract"],
     )?;
+    block_contract::validate(capture, section, effective_policy)?;
     let inventory = netlist::parse(netlist_raw)?;
     let allocation = section
         .get("allocation_text")
@@ -1578,6 +1672,8 @@ pub fn plan(
         effective_policy,
         &section["arrangement"],
         &section["candidates"],
+        section.get("side_eligibility"),
+        section.get("contract"),
     )
 }
 pub fn arrange(
@@ -1588,6 +1684,8 @@ pub fn arrange(
     effective: &Value,
     document: &Value,
     entries: &Value,
+    eligibility: Option<&Value>,
+    contract: Option<&Value>,
 ) -> Result<Value> {
     let refs: BTreeSet<_> = blocks::board(capture)?.into_keys().collect();
     policy::validate(captured, &refs)?;
@@ -1606,7 +1704,8 @@ pub fn arrange(
     let mut admitted = BTreeMap::<String, Value>::new();
     let mut problems = Vec::new();
     for (i, entry) in blocks::rows(entries)?.iter().enumerate() {
-        let a = blocks::admit(entry, capture, inventory, derivation, captured)?;
+        let a =
+            block_variants::admit(entry, capture, inventory, derivation, captured, eligibility)?;
         if a["status"] == "refused" {
             problems.push(json!({"candidate":i,"block":entry["candidate"]["block_id"],"problems":a["problems"]}));
         } else {
@@ -1765,6 +1864,11 @@ pub fn arrange(
             }
         }
         for (b, a) in &admitted {
+            // Each native alternative is checked at candidate evaluation. A bad
+            // first alternative must not discard a valid face of the same block.
+            if a.get("variants").is_some() {
+                continue;
+            }
             let frames = a["poses"]
                 .as_object()
                 .unwrap()
@@ -1906,227 +2010,501 @@ pub fn arrange(
     }
     let mut levels = Vec::<Level>::new();
     let (mut backjumps, mut peak) = (0u64, 0usize);
-    while search.placed.len() < order.len() {
-        let i = search.placed.len();
-        search.current = Some(order[i].clone());
-        if levels.len() == i {
-            let mut conflicts = BTreeSet::new();
-            let ranked = match search.ranked(&order[i], &mut conflicts) {
-                Ok(r) => r,
-                Err(e) => {
-                    if let Some(stop) = e.downcast_ref::<Stopped>() {
-                        return stopped(
-                            capture, effective, &record, &search, stop.0, stop.1, &order[i],
-                            backjumps, peak,
-                        );
+    let has_variants = admitted.values().any(|a| a.get("variants").is_some());
+    ensure!(
+        has_variants || arrangement.get("refinement").is_none(),
+        "member refinement requires native candidate sets"
+    );
+    let residual_budget = effective["step_budget"]
+        .as_u64()
+        .context("residual step budget")?;
+    let mut residual_used = 0u64;
+    let mut previous_failure: Option<(Value, Value, &str)> = None;
+    if has_variants {
+        record["adjustments"] = json!([]);
+        record["residual_failures"] = json!([]);
+    }
+    loop {
+        while search.placed.len() < order.len() {
+            let i = search.placed.len();
+            search.current = Some(order[i].clone());
+            if levels.len() == i {
+                let mut conflicts = BTreeSet::new();
+                let ranked = match search.ranked(&order[i], &mut conflicts) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        if let Some(stop) = e.downcast_ref::<Stopped>() {
+                            return stopped(
+                                capture, effective, &record, &search, stop.0, stop.1, &order[i],
+                                backjumps, peak,
+                            );
+                        }
+                        if e.is::<locality::TargetBudgetExhausted>() {
+                            return stopped(
+                                capture,
+                                effective,
+                                &record,
+                                &search,
+                                "arrangement_budget_exhausted",
+                                "locality target budget exhausted",
+                                &order[i],
+                                backjumps,
+                                peak,
+                            );
+                        }
+                        return Err(e);
                     }
-                    if e.is::<locality::TargetBudgetExhausted>() {
-                        return stopped(
-                            capture,
-                            effective,
-                            &record,
-                            &search,
-                            "arrangement_budget_exhausted",
-                            "locality target budget exhausted",
-                            &order[i],
-                            backjumps,
-                            peak,
-                        );
+                };
+                levels.push(Level {
+                    block: order[i].clone(),
+                    conflicts,
+                    candidates: ranked.into_iter(),
+                });
+            }
+            let level = &mut levels[i];
+            let candidate =
+                match search.candidate(&level.block, &mut level.candidates, &mut level.conflicts) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        if let Some(stop) = e.downcast_ref::<Stopped>() {
+                            return stopped(
+                                capture, effective, &record, &search, stop.0, stop.1, &order[i],
+                                backjumps, peak,
+                            );
+                        }
+                        return Err(e);
                     }
-                    return Err(e);
-                }
+                };
+            if let Some((p, r, variant)) = candidate {
+                search.push(&level.block, variant, p, r)?;
+                peak = peak.max(search.placed.len());
+                continue;
+            }
+            let culprit = search
+                .placed
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, p)| level.conflicts.contains(&p.block))
+                .map(|(i, _)| i);
+            let Some(j) = culprit else {
+                return stopped(
+                    capture,
+                    effective,
+                    &record,
+                    &search,
+                    "arrangement_search_exhausted",
+                    &format!(
+                        "no candidate for block {} in the finite search; infeasibility unproved",
+                        level.block
+                    ),
+                    &level.block,
+                    backjumps,
+                    peak,
+                );
             };
-            levels.push(Level {
-                block: order[i].clone(),
-                conflicts,
-                candidates: ranked.into_iter(),
-            });
+            if backjumps == search.budget {
+                return stopped(
+                    capture,
+                    effective,
+                    &record,
+                    &search,
+                    "arrangement_budget_exhausted",
+                    "deterministic backjump budget exhausted",
+                    &level.block,
+                    backjumps,
+                    peak,
+                );
+            }
+            backjumps += 1;
+            search.backjumps = backjumps;
+            let conflicts = level.conflicts.clone();
+            while search.placed.len() > j {
+                search.placed.pop();
+            }
+            let parent = levels[j].block.clone();
+            levels[j]
+                .conflicts
+                .extend(conflicts.into_iter().filter(|b| b != &parent));
+            levels.truncate(j + 1);
         }
-        let level = &mut levels[i];
-        let candidate =
-            match search.candidate(&level.block, &mut level.candidates, &mut level.conflicts) {
-                Ok(c) => c,
-                Err(e) => {
-                    if let Some(stop) = e.downcast_ref::<Stopped>() {
-                        return stopped(
-                            capture, effective, &record, &search, stop.0, stop.1, &order[i],
-                            backjumps, peak,
-                        );
+        record["search"] = json!({"strategy":STRATEGY,"steps_used":search.steps,"step_budget":search.budget,"backjumps":backjumps,"rejected":search.rejected,"elapsed_s":search.started.elapsed().as_secs_f64()});
+        record["arranged"] = json!(search.placed.iter().map(Placed::record).collect::<Vec<_>>());
+        if has_variants {
+            if record.get("first_arranged").is_none() {
+                record["first_arranged"] = record["arranged"].clone();
+            }
+            if let Some((before, status, reason)) = previous_failure.take() {
+                let after = record["arranged"].clone();
+                record["adjustments"].as_array_mut().unwrap().push(json!({"reason":reason, "before":before,"after":after,"residual_status":status}));
+            }
+            for row in record["blocks"].as_array_mut().unwrap() {
+                let bid = row["block"].as_str().unwrap();
+                let a = &admitted[bid];
+                if let Some(variants) = a.get("variants").and_then(Value::as_array) {
+                    let selected = search.placed.iter().find(|p| p.block == bid).unwrap();
+                    let variant = &variants[selected.variant];
+                    for key in [
+                        "candidate_sha256",
+                        "provenance",
+                        "anchor",
+                        "deferred",
+                        "selected_face",
+                    ] {
+                        row[key] = variant[key].clone();
                     }
-                    return Err(e);
+                    row["boundary"] = variant["binding"].clone();
+                    row["candidate_set_sha256"] = a["candidate_set_sha256"].clone();
                 }
-            };
-        if let Some((p, r)) = candidate {
-            search.push(&level.block, p, r)?;
-            peak = peak.max(search.placed.len());
-            continue;
+            }
         }
-        let culprit = search
+        let poses: BTreeMap<_, _> = search
             .placed
             .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, p)| level.conflicts.contains(&p.block))
-            .map(|(i, _)| i);
-        let Some(j) = culprit else {
-            return stopped(
-                capture,
-                effective,
-                &record,
-                &search,
-                "arrangement_search_exhausted",
-                &format!(
-                    "no candidate for block {} in the finite search; infeasibility unproved",
-                    level.block
-                ),
-                &level.block,
-                backjumps,
-                peak,
-            );
-        };
-        if backjumps == search.budget {
-            return stopped(
-                capture,
-                effective,
-                &record,
-                &search,
-                "arrangement_budget_exhausted",
-                "deterministic backjump budget exhausted",
-                &level.block,
-                backjumps,
-                peak,
-            );
-        }
-        backjumps += 1;
-        search.backjumps = backjumps;
-        let conflicts = level.conflicts.clone();
-        while search.placed.len() > j {
-            search.placed.pop();
-        }
-        let parent = levels[j].block.clone();
-        levels[j]
-            .conflicts
-            .extend(conflicts.into_iter().filter(|b| b != &parent));
-        levels.truncate(j + 1);
-    }
-    record["search"] = json!({"strategy":STRATEGY,"steps_used":search.steps,"step_budget":search.budget,"backjumps":backjumps,"rejected":search.rejected,"elapsed_s":search.started.elapsed().as_secs_f64()});
-    record["arranged"] = json!(search.placed.iter().map(Placed::record).collect::<Vec<_>>());
-    let poses: BTreeMap<_, _> = search
-        .placed
-        .iter()
-        .flat_map(|p| p.members.iter().map(|f| (f.reference.clone(), f.clone())))
-        .collect();
-    let mut residual_capture = capture.clone();
-    for fp in residual_capture["footprints"].as_array_mut().unwrap() {
-        if let Some(p) = poses.get(fp["ref"].as_str().unwrap()) {
-            *fp = footprint::transform_value(fp, &exact::point_value(&p.position), p.rotation)?;
-        }
-    }
-    let source_uuids: BTreeMap<_, _> = by
-        .values()
-        .filter(|f| poses.contains_key(&f.reference))
-        .map(|f| (f.uuid.clone(), f))
-        .collect();
-    if let Some(areas) = residual_capture
-        .get_mut("rule_areas")
-        .and_then(Value::as_array_mut)
-    {
-        for area in areas {
-            if let Some(f) = area["owner"].as_str().and_then(|u| source_uuids.get(u)) {
-                let pose = &poses[&f.reference];
-                let placeholder = json!({"position_nm":exact::point_value(&f.position),"rotation_deg":f.rotation,"pads":[],"courtyards":{"zone":area["outline"]}});
-                match footprint::transform_value(
-                    &placeholder,
-                    &exact::point_value(&pose.position),
-                    pose.rotation,
-                ) {
-                    Ok(p) => area["outline"] = p["courtyards"]["zone"].clone(),
-                    Err(_) => {
-                        return failure(
-                            capture,
-                            effective,
-                            &record,
-                            "unsupported_geometry",
-                            "an arranged member rule area cannot be moved to its pose",
-                            0,
-                        );
+            .flat_map(|p| p.members.iter().map(|f| (f.reference.clone(), f.clone())))
+            .collect();
+        let mut native_members = BTreeMap::new();
+        for placed in &search.placed {
+            if let Some(variants) = admitted[&placed.block]
+                .get("variants")
+                .and_then(Value::as_array)
+            {
+                for fp in blocks::rows(&variants[placed.variant]["capture"]["footprints"])? {
+                    if placed.members.iter().any(|p| fp["ref"] == p.reference) {
+                        native_members.insert(blocks::text(&fp["ref"])?.to_owned(), fp);
                     }
                 }
             }
         }
-    }
-    let mut residual_policy = effective.clone();
-    if hard(stacking) {
-        let margin = exact::integer(&stacking["margin_nm"])?;
-        for r in blocks::refs(&stacking["references"])? {
-            if let Some(p) = poses.get(&r) {
-                obstacles.push(obstacle(
-                    stacking,
-                    &shadow(p, &margin),
-                    format!("block-arrangement shadow {r}"),
-                ));
+        let mut residual_capture = capture.clone();
+        for fp in residual_capture["footprints"].as_array_mut().unwrap() {
+            if let Some(p) = poses.get(fp["ref"].as_str().unwrap()) {
+                let source = native_members.get(&p.reference).copied().unwrap_or(fp);
+                *fp = footprint::transform_value(
+                    source,
+                    &exact::point_value(&p.position),
+                    p.rotation,
+                )?;
             }
         }
-    }
-    residual_policy["obstacles"] = json!(obstacles);
-    residual_policy["fixed_refs"] = json!(blocks::natural(
-        blocks::refs(&effective["fixed_refs"])?
-            .into_iter()
-            .chain(members.iter().cloned())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    ));
-    record["residual"] = json!({"references":blocks::natural(movable.iter().cloned().collect()),"policy_sha256":blocks::digest(&residual_policy),"obstacles":obstacles[blocks::rows(&effective["obstacles"])?.len()..]});
-    let mut plan =
-        packing::pack_arranged(&residual_capture, &residual_policy, Some(capture), &poses)?;
-    if plan["status"] != "planned" {
+        let source_uuids: BTreeMap<_, _> = poses.values().map(|f| (f.uuid.clone(), f)).collect();
+        let mut native_areas = BTreeMap::new();
+        for placed in &search.placed {
+            if let Some(variants) = admitted[&placed.block]
+                .get("variants")
+                .and_then(Value::as_array)
+            {
+                for area in variants[placed.variant]["capture"]["rule_areas"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                {
+                    if placed.members.iter().any(|f| area["owner"] == f.uuid) {
+                        native_areas.insert(area["uuid"].clone().to_string(), area.clone());
+                    }
+                }
+            }
+        }
+        if let Some(areas) = residual_capture
+            .get_mut("rule_areas")
+            .and_then(Value::as_array_mut)
+        {
+            for area in areas {
+                if let Some(native) = native_areas.get(&area["uuid"].clone().to_string()) {
+                    *area = native.clone();
+                }
+                if let Some(f) = area["owner"].as_str().and_then(|u| source_uuids.get(u)) {
+                    let pose = &poses[&f.reference];
+                    let placeholder = json!({"position_nm":f.raw["position_nm"],"rotation_deg":f.raw["rotation_deg"],"pads":[],"courtyards":{"zone":area["outline"]}});
+                    match footprint::transform_value(
+                        &placeholder,
+                        &exact::point_value(&pose.position),
+                        pose.rotation,
+                    ) {
+                        Ok(p) => area["outline"] = p["courtyards"]["zone"].clone(),
+                        Err(_) => {
+                            return failure(
+                                capture,
+                                effective,
+                                &record,
+                                "unsupported_geometry",
+                                "an arranged member rule area cannot be moved to its pose",
+                                0,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let mut residual_policy = effective.clone();
+        let mut residual_obstacles = obstacles.clone();
+        if hard(stacking) {
+            let margin = exact::integer(&stacking["margin_nm"])?;
+            for r in blocks::refs(&stacking["references"])? {
+                if let Some(p) = poses.get(&r) {
+                    residual_obstacles.push(obstacle(
+                        stacking,
+                        &shadow(p, &margin),
+                        format!("block-arrangement shadow {r}"),
+                    ));
+                }
+            }
+        }
+        residual_policy["obstacles"] = json!(residual_obstacles);
+        residual_policy["fixed_refs"] = json!(blocks::natural(
+            blocks::refs(&effective["fixed_refs"])?
+                .into_iter()
+                .chain(members.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        ));
+        if has_variants {
+            residual_policy["step_budget"] = json!(residual_budget - residual_used);
+        }
+        record["residual"] = json!({"references":blocks::natural(movable.iter().cloned().collect()),"policy_sha256":blocks::digest(&residual_policy),"obstacles":residual_obstacles[blocks::rows(&effective["obstacles"])?.len()..]});
+        let mut plan =
+            packing::pack_arranged(&residual_capture, &residual_policy, Some(capture), &poses)?;
+        if has_variants {
+            residual_used += plan["steps_used"]
+                .as_u64()
+                .unwrap_or(0)
+                .max(if plan["status"] == "planned" { 0 } else { 1 });
+            record["residual_budget"] =
+                json!({"step_budget":residual_budget,"steps_used":residual_used});
+        }
+        if plan["status"] != "planned" {
+            let retryable = matches!(
+                plan["status"].as_str(),
+                Some(
+                    "packing_search_exhausted"
+                        | "packing_budget_exhausted"
+                        | "locality_cluster_exhausted"
+                        | "packing_infeasible"
+                        | "fixed_conflict"
+                )
+            );
+            if has_variants && retryable && !search.placed.is_empty() {
+                let mut attempt = json!({"arranged":record["arranged"],"status":plan["status"],"reason":plan["reason"],"steps_used":plan["steps_used"]});
+                for key in ["proof", "binding_constraints", "search_failure"] {
+                    if let Some(value) = plan.get(key) {
+                        attempt[key] = value.clone();
+                    }
+                }
+                record["residual_failures"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(attempt);
+                if residual_used >= residual_budget {
+                    return failure(
+                        capture,
+                        effective,
+                        &record,
+                        "arrangement_budget_exhausted",
+                        "residual candidate budget exhausted across block adjustments",
+                        search.steps + residual_used,
+                    );
+                }
+                previous_failure = Some((
+                    record["arranged"].clone(),
+                    plan["status"].clone(),
+                    "residual_packing_failed",
+                ));
+                let last = search.placed.len() - 1;
+                levels[last]
+                    .conflicts
+                    .extend(search.placed[..last].iter().map(|p| p.block.clone()));
+                search.placed.pop();
+                continue;
+            }
+            plan["block_arrangement"] = record;
+            return Ok(plan);
+        }
+        for p in plan["placements"].as_array_mut().unwrap() {
+            p["fixed"] = json!(fixed.contains(p["ref"].as_str().unwrap()));
+            if has_variants {
+                if let Some(fp) = poses.get(p["ref"].as_str().unwrap()) {
+                    p["side"] = json!(fp.side);
+                }
+            }
+        }
+        let complete_poses: BTreeMap<_, _> = plan["placements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["ref"].as_str().unwrap(), p))
+            .collect();
+        let mut complete = if has_variants {
+            residual_capture.clone()
+        } else {
+            capture.clone()
+        };
+        if has_variants {
+            let owners: BTreeMap<_, _> = blocks::rows(&residual_capture["footprints"])?
+                .iter()
+                .map(|fp| (fp["uuid"].as_str().unwrap(), fp))
+                .collect();
+            if let Some(areas) = complete.get_mut("rule_areas").and_then(Value::as_array_mut) {
+                for area in areas {
+                    if let Some(fp) = area["owner"].as_str().and_then(|uuid| owners.get(uuid)) {
+                        let pose = complete_poses[fp["ref"].as_str().unwrap()];
+                        let placeholder = json!({"position_nm":fp["position_nm"], "rotation_deg":fp["rotation_deg"],
+                            "pads":[], "courtyards":{"zone":area["outline"]}});
+                        let transformed = footprint::transform_value(
+                            &placeholder,
+                            &pose["position_nm"],
+                            exact::rotation(&pose["rotation_deg"])?,
+                        )?;
+                        area["outline"] = transformed["courtyards"]["zone"].clone();
+                    }
+                }
+            }
+        }
+        for fp in complete["footprints"].as_array_mut().unwrap() {
+            let p = complete_poses[fp["ref"].as_str().unwrap()];
+            *fp = footprint::transform_value(
+                fp,
+                &p["position_nm"],
+                exact::rotation(&p["rotation_deg"])?,
+            )?;
+            // The native input's untouched fixed rotation keeps its JSON identity.
+            fp["rotation_deg"] = p["rotation_deg"].clone();
+        }
+        if let Some(contract) = contract {
+            record["contract_check"] = block_contract::check_complete(&complete, contract)?;
+            if record["contract_check"]["status"] == "unknown" {
+                return failure(
+                    capture,
+                    effective,
+                    &record,
+                    "block_contract_unavailable",
+                    "complete plan has unresolved required block constraints",
+                    search.steps + residual_used,
+                );
+            }
+            if record["contract_check"]["status"] != "pass" {
+                if !has_variants || search.placed.is_empty() {
+                    return failure(
+                        capture,
+                        effective,
+                        &record,
+                        "judge_rejected",
+                        "complete plan failed block constraints",
+                        search.steps + residual_used,
+                    );
+                }
+                if plan["steps_used"] == 0 {
+                    residual_used += 1;
+                }
+                record["residual_budget"]["steps_used"] = json!(residual_used);
+                if record.get("contract_failures").is_none() {
+                    record["contract_failures"] = json!([]);
+                }
+                let failed =
+                    json!({"arranged":record["arranged"],"check":record["contract_check"]});
+                record["contract_failures"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(failed);
+                if residual_used >= residual_budget {
+                    return failure(
+                        capture,
+                        effective,
+                        &record,
+                        "arrangement_budget_exhausted",
+                        "residual candidate budget exhausted across block adjustments",
+                        search.steps + residual_used,
+                    );
+                }
+                previous_failure = Some((
+                    record["arranged"].clone(),
+                    json!("block_contract_rejected"),
+                    "block_contract_failed",
+                ));
+                let last = search.placed.len() - 1;
+                levels[last]
+                    .conflicts
+                    .extend(search.placed[..last].iter().map(|p| p.block.clone()));
+                search.placed.pop();
+                continue;
+            }
+        }
+        let mut refinement_steps = 0;
+        if has_variants {
+            let contract = contract.context("native candidate sets require a block contract")?;
+            let (refined, witness) = block_refinement::refine(
+                &complete,
+                effective,
+                contract,
+                &record,
+                arrangement["refinement"]["step_budget"]
+                    .as_u64()
+                    .unwrap_or(64),
+            )?;
+            complete = refined;
+            refinement_steps = witness["steps_used"].as_u64().unwrap();
+            record["member_refinement"] = witness;
+            record["routing_feedback"] = json!({"status":"unavailable","reason":"routing feedback has not been implemented"});
+            let final_fps = blocks::board(&complete)?;
+            for placement in plan["placements"].as_array_mut().unwrap() {
+                let fp = &final_fps[placement["ref"].as_str().unwrap()];
+                for key in ["position_nm", "rotation_deg", "side"] {
+                    placement[key] = fp[key].clone();
+                }
+            }
+            let mut judgment =
+                crate::grading::judge(&complete, None, effective.get("fixed_overhangs"))?;
+            judgment["basis"] = json!("transformed-proposal-not-native");
+            plan["judgment"] = judgment;
+            if let Some(g) = effective.get("groups") {
+                plan["group_grading"] = groups::grade(&complete, &groups::validate(g, None)?)?;
+            }
+            if let Some(l) = effective.get("electrical_locality") {
+                plan["locality_grading"] = locality::grade(&complete, l)?;
+            }
+            record["contract_check"] = block_contract::check_complete(&complete, contract)?;
+        }
+        record["rules"] = grade_rules(&complete, &arrangement, &search.owner, &fixed)?;
+        if let Some(regions) = effective.get("advisory_regions") {
+            plan["advisory_regions"] =
+                crate::grading::advisory_regions(&complete, regions, &fixed)?;
+        }
+        record["deferred_grading"] = deferred_grading(&plan, &admitted);
+        record["residual"]["steps_used"] = plan["steps_used"].clone();
+        let steps = if has_variants {
+            residual_used
+        } else {
+            plan["steps_used"].as_u64().unwrap()
+        } + search.steps
+            + refinement_steps;
+        plan["steps_used"] = json!(steps);
+        plan["policy"] = effective.clone();
+        let failed = (has_variants
+            && (plan["judgment"]["verdict"] != "pass"
+                || plan
+                    .get("group_grading")
+                    .is_some_and(|g| !groups::satisfied(g))
+                || plan
+                    .get("locality_grading")
+                    .is_some_and(|g| g["status"] != "pass" && g["status"] != "info")
+                || record["contract_check"]["status"] != "pass"))
+            || blocks::rows(&record["rules"])?
+                .iter()
+                .any(|r| r["enforcement"] == "hard" && r["status"] != "pass")
+            || blocks::rows(&record["deferred_grading"])?
+                .iter()
+                .any(|r| r["status"] != "pass" && r["status"] != "info");
+        if failed {
+            return failure(
+                capture,
+                effective,
+                &record,
+                "judge_rejected",
+                "complete plan failed a hard block rule or a deferred obligation",
+                steps,
+            );
+        }
         plan["block_arrangement"] = record;
         return Ok(plan);
     }
-    for p in plan["placements"].as_array_mut().unwrap() {
-        p["fixed"] = json!(fixed.contains(p["ref"].as_str().unwrap()));
-    }
-    let complete_poses: BTreeMap<_, _> = plan["placements"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| (p["ref"].as_str().unwrap(), p))
-        .collect();
-    let mut complete = capture.clone();
-    for fp in complete["footprints"].as_array_mut().unwrap() {
-        let p = complete_poses[fp["ref"].as_str().unwrap()];
-        *fp = footprint::transform_value(
-            fp,
-            &p["position_nm"],
-            exact::rotation(&p["rotation_deg"])?,
-        )?;
-    }
-    record["rules"] = grade_rules(&complete, &arrangement, &search.owner, &fixed)?;
-    if let Some(regions) = effective.get("advisory_regions") {
-        plan["advisory_regions"] = crate::grading::advisory_regions(&complete, regions, &fixed)?;
-    }
-    record["deferred_grading"] = deferred_grading(&plan, &admitted);
-    record["residual"]["steps_used"] = plan["steps_used"].clone();
-    let steps = plan["steps_used"].as_u64().unwrap() + search.steps;
-    plan["steps_used"] = json!(steps);
-    plan["policy"] = effective.clone();
-    let failed = blocks::rows(&record["rules"])?
-        .iter()
-        .any(|r| r["enforcement"] == "hard" && r["status"] != "pass")
-        || blocks::rows(&record["deferred_grading"])?
-            .iter()
-            .any(|r| r["status"] != "pass" && r["status"] != "info");
-    if failed {
-        return failure(
-            capture,
-            effective,
-            &record,
-            "judge_rejected",
-            "complete plan failed a hard block rule or a deferred obligation",
-            steps,
-        );
-    }
-    plan["block_arrangement"] = record;
-    Ok(plan)
 }

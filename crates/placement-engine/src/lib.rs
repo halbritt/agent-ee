@@ -1,6 +1,9 @@
 //! Complete placement planning over immutable captured board facts.
 pub mod arrangement;
 pub mod blocks;
+pub mod block_contract;
+pub mod block_refinement;
+pub mod block_variants;
 pub mod constraints;
 pub mod exact;
 pub mod footprint;

@@ -38,6 +38,7 @@ DRIVER_SCHEMA = 'agent-ee.placement-driver/1'
 COPPER_SCHEMA = 'agent-ee.group-copper-scope/1'
 SUBLAYOUT_KEYS = {'request', 'sub_boards'}
 BLOCKS_KEYS = {'netlist', 'arrangement', 'candidates'}
+BLOCKS_OPTIONAL_FILES = ('allocation', 'side_eligibility', 'contract')
 # Board-level nodes a reused group may add, with the pcbnew class its planned copy must have.
 GROUP_TAGS = {'segment': 'PCB_TRACK', 'arc': 'PCB_ARC', 'via': 'PCB_VIA', 'zone': 'ZONE', 'gr_text': 'PCB_TEXT',
               **{tag: 'PCB_SHAPE' for tag in ('gr_line', 'gr_rect', 'gr_circle', 'gr_arc', 'gr_poly', 'gr_curve')}}
@@ -165,8 +166,10 @@ def validate_blocks(value):
 
     The netlist is the captured native export every candidate was packed against; the
     helper uses it only while a fresh in-sandbox export has the same stamp-masked identity."""
-    if (not isinstance(value, dict) or not BLOCKS_KEYS <= set(value) or set(value) - BLOCKS_KEYS - {'allocation'}):
-        raise ValueError(f'placement blocks must have exactly {sorted(BLOCKS_KEYS)} and optionally allocation')
+    if (not isinstance(value, dict) or not BLOCKS_KEYS <= set(value)
+            or set(value) - BLOCKS_KEYS - set(BLOCKS_OPTIONAL_FILES)):
+        raise ValueError(f'placement blocks must have exactly {sorted(BLOCKS_KEYS)} '
+                         f'and optionally {", ".join(BLOCKS_OPTIONAL_FILES)}')
     def captured(rel, label, suffix):
         rel = _relative(rel, label)
         if not rel.endswith(suffix):
@@ -178,10 +181,11 @@ def validate_blocks(value):
     normalized = {'netlist': captured(value['netlist'], 'block netlist', '.xml'),
                   'arrangement': captured(value['arrangement'], 'block arrangement', '.json'),
                   'candidates': [captured(c, 'block candidate', '.json') for c in candidates]}
-    if 'allocation' in value:
-        normalized['allocation'] = captured(value['allocation'], 'block allocation', '.json')
+    for key in BLOCKS_OPTIONAL_FILES:
+        if key in value:
+            normalized[key] = captured(value[key], 'block ' + key, '.json')
     paths = [normalized['netlist'], normalized['arrangement'], *normalized['candidates']]
-    paths += [normalized['allocation']] if 'allocation' in normalized else []
+    paths += [normalized[key] for key in BLOCKS_OPTIONAL_FILES if key in normalized]
     if len(set(paths)) != len(paths):
         raise ValueError('placement block files must be distinct')
     return normalized
@@ -267,7 +271,7 @@ def bind_declaration(declaration, manifest, mutable_inputs):
     section = declaration.get('blocks')
     if section is not None:
         for rel in [section['netlist'], section['arrangement'], *section['candidates'],
-                    *([section['allocation']] if 'allocation' in section else [])]:
+                    *(section[key] for key in BLOCKS_OPTIONAL_FILES if key in section)]:
             if rel not in files or rel in mutable_inputs:
                 raise ValueError(f'placement block file {rel} must be a captured immutable input')
         section = {**section, 'netlist_sha256': files[section['netlist']]}
@@ -530,6 +534,7 @@ def blocks_binding(section, manifest, inputs, policy):
     and the captured allocation, so a stale candidate refuses here, before any iteration is
     spent. The placer's own admission still binds the board and derivation."""
     from .block_arrangement import request_section_from_bytes
+    from . import block_variants
     from .blocks import digest as canonical_digest, validate_candidate
     from .native_netlist import STAMP_FIELDS, stamp_identity
     files = manifest['files']
@@ -551,14 +556,29 @@ def blocks_binding(section, manifest, inputs, policy):
     allocation = captured(section['allocation']) if 'allocation' in section else None
     raws = [captured(rel) for rel in section['candidates']]
     request = request_section_from_bytes(allocation, captured(section['arrangement']), raws,
-                                         names=section['candidates'])
+                                         names=section['candidates'],
+                                         **{key: captured(section[key]) for key in ('side_eligibility', 'contract')
+                                            if key in section})
     expected = {'inventory_sha256': files[netlist], 'policy_sha256': canonical_digest(policy),
                 'allocation_sha256': None if allocation is None else files[section['allocation']]}
     candidates = []
     for rel, entry in zip(section['candidates'], request['candidates']):
         document = entry['candidate']
         try:
-            validate_candidate(document)
+            if document['schema'] == block_variants.SCHEMA:
+                block_variants.validate_document(document, request['side_eligibility'])
+                board_hash = files.get(manifest.get('scope', {}).get('board'))
+                if board_hash is None or document['sources']['board_sha256'] != board_hash:
+                    raise ValueError('candidate set belongs to another captured board')
+                contract = request['contract']
+                if (not isinstance(contract, dict) or contract.get('schema') != 'agent-ee.block-contract/1'
+                        or contract.get('eligibility') != request['side_eligibility']
+                        or not isinstance(contract.get('allocation'), dict)
+                        or contract['allocation'].get('board_sha256') != board_hash
+                        or contract.get('relationships') != policy.get('electrical_locality')):
+                    raise ValueError('candidate-set contract differs from captured board, eligibility or policy')
+            else:
+                validate_candidate(document)
         except ValueError as exc:
             raise ValueError(f'block candidate {rel} is invalid: {exc}') from None
         stale = {key: document['sources'][key] for key in expected if document['sources'][key] != expected[key]}
@@ -575,6 +595,9 @@ def blocks_binding(section, manifest, inputs, policy):
                                                              'sha256': files[section['allocation']]},
               'arrangement': {'path': section['arrangement'], 'sha256': files[section['arrangement']]},
               'candidates': candidates, 'request_policy_sha256': expected['policy_sha256']}
+    for key in ('side_eligibility', 'contract'):
+        if key in section:
+            record[key] = {'path': section[key], 'sha256': files[section[key]]}
     return record, request
 
 
