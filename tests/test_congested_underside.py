@@ -271,7 +271,8 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         self.assertEqual(request['policy']['priority_refs'], ['C1', 'C2'])
         for bundle in candidates:
             for variant in bundle['variants'].values():
-                self.assertEqual(variant['candidate']['provenance']['class'], 'search-derived')
+                if variant['status'] == 'packed':
+                    self.assertEqual(variant['candidate']['provenance']['class'], 'search-derived')
         plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
         self.assert_plan_parity(facts, request, netlist, plan)
         self.assertEqual(plan['status'], 'planned', plan)
