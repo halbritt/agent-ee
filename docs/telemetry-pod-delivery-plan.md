@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 2 — 2026-10-23: first placement attempt recorded; next action is one changed placement-search attempt (agent-521 brief 220a5aa0). Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 2 — 2026-10-23: first placement attempt recorded; next action is one placement with a larger search allowance (agent-521 decision update to brief 220a5aa0). Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -39,11 +39,13 @@ Status: NOT PLACED. Partial stays partial; there is no placed board and nothing 
 
 ## Next action (revision 2)
 
-The same ordinary-model worker, on the same qualified runtime and proximal admission, makes ONE changed placement-search attempt on the same repaired input. Placement priority changes so that R19 and the demonstrated difficult remaining area are placed before space is consumed. The worker first confirms from the actual geometry and policy that this change is meaningful; that check is part of the execution, not a separate proposal or review.
+The same ordinary-model worker, on the same qualified 7d5b0d4d runtime and proximal admission, makes ONE placement on the same repaired input with the identical repaired policy (r1) and the identical search order. Only the computational allowance changes: step_budget 1000000 and search_timeout_s 1400, if the existing runtime supports them. The outer placement step stays 1500 s, with at most 10 minutes of setup and checks.
 
-Unchanged: the fixed sourced set, rules, clearances, board outline and stackup, electrical locality requirements and all parts. No numeric constraint changes and no new scorer. The R1 source and provenance repairs stay, and the exact policy delta is documented. Budget: 200000 search steps, at most 1500 s wall time, at most 10 minutes of setup and checks. No unchanged rerun, automatic successor or broad optimization. If the evidence contradicts the ordering hypothesis, the worker returns that evidence and the best concrete alternative before running.
+Reason (agent-521 decision update): the only demonstrated terminal bound in R1 was the 200000-step budget at about 630 steps/s (316.9 s). R19 being the first unplaced part does not show that R19 is unusually difficult, and 283 of 309 placed with front free-area utilization 0.858 does not establish geometric infeasibility. Raising the agent-selected step budget to use the already-allowed time is a smaller and better-supported action than the earlier search-order hypothesis, which was withdrawn before any search ran.
 
-Predicted result: placing the failing remainder first avoids the observed late-search collision and fragmentation and produces a complete saved placement. On success the worker returns the saved board and project, hashes, and the native preservation and DRC delta, for an immediate routing assignment. On failure it returns the new unplaced frontier, partial count, backjumps and geometry evidence, so the approach can change instead of repeating the same search.
+Unchanged: geometry, clearances, placement constraints, the fixed sourced set, rules, outline, stackup, electrical locality and all parts. No code, scorer or review changes. The R1 partial evidence and the exact policy delta are preserved.
+
+Return: if placement completes, the saved board and project with hashes and the full native preservation and DRC check. If the outcome is unknown, the partial count and frontier, steps and backjumps, and the terminal reason. No automatic further increase or retry; agent-521 decides the next action from the returned evidence.
 
 ## Decision after that result
 
