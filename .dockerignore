@@ -4,6 +4,7 @@
 **/*.py[cod]
 .venv
 build
+**/target
 **/*.egg-info
 .pytest_cache
 evidence/**/inputs

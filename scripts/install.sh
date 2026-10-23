@@ -18,3 +18,7 @@ install_link "$agent_ee_root/skills/agent-ee" "$HOME/.agents/skills/agent-ee"
 install_link "$agent_ee_root/skills/agent-ee" "${CODEX_HOME:-$HOME/.codex}/skills/agent-ee"
 install_link "$agent_ee_root/skills/agent-ee" "$HOME/.claude/skills/agent-ee"
 printf 'Installed agent-ee CLI and discovery links. Run: agent-ee doctor\n'
+if [[ ! -x /usr/local/libexec/agent-ee/agent-ee-placement ]]; then
+    printf 'Placement requires the Rust planner in /usr/local/libexec/agent-ee/.\n'
+    printf 'Build and install it as documented in %s/docs/installation.md#rust-placement-engine\n' "$agent_ee_root"
+fi

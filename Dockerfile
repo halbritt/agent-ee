@@ -79,7 +79,7 @@ RUN set -eu; \
     done
 
 # The exact Rust toolchain is acquired from a digest-pinned image, only in the
-# build stage. The final image receives the installed extension, never Cargo.
+# build stages. The final image receives native artifacts, never Cargo.
 FROM rust:1.99.1-slim-bookworm@sha256:a24e292b4af7bdee351a31d3a6379972a5652f0ea22a1b6d6883324ac4f5097c AS rust-toolchain
 
 FROM native AS kicad-route-build
@@ -94,14 +94,6 @@ RUN set -eu; \
     rm -rf /var/lib/apt/lists/*
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
-
-# Reuse the pinned build-only Rust toolchain. Availability does not activate
-# the optional scorer; Python remains the normal placement backend.
-COPY src/agent_ee/data/placement_score.rs /tmp/placement_score.rs
-RUN mkdir -p /usr/local/lib/agent-ee && \
-    rustc --edition=2021 --crate-type=cdylib -C opt-level=3 -C lto=fat \
-      -C codegen-units=1 -C panic=abort /tmp/placement_score.rs \
-      -o /usr/local/lib/agent-ee/placement_score.so
 
 FROM native AS toolchain
 
@@ -142,8 +134,6 @@ RUN set -eu; \
 ENV AGENT_EE_KICAD_ROUTE_CHECKOUT=/opt/kicad-route
 COPY --from=kicad-route-build --chown=10001:10001 /opt/kicad-route /opt/kicad-route
 COPY --from=kicad-route-build /opt/kicad-route.install.json /opt/kicad-route.install.json
-COPY --from=kicad-route-build /usr/local/lib/agent-ee/placement_score.so /usr/local/lib/agent-ee/placement_score.so
-ENV AGENT_EE_PLACEMENT_SCORE_LIBRARY=/usr/local/lib/agent-ee/placement_score.so
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
 
@@ -152,12 +142,32 @@ RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
 # the image, where the outer-host docker CLI is absent (docs/seeded-benchmark.md).
 COPY docker/image-context.json /usr/local/share/agent-ee/image-context.json
 
+# The whole planner is built from this checkout, with the same pinned compiler
+# as routing. Its source stage is outside the exported toolchain cache.
+FROM kicad-route-build AS placement-engine-build
+WORKDIR /build/agent-ee
+COPY crates/placement-engine/Cargo.toml crates/placement-engine/Cargo.lock ./crates/placement-engine/
+COPY crates/placement-engine/src ./crates/placement-engine/src
+COPY src/agent_ee/data/jlcpcb-locality.json ./src/agent_ee/data/jlcpcb-locality.json
+COPY scripts/build_placement_engine.py ./scripts/build_placement_engine.py
+RUN python3 scripts/build_placement_engine.py fetch
+RUN --network=none python3 scripts/build_placement_engine.py build \
+    --output /usr/local/libexec/agent-ee/agent-ee-placement
+
 # Source and retained fixtures are deliberately outside the exported CI cache.
 FROM toolchain
 
 # Source-launcher installation, as in docs/installation.md: the launcher uses
 # /usr/bin/python3 (which imports pcbnew) and locates src/ from its checkout.
 COPY . /opt/agent-ee
+COPY --from=placement-engine-build /usr/local/libexec/agent-ee/ /usr/local/libexec/agent-ee/
+ENV AGENT_EE_RUST_PLANNER=/usr/local/libexec/agent-ee/agent-ee-placement
+RUN --network=none set -eu; \
+    python3 /opt/agent-ee/scripts/build_placement_engine.py verify \
+      --output /usr/local/libexec/agent-ee/agent-ee-placement; \
+    ldd /usr/local/libexec/agent-ee/agent-ee-placement > /tmp/placement-engine-libraries.txt; \
+    ! grep -q 'not found' /tmp/placement-engine-libraries.txt; \
+    rm /tmp/placement-engine-libraries.txt
 RUN set -eu; \
     ln -s /opt/agent-ee/bin/agent-ee /usr/local/bin/agent-ee; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee

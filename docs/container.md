@@ -34,6 +34,7 @@ hosted run exposed a user-namespace requirement, handled below.
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
 | kicad-route with KRT 0.23.1 | kicad-route `b5774496d8466b67ffa0362b6665fee2108155a3`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
+| Rust placement engine | This checkout's `crates/placement-engine`, committed Cargo lock and digest-pinned Rust 1.99.1 compiler | Locked dependency acquisition, offline Rust unit tests and release build, then source/binary receipt verification in the final image |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -144,6 +145,38 @@ run's apt-install steps marked `CACHED`, with the image loaded for Doctor and
 the strict gate. The initial run must populate the cache. Hosted cache restore
 and export require that follow-up run; local evidence does not establish them.
 No hosted run was triggered for this change.
+
+## Rust placement engine
+
+The complete planning operation runs in
+`/usr/local/libexec/agent-ee/agent-ee-placement`. Its installed receipt is
+`/usr/local/libexec/agent-ee/agent-ee-placement.json`.
+The separate `placement-engine-build` stage reuses the routing build stage's
+pinned compiler and linker environment. It copies only the crate manifests,
+Rust sources, compiled locality data and
+[build script](../scripts/build_placement_engine.py).
+`.dockerignore` excludes local Cargo `target` directories.
+
+Dependency acquisition uses `cargo fetch --locked`. The next layer runs with
+`--network=none`; both `cargo test --release --frozen` and
+`cargo build --release --frozen` must pass before a binary is installed.
+The build checks exact compiler banners, uses the portable `x86-64` CPU target,
+and remaps checkout paths consistently. The receipt records source and lock
+hashes, compiler identity, successful unit tests and the executable hash.
+These are fixed build inputs and recorded output identity; they do not by
+themselves establish byte-for-byte reproducibility across different build hosts.
+
+The final image verifies that receipt against its copied source without a
+compiler or network, and checks shared-library resolution. Only the binary and
+receipt cross from the planner build stage. The planner stage is not a dependency
+of the exported `toolchain` cache, so its application source does not enter that
+cache. No C scorer, scalar scoring library or PyPy runtime is installed.
+
+The normal strict suite exercises the installed binary against the independent
+Python planner using the committed parity tests. Rust unit tests already ran in
+the build stage; runtime tests require no compiler installation. On configured
+project hosts, use `ae-ci-exec` for image builds and native checks; missing
+toolchain inputs fail the check rather than switching to host execution.
 
 ## Pinned routing tool
 
@@ -309,7 +342,8 @@ project stops moving so goddamned fast"). This is temporary, and restoring
 per-push runs needs the owner. The landing gate is the local strict gate; a red
 daily run is a defect to fix. One job:
 
-1. Builds the image from the checkout.
+1. Builds the image from the checkout, including offline Rust planner unit tests
+   and release compilation with the pinned toolchain.
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
    executor before the suite. Failed setup also records the host's user-namespace
    sysctl and kernel log (read-only diagnostics).
