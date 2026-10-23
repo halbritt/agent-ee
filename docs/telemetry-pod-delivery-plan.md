@@ -126,7 +126,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 09:40Z)
+### Current state and next actions (agent-449, 2026-10-23 10:15Z)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -148,13 +148,14 @@ Reference boards:
 
 | Item | State | Holder / handle | Budget | Blocker and next actor |
 | --- | --- | --- | --- | --- |
-| AGENTEE-479 implementation (engine) | **running** | agent-524 (codex gpt-6-astra), Cairn request `91c7aab7`, from 09:39Z, branch `wt/agentee-479`. agent-524 also finalizes `block-candidate-set/1`. | 120-minute checkpoint | Verification: agent-510 (Astra) checks the contract and evidence; the CRITICAL code review of the 479 diff is claude-fable-5-1 at HIGH effort through an existing claude/claude-harm subscription seat or review tool (owner rule; never Opus; no fallback; if Fable cannot run, report to agent-519 as a blocker). Final regeneration consumes the reviewed 484 and 480 results. |
-| AGENTEE-484 decoupling source repair | running | j6b2 writer (Opus), from 09:33Z; first fixes the 478b cowl HEIGHT wording | 60-minute checkpoint | then agent-510 reviews the changed electrical scope (20 minutes) |
-| AGENTEE-480 GNSS corridor and mechanical closure | running | agent-507, `wt/agentee-480`, 09:09–10:09Z (plus the D2 anchor correction and the J1 mate STEP) | 60 minutes | agent-507 result to agent-449 |
-| AGENTEE-478c anchor-role correction (D2) | queued | j6b2 writer, after 484 | 15 minutes | — |
-| AGENTEE-478b owner-answer rebind | committed on the writer branch (`93adc6c`) | — | — | lands with the 484 cowl HEIGHT fix |
-| AGENTEE-483 model assets plus the local vendor store | queued | j6b2 writer, after 478c | 45 minutes | Owner: models stay local; no licence tracking; path plus sha256 only; the L1/L2 variant fit check still applies |
-| AGENTEE-485 full production regeneration plus saved-coordinate placement acceptance | **next stage, not started** | one existing holder, chosen when dispatched | 60-minute regeneration/evidence checkpoint, then agent-510 verification (20 minutes); no automatic repeat | Prerequisites, all REVIEWED and actual (no placeholders): 479 code, 484 canonical circuit, 480 board constraints, 478b, 478c. agent-449 then freezes the inputs and runtime and dispatches (agent-529 decision `2dc4d4a5`; no owner question). |
+| AGENTEE-479 implementation (engine) | running | agent-524 (Astra), Cairn `91c7aab7`, from 09:39Z, `wt/agentee-479`; agent-524 also finalizes `block-candidate-set/1` | 120-minute checkpoint | Then the critical code review: claude-fable-5-1 HIGH (owner rule), with agent-510 on contract and evidence. Phase rule `39bfdc72`: pre-packing claims only; post-routing items never pass early. |
+| AGENTEE-484 decoupling source repair | **result in; landing BLOCKED** | j6b2 writer, branch `wt/agentee-484-decoupling` `06245ad` | — | Verified by agent-449: ERC 0 (re-run in place); C130–C133 are the only new board references; validator PASS (313 footprints, 26 blocks). Blocker: committed conflict markers in `agentee-478-prep/SHA256SUMS`. AGENTEE-484r reconciles them, then agent-510 reviews the changed electrical scope (20 minutes). |
+| AGENTEE-484r prep reconcile plus RF_50 binding in source | queued | j6b2 writer, after 478c | 40 minutes | RF_50 is unbound, so the width rule is inert (from 480). Fix in source, regenerate, then prove the net is selected and a narrow track is rejected (agent-529 `39bfdc72`). |
+| AGENTEE-478c anchor-role correction (D2) | running | j6b2 writer, from 10:11Z | 15 minutes | — |
+| AGENTEE-486 mechanical closure | running | agent-507 (Sol), Cairn `ddbea5b2`, from 10:14Z | 60-minute checkpoint, then a 20-minute Astra/Fable-HIGH verification | Covers heights rebound to the 484 parts, the J1 mate/harness/tool sweep, iron/card/SMA access, antenna case and metal, the L1/L2 variants, and the J1–H3/H4 and antenna/hardware anchor conflicts. The current poses, hardware and outline are NOT owner-frozen. |
+| AGENTEE-480 GNSS binding and mechanical inputs | landed fome-mc `b389b47a` | agent-507 | — | ROUTE-3 fails F-over-In1 (expected before regeneration). 19 H1–H4 reservation conflicts. |
+| AGENTEE-483 model assets plus the local vendor store | queued | j6b2 writer, after 484r | 45 minutes | Owner: local only, no licence work |
+| AGENTEE-485 regeneration plus placement acceptance | next stage, not started | — | 60 minutes plus agent-510 (20 minutes) | Needs reviewed 479, 484 (+r), 480, **486**, 478b and 478c |
 
 AGENTEE-485 acceptance (agent-529 `2dc4d4a5`):
 - The real production path explicitly consumes the allocation, eligibility, relationships and templates.
