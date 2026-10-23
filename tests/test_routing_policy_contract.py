@@ -125,6 +125,24 @@ class ContractSummaryTests(unittest.TestCase):
         self.assertEqual(self.adapter['retained_dirs'], list(attempt.RETAINED_DIRS))
         self.assertNotIn('routability-experiment.json', attempt.RETAINED_FILES)
 
+    def test_experiment_boundary_summary(self):
+        boundary = self.adapter['experiment_boundary']
+        self.assertEqual(boundary['reference_keys'], sorted(attempt.EXPERIMENT_REFERENCE_KEYS))
+        self.assertEqual((boundary['sidecar_schema'], boundary['policy_schema'], boundary['policy_file']),
+                         (attempt.EXPERIMENT_SCHEMA, attempt.EXPERIMENT_POLICY_SCHEMA,
+                          attempt.EXPERIMENT_POLICY_FILE))
+        self.assertEqual(boundary['sidecar_file'], attempt.EXPERIMENT_SIDECAR)
+        self.assertEqual(boundary['policy_copy_file'], attempt.EXPERIMENT_POLICY_COPY)
+        self.assertEqual(boundary['sidecar_keys'], sorted(attempt.EXPERIMENT_SIDECAR_KEYS))
+        self.assertEqual(boundary['identity_keys'], sorted(attempt.EXPERIMENT_IDENTITY_KEYS))
+        self.assertEqual(boundary['policy_keys'], sorted(attempt.EXPERIMENT_POLICY_KEYS))
+        self.assertEqual(boundary['experiment_classes'], list(attempt.EXPERIMENT_CLASSES))
+        self.assertEqual(boundary['refusal_reasons'], list(attempt.EXPERIMENT_REFUSALS))
+        self.assertIs(boundary['qualified'], False)
+        self.assertNotIn(attempt.EXPERIMENT_SCHEMA + ' (planned)', self.adapter['never_consumed'])
+        # The sidecar is not a pinned report: experiment_grade retains or refuses it, never retain().
+        self.assertNotIn('routability-experiment.json', attempt.RETAINED_FILES)
+
     def test_request_example_translation(self):
         example = self.contract['request_example']
         declaration = routing_adapter.validate_declaration(example['declaration'])

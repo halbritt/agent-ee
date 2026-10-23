@@ -1,0 +1,769 @@
+{
+  "schema": "kicad-route/route/1",
+  "kind": "route",
+  "backend": {
+    "name": "builtin",
+    "version": "0.23.1",
+    "build": "owned-cb003b30f75f",
+    "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "source": "https://github.com/halbritt/kicad-route",
+    "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+    "upstream": {
+      "project": "KiCadRoutingTools",
+      "license": "MIT",
+      "upstream": "https://github.com/drandyhaas/KiCadRoutingTools",
+      "upstream_base": "295f9ee197517e8323726853361eb137cc08ba9e",
+      "upstream_release": "v0.23.1",
+      "fork": "https://github.com/halbritt/KiCadRoutingTools",
+      "fork_commit": "0494a05e30063b849c9cf1b9ac02098073d82216",
+      "fork_tree": "288b2baca668892c812c82f0e7db4c2b2b0a50c1",
+      "fixes": {
+        "KICADROUTE-64": "4b316ba",
+        "KICADROUTE-63": "0494a05"
+      },
+      "source_inventory": "reports/routing-engine/source-closure.json",
+      "additional_license_notices": [
+        "py_router/stage3d/vendor/three/LICENSE"
+      ],
+      "ownership": "Maintained as part of kicad-route; upstream is provenance, not a runtime source selector.",
+      "selective_adoptions": {
+        "KICADROUTE-83": {
+          "commits": [
+            "fd59a050e258581d5938c4d9456bbfeb13240e67"
+          ],
+          "scope": "pass-rules"
+        },
+        "KICADROUTE-84": {
+          "commits": [
+            "8c3e833179615dbe5e3cd205e68b03e25a6f73e8",
+            "29be549c9747855315957ccc160d69746a3d66cb",
+            "20a8e1b83b00e410f2adf60861ee536d3e57dabc",
+            "0e0029f450fa609447bcb62d16a9381cbc9d9d5d",
+            "ca96bc28f39d3c5e5f014950e8ed9664a755a8f1"
+          ],
+          "scope": "layer-stub-safety"
+        },
+        "KICADROUTE-85": {
+          "commits": [
+            "a0489b30621460e35f9d390f929fab215f7cc7f3"
+          ],
+          "scope": "pair-keepouts"
+        },
+        "KICADROUTE-86": {
+          "commits": [
+            "9ac916bc16d6edcd554bf4dc8640f30379386447",
+            "ed17b29f7eaec4822ba12178a65eca5c3a452e40"
+          ],
+          "scope": "obstacle-lifecycle"
+        },
+        "KICADROUTE-87": {
+          "commits": [
+            "0b3b6a2d19666c3411252f314d3ca8d12f1766fa"
+          ],
+          "scope": "rescue-custody"
+        },
+        "KICADROUTE-88": {
+          "commits": [
+            "2ddfc187a1bd4aa0f33263de3d5194a4c6205809"
+          ],
+          "scope": "parser-lifecycle"
+        }
+      },
+      "adoption_review_head": "0b3b6a2d19666c3411252f314d3ca8d12f1766fa",
+      "adoption_note": "Selected headless fixes only; extraction baseline above is unchanged. Parser caches use parse-local context rather than upstream global memo. Owned quote-aware copper-preserving writer, unsupported-copper refusal and tap/weld repairs remain authoritative.",
+      "adoption_inventory": "reports/upstream-fixes-20261021/source-closure.json"
+    },
+    "runtime": {
+      "source": "/opt/kicad-route/src/kicad_route/router",
+      "venv": "/opt/kicad-route/.venv-krt",
+      "generation": null
+    },
+    "rust_router": "0.23.1",
+    "execution_identity": {
+      "name": "builtin",
+      "tag": "owned-cb003b30f75f",
+      "version": "0.23.1",
+      "grid_router_version": "0.23.1",
+      "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+      "extension_module_sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8",
+      "venv_python_version": "3.12.3",
+      "venv_packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae"
+    },
+    "reproducible": null,
+    "reproducible_basis": "no determinism record for this build in the state manifest (kicad-route determinism --record)"
+  },
+  "measurement": false,
+  "input": {
+    "project": "rc_filter",
+    "board": "rc_filter.kicad_pcb",
+    "fingerprint": "4ab84fd41abbb88649747b2e48c499c13fab81637b308848a9cd8bd7d7f4fcfa",
+    "source_dir": "/candidate/project",
+    "source": "working tree",
+    "source_git_head": null,
+    "source_dirty_files": [],
+    "baseline": {
+      "report": "../../../../.cache/baseline/8d87f505b6dd60ca284eeeac464f7f2a3d87dc258aa49efa08a2998e93baa696/generation-3_x4vne9/baseline-drc.json",
+      "cached": false,
+      "reasons": [],
+      "identity": {
+        "schema": 2,
+        "input": "4ab84fd41abbb88649747b2e48c499c13fab81637b308848a9cd8bd7d7f4fcfa",
+        "board": "rc_filter.kicad_pcb",
+        "kicad_cli": {
+          "path": "/usr/bin/kicad-cli",
+          "version": "10.0.7",
+          "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+        },
+        "pcbnew": "10.0.7-10.0.7~ubuntu24.04.1",
+        "pour_schema": 1,
+        "native_terminals": {
+          "schema": 1,
+          "producer": {
+            "native_components.py": "fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0",
+            "kicad/native_components.py": "071b5624884586e9a8ea83b7b253c292267b352623f58c3291ddd1ae7ec14fb6",
+            "kicad/facts.py": "d47a3fd2eb40518b7beba5457b679b901150c64e3988f86537d67f373bef8c52"
+          },
+          "tool": {
+            "version": "10.0.7-10.0.7~ubuntu24.04.1",
+            "module": {
+              "path": "/usr/bin/_pcbnew.kiface",
+              "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8"
+            },
+            "binding": {
+              "path": "/usr/lib/python3/dist-packages/pcbnew.py",
+              "sha256": "50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458"
+            },
+            "python": {
+              "path": "/usr/bin/python3.12",
+              "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+            }
+          }
+        },
+        "grading": {
+          "baselinecache.py": "3a36d87ddcdc19fdae6c330e51202ca091bf59e4b1ee583a9c8b4ff9c8eb202f",
+          "cli.py": "5170f5e203544dd446a409dedcade8134b76d666bf075e0e47c4a91bddef6b72",
+          "pour.py": "1583883ee1682bf0f72d709b1e146384d37b481a423584de9bd564ac18f1b6b7",
+          "kicad/pour.py": "a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14",
+          "contract.py": "5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698"
+        },
+        "result_schemas": {
+          "result-1.json": "7f23d6a7495edfdf7cbe5e238a5548bc8e2c81ec63d987e863f5562f2c17dd55",
+          "result-2.json": "cafaab23c9a0ee379f54f03436243193ef41dbf2a1b51b52f15c9df18895ed7f",
+          "result-campaign-2.json": "2ca7cbf0beb2c2d86f6d21a3598dedf623ebd122eef85888a145825f71e9cf35"
+        }
+      },
+      "generation": "generation-3_x4vne9"
+    },
+    "rules_files": {
+      "project": "rc_filter.kicad_pro",
+      "custom_rules": null,
+      "not_loaded": []
+    }
+  },
+  "settings": {
+    "backend": "builtin",
+    "budget_s": 300,
+    "protect": "existing",
+    "max_iterations": null,
+    "passes": null,
+    "default_clearance_mm": null,
+    "clearance_margin_mm": null,
+    "pour_area_loss_pct": null,
+    "pour_min_spokes": null,
+    "backend_args": [],
+    "backend_env": {},
+    "reserve_spokes": null,
+    "barrier": null,
+    "stall_s": null,
+    "mode": "all",
+    "experiment_policy_sha256": "3899a9eeac2ab4027c50454e4b2d1ea73b4620fd7b928fbb8cb6f0051abc37bd",
+    "rule_floor_sha256": null
+  },
+  "scope": {
+    "mode": "all",
+    "nets": 3,
+    "nets_list": [
+      "/IN",
+      "/OUT",
+      "GND"
+    ]
+  },
+  "unsupported": [
+    "KRT's cleanup may neck wide new segments near foreign pads without a flag; the new_copper_netclass_geometry check reports any new copper below its net class"
+  ],
+  "floor": null,
+  "process": {
+    "status": "PASS",
+    "reasons": [],
+    "exit_code": 0,
+    "commands": [
+      {
+        "argv": [
+          "/opt/kicad-route/.venv-krt/bin/python",
+          "/opt/kicad-route/src/kicad_route/router/py_router/route.py",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/input/project/rc_filter.kicad_pcb",
+          "--output",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/krt-out/rc_filter.kicad_pcb",
+          "--escalation",
+          "off",
+          "--fab-tier",
+          "standard",
+          "--strict-sizes",
+          "--no-power-tap-neckdown",
+          "--no-fix-drc-settings",
+          "--json-out",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/krt-out/summary.json",
+          "--keep-input-copper",
+          "--no-stub-layer-swap",
+          "--nets",
+          "*"
+        ],
+        "cwd": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work",
+        "log": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/krt.log",
+        "env": {
+          "KICAD_INRUN_FLOOR_SYNC": "0",
+          "KICAD_TERMINAL_ESCALATION": "0",
+          "KICAD_IMPEDANCE_NECKDOWN": "0",
+          "KICAD_RESCUE_CAP_MOVE": "0",
+          "KICAD_DYNAMIC_ITERATIONS": "0",
+          "KICAD_CLI": "/usr/bin/kicad-cli",
+          "KICAD_STOP_FILE": "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/STOP",
+          "KICAD_RIP_PREEXISTING": "0",
+          "KICAD_FINALIZE_RIP": "0",
+          "KICAD_EFFECTIVE_CONFIG_REQUEST": "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/effective-configuration-request.json"
+        },
+        "budget_s": 300,
+        "grace_s": 60,
+        "last_phase": "improvement gate",
+        "last_metric": {
+          "disconnected_pads_before": 0
+        },
+        "heartbeats": {
+          "count": 10,
+          "log": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/heartbeat.jsonl",
+          "stall_s": null,
+          "since_last_progress_s": 0.1,
+          "tail": [
+            {
+              "t_s": 5.257,
+              "utc": "2026-10-22T20:55:46.707947+00:00",
+              "phase": "plane finalize",
+              "metric": {},
+              "line": "Plane finalize (#562): all zone nets complete (fill-aware) -- skipping engine/cleanup legs, oracle verifies"
+            },
+            {
+              "t_s": 6.009,
+              "utc": "2026-10-22T20:55:47.459594+00:00",
+              "phase": "oracle recheck",
+              "metric": {},
+              "line": "KiCad-oracle recheck: deterministic exact-fill link source (pcbnew refill)"
+            },
+            {
+              "t_s": 9.263,
+              "utc": "2026-10-22T20:55:50.714265+00:00",
+              "phase": "regrade",
+              "metric": {},
+              "line": "JSON_REGRADE: {\"board\": \"file\", \"graded_nets\": 0, \"seconds\": 0.01, \"routed_single\": [], \"failed_single\": [], \"open_single\": [], \"failed_multipoint\": [], \"mul..."
+            },
+            {
+              "t_s": 9.264,
+              "utc": "2026-10-22T20:55:50.714423+00:00",
+              "phase": "Run complete -- whole run, re-graded on the written board (0 net(s), 0.0s)",
+              "metric": {},
+              "line": "============================================================"
+            },
+            {
+              "t_s": 9.264,
+              "utc": "2026-10-22T20:55:50.714519+00:00",
+              "phase": "improvement gate",
+              "metric": {
+                "disconnected_pads_before": 0
+              },
+              "line": "JSON_IMPROVEMENT_GATE: {\"lost\": [], \"gained\": [], \"worsened\": [], \"disconnected_pads_before\": 0, \"disconnected_pads_after\": 0, \"nets_compared\": 3, \"verdict\":..."
+            }
+          ]
+        },
+        "stalled": false,
+        "exit_code": 0,
+        "duration_s": 9.335,
+        "output_tail": "ht 0.25\n\n============================================================\nRouting complete\n============================================================\n  Total vias:    0\n  Total time:    0.00s\n  Iterations:    0\nJSON_SUMMARY: {\"routed_single\": [], \"failed_single\": [], \"open_single\": [], \"failed_multipoint\": [], \"multipoint_nets\": 0, \"multipoint_pads_connected\": 0, \"multipoint_pads_total\": 0, \"multipoint_edges_routed\": 0, \"multipoint_edges_failed\": 0, \"ripup_success_pairs\": [], \"rerouted_pairs\": [], \"single_ended_target_swaps\": [], \"layer_swaps\": 0, \"successful\": 0, \"failed\": 0, \"total_time\": 0.0, \"total_iterations\": 0, \"total_vias\": 0, \"cleanup_disconnected\": [], \"min_clearance_used\": 0.2, \"design_rules\": {\"escalation_policy\": \"off\", \"fab_tier\": \"standard\", \"board_floors\": {\"track_width\": 0.2, \"via_diameter\": 0.5, \"via_drill\": 0.3, \"hole_to_hole\": 0.25, \"annular\": 0.1, \"board_edge\": 0.5, \"clearance\": 0.2}, \"count\": 0, \"nets\": [], \"narrowed\": [], \"min_delivered\": {}, \"fab_tier_escalations\": 0, \"fab_tier_contexts\": [], \"fab_tier_target\": \"advanced\", \"unsupported_rules\": []}, \"plane_fragility\": {\"source\": \"kicad_refill\", \"islands\": 1, \"refill_status\": \"ok\", \"why\": \"the KiCad refill succeeded\", \"machine_dependent\": false}, \"oracle_check\": \"disabled\", \"scope\": \"run\", \"env_knobs\": {\"KICAD_CACHE_HOME\": \"/work/routing/out/.home/cache\", \"KICAD_CLI\": \"/usr/bin/kicad-cli\", \"KICAD_DYNAMIC_ITERATIONS\": \"0\", \"KICAD_EFFECTIVE_CONFIG_REQUEST\": \"/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/effective-configuration-request.json\", \"KICAD_FINALIZE_RIP\": \"0\", \"KICAD_IMPEDANCE_NECKDOWN\": \"0\", \"KICAD_INRUN_FLOOR_SYNC\": \"0\", \"KICAD_RESCUE_CAP_MOVE\": \"0\", \"KICAD_RIP_PREEXISTING\": \"0\", \"KICAD_ROUTE_STATE\": \"/opt/kicad-route\", \"KICAD_STOP_FILE\": \"/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/STOP\", \"KICAD_TERMINAL_ESCALATION\": \"0\"}}\nWrote unchanged copy to /work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/krt-out/rc_filter.kicad_pcb (nothing to route)\n\nPlane finalize (#562): all zone nets complete (fill-aware) -- skipping engine/cleanup legs, oracle verifies\n  KiCad-oracle recheck: deterministic exact-fill link source (pcbnew refill)\n  KiCad-oracle recheck: KiCad reports all processed nets complete\n  [finalize timing] oracle leg: 4.0s\nJSON_ORACLE: {\"available\": true, \"reason\": \"ok\", \"why\": \"the oracle ran\", \"rounds\": 0, \"links_routed\": 0, \"links_failed\": 0, \"remaining\": 0, \"collapsed_duplicate_links\": 0, \"remaining_links\": [], \"cross_board\": 0, \"removed_segments\": [], \"removed_vias\": []}\nVIA_IN_PAD_JSON: {\"count\": 0, \"sites\": [], \"stamped\": 0, \"restored\": 0, \"protected\": 0, \"unstampable\": 0, \"site_created\": 0, \"unprotected\": [], \"note\": \"via-in-pad requires IPC-4761 Type VII (filled + capped + plated); state it on the fab drawing or solder wicks into the barrel\"}\nJSON_REGRADE: {\"board\": \"file\", \"graded_nets\": 0, \"seconds\": 0.01, \"routed_single\": [], \"failed_single\": [], \"open_single\": [], \"failed_multipoint\": [], \"multipoint_pads_total\": 0, \"multipoint_pads_connected\": 0, \"successful\": 0, \"failed\": 0, \"unowned_broken\": [], \"recovered\": [], \"broken_by_run\": []}\n\n============================================================\nRun complete -- whole run, re-graded on the written board (0 net(s), 0.0s)\n============================================================\n  route summary written to /work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/krt-out/summary.json\nJSON_IMPROVEMENT_GATE: {\"lost\": [], \"gained\": [], \"worsened\": [], \"disconnected_pads_before\": 0, \"disconnected_pads_after\": 0, \"nets_compared\": 3, \"verdict\": \"accept\"}\nJSON_SUMMARY_MIN: {\"escalations\": 0, \"failed\": 0, \"failed_single\": [], \"main_loop_time_s\": 0.0, \"min_clearance_used\": 0.2, \"multipoint_deficit\": 0, \"open_single\": [], \"pad_pairs_open\": {\"count\": 0, \"nets\": []}, \"regraded_nets\": 0, \"routed\": 0, \"scope\": \"merged\", \"terminal_restores_broken\": [], \"vias\": 0}\nEXIT=0\n"
+      },
+      {
+        "argv": [
+          "/usr/bin/python3",
+          "/opt/kicad-route/src/kicad_route/kicad/locks.py",
+          "restore",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/krt-out/rc_filter.kicad_pcb",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/locks.json"
+        ],
+        "cwd": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work",
+        "log": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/restore-locks.log",
+        "exit_code": 0,
+        "duration_s": 0.466
+      }
+    ],
+    "backend_report": {
+      "successful": 0,
+      "failed": 0,
+      "failed_single": [],
+      "open_single": [],
+      "failed_multipoint": [],
+      "multipoint_deficit": null,
+      "pad_pairs_connected": null,
+      "pad_pairs_total": null,
+      "total_vias": 0,
+      "total_iterations": 0,
+      "total_time": 0.0,
+      "protected_skipped": null,
+      "scope": "merged",
+      "relaxations": {
+        "escalation_policy": "off",
+        "fab_tier": "standard",
+        "narrowed": [],
+        "fab_tier_escalations": 0,
+        "min_delivered": {},
+        "unsupported_rules": []
+      },
+      "improvement_gate": {
+        "lost": [],
+        "gained": [],
+        "worsened": [],
+        "disconnected_pads_before": 0,
+        "disconnected_pads_after": 0,
+        "nets_compared": 3,
+        "verdict": "accept"
+      },
+      "project_writes": null
+    },
+    "effective_configuration": {
+      "status": "bound",
+      "reasons": [],
+      "replay_authority": false,
+      "record": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/effective-configuration.json",
+      "sha256": "7fd07b24f2ee9e1e44fc53f7e78168cf34f029d2f36c0af078f13cb6e3507c7f",
+      "coverage": "resolved_outer_batch_only",
+      "output_stage": "backend_output_before_wrapper_lock_restore_and_native_refill",
+      "named_inventory_binding": "native_input_facts",
+      "numeric_net_ids": "captured_only_not_independently_validated",
+      "capture_status": "complete",
+      "captured_input_sha256": "d3bea784d7b81b38b3d1beb338c7498abadbc39631bc2d75471a38620aab5a32",
+      "backend_output_sha256": "d3bea784d7b81b38b3d1beb338c7498abadbc39631bc2d75471a38620aab5a32",
+      "request_sha256": "b805e0cf35cb66fa861c79f1a8b6c8404ea78849f2a6bc1e7bf461300375dcbe",
+      "settings_sha256": "a13d45a2e7f231adff1a5e05e7a94cc5aed22d6148c9bf9186731f50d5cbe877",
+      "wrapper_output_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+      "wrapper_output_stage": "after_wrapper_postprocessing_before_native_refill"
+    },
+    "existing_copper_locks": {
+      "lock": {
+        "locked": 6
+      },
+      "lock_exit": 0,
+      "restore": {
+        "restored": 6,
+        "not_found": 0
+      }
+    },
+    "project_writeback": [
+      {
+        "file": "rc_filter.kicad_prl",
+        "identical_to_input": true
+      },
+      {
+        "file": "rc_filter.kicad_pro",
+        "identical_to_input": false
+      }
+    ],
+    "runtime_s": 10.51,
+    "last_phase": "improvement gate",
+    "heartbeats": {
+      "count": 10,
+      "log": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/work/heartbeat.jsonl",
+      "stall_s": null,
+      "since_last_progress_s": 0.1,
+      "tail": [
+        {
+          "t_s": 5.257,
+          "utc": "2026-10-22T20:55:46.707947+00:00",
+          "phase": "plane finalize",
+          "metric": {},
+          "line": "Plane finalize (#562): all zone nets complete (fill-aware) -- skipping engine/cleanup legs, oracle verifies"
+        },
+        {
+          "t_s": 6.009,
+          "utc": "2026-10-22T20:55:47.459594+00:00",
+          "phase": "oracle recheck",
+          "metric": {},
+          "line": "KiCad-oracle recheck: deterministic exact-fill link source (pcbnew refill)"
+        },
+        {
+          "t_s": 9.263,
+          "utc": "2026-10-22T20:55:50.714265+00:00",
+          "phase": "regrade",
+          "metric": {},
+          "line": "JSON_REGRADE: {\"board\": \"file\", \"graded_nets\": 0, \"seconds\": 0.01, \"routed_single\": [], \"failed_single\": [], \"open_single\": [], \"failed_multipoint\": [], \"mul..."
+        },
+        {
+          "t_s": 9.264,
+          "utc": "2026-10-22T20:55:50.714423+00:00",
+          "phase": "Run complete -- whole run, re-graded on the written board (0 net(s), 0.0s)",
+          "metric": {},
+          "line": "============================================================"
+        },
+        {
+          "t_s": 9.264,
+          "utc": "2026-10-22T20:55:50.714519+00:00",
+          "phase": "improvement gate",
+          "metric": {
+            "disconnected_pads_before": 0
+          },
+          "line": "JSON_IMPROVEMENT_GATE: {\"lost\": [], \"gained\": [], \"worsened\": [], \"disconnected_pads_before\": 0, \"disconnected_pads_after\": 0, \"nets_compared\": 3, \"verdict\":..."
+        }
+      ]
+    },
+    "stalled": false,
+    "measurement_qualification": {
+      "measurement": false,
+      "build_reproducible": null,
+      "reasons": [
+        "no determinism record for this build in the state manifest (kicad-route determinism --record)"
+      ]
+    }
+  },
+  "routing": {
+    "status": "COMPLETE",
+    "unconnected_in_scope": 0,
+    "unconnected_total": 0,
+    "baseline_unconnected_total": 0,
+    "unrouted_nets": [],
+    "stats": {
+      "new_tracks": 0,
+      "new_vias": 0,
+      "new_track_length_mm": 0,
+      "new_track_length_mm_by_layer": {},
+      "new_copper_nets": 0,
+      "removed_existing_tracks": 0,
+      "removed_existing_vias": 0
+    }
+  },
+  "validation": {
+    "status": "PASS",
+    "reasons": [],
+    "dir": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate",
+    "rules_files": {
+      "project": "rc_filter.kicad_pro",
+      "custom_rules": null,
+      "not_loaded": []
+    },
+    "restored_project_files": [],
+    "delivered_project_files": [],
+    "delivered_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "drc_commands": [
+      {
+        "argv": [
+          "kicad-cli",
+          "pcb",
+          "drc",
+          "--refill-zones",
+          "--save-board",
+          "--format",
+          "json",
+          "-o",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate/candidate-refill.json",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/candidate/project/rc_filter.kicad_pcb"
+        ],
+        "cwd": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/candidate/project",
+        "log": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate/candidate-refill.log",
+        "exit_code": 0,
+        "duration_s": 3.242
+      },
+      {
+        "argv": [
+          "kicad-cli",
+          "pcb",
+          "drc",
+          "--format",
+          "json",
+          "--severity-all",
+          "--schematic-parity",
+          "--units",
+          "mm",
+          "-o",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate/candidate-drc.json",
+          "/work/routing/out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/candidate/project/rc_filter.kicad_pcb"
+        ],
+        "cwd": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/candidate/project",
+        "log": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate/candidate-drc.log",
+        "exit_code": 0,
+        "duration_s": 4.228
+      }
+    ],
+    "validated_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "candidate_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "refill_modified_board": false,
+    "parity_performed": true,
+    "drc": {
+      "violations_total": 0,
+      "parity_total": 0,
+      "new_violations": {
+        "count": 0,
+        "by_type": {},
+        "by_severity": {}
+      },
+      "preexisting_violations": 0,
+      "resolved_violations": 0,
+      "new_parity": {
+        "count": 0,
+        "by_type": {},
+        "by_severity": {}
+      },
+      "resolved_parity": 0
+    },
+    "native_terminal_evidence": {
+      "reference": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate/reference-terminal-components.json",
+      "candidate": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/validate/candidate-terminal-components.json",
+      "metrics": {
+        "reference": {
+          "terminal_nets": 3,
+          "incomplete_nets": 0,
+          "component_deficit": 0
+        },
+        "candidate": {
+          "terminal_nets": 3,
+          "incomplete_nets": 0,
+          "component_deficit": 0
+        }
+      }
+    },
+    "net_completion": {
+      "status": "PASS",
+      "nets_connected_in_input": 3,
+      "nets_lost": [],
+      "split_components": []
+    },
+    "preservation": {
+      "project_files": "PASS",
+      "board_outline": "PASS",
+      "layers": "PASS",
+      "stackup": "PASS",
+      "board_setup": "PASS",
+      "nets_and_netclasses": "PASS",
+      "pad_connectivity": "PASS",
+      "footprints": "PASS",
+      "zones": "PASS",
+      "keepouts": "PASS",
+      "copper_graphics": "PASS",
+      "protected_copper": "PASS",
+      "new_copper_netclass_geometry": "PASS",
+      "routing_scope": "PASS",
+      "net_completion": "PASS",
+      "pour_integrity": "PASS"
+    }
+  },
+  "candidate": {
+    "dir": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/candidate/project",
+    "board": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z/candidate/project/rc_filter.kicad_pcb"
+  },
+  "run_dir": "out/runs/rc_filter/k91-native-positive/20261022T205530.963752Z",
+  "runtime_s": 30.72,
+  "tool_versions": {
+    "kicad-cli": "10.0.7"
+  },
+  "evidence": {
+    "input_board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "input_fingerprint": "4ab84fd41abbb88649747b2e48c499c13fab81637b308848a9cd8bd7d7f4fcfa",
+    "baseline": {
+      "identity": {
+        "schema": 2,
+        "input": "4ab84fd41abbb88649747b2e48c499c13fab81637b308848a9cd8bd7d7f4fcfa",
+        "board": "rc_filter.kicad_pcb",
+        "kicad_cli": {
+          "path": "/usr/bin/kicad-cli",
+          "version": "10.0.7",
+          "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+        },
+        "pcbnew": "10.0.7-10.0.7~ubuntu24.04.1",
+        "pour_schema": 1,
+        "native_terminals": {
+          "schema": 1,
+          "producer": {
+            "native_components.py": "fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0",
+            "kicad/native_components.py": "071b5624884586e9a8ea83b7b253c292267b352623f58c3291ddd1ae7ec14fb6",
+            "kicad/facts.py": "d47a3fd2eb40518b7beba5457b679b901150c64e3988f86537d67f373bef8c52"
+          },
+          "tool": {
+            "version": "10.0.7-10.0.7~ubuntu24.04.1",
+            "module": {
+              "path": "/usr/bin/_pcbnew.kiface",
+              "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8"
+            },
+            "binding": {
+              "path": "/usr/lib/python3/dist-packages/pcbnew.py",
+              "sha256": "50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458"
+            },
+            "python": {
+              "path": "/usr/bin/python3.12",
+              "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+            }
+          }
+        },
+        "grading": {
+          "baselinecache.py": "3a36d87ddcdc19fdae6c330e51202ca091bf59e4b1ee583a9c8b4ff9c8eb202f",
+          "cli.py": "5170f5e203544dd446a409dedcade8134b76d666bf075e0e47c4a91bddef6b72",
+          "pour.py": "1583883ee1682bf0f72d709b1e146384d37b481a423584de9bd564ac18f1b6b7",
+          "kicad/pour.py": "a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14",
+          "contract.py": "5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698"
+        },
+        "result_schemas": {
+          "result-1.json": "7f23d6a7495edfdf7cbe5e238a5548bc8e2c81ec63d987e863f5562f2c17dd55",
+          "result-2.json": "cafaab23c9a0ee379f54f03436243193ef41dbf2a1b51b52f15c9df18895ed7f",
+          "result-campaign-2.json": "2ca7cbf0beb2c2d86f6d21a3598dedf623ebd122eef85888a145825f71e9cf35"
+        }
+      },
+      "generation": "generation-3_x4vne9"
+    },
+    "reference_files": {
+      "fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+      "rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+      "rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+      "sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+    },
+    "rules_files": {
+      "rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1"
+    },
+    "rule_floor_sha256": null,
+    "backend_output_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "candidate_hash_basis": "post-refill",
+    "candidate_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "pre_refill_board_sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "candidate_copper_signature": {
+      "sha256": "5b12e037dfbf42cd4efa8c7f63abbc1e9b1e4fcc65848b29fa09aba5ab2c9541",
+      "tracks": 5,
+      "vias": 1
+    },
+    "records": {
+      "attempt.json": "a922e0e2f9274e08eee4aa941282eee6300238c12aab24c2f2fd6ddf43892a28",
+      "validate/preservation.json": "8cf932380a356157f0ea95d874ec600410f58e45ef440c8e3d5e74d8444d53dc",
+      "validate/new-findings.json": "5ff88c9f28b8acc5f2c72b470a49c028151205a12102b200c793d6ef1aeebbbd",
+      "validate/candidate-drc.json": "c709c7b3d90465c040e3a6f64e9c2ea2f09f6227e4d1d25be6532057dff49f2c",
+      "validate/candidate-facts.json": "705bdc14af7f1b672ad896120f67b88c41da4e061a3834aa1cb6c3f26f2dd67c",
+      "validate/candidate-refill.json": "e5d85b8acc760cde9d7537497f88194af935b2bf6eca35f4713a06d15d13c471",
+      "validate/reference-terminal-components.json": "afd91c67718832f486268ef0a8fe758cc1fbb2b522eda728341ee0fe0b367faf",
+      "validate/candidate-terminal-components.json": "afd91c67718832f486268ef0a8fe758cc1fbb2b522eda728341ee0fe0b367faf",
+      "validate/pour-integrity.json": "9cdd8d101e0d0723180f98824fd1ed6f6b4717f3455fbee15fbc5c7cc2523f76",
+      "work/effective-configuration-request.json": "b805e0cf35cb66fa861c79f1a8b6c8404ea78849f2a6bc1e7bf461300375dcbe",
+      "work/effective-configuration.json": "7fd07b24f2ee9e1e44fc53f7e78168cf34f029d2f36c0af078f13cb6e3507c7f",
+      "work/effective-configuration-output.kicad_pcb": "d3bea784d7b81b38b3d1beb338c7498abadbc39631bc2d75471a38620aab5a32",
+      "validate/copper-ownership.json": "1be21441ee1ae3ad59b38655a7f0af04dae6398bc7479a6b31b46f1183043341"
+    }
+  },
+  "tool_identity": {
+    "kicad_route": {
+      "version": "bd1e633",
+      "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+      "dirty": false
+    },
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "version": "10.0.7",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+    },
+    "pcbnew": {
+      "build_version": "10.0.7-10.0.7~ubuntu24.04.1",
+      "python": "/usr/bin/python3"
+    },
+    "python": {
+      "version": "3.12.3",
+      "executable": "/usr/bin/python3"
+    },
+    "backend": {
+      "name": "builtin",
+      "tag": "owned-cb003b30f75f",
+      "version": "0.23.1",
+      "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+      "grid_router_version": "0.23.1",
+      "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+      "extension_module_sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8",
+      "venv_python_version": "3.12.3",
+      "venv_packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae"
+    },
+    "state_manifest_sha256": "33cd344e95733941590ffc6cc63e6002ca638077450c0568d3a6ae30f82a3212",
+    "state_manifest_drift": []
+  },
+  "finished_utc": "2026-10-22T20:56:02.236475+00:00",
+  "exit_code": 0,
+  "ledger": {
+    "fingerprint": "628466e0b86e1df5c9825f7e8e65afde14a6febc56a6101bfc64c95e63a91f47",
+    "short": "628466e0b86e",
+    "forced": false,
+    "forced_over": null,
+    "upstream_changed_since": null,
+    "previous_runs": [],
+    "notes": [],
+    "path": "/work/routing/out/ledger.jsonl"
+  },
+  "sandbox": {
+    "require_readonly_state": false,
+    "state": {
+      "path": "/opt/kicad-route",
+      "exists": true,
+      "installed": [
+        ".venv-krt",
+        "vendor/freerouting"
+      ],
+      "writable": false,
+      "writable_parts": [],
+      "readonly_mount": true
+    },
+    "tool_root": {
+      "path": "/opt/kicad-route",
+      "writable": false
+    },
+    "out": {
+      "path": "/work/routing/out"
+    },
+    "home": {
+      "HOME": "/work/routing/home",
+      "required": false,
+      "tool_home": "/work/routing/out/.home",
+      "env": {
+        "KICAD_CONFIG_HOME": "/work/routing/out/.kicad-config",
+        "KICAD_CACHE_HOME": "/work/routing/out/.home/cache",
+        "KICAD_DOCUMENTS_HOME": "/work/routing/out/.home/data",
+        "XDG_CONFIG_HOME": "/work/routing/out/.home/config",
+        "XDG_CACHE_HOME": "/work/routing/out/.home/cache",
+        "XDG_DATA_HOME": "/work/routing/out/.home/data",
+        "XDG_STATE_HOME": "/work/routing/out/.home/state"
+      },
+      "jvm": [
+        "-Duser.home=/work/routing/out/.home/java",
+        "-Djava.util.prefs.userRoot=/work/routing/out/.home/java/prefs"
+      ]
+    },
+    "network": {
+      "interfaces": 1,
+      "non_loopback_interfaces": 0,
+      "non_loopback_examples": [],
+      "non_loopback_routes": 0,
+      "namespace": "net:[4026534282]",
+      "connect_probe": {
+        "target": "192.0.2.1:9/udp",
+        "sends_packet": false,
+        "result": "ENETUNREACH"
+      },
+      "isolated": true
+    }
+  },
+  "copper_ownership": {
+    "status": "bound",
+    "record": "validate/copper-ownership.json",
+    "sha256": "1be21441ee1ae3ad59b38655a7f0af04dae6398bc7479a6b31b46f1183043341",
+    "coverage": "current_run_only_input_fixed",
+    "replay_authority": false
+  },
+  "experiment": {
+    "path": "routability-experiment.json",
+    "sha256": "4c1d33a700df80e584f5c23e83aaaa751e88041758cef4060f91458cdc519435",
+    "schema": "routability-experiment/1"
+  }
+}

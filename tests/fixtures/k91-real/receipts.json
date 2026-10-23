@@ -1,0 +1,75 @@
+{
+  "schema": "agent-ee.k91-real-receipts/2",
+  "producer": {
+    "repository": "https://github.com/halbritt/kicad-route",
+    "commit": "a0ed43494d44fd8312054b204083881fe76f3a81",
+    "license": "MIT",
+    "schema_file": "schemas/routability-experiment-1.json",
+    "schema_sha256": "66df791f04c1c7282d70eccfecc237fdaf49c10f4c3b160d4e49035444128af5"
+  },
+  "source": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt (agent-507 final clean native receipt, tool_identity a0ed434 dirty:false; copied 2026-10-22, every file sha256 checked against the original)",
+  "runs": {
+    "final-current": {
+      "sidecar": "final-current.routability-experiment.json",
+      "policy_copy": "current-policy.experiment-policy.json",
+      "result_experiment": {
+        "path": "routability-experiment.json",
+        "sha256": "833fac9d41953609b404e836b378c89c3454f71a288141c4103ec5c17e7caddc",
+        "schema": "routability-experiment/1"
+      },
+      "effective_configuration": "final-current.effective-configuration.json",
+      "effective_configuration_request": "final-current.effective-configuration-request.json",
+      "result_effective_configuration": {
+        "status": "bound",
+        "reasons": [],
+        "replay_authority": false,
+        "record": "/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/final-clean-receipt/work/effective-configuration.json",
+        "sha256": "50c8f7ede2ea8789a3bfe0c116fbce2ac1bf672207763850cc9e1cf54d09ef17",
+        "coverage": "resolved_outer_batch_only",
+        "output_stage": "backend_output_before_wrapper_lock_restore_and_native_refill",
+        "named_inventory_binding": "native_input_facts",
+        "numeric_net_ids": "captured_only_not_independently_validated",
+        "capture_status": "complete",
+        "captured_input_sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "backend_output_sha256": "7495a5771807d594621710bc39de7f1d274449b01504cdd9d1bd2cf627788219",
+        "request_sha256": "06985f736913d05f27cdd1311ae2465012b86577d092b74e8d1556aa27845fb0",
+        "settings_sha256": "24629070cd2a6a4407602439ed46a1bf1df9facee6cb9cd899b2daa99c4ccdb3",
+        "wrapper_output_board_sha256": "7495a5771807d594621710bc39de7f1d274449b01504cdd9d1bd2cf627788219",
+        "wrapper_output_stage": "after_wrapper_postprocessing_before_native_refill"
+      }
+    }
+  },
+  "retired_interim": {
+    "producer_commit": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5",
+    "schema_sha256": "81969b52c90f9e0f2c7aa4aa22759cc5a072420eba1910377048d673d629aee5",
+    "runs": {
+      "interim-positive-current": {
+        "sidecar": "interim-positive-current.routability-experiment.json",
+        "policy_copy": "current-policy.experiment-policy.json",
+        "result_experiment": {
+          "path": "routability-experiment.json",
+          "sha256": "cea85ed8b5f274e48446330883c16e897e61edc54bf5a54b30bb351947064bea",
+          "schema": "routability-experiment/1"
+        }
+      },
+      "interim-positive-historical": {
+        "sidecar": "interim-positive-historical.routability-experiment.json",
+        "policy_copy": "historical-all-layer.experiment-policy.json",
+        "result_experiment": {
+          "path": "routability-experiment.json",
+          "sha256": "4be90bda12f63e965d13dcc8d40aa84ebd917301c18a73b2e9ef06eef5a781bd",
+          "schema": "routability-experiment/1"
+        }
+      },
+      "interim-negative-stale-runtime": {
+        "sidecar": "interim-negative-stale-runtime.routability-experiment.json",
+        "policy_copy": "current-policy.experiment-policy.json",
+        "result_experiment": {
+          "path": "routability-experiment.json",
+          "sha256": "8e88a0a4353e7fe7a7e826d4032d737af4a763b7451314114c469eebb86348f7",
+          "schema": "routability-experiment/1"
+        }
+      }
+    }
+  }
+}

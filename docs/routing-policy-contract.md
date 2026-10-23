@@ -69,8 +69,10 @@ the read-only input tree. The adapter's request carries only:
 - an optional `diff_pairs: "auto"`, which cannot be combined with a layer policy.
 
 The fixed argv is `kicad-route run --out /work/routing/out --json --backend builtin
---dir /candidate/P --board B --schematic S --name N --label L --protect existing
---budget T`. A layer policy adds `--pour-area-loss PCT` and
+--dir /work/routing/agent-ee-original/P --board B --schematic S --name N --label L
+--protect existing --budget T`. `--dir` is a staged, byte-exact copy of the
+read-only `/candidate` tree, not the mount itself
+([AGENTEE-442](routing-adapter.md#the-step)). A layer policy adds `--pour-area-loss PCT` and
 `--backend-arg=--layers --backend-arg=<layer> ...`, plus `--layer-costs` when
 declared (`kicad_route_attempt.tool_argv`, `policy_argv`, `policy_backend_args`).
 The result's `settings` must equal `expected_settings` exactly. In particular,
@@ -248,8 +250,34 @@ agent-ee runs only `kicad-route run`. It accepts:
 
 It never reads `kicad-route/route-campaign/1` or `/2` (the pin's campaign record),
 `blocked/2`, revalidation records, the `kicad-route/copper-ownership/1` record's
-content, or any planned `campaign/2` or `routability-experiment/1`. A `grep` of
+content, or any planned `campaign/2`. A `grep` of
 `src/` finds no other kicad-route schema.
+
+Since AGENTEE-442 the adapter also has a consumer boundary for
+`routability-experiment/1`. A `result.json` `experiment` reference and the
+declared `routability-policy/1` file are retained with their recomputed
+identity, or refused with a typed reason. The
+[routing adapter](routing-adapter.md#routability-experiment-evidence-agentee-442)
+page describes the record. The declaration is the reviewed five-field
+`routability-policy/1` of kicad-route `a5fa636d`. The reference is bound only to
+the run-relative `routability-experiment.json`. The sidecar shape and the
+retained `experiment-policy.json` copy are those of agent-507's final frozen
+producer, kicad-route `a0ed434`, whose clean native receipt the boundary tests
+replay (the interim `4f06368f` receipts are retired as malformed). A receipt
+that claims `comparison_eligible` is requalified from the attempt record, facts
+and sealed effective-configuration manifest it names by digest, and must
+describe this execution (input and named input files, source, request, the raw,
+wrapper and graded board seals, and run), never trusted on the producer's flag.
+The original input is the snapshot, with the rules inventory derived from it as
+kicad-route `cli.rules_files` derives it. The prepared input (the effective
+configuration's `input` and `captured_input_sha256`) is the `work/input` the
+adapter observes by digest; an optional rules file there that is a link or
+special file is refused, never read as absent. The real replay covers two-layer route_demo
+current-policy evidence, clean and protected, graded with each receipt's own
+execution identity by the consumer's helpers. The adapter cannot run those
+receipts before a re-pin, so integration activation stays gated.
+That producer is not pinned or qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
+still apply when agent-ee re-pins.
 
 The code pin is still byte-exact over every tracked `bin/` and `src/` file:
 309 files, including `src/kicad_route/campaign.py`
@@ -288,13 +316,19 @@ When agent-ee re-pins onto a commit with that work:
    (adapter exit 65). If `campaign/2` and the sidecar touch only the `campaign`
    command, no acceptance change is needed beyond step 1.
 4. **Sidecar retention.** `retain` copies only `result.json`, `attempt.json`,
-   `RESULT.md`, `snapshot.json` and the `validate/`, `facts/` and `work/` trees. A
-   new top-level file in the attempt directory, such as
-   `routability-experiment.json`, is neither refused nor retained. The receipt
-   would silently omit it. To consume the sidecar, add it to `RETAINED_FILES`
-   and `EXPECTED_REPORTS`, and verify its hashes against `inputs`, the snapshot
-   fingerprint and `result.backend` in `verify`. Its comparison key must be
-   rebuilt from the bytes agent-ee retains, not trusted as a label.
+   `RESULT.md`, `snapshot.json` and the `validate/`, `facts/` and `work/` trees.
+   Other top-level files are not retained, with one exception since AGENTEE-442:
+   the root `routability-experiment.json` and `experiment-policy.json` are copied,
+   hashed and graded by `experiment_grade`, with or without a reference. A root
+   file without a binding reference is refused as `unbound`, so the receipt never
+   omits it. When the reviewed schema arrives, re-check the sidecar fields
+   `experiment_grade` reads (the whole sidecar against `EXPERIMENT_SHAPE`, the
+   policy copy, the artifacts it must name, and the manifest, request, attempt,
+   facts and identity fields `_requalify` and `_run_mismatch` read),
+   whether the router echoes the policy in `result.settings` (then
+   `expected_settings` changes), and whether a sidecar exists on process
+   failure. Its comparison key must still be rebuilt from the bytes agent-ee
+   retains, not trusted as a label.
 5. **Re-implemented kicad-route behaviour.** Re-audit every place agent-ee mirrors
    kicad-route internals, whenever the pin changes `cli.py`, `kicad/facts.py`,
    `kicad/pour.py` or `pour.py`:

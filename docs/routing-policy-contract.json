@@ -23,7 +23,27 @@
     "refusal_reason_classes": ["usage", "input", "ledger", "canary", "state"],
     "retained_files": ["result.json", "attempt.json", "RESULT.md", "snapshot.json"],
     "retained_dirs": ["validate", "facts", "work"],
-    "never_consumed": ["kicad-route/route-campaign/1", "kicad-route/route-campaign/2", "campaign/2 (planned)", "routability-experiment/1 (planned)", "blocked/2"]
+    "never_consumed": ["kicad-route/route-campaign/1", "kicad-route/route-campaign/2", "campaign/2 (planned)", "blocked/2"],
+    "experiment_boundary": {
+      "item": "AGENTEE-442",
+      "status": "consumer boundary replayed against the real clean native receipt of kicad-route a0ed434 (two-layer route_demo, current-policy); the pin produces no experiment evidence; no re-pin, not qualified",
+      "producer": "kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 schemas/routability-experiment-1.json",
+      "reference_keys": ["path", "schema", "sha256"],
+      "reference_path": "routability-experiment.json (run-relative)",
+      "sidecar_schema": "routability-experiment/1",
+      "policy_schema": "routability-policy/1",
+      "policy_contract": "kicad-route a5fa636d experiment_policy.load",
+      "policy_keys": ["allowed_trace_layers", "allowed_via_spans", "experiment_class", "rule_areas_sha256", "schema"],
+      "experiment_classes": ["current-policy", "historical-all-layer"],
+      "policy_file": "agent-ee-experiment-policy.json",
+      "sidecar_file": "routability-experiment.json",
+      "policy_copy_file": "experiment-policy.json",
+      "sidecar_keys": ["artifacts", "candidate", "comparison_eligible", "identity", "identity_sha256", "ineligible_reasons", "native_terminals", "outcome", "policy_qualification", "replay_authority", "schema"],
+      "identity_keys": ["budgets", "build", "effective", "input", "native", "origin", "policy", "protection", "request", "scope"],
+      "record_statuses": ["retained", "refused", "absent"],
+      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy", "unbound", "ineligible", "unqualified", "run_mismatch"],
+      "qualified": false
+    }
   },
   "request_example": {
     "declaration": {

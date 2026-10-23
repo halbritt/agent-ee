@@ -2,7 +2,7 @@
  "files_manifest": "files-manifest.json",
  "files_manifest_sha256": "8bd1f2adfd0a0cee9ba813c01ed4b610d7dd9df07107b03a8d4976791736bfbe",
  "origin_facts": {
-  "basis_sha256": "920822af77d4a8068192702bb6a04ce44c0cf6c34b86d7ebd6498bf3d891f651",
+  "basis_sha256": "6968b96fc8b8e3d25432cea4011a8503e087ad34025ebdc554c395d61947ce48",
   "captured_origins": {
    "evidence/adjudicator-comparison/agy/calculation/candidate.json": [
     "AE",

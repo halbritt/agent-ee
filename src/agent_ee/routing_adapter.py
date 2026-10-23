@@ -45,7 +45,7 @@ class StaleRoutingEvidence(ValueError):
 ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routing/kicad-route.stderr',
              'routing/attempt/result.json', 'routing/attempt/attempt.json', 'routing/attempt/RESULT.md',
              'routing/attempt/snapshot.json', 'routing/attempt/validate', 'routing/attempt/facts',
-             'routing/attempt/work')
+             'routing/attempt/work', 'routing/' + attempt.ORIGINAL_STAGE)
 
 
 def preflight(checkout, state=None, backend='builtin'):
@@ -78,11 +78,13 @@ def preflight(checkout, state=None, backend='builtin'):
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='builtin', diff_pairs=None, layer_policy=None):
+         backend='builtin', diff_pairs=None, layer_policy=None, experiment_policy=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
 
     layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
-    layer costs, pour area-loss bound and optional RF reference plane."""
+    layer costs, pour area-loss bound and optional RF reference plane.
+    experiment_policy (AGENTEE-442) is a five-field routability-policy/1 declaration the
+    router receives as --experiment-policy; its experiment evidence is retained or refused."""
     check = preflight(checkout, state, backend)
     if check['problems']:
         raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
@@ -95,6 +97,8 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
         args += ['--diff-pairs', diff_pairs]
     if layer_policy is not None:
         args += ['--layer-policy', attempt.canonical_json(layer_policy)]
+    if experiment_policy is not None:
+        args += ['--experiment-policy', attempt.canonical_json(experiment_policy)]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
     return _step(request, check['checkout'], check['state'] if separate else None)
 
@@ -117,7 +121,7 @@ def _step(request, checkout, state):
 def validate_declaration(value):
     """Strict campaign opt-in; command, mounts, pin and environment are not configurable."""
     required = {'schema', 'project', 'board', 'schematic', 'name', 'label', 'checkout'}
-    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs', 'layer_policy'}
+    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs', 'layer_policy', 'experiment_policy'}
     if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.routing-adapter/1' or
             not required <= set(value) or not set(value) <= required | optional):
         raise ValueError('expected agent-ee.routing-adapter/1 declaration')
@@ -137,12 +141,14 @@ def validate_declaration(value):
         'backend': value.get('backend', 'builtin'), 'budget_s': budget, 'timeout_s': timeout,
         'state': 'separate' if separate else 'checkout',
         **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
-        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
+        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {}),
+        **({'experiment_policy': value['experiment_policy']} if 'experiment_policy' in value else {})}))
     return {'schema': value['schema'], **{k: request[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
             'checkout': checkout, 'state': state if separate else None, 'budget': request['budget_s'],
             'timeout': request['timeout_s'], 'backend': request['backend'],
             **({'diff_pairs': request['diff_pairs']} if 'diff_pairs' in request else {}),
-            **({'layer_policy': request['layer_policy']} if 'layer_policy' in request else {})}
+            **({'layer_policy': request['layer_policy']} if 'layer_policy' in request else {}),
+            **({'experiment_policy': request['experiment_policy']} if 'experiment_policy' in request else {})}
 
 
 def campaign_spec(declaration, manifest, mutable):
@@ -166,7 +172,8 @@ def declaration_spec(value):
         'budget_s': value['budget'], 'timeout_s': value['timeout'],
         'state': 'separate' if value['state'] else 'checkout',
         **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
-        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
+        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {}),
+        **({'experiment_policy': value['experiment_policy']} if 'experiment_policy' in value else {})}))
     return validate_step(_step(request, value['checkout'], value['state']), host=False)
 
 
@@ -364,6 +371,7 @@ def _verify(run, report, inputs, receipt, layout):
     if sem['exit_code'] != (process['exit_code'] if process is not None else None):
         raise ValueError('reported router exit differs from the observed process exit')
     _tool_claims(report, request, expected, ran=process is not None)
+    _staged(routing, report, request, expected, ran=process is not None)
     if report['tool_version'] != attempt.TOOL_VERSION:
         raise ValueError('routing tool version is not the pinned unknown')
     if report['reproducibility'] != attempt.REPRODUCIBILITY[request['backend']]:
@@ -437,12 +445,39 @@ def _verify(run, report, inputs, receipt, layout):
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
         raise ValueError('pair coverage differs from retained routing evidence')
     policy = _policy_grade(routing, report, request, result, classification)
+    experiment = _experiment_grade(routing, report, request, result, classification, retained, expected)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
             'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
             'backend': backend, 'tool_version': dict(attempt.TOOL_VERSION),
             'reproducibility': attempt.REPRODUCIBILITY[request['backend']],
-            **({'layer_policy': policy} if policy is not None else {})}
+            **({'layer_policy': policy} if policy is not None else {}),
+            **({'experiment': experiment} if experiment is not None else {})}
+
+
+def _experiment_grade(routing, report, request, result, classification, retained, layout):
+    """Re-derive the K91 experiment record (AGENTEE-442) from the retained bytes; None when not involved.
+
+    A refused record is honest only on an attempt that delivers no board."""
+    sem = report['semantics']
+    key = f'attempt/{attempt.EXPERIMENT_POLICY_FILE}'
+    if 'experiment_policy' not in request:
+        if key in retained:
+            raise ValueError('experiment policy file without a declared experiment policy')
+    elif report['process'] is not None and classification not in ('contradiction', 'timeout', 'cancelled'):
+        if (key not in retained or (routing / key).read_bytes() !=
+                attempt.canonical_json(request['experiment_policy']).encode()):
+            raise ValueError('experiment policy file differs from the declared experiment policy')
+    found = (report.get('discovery') or {}).get('attempt_dir')
+    grade = attempt.experiment_grade(request, result, routing / 'attempt',
+                                     attempt.experiment_run(request, layout, found,
+                                                            report['omitted_design_files']))
+    if ('experiment' in sem) != (grade is not None) or sem.get('experiment') != grade:
+        raise ValueError('experiment evidence record differs from the retained routing evidence')
+    if (grade is not None and grade['status'] == 'refused' and
+            classification not in ('contradiction', 'timeout', 'cancelled')):
+        raise ValueError(f'a {classification} attempt with refused experiment evidence')
+    return grade
 
 
 def _policy_grade(routing, report, request, result, classification):
@@ -499,6 +534,95 @@ def _tool_claims(report, request, layout, *, ran):
         raise ValueError('router argv, environment or timeout differ from the fixed adapter values')
     if report['identity_after'] is None or report['discovery'] is None:
         raise ValueError('routing attempt ran without its after-identities or discovery')
+
+
+def _staged(routing, report, request, layout, *, ran):
+    """The staged original the router read as --dir (AGENTEE-442): at the adapter's
+    staging path, its per-file manifest and tree identity the declared input's, and the
+    retained staged tree exactly the one the attempt observed after the router ran
+    (inputs.staged_after), for every classification. The staged tree is required
+    replay evidence: an absent, partial or stale tree refuses (review H1, H3)."""
+    inputs = report['inputs']
+    if not isinstance(inputs, dict) or set(inputs) != {'files', 'sha256', 'staged', 'staged_after'}:
+        raise ValueError('routing attempt inputs have unknown or missing fields')
+    staged, after = inputs['staged'], inputs['staged_after']
+    path = routing / attempt.ORIGINAL_STAGE
+    if staged is None:
+        if ran:
+            raise ValueError('routing attempt ran without a staged original')
+        if after is not None or os.path.lexists(path):
+            raise ValueError('an attempt that staged nothing has a staged original')
+        return
+    if (not isinstance(staged, dict) or set(staged) != {'path', 'root', 'files', 'sha256'} or
+            staged['path'] != str(attempt.staged_dir(request, layout)) or
+            staged['root'] != str(attempt.staged_root(layout))):
+        raise ValueError('staged original is not at the adapter staging path')
+    # Staging runs only after every other precondition held, so a staged attempt that
+    # did not run is one whose copy differed from the input.
+    if (staged['files'] == inputs['files'] and staged['sha256'] == inputs['sha256']) != ran:
+        raise ValueError('the staged original differs from the declared input' if ran else
+                         'a not-run attempt records a staged original equal to its input')
+    if not ran:
+        if after is not None:
+            raise ValueError('a not-run attempt records a post-run staged original')
+        expected = {'status': 'observed', 'files': staged['files'], 'sha256': staged['sha256']}
+    else:
+        if (not isinstance(after, dict) or set(after) != {'status', 'files', 'sha256'} or
+                after['status'] not in ('observed', 'missing', 'unreadable') or
+                (after['status'] == 'observed') != (after['files'] is not None and after['sha256'] is not None)):
+            raise ValueError('routing attempt has no sealed post-run staged original')
+        expected = after
+        sem = report['semantics']
+        changed = after != {'status': 'observed', 'files': staged['files'], 'sha256': staged['sha256']}
+        # A router that wrote its input is an honest contradiction, never adoptable.
+        if changed != (sem['classification'] == 'contradiction' and
+                       'the staged original changed during the attempt' in sem['reasons']):
+            raise ValueError('the post-run staged original and the classification disagree')
+    observed = attempt.staged_observation({'work': routing.parent})
+    if observed != expected:
+        raise ValueError(f'staged original bytes differ from the adapter report (retained tree '
+                         f'{observed["status"]}, sealed {expected["status"]})')
+
+
+def predecessor_input(design, project, experiment=True):
+    """Why the host input design/project is not an original project, or None (review H2).
+
+    The sandbox mounts a copy of design and the adapter stages it at a neutral path, which
+    kicad-route reads as an original at depth 0. So the input's owning context is judged
+    here, on the host path, before anything is copied, by kicad-route's own rule
+    (bd1e633 cli.previous_step and experiment._origin): an input that is the candidate
+    of the run whose attempt.json lies two levels up is a genuine predecessor, and one
+    laid out as a run candidate, or beside a run record, without that owner is a missing
+    predecessor. The adapter retains no predecessor receipts, so both are refused.
+
+    A genuine owner or a run record beside the input refuses every step. A parent that
+    is only named 'candidate', with no run record, is kicad-route's missing predecessor
+    only for its experiment origin, so it refuses only a step that declares an
+    experiment policy (experiment): no other step consumes origin evidence."""
+    src = (Path(design) / project).resolve()
+    prev = src.parent.parent
+    try:
+        owner = json.loads((prev / 'attempt.json').read_text())
+    except (OSError, ValueError):
+        owner = None
+    if (isinstance(owner, dict) and isinstance(owner.get('candidate_dir'), str) and
+            (prev / owner['candidate_dir']).resolve() == src):
+        return (f'routing input {src} is the candidate of the kicad-route run {prev}: a predecessor '
+                'input, whose ancestry staging would erase; predecessor chains are unsupported')
+    if (any(os.path.lexists(prev / n) for n in ('attempt.json', 'result.json')) or
+            (experiment and src.parent.name == 'candidate')):
+        return (f'routing input {src} is laid out as a kicad-route run candidate without a readable '
+                'owning run that owns it: a missing predecessor, not an original project')
+    return None
+
+
+def input_refusal(spec, design):
+    """stage_receipts.run_step calls this before it copies design: the refusal of a
+    kicad-route adapter step's input, or None for any other step."""
+    if spec.get('stage') != 'routing' or not str(spec.get('step', '')).startswith('kicad-route-'):
+        return None
+    argv = spec['argv']
+    return predecessor_input(design, argv[argv.index('--project') + 1], '--experiment-policy' in argv)
 
 
 def _attempt_dir(found, request):
@@ -577,6 +701,14 @@ def _receipt_agrees(receipt, report, request, routing, backend):
         raise ValueError('stage receipt output differs from the routed candidate')
     if receipt['artifacts'].get('routing/adapter-report.json') != digest(routing / 'adapter-report.json'):
         raise ValueError('stage receipt does not anchor this routing adapter report')
+    # The receipt seals the retained staged tree's files; they must be the report's.
+    prefix = f'routing/{attempt.ORIGINAL_STAGE}'
+    sealed = {k[len(prefix) + 1:]: v for k, v in receipt['artifacts'].items()
+              if k.startswith(prefix + '/') and v is not None}
+    after = report['inputs']['staged_after'] or (
+        {'files': report['inputs']['staged']['files']} if report['inputs']['staged'] else None)
+    if after is not None and after.get('files') is not None and sealed != after['files']:
+        raise ValueError('stage receipt staged-original artifacts differ from the routing adapter report')
     # The receipt's own strict parser reports what it read; a reported backend must be the same one.
     if backend['status'] == 'reported' and receipt['tool']['backend'] != backend:
         raise ValueError('stage receipt backend differs from the retained result.json')
@@ -600,13 +732,16 @@ def _request_argv(request):
         flags['diff_pairs'] = '--diff-pairs'
     if 'layer_policy' in request:
         flags['layer_policy'] = '--layer-policy'
+    if 'experiment_policy' in request:
+        flags['experiment_policy'] = '--experiment-policy'
     if set(request) != set(flags):
         raise ValueError('routing adapter request has unknown or missing fields')
     argv = []
     for key, flag in flags.items():
         try:
-            value = attempt.canonical_json(request[key]) if key == 'layer_policy' else str(request[key])
+            value = (attempt.canonical_json(request[key]) if key in ('layer_policy', 'experiment_policy')
+                     else str(request[key]))
         except (TypeError, ValueError):
-            raise ValueError('routing adapter layer policy is not JSON') from None
+            raise ValueError(f'routing adapter {key.replace("_", " ")} is not JSON') from None
         argv += [flag, value]
     return argv
