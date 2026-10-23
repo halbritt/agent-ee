@@ -352,9 +352,17 @@ class PlacerTest(unittest.TestCase):
         for bad in (-0.1, True, '1.5', 1e-7):
             with self.assertRaises(ValueError):
                 pack(board, request(fixed_refs=[], min_courtyard_edge_mm=bad))
-        tight = pack(capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20)),
-                     request(fixed_refs=[], min_courtyard_edge_mm=1.5))
-        self.assertEqual((tight['status'], tight['min_courtyard_edge_mm']), ('packing_search_exhausted', 1.5))
+        narrow = capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20))
+        tight = pack(narrow, request(fixed_refs=[], min_courtyard_edge_mm=1.5))
+        # AGENTEE-249 default: after the search fails, the capacity proof binds the unsourced
+        # (soft) margin, so the outcome stays unknown and names it for confirmation.
+        self.assertEqual((tight['status'], tight['outcome'], tight['min_courtyard_edge_mm']),
+                         ('packing_infeasible', 'unknown', 1.5))
+        self.assertEqual((tight['proof']['kind'], tight['owner_confirmation']),
+                         ('board_capacity_fragmented', ['min_courtyard_edge_mm']))
+        self.assertEqual(tight['search_failure']['status'], 'packing_search_exhausted')
+        opted_out = pack(narrow, request(fixed_refs=[], min_courtyard_edge_mm=1.5, capacity_proof=False))
+        self.assertEqual((opted_out['status'], opted_out['min_courtyard_edge_mm']), ('packing_search_exhausted', 1.5))
 
     def test_edge_mounted_exempt(self):
         from agent_ee.placement_predicates import edge_clearance
@@ -495,7 +503,14 @@ class EnvelopeFixedTest(unittest.TestCase):
         x, y = cap['position_nm']
         self.assertTrue(5_500_000 <= x <= 6_000_000 and 5_500_000 <= y <= 6_000_000, cap)
         # The gap still holds against the exact polygon: a 3 mm notch cannot take 2 mm plus 1.5 mm.
-        self.assertEqual(pack(board, request(gap_nm=1_500_000))['status'], 'packing_search_exhausted')
+        self.assertEqual(pack(board, request(gap_nm=1_500_000, capacity_proof=False))['status'],
+                         'packing_search_exhausted')
+        # AGENTEE-249 default: after the search fails, the fragmentation row proves it against
+        # the unsourced (advisory) gap, so the outcome stays unknown and names the gap.
+        report = pack(board, request(gap_nm=1_500_000))
+        self.assertEqual((report['status'], report['outcome'], report['proof']['kind'], report['owner_confirmation']),
+                         ('packing_infeasible', 'unknown', 'board_capacity_fragmented', ['gap_nm']))
+        self.assertEqual(report['search_failure']['status'], 'packing_search_exhausted')
 
     def test_fixed_courtyard_conflict_names_the_reference(self):
         from test_placement import rectangle
@@ -579,7 +594,10 @@ class SeedFixedPairsTest(unittest.TestCase):
                                                     [0, 20000000]]),
                          part('R1', 10, 10)])
         report = pack(tight, request(fixed_refs=['U1', 'C1'], gap_nm=1_200_000, carry_seed_fixed_pairs=True))
-        self.assertEqual(report['status'], 'packing_search_exhausted', report)
+        self.assertEqual(report['search_failure']['status'], 'packing_search_exhausted', report)
+        # AGENTEE-249 default: the slot is proved too narrow against the unsourced gap (unknown).
+        self.assertEqual((report['status'], report['outcome'], report['owner_confirmation']),
+                         ('packing_infeasible', 'unknown', ['gap_nm']))
         self.assertEqual(report['carried_fixed_pairs'], [])
         self.assertEqual(pack(tight, request(fixed_refs=['U1', 'C1'], gap_nm=1_100_000, carry_seed_fixed_pairs=True)
                               )['status'], 'planned')

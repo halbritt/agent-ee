@@ -1085,24 +1085,20 @@ Experiment evidence is never dropped and is never qualified.
   change repairs. The producer itself marked the receipt not comparison-eligible
   (`origin predecessor is missing or does not own this input`): kicad-route
   `experiment._origin` reads any `--dir` whose parent directory is named
-  `candidate` as a run candidate with a missing predecessor, and the adapter's
-  `--dir` was always `/candidate/<project>`. So every adapter-run K91 receipt was
-  `ineligible`. Agent-ee does not relabel that receipt. agent-507 adjudicated that
-  this is the intended producer contract. The consumer now routes a staged copy
-  of the original (see the router invocation above). The read-only mount is
-  unchanged. A fresh adapter-run attempt is needed for a positive. This change
-  does not run one. Records, receipts and negative controls are in
-  `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`).
-  They predate staging: they record `--dir /candidate/project` and no
-  `inputs.staged`, which the current `verify` requires. They are kept as they
-  are, as the record of that attempt. They are not re-graded.
   `candidate` as a run candidate with a missing predecessor. For a top-level
   project input the adapter's `--dir` is `/candidate/<project>`, so every
   adapter-run K91 receipt for a top-level project is `ineligible`. A nested
   project path (`/candidate/nested/project`) does not meet that rule (review
   probe of the producer's `_origin`; not a receipt and not a route). Agent-ee does
-  not relabel it. Records, receipts and negative controls are in
-  `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`). The
+  not relabel it. agent-507 adjudicated that this is the intended producer
+  contract. The consumer now routes a staged copy of the original (see the
+  router invocation above). The read-only mount is unchanged. A fresh
+  adapter-run attempt is needed for a positive. This change does not run one.
+  Records, receipts and negative controls are in
+  `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`).
+  They predate staging: they record `--dir /candidate/project` and no
+  `inputs.staged`, which the current `verify` requires. They are kept as they
+  are, as the record of that attempt. They are not re-graded. The
   harness's recorded `controls_refused: false` is a harness defect: it counted
   the mismatched-runtime control's verified `not_run` as accepted. The record is
   kept as written. `scripts/k91_classify.py` re-derives it (`CLASSIFIER_V1`) and
@@ -1165,6 +1161,21 @@ Experiment evidence is never dropped and is never qualified.
   slot, and every round-1 to round-3 counterexample through the actual
   consumer. `tests/test_k91_control_matrix.py` runs it, and
   `tests/test_k91_reason_probe.py` is the round-3 reviewer's probe.
+
+  The round-1 record predates the staged original. The matrix replays its
+  committed `not_run` report under the verifier of its own era: the adapter at
+  `7552f6db`, which wrote and committed it, loaded from git objects. That
+  verifier must reproduce the recorded value and refuse an edited copy. Today's
+  verifier must refuse the same report, for its missing staged original at the
+  report's own pin and as stale evidence at the production pin. The committed
+  bytes are never rewritten or re-graded.
+
+  An agent-ee capture run (`runs/N` holding `result.json` beside
+  `inputs/<project>`) has the layout that kicad-route reads as a missing
+  predecessor. So the adapter refuses `runs/N/inputs` as a routing input. A
+  caller that routes a captured candidate copies its inputs to a neutral path
+  first. The production campaign routes the implementation design copy, which
+  has no run record beside it.
 
   Anything missing or malformed is incomplete. A skipped adoption is never a
   refusal. The bare `stage_receipts.adopt` runs on another design copy as a
@@ -1500,3 +1511,75 @@ generation layout), `test_kicad_route_native`,
 `test_kicad_route_adapter`, `test_owned_router_pin` and the other modules listed in the
 [routing policy contract](routing-policy-contract.md).
 
+
+### Landed-image production validation (2026-10-22)
+
+The production-validation lane executed one coordinator routing step on the same
+`fixtures/rc/control` case as the generation positive, with requirements captured,
+through `routing_adapter.step` and `stage_receipts.run_step`. It used the existing
+image for landed agent-ee `854f4e023c56be32e834f194a68e7746f59a5b2f` without rebuilding.
+The selected manifest had `krt.generation: null` (the supported legacy layout),
+`owned-9cfc5d5e9369`, and the b5774496 source identity. The actual engine command
+selected `/opt/kicad-route/.venv-krt/bin/python` and the checkout's owned router.
+The receipt completed with exit 0 in 17.835 s; adapter replay returned `complete`
+and `eligible`, and native validation returned `PASS`. A controlled mismatched
+source generation was refused by the same step declaration before routing.
+
+The retained delivery, the independent Opus review and its probes are kept
+durably in the private evidence bucket as
+`s3://agent-ee-evidence/closeout/AGENTEE-450/AGENTEE-450-evidence-db54e86f0f2cdd162de40be98d7f8c17a66097c8b4f2a8fbbf879740bd753d98.tar.zst`
+(the name carries the archive's sha256; its `AGENTEE-450/SHA256SUMS` lists
+27,054 files). The worker result records the image identity, exact commands,
+evidence hashes, and a corrected harness path assertion (no second routing
+attempt). The receipt's `generation: null` is the supported checkout-local
+layout, and the image build is not claimed to be reproducible. This qualifies execution
+identity on the RC control; it does not demonstrate target-board improvement,
+repeatability, differential-pair acceptance, or close AGENTEE-442.
+
+### Production runtime repin to 7d5b0d4d (2026-10-22, AGENTEE-466)
+
+The qualified production runtime moves from the 854f4e02 image to the gate image of agent-ee
+`7d5b0d4de65a5b8e8f925ad6f366a46653aae563`, which contains the AGENTEE-454 read-once repair.
+The gate built it from `b29cead1c3bfdd8fb8938dcba77bb14956810c90`; `7d5b0d4d` is an empty
+stack-marker commit on top of it, with the same tree. Image tag
+`agent-ee:ci-b29cead1c3bfdd8fb8938dcba77bb14956810c90`, OCI index
+`sha256:6dd73b1559920a8417ac51af6a148b134aff6ee7dacf8e93842156beabce2334` (agent-ee-gate-c4,
+containerd store), config `sha256:d96f8e00a50a1bb6fab119ac8973a083af9373e2c9c235f3df20f655cfc3b5b7`
+(the ID a classic Docker store reports for the same image). All 1,804 files under
+`/opt/agent-ee` match the 7d5b0d4d tree by sha256, with none missing and none extra. The router is
+unchanged: b5774496, `krt.generation: null` (the legacy layout), source
+`9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2` (recomputed from the
+checkout), extension `ec5fb733d321343456917b2925ec275af233e3a44d34b2f332800d51352b2cd9`
+(hashed from the actual bytes), interpreter `/opt/kicad-route/.venv-krt/bin/python`
+(Python 3.12.3). The selected manifest is byte-identical to the one the 854f4e02 validation
+selected.
+
+The qualification repeats the validation above on the same `fixtures/rc/control` case. One
+routing step ran through `routing_adapter.step`, `stage_receipts.run_step` and
+`routing_adapter.verify`. The receipt completed with exit 0 in 35.2 s; the adapter classified
+it `complete` and `eligible`, and native validation returned `PASS`. Three mismatched runtimes
+were refused by the same step declaration before routing:
+- a router generation built from edited source (`owned engine source digest differs`);
+- a checkout whose HEAD names the old 5f1c072 pin (`is not the pinned`);
+- an installed extension whose bytes differ from its manifest (`state manifest drift`).
+
+One pod-preparation dry run ran under native-admit in this image, using the production-capture
+`build.py` and `pipeline.py` at fome-mc `5d923c5412d3659638c67c9cfa9f097e24620518`, with only
+`AGENT_EE_PIN` moved to 7d5b0d4d. The committed capture reproduced byte for byte, and all 28
+stages were accepted, as in the retained 81e387ee run. The read-once path executed in the
+actual pipeline: each of the 90 `parts_manifest.dependency_closure` and 22 `qualify_manifest`
+calls read about 128.3 MB, against about 31.3 GB per call in the AGENTEE-454 "before"
+measurement. Of the retained run's 211 mapped files, 200 emitted design files are
+byte-identical. Eleven mapped records differ. The actual 27 bounded check outcomes remain
+execution `ok`, outcome `defect`, and the final blocking obligations remain open. The repinned
+baseline additionally records AGENTEE-448 J1 nominal component-thickness screening and
+source/current obligation statements; this is a semantic baseline addition, and the accepted
+policy is unchanged. All 18 source-revision annotations become null in the exported non-Git
+context. Source, run, path, stock-age and policy identities also change. Of the separately
+compared 114 emission receipt files, 92 are byte-identical and 22 differ. This proves the
+stated design-byte and observed-check equivalence on these inputs, not byte or semantic
+identity of every baseline, receipt or metadata record. The pod pin
+itself (`AGENT_EE_PIN` in fome-mc `production-capture/pipeline.py`) is fome-mc's and is still
+81e387ee on the j6 and j6b2 branches; it moves only in fome-mc. This qualifies execution
+identity and the read-once path on these inputs. It is not a latency claim, a routing campaign
+or project adoption.

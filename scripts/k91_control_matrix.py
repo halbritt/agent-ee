@@ -26,8 +26,10 @@ expected outcome; 1 otherwise, listing the rows that differ.
 import argparse
 import copy
 import importlib
+import importlib.util
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -39,6 +41,11 @@ for path in (ROOT / 'src', ROOT):
 
 SLOTS = ('a_mismatched_runtime', 'b_tampered_candidate', 'b_tampered_sidecar', 'c_stale_input')
 REQUIRED = ('a_mismatched_runtime', 'b_tampered_candidate', 'c_stale_input')
+# The adapter that wrote and committed evidence/k91-native-positive (round 1), before the staged
+# original (2c37f645); its verifier classifies that record. ERA_MODULES are the ones its verify imports.
+ERA = '7552f6db72ed53d5439144d145835160c206f0cb'
+ERA_PACKAGE = 'k91_era_adapter'
+ERA_MODULES = ('routing_adapter', 'kicad_route_attempt', 'storage')
 BOARD = 'project/rc.kicad_pcb'
 SIDECAR = 'routing/attempt/routability-experiment.json'
 REFUSED, NOT_REFUSED, INCOMPLETE = 'refused', 'not_refused', 'incomplete'
@@ -237,8 +244,24 @@ class Matrix:
         historical = c.v2_verdict(c.v1_controls_as_v2(manifest))
         self.check_row('round-1 historical: no required control refused at the boundary', False,
                        historical['controls_refused'], 'round-1/2 review')
-        self.check_row('round-1 mismatch-replay: the committed not_run report verifies to the recorded value', True,
-                       self.mismatch_replay(manifest), 'round2/mismatch-replay.py')
+        # The round-1 record predates the staged original (2c37f645): it is classified by the verifier of
+        # its own era, the adapter that wrote and committed it, and today's verifier refuses it.
+        self.check_row('round-1 mismatch-replay: the committed not_run report verifies to the recorded value '
+                       f'under its era verifier ({ERA[:8]}, pre-staging)', True,
+                       self.mismatch_replay(manifest, self.era_adapter()), 'round2/mismatch-replay.py')
+        self.check_row('round-1 mismatch-replay: the era verifier refuses an edited copy of the report',
+                       'ValueError: routing adapter report identity mismatch',
+                       self.outcome(lambda: self.mismatch_replay(
+                           manifest, self.era_adapter(), edit=lambda r: r['semantics'].update(reasons=[]))),
+                       'ee442 composition')
+        from agent_ee import routing_adapter
+        self.check_row('round-1 mismatch-replay: today\'s verifier refuses the pre-staging report at its own pin',
+                       'ValueError: routing attempt inputs have unknown or missing fields',
+                       self.outcome(lambda: self.mismatch_replay(manifest, routing_adapter)), 'ee442 composition')
+        self.check_row('round-1 mismatch-replay: today\'s verifier refuses the pre-staging report as stale at the '
+                       'production pin', 'StaleRoutingEvidence',
+                       self.outcome(lambda: self.mismatch_replay(manifest, routing_adapter, pin=None)).split(':')[0],
+                       'ee442 composition')
         base = c.v1_controls_as_v2(manifest)['controls']['a_mismatched_runtime']
         for key in ('router_exit', 'candidate_sha256'):
             record = copy.deepcopy(base)
@@ -346,15 +369,47 @@ class Matrix:
         again['link'] = None
         chain.append(again)
 
-    def mismatch_replay(self, manifest):
-        from agent_ee import routing_adapter
+    def mismatch_replay(self, manifest, adapter, pin=True, edit=None):
+        """Whether adapter.verify re-derives the recorded value from the committed not_run report: at the
+        report's own pin (the round-2 replay), or at the adapter's production pin when pin is None. edit
+        changes a copy of the report first; the committed bytes are only ever read."""
         evidence = ROOT / 'evidence/k91-native-positive/neg-runtime'
         report = json.loads((evidence / 'adapter-report.json').read_text())
-        pin = report['adapter']['compatibility'].split('@')[1]
         run = self.fresh('mismatch-replay') / 'run'
         (run / 'routing').mkdir(parents=True)
         shutil.copyfile(evidence / 'adapter-report.json', run / 'routing/adapter-report.json')
-        return routing_adapter.verify(run, layout={'pin': pin}) == manifest['controls']['a_mismatched_runtime']['verify']['value']
+        if edit is not None:
+            edit(report)
+            (run / 'routing/adapter-report.json').write_text(json.dumps(report))
+        layout = {'pin': report['adapter']['compatibility'].split('@')[1]} if pin else None
+        return adapter.verify(run, layout=layout) == manifest['controls']['a_mismatched_runtime']['verify']['value']
+
+    @staticmethod
+    def outcome(call):
+        try:
+            return f'returned {call()!r}'
+        except Exception as exc:
+            return f'{type(exc).__name__}: {exc}'
+
+    def era_adapter(self):
+        """routing_adapter as committed at ERA, loaded from this repository's git objects into a private
+        package: the verifier of the round-1 record's own era, never a fallback of today's."""
+        package = self.fresh('era') / ERA_PACKAGE
+        package.mkdir(parents=True)
+        (package / '__init__.py').write_text('')
+        for name in ERA_MODULES:
+            (package / f'{name}.py').write_bytes(subprocess.run(
+                ['git', '-C', str(ROOT), 'show', f'{ERA}:src/agent_ee/{name}.py'],
+                check=True, capture_output=True).stdout)
+        spec = importlib.util.spec_from_file_location(ERA_PACKAGE, package / '__init__.py',
+                                                      submodule_search_locations=[str(package)])
+        sys.modules[ERA_PACKAGE] = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(sys.modules[ERA_PACKAGE])
+            return importlib.import_module(f'{ERA_PACKAGE}.routing_adapter')
+        finally:
+            for name in [n for n in sys.modules if n == ERA_PACKAGE or n.startswith(ERA_PACKAGE + '.')]:
+                del sys.modules[name]
 
 
 ORIGINAL = {'wrong_replay_binding': ('ValueError', 'replayed receipt is not the step and binding the consumer asked for'),

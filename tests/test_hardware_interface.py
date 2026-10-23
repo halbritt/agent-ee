@@ -121,7 +121,7 @@ class InterfaceTests(unittest.TestCase):
                 validate_contract(contract)
 
     def test_duplicate_json_identity_is_not_silently_overwritten(self):
-        from agent_ee.hardware_interface import load_contract
+        from agent_ee.hardware_interface import load_contract_unverified as load_contract
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'contract.json'
             original=(FIXTURE/'contract.json').read_text()

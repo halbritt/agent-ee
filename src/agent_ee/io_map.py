@@ -4,12 +4,12 @@ import copy
 import csv
 import hashlib
 import io
-import json
 import re
 from pathlib import Path
 
-from .hardware_interface import exact_keys, text, unique_object, validate_contract
-from .storage import write_json
+from .hardware_interface import (RECORD_SCHEMA, exact_keys, requirement_authority, strict_json, text,
+                                validate_contract, validate_origin, validate_requirement_entry, verify_contract)
+from .storage import json_bytes, write_json
 
 REQUIRED = ('Connector_Pin', 'Signal_Name', 'Net', 'MCU_Ref', 'MCU_Pin', 'External_Destination')
 
@@ -46,6 +46,17 @@ def read_rows(raw):
     return rows
 
 
+def cited_ids(row):
+    return sorted(set(re.findall(r'\bPOD-IF-[A-Z0-9-]+\b', row.get('Notes', ''))))
+
+
+def row_citations(raw):
+    """Per CSV row number: the descriptive values and cited requirement IDs a compiled citation carries."""
+    return {number: {'connector_pin': row['Connector_Pin'], 'signal': row['Signal_Name'],
+                     'external_destination': row['External_Destination'], 'requirements': cited_ids(row)}
+            for number, row, _ in read_rows(raw)}
+
+
 PATH_FIELDS = 'terminals pin_names devices directions'
 
 
@@ -61,14 +72,62 @@ def read_paths(paths):
     return paths['paths']
 
 
+HISTORY_SCHEMA = 'agent-ee.io-map-history/1'
+
+
+def read_history(history):
+    """Original (e.g. v9) provenance for carried citations; `sourced` maps IDs to current sources."""
+    exact_keys(history, 'schema origin rows sourced')
+    if history['schema'] != HISTORY_SCHEMA:
+        raise ValueError(f'expected {HISTORY_SCHEMA}')
+    validate_origin(history['origin'])
+    if not isinstance(history['rows'], dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v.strip()
+                                                    for k, v in history['rows'].items()):
+        raise ValueError('history rows must map connector pins to original locators')
+    if not isinstance(history['sourced'], dict):
+        raise ValueError('history sourced must map requirement IDs to source references')
+    for rid, ref in history['sourced'].items():
+        validate_requirement_entry(dict(id=rid, qualification='sourced', source=copy.deepcopy(ref)))
+    return history
+
+
+def build_record(contract, history):
+    """The qualification record binding each compiled row's citation to its original provenance."""
+    history = read_history(copy.deepcopy(history))
+    rows = {}
+    for invariant in contract['invariants']:
+        citation = invariant['io_map']
+        rows.setdefault(citation['row'], dict(
+            {k: copy.deepcopy(citation[k]) for k in 'row connector_pin signal external_destination requirements'.split()},
+            origin=dict(history['origin'], locator=history['rows'].get(citation['connector_pin'],
+                                                                      history['origin']['locator']))))
+    first = next(i['io_map'] for i in contract['invariants'])
+    return {'schema': RECORD_SCHEMA, 'io_map': {'path': first['path'], 'sha256': first['sha256']},
+            'rows': [rows[n] for n in sorted(rows)]}
+
+
+def traceability(contract, spec_record):
+    """Spec requirement IDs split by qualification; token presence alone is not qualified coverage."""
+    expected = {r['id'] for r in spec_record['requirements'] if r['id'].startswith('POD-IF-')}
+    authority = requirement_authority(contract)
+    return {'qualified': sorted(expected & set(authority['sourced'])),
+            'unqualified-carryover': sorted(expected & set(authority['unqualified-carryover'])),
+            'missing': sorted(expected - set(authority['sourced']) - set(authority['unqualified-carryover']))}
+
+
 def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None, paths=None,
-                   source_bytes=None, require_source_sha256=False):
+                   source_bytes=None, require_source_sha256=False, qualifications=None,
+                   history=None, record_path=None, report=None, origin_bytes=None, captured=None):
     """Bindings borrow components/terminals from a validated interface/1 contract.
 
     Connector terminal IDs equal Connector_Pin; MCU IDs are MCU_Ref:MCU_Pin.
     Missing bindings and TBD identities remain explicitly unresolved. Concrete
     MCU pins require MCU_Path=direct or ';'-separated IDs of declared indirect
     paths, one per ';'-separated MCU_Pin; anything else is refused.
+
+    With `history`, the emitted record is verified by the same loader every consumer uses
+    (verify_contract); `captured` (path -> bytes) supplies each sourced requirement source and,
+    optionally, original origins (`origin_bytes` is the origin path's entry).
     """
     source = copy.deepcopy(source)
     if source_bytes is not None:
@@ -79,6 +138,23 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
     elif require_source_sha256:
         raise ValueError('requirement source bytes are required to compute sha256')
     rows = read_rows(raw)
+    captured = dict(captured or {})
+    if history is not None:
+        if qualifications is not None or not record_path:
+            raise ValueError('history replaces qualifications and requires record_path')
+        checked = read_history(copy.deepcopy(history))
+        qualifications = checked['sourced']
+        if origin_bytes is not None:
+            if hashlib.sha256(origin_bytes).hexdigest() != checked['origin']['sha256']:
+                raise ValueError('historical origin bytes differ from the declared origin sha256')
+            captured[checked['origin']['path']] = origin_bytes
+    elif record_path is not None or origin_bytes is not None or captured:
+        raise ValueError('record_path, origin_bytes and captured require history')
+    if qualifications is not None:
+        if not isinstance(qualifications, dict):
+            raise ValueError('qualifications must map requirement IDs to source references')
+        for rid, ref in qualifications.items():
+            validate_requirement_entry(dict(id=rid, qualification='sourced', source=copy.deepcopy(ref)))
     bindings = validate_contract(copy.deepcopy(bindings)) if bindings is not None else {'components': {}, 'terminals': {}}
     paths = read_paths(copy.deepcopy(paths)) if paths is not None else None
     used_paths = set()
@@ -138,11 +214,17 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
 
     for number, row, nc in rows:
         position = row['Connector_Pin']
-        ids = sorted(set(re.findall(r'\bPOD-IF-[A-Z0-9-]+\b', row.get('Notes', ''))))
+        ids = cited_ids(row)
         for rid in ids:
             coverage.setdefault(rid, []).append(position)
+        if qualifications is not None:
+            cited = [dict(id=rid, qualification='sourced', source=copy.deepcopy(qualifications[rid]))
+                     if rid in qualifications else dict(id=rid, qualification='unqualified-carryover')
+                     for rid in ids]
+        else:
+            cited = ids
         citation = dict(path=csv_path, sha256=sha, row=number, connector_pin=position,
-                        signal=row['Signal_Name'], external_destination=row['External_Destination'], requirements=ids)
+                        signal=row['Signal_Name'], external_destination=row['External_Destination'], requirements=cited)
         if row['Net'] in ('N/A', 'TBD'):
             invariant(position + ':net', 'unresolved', citation,
                       reason=f'row {number}: no electrical net declared ({row["Net"]})')
@@ -195,13 +277,29 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
             or any(d['component'] == cid for d in i.get('devices', [])))
         contract['invariants'].append(dict(id=cid + ':populated', kind='component', component=cid,
             populated=True, requirement=requirement, source=copy.deepcopy(source), io_map=citation))
+    if qualifications is not None and set(qualifications) - set(coverage):
+        raise ValueError(f'qualification for uncited requirement: {sorted(set(qualifications) - set(coverage))}')
     if spec_record is not None:
         expected = {r['id'] for r in spec_record['requirements'] if r['id'].startswith('POD-IF-')}
         if not expected or expected != set(coverage):
             raise ValueError(f'interface traceability mismatch: missing={sorted(expected - coverage.keys())}; '
                              f'unknown={sorted(coverage.keys() - expected)}')
-    return validate_contract(contract, require_source_sha256=require_source_sha256,
-                             source_bytes={source['path']: source_bytes} if source_bytes is not None else None)
+    record = None
+    if history is not None:
+        record = json_bytes(build_record(contract, history))
+        contract['qualification_record'] = {'path': record_path, 'sha256': hashlib.sha256(record).hexdigest()}
+        captured[csv_path] = raw
+    contract, verified = verify_contract(
+        contract, qualification=record, captured=captured if history is not None else None,
+        require_source_sha256=require_source_sha256,
+        source_bytes={source['path']: source_bytes} if source_bytes is not None else None)
+    if report is not None:
+        report['qualification'] = verified
+        report['origin_verification'] = (None if history is None else
+                                          verified['origin_verification'][history['origin']['path']])
+        report['traceability'] = (traceability(contract, spec_record) if spec_record is not None else None)
+        report['qualification_record'] = record
+    return contract
 
 
 def main(argv=None):
@@ -217,23 +315,59 @@ def main(argv=None):
     parser.add_argument('--bindings', help='interface/1 contract supplying explicit terminal bindings')
     parser.add_argument('--spec-record', help='require complete POD-IF-* row traceability')
     parser.add_argument('--paths', help='agent-ee.io-map-paths/1 declaring indirect MCU paths')
+    parser.add_argument('--qualifications', help='JSON {requirement id: {path, sha256, locator}} marking cited '
+                        'requirements sourced; all other cited IDs are emitted unqualified-carryover')
+    parser.add_argument('--history', help='agent-ee.io-map-history/1 binding original provenance; requires '
+                        '--record-path and --record-out and replaces --qualifications')
+    parser.add_argument('--history-source', help='captured bytes of the history origin file; its sha256 must '
+                        'equal the declared origin sha256 (otherwise the origin is reported declared-unverified)')
+    parser.add_argument('--captured', action='append', default=[], metavar='PATH',
+                        help='captured input at this relative path (repeatable): each sourced requirement '
+                        'source of --history must be supplied')
+    parser.add_argument('--record-path', help='captured path the contract declares for the qualification record')
+    parser.add_argument('--record-out', help='file receiving the qualification record')
     parser.add_argument('--out', required=True)
     args = parser.parse_args(argv)
     def load(path):
-        return json.loads(Path(path).read_text(encoding='utf-8'), object_pairs_hook=unique_object) if path else None
+        # A supplied file is parsed as is: JSON null or a non-object is refused, never read as "absent".
+        if path is None:
+            return None
+        value = strict_json(Path(path).read_bytes(), path)
+        if not isinstance(value, dict):
+            raise ValueError(f'{path}: expected a JSON object, got {type(value).__name__}')
+        return value
+    trace = {}
     try:
+        if bool(args.history) != bool(args.record_out):
+            raise ValueError('--history and --record-out must be given together')
         try:
             source_bytes = Path(args.source_file if args.source_file is not None else args.source).read_bytes()
         except FileNotFoundError as exc:
             parser.exit(2, f'io-map: missing-source (FileNotFoundError): {exc}\n')
         contract = compile_io_map(Path(args.csv).read_bytes(), csv_path=args.csv_path,
             requirement=text(args.requirement), source=dict(path=args.source, locator=args.locator),
-            bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths),
+            bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths), qualifications=load(args.qualifications),
+            history=load(args.history),
+            origin_bytes=Path(args.history_source).read_bytes() if args.history_source else None,
+            record_path=args.record_path, report=trace,
+            captured={path: Path(path).read_bytes() for path in args.captured} or None,
             source_bytes=source_bytes, require_source_sha256=args.require_source_sha256)
         write_json(args.out, contract)
+        if args.history:
+            Path(args.record_out).write_bytes(trace['qualification_record'])
     except (OSError, ValueError, UnicodeError) as exc:
         parser.exit(2, f'io-map: {exc}\n')
     print(f'compiled {len(contract["invariants"])} invariants; unresolved declarations remain unknown')
+    if args.history:
+        print('historical origin: ' + trace['origin_verification'])
+    if trace.get('traceability'):
+        split = trace['traceability']
+        print('spec traceability: qualified=' + ','.join(split['qualified'])
+              + ' unqualified-carryover=' + ','.join(split['unqualified-carryover']))
+    authority = requirement_authority(contract)
+    if authority['unqualified-carryover']:
+        print('unqualified carry-over requirements (reported, never authority): '
+              + ', '.join(authority['unqualified-carryover']))
     return 0
 
 

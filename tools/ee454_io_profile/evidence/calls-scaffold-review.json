@@ -1,0 +1,61 @@
+{
+  "schema": "agent-ee.ee454-call-count/1",
+  "tests": [
+    "tests.test_scaffold_producer.NativeProducerTests.test_cli_produce_and_review_with_native_rules_loaded"
+  ],
+  "tests_run": 1,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "python": "3.12.3",
+  "watched": {
+    "baseline.py:compile_baseline": {
+      "calls": 5,
+      "cumtime": 0.0976,
+      "callers": {
+        "preflight.py:capture_expectation": 1,
+        "baseline.py:load_baseline": 4
+      }
+    },
+    "baseline.py:load_baseline": {
+      "calls": 4,
+      "cumtime": 0.0878,
+      "callers": {
+        "candidate.py:verify_snapshot": 1,
+        "baseline.py:evidence_seal": 1,
+        "cli.py:verify_records": 1,
+        "baseline.py:verify_evidence": 1
+      }
+    },
+    "parts_manifest.py:dependency_closure": {
+      "calls": 5,
+      "cumtime": 0.0125,
+      "callers": {
+        "parts_subset.py:capability": 5
+      }
+    },
+    "storage.py:digest": {
+      "calls": 864,
+      "cumtime": 0.2986,
+      "callers": {
+        "test_scaffold_producer.py:profile": 12,
+        "routing_rules.py:captured_file": 155,
+        "catalog.py:capture_catalog": 1,
+        "candidate.py:verify_snapshot": 25,
+        "test_part_selection.py:snapshot": 2,
+        "fab_profile.py:verify_source": 60,
+        "test_scaffold_producer.py:write": 1,
+        "candidate.py:source_manifest": 25,
+        "cli.py:policy_files": 430,
+        "cli.py:artifacts": 98,
+        "test_parts_subset.py:captured_fixture": 3,
+        "baseline.py:evidence_seal": 33,
+        "rf_review.py:retained_routing": 1,
+        "parts_subset.py:capability": 5,
+        "cli.py:verify_records": 1,
+        "test_parts_subset.py:put": 11,
+        "candidate.py:verify_source": 1
+      }
+    }
+  }
+}

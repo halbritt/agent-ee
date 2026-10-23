@@ -12,8 +12,9 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from agent_ee.executor import RECORDS, Cancellation, execute
+from agent_ee.executor import RECORDS, Cancellation, execute, sandbox_argv
 from agent_ee.storage import json_digest, read_json, write_json
 from toolchain import toolchain_test
 
@@ -233,6 +234,53 @@ class ExecutorRecordTests(unittest.TestCase):
             self.run_tool(work, {**plan, 'sleep': 30}, timeout=30, cancellation=cancellation)
         self.assertIsInstance(raised.exception.__cause__, PermissionError)
         self.assert_host_untouched()
+
+
+class VisualPolicyTests(unittest.TestCase):
+    """The typed candidate-imaging policy is the only imaging setting crossing --clearenv (AGENTEE-458)."""
+    PROBE = 'import os, sys; sys.stdout.write(repr(os.environ.get("AGENT_EE_SKIP_VISUALS")))'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-visual-policy-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / 'inputs').mkdir()
+
+    def test_only_a_boolean_adds_the_strict_flag_and_none_keeps_the_argv(self):
+        argv = ['/usr/bin/true']
+        legacy = sandbox_argv(self.root / 'inputs', self.root / 'work', argv)
+        self.assertEqual(sandbox_argv(self.root / 'inputs', self.root / 'work', argv, skip_visuals=None), legacy)
+        self.assertNotIn('AGENT_EE_SKIP_VISUALS', legacy)
+        for value, flag in ((True, '1'), (False, '0')):
+            command = sandbox_argv(self.root / 'inputs', self.root / 'work', argv, skip_visuals=value)
+            options = command[:command.index('--')]
+            self.assertEqual(options.count('AGENT_EE_SKIP_VISUALS'), 1)
+            at = options.index('AGENT_EE_SKIP_VISUALS')
+            self.assertEqual(options[at - 1:at + 2], ['--setenv', 'AGENT_EE_SKIP_VISUALS', flag])
+            # After --clearenv, so the cleared environment cannot drop it.
+            self.assertLess(options.index('--clearenv'), at)
+        for value in (1, 0, '1', 'true', [], {}):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, 'skip_visuals must be a boolean or None'):
+                    sandbox_argv(self.root / 'inputs', self.root / 'work', argv, skip_visuals=value)
+                work = self.root / f'refused-{type(value).__name__}'
+                with self.assertRaisesRegex(ValueError, 'skip_visuals must be a boolean or None'):
+                    execute(self.root / 'inputs', work, argv, skip_visuals=value)
+                self.assertFalse(work.exists())
+
+    @toolchain_test
+    def test_sandbox_sees_only_the_passed_policy_never_the_host_flag(self):
+        argv = ['/usr/bin/python3', '-c', self.PROBE]
+        with patch.dict(os.environ, {'AGENT_EE_SKIP_VISUALS': '1'}):
+            inherited = execute(self.root / 'inputs', self.root / 'none', argv)
+            explicit = execute(self.root / 'inputs', self.root / 'render', argv, skip_visuals=False)
+        with patch.dict(os.environ, {'AGENT_EE_SKIP_VISUALS': '0'}):
+            skipped = execute(self.root / 'inputs', self.root / 'skip', argv, skip_visuals=True)
+        for name, record, seen in (('none', inherited, 'None'), ('render', explicit, "'0'"),
+                                   ('skip', skipped, "'1'")):
+            with self.subTest(name):
+                self.assertEqual(record['execution'], 'ok', (self.root / name / 'console.log').read_text())
+                self.assertEqual((self.root / name / 'stdout.log').read_text(), seen)
 
 
 class WriteJsonTests(unittest.TestCase):

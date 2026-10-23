@@ -379,6 +379,58 @@ artifact inventory). One `runtime_files()` observation reads 1.24 GB before and 
 after. A campaign verification's host term is now constant; its candidate term still
 grows with the number of retained runs.
 
+### Per-call verified reads (AGENTEE-454)
+
+`parts_manifest.dependency_closure` and `qualify_manifest` replay every named part's
+part record, JLCPCB capture and shared datasheet acquisition. Before this change a pass
+over the Rev-3 complete parts manifest (327 parts, 316 part records, 128 MB of distinct
+inputs) read 31.25 GB: each part revalidated its whole shared acquisition and every PDF
+was hashed, reread for the envelope check, rehashed for the dependency map and reread
+again by the closure's final loop.
+
+Now one call creates a `storage.CallReads`, passes it explicitly down the replay
+(`part_record._sources`, `_external_sources`, `qualify_record`,
+`datasheet_selection.datasheet` and `check_binding`, `datasheet_facts.load_acquisition`,
+`datasheet_capture.historical_source`, `part_selection.selection_check` and
+`catalog.load_catalog`) and drops it on return:
+
+- Each file is read once and hashed from the bytes read. `load_acquisition` checks the
+  PDF envelope and parses the acquisition JSON on exactly those bytes; the previous
+  hash-then-reread window is gone, also without a `CallReads`.
+- Entries are keyed by resolved real path and the SHA-256 of the bytes actually read.
+  A lookup pinning another digest, or a path that resolves to another file (a symlinked
+  root, another capture), misses and reads now. A replay of one acquisition is reused
+  only for the same resolved root and manifest, pinned digest and binding identity.
+- Path policy runs at every use: `read_captured`'s no-link/regular-file walk and
+  `captured_path` containment are rechecked before each lookup, including every path of
+  a reused acquisition replay, so no refusal or acceptance of a path is served from it.
+- Consumers inside the call see the verified bytes: the closure's final loop, the part
+  dependency maps, source-selection decisions and their selected-source receipts,
+  historical source notes (hashed and parsed from one read), generic catalog selection
+  (snapshot manifest and database, after every pin, size, schema and row check) and
+  `qualify_manifest`'s CAD check use them, not a later reread.
+- Nothing is module-level, cross-call or keyed by file status. The next call, including
+  the next `compile_baseline`/`load_baseline` and every `parts_subset` or identity-witness
+  pass inside one, rereads and rehashes current bytes. `storage.digest()` and
+  `digest_fd()` are unchanged and never consult a `CallReads`.
+
+Measured with the AGENTEE-454 profile harness on the same reconstructed Rev-3 manifest
+(Python 3.14 on peecee-wsl, which lacks `/proc/self/io`, so bytes are the harness's
+per-read counters): one `dependency_closure` pass read 31,248,160,693 bytes in 19.8 s
+before and 128,074,107 bytes in 2.6 s after; one `qualify_manifest` read 31,376,303,522
+bytes in 25.0 s before and 128,117,988 bytes in 7.9 s after. The closure map and the
+qualification result are identical. This is per pass on that subset, not a measured
+production-run gain.
+
+The trade: a byte change made to a capture file in the middle of one call, after its
+first read, is not seen by that call (its consumers keep the verified bytes); it is
+refused by the next call. `tests.test_call_reads` covers changed bytes and same-size,
+same-mtime shared-mapping writes between calls, symlinked and aliased paths, a different
+pinned digest, bindings, a link substituted mid-call, and mid-call substitutions of a
+capture PDF, a selected-source PDF and decision, a historical source note and the catalog
+snapshot manifest and database, whose consumers still see the verified bytes while the
+next call refuses them.
+
 ## Version-2 witnesses and evidence seal
 
 Scope version 2 changes the **scope** contract; candidate, packet and result
@@ -644,4 +696,7 @@ PYTHONPATH=src python3 scripts/benchmark_packet_index.py build/review
 The report separates structural index size, prefix packet size and indexed packet
 size. It does not measure tokens, provider latency or model missed defects.
 No reviewer attention, detection or cost improvement is established by these
-mechanical measurements; a paired live reviewer comparison remains outstanding.
+mechanical measurements. The capped live comparison is in
+[packet navigation reviewer A/B](packet-index-ab.md). It recorded provider token
+usage, reviewer latency and missed-defect outcomes for three comparable matched
+pairs, and it makes no savings claim.

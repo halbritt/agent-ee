@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('schematic_render', 'part_decisions', 'jlc_dfm', 'fab_package', 'cpl_rotation', 'jlc_cost_estimate', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'pin_contracts', 'active_spice',
                    'kicad_happy', 'kicad_happy_severity_gate', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'net_class_assignment', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions', 'placement_congestion', 'rf_geometry'))
+                   'netclass_completeness', 'net_class_assignment', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions', 'placement_congestion', 'rf_geometry', 'antenna_placement'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -509,6 +509,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
+        elif kind == 'antenna_placement':
+            from .antenna_placement import capability
+            captured(scope.get('board'))
+            descriptor = capability(params, scope, files, inputs)
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
         elif kind == 'dfm_geometry':
             from .dfm_geometry import capability
             captured(scope.get('board'))
@@ -621,6 +628,9 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
+            authority, history = descriptor['requirement_authority'], descriptor['requirement_history']
+            if authority['sourced'] or authority['unqualified-carryover'] or history['qualification_bound']:
+                result['requirement_qualification'] = {**authority, **history}
         elif kind == 'active_spice':
             from .active_spice import capability
             descriptor = capability(params, files, inputs, scope)
@@ -720,6 +730,14 @@ def compile_coverage(scope, files, inputs=None):
         raise ValueError('defect-capable check requires an acceptance mapping')
     report = {'schema': 'agent-ee.coverage/1', 'policy': 'executable-acceptance/1',
               'checks': checks, 'requirements': requirements}
+    qualified = {cid: c['requirement_qualification'] for cid, c in checks.items() if 'requirement_qualification' in c}
+    if qualified:
+        # Citations are reported, not coverage: only sourced IDs are qualified; carry-over never satisfies a requirement.
+        report['requirement_citations'] = {
+            'qualified': sorted({r for q in qualified.values() for r in q['sourced']}),
+            'unqualified-carryover': {cid: q['unqualified-carryover'] for cid, q in qualified.items()
+                                      if q['unqualified-carryover']},
+            'counted_as_coverage': False}
     return {**report, 'coverage_id': identity(report)}
 
 

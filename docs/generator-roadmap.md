@@ -131,11 +131,11 @@ still consume that project; scaffolding establishes no routed-board acceptance.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
-The [original RC stage fixtures](rc-stage-fixtures.md) provide unplaced,
+The [RC stage fixtures](rc-stage-fixtures.md) provide unplaced,
 placed-unrouted and seeded placement inputs with native checks and a recorded
-KRT attempt. They are independent alternatives to the FOME-MC reference;
-AGENTEE-103's exact control-derived variants remain blocked by unresolved
-third-party rights. These fixtures do not qualify the complete rung.
+KRT attempt, as pcbnew derivatives of the FOME-MC RC control
+(`fixtures/rc/derived/`) and as an independent original alternative
+(`fixtures/rc/stages/`). These fixtures do not qualify the complete rung.
 
 ## Starting a campaign from an empty candidate
 
@@ -410,11 +410,12 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 ## Licence posture
 
-- agent-ee: MIT is proposed in main (AGENTEE-14), with
+- agent-ee: MIT (AGENTEE-14), approved for agent-ee material and the FOME-MC
+  RC fixture and `eda.py`-derived logic on 2026-10-22
+  ([decision](decisions.md#mit-license-approved-agentee-14-2026-10-22)), with
   a [file-origin inventory](file-origins.json) of every tracked file and a
-  [summary](third-party-origins.md). The proposal is merged; owner confirmation remains pending.
-  FOME-MC fixture, donor, vendor and other third-party files stay excluded
-  until the owner decides each origin.
+  [summary](third-party-origins.md). Donor, vendor and other third-party files
+  stay excluded until the owner decides each origin.
 - kicad-route: the current pin carries an MIT `LICENSE`; its owned routing
   engine retains the MIT upstream and fork notices.
 - KRT (KiCadRoutingTools) is MIT. Freerouting (GPL-3.0) runs as a separate

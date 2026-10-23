@@ -193,8 +193,12 @@ class AccessTests(unittest.TestCase):
         plain['footprints'][0].pop('access_direction')
         policy = request(fixed_refs=[], gap_nm=0, obstacles=obstacles)
         declared, legacy = (pack(b, policy) for b in (board, plain))
-        self.assertEqual(declared['status'], 'packing_search_exhausted')
-        for key in ('status', 'outcome', 'reason', 'steps_used', 'placements'):
+        self.assertEqual(declared['search_failure']['status'], 'packing_search_exhausted')
+        # AGENTEE-249 default (proposed ruling): after the search fails, the authored comb
+        # obstacles prove the 2 mm socket cannot fit (hard, fixture-author sources): a defect.
+        self.assertEqual((declared['status'], declared['outcome'], declared['proof']['kind']),
+                         ('packing_infeasible', 'defect', 'board_capacity_fragmented'))
+        for key in ('status', 'outcome', 'reason', 'steps_used', 'placements', 'search_failure'):
             self.assertEqual(declared[key], legacy[key], key)
 
     def test_fixed_inboard_is_refused_with_reason(self):

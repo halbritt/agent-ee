@@ -17,8 +17,13 @@ import tempfile
 import unittest
 
 from agent_ee.catalog import capture_catalog, load_catalog
-from agent_ee.catalog_identity import (FORMAT, capture_identity, load_identity_index, main,
+from unittest import mock
+
+from agent_ee import catalog_identity
+from agent_ee.catalog_bouni import KNOWN_FAMILIES, BouniRefusal, passive_boundary
+from agent_ee.catalog_identity import (FORMAT, GENERIC_FAMILIES, capture_identity, generic, load_identity_index, main,
                                        resolve_decisions)
+from agent_ee.part_selection import VALUE_ATTRIBUTES
 from agent_ee.catalog_jlcparts import COMPONENT_COLUMNS
 from agent_ee.jlc_stock_capture import response_datasheet_url
 from agent_ee.storage import digest, write_json
@@ -129,6 +134,91 @@ class IdentityIndexTests(unittest.TestCase):
             self.assertIsNone(index.by_lcsc('C18'))
             self.assertIsNone(index.by_lcsc('C21'))
 
+    def test_passive_boundary_both_sides(self):
+        """R/C/L value-resolved rows are pruned; every family not established by value is kept."""
+        self.assertEqual(GENERIC_FAMILIES, KNOWN_FAMILIES)
+        self.assertEqual(GENERIC_FAMILIES, tuple(VALUE_ATTRIBUTES))
+        extra = ((30, 'Inductors, Coils, Chokes', 'Power Inductors'),
+                 (31, 'Inductors, Coils, Chokes', 'Ferrite Beads'),
+                 (32, 'Inductors, Coils, Chokes', 'Common Mode Filters'),
+                 (33, 'Resistors', 'Resistor Networks & Arrays'),
+                 (34, 'Resistors', 'NTC Thermistors'),
+                 (35, 'Capacitors', 'Trimmer Capacitors'),
+                 (36, 'Diodes', 'Schottky Diodes'),
+                 (37, 'LED Indication - Discrete', 'Light Emitting Diodes (LED)'),
+                 (38, 'Filters', 'Ferrite Beads'),
+                 (39, 'Circuit Protection', 'Resettable Fuses'),
+                 (40, 'Voltage Regulators - Linear, Low Drop Out (LDO) Regulators', 'Linear Regulators'))
+
+        def edit(connection):
+            for lcsc, category, sub in extra:
+                connection.execute('INSERT INTO jlc_components SELECT * FROM jlc_components WHERE lcsc=13')
+                connection.execute('UPDATE jlc_components SET lcsc=?, category=?, subcategory=?, mfr=? '
+                                   'WHERE rowid=(SELECT max(rowid) FROM jlc_components)',
+                                   (lcsc, category, sub, f'OWNED-BOUNDARY-{lcsc}'))
+        path, pin = self.capture(edit=edit)
+        manifest = json.loads((path / 'manifest.json').read_text())
+        self.assertEqual(manifest['generic_families_excluded'], ['resistor', 'capacitor', 'inductor'])
+        self.assertEqual(manifest['pruned_rows'], {'generic': 3, 'stale': 1})
+        with load_identity_index(path, pin) as index:
+            for lcsc in ('C18', 'C19', 'C30'):
+                self.assertIsNone(index.by_lcsc(lcsc), lcsc)
+            for lcsc in ['C15', 'C17'] + [f'C{n}' for n in range(31, 41)]:
+                self.assertEqual(index.by_lcsc(lcsc)['lcsc'], lcsc)
+
+    def test_unqualified_passive_subfamilies_are_retained(self):
+        """Unknown, empty and unlisted R/C/L subcategories are non-generic (fail closed)."""
+        cases = ((50, 'Inductors, Coils, Chokes', 'Common-Mode Chokes'), (51, 'Inductors', 'Coupled Inductors'),
+                 (52, 'Resistors', 'Unqualified owned subfamily'), (53, 'Capacitors', ''),
+                 (54, 'Inductors', 'RF Baluns'))
+
+        def edit(connection):
+            for lcsc, category, sub in cases:
+                connection.execute('INSERT INTO jlc_components SELECT * FROM jlc_components WHERE lcsc=13')
+                connection.execute('UPDATE jlc_components SET lcsc=?, category=?, subcategory=?, mfr=? '
+                                   'WHERE rowid=(SELECT max(rowid) FROM jlc_components)',
+                                   (lcsc, category, sub, f'OWNED-ADVERSARY-{lcsc}'))
+        path, pin = self.capture(edit=edit)
+        with load_identity_index(path, pin) as index:
+            for lcsc, _, _ in cases:
+                self.assertEqual(index.by_lcsc(f'C{lcsc}')['lcsc'], f'C{lcsc}')
+        boundary = passive_boundary(GENERIC_FAMILIES)
+        self.assertTrue(generic('Inductors', 'Power Inductors', boundary))
+        self.assertFalse(generic('Inductors', 'Common-Mode Chokes', boundary))
+        self.assertFalse(generic('Capacitors', '', boundary))
+
+    def test_unqualified_subfamily_keeps_ambiguity(self):
+        def edit(connection):
+            for lcsc, sub, package in ((60, 'Common Mode Filters', 'OWNED-PKG-A'),
+                                       (61, 'Common-Mode Chokes', 'OWNED-PKG-B')):
+                connection.execute('INSERT INTO jlc_components SELECT * FROM jlc_components WHERE lcsc=13')
+                connection.execute('UPDATE jlc_components SET lcsc=?, category=?, subcategory=?, mfr=?, package=? '
+                                   'WHERE rowid=(SELECT max(rowid) FROM jlc_components)',
+                                   (lcsc, 'Inductors', sub, 'OWNED-COMMONMODE-A', package))
+        path, pin = self.capture(edit=edit)
+        with load_identity_index(path, pin) as index:
+            entry = resolve_decisions(index, decisions(('choke', 'OWNED-COMMONMODE-A', None)))['entries'][0]
+        self.assertEqual(entry['status'], 'ambiguous')
+
+    def test_passive_boundary_is_enforced_at_capture_and_load(self):
+        for families, reason in ((('resistor', 'capacitor', 'inductor', 'diode'), 'boundary_invalid'),
+                                 (('resistor', 'ferrite_bead'), 'boundary_invalid'), ((), 'boundary_invalid')):
+            with self.subTest(families), mock.patch.object(catalog_identity, 'GENERIC_FAMILIES', families):
+                with self.assertRaises(BouniRefusal) as ctx:
+                    capture_identity(self.source(), self.root, self.root / 'widened')
+                self.assertEqual(ctx.exception.reason, reason)
+                self.assertFalse((self.root / 'widened').exists())
+        for name, families, error in (('widened', ['resistor', 'capacitor', 'inductor', 'led'], 'boundary_invalid'),
+                                      ('string', 'resistor', 'boundary_invalid'),
+                                      ('narrowed', ['resistor', 'capacitor'], 'schema or profile')):
+            with self.subTest(name):
+                path, _ = self.capture(name)
+                manifest = json.loads((path / 'manifest.json').read_text())
+                manifest['generic_families_excluded'] = families
+                write_json(path / 'manifest.json', manifest)
+                with self.assertRaisesRegex(ValueError, error):
+                    load_identity_index(path, digest(path / 'manifest.json'))
+
     def test_existing_catalog_profile_and_row_hashes_are_unchanged(self):
         """The identity profile is separate; the stocked catalog/1 import is untouched."""
         source = self.source(fmt='jlcparts-v2-stocked-split-zip')
@@ -166,7 +256,7 @@ class IdentityIndexTests(unittest.TestCase):
     def test_forged_rows_fail_closed_after_repin(self):
         for name, sql, message in (
                 ('key', "UPDATE identity SET mpn_key='OTHER' WHERE lcsc='C13'", 'MPN key'),
-                ('generic', "UPDATE identity SET category='Resistors' WHERE lcsc='C13'", 'outside profile'),
+                ('generic', "UPDATE identity SET category='Capacitors', subcategory='MLCC' WHERE lcsc='C13'", 'outside profile'),
                 ('tier', "UPDATE identity SET library_tier='Gold' WHERE lcsc='C13'", 'outside profile'),
                 ('date', "UPDATE identity SET last_seen='2026-09-15' WHERE lcsc='C13'", 'snapshot window'),
                 ('stock', "UPDATE identity SET stock=-1 WHERE lcsc='C13'", 'stock/presence')):

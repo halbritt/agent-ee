@@ -297,12 +297,12 @@ exercises 90–112 mechanical stand-ins on both sides across 80 × 50 to
 90 × 65 mm outlines, with a 48 × 21 mm keepout and native placement evidence.
 It measures fixture capacity and determinism; actual pod geometry needs its own checks.
 
-Original [RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
+[RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
 placed-unrouted and seeded placement defects with native checks and a KRT
-input receipt. The [routing equivalence check](docs/routing-equivalence.md)
+input receipt, both as pcbnew derivatives of the RC control
+(`fixtures/rc/derived/`) and as an original alternative (`fixtures/rc/stages/`). The [routing equivalence check](docs/routing-equivalence.md)
 compares repeated routed outputs by normalized copper geometry and records
-byte differences without failing them. The exact FOME-MC control derivatives requested by AGENTEE-103
-remain blocked by unresolved third-party rights.
+byte differences without failing them.
 
 The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
 projects from captured envelope and parts records plus an explicit stage-one
@@ -667,6 +667,13 @@ and stub tree, and the reference-plane return-corridor guard at a declared width
 with a recorded basis. An absent structure is a defect and never counts as
 microstrip. Missing bounds, widths or fills are unknown. It is not RF
 qualification.
+The [ESP32 antenna placement check](docs/antenna-placement.md) is a bare-board
+fab gate for the ESP32-S3-WROOM-1 outside-board case (Espressif guidelines
+section 1.4.7). It grades U1's saved pose, the board edge the antenna crosses,
+the feed-point corner and the retained module keepout against hash-pinned
+sources. Missing sources are unknown. The corner slot is an agent-derived class
+default, labelled as such; manufacturer corner compliance stays unknown. Housing, nearby metal, support and RF
+performance stay open physical and bench obligations.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. A pinned jlcparts feed
@@ -814,7 +821,9 @@ declared criterion per check: native DRC courtyard overlap and footprint
 keepouts from an earlier DRC, outline containment, courtyard edge clearance,
 declared connector edges and a pad-centre ratsnest proxy. The advisory
 [pre-route congestion report](docs/placement-congestion.md) ranks pad overlaps,
-courtyard issues and congested regions with suggested moves; it never passes a board. An
+courtyard issues and congested regions with suggested moves; it never passes a board.
+[Local copper access](docs/placement-access.md) reports diagnostic, native-qualified
+access witnesses or unknowns per terminal and never ranks or rejects a placement. An
 [initial placer](docs/placer.md) proposes deterministic positions on an isolated
 copy and validates the saved result with native tools. Opt-in
 [targeted plans](docs/placement-plans.md) place caller-named decoupling capacitors
@@ -841,7 +850,8 @@ Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
-is a proved infeasibility only when the policy opts in
+replaces a failed search with a proved infeasibility, after the unchanged
+search, unless the policy opts out
 ([AGENTEE-249](docs/placer.md#board-capacity-agentee-249)). Proofs depending on
 [unsourced margins or gaps](docs/placer.md#unsourced-policy-limits-agentee-358)
 report unknown and name those advisory limits. A declared captured
@@ -882,9 +892,10 @@ Adjudicators may cite the verified immutable `baseline.json`.
 native components, pins, nets and board primitives to declared checks and
 requirements. Bounded views retain access to the full baseline and raw evidence;
 ambiguous identities stay unresolved. The index supplies navigation, not defect
-authority. Its effect on model token use and detection is not yet measured.
-An initial matched-version pilot stopped when both control reviewers timed out;
-no replacement samples or performance claims were made.
+authority. An initial matched-version pilot stopped when both control reviewers
+timed out. A capped [live A/B](docs/packet-index-ab.md) on 2026-10-22 made 9
+subscription calls. It measured tokens, latency and missed defects, found no
+misses and no navigation citations, and makes no savings claim.
 
 Bench corrections bind to the complete captured design inventory. Changing a
 component, connection, layout or library makes calibrated acceptance unavailable
@@ -1031,13 +1042,16 @@ series/parallel networks; unsupported conductors leave coverage incomplete.
 
 ## License
 
-The [MIT License](LICENSE) is proposed for material written for agent-ee and
-for outputs of its runs on that material, and it is declared in the package
-metadata. The proposal is included for review; the owner has not yet approved it.
+agent-ee is licensed under the [MIT License](LICENSE), declared in the package
+metadata. The license covers material written for agent-ee, outputs of its runs
+on that material, the RC fixture copied from FOME-MC and the logic in
+`src/agent_ee/checks.py` adapted from FOME-MC. The owner approved MIT for these
+on 2026-10-22 ([decision](docs/decisions.md#mit-license-approved-agentee-14-2026-10-22),
+relayed by the coordinator). The RC fixture embeds stock KiCad library data,
+which keeps its own license.
 
 The MIT grant does not cover files that come from other projects. These include
-the RC fixture copied from FOME-MC, logic in `src/agent_ee/checks.py` adapted
-from FOME-MC, donor ECU design files and their libraries, stock KiCad libraries
+donor ECU design files and their libraries, stock KiCad libraries
 inside the evidence archives, datasheets and fetched web pages. The
 [file-origin inventory](docs/file-origins.json) classifies every tracked file by
 origin, upstream license and publication status, and
@@ -1045,8 +1059,8 @@ origin, upstream license and publication status, and
 Publication rights for those files are unresolved, and each origin needs an
 owner decision. The public repository already contains many of them. That does
 not establish a right to publish them.
-The fome-mc block fixtures under `fixtures/fome-mc/` are the one exception
-with a recorded owner decision (2026-10-18). The owner holds the rights to
+The fome-mc block fixtures under `fixtures/fome-mc/` have a separate recorded
+owner decision (2026-10-18). The owner holds the rights to
 fome-mc. Those files are still outside the MIT grant. See their
 [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md).
 

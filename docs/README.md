@@ -48,7 +48,9 @@ product's hardware qualification.
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Run DFM geometry rules (annular ring, aspect ratio, acid traps, bridge gap, spacing, skew, copper balance) | [DFM geometry](dfm-geometry.md) |
 | Check grounded-CPW width, gap and reference, stitching-via pitch, branched RF net length and the declared return-corridor guard on the routed board | [RF geometry](rf-geometry.md) |
+| Check the ESP32-S3-WROOM-1 outside-board antenna placement (pose, edge, feed-point corner, module keepout) as a bare-board fab gate | [ESP32 antenna placement](antenna-placement.md) |
 | Report pre-route pad overlaps, congested regions and suggested moves for the placement writer | [Placement congestion](placement-congestion.md) |
+| Capture raw routing geometry and report diagnostic local copper-access witnesses or unknowns per terminal | [Local copper access](placement-access.md) |
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |
 | Gate the BOM for JLC assembly: LCSC binding, stock freshness, Extended parts | [Assembly readiness](assembly-readiness.md) |
 | Check source-bound component choices and captured deviations | [Component decisions](part-decisions.md) |

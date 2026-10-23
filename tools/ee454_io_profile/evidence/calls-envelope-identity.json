@@ -1,0 +1,89 @@
+{
+  "schema": "agent-ee.ee454-call-count/1",
+  "tests": [
+    "tests.test_envelope_mechanics.EnvelopeMechanicsTests.test_harness_identity_binds_the_contracted_part"
+  ],
+  "tests_run": 1,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "python": "3.12.3",
+  "watched": {
+    "baseline.py:compile_baseline": {
+      "calls": 12,
+      "cumtime": 0.8715,
+      "callers": {
+        "candidate.py:capture": 12
+      }
+    },
+    "board_envelope.py:identity_witness": {
+      "calls": 12,
+      "cumtime": 0.2056,
+      "callers": {
+        "board_envelope.py:staged_coverage": 12
+      }
+    },
+    "datasheet_facts.py:load_acquisition": {
+      "calls": 11,
+      "cumtime": 0.0216,
+      "callers": {
+        "part_record.py:_sources": 11
+      }
+    },
+    "part_record.py:_sources": {
+      "calls": 11,
+      "cumtime": 0.0565,
+      "callers": {
+        "part_record.py:qualify_record": 9,
+        "part_record.py:prepare_record": 2
+      }
+    },
+    "part_record.py:qualify_record": {
+      "calls": 9,
+      "cumtime": 0.0369,
+      "callers": {
+        "parts_manifest.py:dependency_closure": 9
+      }
+    },
+    "parts_manifest.py:dependency_closure": {
+      "calls": 9,
+      "cumtime": 0.0902,
+      "callers": {
+        "parts_subset.py:capability": 4,
+        "parts_manifest.py:qualify_manifest": 5
+      }
+    },
+    "parts_manifest.py:qualify_manifest": {
+      "calls": 5,
+      "cumtime": 0.2529,
+      "callers": {
+        "test_envelope_mechanics.py:parts_capture": 1,
+        "board_envelope.py:identity_witness": 4
+      }
+    },
+    "storage.py:digest": {
+      "calls": 6685,
+      "cumtime": 3.6582,
+      "callers": {
+        "candidate.py:source_manifest": 2218,
+        "parts_subset.py:capability": 4,
+        "test_envelope_mechanics.py:resealed": 2,
+        "test_envelope_mechanics.py:parts_capture": 3,
+        "test_envelope_mechanics.py:setUp": 1,
+        "board_envelope.py:identity_witness": 11,
+        "fab_profile.py:verify_source": 751,
+        "test_envelope_mechanics.py:scope": 12,
+        "catalog.py:capture_catalog": 1,
+        "routing_rules.py:captured_file": 1326,
+        "candidate.py:capture": 1121,
+        "datasheet_facts.py:load_acquisition": 22,
+        "test_approved_parts.py:named_fixture": 2,
+        "test_part_selection.py:snapshot": 2,
+        "test_parts_subset.py:captured_fixture": 3,
+        "test_parts_subset.py:put": 11,
+        "test_approved_parts.py:put": 16,
+        "board_envelope.py:source_inventory": 1179
+      }
+    }
+  }
+}

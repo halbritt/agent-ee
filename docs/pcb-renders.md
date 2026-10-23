@@ -154,8 +154,8 @@ that images are unavailable rather than implicitly generating new evidence.
 The shared test harness defaults `AGENT_EE_SKIP_VISUALS` to `1` when the
 variable is unset. This covers saved placement proposals and coordinator captures
 made in the test process, and the resulting reviewer packets. The production executor clears
-inherited environment variables: placement helpers launched inside that sandbox
-still need an explicit request or CLI skip flag. The `test_candidate_visuals`,
+inherited environment variables, so a host flag never reaches a sandboxed tool;
+see the sandbox render policy below. The `test_candidate_visuals`,
 `test_render3d`, `test_schematic_render`, `test_datasheet_footprint`,
 `test_schematic_text` and `test_purpose_review` modules force `0` during execution
 and restore the previous environment afterward. Their existing visual evidence
@@ -164,6 +164,32 @@ test process into imaging. Invalid flag values remain invalid. Production
 processes do not import the test harness and continue to render by default.
 Schematic rendering and other checks that create their own visual evidence do
 not consult this candidate-imaging flag.
+
+### Sandbox render policy (AGENTEE-458)
+
+`executor.execute(..., skip_visuals=)` (and `stage_receipts.run_step`) takes a
+typed candidate-imaging policy. `None`, the default, adds nothing and keeps every
+sandbox argv byte-identical. A boolean adds exactly
+`--setenv AGENT_EE_SKIP_VISUALS 1|0` to the fixed `--clearenv` allowlist; any
+other value refuses before the work directory is created. No other host
+variable is propagated. Ordinary per-iteration placement never images its
+proposal: `placement_adapter.run_placement_iteration` runs the placer helper
+step with `skip_visuals=True`, so the helper's nested candidate imaging records
+`status: skipped` and no `kicad-cli pcb render` starts. The policy is retained in
+the stage receipt's recorded `sandbox_argv`. Completed-iteration images remain
+the coordinator capture (`capture_visuals`), bound to the captured board, and an
+explicit milestone render passes `skip_visuals=False` or calls `produce`
+directly; its manifest records the placed board's SHA-256. The scheduled render
+gallery (AGENTEE-456) is separate. Regressions:
+`test_placement_adapter.OrdinaryPlacementRenderPolicyTest` places a guarded
+`kicad-cli` shim on the sandbox PATH and fails if a native board render starts
+during ordinary helper placement, with a control proving the shim observes a
+render started in the nested sandbox. It does no render work. The explicit
+milestone render is the designated native test
+`test_candidate_visuals.test_networkless_placement_runner_retains_images_through_nested_executor`.
+Nested bwrap needs unprivileged user namespaces inside the outer sandbox. The
+pinned CI image provides them; where it fails, nested imaging stays explicit
+`unavailable` coverage.
 
 Native image bytes are hashed, but byte determinism is not certified. The result
 records this as `reproducibility.status: not_verified` with a reason: native ray

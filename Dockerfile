@@ -111,13 +111,21 @@ RUN set -eu; \
 # Test reference tool only: the fab-consistency zstd decoder is compared with
 # frames from the zstd CLI, from the same snapshot as the image's libzstd1.
 ARG ZSTD_VERSION=1.5.5+dfsg2-2build1.1
+# PID 1 of every container run from this image: reaps orphaned descendants
+# (zombie bwrap under long strict_suite parents) and forwards signals and the
+# exit status, without `docker run --init`, whose /usr/sbin/docker-init bind
+# mount is a /usr submount that the stage-receipt refusal rightly rejects.
+ARG TINI_VERSION=0.19.0-1
 RUN set -eu; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
-    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}" "tini=${TINI_VERSION}"; \
+    apt-mark hold tini; \
     apt-mark hold zstd; \
     rm -f /usr/local/bin/apt-retry; \
     rm -rf /var/lib/apt/lists/*; \
-    zstd --version | grep -q 'v1\.5\.5'
+    zstd --version | grep -q 'v1\.5\.5'; \
+    test "$(dpkg-query -W -f='${Version}' tini)" = "${TINI_VERSION}"; \
+    test -x /usr/bin/tini
 
 # kicad-route b577449 with its owned routing engine for the routing stage. The checkout is
 # its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
@@ -150,4 +158,5 @@ LABEL org.opencontainers.image.title="agent-ee" \
 # Bubblewrap needs an unprivileged user namespace; run as a non-root user.
 USER agentee
 WORKDIR /home/agentee
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["agent-ee", "doctor", "--checks-only"]

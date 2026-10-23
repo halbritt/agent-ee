@@ -16,7 +16,8 @@ allowlist data and the producer migration described below.
 - `load_manifest(root, path)`: strict JSON and captured-path validation.
 - `dependency_closure(document, root)`: validates pinned bytes and returns the
   sorted path-to-SHA256 map of every dependency. The caller also freezes the
-  manifest file itself.
+  manifest file itself. Within one call each distinct file is read and hashed
+  once (see [per-call verified reads](result-reference.md#per-call-verified-reads-agentee-454)).
 - `qualify_manifest(document, root)`: rederives canonical selection and CAD
   assignment checks; returns `dependencies`, `selection`, `cad`, and explicit
   `missing_provenance`. Missing required datasheet data remains missing coverage.

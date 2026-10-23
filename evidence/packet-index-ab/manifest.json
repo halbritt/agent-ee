@@ -1,0 +1,24 @@
+{
+  "schema": "agent-ee.packet-index-ab-evidence/1",
+  "item": "AGENTEE-12",
+  "store": {
+    "bucket": "agent-ee-evidence",
+    "prefix": "packet-index-ab/",
+    "access": "private owner Garage store; see docs/reproducing-evidence.md"
+  },
+  "source_commit": "5a1ec187951b896abfd5e3355ec9b97fd77b863e",
+  "objects": {
+    "packet-index-ab-live-20261022.tar.gz": {
+      "sha256": "6a249ed0348c76e07df63c0fe81298f2dc8c6d259a9e9f07f89a9867f5859fb6",
+      "bytes": 20732768
+    },
+    "raw-files-manifest.json": {
+      "sha256": "6e585716ef10c784b08655eda2438a82d8aafb5f8b1492e6fa3f82fc3f97858c",
+      "bytes": 2170808
+    }
+  },
+  "archive_root": "live/",
+  "archive_files": 9651,
+  "upload": "aws s3api put-object after head-object found no object; If-None-Match is not enforced by this store, so absence was checked first and each object was fetched back and compared with sha256sum -c",
+  "contents": "prepared checks-only runs, both arm packets, eight cells with prompts, raw reviewer consoles, attempts, preflight receipts, plan, run record, logs and a ledger snapshot. Captured inputs include the FOME-MC RC fixture (T1) and stock KiCad library files (T6); not for publication."
+}

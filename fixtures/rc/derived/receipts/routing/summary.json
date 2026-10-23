@@ -1,0 +1,56 @@
+{
+  "backend": {
+    "reason": null,
+    "status": "reported",
+    "value": {
+      "build": "owned-c2ac657d5617",
+      "commit": "5f1c072b86e0caee82c7656226c4d0e3ec580a58",
+      "name": "krt",
+      "reproducible": null,
+      "reproducible_basis": "no determinism record for this build in the state manifest (kicad-route determinism --record)",
+      "rust_router": "0.23.1",
+      "source": "https://github.com/halbritt/kicad-route",
+      "source_sha256": "c2ac657d5617e6e0441ea42d1db52ce95d6fa23a512652e835c5064db440a9f7",
+      "upstream": {
+        "additional_license_notices": [
+          "py_router/stage3d/vendor/three/LICENSE"
+        ],
+        "fixes": {
+          "KICADROUTE-63": "0494a05",
+          "KICADROUTE-64": "4b316ba"
+        },
+        "fork": "https://github.com/halbritt/KiCadRoutingTools",
+        "fork_commit": "0494a05e30063b849c9cf1b9ac02098073d82216",
+        "fork_tree": "288b2baca668892c812c82f0e7db4c2b2b0a50c1",
+        "license": "MIT",
+        "ownership": "Maintained as part of kicad-route; upstream is provenance, not a runtime source selector.",
+        "project": "KiCadRoutingTools",
+        "source_inventory": "reports/routing-engine/source-closure.json",
+        "upstream": "https://github.com/drandyhaas/KiCadRoutingTools",
+        "upstream_base": "295f9ee197517e8323726853361eb137cc08ba9e",
+        "upstream_release": "v0.23.1"
+      },
+      "version": "0.23.1"
+    }
+  },
+  "candidate_sha256": "b1b3b4b967b1f0c97fe04a17941f004919a3ae303466d775f50d957d9dfb8fd3",
+  "classification": "complete",
+  "coverage": "routing_complete",
+  "pair_coverage": {
+    "acceptance_ready": false,
+    "limitations": [
+      "Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.",
+      "Differential pair routing was not requested; pair geometry is unqualified"
+    ],
+    "pairs": [],
+    "status": "unknown"
+  },
+  "proposal": "eligible",
+  "reproducibility": "deterministic backend, repeatability not qualified by this attempt",
+  "router_exit": 0,
+  "tool_version": {
+    "reason": "kicad-route at the pin has no --version; identity is the pinned code",
+    "status": "unknown",
+    "value": null
+  }
+}

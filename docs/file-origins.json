@@ -6,9 +6,9 @@
   "license_proposal": {
     "spdx": "MIT",
     "file": "LICENSE",
-    "status": "Merged as a proposal for owner review. Not owner-approved; third-party origins remain excluded.",
-    "covers": "Files whose every origin has permission_status proposed-mit-pending-owner-approval.",
-    "excludes": "Every file with an origin whose permission_status is unresolved-owner-decision-required."
+    "status": "Owner-approved (owner-relayed decision of 2026-10-22, origins AE, AE-RUN, T1 and T2; see their owner_record). Origins T3-T16 are not covered by this decision.",
+    "covers": "Files whose every origin is AE, AE-RUN, T1 or T2. Of those, files whose origins embed an unresolved upstream origin (T1 embeds T6) report permission_status derived: the MIT grant covers the owner's material in them, not the embedded upstream content, which keeps its upstream_license.",
+    "excludes": "Every file with an origin other than AE, AE-RUN, T1 or T2, including every file with an origin whose permission_status is unresolved-owner-decision-required, and T16 (owner-confirmed for committing as fixtures, with no repository licence chosen), and KICAD-HAPPY-219 (owner-confirmed 2026-10-22 for publication under its upstream MIT license, license_basis upstream; files report owner-confirmed-upstream-license)."
   },
   "observations": [
     "On 2026-10-17 the GitHub API reported halbritt/agent-ee and halbritt/fome-mc as public, with agent-ee main at 69d7bbf46fa40b170c61bf325f18e5ef78988f8c. That branch already contains the third-party-origin files listed here. This is an observation, not a rights decision."
@@ -17,7 +17,8 @@
     "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
     "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
     "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given).",
-    "derived": "Captured or generated under an owner-confirmed origin that embeds upstream origins whose permission_status is unresolved; check_origins names each embedded upstream origin id and upstream_license."
+    "derived": "Captured or generated under an owner-confirmed origin that embeds upstream origins whose permission_status is unresolved; check_origins names each embedded upstream origin id and upstream_license.",
+    "owner-confirmed-upstream-license": "File-level status of files whose origins are all confirmed and include an origin with license_basis upstream: the owner approved publishing third-party material under its own upstream_license (owner_record with date, decision, where, class and applies). Not covered by agent-ee's MIT grant."
   },
   "kinds": {
     "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
@@ -33,17 +34,17 @@
     "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
     "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
-  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its declared origins is unresolved, derived if an owner-confirmed origin embeds an unresolved upstream origin (with each embedded origin id and upstream_license named), otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its declared origins is unresolved, derived if an owner-confirmed origin embeds an unresolved upstream origin (with each embedded origin id and upstream_license named), otherwise owner-confirmed-upstream-license if any of its origins (declared or embedded) has license_basis upstream, otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
   "origins": {
     "AE": {
       "name": "agent-ee original material",
       "description": "Code, tests, scripts, configuration, documentation, planning records and original fixtures written for agent-ee in this repository by the owner and by AI agents working under the owner's direction. Original fixtures are produced by generators in this repository or hand-authored here.",
       "upstream": null,
-      "upstream_license": "Not applicable. MIT is proposed in LICENSE.",
+      "upstream_license": "Not applicable. MIT (LICENSE), owner-approved 2026-10-22 (owner_record).",
       "license_verified": false,
-      "permission_status": "proposed-mit-pending-owner-approval",
-      "owner_decision": "Approve MIT for this material and confirm the copyright holder named in LICENSE. Authorship by AI agents was not analysed.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for agent-ee material. Asked: approve MIT for this material and confirm the copyright holder named in LICENSE. Authorship by AI agents was not analysed.",
       "evidence": [
         "git log author for all commits on main is halbritt",
         "LICENSE",
@@ -52,20 +53,35 @@
       "capture_sources": [
         "/fixtures/rc/requirements/",
         "/requirements.txt"
-      ]
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "agent-ee material"
+      }
     },
     "AE-RUN": {
       "name": "Retained agent-ee run outputs",
       "description": "Coordinator records, native KiCad/ngspice/Bubblewrap outputs and Claude, Codex and Agy subscription reviewer outputs produced by agent-ee runs. A file has this origin alone only when its run used agent-ee material as input.",
       "upstream": null,
-      "upstream_license": "Not applicable. MIT is proposed in LICENSE.",
+      "upstream_license": "Not applicable. MIT (LICENSE), owner-approved 2026-10-22 (owner_record).",
       "license_verified": false,
-      "permission_status": "proposed-mit-pending-owner-approval",
-      "owner_decision": "Approve MIT for retained run outputs. Model-provider output terms and tool banners in the outputs (for example the ngspice copyright banner) were not analysed.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for agent-ee material, which includes retained run outputs. Asked: approve MIT for retained run outputs. Model-provider output terms and tool banners in the outputs (for example the ngspice copyright banner) were not analysed.",
       "evidence": [
         "evidence/README.md",
-        "evidence/files-manifest.json"
-      ]
+        "evidence/files-manifest.json",
+        "docs/decisions.md"
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "agent-ee material"
+      }
     },
     "T1": {
       "name": "FOME-MC RC filter fixture",
@@ -80,23 +96,31 @@
         },
         "license_file": null
       },
-      "upstream_license": "No license found. FOME-MC has no LICENSE or COPYING file at da52756, and the GitHub API reports no license.",
+      "upstream_license": "No license file in FOME-MC: no LICENSE or COPYING file at da52756, and the GitHub API reports no license. The owner, sole author of these files, approved MIT for them in agent-ee on 2026-10-22 (owner_record). Embedded KiCad stock library data keeps its own licence (T6).",
       "license_verified": true,
       "embedded_origins": [
         "T6"
       ],
-      "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "Confirm whether these FOME-MC files may be published in agent-ee and under which license. Every FOME-MC commit lists halbritt as author; that is not treated as a publication right.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for the FOME-MC RC fixture. Asked: confirm whether these FOME-MC files may be published in agent-ee and under which license. Files fold to derived because the fixture embeds unresolved T6 data.",
       "evidence": [
         "fixtures/rc/PROVENANCE.md",
-        "evidence/*/candidate.json sources"
+        "evidence/*/candidate.json sources",
+        "docs/decisions.md"
       ],
       "capture_sources": [
         "/fixtures/rc/control/",
         "/fixtures/rc/seeded/",
         "/disposable/",
         "/native/"
-      ]
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "the FOME-MC RC fixture"
+      }
     },
     "T2": {
       "name": "FOME-MC toolchain/eda.py validation logic",
@@ -110,14 +134,22 @@
         },
         "license_file": null
       },
-      "upstream_license": "No license found (see T1).",
+      "upstream_license": "No license file in FOME-MC (see T1). The owner, sole author of eda.py, approved MIT for the derived logic in agent-ee on 2026-10-22 (owner_record).",
       "license_verified": true,
-      "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "Confirm whether the adapted eda.py logic may be published under MIT. Until then the adapted portions of checks.py are not covered by the MIT grant.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for the eda.py-derived logic. Asked: confirm whether the adapted eda.py logic may be published under MIT.",
       "evidence": [
         "src/agent_ee/checks.py module docstring",
-        "line comparison against fome-mc 5b7b175:toolchain/eda.py"
-      ]
+        "line comparison against fome-mc 5b7b175:toolchain/eda.py",
+        "docs/decisions.md"
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "the eda.py-derived logic"
+      }
     },
     "T3": {
       "name": "Polygonus-Universal-112 donor ECU design",
@@ -444,8 +476,18 @@
       },
       "upstream_license": "MIT; Copyright (c) 2025 Andrew Klofas; retained in fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",
       "license_verified": true,
-      "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "The 2026-10-19 AGENTEE-219e assignment authorizes retaining this exact MIT software diff locally with its notice for portable tests. Publication is not authorized by this assignment; record an owner publication decision before distribution. This third-party software is excluded from the agent-ee proposed MIT grant.",
+      "license_basis": "upstream",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): publication of this exact MIT software diff in the public agent-ee repository, with its MIT notice, is approved under its upstream MIT license (license_basis upstream). This third-party software is not covered by agent-ee's MIT grant; files report owner-confirmed-upstream-license. Earlier, the 2026-10-19 AGENTEE-219e assignment authorized only retaining the diff locally with its notice for portable tests.",
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: vendor the kicad-happy MIT correction patch (origin KICAD-HAPPY-219) into the public agent-ee repo with its MIT notice, AND send the fix upstream; move the pin when upstream lands. The held 51f7bcf chain may be integrated.",
+        "where": "AGENTEE-219 Plane comment 91bc4b33-e29a-480c-9f8f-2a4599f6d3a7 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed",
+        "class": "owner-relayed",
+        "applies": "publication of fixtures/kicad-happy/ac4-false-positives/correction.patch with its MIT notice correction-LICENSE.txt, under the upstream MIT license (Copyright (c) 2025 Andrew Klofas), from 2026-10-22",
+        "caveat": "The decision question framed the patch as not yet landed, but commit 51f7bcf4a785edb14b790306400eaca3088c5188 had already published it to the public agent-ee repository on 2026-10-19. Publication between 2026-10-19 and 2026-10-22 was therefore not owner-authorized at the time; the authorization applies from 2026-10-22.",
+        "open_follow_ups": "Not done: submitting the fix to upstream aklofas/kicad-happy, and moving the kicad-happy pin once upstream lands it."
+      },
       "evidence": [
         "fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",
         "fixtures/kicad-happy/ac4-false-positives/correction.patch"
@@ -2693,6 +2735,45 @@
     },
     {
       "paths": [
+        "fixtures/rc/derived/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T1",
+        "T6"
+      ],
+      "note": "AGENTEE-103 stage-boundary derivatives of fixtures/rc/control: boards saved by pcbnew from the control with tracks/via removed, the GND zone unfilled or removed and authored moves; schematic, project and library tables are byte copies of the control. See fixtures/rc/PROVENANCE.md."
+    },
+    {
+      "paths": [
+        "fixtures/rc/derived/generate.py",
+        "fixtures/rc/derived/expectations.json",
+        "fixtures/rc/derived/placed-unrouted.scope.json",
+        "fixtures/rc/derived/seeded-placement.scope.json",
+        "fixtures/rc/derived/unplaced.scope.json",
+        "fixtures/rc/derived/requirements/",
+        "fixtures/rc/derived/receipts/routing/route.py"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-103 original derivation script, scopes, independently authored requirements/expectations and the routing receipt driver; they name the control's references and coordinates as facts and copy no design bytes."
+    },
+    {
+      "paths": [
+        "fixtures/rc/derived/receipts/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ],
+      "note": "Actual generation, checks-only and KRT stage receipt excerpts over the control-derived boards (T1 with stock KiCad footprints, T6). Provenance only, not portable complete evidence stores."
+    },
+    {
+      "paths": [
         "tests/test_campaign.py"
       ],
       "kind": "owned-source",
@@ -3115,6 +3196,24 @@
         "T16"
       ],
       "note": "Capture request written for agent-ee naming the fome-mc commit and footprint path (AGENTEE-169)."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/evidence/repair-after-closure-count.json",
+        "tools/ee454_io_profile/evidence/repair-after-closure-plain.json",
+        "tools/ee454_io_profile/evidence/repair-after-qualify-count.json",
+        "tools/ee454_io_profile/evidence/repair-before-closure-count.json",
+        "tools/ee454_io_profile/evidence/repair-before-closure-plain.json",
+        "tools/ee454_io_profile/evidence/repair-before-qualify-count.json",
+        "tools/ee454_io_profile/evidence/repair-compare-after.json",
+        "tools/ee454_io_profile/evidence/repair-compare-base.json",
+        "tools/ee454_io_profile/evidence/repair-inputs.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-454 phase-2 harness measurements: timings, byte counts and path/hash metadata only; no third-party design bytes."
     },
     {
       "paths": [
@@ -3861,6 +3960,72 @@
         "KICAD-HAPPY-219"
       ],
       "reviewed": "Exact git diff of six changed software/documentation/CI files from v2.3.1 to the proposed correction; no design or library files. Upstream MIT notice retained separately."
+    },
+    {
+      "paths": [
+        "evidence/packet-index-ab/call-ledger.jsonl",
+        "evidence/packet-index-ab/report.json",
+        "evidence/packet-index-ab/manifest.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-12 capped reviewer A/B records written by src/agent_ee/packet_ab.py: the call ledger (cell ids, reservation/settle events, execution states, durations, timestamps), the aggregate report (token counts, durations, scores, candidate/plan identities) and the store manifest (object names, hashes, sizes). No captured design, library, prompt or reviewer text."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/analyze.py",
+        "tools/ee454_io_profile/count_calls.py",
+        "tools/ee454_io_profile/profile_io.py",
+        "tools/ee454_io_profile/reconstruct.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-454 diagnostic harness written for agent-ee: reconstruction from pinned local objects, I/O wrapper profiling, call counting and analysis. No third-party code or design bytes."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original usage notes for the AGENTEE-454 diagnostic harness."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/evidence/attribution.json",
+        "tools/ee454_io_profile/evidence/calls-envelope-identity.json",
+        "tools/ee454_io_profile/evidence/calls-pod-driver.json",
+        "tools/ee454_io_profile/evidence/calls-scaffold-review.json",
+        "tools/ee454_io_profile/evidence/closure-count-2.json",
+        "tools/ee454_io_profile/evidence/closure-count.json",
+        "tools/ee454_io_profile/evidence/closure-cprofile.json",
+        "tools/ee454_io_profile/evidence/closure-plain-2.json",
+        "tools/ee454_io_profile/evidence/closure-plain.json",
+        "tools/ee454_io_profile/evidence/inputs.json",
+        "tools/ee454_io_profile/evidence/qualify-count.json",
+        "tools/ee454_io_profile/evidence/qualify-plain.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Harness outputs from the AGENTEE-454 phase-1 profile: call counts, byte totals, timings and path/content-hash records of the reconstructed manifest inputs. Path and hash metadata only; no third-party design bytes."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/evidence/repair-README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-454 repair measurement notes."
     }
   ]
 }

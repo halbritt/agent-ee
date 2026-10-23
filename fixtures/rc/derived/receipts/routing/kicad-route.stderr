@@ -1,0 +1,10 @@
+[route] krt on rc_filter -> out/runs/rc_filter/ee103/20261022T193001.116461Z
+[route] scope: all (3 of 3 nets)
+[route] baseline: native DRC of the untouched input (refilled)
+[route] routing with krt (budget 60s)
+[route] process: PASS
+[route] validating the candidate (refill, DRC + parity, preservation)
+[route] routing: COMPLETE
+[route] validation: PASS
+[route] candidate: out/runs/rc_filter/ee103/20261022T193001.116461Z/candidate/project/rc_filter.kicad_pcb
+[route] result: out/runs/rc_filter/ee103/20261022T193001.116461Z/result.json  (exit 0)

@@ -248,6 +248,7 @@ registered check kind.
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
 | `rf_geometry` | `/usr/bin/python3 -B -m agent_ee.rf_geometry BOARD --request /work/rf-request.json --out /work/rf-native.json`, then a coordinator evaluation against the captured declaration; see [RF geometry](rf-geometry.md) | 600 s |
+| `antenna_placement` | `/usr/bin/python3 -B -m agent_ee.antenna_placement BOARD --request /work/antenna-request.json --out /work/antenna-native.json` when the footprint is captured, then a coordinator evaluation against the captured declaration and pinned sources; see [ESP32 antenna placement](antenna-placement.md) | 300 s |
 | `placement_congestion` | `/usr/bin/python3 -B -m agent_ee.placement_probe BOARD --out /work/placement-probe.json`, then an offline coordinator analysis of the captured probe ([details](placement-congestion.md)) | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -432,11 +433,11 @@ the projection grades instead of refusing. A native `silk_overlap` or
 `silk_over_copper` violation whose type and complete item-UUID set equal an
 open carried defect is graded as carried rather than as a violation.
 
-The [original RC stage fixtures](rc-stage-fixtures.md) exercise this boundary:
-placed-unrouted retains native unconnected items and passes the placement
-projection; seeded-placement has a native R1/C1 courtyard overlap. Both remain
-defects under full DRC. The control-derived variants requested by AGENTEE-103
-remain blocked by unresolved third-party rights.
+The [RC stage fixtures](rc-stage-fixtures.md) exercise this boundary, both
+the control-derived variants and the original alternative: placed-unrouted
+retains native unconnected items and passes the placement projection;
+seeded-placement has a native R1/C1 courtyard overlap. Both remain defects
+under full DRC.
 
 Zone fill is evaluated as saved. The implementation does not refill, save or
 repair the board. Reported exclusions stay visible and are not dropped by this
@@ -627,6 +628,35 @@ A missing coplanar ground or reference is a defect stated as an absent
 structure, never graded as microstrip. A `null` bound, an unfilled zone or an
 unrouted branch is unknown, with execution `unsupported`. The check is not RF
 qualification, and the guard is a geometric guard result only.
+
+## ESP32 outside-board antenna placement
+
+The [antenna placement check](antenna-placement.md) (AGENTEE-453) takes exactly
+`params.declaration`, a captured `agent-ee.antenna-placement-declaration/1`
+record. It binds the reviewed `outside_board` policy for the Espressif
+guidelines snapshot (section 1.4.7, page 33, Fig. 24/25), the module datasheet
+and the stock footprint, each to its reviewed SHA-256 pin. It also names the
+board edge the antenna must cross. If a source is captured with other bytes,
+capture is refused. A source that is not captured is `unknown`. On the saved
+board the check grades seven sections: sources, footprint identity and pose,
+antenna area outside board material, feed point on the board edge, feed-side
+corner on the declared edge, retained module keepout, and copper inside that
+keepout. Missing evidence, a back-side or off-axis pose, and a body overhang
+beyond the edge are `unknown`. Overlap, a wrong edge, a removed or altered rule
+area, keepout copper and a pad whose native copper differs from the captured
+footprint (for example one pad rotated in place) are defects. No clearance is
+derived: the Figure 11-1 pin label is not a clearance. Espressif prints no
+corner distance, so `manufacturer_corner_compliance` is always `unknown`. The
+feed-side corner is graded only when the declaration carries the exact
+agent-derived class-default `corner_policy` (an 18 mm slot taken from the
+module width). That section, and any verdict it decides, has
+`verdict_authority: agent-derived-class-default`, never
+`manufacturer-sourced`. Without the policy the corner is `unknown`. This is a
+bare-board gate. Housing pocket, in-housing clearance, nearby metal, support and
+installed RF performance stay open obligations, carried by `bare_board_claim`,
+the AGENTEE-449 composition point. The claim requires the unchanged candidate
+snapshot, the immutable baseline, the complete sealed check set and a report
+equal to its re-derivation from the sealed native measurement.
 
 ## Native netlist
 
@@ -1035,6 +1065,7 @@ The compiler CLI always requires readable source bytes and refuses a missing
 source with exit 2 and a typed error before writing a contract;
 `--require-source-sha256` remains accepted. Digest-free legacy contracts retain
 their existing validation. See [source options](io-map.md#requirements-source-provenance).
+Requirement citations carry `qualification` (`unqualified-carryover` default for bare IDs, or `sourced` with a captured sha256 source); unqualified IDs are reported in `details.requirement_qualification` and never graded. Optional `qualification_record` check parameter pins a record that binds the complete citation set, statuses and original provenance. Every consumer loads it through one typed loader (pin, exact bytes, schema; null is never absent), binds it to the captured CSV rows and verifies origins per distinct path/sha256. Coverage and `details.requirement_history` report it. See [qualification](io-map.md#one-record-loader).
 Concrete MCU rows require an explicit `MCU_Path=direct` declaration or the IDs
 of declared [indirect paths](io-map.md#indirect-mcu-paths). Undeclared path names
 are refused with their CSV row; TBD MCU rows keep an unresolved predicate without
@@ -1360,7 +1391,14 @@ The contract fixes the minimum witnesses and open items, so coverage cannot
 drop them. It also requires the telemetry pod's J1 `part-identity/1` witness,
 taken from the scope's `parts_subset` check over the captured parts manifest
 and footprint, with the complete manifest passing `qualify_manifest`. The
-`corner-holes` witnesses are the source holes H1–H4 by identity. The final
+`corner-holes` witnesses are the source holes H1–H4 by identity. J1 board
+thickness is not an open item. The contract screens J1 through the
+`tht-thickness-fit/1` judge (TE 1.57 mm, K1 sheet 2) against the envelope
+nominal, after the declaration passes the `tht-thickness-fit/1` declaration
+validator. A refused declaration is `unknown`, never `pass`. The contract
+requires `thickness-tolerance` open whenever the screen does not pass, and keeps
+the source statement next to a current statement
+([J1 thickness](board-envelope.md#source-contracts)). The final
 guard verifies the candidate identity and baseline before it reads the scope's
 envelope declaration.
 
@@ -2555,4 +2593,6 @@ The shared test harness defaults incidental candidate imaging off with the
 strict `AGENT_EE_SKIP_VISUALS=1` flag. Candidate-visual and 3D-render test modules
 force `0` while they run, retaining native image/hash coverage. Production
 continues to render by default; this test setting neither skips tests nor
-changes a check verdict.
+changes a check verdict. Ordinary placement helper steps run with the typed
+[sandbox render policy](pcb-renders.md#sandbox-render-policy-agentee-458)
+`skip_visuals=True` and never image their proposal (AGENTEE-458).

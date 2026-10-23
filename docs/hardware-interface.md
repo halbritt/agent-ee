@@ -79,7 +79,7 @@ The supported kinds and additional fields are:
 | `indirect_path` | Ordered `terminals`, `pin_names`, `devices`, `directions` | Every declared segment and intermediate part identity holds natively; see [below](#declared-indirect-paths). |
 
 The offline [io-map compiler](io-map.md) emits these predicates from a CSV.
-Invariants may carry its strict `io_map` citation object, including a captured
+Invariants may carry its strict `io_map` citation object (requirement entries carry an enforced [qualification](io-map.md#requirement-qualification)), including a captured
 CSV hash, row and external destination text. The CSV becomes an immutable scope
 input; destination prose supplies no additional engineering authority.
 

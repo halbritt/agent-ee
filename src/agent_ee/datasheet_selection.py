@@ -1,5 +1,4 @@
 """Replay explicit captured source decisions independently of purchase identity."""
-import hashlib
 import re
 from pathlib import Path
 
@@ -50,11 +49,13 @@ def validate_document(document, *, context):
     return document
 
 
-def _selected_source(root, ref, *, context):
-    """Return the sole selected source; rejected hashes always take precedence."""
+def _selected_source(root, ref, *, context, reads=None):
+    """Return the sole selected source; rejected hashes always take precedence.
+
+    reads is the calling validation's storage.CallReads, or None to read now."""
     from .parts_manifest import _read_blob
     validate_ref(ref)
-    document = validate_document(strict_json(_read_blob(root, ref)), context=context)
+    document = validate_document(strict_json(_read_blob(root, ref, reads)), context=context)
     entry = document['parts'].get(ref['part_key'])
     if entry is None or len(entry['selected']) != 1:
         ids = [] if entry is None else [s['id'] for s in entry['selected']]
@@ -66,8 +67,8 @@ def _selected_source(root, ref, *, context):
     return selected, entry['rejected']
 
 
-def _receipt(root, selected):
-    record, _ = _acquisition(root, selected['provenance'])
+def _receipt(root, selected, reads=None):
+    record, _ = _acquisition(root, selected['provenance'], reads)
     if record['sha256'] != selected['sha256']:
         raise ValueError('selected source hash differs from acquisition')
     return {**selected, 'acquisition': record}
@@ -78,16 +79,18 @@ def selected_source(root, ref, *, context):
     return _receipt(root, selected), rejected
 
 
-def check_binding(root, ref, artifact, provenance, *, context):
-    """Refuse rejected bytes even under an acquisition alias or a different URL."""
-    selected, rejected = _selected_source(root, ref, context=context)
+def check_binding(root, ref, artifact, provenance, *, context, reads=None):
+    """Refuse rejected bytes even under an acquisition alias or a different URL.
+
+    reads is the calling validation's storage.CallReads (AGENTEE-454), or None."""
+    selected, rejected = _selected_source(root, ref, context=context, reads=reads)
     conflicts = [s for s in rejected if s['sha256'] == artifact['sha256']]
     if conflicts:
         raise ValueError(f'{context}: rejected datasheet source(s) {conflicts}; selected={selected["id"]}')
     if artifact['sha256'] != selected['sha256'] or provenance != selected['provenance']:
         raise ValueError(f'{context}: bound datasheet differs from selected source {selected["id"]} '
                          f'({selected["sha256"]}); bound={artifact}, provenance={provenance}')
-    return _receipt(root, selected)
+    return _receipt(root, selected, reads)
 
 
 def acquisition_source(root, ref, *, context):
@@ -97,31 +100,31 @@ def acquisition_source(root, ref, *, context):
     return {k: provenance[k] for k in ('path', 'sha256')}, acquisition_id
 
 
-def _acquisition(root, provenance):
+def _acquisition(root, provenance, reads=None):
     """Replay one source through the shared acquisition loader."""
     from .datasheet_facts import load_acquisition
-    from .parts_manifest import _read_blob, read_captured
+    from .parts_manifest import _read_blob, captured_sha256
     match = re.fullmatch(r'parts\[id=(.+)\]', provenance['locator'])
     if match is None:
         raise ValueError('datasheet provenance must select a captured acquisition id')
     blob = {k: provenance[k] for k in ('path', 'sha256')}
-    document = strict_json(_read_blob(root, blob))
+    document = strict_json(_read_blob(root, blob, reads))
     bindings = sorted([{'id': r['id'], 'datasheet_url': r['url']} for r in document['parts']],
                       key=lambda r: r['id'])
-    acquired, paths = load_acquisition(root, blob, bindings)
+    acquired, paths = load_acquisition(root, blob, bindings, reads)
     record = acquired.get(match[1])
     if record is None or record['missing']:
         raise ValueError('part datasheet acquisition missing')
-    return record, {p: hashlib.sha256(read_captured(root, p)).hexdigest() for p in paths}
+    return record, {p: captured_sha256(root, p, reads) for p in paths}
 
 
-def datasheet(root, part):
+def datasheet(root, part, reads=None):
     from .copper_features import require_purchased
     require_purchased(part, 'datasheet binding')
     sheet = part['datasheet']
     if sheet['status'] != 'captured':
         raise ValueError('binding fill requires captured datasheet: ' + part['id'])
-    record, paths = _acquisition(root, sheet['provenance'])
+    record, paths = _acquisition(root, sheet['provenance'], reads)
     artifact = {'path': (Path(sheet['provenance']['path']).parent / record['path']).as_posix(),
                 'sha256': record['sha256']}
     if artifact != sheet['artifact']:

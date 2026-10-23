@@ -1132,17 +1132,22 @@ def _discard(receipt_dir, refusal):
         raise ReceiptCleanupError(receipt_dir, refusal)
 
 
-def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
-    """Execute one declared step on a copy of design; never modifies design itself."""
+def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None, skip_visuals=None):
+    """Execute one declared step on a copy of design; never modifies design itself.
+
+    skip_visuals is the executor's typed candidate-imaging policy for the step sandbox
+    (AGENTEE-458); None leaves the sandbox argv unchanged."""
+    from .executor import visual_policy
     from .tool_source import hold_snapshots
+    visual_policy(skip_visuals)
     # Acquire before host validation/observation so pruning cannot interleave.
     validated = validate_step(spec, host=False)
     with hold_snapshots(validated['mounts']):
         return _run_step(receipt_dir, design, validated, binding,
-                         deadline=deadline, cancellation=cancellation)
+                         deadline=deadline, cancellation=cancellation, skip_visuals=skip_visuals)
 
 
-def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
+def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None, skip_visuals=None):
     spec = validate_step(spec, host=False)
     runtime_spec, mount_identities = _resolved_mounts(spec)
     with _opened_mounts(runtime_spec, mount_identities) as mounts:
@@ -1150,11 +1155,12 @@ def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation
             {**mount, 'descriptor': descriptor}
             for mount, (descriptor, _) in zip(runtime_spec['mounts'], mounts)]}
         return _run_bound_step(receipt_dir, design, spec, binding, runtime_spec,
-                               mount_identities, mounts, deadline=deadline, cancellation=cancellation)
+                               mount_identities, mounts, deadline=deadline, cancellation=cancellation,
+                               skip_visuals=skip_visuals)
 
 
 def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_identities, mounts,
-                    *, deadline=None, cancellation=None):
+                    *, deadline=None, cancellation=None, skip_visuals=None):
     if not isinstance(binding, dict):
         raise ValueError('stage receipt binding must be an object')
     timeout = spec['timeout_s']
@@ -1197,7 +1203,7 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         # An exhausted budget is recorded as the step's own observed timeout.
         execution = execute(receipt_dir / 'inputs', run, spec['argv'],
                             timeout=max(.001, timeout - (time.monotonic() - start)), network=False,
-                            extra_ro=mounts, cancellation=cancellation)
+                            extra_ro=mounts, cancellation=cancellation, skip_visuals=skip_visuals)
     except KeyboardInterrupt:
         # The executor writes its record before re-raising an interrupt. Anything else on disk may
         # have been planted by the tool, and at most it yields a cancelled, unadoptable receipt.

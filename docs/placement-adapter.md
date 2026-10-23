@@ -167,7 +167,11 @@ the index comes from the step plan. The step's sandbox view is:
 
 Inside the sandbox, the driver exports native KiCad XML from
 `/candidate/<schematic>`. It then calls the unchanged `placer_runner.main`, with
-the fresh destination `/work/placement/placed`. The step declares the following:
+the fresh destination `/work/placement/placed`. The coordinator runs the step with
+the typed [sandbox render policy](pcb-renders.md#sandbox-render-policy-agentee-458)
+`skip_visuals=True`: an ordinary placement iteration never starts a native board
+render, and the proposal's `visuals` record `status: skipped` (AGENTEE-458).
+The step declares the following:
 
 - writes: `{<board>: "placement/placed/candidate.kicad_pcb"}`
 - artifacts: `placement`

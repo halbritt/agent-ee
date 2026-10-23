@@ -1,0 +1,10 @@
+{
+  "board": {
+    "path": "inputs/project/rc_filter.kicad_pcb",
+    "sha256": "dfcf3ac73a18e385454f2a9b6b19002ad3484344ecb41184632b1675ccd2b259"
+  },
+  "reason": "no routing adapter receipt was supplied for this candidate",
+  "receipt": null,
+  "schema": "agent-ee.rf-routing-evidence/1",
+  "status": "missing_evidence"
+}

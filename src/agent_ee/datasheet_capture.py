@@ -239,16 +239,22 @@ def capture_datasheets(parts, out, *, timeout=30, max_bytes=MAX_BYTES):
                 out.rmdir()
 
 
-def historical_source(root, locator, pdf_sha256):
-    """Read a pinned historical source-list entry; never infer redirect or time."""
+def historical_source(root, locator, pdf_sha256, reads=None):
+    """Read a pinned historical source-list entry; never infer redirect or time.
+
+    The note is hashed and parsed from one read (AGENTEE-454); reads, when given, is the
+    calling validation's storage.CallReads, so the call's verified bytes are reused."""
     from .catalog import exact_fields, nonempty
     from .datasheet_parts import captured_path, _hash
-    from .storage import digest, read_json
+    from .storage import read_verified
     exact_fields(locator, ('path', 'sha256', 'entry'))
     note = captured_path(root, locator['path'])
-    if digest(note) != _hash(locator['sha256']):
+    pin = locator['sha256']
+    # Read before the pin is validated, as before: an unreadable note still refuses first.
+    raw, found = read_verified(note, pin if isinstance(pin, str) else None, reads)
+    if found != _hash(pin):
         raise ValueError('historical source note hash mismatch')
-    entries = read_json(note)
+    entries = json.loads(raw.decode())
     index = locator['entry']
     if (not isinstance(entries, list) or type(index) is not int or
             not 0 <= index < len(entries)):

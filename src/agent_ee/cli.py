@@ -247,6 +247,12 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         raise ValueError("stored final qualification differs from the captured baseline envelope coverage")
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
+    # Every run state, checks-only and interrupted runs included, projects the retained checks.
+    if ("expected_check_ids" in result and
+            result["expected_check_ids"] != [c.get("id") for c in manifest["scope"].get("checks", [])]):
+        raise ValueError("result check inventory differs from the captured scope's declared checks")
+    bind_checks(run, result["checks"])
+    bind_check_findings(result)
     if result["state"] == "complete":
         expected = {c["id"] for c in manifest["scope"]["checks"]}
         if expected != {c["id"] for c in result["checks"]}:
@@ -258,6 +264,50 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
             if review != read_json(run / "reviews" / (review["role"] + ".json")):
                 raise ValueError("review projection differs from retained initial review")
     return result
+
+
+def bind_checks(run, checks):
+    """Raise unless the projected checks are exactly the retained checks/*.json records.
+
+    A projected check without a retained record is accepted only as an unexecuted unknown, the
+    placeholder recover_records writes for a check the run never finished (AGENTEE-16)."""
+    retained = {p.name: read_json(p) for p in sorted((Path(run) / "checks").glob("*.json"))}
+    if not isinstance(checks, list) or not all(isinstance(c, dict) for c in checks):
+        raise ValueError("result checks are not a list of records")
+    for check in checks:
+        cid = check.get("id")
+        name = f"{cid}.json" if isinstance(cid, str) else None
+        if name in retained:
+            if check != retained.pop(name):
+                raise ValueError(f"check {cid} projection differs from retained native-check result checks/{name}")
+            continue
+        # A malformed declaration is retained as checks/invalid-<index>.json.
+        malformed = next((n for n, r in retained.items() if n.startswith("invalid-") and r == check), None)
+        if malformed is not None:
+            del retained[malformed]
+        elif check.get("execution") == "ok" or check.get("outcome") != "unknown":
+            raise ValueError(f"check {cid!r} projects an executed or known result without a retained "
+                             "native-check record")
+    if retained:
+        raise ValueError("retained native-check results are not projected: " + ", ".join(sorted(retained)))
+
+
+# Fields adjudication owns; every other collected field derives from the check record.
+ADJUDICATED_FIELDS = ("status", "disposition", "events")
+
+
+def bind_check_findings(result):
+    """Raise unless the check findings are those the (bound) projected checks derive."""
+    from .findings import collect_findings
+    expected = {f["id"]: f for f in collect_findings([], result["checks"])}
+    stored = [f for f in result.get("findings", []) if not isinstance(f, dict) or f.get("source") == "check"]
+    ids = [f.get("id") if isinstance(f, dict) else None for f in stored]
+    if len(ids) != len(set(ids)) or set(ids) != set(expected):
+        raise ValueError("check findings differ from the defects in the retained native-check results")
+    for finding in stored:
+        derived = expected[finding["id"]]
+        if any(finding.get(key) != value for key, value in derived.items() if key not in ADJUDICATED_FIELDS):
+            raise ValueError(f"finding {finding['id']} differs from its retained native-check result")
 
 
 def finding_status(finding):
@@ -373,6 +423,33 @@ def save_result(run, result):
     render(run, result)
 
 
+def _recovered_execution(path, expected):
+    """Read a review-execution record; a record cut off before it named its role or status is kept, not dropped.
+
+    review-executions/<role>.json is written per role, so a record without ``role`` takes it from the file
+    name, but only when that name is one of the scope's expected reviewer roles (``expected`` is None without a
+    captured scope). A record whose file name or role is not expected is returned as ``(None, unexpected)`` so
+    it is reported beside the executions and never satisfies a role. A record without ``execution`` is
+    cancelled evidence, not a pass. The reconstruction mark is returned beside the record, not inside it, so
+    the archived execution projection stays exactly what the executor wrote.
+    """
+    record = read_json(path)
+    if "role" in record:
+        recognized = record["role"] == path.stem if expected is None else record["role"] == path.stem in expected
+    else:
+        recognized = expected is not None and path.stem in expected
+    if not recognized:
+        return None, {"file": path.name, "role": record.get("role"),
+                      "error": "review execution record does not belong to an expected reviewer role"}
+    reconstructed = "role" not in record
+    if reconstructed:
+        record["role"] = path.stem
+    if "execution" not in record:
+        record["execution"] = "interrupted"
+        record.setdefault("error", "run stopped before this review execution record was completed")
+    return record, path.stem if reconstructed else None
+
+
 def recover_records(run, result):
     """Project completed durable work after an exception or operator interrupt."""
     from .findings import collect_findings
@@ -380,9 +457,21 @@ def recover_records(run, result):
     previous = {f["id"]: f for f in result.get("findings", [])}
     result["checks"] = [read_json(p) for p in sorted((run / "checks").glob("*.json"))]
     result["reviews"] = [read_json(p) for p in sorted((run / "reviews").glob("*.json"))]
-    result["review_executions"] = [read_json(p) for p in sorted((run / "review-executions").glob("*.json"))]
-    if result.get("candidate_id"):
-        scope = read_json(run / "candidate.json")["scope"]
+    scope = read_json(run / "candidate.json")["scope"] if result.get("candidate_id") else None
+    expected = ({r["role"] for r in scope.get("review_profile", {}).get("reviewers", [{"role": "circuit"}, {"role": "physical"}])}
+                if scope else None)
+    result["review_executions"] = []
+    result["recovered_review_roles"] = []
+    result["unexpected_review_executions"] = []
+    for p in sorted((run / "review-executions").glob("*.json")):
+        record, note = _recovered_execution(p, expected)
+        if record is None:
+            result["unexpected_review_executions"].append(note)
+            continue
+        result["review_executions"].append(record)
+        if note:
+            result["recovered_review_roles"].append(note)
+    if scope:
         done = {c["id"] for c in result["checks"]}
         for spec in scope["checks"]:
             if spec["id"] in done:

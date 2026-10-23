@@ -207,6 +207,19 @@ Build from a clean checkout:
 docker build -t agent-ee:local .
 ```
 
+## Init and reaping
+
+The image's `ENTRYPOINT` is `/usr/bin/tini --` (Ubuntu `tini` 0.19.0-1, pinned
+and held like the other packages). As PID 1 it reaps orphaned descendants,
+forwards `SIGTERM`/`SIGINT` to the command and returns the command's exit
+status (`128+N` for a command killed by signal `N`). Without it, a long-lived
+parent such as `strict_suite.py` leaves every orphaned Bubblewrap process as a
+zombie (about 20,960 accumulated on one gate host). `docker run --init` is not
+used because it bind-mounts `/usr/sbin/docker-init`, a `/usr` submount that the
+stage-receipt refusal (`mount_source_submount`) correctly rejects; the refusal
+is unchanged. `tests/test_ci_init.py` runs the real `tini` against orphaned
+grandchildren, exit codes and signals, and checks the Dockerfile pin.
+
 ## Bubblewrap inside the container
 
 agent-ee keeps its own sandbox inside the container: every native check still
@@ -320,10 +333,11 @@ repository. One job:
 
 Project CI does not call the reusable action and uploads no run directory. A run
 directory holds copies of the candidate inputs, and the RC fixture inputs include
-third-party design material: the FOME-MC-origin fixture and captured stock KiCad
-library files. This repository is public, and the owner has not yet resolved
-whether that material may be republished, so run outputs stay on the ephemeral
-runner and only the gate summary reaches the job page.
+the FOME-MC-origin fixture (origin T1 in [file-origins.json](file-origins.json))
+and captured stock KiCad library files (origin T6). This repository is public.
+T6 files are not redistributed (see [the sample run](#sample-consumer-run-local-only)),
+so run outputs stay on the ephemeral runner and only the gate summary reaches the
+job page.
 
 The shared test harness defaults incidental candidate imaging off with
 `AGENT_EE_SKIP_VISUALS=1`. The candidate-visual and 3D-render modules explicitly
@@ -490,7 +504,9 @@ Outputs are `verdict` and `run-directory`. The action:
    `agent-ee verify` on the new run. Their exit statuses are recorded, not judged:
    checks-only always exits 1.
 3. Runs [scripts/action_gate.py](../scripts/action_gate.py) on the run. It writes
-   the verdict, a check table and the run's `REPORT.md` to the job summary.
+   the verdict, a check table and the run's `REPORT.md` to the job summary. The
+   gate judges `result.json`'s checks only after binding each one, and the check
+   findings derived from them, to the retained `checks/<id>.json` record.
 4. Uploads the whole run directory, including hidden scratch files, as an
    artifact whatever the verdict.
 5. Fails the step unless the verdict is `checks_passed`.
@@ -500,11 +516,20 @@ Outputs are `verdict` and `run-directory`. The action:
 | `checks_passed` | Every declared check executed with `pass` or `info` | Success |
 | `check_failed` | Every declared check executed; at least one reports `defect` | Failure |
 | `coverage_incomplete` | A declared check is missing, `unknown` or not executed; or the run errored, was interrupted or never finalized | Failure |
-| `result_invalid` | `result.json` missing, unreadable or malformed; no new run directory; or `agent-ee verify` refused the run | Failure |
+| `result_invalid` | `result.json` missing, unreadable or malformed; its checks or check findings contradict the retained `checks/<id>.json` records; no new run directory; or `agent-ee verify` refused the run | Failure |
 
 No model review or adjudication runs, and `checks_passed` is not design
 acceptance. It says only that the declared native checks executed and passed
-for the captured candidate. The gate's tests are in
+for the captured candidate.
+
+`agent-ee verify` applies the same binding for every run state, including
+checks-only, errored and interrupted runs, not only complete ones (AGENTEE-16).
+Every retained check record must be projected unchanged, and every check
+finding must equal the one its record derives. A projected check without a
+retained record must be an unexecuted `unknown` placeholder for a check the run
+never finished. The result's check inventory must equal the captured scope's
+declared checks. Any contradiction refuses verification with a specific reason.
+The gate's tests are in
 [test_action_gate.py](../tests/test_action_gate.py).
 
 A consumer repository uses the action by reference or from a copy. Each run builds the image unless an `image` is
@@ -516,29 +541,43 @@ request can also edit the scope and requirements it is judged against, so the
 gate checks a contribution only against criteria the consumer controls when the
 scope comes from a trusted revision.
 
-### Sample workflow and local evidence
+### Sample consumer run (local only)
 
-The [installation guide](installation.md#sample-consumer-workflow) has a sample
-consumer workflow that runs the action on the seeded RC fixture and fails with the
-`rc-step` finding in the job summary. Like every action run, it uploads the run
-directory as an artifact, and the seeded run directory contains the third-party
-fixture inputs. A hosted run of the sample therefore waits for the owner's
-decision on publishing that material.
+A hosted GitHub Actions run of the sample is not used. The owner answered the
+question of running it on GitHub CI (owner decision #13), relayed by agent-519
+(class: owner-relayed, agent-drafted, unconfirmed; Plane AGENTEE-16 comment cf9e4e48-3e00-46da-9b4d-1d6f7eaac858, 2026-10-22T19:26:16Z), verbatim:
 
-The local evidence for this behavior is limited. A scratch harness, not part of
-the repository, ran the action's shell steps with GitHub's `bash -eo pipefail`
-semantics against the image built on the demonstrated host. It replaced
-`upload-artifact` with a directory copy. Results:
+> I don't think we can use github CI for this, so c.
 
-- The seeded fixture produced `check_failed`, with the `rc-step` defect in the
-  summary and a failed final step.
-- The control produced `checks_passed`.
-- A zero budget gave `coverage_incomplete`.
-- A missing scope, an existing output directory and an output outside the
-  workspace each gave `result_invalid`.
-- The copied run directory, hidden files included, matched the original.
+So no sample workflow is committed, nothing is uploaded as an artifact, and the
+T6 stock KiCad library files that a run directory captures under `inputs/stock/`
+are not redistributed by this design. The reusable [action.yml](../action.yml)
+stays available for consumers to run in their own repositories.
 
-The action has not yet run on a hosted runner.
+[scripts/consumer_sample.py](../scripts/consumer_sample.py) reproduces the sample
+locally on the RC fixture. The seeded scope (`fixtures/rc/seeded.scope.json`)
+must give `check_failed` with an `rc-step` defect (`vout_1ms=0.0951625` outside
+`[0.62, 0.65]`). The control scope (`fixtures/rc/control.scope.json`) must give
+`checks_passed`. Both are judged from `result.json` by
+[action_gate.py](../scripts/action_gate.py) with `--expect` and `--expect-check`,
+so any other verdict, a missing result or a different `rc-step` outcome exits 1.
+
+```
+scripts/consumer_sample.py run seeded      # review into a NEW directory (an existing --out is refused), verify, judge
+scripts/consumer_sample.py run control
+scripts/consumer_sample.py judge seeded RUN_DIR [--display-only]   # verify, then judge a retained run directory
+```
+
+`run` needs the native toolchain: the container image, or a host with
+`kicad-cli` and `ngspice`. `judge` needs only the retained directory and always runs `agent-ee verify` first (a refusal
+exits 1); `--display-only` prints the projection without verifying and exits 2, never 0. The
+retained run directory stays local; it holds the captured stock libraries and no
+CC-BY-SA license document, so do not publish it. The local runner's unit tests in
+[test_action_gate.py](../tests/test_action_gate.py) use synthetic results; the
+independent AGENTEE-16 review (2026-10-22) also ran it on real retained seeded and
+control run directories. The native verdicts come from the checks' own tests.
+
+The action has not run on a hosted runner, and this design does not plan one.
 
 ## Stock 3D models
 
