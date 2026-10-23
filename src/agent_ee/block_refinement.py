@@ -135,15 +135,33 @@ def _admitted(proposed, reference, policy, contract, record):
     return block_contract.check_complete(proposed, contract)['status'] == 'pass'
 
 
-def _targets(fp, peers, gap):
+def _targets(fp, peers, gap, grounds):
     x, y = fp['position_nm']
     a = _bbox(fp)
     targets = set()
+    def points(member):
+        nets = {}
+        for pad in member['pads']:
+            if pad.get('net') and pad['net'] not in grounds:
+                nets.setdefault(pad['net'], []).append(_point(member, pad, [member]))
+        return nets
+    own_points = points(fp)
     for peer in peers:
         b = _bbox(peer)
         xs = {x, peer['position_nm'][0], x+b[0]-a[2]-gap, x+b[2]-a[0]+gap}
         ys = {y, peer['position_nm'][1], y+b[1]-a[3]-gap, y+b[3]-a[1]+gap}
         targets.update((px, py) for px in xs for py in ys)
+        # At most eight poses per matching pad pair: direct alignment neighbours
+        # and each single-axis neighbour. Never cross axes from unrelated pairs.
+        for net, peer_points in points(peer).items():
+            for origin in own_points.get(net, []):
+                for target in peer_points:
+                    px, py = (position + b-a for position, a, b in zip((x, y), origin, target))
+                    near_x = {math.floor(px), math.ceil(px)}
+                    near_y = {math.floor(py), math.ceil(py)}
+                    targets.update((nx, ny) for nx in near_x for ny in near_y)
+                    targets.update((nx, y) for nx in near_x)
+                    targets.update((x, ny) for ny in near_y)
     targets.discard((x, y))
     return sorted(targets)
 
@@ -155,6 +173,7 @@ def refine(capture, policy, contract, block_records, *, step_budget):
         raise ValueError('member refinement requires a complete passing block contract')
     result = deepcopy(capture)
     fixed = placer._fixed_refs(capture, policy)
+    grounds = set(policy['ground_nets'])
     witness = {'schema': SCHEMA, 'capture_digest_basis': CAPTURE_DIGEST_BASIS, 'source_capture_sha256': capture_digest(capture),
                'policy_sha256': digest(policy), 'contract_sha256': digest(contract),
                'step_budget': step_budget, 'steps_used': 0, 'moves': [], 'rejected': {}, 'skipped': []}
@@ -170,7 +189,7 @@ def refine(capture, policy, contract, block_records, *, step_budget):
             fp = next(fp for fp in result['footprints'] if fp['ref'] == reference)
             peers = [peer for peer in result['footprints'] if peer['ref'] in refs and peer['ref'] != reference]
             before = _metrics(result, policy, contract, block_records, refs)
-            for position in _targets(fp, peers, policy['gap_nm']):
+            for position in _targets(fp, peers, policy['gap_nm'], grounds):
                 if witness['steps_used'] >= step_budget:
                     exhausted = True
                     break

@@ -296,10 +296,41 @@ fn admitted(
     }
     Ok(block_contract::check_complete(proposed, contract)?["status"] == "pass")
 }
-fn targets(fp: &Value, peers: &[&Value], gap: &Int) -> Result<BTreeSet<Point>> {
+fn signal_points(
+    fp: &Value,
+    grounds: &BTreeSet<String>,
+) -> Result<BTreeMap<String, Vec<[Rat; 2]>>> {
+    let mut nets = BTreeMap::<String, Vec<[Rat; 2]>>::new();
+    for pad in blocks::rows(&fp["pads"])? {
+        let Some(net) = pad["net"]
+            .as_str()
+            .filter(|s| !s.is_empty() && !grounds.contains(*s))
+        else {
+            continue;
+        };
+        let mut endpoint = json!({"reference":fp["ref"],"pad":pad["number"],"net":net});
+        if let Some(uuid) = pad
+            .get("uuid")
+            .filter(|u| u.as_str().is_some_and(|s| !s.is_empty()))
+        {
+            endpoint["uuid"] = uuid.clone();
+        }
+        nets.entry(net.to_owned())
+            .or_default()
+            .push(locality::resolve(std::slice::from_ref(fp), &endpoint)?);
+    }
+    Ok(nets)
+}
+fn targets(
+    fp: &Value,
+    peers: &[&Value],
+    gap: &Int,
+    grounds: &BTreeSet<String>,
+) -> Result<BTreeSet<Point>> {
     let p = exact::point(&fp["position_nm"])?;
     let a = bbox(fp)?;
     let mut out = BTreeSet::new();
+    let own_points = signal_points(fp, grounds)?;
     for peer in peers {
         let b = bbox(peer)?;
         let q = exact::point(&peer["position_nm"])?;
@@ -323,6 +354,38 @@ fn targets(fp: &Value, peers: &[&Value], gap: &Int) -> Result<BTreeSet<Point>> {
                 });
             }
         }
+        // At most eight poses per matching pair, without combining unrelated
+        // pad axes: four direct neighbours and four single-axis neighbours.
+        for (net, peer_points) in signal_points(peer, grounds)? {
+            if let Some(origins) = own_points.get(&net) {
+                for origin in origins {
+                    for target in &peer_points {
+                        let x = Rat::from_integer(p.x.clone()) + &target[0] - &origin[0];
+                        let y = Rat::from_integer(p.y.clone()) + &target[1] - &origin[1];
+                        let near_x = BTreeSet::from([exact::floor(&x), exact::ceil(&x)]);
+                        let near_y = BTreeSet::from([exact::floor(&y), exact::ceil(&y)]);
+                        for x in &near_x {
+                            out.insert(Point {
+                                x: x.clone(),
+                                y: p.y.clone(),
+                            });
+                            for y in &near_y {
+                                out.insert(Point {
+                                    x: x.clone(),
+                                    y: y.clone(),
+                                });
+                            }
+                        }
+                        for y in &near_y {
+                            out.insert(Point {
+                                x: p.x.clone(),
+                                y: y.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
     out.remove(&p);
     Ok(out)
@@ -343,6 +406,7 @@ pub fn refine(
     );
     let mut result = capture.clone();
     let fixed = fixed(capture, policy)?;
+    let grounds = policy::strings(&policy["ground_nets"], "ground_nets")?;
     let mut moves = Vec::new();
     let mut rejected = BTreeMap::<String, u64>::new();
     let mut skipped = Vec::new();
@@ -394,7 +458,7 @@ pub fn refine(
                     p["ref"] != reference && p["ref"].as_str().is_some_and(|r| refs.contains(r))
                 })
                 .collect();
-            let candidates = targets(&fp, &peers, &exact::integer(&policy["gap_nm"])?)?;
+            let candidates = targets(&fp, &peers, &exact::integer(&policy["gap_nm"])?, &grounds)?;
             let mut before = metrics(&result, policy, contract, block_records, &refs)?;
             for position in candidates {
                 if steps >= step_budget {
@@ -467,6 +531,43 @@ pub fn refine(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn fractional_pad_alignment_adds_only_pair_neighbours_and_excludes_ground() {
+        let member = |reference: &str, x: i64, y: i64, offset: Value| {
+            json!({"ref":reference,"position_nm":[x,y],
+                "courtyards":{"F":{"status":"proven","polygons":[[[x-2,y-2],[x+2,y-2],[x+2,y+2],[x-2,y+2]]]}},
+                "pads":[{"uuid":format!("{reference}-1"),"number":"1","net":"SIG",
+                         "position_nm":[x,y],"copper_centroid_offset_nm":offset}]})
+        };
+        let moving = member("A", 10, -10, json!([[1, 3], [-1, 2]]));
+        let mut peer = member("B", -30, 20, json!([[-1, 2], [1, 3]]));
+        let unchanged = (moving.clone(), peer.clone());
+        let grounds = BTreeSet::from(["SIG".to_owned()]);
+        let gap = Int::from(1);
+        let contacts = targets(&moving, &[&peer], &gap, &grounds).unwrap();
+        let actual = targets(&moving, &[&peer], &gap, &BTreeSet::new()).unwrap();
+        // Ideal origin (-30-5/6, 20+5/6) needs negative floor and positive
+        // ceiling, both direct alignment and single-axis alternatives.
+        let mut expected = contacts.clone();
+        for x in [-31, -30] {
+            expected.insert(Point::new(x, -10));
+            for y in [20, 21] {
+                expected.insert(Point::new(x, y));
+            }
+        }
+        for y in [20, 21] {
+            expected.insert(Point::new(10, y));
+        }
+        assert_eq!(actual, expected);
+        assert!(actual.difference(&contacts).count() <= 8);
+        assert_eq!((&moving, &peer), (&unchanged.0, &unchanged.1));
+        peer["pads"][0]["net"] = json!("OTHER");
+        assert_eq!(
+            targets(&moving, &[&peer], &gap, &BTreeSet::new()).unwrap(),
+            contacts
+        );
+    }
 
     fn fixture() -> (Value, Value, Value, Value) {
         let fp = |reference: &str, x: i64| {

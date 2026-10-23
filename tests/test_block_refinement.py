@@ -73,6 +73,28 @@ def verification_entries(board, record):
 
 
 class BlockRefinementTest(unittest.TestCase):
+    def test_fractional_pad_alignment_adds_only_pair_neighbours_and_excludes_ground(self):
+        def member(ref, x, y, offset):
+            return {'ref': ref, 'position_nm': [x, y],
+                    'courtyards': {'F': {'status': 'proven', 'polygons': [
+                        [[x-2, y-2], [x+2, y-2], [x+2, y+2], [x-2, y+2]]]}},
+                    'pads': [{'uuid': ref+'-1', 'number': '1', 'net': 'SIG',
+                              'position_nm': [x, y], 'copper_centroid_offset_nm': offset}]}
+        moving = member('A', 10, -10, [[1, 3], [-1, 2]])
+        peer = member('B', -30, 20, [[-1, 2], [1, 3]])
+        unchanged = deepcopy((moving, peer))
+        contacts = set(block_refinement._targets(moving, [peer], 1, {'SIG'}))
+        actual = block_refinement._targets(moving, [peer], 1, set())
+        # Exact ideal origin is (-30-5/6, 20+5/6). Check negative floor,
+        # positive ceiling, direct points and single-axis alternatives.
+        neighbours = {(x, y) for x in (-31, -30) for y in (20, 21)}
+        neighbours |= {(x, -10) for x in (-31, -30)} | {(10, y) for y in (20, 21)}
+        self.assertEqual(actual, sorted(contacts | neighbours))
+        self.assertLessEqual(len(set(actual) - contacts), 8)
+        self.assertEqual((moving, peer), unchanged)
+        peer['pads'][0]['net'] = 'OTHER'
+        self.assertEqual(set(block_refinement._targets(moving, [peer], 1, set())), contacts)
+
     def test_capture_digest_preserves_public_facts_without_private_cache_or_angle_spelling(self):
         board = facts()
         expected = block_refinement.capture_digest(board)
