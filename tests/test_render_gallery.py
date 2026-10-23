@@ -1,9 +1,7 @@
 import contextlib
-import functools
 import hashlib
 import html
-import ipaddress
-import urllib.parse
+from html.parser import HTMLParser
 import itertools
 import json
 import multiprocessing
@@ -165,198 +163,500 @@ def random_texts(seed, rounds):
 
 
 LEAKS = ('hidden', 'file:', 'C:', '\\', 'private-', 'Alice', 'localhost')
-ADDRESS_RUN = re.compile(r'[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*')
-HOST_MARKERS = ('hidden', 'private-', 'localhost', 'alice')
-ULA = ipaddress.IPv6Network('fd00::/8')
 
 
-def ip_addresses(body):
-    """IPv6 addresses among the tokens of body, parsed with ipaddress. A run of hex digits, colons and dots is tried
-    at every colon-group boundary, so a delimiter colon beside an address ("host:fd00::1", "fd00::1:") neither hides
-    it nor joins it; a zone id ("%eth0") ends the run; a hex id that merely contains "fd00" is no address."""
-    found = []
-    for run in ADDRESS_RUN.findall(body):
-        colons = [i for i, c in enumerate(run) if c == ':']
-        starts = [0] + [i + 1 for i in colons]
-        ends = [i for i in colons] + [len(run)]
-        for start in starts:
-            for end in ends:
-                candidate = run[start:end].strip('.')
-                if end <= start or ':' not in candidate:
-                    continue
-                try:
-                    ipaddress.IPv6Address(candidate)
-                except ValueError:
-                    continue
-                found.append(candidate)
-    return sorted(set(found))
-
-
-def ula_addresses(body):
-    """The fd00::/8 addresses among ip_addresses(body)."""
-    return [a for a in ip_addresses(body) if ipaddress.IPv6Address(a) in ULA]
-
-
-# The allow-list leak oracle (AGENTEE-452, third-review redesign). Each published body is read in every form a
-# reader could decode it to: as published, HTML-unescaped, every JSON key and string, and each of those
-# percent-decoded until stable. Each form is cut into tokens at whitespace and at the characters RFC 3986 never
-# allows in a URI (" < > \ ^ ` { | }), and leading ([{' and trailing )]}'.,;:!? wrapper punctuation is stripped. A
-# token is allowed whole when it has a published shape (TOKEN_SHAPES). Otherwise every URL-ish or host-ish candidate
-# in it must be allowed:
-#   scheme       a scheme then anything ("https://h/p", "http:/h/x", "http:h", "smb:..."): only https with a plain
-#                authority naming an ALLOWED_HOSTS host and an optional port 0-65535; no userinfo, no "@" anywhere,
-#                no malformed %-escape, and urllib.parse must parse it (port included), else it fails closed;
-#   //authority  a network-path reference ("//h/x"), judged as https: would be; "//" with nothing after is prose;
-#   host:port    a bare host or bracketed literal and a port ("LOCALHOST:80", "[::1]:80"): an ALLOWED_HOSTS host
-#                and a port 0-65535;
-#   @            a token holding "@" outside a scheme candidate is allowed only as a whole mailbox
-#                ("email@example.com", "user@host"): an ALLOWED_HOSTS domain or one plain host word;
-#   IP literal   any IPv6 address (fd00::/8 included, with or without a zone id) or dotted IPv4 address;
-#   dotted name  outside a scheme candidate: an ALLOWED_HOSTS host or a decimal number;
-#   host word    any word, in any case or encoding, carrying a HOST_MARKERS marker.
-# No IP literal and no other host has a published instance, so all fail. Inline CSS (a <style> element or style=
-# attribute, see page and _with_status) is not text: it is blanked when it holds only CSS characters and no host word.
+# The structural leak oracle (AGENTEE-452; agent-449's positive-oracle redesign after the fourth review).
+# Nothing is scanned or recognized. Every published body is parsed (JSON trees; HTML elements, attributes, text
+# nodes and <style> content), and every JSON key, string, number and boolean, every HTML tag, attribute value and
+# text node, and every route must match an exact grammar from the publisher's own field list in
+# src/agent_ee/render_gallery.py; anything that no grammar covers fails with LeakOracleFailure. The record fields
+# follow _bundle (render_gallery.py:217), _viewer (:234), _diagnostic (:250), _status_record (:279), _recorded
+# (:1173) with _claims (:1000) and _masked (:1018); the pages follow page (:1141), diagnostic_cards (:1120),
+# _status_html (:1080), _status_lines (:1033), _supplement_status (:1100) and _with_status (:1181); routes follow
+# GalleryHandler.send_head (:1214-1218).
 #
-# Each allowed shape has a published instance (D6 = the Diagnostic 6 bundle adfb7668ac0c-86b84f0f741e as served by
-# the gallery; its manifest and status record are pinned byte for byte by diagnostic_6()) or is one of the
-# coordinator's false-positive controls (CONTROL, AllowListMatrixTests.PASSES):
-#   ALLOWED_HOSTS  github.com: the served viewer asset viewer/vendor/GLTFLoader.js cites
-#                  https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#accessors;
-#                  example.org, example.com: CONTROL (public URLs, ports 0 and 65535, a wrapped URL, an email).
-#   time           D6 published_at "2026-10-22T23:18:18.401181+00:00".
-#   file           D6 evidence "telemetry-pod.kicad_pcb", "rj_diagnostic-6_305fp+4holes_..._20261022T231757Z.json",
-#                  images "top.png"; served index.html/status.json links; gallery model warnings
-#                  "SOIC-8_3.9x4.9mm_P1.27mm.step" and "c-1-776163-1-t-3d.stp"; packet "INDEX.md" (status
-#                  0e28e3b235a2-c50f79a6c84e); "Hidden.step" (CONTROL: a real packet name, review ee452d-r3);
-#                  "board.glb": the viewer model the gallery serves at viewer/board.glb and names in viewer.json.
-#   gallery path   D6 page links "/", "/bundles/adfb7668ac0c-86b84f0f741e/top.png" and ".../status.json".
-#   schema         D6 "agent-ee.gallery-bundle/3", "agent-ee.gallery-status/1".
-#   number         decimal numbers in published JSON.
-#   mailbox        CONTROL only ("email@example.com in prose", "commit: user@host").
-ALLOWED_HOSTS = frozenset(('github.com', 'example.org', 'example.com'))
-FILE_NAME = r'[A-Za-z0-9_][A-Za-z0-9_.+-]*\.(?:kicad_pcb|json|png|md|step|stp|html|glb)'
-TOKEN_SHAPES = {
-    'time': re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)?'),
-    'file': re.compile(FILE_NAME),
-    'gallery path': re.compile(r'/|/(?:bundles|diagnostics|statuses)/[a-f0-9]{12}-[a-f0-9]{12}/(?:viewer/)?' + FILE_NAME),
-    'schema': re.compile(r'agent-ee\.[a-z]+(?:-[a-z]+)*/\d+'),
-    'number': re.compile(r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'),
-}
-TOKEN = re.compile(r'[^\s"<>\\^`{|}]+')
-SCHEME = re.compile(r'(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]*:(?=.)', re.S)
-HOST_PORT = re.compile(r'(?<![A-Za-z0-9.%\-])(\[[^\]]*\]|[A-Za-z0-9.%\-]+):(\d+)(?![A-Za-z0-9])')
-MAILBOX = re.compile(r'[A-Za-z0-9._+\-]+@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*)')
-DOTTED = re.compile(r'(?<![A-Za-z0-9.%\-])[A-Za-z0-9%\-]+(?:\.[A-Za-z0-9%\-]+)+')
-IPV4 = re.compile(r'(?<![0-9.])\d{1,3}(?:\.\d{1,3}){3}(?![0-9])')
-BAD_ESCAPE = re.compile(r'%(?![0-9A-Fa-f]{2})')
-CSS = re.compile(r'<style>(?:@media|[A-Za-z0-9#%:;{}(),.\- ])*</style>|style="[A-Za-z0-9#%:;(),.\- ]*"')
+# Variable leaves are enumerated or bounded and each has a published witness in the staged gallery
+# (~/.local/share/agent-ee-render-gallery/artifacts, checked by ~/agent-ee-diag6-stage/SHA256SUMS; lines below):
+#   basenames  REAL_BASENAMES, each from a staged line (served through _basename/_name), plus FIXTURE_BASENAMES:
+#              the exact names this module's own fixtures publish; no other name, so "intranet.corp.step" fails;
+#   counts     integers 0-999999 (D6 manifest "footprints": 309 at bundles/adfb7668ac0c-86b84f0f741e/manifest.json:13);
+#              no float has a witness, so none is covered;
+#   designators _DESIGNATOR [A-Z]{1,8}[0-9]{1,6} (D6 warning "TP4: no 3D model is declared", manifest.json:25);
+#   hashes, ids, times _HASH, _ID, _TIME (manifest.json:5,8; index.json:3);
+#   pixel sizes 1-99999 (manifest.json:52 "KiCad produced 2384×1568 for requested 2400×1600").
+# The coordinator's controls (example.org URLs, an email, "user@host", ...) are not grammar: they pass only as the
+# exact values a test registers with publication_fixtures() at the place it injects them.
+_DESIGNATOR_RE = r'[A-Z]{1,8}[0-9]{1,6}'
+_HASH_RE, _ID_RE = r'[a-f0-9]{64}', r'[a-f0-9]{12}-[a-f0-9]{12}'
+_TIME_RE = r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)?'
+_COUNT_MAX, _PIXELS_RE = 999999, r'[1-9]\d{0,4}'
+REAL_BASENAMES = {  # staged file:line whose publication serves the name
+    'telemetry-pod.kicad_pcb': 'statuses.json:47', 'top.png': 'index.json:58', 'bottom.png': 'index.json:63',
+    'isometric.png': 'index.json:68',
+    'render-job-association_adfb7668ac0c_20261022T231757Z.json': 'statuses.json:52',
+    'rj_diagnostic-6_305fp+4holes_unrouted_not-qualified_new-board_20261022T231757Z.json': 'statuses.json:57',
+    'candidate.kicad_pcb': 'statuses.json:108', 'INDEX.md': 'statuses.json:462', 'RECEIPT.json': 'statuses.json:447',
+    'design-diff.json': 'statuses.json:452', 'drc-iter8t.json': 'statuses.json:457',
+    'iter8t-association.json': 'statuses.json:472', 'correction-association_2938ee1ee2ca.json': 'statuses.json:299',
+    'fome-mc-main-cc0a4045152d_telemetry-pod-README.md': 'statuses.json:372',
+    'render-job-association_2938ee1ee2ca_20261022T191106Z.json': 'statuses.json:362',
+    'render-job-association_56313982e687_20261022T191820Z.json': 'statuses.json:235',
+    'render-job-association_56313982e687_20261022T191947Z.json': 'statuses.json:174',
+    'render-job-association_56313982e687_20261022T191954Z.json': 'statuses.json:113',
+    'render-job_fome-mc-main-cc0a4045152d_board-changed_not-qualified_20261022T191106Z.json': 'statuses.json:367',
+    'rj_iter8t_305fp+4holes_unrouted_not-qualified_board-unchanged_20261022T191947Z.json': 'statuses.json:179',
+    'rj_iter8t_305fp+4holes_unrouted_not-qualified_board-unchanged_20261022T191954Z.json': 'statuses.json:118',
+    'rj_iter8t_305fp+4holes_unrouted_not-qualified_same-board-as-gallery-56313982e687-0e28e3b235a2_20261022T191820Z.json':
+        'statuses.json:240',
+    'HISTORICAL_INCORRECT-SELECTION_old-112-footprint-pilot-rendered-by-mistake_retained-as-evidence.json':
+        'statuses.json:304',
+    'NEO-M9N-00B_visualization-only_datasheet-derived_not-manufacturer-mechanical-qualification.step':
+        'statuses.json:467',
+    'C_0402_1005Metric.step': 'index.json:1133', 'C_0603_1608Metric.step': 'index.json:229',
+    'C_0805_2012Metric.step': 'index.json:324', 'C_1206_3216Metric.step': 'index.json:3954',
+    'C_1210_3225Metric.step': 'index.json:425', 'microSD_HC_Hirose_DM3AT-SF-PEJM5.step': 'index.json:5244',
+    'SMA_Molex_73251-1153_EdgeMount_Horizontal.step': 'index.json:381',
+    'Crystal_SMD_SeikoEpson_FA238-4Pin_3.2x2.5mm.step': 'index.json:2467', 'D_SMC.step': 'index.json:2258',
+    'D_SOD-123.step': 'index.json:2201', 'L_0603_1608Metric.step': 'index.json:1772',
+    'LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y.step': 'index.json:1342',
+    'SOIC-14_3.9x8.7mm_P1.27mm.step': 'index.json:1677', 'SOIC-16_3.9x9.9mm_P1.27mm.step': 'index.json:4536',
+    'SOIC-8_3.9x4.9mm_P1.27mm.step': 'index.json:267', 'TSSOP-14_4.4x5mm_P0.65mm.step': 'index.json:5383',
+    'TSSOP-16_4.4x5mm_P0.65mm.step': 'index.json:3366',
+    'VSON-10-1EP_3x3mm_P0.5mm_EP1.65x2.4mm.step': 'index.json:577', 'SOT-23-5.step': 'index.json:2144',
+    'SOT-23-6.step': 'index.json:2619', 'SOT-23.step': 'index.json:1051', 'SOT-323_SC-70.step': 'index.json:1076',
+    'ESP32-S3-WROOM-1.step': 'index.json:1323', 'R_0603_1608Metric.step': 'index.json:286',
+    'R_0805_2012Metric.step': 'index.json:925', 'R_1206_3216Metric.step': 'index.json:2657',
+    'R_2512_6332Metric.step': 'index.json:539', 'c-1-776163-1-t-3d.stp': 'index.json:2676'}
+# The exact names this module's own fixtures publish: the captured fixture board (DiagnosticSupplementTests.capture
+# and the GalleryTests boards), the supplement image (DiagnosticSupplementTests.setUp) and the model warning d.step
+# (GalleryTests.test_host_paths_in_warnings_coverage_and_viewer_are_published_as_basenames_or_redacted).
+FIXTURE_BASENAMES = frozenset(('board.kicad_pcb', 'annotated.png', 'd.step'))
 
 
-def without_css(form):
-    """form with each inline style that holds only CSS characters and no host word blanked."""
-    return CSS.sub(lambda m: m[0] if any(map(host_word, re.findall(r'[A-Za-z0-9%\-]+', m[0]))) else ' ', form)
+class LeakOracleFailure(AssertionError):
+    """The one leak-oracle failure: a published leaf that no field grammar covers."""
+    def __init__(self, where, path, value):
+        self.where, self.path, self.value = where, path, value
+        super().__init__(oracle_message(where, path, value))
 
 
-def host_word(word):
-    word = urllib.parse.unquote(word).lower()
-    return any(m in word for m in HOST_MARKERS)
+def oracle_message(where, path, value):
+    return f'leak oracle: {path} = {value!r} matches no published field grammar (surface {where!r})'
 
 
-def allowed_host(host, port=None):
-    """host (already decoded) is published only when it is an ALLOWED_HOSTS name, with a port 0-65535 if any."""
-    return host.lower() in ALLOWED_HOSTS and (port is None or int(port) <= 65535)
+class Uncovered(Exception):
+    def __init__(self, path, value):
+        super().__init__(path, value)
+        self.path, self.value = path, value
 
 
-def allowed_uri(candidate):
-    """A scheme candidate is allowed only as https with a plain ALLOWED_HOSTS authority; anything urllib.parse
-    cannot parse fails closed."""
-    if candidate[:8].lower() != 'https://' or '@' in candidate or BAD_ESCAPE.search(candidate):
-        return False
+_FIXTURES = []
+
+
+@contextlib.contextmanager
+def publication_fixtures(probe):
+    """Within the block, probe (a string or list of strings) is covered exactly where run_real_publication_test
+    injects it: as the review_probe value of a JSON object or list item, and as the text after an HTML page."""
+    _FIXTURES.append(probe)
     try:
-        parts = urllib.parse.urlsplit(candidate)
-        port = parts.port
-    except ValueError:
-        return False
-    return (re.fullmatch(r'[A-Za-z0-9.\-]+(?::\d+)?', parts.netloc) is not None
-            and allowed_host(parts.hostname or '', port))
+        yield
+    finally:
+        _FIXTURES.pop()
 
 
-def strip_wrappers(token):
-    return token.lstrip("([{'").rstrip(")]}'.,;:!?")
+def _fixture_json(value):
+    return bool(_FIXTURES) and value == _FIXTURES[-1]
 
 
-@functools.lru_cache(maxsize=None)
-def token_leaks(token):
-    """The candidates of one token that have no allowed shape (a tuple; tokens repeat across surfaces)."""
-    return tuple(_token_leaks(token))
+def _fixture_text(text):
+    probe = _FIXTURES[-1] if _FIXTURES else None
+    return probe is not None and text == ''.join('\n' + t for t in ([probe] if isinstance(probe, str) else probe))
 
 
-def _token_leaks(token):
-    core = strip_wrappers(token)
-    if not core or any(shape.fullmatch(core) for shape in TOKEN_SHAPES.values()):
-        return []
-    found = [w for w in re.findall(r'[A-Za-z0-9%\-]+', core) if host_word(w)]
-    found += [a for a in ip_addresses(core)] + IPV4.findall(core)
-    found += [m[0] for m in HOST_PORT.finditer(core) if not allowed_host(urllib.parse.unquote(m[1]), m[2])]
-    # "name:80" is a host:port candidate (above), not a scheme.
-    schemes = [m for m in SCHEME.finditer(core) if not re.match(r'\d+(?![A-Za-z0-9])', core[m.end():])]
-    if schemes:
-        found += [core[m.start():] for m in schemes if not allowed_uri(core[m.start():])]
-        return found + list(token_leaks(core[:schemes[0].start()]))
-    for m in re.finditer('//', core):
-        if core[m.end():] and not allowed_uri('https:' + core[m.start():]):
-            found.append(core[m.start():])
-    if '@' in core:
-        mailbox = MAILBOX.fullmatch(core)
-        domain = mailbox and mailbox[1]
-        if not domain or not (allowed_host(domain) or ('.' not in domain and not host_word(domain))):
-            found.append(core)
-        return found
-    for m in DOTTED.finditer(core):
-        if not (allowed_host(urllib.parse.unquote(m[0])) or TOKEN_SHAPES['number'].fullmatch(m[0])):
-            found.append(m[0])
-    return found
+def _alternation(values):
+    return '(?:' + '|'.join(re.escape(v) for v in sorted(values, key=lambda v: (-len(v), v))) + ')'
 
 
-def json_strings(data):
-    if isinstance(data, str):
-        yield data
-    elif isinstance(data, dict):
-        for key, value in data.items():
-            yield from json_strings(key)
-            yield from json_strings(value)
-    elif isinstance(data, list):
-        for value in data:
-            yield from json_strings(value)
+def _basename_re():
+    return _alternation(set(REAL_BASENAMES) | FIXTURE_BASENAMES)
 
 
-def published_forms(body):
-    """body as published, HTML-unescaped and as JSON strings, each also percent-decoded until stable."""
-    forms = [body, html.unescape(body)]
-    with contextlib.suppress(ValueError):
-        forms += list(json_strings(json.loads(body)))
-    for form in forms:
-        for _ in range(4):
-            yield form
-            decoded = urllib.parse.unquote(form)
-            if decoded == form:
-                break
-            form = decoded
+class Leaf:
+    def __init__(self, name, accepts):
+        self.name, self.accepts = name, accepts
 
 
-def leak_candidates(body):
-    """Every URL-ish or host-ish candidate in any decoded form of body that has no allowed shape."""
-    tokens = set()
-    for form in set(published_forms(body)):
-        tokens.update(TOKEN.findall(without_css(form)))
-    return sorted({candidate for token in tokens for candidate in token_leaks(token)})
+def literal(*values):
+    return Leaf('literal', lambda v: any(type(v) is type(x) and v == x for x in values))
+
+
+def text(pattern, nullable=False):
+    compiled = re.compile(pattern)
+    return Leaf(pattern, lambda v: (nullable and v is None) or (isinstance(v, str) and compiled.fullmatch(v) is not None))
+
+
+def lazy_text(build, nullable=False):
+    """A text leaf whose pattern is built on first use (basename alternations change with FIXTURE_BASENAMES)."""
+    cache = {}
+
+    def accepts(v):
+        if 'pattern' not in cache:
+            cache['pattern'] = re.compile(build())
+        return (nullable and v is None) or (isinstance(v, str) and cache['pattern'].fullmatch(v) is not None)
+    return Leaf('lazy', accepts)
+
+
+def count(nullable=True):
+    return Leaf('count', lambda v: (nullable and v is None) or (type(v) is int and 0 <= v <= _COUNT_MAX))
+
+
+class Record:
+    def __init__(self, fields, optional=()):
+        self.fields, self.optional = fields, set(optional)
+
+
+class ListOf:
+    def __init__(self, item):
+        self.item = item
+
+
+class Nullable:
+    def __init__(self, grammar):
+        self.grammar = grammar
+
+
+def check_value(value, grammar, path):
+    if isinstance(grammar, Nullable):
+        if value is not None:
+            check_value(value, grammar.grammar, path)
+    elif isinstance(grammar, Leaf):
+        if not grammar.accepts(value):
+            raise Uncovered(path, value)
+    elif isinstance(grammar, ListOf):
+        if not isinstance(value, list):
+            raise Uncovered(path, value)
+        for n, item in enumerate(value):
+            check_value(item, grammar.item, f'{path}[{n}]')
+    elif isinstance(grammar, Record):
+        if not isinstance(value, dict):
+            raise Uncovered(path, value)
+        for key, item in value.items():
+            if key not in grammar.fields:
+                raise Uncovered(f'{path}.{key}', item)
+            check_value(item, grammar.fields[key], f'{path}.{key}')
+        missing = set(grammar.fields) - set(value) - grammar.optional
+        if missing:
+            raise Uncovered(f'{path}.{sorted(missing)[0]}', '<absent>')
+    else:
+        check_value(value, grammar(value), path)  # a dispatcher returns the grammar for value
+
+
+LABEL_RE = r'(?:(?:Iteration|Revision|Candidate|Milestone|Diagnostic|Fixture) (?:0|[1-9]\d{0,5})|<redacted>)'
+STAGES = {'placement': 'Placement', 'routing': 'Routing in progress', 'routed': 'Routed', 'review': 'Design review',
+          'diagnostic': 'Diagnostic', 'fixture': 'Test fixture'}  # render_gallery.py:63
+NOTICES = (  # render_gallery.py:50
+    'File availability is not proof that KiCad loaded a model; inspect native render logs.',
+    'The board hash binds the saved PCB; component models may come from current local KiCad libraries and are not '
+    'bound by that hash.', 'Geometry is for visual inspection, not electrical or fabrication acceptance.')
+LIMITATION = ('Publisher verifies the retained candidate and input bytes, not the analysis or the adoption of any '
+              'proposed change.')  # render_gallery.py:55
+ROUTING = {'unrouted': 'Unrouted (verified: the retained board has no tracks or vias)',
+           'partially-routed': 'Partially routed (publisher statement; tracks or vias present)',
+           'routed': 'Routed (publisher statement; completeness not verified)'}  # render_gallery.py:69
+ADOPTION = {'not-adopted': 'Proposed change NOT adopted (publisher statement)',
+            'adopted': 'Proposed change adopted (publisher statement, not verified)',
+            'no-proposal': 'No change proposed (publisher statement)'}  # render_gallery.py:72
+RECORDED = {  # render_gallery.py:82
+    'routing': {'routed': ('Routed: the bound board has tracks or vias (completeness not verified)', None),
+                'unrouted': ('Unrouted: the bound board has no tracks, arcs or vias', 'Unrouted')},
+    'adoption': {'adopted': ('Adopted (recorded disposition)', None),
+                 'not-adopted': ('Not adopted (recorded disposition)', 'Not adopted')},
+    'qualification': {'qualified': ('Qualified (recorded disposition, not verified by the gallery)', None),
+                      'unqualified': ('Not qualified (recorded disposition, not machine qualification)', 'Not qualified')},
+    'scope': {'full': ('Full design candidate (recorded)', None),
+              'models-only': ('Models-only derivative: only 3D model references changed; placement and structure '
+                              'unchanged (recorded)', 'Models-only derivative')}}
+DEFECTS = {'silk': 'silkscreen defects (native DRC silk_* violations)', 'drc': 'native DRC violations',
+           'review': 'defects open in the recorded review'}  # render_gallery.py:93
+PROVENANCE = {'manufacturer': 'manufacturer model', 'mechanical': 'mechanical model',
+              'datasheet-derived': 'datasheet-derived visualization model, not manufacturer or mechanical model '
+                                   'evidence'}  # render_gallery.py:95
+EVIDENCE_ROLES = ('board', 'association', 'receipt', 'design-diff', 'drc', 'index', 'model', 'review')  # :99
+VIEWS = ('top', 'bottom', 'isometric')  # render_gallery.py:27
+
+
+def warning_re():
+    """_warning (render_gallery.py:171): a notice, or a rebuilt code with allowlisted parameters."""
+    views, n = _alternation(VIEWS), _PIXELS_RE
+    return ('(?:' + _alternation(NOTICES) + f'|{_DESIGNATOR_RE}: no 3D model is declared'
+            f'|{_DESIGNATOR_RE}: (?:missing|unresolved) 3D model (?:{_basename_re()}|<redacted>)'
+            f'|{views}: KiCad produced {n}×{n} for requested {n}×{n}|{views}: <redacted>|<redacted>)')
+
+
+HASH, ID, TIME = text(_HASH_RE, True), text(_ID_RE, True), text(_TIME_RE, True)
+NAME = lazy_text(lambda: f'(?:{_basename_re()}|<redacted>)')  # _name, _basename
+PATH_NAME = lazy_text(lambda: f'(?:{_basename_re()}|<redacted>)', nullable=True)
+WARNINGS = ListOf(lazy_text(warning_re))
+EVIDENCE = ListOf(literal(*EVIDENCE_ROLES))
+LABEL, STAGE = text(LABEL_RE), literal(*STAGES, '<redacted>')
+STATUS_RECORD = Record({
+    'id': ID, 'schema': literal('agent-ee.gallery-status/1', None),
+    'subject': Record({'area': literal('bundles', 'diagnostics', None), 'id': ID, 'manifest_sha256': HASH,
+                       'board_sha256': HASH}),
+    'label': Nullable(LABEL), 'stage': Nullable(STAGE),
+    **{key: Record({'value': literal(*vocabulary, None), 'evidence': EVIDENCE}) for key, vocabulary in RECORDED.items()},
+    'open_defects': Record({'count': count(), 'class': literal(*DEFECTS, None), 'evidence': EVIDENCE}),
+    'drc': Record({'violations': count(), 'raw_unconnected_items': count(), 'evidence': EVIDENCE}),
+    'models': ListOf(Record({'reference': text(_DESIGNATOR_RE, True), 'provenance': literal(*PROVENANCE, None),
+                             'transparency': literal('verified', None), 'sha256': HASH, 'evidence': EVIDENCE})),
+    'evidence': ListOf(Record({'role': literal(*EVIDENCE_ROLES, None), 'name': NAME, 'sha256': HASH})),
+    'published_at': TIME}, optional=('id',))
+CLAIMS = Record({
+    **{key: literal(*vocabulary, None) for key, vocabulary in RECORDED.items()},
+    'open_defects': Nullable(Record({'count': count(False), 'class': literal(*DEFECTS)})),
+    'drc': Nullable(Record({'violations': count(), 'raw_unconnected_items': count()})),
+    'models': ListOf(Record({'reference': text(_DESIGNATOR_RE), 'provenance': literal(*PROVENANCE, None),
+                             'transparency': literal('verified', None), 'sha256': HASH}))})
+RECORDED_STATUS = Record({'subject': Record({'area': literal('bundles', 'diagnostics'), 'id': ID}),
+                          'attached': literal('matched', 'mismatched', 'none'), 'record': Nullable(STATUS_RECORD),
+                          'shown': Nullable(CLAIMS)})
+BUNDLE = Record({
+    'id': ID, 'schema': literal('agent-ee.gallery-bundle/3'), 'label': LABEL, 'stage': STAGE, 'board_sha256': HASH,
+    'candidate_id': HASH, 'published_at': TIME, 'rendered_at': TIME,
+    'model_coverage': Record({'summary': Record({key: count() for key in (
+        'footprints', 'models', 'footprints_fully_resolved', 'resolved', 'missing', 'unresolved', 'disabled',
+        'no_model')})}),
+    'warnings': WARNINGS,
+    'images': ListOf(lambda image: Record({'view': literal(image.get('view') if image.get('view') in VIEWS else ()),
+                                           'path': literal(f'{image.get("view")}.png'), 'sha256': HASH})
+                     if isinstance(image, dict) else literal()),
+    'viewer': literal(True, False), 'recorded_status': RECORDED_STATUS}, optional=('id', 'recorded_status'))
+VIEWER = Record({
+    'schema': literal('agent-ee.viewer/1', None), 'publication': literal('agent-ee.gallery-viewer/2'),
+    'board': Record({'name': PATH_NAME, 'path': PATH_NAME, 'sha256': HASH}), 'candidate_id': HASH,
+    'captured_board': PATH_NAME, 'model': literal('board.glb'), 'warnings': WARNINGS,
+    'coordinates': Record({'up': literal('Y', 'Z', None), 'units': literal('m', None)}), 'model_sha256': HASH,
+    'recorded_status': RECORDED_STATUS}, optional=('recorded_status',))  # served with it, render_gallery.py:1254
+DIAGNOSTIC = Record({
+    'id': ID, 'schema': literal('agent-ee.gallery-diagnostic/4', None), 'kind': literal('annotated-2d-diagnostic'),
+    'label': LABEL, 'stage': STAGE, 'candidate_id': HASH, 'captured_board': PATH_NAME, 'board_sha256': HASH,
+    'routing': Record({'status': literal(*ROUTING, None), 'copper_items': count()}),
+    'adoption': Record({'status': literal(*ADOPTION, None), 'verified': literal(False)}), 'published_at': TIME,
+    'source_packet': Record({'name': NAME, 'sha256': HASH}), 'source_image': Record({'name': NAME, 'sha256': HASH}),
+    'image': Record({'path': literal('image.png'), 'width': count(), 'height': count(), 'sha256': HASH}),
+    'limitation': literal(LIMITATION), 'recorded_status': RECORDED_STATUS}, optional=('id', 'recorded_status'))
+
+
+def record_grammar(value):
+    """The record a published JSON object is, by the fields only that record has."""
+    if isinstance(value, dict):
+        for key, grammar in (('attached', RECORDED_STATUS), ('publication', VIEWER), ('kind', DIAGNOSTIC),
+                             ('subject', STATUS_RECORD), ('images', BUNDLE)):
+            if key in value:
+                return grammar
+        if value:  # no record has this object's fields: its first field is uncovered
+            return Record({})
+    return literal()
+
+
+def check_json(data, path='$'):
+    """A published JSON surface: one record, or a list of records (a listing)."""
+    if isinstance(data, list):
+        for n, item in enumerate(data):
+            if not (isinstance(item, dict) and set(item) == {'review_probe'} and _fixture_json(item['review_probe'])):
+                check_value(item, record_grammar, f'{path}[{n}]')
+    elif isinstance(data, dict) and 'review_probe' in data and _fixture_json(data['review_probe']):
+        check_value({k: v for k, v in data.items() if k != 'review_probe'}, record_grammar, path)
+    else:
+        check_value(data, record_grammar, path)
+
+
+# --- HTML -------------------------------------------------------------------
+PAGE_CSS = ('body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}'
+            'a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;'
+            'margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));'
+            'gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre'
+            '{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;'
+            'border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;'
+            'color:#fff}.complete{background:#1e5a3a;color:#fff}.recorded{margin:12px 0}.button{display:inline-block;'
+            'padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section'
+            '{padding:16px}.images{grid-template-columns:1fr}}')  # render_gallery.py:1170
+BANNER_STYLE = ('background:#1b2735;color:#e7eef7;padding:8px 16px;font:14px system-ui;max-height:40vh;'
+                'overflow:auto')  # render_gallery.py:1183
+ROUTE_RE = (rf'/bundles/{_ID_RE}/(?:top\.png|bottom\.png|isometric\.png|manifest\.json|status\.json|index\.html|'
+            rf'viewer/index\.html)|/diagnostics/{_ID_RE}/(?:image\.png|index\.html|manifest\.json)')  # :1214-1216
+ATTRIBUTES = {  # tag: {attribute: grammar}; any other tag or attribute is uncovered
+    'html': {'lang': literal('en')}, 'body': {}, 'title': {}, 'h1': {}, 'h2': {}, 'strong': {}, 'li': {},
+    'details': {}, 'summary': {}, 'figure': {}, 'figcaption': {}, 'style': {},
+    'meta': {'charset': literal('utf-8'), 'name': literal('viewport'),
+             'content': literal('width=device-width, initial-scale=1')},
+    'p': {'class': literal('hash', 'coverage', 'badge unknown', 'badge incomplete', 'badge complete'),
+          'role': literal('status')},
+    'ul': {'class': literal('status')},
+    'div': {'class': literal('images', 'recorded'), 'id': literal('diagnostics'), 'style': literal(BANNER_STYLE)},
+    'section': {'id': text(rf'diagnostic-{_ID_RE}')},
+    'a': {'href': text(rf'/|#diagnostics|{ROUTE_RE}'), 'class': literal('button'), 'style': literal('color:#8fc9ff')},
+    'img': {'src': text(rf'/bundles/{_ID_RE}/(?:top|bottom|isometric)\.png|/diagnostics/{_ID_RE}/image\.png'),
+            'alt': text(r'(?:top|bottom|isometric) native 3D view|Annotated 2D diagnostic; open full-size image')}}
+
+
+def page_text_re():
+    """Every text node the page templates emit, with their parameters' grammars."""
+    count_t, hash_t, time_t = r'(?:0|[1-9]\d{0,5})', rf'(?:{_HASH_RE}|unknown)', rf'(?:{_TIME_RE}|unknown)'
+    stage_t = _alternation([*STAGES.values(), '<redacted>'])
+    key_t = _alternation(k.title() for k in RECORDED)
+    limit = ('(?:' + f'{key_t} unknown|Unrouted|Not adopted|Not qualified|Models-only derivative|Open defects unknown|'
+             f'[1-9]\\d{{0,5}} open defects|{_DESIGNATOR_RE} model (?:datasheet-derived|provenance unknown)|'
+             f'{_DESIGNATOR_RE} transparency unknown|Other model provenance unknown)')
+    recorded = '|'.join(f'{re.escape(key.title())}: {_alternation(t for t, _ in vocabulary.values())}'
+                        for key, vocabulary in RECORDED.items())
+    item = (rf'(?:{_alternation(EVIDENCE_ROLES)}|unknown): (?:{_basename_re()}|<redacted>) SHA-256 {hash_t}')
+    fixed = _alternation([
+        'PCB render gallery', 'PCB render bundle', 'PCB diagnostic supplement', 'Back to render gallery',
+        'Native KiCad images · Latest candidate and retained history',
+        'Visual inspection only. Missing component models can make geometry incomplete; these images do not approve '
+        'electrical or fabrication readiness.', 'Diagnostic supplements',
+        'No completed render bundles have been published yet.',
+        'Model coverage unknown: do not treat this geometry as complete',
+        'Incomplete models: geometry is missing components', 'All declared 3D models resolved',
+        'Attached status record',
+        'Recorded status is a publisher record bound by hash to retained evidence, not new validation by the gallery.',
+        'Interactive viewer not published for this candidate.', 'Open interactive 3D viewer', 'Top', 'Bottom',
+        'Isometric', 'Publication manifest', ' · ', 'Recorded status', 'Bundle page',
+        'Annotated 2D diagnostic supplement', 'Open diagnostic', 'Diagnostic provenance',
+        'Status unknown: not bound to a verified retained candidate, or routing and adoption status are not recorded',
+        'No Latest render to compare: treat as historical', 'Same board as the Latest render',
+        'Historical: not the board in the Latest render', LIMITATION,
+        'Other component models: provenance unknown (not recorded)', 'Native DRC report: unknown (not recorded)',
+        'Open defects: unknown (not recorded)',
+        *(f'{reason}: routing, adoption, qualification, scope, open defects and model provenance are unknown'
+          for reason in ("An attached status record does not match this publication's bytes",
+                         'No status record attached'))])
+    return '(?:' + '|'.join([
+        fixed, rf'(?:Latest: )?{LABEL_RE}', rf'Stage: {stage_t}(?: · Rendered {time_t})?', rf'Board SHA-256: {hash_t}',
+        rf'Models: {count_t} resolved; {count_t} missing; {count_t} unresolved; {count_t} disabled; '
+        rf'{count_t} footprints without a model\.'.replace(count_t, rf'(?:{count_t}|unknown)'),
+        rf'Recorded limitations: {limit}(?:; {limit})*', rf'{key_t}: unknown \(not recorded\)', recorded,
+        rf'Open defects: {count_t} {_alternation(DEFECTS.values())} \(recorded\)',
+        rf'Native DRC \(recorded report, not re-run by the gallery\): (?:{count_t}|unknown) violations; '
+        rf'(?:{count_t}|unknown) raw unconnected items \(not an incomplete-net count\)',
+        rf'Model {_DESIGNATOR_RE}: (?:{_alternation(PROVENANCE.values())}|provenance unknown \(not recorded\)); '
+        rf'(?:transparency verified|transparency unknown \(not verified\))(?:; model SHA-256 {_HASH_RE})?',
+        rf'Retained evidence: {item}(?: · {item})*', rf'Model warnings \({count_t}\)', warning_re(),
+        rf'Retained candidate {_HASH_RE}', rf'Routing: {_alternation(ROUTING.values())}',
+        rf'Adoption: {_alternation(ADOPTION.values())}', rf'Published {time_t}']) + ')'
+
+
+class PageParser(HTMLParser):
+    """The elements, attributes, text nodes and style content of an HTML surface, as events."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.events, self.stack = [], []
+
+    def handle_starttag(self, tag, attrs):
+        self.events.append(('tag', '/'.join(self.stack + [tag]), tag, attrs))
+        if tag not in ('meta', 'img'):
+            self.stack.append(tag)
+
+    handle_startendtag = handle_starttag
+
+    def handle_endtag(self, tag):
+        self.events.append(('end', '/'.join(self.stack), tag, None))
+        if tag in self.stack:
+            del self.stack[len(self.stack) - 1 - self.stack[::-1].index(tag):]
+
+    def handle_data(self, data):
+        self.events.append(('text', '/'.join(self.stack), data, self.stack[-1] if self.stack else None))
+
+    def handle_decl(self, decl):
+        self.events.append(('decl', '/'.join(self.stack), decl, None))
+
+    def unknown_decl(self, data):
+        self.events.append(('other', '/'.join(self.stack), data, None))
+
+    handle_comment = handle_pi = unknown_decl
+
+
+_PAGE_TEXT = {}
+
+
+def check_html(body, path='html'):
+    if 'pattern' not in _PAGE_TEXT:
+        _PAGE_TEXT['pattern'] = re.compile(page_text_re())
+    parser = PageParser()
+    parser.feed(body)
+    parser.close()
+    for kind, where, value, extra in parser.events:
+        here = f'{path}:{where or "(top)"}'
+        if kind == 'decl':
+            if value != 'doctype html':
+                raise Uncovered(here + ' <!...>', value)
+        elif kind == 'tag':
+            grammar = ATTRIBUTES.get(value)
+            if grammar is None:
+                raise Uncovered(here + ' <tag>', value)
+            names = [name for name, _ in extra]
+            for name, attribute in extra:
+                if name not in grammar or names.count(name) > 1 or not grammar[name].accepts(attribute):
+                    raise Uncovered(f'{here} @{name}', attribute)
+        elif kind == 'end':
+            if value not in ATTRIBUTES:
+                raise Uncovered(here + ' </tag>', value)
+        elif kind == 'text':
+            if extra == 'style':
+                if value != PAGE_CSS:
+                    raise Uncovered(here + ' style', value)
+            elif not (_PAGE_TEXT['pattern'].fullmatch(value) or _fixture_text(value)):
+                raise Uncovered(here + ' text', value)
+        else:
+            raise Uncovered(here + ' markup', value)
+
+
+_SEGMENT_END = re.compile(r'>(?=[\[{])')
+
+
+def _unique_pairs(pairs):
+    """A JSON object, refused when a key repeats (the parsed tree would keep only one of the published values)."""
+    keys = [key for key, _ in pairs]
+    if len(set(keys)) != len(keys):
+        raise ValueError('repeated key')
+    return dict(pairs)
+
+
+def _no_constant(name):
+    raise ValueError(f'non-JSON constant {name}')
+
+
+def check_publication(body, where):
+    """Parse body (one surface, or surfaces as a test concatenates them) and cover every leaf, else
+    LeakOracleFailure naming the first uncovered field path and value."""
+    decoder, p, n = json.JSONDecoder(object_pairs_hook=_unique_pairs, parse_constant=_no_constant), 0, 0
+    try:
+        while p < len(body):
+            if body[p].isspace():
+                p += 1
+                continue
+            if body[p] in '[{':
+                try:
+                    data, end = decoder.raw_decode(body, p)
+                except ValueError:
+                    raise Uncovered(f'surface[{n}]', body[p:])
+                check_json(data, f'surface[{n}]$')
+            elif body[p] == '<':
+                match = _SEGMENT_END.search(body, p)
+                end = match.end() if match else len(body)
+                check_html(body[p:end], f'surface[{n}]')
+            else:
+                raise Uncovered(f'surface[{n}]', body[p:])
+            p, n = end, n + 1
+    except Uncovered as uncovered:
+        raise LeakOracleFailure(where, uncovered.path, uncovered.value) from None
 
 
 def assert_no_uri_leak(test, body, where):
+    check_publication(body, where)
     for leak in LEAKS:
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
-    test.assertEqual(leak_candidates(body), [], where)
-    test.assertEqual(ula_addresses(urllib.parse.unquote(body)), [], where)
 
 
 # The Diagnostic 6 bundle as the render job published it (2026-10-22, run 20261022T231757Z): its stored manifest
@@ -401,96 +701,26 @@ def diagnostic_6():
     return manifest, status
 
 
-class LeakScanTests(unittest.TestCase):
-    def test_generated_id_containing_fd00_is_not_a_leak(self):
-        body = json.dumps({'id': 'a1fd00b2c3d4e5f6', 'diagnostic': 'fd00deadbeef', 'sha256': 'fd00' + '0' * 60})
-        assert_no_uri_leak(self, body, 'hex id')
 
-    def test_real_ula_address_still_fails(self):
-        for body in ('http://[fd00:1234::1]/x', 'host fd00::1 end', '{"a": "FD00:abcd::2"}', 'host:fd00::1',
-                     'fd00::1:', '"host:fd00::1:"', 'beef:fd00::1', '[fd00::1]:8080'):
-            with self.assertRaises(AssertionError, msg=body):
-                assert_no_uri_leak(self, body, body)
 
-    def test_leaked_uri_or_host_still_fails(self):
-        for body in ('file:///private-share/m.step', 'smb://user-hidden@server/x', 'http://localhost/x'):
-            with self.assertRaises(AssertionError, msg=body):
-                assert_no_uri_leak(self, body, body)
+def bundle_record(**changes):
+    """A published bundle record, as _bundle rebuilds it, with changes."""
+    record = gallery._bundle({'id': '0' * 12 + '-' + '1' * 12, 'label': 'Iteration 1', 'stage': 'placement',
+                              'board_sha256': 'a' * 64, 'published_at': '2026-10-22T23:18:18Z',
+                              'warnings': ['R1: missing 3D model board.kicad_pcb'], 'images': [{'view': 'top'}]})
+    record.update(changes)
+    return record
 
-    def test_uri_and_host_tokens_are_parsed(self):
-        for body, expected in (('see FILE:///x', 'FILE:///x'), ('"smb://bob@srv/x"', 'smb://bob@srv/x'),
-                               ('<http://LocalHost:80/x>', 'http://LocalHost:80/x'),
-                               ('http://[fd00::1]/x', 'http://[fd00::1]/x')):
-            self.assertIn(expected, leak_candidates(body), body)
-        self.assertEqual(leak_candidates('https://example.org/x'), [])
 
-    def test_userinfo_with_semicolons_or_commas_is_detected(self):
-        for body in ('https://bob;secret@example.org/x', 'https://bob,secret@example.org/x',
-                     '{"u": "https://bob;secret@example.org/x"}', 'see (https://a,b:c;d@example.org/x), ok'):
-            self.assertTrue(leak_candidates(body), body)
-            with self.assertRaises(AssertionError, msg=body):
-                assert_no_uri_leak(self, body, body)
-
-    def test_encoded_and_uppercase_hosts_are_detected(self):
-        for body in ('http://%6cocalhost/x', 'http://%68idden/x', 'http://%66%64%30%30%3a%3a1/', '%6c%6f%63%61%6c%68%6f%73%74',
-                     'LOCALHOST', 'FD00::1', 'HIDDEN', 'http://%6C%6F%63%61%6C%68%6F%73%74:80/'):
-            self.assertTrue(leak_candidates(body), body)
-            with self.assertRaises(AssertionError, msg=body):
-                assert_no_uri_leak(self, body, body)
-
-    def test_malformed_authority_fails_closed(self):
-        for body in ('http://example.org:bad/', 'http://example.org:65536/', 'http://', 'https:///x', 'http://[broken/',
-                     'http://example.org:-1/'):
-            self.assertTrue(leak_candidates(body), body)
-            with self.assertRaises(AssertionError, msg=body):
-                assert_no_uri_leak(self, body, body)
-
-    def test_ordinary_uris_and_prose_still_pass(self):
-        for body in ('', '{}', 'https://example.org/x', 'https://example.org:8443/a;b,c', 'a1fd00b2c3d4e5f6 plain prose',
-                     '{"rendered": "ok", "n": 3}'):
-            assert_no_uri_leak(self, body, body)
-
-    def test_ula_tokenizer_survives_adjacent_delimiters(self):
-        for body in ('host:fd00::1', 'fd00::1:', ':fd00::1:'):
-            self.assertEqual(ula_addresses(body), ['fd00::1'], body)
-        self.assertEqual(ula_addresses('fcff::1 fe00::1 a1fd00b2c3d4e5f6 12:34:56'), [])
-
-    def test_each_allowed_shape_passes_on_its_published_instance(self):
-        instances = {
-            'time': ['2026-10-22T23:18:18.401181+00:00'],
-            'file': ['telemetry-pod.kicad_pcb', 'rj_diagnostic-6_305fp+4holes_unrouted_not-qualified_new-board_20261022T231757Z.json',
-                     'top.png', 'index.html', 'SOIC-8_3.9x4.9mm_P1.27mm.step', 'c-1-776163-1-t-3d.stp', 'INDEX.md',
-                     'Hidden.step'],
-            'gallery path': ['/', '/bundles/adfb7668ac0c-86b84f0f741e/top.png', '/bundles/adfb7668ac0c-86b84f0f741e/status.json'],
-            'schema': ['agent-ee.gallery-bundle/3', 'agent-ee.gallery-status/1'],
-            'number': ['3', '0.5']}
-        for shape, values in instances.items():
-            for value in values:
-                self.assertTrue(TOKEN_SHAPES[shape].fullmatch(value), (shape, value))
-                self.assertEqual(leak_candidates(value), [], value)
-        self.assertEqual(leak_candidates(
-            'https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#accessors'), [])
-        self.assertEqual(leak_candidates('Rendered 2026-10-22T23:18:18.189096+00:00 · R1: missing 3D model m.step'), [])
-
-    def test_inline_css_is_blanked_only_without_host_words(self):
-        self.assertEqual(leak_candidates('<style>a{color:#8fc9ff}img{width:100%}@media(max-width:700px){p{margin:0}}</style>'), [])
-        self.assertEqual(leak_candidates('<div style="background:#1b2735;padding:8px 16px;font:14px system-ui">'), [])
-        for body in ('<style>.localhost{color:#fff}</style>', '<div style="color:%6cocalhost">',
-                     '<style>a{background:url(//example.net/x)}</style>'):
-            self.assertTrue(leak_candidates(body), body)
-
-    def test_bare_host_marker_words_fail_in_any_case(self):
-        # No publication holds a bare marker word, so prose such as "Hidden component" fails with it.
-        for body in ('HIDDEN', 'Hidden component count is zero', 'LocalHost', 'PRIVATE-host', '%41lice'):
-            self.assertTrue(leak_candidates(body), body)
-
-    def test_diagnostic_6_publication_is_allowed(self):
-        """The real Diagnostic 6 bundle, stored and served by the gallery, has no candidate off the allow-list."""
+class StructuralOracleTests(unittest.TestCase):
+    def test_diagnostic_6_publication_is_covered_as_published(self):
+        """F1: the real Diagnostic 6 JSON and pages, stored and served, are covered with no spelling workaround."""
         manifest, status = diagnostic_6()
         manifest_bytes, status_bytes = gallery._encode(manifest), gallery._encode(status)
         self.assertEqual(hashlib.sha256(manifest_bytes).hexdigest(), D6_MANIFEST_SHA256)
         self.assertEqual(hashlib.sha256(status_bytes).hexdigest(), D6_STATUS_SHA256)
         self.assertEqual(D6_STATUS_ID, D6_MANIFEST_SHA256[:12] + '-' + D6_STATUS_SHA256[:12])
+        self.assertIn(b'2384\\u00d71568', manifest_bytes)  # the stored spelling of "2384×1568", checked as is
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'bundles' / D6_ID).mkdir(parents=True)
@@ -512,116 +742,198 @@ class LeakScanTests(unittest.TestCase):
                 server.shutdown()
                 thread.join()
                 server.server_close()
-        self.assertEqual(len(stored), 4)
-        self.assertEqual(json.loads(served[3])['attached'], 'matched')
+        self.assertEqual((len(stored), json.loads(served[3])['attached']), (4, 'matched'))
         self.assertIn('Retained evidence: board: telemetry-pod.kicad_pcb', served[0])
         for n, body in enumerate(stored + served):
-            self.assertEqual(leak_candidates(body), [], n)
-            self.assertEqual(ula_addresses(urllib.parse.unquote(body)), [], n)
-            # LEAKS holds "\": JSON publications spell "×" as ×, the only one there.
-            unescaped = body.replace('\\u00d7', '×')
-            self.assertEqual([leak for leak in LEAKS if leak in (unescaped.lower() if leak == 'file:' else unescaped)],
-                             [], n)
+            check_publication(body, f'diagnostic 6 surface {n}')
+
+    def test_every_variable_allowance_has_a_staged_witness(self):
+        for name, witness in REAL_BASENAMES.items():
+            self.assertRegex(witness, r'^(index|statuses)\.json:[1-9]\d*$', name)
+        self.assertEqual(set(REAL_BASENAMES) & FIXTURE_BASENAMES, set())
+        for value in ('example.org', 'example.com', 'user@host', 'Hidden.step', 'intranet.corp.step'):
+            self.assertNotIn(value, set(REAL_BASENAMES) | FIXTURE_BASENAMES)
+
+    def test_an_uncovered_leaf_fails_with_the_one_message_naming_path_and_value(self):
+        record = bundle_record(warnings=['R1: missing 3D model intranet.corp.step'])
+        with self.assertRaises(LeakOracleFailure) as caught:
+            check_publication(json.dumps(record), 'probe')
+        self.assertEqual(str(caught.exception), "leak oracle: surface[0]$.warnings[0] = "
+                         "'R1: missing 3D model intranet.corp.step' matches no published field grammar "
+                         "(surface 'probe')")
+        for changes, path in (({'board_sha256': '0x0a000001'}, '$.board_sha256'),
+                              ({'model_coverage': {'summary': {**record['model_coverage']['summary'], 'models': 0.5}}},
+                               '$.model_coverage.summary.models'),
+                              ({'review_probe': 'x'}, '$.review_probe'), ({'label': 'Iteration 01'}, '$.label')):
+            with self.assertRaises(LeakOracleFailure) as caught:
+                check_publication(json.dumps(bundle_record(**changes)), 'probe')
+            self.assertEqual(caught.exception.path, 'surface[0]' + path)
+
+    def test_generated_ids_and_hashes_containing_fd00_are_covered(self):
+        record = bundle_record(id='a1fd00b2c3d4-e5f6fd00a1b2', board_sha256='fd00' + '0' * 60,
+                               candidate_id='0' * 12 + 'fd00' + '0' * 48)
+        check_publication(json.dumps(record), 'hex ids')
+        rng = random.Random(452)
+        for _ in range(200):
+            value = ''.join(rng.choices('0123456789abcdef', k=12)) + 'fd00' + ''.join(rng.choices('0123456789abcdef', k=48))
+            check_publication(json.dumps(bundle_record(board_sha256=value)), value)
+
+    def test_pages_are_covered_and_every_markup_change_fails(self):
+        manifest, status = diagnostic_6()
+        body = page([{'id': D6_ID, **manifest}]).decode()
+        check_publication(body, 'page')
+        for old, new in (('<h2>', '<h2 title="x">'), ('href="/bundles/', 'href="https://example.org/bundles/'),
+                         (PAGE_CSS, PAGE_CSS.replace('}', ':root{--endpoint:10.0.0.1}', 1)),
+                         ('<p>Visual', '<!-- x --><p>Visual'), ('</html>', '<script>x</script></html>'),
+                         ('Board SHA-256: ', 'Board SHA-256: 0x0a000001 ')):
+            self.assertIn(old, body)
+            with self.assertRaises(LeakOracleFailure, msg=new):
+                check_publication(body.replace(old, new, 1), new)
+
+    def test_concatenated_surfaces_are_each_parsed(self):
+        assert_no_uri_leak(self, surfaces(next(corpus())), 'composed')
+        for extra in ('x', '{"export": 1}', '<b>x</b>', ' 0.5', ' NaN', '[Infinity]'):
+            with self.assertRaises(LeakOracleFailure, msg=extra):
+                check_publication(surfaces('m.step') + extra, extra)
+        record = json.dumps(bundle_record())
+        repeated = record.replace('"label": "Iteration 1"', '"label": "intranet.corp", "label": "Iteration 1"')
+        self.assertNotEqual(repeated, record)
+        with self.assertRaises(LeakOracleFailure):  # json.loads would keep only the covered value
+            check_publication(repeated, 'repeated key')
 
 
 REAL_PUBLICATION_TEST = 'test_real_packet_and_image_names_are_published_as_plain_basenames_or_redacted'
 
 
-def run_real_publication_test(probe):
-    """DiagnosticSupplementTests.REAL_PUBLICATION_TEST with probe added to every surface it checks, as review rounds
-    1-3 injected it: a review_probe field in each JSON object, an item in each JSON list, a line after each page."""
+def inject(body, probe, mode):
+    """body with probe placed as review rounds 1-3 did (append: a review_probe field in each JSON object, an item in
+    each JSON list, text after each page), into a published field (field: source_packet.name, the card label), or
+    into an attribute value (attribute: captured_board, the first href). A number goes in image.width."""
+    try:
+        data = json.loads(body)
+    except ValueError:
+        shown = html.escape(str(probe))
+        if mode == 'append':
+            return body + ''.join('\n' + str(t) for t in (probe if isinstance(probe, list) else [probe]))
+        if mode == 'field':
+            changed = re.sub(r'<h2>[^<]*</h2>', lambda _: '<h2>' + shown + '</h2>', body, count=1)
+        else:
+            changed = re.sub(r'href="[^"]*"', lambda _: 'href="' + shown + '"', body, count=1)
+        assert changed != body, (mode, probe)
+        return changed
+    records = data if isinstance(data, list) else [data]
+    for record in records:
+        if mode == 'append':
+            continue
+        if not isinstance(probe, str):
+            record['image']['width'] = probe
+        elif mode == 'field':
+            record['source_packet']['name'] = probe
+        else:
+            record['captured_board'] = probe
+    if mode == 'append':
+        if isinstance(data, list):
+            data.append({'review_probe': probe})
+        else:
+            data['review_probe'] = probe
+    return json.dumps(data)
+
+
+def run_real_publication_test(probe, mode='append', fixture=False):
+    """(testsRun, failures, errors, skips, failure text) of DiagnosticSupplementTests.REAL_PUBLICATION_TEST with probe
+    injected into every surface it checks; with fixture, probe is registered as the exact control value."""
     original = DiagnosticSupplementTests.surfaces
-    lines = ''.join('\n' + text for text in ([probe] if isinstance(probe, str) else probe))
 
     def surfaces(self, *args, **kwargs):
-        changed = []
-        for body in original(self, *args, **kwargs):
-            try:
-                data = json.loads(body)
-            except ValueError:
-                changed.append(body + lines)
-                continue
-            if isinstance(data, dict):
-                data['review_probe'] = probe
-            else:
-                data.append({'review_probe': probe})
-            changed.append(json.dumps(data))
-        return changed
+        return [inject(body, probe, mode) for body in original(self, *args, **kwargs)]
     result = unittest.TestResult()
-    with mock.patch.object(DiagnosticSupplementTests, 'surfaces', surfaces):
+    with mock.patch.object(DiagnosticSupplementTests, 'surfaces', surfaces), (
+            publication_fixtures(probe) if fixture else contextlib.nullcontext()):
         DiagnosticSupplementTests(REAL_PUBLICATION_TEST).run(result)
-    return result
+    detail = ''.join(text for _, text in result.failures + result.errors)
+    return result.testsRun, len(result.failures), len(result.errors), len(result.skipped), detail
 
 
-class AllowListMatrixTests(unittest.TestCase):
-    """The committed leak matrix. LEAK_ROWS are every leak review rounds 1-3 reported or probed (r1:
-    ee452b-gallery-fd00, r2: ee452c-tokenize, r3: ee452d-uri-failclosed, probe scripts in
-    reviews/<round>-probes/) and the redesign's own grammar cases (g); each must fail. PASSES rows are the
-    coordinator's false-positive and over-rejection controls; each must pass."""
-    LEAK_ROWS = (
-        # r1 ee452b adversarial.py and its HOLD H1 injection
-        ('r1-01', 'fd00::1'), ('r1-02', 'host:fd00::1'), ('r1-03', 'fd00::1:'), ('r1-04', 'http://[fd00::1]/x'),
-        ('r1-05', 'fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('r1-06', 'http://localhost/x'), ('r1-07', 'file:///m.step'),
-        ('r1-08', 'server-hidden'), ('r1-09', 'http://server.example/x'),
-        # r2 ee452c adversarial.py and parser_boundaries.py (HOLD H1-H3 and the accepted address forms)
-        ('r2-01', '[fd00::1]:8080'), ('r2-02', 'beef:fd00::1'), ('r2-03', 'fd00::1%eth0'),
-        ('r2-04', 'http://[fd00::1%25eth0]/'), ('r2-05', 'FD00::1'), ('r2-06', 'fcff::1'), ('r2-07', 'fe00::1'),
-        ('r2-08', '::ffff:192.168.1.2'), ('r2-09', 'http://[::ffff:192.168.1.2]/'), ('r2-10', 'http://[::ffff:127.0.0.1]/'),
-        ('r2-11', 'http://[broken/'), ('r2-12', 'http://example.org:bad/'), ('r2-13', 'http://'), ('r2-14', 'FILE:///x'),
-        ('r2-15', 'smb://bob@srv/x'), ('r2-16', 'http://LocalHost:80/x'), ('r2-17', 'http://PRIVATE-host/x'),
-        ('r2-18', 'http://HIDDEN/x'), ('r2-19', 'LOCALHOST'), ('r2-20', '//LOCALHOST/x'), ('r2-21', 'http://%6cocalhost/x'),
-        ('r2-22', 'http://%68idden/x'), ('r2-23', 'http://%66%64%30%30%3a%3a1/'),
-        ('r2-24', 'https://bob;secret@example.org/x'), ('r2-25', 'https://bob,secret@example.org/x'),
-        ('r2-26', 'https://bob@example.org/x'), ('r2-27', 'http://example.org:65536/'),
-        ('r2-28', '%6c%6f%63%61%6c%68%6f%73%74'), ('r2-29', 'HIDDEN'),
-        # r3 ee452d adversarial.py, additional.py and boundaries.py (HOLD H1-H3)
-        ('r3-01', "https://bob'pass@example.org/x"), ('r3-02', "https://bob'pass:secret@example.org/x"),
-        ('r3-03', 'LOCALHOST:80'), ('r3-04', 'http://[::1]junk/'), ('r3-05', 'http:/example.org/x'),
-        ('r3-06', 'http://example.org:-1/'), ('r3-07', 'https:///x'), ('r3-08', 'https://'),
-        ('r3-09', 'http:/LOCALHOST/x'), ('r3-10', 'http:LOCALHOST'), ('r3-11', 'http://%6C%6F%63%61%6C%68%6F%73%74:80/'),
-        # g: scheme typos, userinfo with any delimiter, bare host:port, encoding and case, IP literals and zones
-        ('g-01', 'https:example.org'), ('g-02', 'HTTPS://LOCALHOST/'), ('g-03', 'mailto:bob@example.org'),
-        ('g-04', 'https://bob!x@example.org/'), ('g-05', 'https://bob$x@example.org/'), ('g-06', 'https://bob(x)@example.org/'),
-        ('g-07', 'https://bob*x=y&z@example.org/'), ('g-08', 'https://b%40b@example.org/'), ('g-09', 'https://:secret@example.org/'),
-        ('g-10', 'example.org:65536'), ('g-11', 'intranet.corp:443'), ('g-12', '%6C%6F%63%61%6C%68%6F%73%74:80'),
-        ('g-13', '%256cocalhost'), ('g-14', 'https://еxample.org/'), ('g-15', 'fe80::1%eth0'),
-        ('g-16', '[fe80::1%25eth0]:80'), ('g-17', '10.0.0.1'), ('g-18', 'https://192.168.1.2/'), ('g-19', 'bob@localhost'),
-        ('g-20', 'https://example.org/?u=http://intranet.corp'), ('g-21', 'x=https://intranet.corp/'),
-        ('g-22', 'intranet.corp'), ('g-23', 'https://example.org.evil.test/'), ('g-24', 'https://example.org:8443@intranet.corp/'),
-        ('g-25', 'https://example.org/%zz'), ('g-26', 'bob:secret@example.org'), ('g-27', 'https://example.org\\@intranet.corp/'))
-    PASSES = (
-        'email@example.com in prose', 'commit: user@host', 'version fd00a1b', 'a1fd00b2c3d4e5f6 plain prose',
-        'https://example.org/x', 'https://example.org:0/x', 'https://example.org:65535/x', 'https://example.org:65535',
-        'https://example.org:8443/a;b,c', 'see (https://example.org)', 'see (https://example.org:8443)',
-        '(https://example.org:65535)', "'https://example.org/x'", 'Hidden.step', 'Use // for integer division', 'a//',
-        '', '{}')
-    WRAPPERS = ('{}', '({})', "'{}'", 'see {}.', '[{}]')
+class LeakRegressionTests(unittest.TestCase):
+    """The committed regression set: every probe case of review rounds 1-4, each with its round and finding, and
+    the coordinator's required cases. Round 1: reviews/ee452b-gallery-fd00-probes (adversarial.py,
+    compare_oracle.py); round 2: ee452c-tokenize-probes (adversarial.py, parser_boundaries.py); round 3:
+    ee452d-uri-failclosed-probes (adversarial.py, additional.py, boundaries.py); round 4: ee452e-allowlist-oracle-probes
+    (independent.py, supplemental.py; findings H1-H5); g: the allow-list round's own grammar rows; req: the
+    coordinator's mandatory list. Each case must fail the real publication test in every injection mode with the
+    leak-oracle message."""
+    CASES = (
+        ('r1-01', 'r1 H1', 'fd00::1'), ('r1-02', 'r1 H1', 'host:fd00::1'), ('r1-03', 'r1 H1', 'fd00::1:'),
+        ('r1-04', 'r1', 'http://[fd00::1]/x'), ('r1-05', 'r1', 'fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'),
+        ('r1-06', 'r1', 'http://localhost/x'), ('r1-07', 'r1', 'file:///m.step'), ('r1-08', 'r1', 'server-hidden'),
+        ('r1-09', 'r1', 'http://server.example/x'), ('r1-10', 'r1 H2', 'fcff::1'), ('r1-11', 'r1 H2', 'fe00::1'),
+        ('r2-01', 'r2', '[fd00::1]:8080'), ('r2-02', 'r2', 'beef:fd00::1'), ('r2-03', 'r2', 'fd00::1%eth0'),
+        ('r2-04', 'r2', 'http://[fd00::1%25eth0]/'), ('r2-05', 'r2', 'FD00::1'), ('r2-06', 'r2', '::ffff:192.168.1.2'),
+        ('r2-07', 'r2', 'http://[::ffff:192.168.1.2]/'), ('r2-08', 'r2', 'http://[::ffff:127.0.0.1]/'),
+        ('r2-09', 'r2 H3', 'http://[broken/'), ('r2-10', 'r2 H3', 'http://example.org:bad/'), ('r2-11', 'r2 H3', 'http://'),
+        ('r2-12', 'r2', 'FILE:///x'), ('r2-13', 'r2', 'smb://bob@srv/x'), ('r2-14', 'r2', 'http://LocalHost:80/x'),
+        ('r2-15', 'r2', 'http://PRIVATE-host/x'), ('r2-16', 'r2', 'http://HIDDEN/x'), ('r2-17', 'r2 H2', 'LOCALHOST'),
+        ('r2-18', 'r2 H2', '//LOCALHOST/x'), ('r2-19', 'r2 H2', 'http://%6cocalhost/x'), ('r2-20', 'r2 H2', 'http://%68idden/x'),
+        ('r2-21', 'r2', 'http://%66%64%30%30%3a%3a1/'), ('r2-22', 'r2 H1', 'https://bob;secret@example.org/x'),
+        ('r2-23', 'r2 H1', 'https://bob,secret@example.org/x'), ('r2-24', 'r2', 'https://bob@example.org/x'),
+        ('r2-25', 'r2 H3', 'http://example.org:65536/'),
+        ('r3-01', 'r3 H1', "https://bob'pass@example.org/x"), ('r3-02', 'r3 H1', "https://bob'pass:secret@example.org/x"),
+        ('r3-03', 'r3 H2', 'LOCALHOST:80'), ('r3-04', 'r3', 'http://[::1]junk/'), ('r3-05', 'r3', 'http:/example.org/x'),
+        ('r3-06', 'r3', 'http://example.org:-1/'), ('r3-07', 'r3', 'https:///x'), ('r3-08', 'r3', 'https://'),
+        ('r3-09', 'r3 H3', 'http:/LOCALHOST/x'), ('r3-10', 'r3 H3', 'http:LOCALHOST'),
+        ('r3-11', 'r3', 'http://%6C%6F%63%61%6C%68%6F%73%74:80/'), ('r3-12', 'r3', '%6c%6f%63%61%6c%68%6f%73%74'),
+        ('r3-13', 'r3', 'HIDDEN'), ('r3-14', 'r3 gap', 'Hidden component count is zero'),
+        ('r4-01', 'r4 H1', '10.23.45.67'), ('r4-02', 'r4 H1', '192.168.23.45'), ('r4-03', 'r4 H1', '172.16.23.45'),
+        ('r4-04', 'r4 H1', '169.254.23.45'), ('r4-05', 'r4 H1', 'fe80::23%eth0'), ('r4-06', 'r4 H1', '::ffff:10.0.0.1'),
+        ('r4-07', 'r4 H1', '012.000.000.001'), ('r4-08', 'r4 H1', '0x0a000001'), ('r4-09', 'r4 H1', '167772161'),
+        ('r4-10', 'r4 H1', 'https://012.000.000.001/'), ('r4-11', 'r4 H1', 'https://0x0a000001/'),
+        ('r4-12', 'r4 H1', 'LOCALHOST.'), ('r4-13', 'r4 H1', 'https://l\u043ecalhost/'),
+        ('r4-14', 'r4 H1', 'data:text/plain,secret'), ('r4-15', 'r4 H1', 'mailto:bob@buildbox'),
+        ('r4-16', 'r4 H1', 'git@buildbox:repo'), ('r4-17', 'r4 H1', 'smb://buildbox/share'),
+        ('r4-18', 'r4 H1', '\\\\server\\share'), ('r4-19', 'r4 H1', '/home/bob/projects/board'),
+        ('r4-20', 'r4 H1', '/home/bob/projects/board.step'), ('r4-21', 'r4 H2', 'https://example.org/?token=LOCALHOST'),
+        ('r4-22', 'r4 H2', 'https://example.org/?token=/home/bob/projects/board'),
+        ('r4-23', 'r4 H2', 'https://example.org/?token=intranet.corp'), ('r4-24', 'r4 H1', 'https:'),
+        ('r4-25', 'r4 H1', 'http:'), ('r4-26', 'r4 H3', '<style>.10.0.0.1{color:red}</style>'),
+        ('r4-27', 'r4 H3', '<div style="--endpoint:fe80::1">'), ('r4-28', 'r4 H1', 'intranet.corp.step'),
+        ('r4-29', 'r4 H1', '%252525256cocalhost'), ('r4-30', 'r4 H3', '<style>:root{--endpoint:10.0.0.1}</style>'),
+        ('r4-31', 'r4 H5', 'user@buildbox'), ('r4-32', 'r4 H5', '0.5'), ('r4-33', 'r4 H5', '1e20'),
+        ('g-01', 'g', 'https:example.org'), ('g-02', 'g', 'HTTPS://LOCALHOST/'), ('g-03', 'g', 'mailto:bob@example.org'),
+        ('g-04', 'g', 'https://bob!x@example.org/'), ('g-05', 'g', 'https://b%40b@example.org/'),
+        ('g-06', 'g', 'intranet.corp:443'), ('g-07', 'g', 'https://example.org.evil.test/'), ('g-08', 'g', '10.0.0.1'),
+        ('req-01', 'req', 'https://example.org/?q=%2Fhome%2Fbob'), ('req-02', 'req', 'https://%2525252e/'),
+        ('req-03', 'req', 'bob@intranet.corp'), ('req-04', 'req H5', 0.5), ('req-05', 'req H5', 1e20))
+    # The coordinator's clean controls: exact fixture values, covered only where a test registers them.
+    CONTROLS = ('email@example.com in prose', 'commit: user@host', 'version fd00a1b', 'a1fd00b2c3d4e5f6 plain prose',
+                'https://example.org/x', 'https://example.org:0/x', 'https://example.org:65535/x',
+                'https://example.org:65535', 'https://example.org:8443/a;b,c', 'see (https://example.org)',
+                'see (https://example.org:8443)', '(https://example.org:65535)', "'https://example.org/x'",
+                'Hidden.step', 'Use // for integer division', 'a//')
+    MESSAGE = re.compile(r"LeakOracleFailure: leak oracle: \S.* = .+ matches no published field grammar \(surface .+\)")
 
-    def test_every_leak_fails_the_allow_list_bare_wrapped_and_encoded(self):
-        for row, text in self.LEAK_ROWS:
-            for body in ([w.format(text) for w in self.WRAPPERS] + [json.dumps({'u': text}), json.dumps([text]),
-                         html.escape(text), '<a href="' + html.escape(text) + '">x</a>']):
-                self.assertTrue(leak_candidates(body), (row, body))
-                with self.assertRaises(AssertionError, msg=(row, body)):
-                    assert_no_uri_leak(self, body, row)
+    def test_each_case_fails_the_real_publication_test_in_every_injection_mode(self):
+        for row, finding, value in self.CASES:
+            for mode in ('append', 'field', 'attribute'):
+                ran, failures, errors, skips, detail = run_real_publication_test(value, mode)
+                self.assertEqual((ran, failures, errors, skips), (1, 1, 0, 0), (row, finding, value, mode, detail))
+                self.assertRegex(detail, self.MESSAGE, (row, mode))
 
-    def test_every_control_passes(self):
-        rng = random.Random(452)
-        ids = [''.join(rng.choices('0123456789abcdef', k=12)) + 'fd00' + ''.join(rng.choices('0123456789abcdef', k=44))
-               for _ in range(1000)]
-        for body in self.PASSES + (json.dumps({'id': ids}), json.dumps(list(self.PASSES))):
-            assert_no_uri_leak(self, body, body[:80])
+    def test_registered_controls_pass_the_real_publication_test(self):
+        ran, failures, errors, skips, detail = run_real_publication_test(list(self.CONTROLS), fixture=True)
+        self.assertEqual((ran, failures, errors, skips), (1, 0, 0, 0), detail)
 
-    def test_each_injected_leak_fails_the_real_publication_test(self):
-        for row, text in self.LEAK_ROWS:
-            result = run_real_publication_test(text)
-            self.assertEqual((result.testsRun, len(result.failures), len(result.errors), len(result.skipped)),
-                             (1, 1, 0, 0), (row, text, result.errors))
-
-    def test_injected_controls_pass_the_real_publication_test(self):
-        result = run_real_publication_test(list(self.PASSES))
-        self.assertEqual((result.testsRun, len(result.failures), len(result.errors), len(result.skipped)),
-                         (1, 0, 0, 0), result.failures + result.errors)
+    def test_controls_are_exact_fixtures_not_allowances(self):
+        """Unregistered, or registered at another value, a control fails like any uncovered leaf."""
+        for probe, fixture in ((list(self.CONTROLS), False), (list(self.CONTROLS) + ['user@buildbox'], False),
+                               ('Hidden.step', False), ('example.org', False)):
+            ran, failures, errors, skips, detail = run_real_publication_test(probe, fixture=fixture)
+            self.assertEqual((ran, failures, errors, skips), (1, 1, 0, 0))
+            self.assertRegex(detail, self.MESSAGE)
+        with publication_fixtures(['https://example.org/x']):
+            with self.assertRaises(LeakOracleFailure):
+                check_publication(json.dumps(bundle_record(review_probe=['https://example.org/y'])), 'other value')
+            with self.assertRaises(LeakOracleFailure):  # an exact control is covered only where it was injected
+                check_publication(json.dumps(bundle_record(label='https://example.org/x')), 'other place')
 
 
 def records(text):
@@ -679,6 +991,16 @@ def assert_leak_free(test, published, seed=433, rounds=20000, stride=1):
     """The oracle: no composed or seeded random text leaves a host marker in what is published."""
     for text in itertools.islice(itertools.chain(corpus(), random_texts(seed, rounds)), 0, None, stride):
         assert_no_uri_leak(test, published(text), text)
+
+
+def assert_leak_detected(test, published, **options):
+    """The negative-control contract: assert_leak_free(published) fails with the one leak-oracle failure, whose
+    message is exactly the oracle's line for the surface, field path and value it names. Returns the failure."""
+    with test.assertRaises(LeakOracleFailure) as caught:
+        assert_leak_free(test, published, **options)
+    failure = caught.exception
+    test.assertEqual(str(failure), oracle_message(failure.where, failure.path, failure.value))
+    return failure
 
 
 def publish_in_process(root, renders, label):
@@ -1260,9 +1582,8 @@ class GalleryTests(unittest.TestCase):
 
         exact = (legacy_marker, slash_only, plain_text, marker_name)
         for leaky in (lambda text: text, scrubbed, unlisted, loose_basename, *exact):
-            # A marker substring, or a candidate off the allow-list (which can catch a leaky design first).
-            with self.assertRaisesRegex(AssertionError, 'unexpectedly found in|Lists differ'):
-                assert_leak_free(self, leaky, rounds=200, stride=1 if leaky in exact else 7)
+            failure = assert_leak_detected(self, leaky, rounds=200, stride=1 if leaky in exact else 7)
+            check_publication(surfaces(failure.where), failure.where)  # the leaky addition, not the clean surfaces
         assert_leak_free(self, surfaces, seed=1, rounds=200, stride=50)
 
     def test_composed_texts_are_never_published_on_any_core_surface(self):
@@ -2308,5 +2629,6 @@ class StatusRecordTests(unittest.TestCase):
         """Negative control: a status projection that keeps free-text references is caught by the oracle."""
         from unittest import mock
         with mock.patch.object(gallery, '_DESIGNATOR', re.compile(r'.*', re.S)):
-            with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
-                assert_leak_free(self, surfaces, rounds=200, stride=7)
+            failure = assert_leak_detected(self, surfaces, rounds=200, stride=7)
+        self.assertIn('.models[', failure.path)
+        check_publication(surfaces(failure.where), failure.where)  # the unpatched projection covers that text
