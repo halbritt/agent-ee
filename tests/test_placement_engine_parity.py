@@ -5,6 +5,7 @@ Only the arrangement's elapsed clock is normalized; ordering, numeric types,
 placements, budgets, proofs and diagnostics must agree exactly.
 """
 import copy
+import gzip
 import hashlib
 import json
 import os
@@ -299,6 +300,96 @@ class WholePlannerParityTest(EngineFixture, unittest.TestCase):
                     self.assertEqual(plan['block_arrangement']['residual']['references'], ['J1'])
                     self.assertEqual(plan['steps_used'], plan['block_arrangement']['search']['steps_used']
                                      + plan['block_arrangement']['residual']['steps_used'])
+
+
+class TelemetryCompatibilityParityTest(EngineFixture, unittest.TestCase):
+    """Real iteration-7 geometry and constraints, using current candidate identities.
+
+    This is a new compatibility regression, not the historical iter8n benchmark.
+    The older candidates retain their exact frame poses and policies. Re-emission
+    computes canonical geometry identities and evidence without running search.
+    Design bytes remain in the existing external fome-mc object store.
+    """
+    COMMIT = '19522e37de01103a93fe171a09fe624d8aba6bad'
+    NATIVE_COMMIT = '6530e8b8dd05baa0e5e39ac295172b35026c4f56'
+    ITERATION = 'telemetry-pod/expansion/placement-candidate/iteration-7/'
+    INPUTS = {
+        'seed.kicad_pcb': (COMMIT, ITERATION + 'inputs/seed.kicad_pcb.gz',
+                          '21bbf8efdfaf848f1a9494846a6fb1bdf31d19581daaf2c5fb601a26ffba8ecc'),
+        'seed.kicad_pro': (COMMIT, ITERATION + 'candidate.kicad_pro',
+                          'a91ee4d1a8ecfa583df33e707defdb3174e505d91853fc1e4959600d770aa57f'),
+        'request.json': (COMMIT, ITERATION + 'inputs/request.json',
+                         'f701c80ceae42616caead2c5b01f2ad93d00ac2819957e530c8026c07bedec05'),
+        'native.xml': (NATIVE_COMMIT, 'telemetry-pod/expansion/storage-microsd/native.xml',
+                       '7791d44380d40bb46b0dbe1cd7495ce59408e8691afe2bf360eaf70b3eab7556'),
+    }
+
+    def test_tracked_309_part_board_arranges_and_packs_with_exact_reference_parity(self):
+        from agent_ee.placement_probe import extract
+        from toolchain import fome_mc_store, require_toolchain
+        require_toolchain(native=True)
+        store = fome_mc_store(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', Path.home() / 'git/fome-mc'),
+                              self.COMMIT, self.NATIVE_COMMIT)
+        with tempfile.TemporaryDirectory(prefix='agent-ee-telemetry-parity-') as directory:
+            root = Path(directory)
+            original_bytes = {}
+            for name, (commit, path, expected_sha) in self.INPUTS.items():
+                raw = subprocess.run(['git', '-C', str(store), 'cat-file', 'blob', f'{commit}:{path}'],
+                                     capture_output=True, check=True, timeout=30).stdout
+                raw = gzip.decompress(raw) if path.endswith('.gz') else raw
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), expected_sha, name)
+                original_bytes[name] = raw
+                (root / name).write_bytes(raw)
+            facts = extract(root / 'seed.kicad_pcb')
+            self.assertEqual(facts['board_sha256'], self.INPUTS['seed.kicad_pcb'][2])
+            self.assertEqual(len(facts['footprints']), 309)
+            request_ = json.loads(original_bytes['request.json'])
+            original_request = copy.deepcopy(request_)
+            inventory = read_native_inventory(root / 'native.xml')
+            derived = blocks.derive(inventory, read_sheet_names(root / 'native.xml'), facts,
+                inventory_sha256=self.INPUTS['native.xml'][2],
+                allocation_raw=request_['blocks']['allocation_text'].encode('utf-8'))
+            definitions = {block['id']: block for block in derived['blocks']}
+            self.assertEqual(len(request_['blocks']['candidates']), 17)
+            for entry in request_['blocks']['candidates']:
+                old = entry['candidate']
+                anchor = old['frame']['anchor']
+                poses = {row['reference']: {'ref': row['reference'], **row['pose']} for row in old['members']}
+                self.assertEqual(poses[anchor]['position_nm'], [0, 0])
+                self.assertEqual(poses[anchor]['rotation_deg'], 0)
+                # These are retained search records, not a new search or an invented witness.
+                old_plan = {'search': old['search'], 'judgment': old['placer_judgment'],
+                            'steps_used': old['search']['steps_used'], 'step_budget': old['search']['step_budget']}
+                current = blocks._plain(blocks.candidate(facts, inventory, derived, definitions[old['block_id']],
+                    anchor, poses, request_['policy'], old['block_policy'], old['deferred'], old_plan))
+                self.assertEqual(current['status'], 'packed', old['block_id'])
+                for before, after in zip(old['members'], current['members'], strict=True):
+                    for key in ('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'pins'):
+                        self.assertIsNone(first_difference(before[key], after[key]), (old['block_id'], key))
+                    self.assertEqual(set(before['courtyard']), set(after['courtyard']))
+                    for side, record in before['courtyard'].items():
+                        canonical = copy.deepcopy(record)
+                        for key in ('polygons', 'inner_polygons'):
+                            if key in canonical:
+                                canonical[key] = sorted(blocks.canonical_ring(ring) for ring in canonical[key])
+                        self.assertIsNone(first_difference(canonical, after['courtyard'][side]))
+                for side, outline in old['outline'].items():
+                    self.assertEqual(outline['box_nm'], current['outline'][side]['box_nm'])
+                    self.assertEqual(sorted(blocks.canonical_ring(r) for r in outline['courtyards']),
+                                     sorted(blocks.canonical_ring(r) for r in current['outline'][side]['courtyards']))
+                entry['candidate'] = current
+            self.assertIsNone(first_difference(request_['policy'], original_request['policy']))
+            self.assertIsNone(first_difference(request_['blocks']['arrangement'],
+                                               original_request['blocks']['arrangement']))
+            self.assertEqual(request_['blocks']['allocation_text'], original_request['blocks']['allocation_text'])
+            plan = self.compare(facts, request_, netlist_xml=original_bytes['native.xml'].decode('utf-8'))
+            self.assertEqual(plan['status'], 'planned')
+            self.assertEqual(len(plan['placements']), 309)
+            self.assertEqual({p['ref'] for p in plan['placements']}, {fp['ref'] for fp in facts['footprints']})
+            self.assertGreater(plan['block_arrangement']['search']['steps_used'], 0)
+            self.assertGreater(plan['block_arrangement']['residual']['steps_used'], 0)
+            for name, raw in original_bytes.items():
+                self.assertEqual((root / name).read_bytes(), raw, name)
 
 
 if __name__ == '__main__':
