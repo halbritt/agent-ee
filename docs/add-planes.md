@@ -108,7 +108,14 @@ plane_step = add_planes.step(
 
 Put this declaration in the campaign's routing `steps`, followed by the
 dedicated `routing_adapter` declaration. The step adopts only exit 0 and writes
-only the board. Do not put the plane plan or native board in `writer_editable`.
+the board and its producer report. By default the report is named
+`<plan-stem>-producer.json` beside the plan; `step(..., report=...)` can name
+an explicit candidate path. Keep the plan, board and report outside
+`writer_editable`. Capture an empty report output slot before preparation;
+this reserves the inventory without inventing a report or its eventual hash.
+The campaign must list the report in `mutable_inputs`. With `pod_driver`, keep
+the initial scaffold scope's mutable list limited to native files: the existing
+`_final_scope` adds declared step outputs, including this report, after scaffolding.
 AGENTEE-197 verifies the captured-source → plane receipt → owned-router receipt
 chain and refuses writer edits before the first routing producer. The router
 retains its own semantic verification and `--protect existing` contract.
@@ -152,7 +159,7 @@ stage receipt binds all captured inputs, tool source, output bytes and artifacts
 Native tests use an original four-layer probe with In1 GND and two In2 power
 regions. They exercise byte preservation, repeated fills, native footprint
 keepouts, unplanned-zone/missing-net refusal, saved fill validation, native DRC
-defects, and board-only receipt adoption. Native island-policy regressions check
+defects, and board/report receipt adoption. Native island-policy regressions check
 wholly unconnected zone refusal under `always`, its retained fill under `never`,
 and a split zone whose secondary island is removed only under `always`, with
 saved fills inspected in fresh processes. The optional routing test uses the
@@ -174,15 +181,33 @@ owner and bench obligations remain open. No fabrication is authorized here.
 ### Final DRC obligation binding (AGENTEE-487c)
 
 A final full `drc` check declares `params.plane_obligations`, a list of objects
-with `plan`, `producer`, and `composition` links. Each link is
-`{"path": "captured/relative/path", "sha256": "<captured file digest>"}`.
-`plan` names the plane-plan input; `producer` names the existing
-`agent-ee.add-planes/1` report (`out/planes.json`), not a second receipt format.
-`composition` names the captured `pod-capture.scope-composition/*` record,
-whose `planes` list must contain the exact plan path/hash link. Capture all
-three files as immutable inputs. The producer must have succeeded and bind the
-same plan hash and planned UUIDs. Its result is provenance, never final-board
-acceptance. Final DRC still inspects the saved board and native DRC findings.
+with `plan`, `producer`, and `composition` links. The plan and composition are
+captured immutable inputs with `{"path": "relative/path", "sha256": "digest"}`.
+The composition's `planes` list contains the exact plan path/hash link.
+
+For an in-campaign producer, declare the report without a preparation-time hash:
+
+```json
+{
+  "producer": {"path": "composition/planes-producer.json", "stage": "add-planes"}
+}
+```
+
+The producing stage records the actual report SHA-256 in its receipt and adopts
+`out/planes.json` into that candidate path. The final check resolves the hash
+after production, through the verified owned-router receipt and its immediately
+preceding add-planes receipt. The producer's complete output tree must equal the
+router's input tree, and the report must bind the producing board before/after
+hashes and the immutable plan. Missing routing/producer evidence, a missing or
+stale report, or a different plan/board refuses the binding. Resolved links appear
+in the final check's `details.plane_bindings`. The native saved-board plane
+inspection and DRC still run; provenance is not final-board acceptance.
+
+An already captured historical report may still use a fixed `path`/`sha256`
+producer link; that mode freezes all three files as before. The stage-owned mode
+freezes only the plan and composition; its empty output slot and later report
+remain coordinator-owned candidate data. The scope does not change after
+preparation, and no report hash is precomputed.
 
 Plan filenames are unrestricted. Captured plane plans and producer reports
 without these bindings fail final DRC, including renamed files. Missing files,

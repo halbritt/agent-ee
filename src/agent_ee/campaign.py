@@ -329,10 +329,14 @@ def validate_routing_predecessors(steps, scope):
     preceding = [validate_step(s, host=False) for s in steps if s['stage'] == 'routing']
     if not preceding:
         return
+    writes = preceding[0]['writes'] if len(preceding) == 1 else {}
+    reports = set(writes) - {scope['board']}
+    report_ok = (not reports or (len(reports) == 1 and
+                                writes[next(iter(reports))] == 'out/planes.json'))
     if (len(preceding) != 1 or preceding[0]['step'] != 'add-planes' or
-            set(preceding[0]['writes']) != {scope['board']} or preceding[0]['adoptable_exits'] != [0]):
+            scope['board'] not in writes or not report_ok or preceding[0]['adoptable_exits'] != [0]):
         raise ValueError('routing_adapter cannot be combined with routing implementation_steps '
-                         'except one add-planes producer writing only the board and adopting exit 0')
+                         'except one add-planes producer writing the board and optional producer report and adopting exit 0')
 
 
 def verify_routing_chain(work, index, expected, specs, *, terminal_incomplete):

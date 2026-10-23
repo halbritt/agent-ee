@@ -81,14 +81,23 @@ def zone_ids(plan):
 PRE_ROUTING = 'pre-routing'
 
 
-def step(source_root, *, board, plan, phase=None):
-    for path in (board, plan):
+def report_path(plan):
+    """Candidate path owned by the plane producer, beside its captured plan."""
+    return str(Path(plan).with_name(Path(plan).stem + '-producer.json'))
+
+
+def step(source_root, *, board, plan, phase=None, report=None):
+    report = report_path(plan) if report is None else report
+    for path in (board, plan, report):
         stage_receipts._relative(path, 'plane input')
+    if len({board, plan, report}) != 3:
+        raise ValueError('plane board, plan and producer report paths must be distinct')
     return stage_receipts.validate_step(dict(schema='agent-ee.stage-step/1', step='add-planes', stage='routing',
         argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P', '-m',
               'agent_ee.add_planes', '--board', board, '--plan', plan, *_phase_argv(phase)],
         mounts=[dict(source=str(snapshot(source_root)), at='/tool/agent-ee')], source='/tool/agent-ee',
-        version_argv=['/usr/bin/kicad-cli', 'version'], writes={board:'out/board.kicad_pcb'},
+        version_argv=['/usr/bin/kicad-cli', 'version'],
+        writes={board:'out/board.kicad_pcb', report:'out/planes.json'},
         artifacts=['out'], adoptable_exits=[0], timeout_s=600))
 
 
@@ -259,7 +268,8 @@ def generate(candidate, board, plan_path, out, *, phase=None):
     if out.exists() or out.is_symlink() or candidate in out.resolve().parents:
         raise ValueError('plane output must be new and outside captured inputs')
     out.mkdir(parents=True)
-    report = dict(schema=RESULT, execution='failed', outcome='unknown', plan_sha256=digest(candidate/plan_path),
+    report = dict(schema=RESULT, execution='failed', outcome='unknown', board_path=board, plan_path=plan_path,
+                  plan_sha256=digest(candidate/plan_path),
                   board_before=hashlib.sha256(original).hexdigest(), planned_zone_ids=zone_ids(plan), findings=[],
                   phase=phase, deferred_connectivity=[])
     try:
