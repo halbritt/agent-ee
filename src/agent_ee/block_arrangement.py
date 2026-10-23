@@ -301,7 +301,7 @@ def _admit_set(entry, capture, inventory, derivation, policy, eligibility):
     return result, []
 
 
-def _block_record(bid, entry):
+def _block_record(bid, entry, *, selected=False):
     return {'block': bid, 'provenance': entry['provenance'],
             'candidate_sha256': entry['candidate_sha256'], 'anchor': entry['anchor'],
             'references': sorted(entry['poses'], key=blocks._natural), 'boundary': entry['binding'],
@@ -309,7 +309,7 @@ def _block_record(bid, entry):
             **({'mapping': dict(sorted(entry['mapping'].items(), key=lambda item: blocks._natural(item[0])))}
                if entry['mapped'] else {}),
             **({key: entry[key] for key in ('candidate_set_sha256', 'selected_face')}
-               if 'candidate_set_sha256' in entry else {})}
+               if selected and 'candidate_set_sha256' in entry else {})}
 
 
 def _arranged_rows(search):
@@ -1102,8 +1102,13 @@ def _deferred_grading(plan, admitted):
         for gid in deferred['groups']:
             measured = [m for m in groups.get('measured', []) if m.get('group') == gid]
             bad = [d for d in placement_groups.violations(groups) if d.get('group') == gid]
-            out.append({'block': bid, 'kind': 'group', 'id': gid, 'measured': len(measured),
-                        'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
+            # The group judge emits distance rows only for anchored groups. A
+            # region-only group still evaluated every declared member; failures
+            # and missing geometry remain in the same violations collection.
+            count = len(measured) or sum(len(g['references']) for g in groups.get('groups', [])
+                                        if g['id'] == gid and 'region' in g)
+            out.append({'block': bid, 'kind': 'group', 'id': gid, 'measured': count,
+                        'status': 'pass' if count and not bad else 'defect' if bad else 'unknown'})
     return out
 
 
@@ -1303,7 +1308,7 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
             placed.get('selected_face'), admitted[bid]) for placed in search.placed_blocks for bid in [placed['block']]}
         if has_sets:
             record['blocks'] = [_block_record(b, {**selected[b], **({'candidate_set_sha256': admitted[b]['candidate_set_sha256']}
-                                 if 'candidate_set_sha256' in admitted[b] else {})}) for b in block_ids]
+                                 if 'candidate_set_sha256' in admitted[b] else {})}, selected=True) for b in block_ids]
         record['search'] = {'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget,
                             'backjumps': backjumps, 'rejected': dict(sorted(search.rejected.items())), 'elapsed_s': elapsed}
         record['arranged'] = _arranged_rows(search)

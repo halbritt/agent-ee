@@ -111,7 +111,7 @@ def arrangement_policy():
                             'provenance': {'enforcement': 'hard', 'citation': CITATION}}}
 
 
-def write_board(directory, *, witness=False):
+def write_board(directory, *, witness=False, spare_front=False):
     """Build and save the literal native source or the hand-constructed witness."""
     import pcbnew as k
     directory = Path(directory)
@@ -134,7 +134,8 @@ def write_board(directory, *, witness=False):
         identity(shape, name)
         parent.Add(shape)
 
-    outline = [(0, 0), (10.5, 0), (10.5, 3), (0, 3)]
+    width = 15.5 if spare_front else 10.5
+    outline = [(0, 0), (width, 0), (width, 3), (0, 3)]
     for i, start in enumerate(outline):
         line(board, k.Edge_Cuts, start, outline[(i + 1) % 4], f'edge-{i}')
     nets = {}
@@ -147,6 +148,8 @@ def write_board(directory, *, witness=False):
         fp.SetReference(ref)
         fp.SetValue(dict((p[0], p[4]) for p in PARTS).get(ref, 'fixed reservation'))
         fp.SetFPID(k.LIB_ID('Owned', 'Residual' if ref == 'R1' else 'Square'))
+        fp.SetAttributes(k.FP_BOARD_ONLY | k.FP_EXCLUDE_FROM_BOM | k.FP_EXCLUDE_FROM_POS_FILES
+                         if ref in ('H1', 'H2') else k.FP_SMD)
         board.Add(fp)
         for field in fp.GetFields():
             identity(field, f'{ref}-field-{field.GetName()}')
@@ -171,6 +174,8 @@ def write_board(directory, *, witness=False):
                 pad.SetNet(nets[net])
                 fp.Add(pad)
         position, side = WITNESS[ref]
+        if spare_front and ref == 'H1':
+            position = [14000000, 1500000]
         if not witness and ref in ('U1', 'C1', 'R1'):
             position, side = [20 * MM, (5 + index * 4) * MM], 'F'
         if side == 'B':
