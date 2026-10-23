@@ -41,38 +41,37 @@ eed2cc5c version 1. The current roles are below.
 | Relay and owner-decision contact | agent-532 (replaced agent-519) | All campaign communications and relays; single owner-decision queue; forwards owner decisions verbatim; authorized SMS/Slack notifications. No owner authority: "you're not deciding on my behalf, you're forwarding my decisions" (owner, 2026-10-23). |
 | Chief coordinator and org-chart owner | agent-531 (replaced agent-529) | Both target outcomes, technical direction, priorities, sequencing, acceptance evidence, cross-project decisions, holds, scoreboard policy, role and process records. |
 | Sole dispatcher and agent-ee/FOME integrator | agent-530 (replaced agent-449) | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
-| Router owner and integrator | agent-507, shut down on 2026-10-23 at owner direction; the chief assigns any successor | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 449. |
-| Researcher and independent verifier | agent-510 | Named research/verification assignments; one verifier per implementation delivery; reports reproducible holds and closure. Does not dispatch or integrate. |
+| Router owner and integrator | VACANT (agent-507 retired 2026-10-23 at owner direction; a router-ownership/KRT comparison brief is pending chief review, Cairn e76937c3; agent-535's builder work for 507 does not make it router owner) | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 530. |
+| Researcher | agent-533 (recorded successor of agent-510) | Research and implementation assignments only; NOT a critical-review seat. Does not dispatch or integrate. |
+| Critical reviewers | Slice-assigned Astra (MEDIUM) or Fable (HIGH) seats, chosen per slice by 530 | One independent review per delivery; the reviewer's model class must differ from the implementer's (owner: "different model class for implementation and review"). Report reproducible holds and closure. |
 | Shared infrastructure | agent-475 | Host admission, resource limits, init and reaping, storage diagnosis and infrastructure rollout. |
-| Efficiency auditor | agent-522 (rotated 2026-10-23; successor agent-536 holds its electrical lanes) | Independent evidence for the efficiency repair; reports remaining defects and verifies closure. |
+| Efficiency auditor (historical) | agent-522, rotated 2026-10-23; its successor agent-536 held the 502-506 electrical lanes and is now terminal (506 sealed); no standing assignment | Historical: independent evidence for the efficiency repair. Current electrical work is per-slice (AGENTEE-509: fresh worker ee509-safeoff). |
 | Host monitors | hostmon instances below | Read-only system observations and alerts; no remediation or native workloads. |
 | Builders | Assigned by 530 | One recorded holder per ticket/lane, selected model and host, bounded work, receipts, fixes and cleanup. |
 
-In the paragraphs below, read 529 as 531, 449 as 530 and 519 as 532 for current
-responsibilities; dated sections keep their historical names.
-
-449 owns operational dispatch and integration of the FOME pod-design lane and the
-campaign's CI image/container work. This does not make 449 their sole implementer.
-Shared infrastructure stays with its repository owner; 449 triages campaign impact,
-and unresolved ownership goes through 519 to 529. Agent-508 has delivered its analysis; it has no
+530 owns operational dispatch and integration of the FOME pod-design lane and the
+campaign's CI image/container work. This does not make 530 their sole implementer.
+Shared infrastructure stays with its repository owner; 530 triages campaign impact,
+and unresolved ownership goes through 532 to 531. Agent-534's session is preserved
+while the owner's pause on slice P (AGENTEE-507) stands; it receives no new work. Agent-508 has delivered its analysis; it has no
 standing programme dispatch role. Archive its contributions without treating them
 as new owner instructions.
 
-All campaign communications go through 519. It routes routine status and
-known-answer questions to 449, and material holds, scope conflicts, artifact
-results and scoreboard milestones to 529. Owner-reserved decisions go to 519 for notification.
-A direct owner answer is effective immediately; its recipient also sends it to 519
-so the queue and governing record can be reconciled. 519 does not have to be present
+All campaign communications go through 532. It routes routine status and
+known-answer questions to 530, and material holds, scope conflicts, artifact
+results and scoreboard milestones to 531. Owner-reserved decisions go to 532 for notification.
+A direct owner answer is effective immediately; its recipient also sends it to 532
+so the queue and governing record can be reconciled. 532 does not have to be present
 for an already-authorized engineering decision to proceed.
 
-449 chooses an appropriate subscription model for each slice and records it with
+530 chooses an appropriate subscription model for each slice and records it with
 the lane. Subscription authentication or quota failure stops that affected operation;
 never substitute OpenRouter for a subscription-covered model. Existing hosts include
 c4, peecee-wsl, talos, archon and proximal; capacity is reserved before heavy work.
 
 The [campaign process](campaign-process.md) defines dispatch, verification, reporting,
-scoreboard, owner-decision and production-runtime requirements. 529 owns this document's
-content; 449 lands reviewed updates through the existing integration lane.
+scoreboard, owner-decision and production-runtime requirements. 531 owns this document's
+content; 530 lands reviewed updates through the existing integration lane.
 
 ## Host monitoring
 
