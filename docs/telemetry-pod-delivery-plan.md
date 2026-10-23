@@ -126,164 +126,39 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Integrator record: dispatch and observed results (agent-449)
+### Current state and next actions (agent-449, 2026-10-23 09:25Z)
 
-- ROUTE-4 terminal state (reconciled by agent-449 on 2026-10-23): agent-507's
-  finite batch had run before the suspension arrived. It stopped by its own rule
-  after 2 consecutive target failures, and no routing is running.
-  - Best retained candidate `5690da57e291dff46f80b239c1c81f164d0622c6d4c0d03b65437e653f025825`:
-    one GND junction via. Against ROUTE-3: 77→75 open, DRC 140→138, no new finding
-    or split. Against R5: 58 dangling.
-  - Two later targets were rejected and reverted.
-  - Evidence is preserved and NOT adopted, on fome-mc main `fd9b3c40`,
-    `telemetry-pod/expansion/route-4/`. The ROUTE-3 baseline above is unchanged.
-  - Gallery: Diagnostic 10, bundle `5690da57e291-216cf677a645`, labelled
-    INCOMPLETE / NOT RELEASED / not adopted.
-- AGENTEE-473 holder: the existing pod-capture-j6b2 writer (Claude Opus, session
-  `266a6f9b-6921-458f-b927-86b58473050f`, proximal), started 08:34:38Z.
-- AGENTEE-474 holder: agent-507 (codex gpt-6.1-sol, `0573c9f0`, proximal), Cairn
-  request event `767c8dc6`. It starts after the ROUTE-4 packaging.
-- Plane assignee for both is the only workspace member (halbritt). The accountable
-  agent, model, session and host are recorded in item comments. Both items are
-  In Progress.
-- Rust planner. Dated owner relay `863a378d` (2026-10-23, owner to agent-519):
-  "bring in the rust planner".
-  - agent-524's greenfield Rust planner ships as agent-ee's planner, with the
-    Python planner kept as the parity reference. Parity is evidence of
-    equivalence, not of the grouping contract.
-  - agent-529 imposes no new adoption bar and assigns no competing port
-    (sequencing addendum `7cd7a8a9`).
-  - Sequencing, owned by agent-449: the Rust planner lands first through the
-    normal sole-integrator path once agent-524 hands over a rebased branch with
-    no C path, the R5 side-transform kept, a reproducible CI-image build and
-    committed parity regressions. The AGENTEE-472 block-repair code then targets
-    that frozen shipping identity and revalidates final-coordinate behaviour on it.
-  - Only verified-disjoint shared-boundary work runs alongside, for example the
-    fome-mc production `blocks` declaration or eligibility-record data. No
-    concurrent conflicting edits. A concrete conflict goes to agent-519 as the
-    smallest decision.
-- AGENTEE-473b (Rust follow-up trace): the same j6b2 writer, at most 20 minutes,
-  read-only, started 08:47:32Z. It maps the shipping Rust planner (`6f48b9f2`;
-  agent-524 has since rebased to `7563d18a`, not yet handed over) onto the 473
-  findings, and classifies each gap as shared input, adapter/admission/validation,
-  or planner implementation.
-  - Result (08:47–08:51Z; fome-mc main `d8f6ec09`, `agentee-473b-rust-trace/`;
-    SHA256SUMS and the cited lines verified by agent-449):
-    - Rust `6f48b9f2` ports stage B (block arrangement of supplied candidates),
-      candidate admission and residual packing, but not stage A, which stays the
-      Python `blocks.pack_block`.
-    - Rust has only the captured side (`footprint.rs:702` takes no side
-      parameter; `arrangement.rs:743` searches rotations only).
-    - The Python block path stays reachable. `6f48b9f2` predates the R5
-      side-transform correction, so the rebase must carry it.
-    - Side-aware arrangement must change in both Rust and the Python reference,
-      landing with or after the Rust branch.
-    - Verified-disjoint shared-boundary work that can run alongside: the
-      membership allocation and a strict-coverage validator; the side-eligibility
-      record with its binding; a per-block final-coordinate report in Python
-      saved-board validation; fome-mc production declaring `blocks`. The
-      eligibility-derived side-change authorization waits for the Rust landing
-      (rebase point in `placer_runner.py`). The stage-A side-variant schema needs
-      agreement with agent-524.
-- Owner direct to agent-449 (2026-10-23): "make the new rust planner the default".
-  This is Rust landing precondition 6 (AGENTEE-476): Rust is the default planning
-  runtime with no opt-in; Python is reachable only as an explicit parity reference,
-  never a silent fallback; a missing or failed Rust binary fails loudly; the CI image
-  ships the binary; and a committed test proves the default path executes Rust.
-  agent-524's rebased `7563d18a` was still opt-in (`placement_runtime.py:19`).
-- Verifiers (agent-529 decision, relay `9fc54d8d`): agent-510 independently
-  verifies the 473/474 package (25 minutes, triggered when both are complete) and
-  later each frozen repair and candidate artifact. agent-522 verifies the landed
-  Rust runtime (20 minutes, triggered by agent-449's landed-commit report;
-  AGENTEE-476).
-- Queued on the j6b2 writer:
-  - AGENTEE-475, the AppArmor repo cleanup after the owner had the profiles
-    removed. 30 minutes, started 08:50Z.
-  - Then AGENTEE-477, the 3D model gaps (owner: "the missing 3d models need to
-    tracked down"). 60 minutes; the re-render goes through the existing gallery
-    job.
+This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
-- AGENTEE-473 observed result (08:35–08:43Z, read-only; fome-mc main `4ff731c9`,
-  `telemetry-pod/expansion/agentee-473-trace/`). agent-449 verified SHA256SUMS,
-  `repro.json` and the cited source lines.
-  - Production bypassed the existing two-pass block path. The campaign adapter
-    declares no `blocks` (fome-mc `production-capture/pipeline.py`), and the flat
-    emitted schematic derives 0 blocks; with the existing 18-block allocation
-    `434a9984…` it derives 18. Production ran a flat front-side pack of 300
-    movable parts.
-  - No packing path chooses a side. Stage B macros take the captured side
-    (`block_arrangement.py:324`). AGENTEE-340's "both sides" was implemented as
-    captured side only. The only flip capability is the R5 write/admission
-    correction, and no planner produces its authorization.
-  - Device-support bounds are advisory: 22 of 26 measured pairs are exceeded on
-    R5/ROUTE-3. 5 blocks are split across faces, and block spreads are 29–106 mm.
-  - Routing feedback (AGENTEE-391) is not integrated.
-  - Proposed reusable boundary: a side-aware block arrangement. In order:
-    strict membership coverage; a bound per-block side-eligibility record;
-    mirrored stage-A candidates from the native flip; a stage-B search over
-    rotation × eligible side with no balance term; a plan side with the
-    authorization derived from the eligibility record; device-support hard only
-    when sourced; production declares `blocks`; then routing feedback. A
-    congested-underside regression design is included.
-  - Open decisions for agent-529: D1 the membership allocation and residual
-    roles; D2 per-block side eligibility (U1 antenna, U3 GNSS path, regulators,
-    double-sided assembly, back test access); D3 the hardness of support bounds;
-    D4 deliberate cross-face splits versus strict whole-block side; D5 the side
-    policy for residual parts.
+Owner directions (relayed by agent-519, verbatim quotes kept separate from interpretation):
+- "bring in the rust planner"; "make the new rust planner the default".
+- "Pogo clip on bench": TP1–6 are hand-probed on the bare board before enclosure, with BLE OTA after. Back-side test points are fine. Reserve probe approach only; no fixture.
+- "Once, on the bench": JP1–5 get soldering-iron access before enclosure.
+- "90mm height, the length and width are quite a bit more than that": about 90 mm is a provisional HEIGHT envelope for the full stack. It is an estimate, not a cap; the outline is not cowl-constrained.
+- "Agents pick M3 hardware".
+- These answers settle usage and selection only. They never establish a clearance PASS.
+- The inductor variants are exact: L1 SRP7050TA-150M, L2 SRP7050WA-6R8M (`47f9ef50`).
 
-- AGENTEE-474 observed result (agent-507, 08:41–08:56Z, read-only; fome-mc main
-  `7be86549`, `telemetry-pod/expansion/agentee-474-constraints/`; SHA256SUMS
-  verified by agent-449). A 23-entry register (C01–C23), each entry classed
-  OWNER / OWNER-RELAY / MFR / MECH-DERIVED / AGENT / UNKNOWN and marked as
-  blocking qualified packing (P) or release (R). Findings that change the plan:
-  - Both faces are permitted, with no quota.
-  - The 0.5 mm courtyard-to-edge setting is an AGENT default, not an owner or
-    manufacturer limit. No replacement margin is proposed.
-  - The D-PCB-6 GNSS corridor is bound to obsolete U3 coordinates (actual U3.11
-    RF pad (49.35, 18.75); B.Cu RF copper exists outside the rectangle). The
-    U3/L3/D3/J2 topology must be reconciled before any new packed or routed
-    candidate is accepted.
-  - The U1 antenna rectangle is captured CAD, not a manufacturer minimum.
-  - H1–H4 hardware envelopes, heights, and TP and JP access are UNKNOWN.
-  - It provides before-packing and final-coordinate checking contracts.
-- agent-510 independent verification of the 473/473b/474 package is triggered
-  (inputs complete). The brief went to agent-519 for relay. Budget 25 minutes;
-  it returns holds or acceptance of the investigation, not board acceptance.
-- AGENTEE-475 (AppArmor repo cleanup) landed on agent-ee main `061c8049`.
-- AGENTEE-477 (3D model gaps) has been running on the j6b2 writer since 08:55Z.
-- Next decisions (agent-529): D1–D5 from the 473 trace; the GNSS corridor
-  reconciliation owner and budget; then the first repair slice. That slice is
-  verified-disjoint shared-boundary work alongside the Rust landing, or
-  planner-side work after it.
+Reference boards:
+- Diagnostic reference and gallery pin: `b1bb009b`, the ROUTE-4 board plus 9 KiCad stock models. Not adopted, no poses frozen.
+  - Model coverage is 292/309. 17 are unresolved: 15 intended-none, and L1/L2 missing pending the owner fetch AGENTEE-481. U3 is visualization only.
+- Retained for comparison: `57a7968d` (ROUTE-3 plus models), ROUTE-3 `08066170`, ROUTE-4 `5690da57` (historical) and R5 `8f3bc234`.
 
-- agent-510 independent verification of the 473/473b/474 package
-  (fome-mc `7be86549`; via agent-519, record `fc3488f4`): **HOLD on the
-  investigation, not board acceptance**.
-  - H1: group constraints are enforced in search (Python `placer.py:1902-1906`,
-    `:2447-2449`; `block_arrangement.py:894-907`; Rust `groups.rs:227-243`). Only
-    electrical locality is soft. 473's "advisories never prune" claim must be
-    corrected.
-  - H2: the congested-underside regression contract needs a deterministic
-    witness, a real legalization conflict and a negative mutation.
-  - H3: remove the questions already answered (double-sided per `R:65`;
-    cross-face adjacency required by AGENTEE-472) and add an
-    acceptance/dependency map. Whole-block flips alone are insufficient.
-  - The 474 provenance is supported (minor fixes: the spread-metric docstring;
-    the emitted spread minimum is 95.25 mm).
-  - agent-529 decides the bounded correction brief; agent-449 applies it.
-- Owner answers to the 474 unknowns (via agent-519, `fd5bea71`, cowl corrected by
-  `27c51f73`):
-  - TP1–6: pogo clip on the bench before enclosure, BLE OTA after; back-side
-    test points are OK; reserve probe-approach clearance only.
-  - JP1–5: set once on the bench before enclosure.
-  - Cowl: "90mm height, the length and width are quite a bit more than that".
-    About 90 mm is a provisional envelope HEIGHT (an owner estimate); the
-    90 × 65 outline is not constrained by the cowl.
-  - H1–H4: agents pick standard M3 hardware and reserve clearance on both faces.
-- AGENTEE-480 (GNSS corridor rebind and mechanical closure, agent-507, 60 minutes,
-  data only) dispatched 09:08Z, in parallel with AGENTEE-478 on the j6b2 writer.
-- AGENTEE-477 result: 3D model coverage 283 → 292 of 309; L1/L2 Bourns models
-  are an owner fetch item. Gallery Diagnostic 11 (bundle `b1bb009b4e4c-6319f68a586a`).
+| Item | State | Holder / handle | Budget | Blocker and next actor |
+| --- | --- | --- | --- | --- |
+| AGENTEE-476 Rust planner landing | agent-524 working, NOT handed over | agent-524. Branch `wt/rust-planner-greenfield-agent524` at `840da8d5`, 0 behind / 27 ahead of main, no C files; the code now defaults to Rust (`active() or Session()`). | owner-directed | agent-524 hands over through agent-519; agent-449 verifies preconditions 1–6 and lands it; then agent-522 runs a 20-minute runtime check. **Gates AGENTEE-479.** |
+| AGENTEE-478 D1–D5 prep | terminal, landed | fome-mc main `57810f11` (writer `2ee1e63`) | — | agent-529: decide the 10 missing per-pin decouplers (rebind bank capacitors or change the design). The stage-A format `block-candidate-set/1` needs agent-524's agreement. |
+| AGENTEE-478b owner-answer rebind | queued | j6b2 writer, after 482 | 15 minutes | starts when 482 ends |
+| AGENTEE-480 GNSS corridor and mechanical closure | running | agent-507, `wt/agentee-480` (work in progress), 09:09–10:09Z | 60 minutes | agent-507 result to agent-449 |
+| AGENTEE-482 HOLD correction (H1/H2/H3) | running | j6b2 writer, session `266a6f9b`, process 80961, started 09:23:41Z | 20 minutes | then agent-510 rechecks the changed scope (10 minutes, via agent-519) |
+| AGENTEE-483 model assets in candidate outputs | queued | j6b2 writer, after 478b | 30 minutes | — |
+| AGENTEE-479 implementation | waiting | j6b2 writer; verifier agent-510 | 120 minutes | AGENTEE-476 landing, the decoupler decision, the 480 corridor and the 482/510 closure |
+
+Settled results:
+- The 473/473b traces and the 474 register (fome-mc `4ff731c9`, `d8f6ec09`, `7be86549`). agent-510 put them on HOLD; the correction is AGENTEE-482.
+- AGENTEE-475, AppArmor profile loading removed (agent-ee `061c8049`).
+- AGENTEE-477, 3D models (fome-mc `fa41e4b9`).
+- ROUTE-4 historical evidence (fome-mc `fd9b3c40`).
 
 ## Placement acceptance matrix
 
