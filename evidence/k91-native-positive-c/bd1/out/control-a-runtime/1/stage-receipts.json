@@ -1,0 +1,15 @@
+{
+  "delivered": {
+    "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+    "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "identity": "012b01e63c51fe6b5ab63152cf3c084fa8ee4d4631652c84f620cf55a45671e9",
+  "implementation": 1,
+  "receipts": [],
+  "schema": "agent-ee.stage-receipt-index/1",
+  "source_candidate_id": "k91-native-positive"
+}

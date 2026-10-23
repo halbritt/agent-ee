@@ -3940,6 +3940,16 @@
     },
     {
       "paths": [
+        "evidence/k91-native-positive-c/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "note": "AGENTEE-442 positive-c records: the first turn's refusal (runtime identity probe, its JSON output, two kicad-route usage-refusal records and their refusal-latest.json, a note); under bd1/ the packet verification and preflight scripts with their JSON output and the one bd1 attempt's JSON records (evidence manifest, binding, receipts, adapter reports, router result and sidecar, policy copies), the pinned adapter copy and a hash list of every OUT file; SHA256SUMS. No design file bytes."
+    },
+    {
+      "paths": [
         ".uipass-gallery.yaml",
         "deployment/agent-ee-render-gallery.service",
         "src/agent_ee/render_gallery.py"

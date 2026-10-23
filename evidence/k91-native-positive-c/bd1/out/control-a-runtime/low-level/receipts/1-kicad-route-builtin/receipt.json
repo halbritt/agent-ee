@@ -1,0 +1,381 @@
+{
+  "argv": [
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "/opt/agent-ee-routing/kicad_route_attempt.py",
+    "--project",
+    "project",
+    "--board",
+    "rc_filter.kicad_pcb",
+    "--schematic",
+    "rc_filter.kicad_sch",
+    "--name",
+    "rc_filter",
+    "--label",
+    "k91-native-positive",
+    "--budget",
+    "300",
+    "--timeout",
+    "900",
+    "--backend",
+    "builtin",
+    "--state",
+    "checkout",
+    "--experiment-policy",
+    "{\"allowed_trace_layers\":[\"F.Cu\",\"B.Cu\"],\"allowed_via_spans\":[[\"F.Cu\",\"B.Cu\"]],\"experiment_class\":\"current-policy\",\"rule_areas_sha256\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema\":\"routability-policy/1\"}"
+  ],
+  "artifacts": {
+    "routing/adapter-report.json": "9c18b893ebb08f5a1751a0217b5a63e9d9fd8eb89c39e534934f09be10c7a6c1",
+    "routing/agent-ee-original": null,
+    "routing/attempt/RESULT.md": null,
+    "routing/attempt/attempt.json": null,
+    "routing/attempt/facts": null,
+    "routing/attempt/result.json": null,
+    "routing/attempt/snapshot.json": null,
+    "routing/attempt/validate": null,
+    "routing/attempt/work": null,
+    "routing/kicad-route.stderr": null,
+    "routing/kicad-route.stdout": null
+  },
+  "binding": {
+    "implementation": 1,
+    "receipt_index": 1,
+    "source_candidate_id": "k91-native-positive"
+  },
+  "changed": [
+    "project/rc_filter.kicad_pcb"
+  ],
+  "duration_s": 3.118,
+  "execution": {
+    "argv": [
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "/opt/agent-ee-routing/kicad_route_attempt.py",
+      "--project",
+      "project",
+      "--board",
+      "rc_filter.kicad_pcb",
+      "--schematic",
+      "rc_filter.kicad_sch",
+      "--name",
+      "rc_filter",
+      "--label",
+      "k91-native-positive",
+      "--budget",
+      "300",
+      "--timeout",
+      "900",
+      "--backend",
+      "builtin",
+      "--state",
+      "checkout",
+      "--experiment-policy",
+      "{\"allowed_trace_layers\":[\"F.Cu\",\"B.Cu\"],\"allowed_via_spans\":[[\"F.Cu\",\"B.Cu\"]],\"experiment_class\":\"current-policy\",\"rule_areas_sha256\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema\":\"routability-policy/1\"}"
+    ],
+    "console": "console.log",
+    "console_sha256": "99601786c6e5032074f77711e34ebba524ef7c521ab59b5437b61869560d8116",
+    "duration_s": 0.533,
+    "execution": "failed",
+    "exit_code": 64,
+    "mount_guard": true,
+    "sandbox_argv": [
+      "bwrap",
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
+      "--unshare-ipc",
+      "--unshare-uts",
+      "--ro-bind",
+      "/usr",
+      "/usr",
+      "--symlink",
+      "usr/lib",
+      "/lib",
+      "--symlink",
+      "usr/lib64",
+      "/lib64",
+      "--symlink",
+      "usr/bin",
+      "/bin",
+      "--symlink",
+      "usr/sbin",
+      "/sbin",
+      "--ro-bind",
+      "/etc",
+      "/etc",
+      "--proc",
+      "/proc",
+      "--dev",
+      "/dev",
+      "--tmpfs",
+      "/tmp",
+      "--dir",
+      "/home",
+      "--dir",
+      "/run",
+      "--ro-bind",
+      "/opt/agent-ee/build/k91-positive-c-out/control-a-runtime/low-level/receipts/1-kicad-route-builtin/inputs",
+      "/candidate",
+      "--ro-bind",
+      "/opt/agent-ee/src",
+      "/app",
+      "--bind",
+      "/opt/agent-ee/build/k91-positive-c-out/control-a-runtime/low-level/receipts/1-kicad-route-builtin/run",
+      "/work",
+      "--chdir",
+      "/work",
+      "--clearenv",
+      "--setenv",
+      "PATH",
+      "/usr/local/bin:/usr/bin:/bin",
+      "--setenv",
+      "HOME",
+      "/work/home",
+      "--setenv",
+      "LANG",
+      "C.UTF-8",
+      "--setenv",
+      "PYTHONPATH",
+      "/app",
+      "--setenv",
+      "KICAD_CONFIG_HOME",
+      "/work/kicad-config",
+      "--setenv",
+      "KICAD10_SYMBOL_DIR",
+      "/candidate/stock/symbols",
+      "--setenv",
+      "KICAD10_FOOTPRINT_DIR",
+      "/candidate/stock/footprints",
+      "--setenv",
+      "KICAD10_TEMPLATE_DIR",
+      "/candidate/stock/template",
+      "--unshare-net",
+      "--ro-bind-fd",
+      "3",
+      "/opt/agent-ee-routing/kicad_route_attempt.py",
+      "--ro-bind-fd",
+      "4",
+      "/opt/kicad-route",
+      "--ro-bind-fd",
+      "5",
+      "/opt/agent-ee-routing/net_binding.py",
+      "--ro-bind-fd",
+      "6",
+      "/opt/agent-ee-routing/symbol_library.py",
+      "--",
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "-c",
+      "import ctypes, json, os, signal, sys\nfor path, device, inode in json.loads(sys.argv[1]):\n    observed = os.stat(path, follow_symlinks=False)\n    if (observed.st_dev, observed.st_ino) != (device, inode):\n        print('mount_source_changed:' + path, file=sys.stderr)\n        raise SystemExit(125)\nos.write(1, b'agent-ee: mount identities verified\\n')\nfor name in ('SIGPIPE', 'SIGXFZ', 'SIGXFSZ'):\n    number = getattr(signal, name, None)\n    if number is not None:\n        signal.signal(number, signal.SIG_DFL)\narguments = [os.fsencode(value) for value in sys.argv[3:]]\nnative_argv = (ctypes.c_char_p * (len(arguments) + 1))(*arguments, None)\nlaunch = ctypes.CDLL(None, use_errno=True).execvp\nlaunch.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p)]\nlaunch.restype = ctypes.c_int\nlaunch(arguments[0], native_argv)\nerror = ctypes.get_errno()\nraise OSError(error, os.strerror(error), sys.argv[3])\n",
+      "[[\"/opt/agent-ee-routing/kicad_route_attempt.py\",64512,62809471],[\"/opt/kicad-route\",64512,8175130],[\"/opt/agent-ee-routing/net_binding.py\",64512,62698999],[\"/opt/agent-ee-routing/symbol_library.py\",64512,62699091]]",
+      "--",
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "/opt/agent-ee-routing/kicad_route_attempt.py",
+      "--project",
+      "project",
+      "--board",
+      "rc_filter.kicad_pcb",
+      "--schematic",
+      "rc_filter.kicad_sch",
+      "--name",
+      "rc_filter",
+      "--label",
+      "k91-native-positive",
+      "--budget",
+      "300",
+      "--timeout",
+      "900",
+      "--backend",
+      "builtin",
+      "--state",
+      "checkout",
+      "--experiment-policy",
+      "{\"allowed_trace_layers\":[\"F.Cu\",\"B.Cu\"],\"allowed_via_spans\":[[\"F.Cu\",\"B.Cu\"]],\"experiment_class\":\"current-policy\",\"rule_areas_sha256\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema\":\"routability-policy/1\"}"
+    ],
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_sha256": "99601786c6e5032074f77711e34ebba524ef7c521ab59b5437b61869560d8116",
+    "timeout_s": 1198.5520564659964
+  },
+  "exit_code": 64,
+  "identity": "f1c5a4dac135b13f6befebf8d300fc1d87f21e8e61b5d16425b5ab97410385d0",
+  "inputs": {
+    "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+    "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "outputs": {
+    "project/rc_filter.kicad_pcb": null
+  },
+  "receipt_id": "40c54d09-f2c6-48b5-89a7-ca19fbd561a3",
+  "sandbox_profile_sha256": "4d67c795f741ac09eb0de9efc1aa5218c77b8d6d0bcfe5ef53921bd65d503bc8",
+  "schema": "agent-ee.stage-receipt/2",
+  "spec": {
+    "adoptable_exits": [
+      0,
+      2
+    ],
+    "argv": [
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "/opt/agent-ee-routing/kicad_route_attempt.py",
+      "--project",
+      "project",
+      "--board",
+      "rc_filter.kicad_pcb",
+      "--schematic",
+      "rc_filter.kicad_sch",
+      "--name",
+      "rc_filter",
+      "--label",
+      "k91-native-positive",
+      "--budget",
+      "300",
+      "--timeout",
+      "900",
+      "--backend",
+      "builtin",
+      "--state",
+      "checkout",
+      "--experiment-policy",
+      "{\"allowed_trace_layers\":[\"F.Cu\",\"B.Cu\"],\"allowed_via_spans\":[[\"F.Cu\",\"B.Cu\"]],\"experiment_class\":\"current-policy\",\"rule_areas_sha256\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema\":\"routability-policy/1\"}"
+    ],
+    "artifacts": [
+      "routing/adapter-report.json",
+      "routing/kicad-route.stdout",
+      "routing/kicad-route.stderr",
+      "routing/attempt/result.json",
+      "routing/attempt/attempt.json",
+      "routing/attempt/RESULT.md",
+      "routing/attempt/snapshot.json",
+      "routing/attempt/validate",
+      "routing/attempt/facts",
+      "routing/attempt/work",
+      "routing/agent-ee-original"
+    ],
+    "backend_report": {
+      "artifact": "routing/attempt/result.json",
+      "key": "backend"
+    },
+    "mounts": [
+      {
+        "at": "/opt/agent-ee-routing/kicad_route_attempt.py",
+        "source": "/opt/agent-ee/build/k91-positive-c-out/pinned-adapter/kicad_route_attempt.py"
+      },
+      {
+        "at": "/opt/kicad-route",
+        "source": "/opt/kicad-route"
+      },
+      {
+        "at": "/opt/agent-ee-routing/net_binding.py",
+        "source": "/opt/agent-ee/src/agent_ee/net_binding.py"
+      },
+      {
+        "at": "/opt/agent-ee-routing/symbol_library.py",
+        "source": "/opt/agent-ee/src/agent_ee/symbol_library.py"
+      }
+    ],
+    "schema": "agent-ee.stage-step/1",
+    "source": "/opt/kicad-route/src",
+    "stage": "routing",
+    "step": "kicad-route-builtin",
+    "timeout_s": 1200,
+    "version_argv": null,
+    "writes": {
+      "project/rc_filter.kicad_pcb": "routing/candidate/project/rc_filter.kicad_pcb"
+    }
+  },
+  "spec_sha256": "b518851dd2e14ded0db4295184322ef41151d912e7e9716ae3b0d2cd12dfd776",
+  "started_unix": 1792718878.018051,
+  "status": "failed",
+  "tool": {
+    "backend": {
+      "reason": "backend report artifact missing",
+      "status": "unknown",
+      "value": null
+    },
+    "executable": {
+      "host_path": "/usr/bin/python3.12",
+      "path": "/usr/bin/python3",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    "mounts": [
+      {
+        "at": "/opt/agent-ee-routing/kicad_route_attempt.py",
+        "files": 1,
+        "sha256": "c15dad0ffcb3f5cb123d002af538c1eed33e26fcf48636799fac40d325a14049"
+      },
+      {
+        "at": "/opt/kicad-route",
+        "files": 12859,
+        "sha256": "a8f3ff040c5ccd94ebc281d1f517751a40487165a6ef3209bf29433713824762"
+      },
+      {
+        "at": "/opt/agent-ee-routing/net_binding.py",
+        "files": 1,
+        "sha256": "971cebb9c55e092c115a1c98d0b54c00746432ae72da981d0e9aeace96bbb2d6"
+      },
+      {
+        "at": "/opt/agent-ee-routing/symbol_library.py",
+        "files": 1,
+        "sha256": "c4e0dce3c6ca532313f83292f07b5f4090f1f2e9bd8c262821b307ccd408f492"
+      }
+    ],
+    "reported_version": {
+      "reason": "no version probe declared",
+      "status": "unknown",
+      "value": null
+    },
+    "source_tree": {
+      "files": 308,
+      "path": "/opt/kicad-route/src",
+      "sha256": "2ec0500764b2355749074a94c091109941253a5e4cb9a07f8c47b570d58fea39"
+    }
+  },
+  "tool_after": {
+    "executable": {
+      "host_path": "/usr/bin/python3.12",
+      "path": "/usr/bin/python3",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    "mounts": [
+      {
+        "at": "/opt/agent-ee-routing/kicad_route_attempt.py",
+        "files": 1,
+        "sha256": "c15dad0ffcb3f5cb123d002af538c1eed33e26fcf48636799fac40d325a14049"
+      },
+      {
+        "at": "/opt/kicad-route",
+        "files": 12859,
+        "sha256": "a8f3ff040c5ccd94ebc281d1f517751a40487165a6ef3209bf29433713824762"
+      },
+      {
+        "at": "/opt/agent-ee-routing/net_binding.py",
+        "files": 1,
+        "sha256": "971cebb9c55e092c115a1c98d0b54c00746432ae72da981d0e9aeace96bbb2d6"
+      },
+      {
+        "at": "/opt/agent-ee-routing/symbol_library.py",
+        "files": 1,
+        "sha256": "c4e0dce3c6ca532313f83292f07b5f4090f1f2e9bd8c262821b307ccd408f492"
+      }
+    ],
+    "source_tree": {
+      "files": 308,
+      "path": "/opt/kicad-route/src",
+      "sha256": "2ec0500764b2355749074a94c091109941253a5e4cb9a07f8c47b570d58fea39"
+    }
+  },
+  "version_execution": null,
+  "violations": [
+    "missing_output:project/rc_filter.kicad_pcb"
+  ]
+}

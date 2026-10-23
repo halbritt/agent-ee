@@ -1,0 +1,19 @@
+{
+  "schema": "kicad-route/refusal/1",
+  "kind": "refusal",
+  "exit_code": 4,
+  "command": null,
+  "reason_class": "usage",
+  "message": "argument cmd: invalid choice: 'route' (choose from 'doctor', 'run', 'validate', 'blocked', 'compare', 'audit', 'floor', 'publish', 'spokes', 'decoupling', 'planes', 'barrier', 'update', 'state-manifest', 'determinism', 'canary', 'corpus', 'smoke', 'campaign')",
+  "argv": [
+    "route",
+    "--experiment-policy",
+    "/nonexistent",
+    "--help"
+  ],
+  "cwd": "/opt/agent-ee",
+  "input_fingerprint": null,
+  "discarded_run_dir": null,
+  "refused_utc": "2026-10-23T00:41:53.396974+00:00",
+  "record": "build/kicad-route/refusals/20261023T004153.397040Z-11.json"
+}

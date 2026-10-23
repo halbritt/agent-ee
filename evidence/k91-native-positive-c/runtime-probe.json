@@ -1,0 +1,47 @@
+{
+  "checkout": "/opt/kicad-route",
+  "checkout_commit": "b5774496d8466b67ffa0362b6665fee2108155a3",
+  "production_pin": "b5774496d8466b67ffa0362b6665fee2108155a3",
+  "source_sha256": "9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2",
+  "packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae",
+  "python_version": "3.12.3",
+  "manifest_drift": [],
+  "extension": {
+    "path": ".venv-krt/lib/python3.12/site-packages/grid_router.so",
+    "sha256": "03806afa07ad635cf4c4416628c7edde1bc67c308992acec837c939f0a1b85a1",
+    "harness_expected_path": ".venv-krt/lib/python3.12/site-packages/grid_router.so",
+    "harness_path_sha256": "03806afa07ad635cf4c4416628c7edde1bc67c308992acec837c939f0a1b85a1"
+  },
+  "manifest": {
+    "sha256": "34a74cd0eb7b26b9c793a8d86094d1240586ae55dd7af627bebee0de6b9fd8d0",
+    "state_dir": "/opt/kicad-route",
+    "generation": null,
+    "commit": "b5774496d8466b67ffa0362b6665fee2108155a3",
+    "source_sha256": "9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2",
+    "extension_sha256": "03806afa07ad635cf4c4416628c7edde1bc67c308992acec837c939f0a1b85a1",
+    "packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae"
+  },
+  "interpreter": {
+    "lexical": "/opt/kicad-route/.venv-krt/bin/python",
+    "link": "python3",
+    "resolved": "/usr/bin/python3.12"
+  },
+  "cli_help": {
+    "route": {
+      "exit": 4,
+      "mentions_experiment_policy": false
+    }
+  },
+  "cli_experiment_policy_flag": {
+    "exit": 4,
+    "stderr_tail": [
+      "                   ...",
+      "kicad-route: error: argument cmd: invalid choice: 'route' (choose from 'doctor', 'run', 'validate', 'blocked', 'compare', 'audit', 'floor', 'publish', 'spokes', 'decoupling', 'planes', 'barrier', 'update', 'state-manifest', 'determinism', 'canary', 'corpus', 'smoke', 'campaign')",
+      "kicad-route: refusal record build/kicad-route/refusals/20261023T004153.397040Z-11.json (exit 4)"
+    ]
+  },
+  "producer_modules": {
+    "experiment.py": false,
+    "experiment_policy.py": true
+  }
+}

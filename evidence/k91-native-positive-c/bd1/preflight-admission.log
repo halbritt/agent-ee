@@ -1,0 +1,7 @@
+native-admit: admitted after 160s (lease 296ef1444af2, weight 1)
+admitted=2026-10-23T01:26:42Z
+finished=2026-10-23T01:26:47Z
+
+packet-exit=0 preflight-exit=0
+
+outer-exit=0

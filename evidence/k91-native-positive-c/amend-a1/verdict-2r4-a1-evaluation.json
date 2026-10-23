@@ -1,0 +1,171 @@
+{
+  "schema": "agent-ee.k91-native-positive/amended-evaluation/1",
+  "item": "AGENTEE-442",
+  "authority": "agent-521 ruling f14c71ec (coordinator decision relayed by agent-449, not owner text); delta review: \"Verdict: READY — classifier-contract implementation at git object fd87b0c9fd7f851acde04c78f162cbb183025986\"",
+  "evaluation_command": {
+    "argv": [
+      "python3",
+      "-B",
+      "build/a1_evaluate.py"
+    ],
+    "cwd": "/opt/agent-ee",
+    "wrapper_as_invoked": "AGENT_EE_SKIP_VISUALS=1 ~/.local/bin/ae-ci-exec . -- env WRAP=<this string> sh build/eval2.sh (proximal; worktree ee442-native-positive-c)"
+  },
+  "authenticated_inputs": {
+    "verified_before_use": true,
+    "sha256": {
+      "scripts/k91_classify.py": "55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706",
+      "scripts/k91_classify_a1.py": "b78046bcfb70426e827a0929eaaba4ab000aaab0184645aa88dc482abc45ce01",
+      "evidence/k91-native-positive-c/amend-a1/original-classifier/k91_classify.py": "55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706",
+      "evidence/k91-native-positive-c/bd1/out/evidence-manifest.json": "8acd9dff0c2ccfc3f860c8d28333b581fdbe6e357ab8a543355aac062d12ce53",
+      "evidence/k91-native-positive-c/bd1/out/positive/1/receipts/1-kicad-route-builtin/receipt.json": "e78941b30b2c1f305cfff7ae4fbc9cc526f1172f6a7461f0bfc5295970adccb0",
+      "evidence/k91-native-positive-c/bd1/preflight.json": "517587bc0497f5a975009da5ed490a1c383e2027445c00516ad86faae9cf2b46",
+      "evidence/k91-native-positive-c/bd1/attempt.stdout": "05c2644baea03c1486b7e2401c817a43e3e3d83d9b4b5e338d4bf5777c32f33f",
+      "evidence/k91-native-positive-c/bd1/attempt-admission.log": "098aa1eeadb0febb574b9ca87e9cebfa7dd91aece7f335ae6adadcc2e1304e0d"
+    }
+  },
+  "source_commit": "d5e016ea44d0d4d972eac11e676bb0d6765aec68",
+  "agent_ee_head": "d5e016ea44d0d4d972eac11e676bb0d6765aec68",
+  "generator": {
+    "path": "build/a1_evaluate.py (not committed; source below)",
+    "sha256": "ef995c45b89ef06577084dada07f6d86766841d0f2aa0f505a84f960b4926f89",
+    "source": "\"\"\"Write the verdict-2r4-a1 evaluation of the sealed positive-c bd1 records (AGENTEE-442; agent-521 f14c71ec).\n\nRead-only over the sealed evidence; writes exactly one new file, refusing to overwrite. No routing,\nrun_step, verify, adoption or regrade: the classifiers only read the retained dicts. Every input file,\nand both classifier modules, is AUTHENTICATED first: its sha256 must equal EXPECTED before it is read\nor imported; any mismatch or missing file refuses (exit 2) and nothing is written.\n\"\"\"\nimport hashlib\nimport json\nimport os\nimport subprocess\nimport sys\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nEXPECTED = {\n    'scripts/k91_classify.py': '55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706',\n    'scripts/k91_classify_a1.py': 'b78046bcfb70426e827a0929eaaba4ab000aaab0184645aa88dc482abc45ce01',\n    'evidence/k91-native-positive-c/amend-a1/original-classifier/k91_classify.py':\n        '55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706',\n    'evidence/k91-native-positive-c/bd1/out/evidence-manifest.json':\n        '8acd9dff0c2ccfc3f860c8d28333b581fdbe6e357ab8a543355aac062d12ce53',\n    'evidence/k91-native-positive-c/bd1/out/positive/1/receipts/1-kicad-route-builtin/receipt.json':\n        'e78941b30b2c1f305cfff7ae4fbc9cc526f1172f6a7461f0bfc5295970adccb0',\n    'evidence/k91-native-positive-c/bd1/preflight.json':\n        '517587bc0497f5a975009da5ed490a1c383e2027445c00516ad86faae9cf2b46',\n    'evidence/k91-native-positive-c/bd1/attempt.stdout':\n        '05c2644baea03c1486b7e2401c817a43e3e3d83d9b4b5e338d4bf5777c32f33f',\n    'evidence/k91-native-positive-c/bd1/attempt-admission.log':\n        '098aa1eeadb0febb574b9ca87e9cebfa7dd91aece7f335ae6adadcc2e1304e0d'}\nAUTHENTICATED = {}\nfor name, want in EXPECTED.items():\n    path = ROOT / name\n    found = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None\n    if found != want:\n        print(f'REFUSED: {name} sha256 {found} is not the expected {want}; nothing written', file=sys.stderr)\n        sys.exit(2)\n    AUTHENTICATED[name] = found\nsys.path.insert(0, str(ROOT / 'scripts'))\nimport k91_classify as v2  # noqa: E402\nimport k91_classify_a1 as a1  # noqa: E402\n\nE = ROOT / 'evidence/k91-native-positive-c'\nOUT = E / 'amend-a1/verdict-2r4-a1-evaluation.json'\nSOURCES = {'manifest': E / 'bd1/out/evidence-manifest.json',\n           'receipt': E / 'bd1/out/positive/1/receipts/1-kicad-route-builtin/receipt.json',\n           'mismatch_capture': E / 'bd1/preflight.json',\n           'original_stdout': E / 'bd1/attempt.stdout', 'original_exit_log': E / 'bd1/attempt-admission.log'}\nQUALIFIERS = [\n    'The RC fixture was ALREADY CONNECTED. baseline_unconnected_total=0 and unconnected_total=0; new_tracks, new_vias '\n    'and new_track_length_mm are all 0; backend successful, failed and total_iterations are all 0; gained, lost and '\n    'worsened are empty; terminal metrics are 3 nets, 0 incomplete, 0 deficit; native DRC 0 violations, parity and '\n    'preservation PASS.',\n    'So the positive proves real run_step → verify → adopt PLUMBING on the bd1 runtime. It is NOT evidence of routing '\n    'work or algorithmic improvement. Changed board/tree hashes must not be read as newly routed copper.',\n    'Bare stage_receipts.adopt ACCEPTS a sidecar-tampered result, while the full consumer refuses it. That is the known '\n    'AGENTEE-465 boundary and must be retained as a stated limitation.',\n    'Control A stays INCOMPLETE.']\n\n\ndef sha(path):\n    return hashlib.sha256(Path(path).read_bytes()).hexdigest()\n\n\ndef rel(path):\n    return str(Path(path).relative_to(ROOT))\n\n\nif OUT.exists():\n    raise SystemExit(f'{rel(OUT)} exists; not overwritten')\nmanifest = json.loads(SOURCES['manifest'].read_text())\nreceipt = json.loads(SOURCES['receipt'].read_text())\ncaptured = json.loads(SOURCES['mismatch_capture'].read_text())['mismatch_M']\nidentities = a1.identities_of(manifest, captured)\namended = a1.v2a1_verdict(manifest, identities)\noriginal = v2.v2_verdict(manifest)\nexit_lines = [l for l in SOURCES['original_exit_log'].read_text().splitlines() if l.startswith('harness-exit=')]\nrecord = {\n    'schema': 'agent-ee.k91-native-positive/amended-evaluation/1',\n    'item': 'AGENTEE-442',\n    'authority': ('agent-521 ruling f14c71ec (coordinator decision relayed by agent-449, not owner text); '\n                  'delta review: \"Verdict: READY — classifier-contract implementation at git object '\n                  'fd87b0c9fd7f851acde04c78f162cbb183025986\"'),\n    'evaluation_command': {'argv': list(sys.orig_argv), 'cwd': os.getcwd(),\n                           'wrapper_as_invoked': os.environ.get('A1_EVAL_WRAPPER')},\n    'authenticated_inputs': {'verified_before_use': True, 'sha256': AUTHENTICATED},\n    'source_commit': subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True,\n                                    check=True).stdout.strip(),\n    'agent_ee_head': subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True,\n                                    check=True).stdout.strip(),\n    'generator': {'path': 'build/a1_evaluate.py (not committed; source below)', 'sha256': sha(__file__),\n                  'source': Path(__file__).read_text()},\n    'classifiers': {\n        'original': {'id': v2.CLASSIFIER_V2, 'file': 'scripts/k91_classify.py', 'sha256': sha(ROOT / 'scripts/k91_classify.py'),\n                     'preserved_copy': 'evidence/k91-native-positive-c/amend-a1/original-classifier/k91_classify.py',\n                     'preserved_copy_sha256': sha(E / 'amend-a1/original-classifier/k91_classify.py')},\n        'amended': {'id': a1.CLASSIFIER_V2A1, 'amendment': a1.AMENDMENT, 'file': 'scripts/k91_classify_a1.py',\n                    'sha256': sha(ROOT / 'scripts/k91_classify_a1.py')}},\n    'linkage': {name: {'path': rel(path), 'sha256': sha(path)} for name, path in SOURCES.items()},\n    'receipt_id': receipt['receipt_id'],\n    'mismatch_capture': {'field': 'mismatch_M', 'commit': captured.get('commit'),\n                         'extension_sha256': captured.get('extension_sha256')},\n    'identities': identities,\n    'original_classification': {\n        'sealed_verdict': manifest['verdict'], 'recomputed_equals_sealed': original == manifest['verdict'],\n        'sealed_classifier': manifest['classifier'], 'sealed_classifier_sha256': manifest['classifier_sha256'],\n        'qualified': manifest['qualified'], 'stdout_equals_sealed_verdict':\n            json.loads(SOURCES['original_stdout'].read_text()) == manifest['verdict'], 'exit': exit_lines},\n    'amended_verdict': amended,\n    'qualified': False,\n    'scope_qualifiers_r1_agent_510_verbatim': QUALIFIERS,\n    'scope_limits': ['plumbing only: the RC fixture was already connected; consumer run_step -> verify -> adopt plumbing',\n                     '0 new copper: new_tracks 0, new_vias 0, new_track_length_mm 0 (R1 qualifier)',\n                     'AGENTEE-465 open: bare stage_receipts.adopt accepts the sidecar-tampered result',\n                     'no target benefit', 'no production qualification or release', 'no K96 release'],\n    'not_claimed': ['routing work or algorithmic improvement', 'production release or qualification', 'target benefit',\n                    'same-commit tamper behavior', 'K96 release', 'a new native positive or regrade'],\n}\nOUT.write_text(json.dumps(record, indent=2, ensure_ascii=False) + '\\n')\nprint(json.dumps({'record': rel(OUT), 'sha256': sha(OUT), 'amended': {k: amended[k] for k in (\n    'classifier', 'positive_accepted', 'controls', 'controls_refused', 'not_refused_because')}}, ensure_ascii=False))\n"
+  },
+  "classifiers": {
+    "original": {
+      "id": "agent-ee.k91-native-positive/verdict-2r4",
+      "file": "scripts/k91_classify.py",
+      "sha256": "55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706",
+      "preserved_copy": "evidence/k91-native-positive-c/amend-a1/original-classifier/k91_classify.py",
+      "preserved_copy_sha256": "55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706"
+    },
+    "amended": {
+      "id": "agent-ee.k91-native-positive/verdict-2r4-a1",
+      "amendment": "agentee-442/control-a-wrong-head/1 (agent-521 f14c71ec; reviews/ee442-native-positive-c-sol.md)",
+      "file": "scripts/k91_classify_a1.py",
+      "sha256": "b78046bcfb70426e827a0929eaaba4ab000aaab0184645aa88dc482abc45ce01"
+    }
+  },
+  "linkage": {
+    "manifest": {
+      "path": "evidence/k91-native-positive-c/bd1/out/evidence-manifest.json",
+      "sha256": "8acd9dff0c2ccfc3f860c8d28333b581fdbe6e357ab8a543355aac062d12ce53"
+    },
+    "receipt": {
+      "path": "evidence/k91-native-positive-c/bd1/out/positive/1/receipts/1-kicad-route-builtin/receipt.json",
+      "sha256": "e78941b30b2c1f305cfff7ae4fbc9cc526f1172f6a7461f0bfc5295970adccb0"
+    },
+    "mismatch_capture": {
+      "path": "evidence/k91-native-positive-c/bd1/preflight.json",
+      "sha256": "517587bc0497f5a975009da5ed490a1c383e2027445c00516ad86faae9cf2b46"
+    },
+    "original_stdout": {
+      "path": "evidence/k91-native-positive-c/bd1/attempt.stdout",
+      "sha256": "05c2644baea03c1486b7e2401c817a43e3e3d83d9b4b5e338d4bf5777c32f33f"
+    },
+    "original_exit_log": {
+      "path": "evidence/k91-native-positive-c/bd1/attempt-admission.log",
+      "sha256": "098aa1eeadb0febb574b9ca87e9cebfa7dd91aece7f335ae6adadcc2e1304e0d"
+    }
+  },
+  "receipt_id": "6458705d-1932-4d07-9571-d49c5c5eed32",
+  "mismatch_capture": {
+    "field": "mismatch_M",
+    "commit": "b5774496d8466b67ffa0362b6665fee2108155a3",
+    "extension_sha256": "03806afa07ad635cf4c4416628c7edde1bc67c308992acec837c939f0a1b85a1"
+  },
+  "identities": {
+    "proposed_commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "mismatch_commit": "b5774496d8466b67ffa0362b6665fee2108155a3"
+  },
+  "original_classification": {
+    "sealed_verdict": {
+      "classifier": "agent-ee.k91-native-positive/verdict-2r4",
+      "positive_accepted": true,
+      "controls": {
+        "a_mismatched_runtime": "incomplete",
+        "b_tampered_candidate": "refused",
+        "b_tampered_sidecar": "refused",
+        "c_stale_input": "refused"
+      },
+      "required": [
+        "a_mismatched_runtime",
+        "b_tampered_candidate",
+        "c_stale_input"
+      ],
+      "controls_refused": false,
+      "not_refused_because": {
+        "a_mismatched_runtime": [
+          "root exception is not the contract refusal: ValueError: kicad-route does not qualify: checkout HEAD b5774496d8466b67ffa0362b6665fee2108155a3 is not the pinned bd1e633f2e585f4fc931ceab001299b78d0d8bb7; no automatic update; tool file differs from pin: src/kicad_route/cli.py; tool file differs from pin: src/kicad_route/common.py; tool file differs from pin: src/kicad_route/configuration_evidence.py; tool file differs from pin: src/kicad_route/copper_ownership.py; tool file differs from pin: src/kicad_route/corpus.py; tool file differs from pin: src/kicad_route/evidence.py; pinned file missing: src/kicad_route/experiment.py; pinned file missing: src/kicad_route/kicad/emit_additions.py; pinned file missing: src/kicad_route/repair_child.py; pinned file missing: src/kicad_route/repair_trial.py; tool file differs from pin: src/kicad_route/router/py_router/pour_guard.py at routing_adapter.py:validate_campaign_step",
+          "precondition not shown: host_binding_refused"
+        ]
+      },
+      "low_level": {
+        "a_mismatched_runtime": "refused",
+        "b_tampered_candidate": "refused",
+        "b_tampered_sidecar": "incomplete",
+        "c_stale_input": "refused"
+      }
+    },
+    "recomputed_equals_sealed": true,
+    "sealed_classifier": "agent-ee.k91-native-positive/verdict-2r4",
+    "sealed_classifier_sha256": "55563ea17c7e4ba725219717904a95beb0a5814676558f5690c0500f102dd706",
+    "qualified": false,
+    "stdout_equals_sealed_verdict": true,
+    "exit": [
+      "harness-exit=1"
+    ]
+  },
+  "amended_verdict": {
+    "classifier": "agent-ee.k91-native-positive/verdict-2r4-a1",
+    "amends": "agent-ee.k91-native-positive/verdict-2r4",
+    "amendment": "agentee-442/control-a-wrong-head/1 (agent-521 f14c71ec; reviews/ee442-native-positive-c-sol.md)",
+    "identities": {
+      "proposed_commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+      "mismatch_commit": "b5774496d8466b67ffa0362b6665fee2108155a3"
+    },
+    "positive_accepted": true,
+    "controls": {
+      "a_mismatched_runtime": "refused",
+      "b_tampered_candidate": "refused",
+      "b_tampered_sidecar": "refused",
+      "c_stale_input": "refused"
+    },
+    "required": [
+      "a_mismatched_runtime",
+      "b_tampered_candidate",
+      "c_stale_input"
+    ],
+    "controls_refused": true,
+    "not_refused_because": {},
+    "low_level": {
+      "a_mismatched_runtime": "refused",
+      "b_tampered_candidate": "refused",
+      "b_tampered_sidecar": "incomplete",
+      "c_stale_input": "refused"
+    }
+  },
+  "qualified": false,
+  "scope_qualifiers_r1_agent_510_verbatim": [
+    "The RC fixture was ALREADY CONNECTED. baseline_unconnected_total=0 and unconnected_total=0; new_tracks, new_vias and new_track_length_mm are all 0; backend successful, failed and total_iterations are all 0; gained, lost and worsened are empty; terminal metrics are 3 nets, 0 incomplete, 0 deficit; native DRC 0 violations, parity and preservation PASS.",
+    "So the positive proves real run_step → verify → adopt PLUMBING on the bd1 runtime. It is NOT evidence of routing work or algorithmic improvement. Changed board/tree hashes must not be read as newly routed copper.",
+    "Bare stage_receipts.adopt ACCEPTS a sidecar-tampered result, while the full consumer refuses it. That is the known AGENTEE-465 boundary and must be retained as a stated limitation.",
+    "Control A stays INCOMPLETE."
+  ],
+  "scope_limits": [
+    "plumbing only: the RC fixture was already connected; consumer run_step -> verify -> adopt plumbing",
+    "0 new copper: new_tracks 0, new_vias 0, new_track_length_mm 0 (R1 qualifier)",
+    "AGENTEE-465 open: bare stage_receipts.adopt accepts the sidecar-tampered result",
+    "no target benefit",
+    "no production qualification or release",
+    "no K96 release"
+  ],
+  "not_claimed": [
+    "routing work or algorithmic improvement",
+    "production release or qualification",
+    "target benefit",
+    "same-commit tamper behavior",
+    "K96 release",
+    "a new native positive or regrade"
+  ]
+}

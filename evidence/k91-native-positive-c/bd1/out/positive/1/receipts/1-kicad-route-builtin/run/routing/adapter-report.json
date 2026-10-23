@@ -1,0 +1,429 @@
+{
+  "adapter": {
+    "compatibility": "kicad-route@bd1e633f2e585f4fc931ceab001299b78d0d8bb7"
+  },
+  "backend": {
+    "reason": null,
+    "status": "reported",
+    "value": {
+      "build": "owned-cb003b30f75f",
+      "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+      "execution_identity": {
+        "extension_module_sha256": "610b3acdfa0b5a2ee95fedd2a3526ff23b457c115c2f93bbac9fedf2ffcd99d8",
+        "grid_router_version": "0.23.1",
+        "name": "builtin",
+        "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+        "tag": "owned-cb003b30f75f",
+        "venv_packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae",
+        "venv_python_version": "3.12.3",
+        "version": "0.23.1"
+      },
+      "name": "builtin",
+      "reproducible": null,
+      "reproducible_basis": "no determinism record for this build in the state manifest (kicad-route determinism --record)",
+      "runtime": {
+        "generation": null,
+        "source": "/opt/kicad-route/src/kicad_route/router",
+        "venv": "/opt/kicad-route/.venv-krt"
+      },
+      "rust_router": "0.23.1",
+      "source": "https://github.com/halbritt/kicad-route",
+      "source_sha256": "cb003b30f75f7b97859dcaaae6097ff1cbdeca00e7e38c2b1ab4b4a11e4790c2",
+      "upstream": {
+        "additional_license_notices": [
+          "py_router/stage3d/vendor/three/LICENSE"
+        ],
+        "adoption_inventory": "reports/upstream-fixes-20261021/source-closure.json",
+        "adoption_note": "Selected headless fixes only; extraction baseline above is unchanged. Parser caches use parse-local context rather than upstream global memo. Owned quote-aware copper-preserving writer, unsupported-copper refusal and tap/weld repairs remain authoritative.",
+        "adoption_review_head": "0b3b6a2d19666c3411252f314d3ca8d12f1766fa",
+        "fixes": {
+          "KICADROUTE-63": "0494a05",
+          "KICADROUTE-64": "4b316ba"
+        },
+        "fork": "https://github.com/halbritt/KiCadRoutingTools",
+        "fork_commit": "0494a05e30063b849c9cf1b9ac02098073d82216",
+        "fork_tree": "288b2baca668892c812c82f0e7db4c2b2b0a50c1",
+        "license": "MIT",
+        "ownership": "Maintained as part of kicad-route; upstream is provenance, not a runtime source selector.",
+        "project": "KiCadRoutingTools",
+        "selective_adoptions": {
+          "KICADROUTE-83": {
+            "commits": [
+              "fd59a050e258581d5938c4d9456bbfeb13240e67"
+            ],
+            "scope": "pass-rules"
+          },
+          "KICADROUTE-84": {
+            "commits": [
+              "8c3e833179615dbe5e3cd205e68b03e25a6f73e8",
+              "29be549c9747855315957ccc160d69746a3d66cb",
+              "20a8e1b83b00e410f2adf60861ee536d3e57dabc",
+              "0e0029f450fa609447bcb62d16a9381cbc9d9d5d",
+              "ca96bc28f39d3c5e5f014950e8ed9664a755a8f1"
+            ],
+            "scope": "layer-stub-safety"
+          },
+          "KICADROUTE-85": {
+            "commits": [
+              "a0489b30621460e35f9d390f929fab215f7cc7f3"
+            ],
+            "scope": "pair-keepouts"
+          },
+          "KICADROUTE-86": {
+            "commits": [
+              "9ac916bc16d6edcd554bf4dc8640f30379386447",
+              "ed17b29f7eaec4822ba12178a65eca5c3a452e40"
+            ],
+            "scope": "obstacle-lifecycle"
+          },
+          "KICADROUTE-87": {
+            "commits": [
+              "0b3b6a2d19666c3411252f314d3ca8d12f1766fa"
+            ],
+            "scope": "rescue-custody"
+          },
+          "KICADROUTE-88": {
+            "commits": [
+              "2ddfc187a1bd4aa0f33263de3d5194a4c6205809"
+            ],
+            "scope": "parser-lifecycle"
+          }
+        },
+        "source_inventory": "reports/routing-engine/source-closure.json",
+        "upstream": "https://github.com/drandyhaas/KiCadRoutingTools",
+        "upstream_base": "295f9ee197517e8323726853361eb137cc08ba9e",
+        "upstream_release": "v0.23.1"
+      },
+      "version": "0.23.1"
+    }
+  },
+  "candidate": {
+    "path": "candidate/project/rc_filter.kicad_pcb",
+    "sha256": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232"
+  },
+  "candidate_editor_state": {
+    "rc_filter.kicad_prl": "de0d33298a7a72e86d7f59b1c0d05d45e07d1429c8ecfe19d9f7c232860d1a09"
+  },
+  "candidate_files": {
+    "fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+    "rc_filter.kicad_pcb": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "rc_filter.kicad_prl": "de0d33298a7a72e86d7f59b1c0d05d45e07d1429c8ecfe19d9f7c232860d1a09",
+    "rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+  },
+  "discovery": {
+    "attempt_dir": "out/runs/rc_filter/k91-native-positive/20261023T012732.823081Z",
+    "problems": []
+  },
+  "identity": "dc48b18d59a34f9f392a4083919de7b7947bbe7940bf303b41d2af596478f4a8",
+  "identity_after": {
+    "code": {
+      "bin": {
+        "entries": 1,
+        "sha256": "dfc758a3d0c0ecaf9e2e4f5dc9a06a322a8f6b3a74392e62abe8f940aad6687e"
+      },
+      "src": {
+        "entries": 342,
+        "sha256": "ecf364ef3592361b0186def6185bce46edf8ba5a00adfde1ce3e68260a7f470c"
+      }
+    },
+    "state": {
+      ".venv-krt": {
+        "entries": 4709,
+        "sha256": "ad87084c71ec076cee3f72dec5f596003546af031ab5c0a8584e1fca008dd9f2"
+      }
+    },
+    "state_manifest": "33cd344e95733941590ffc6cc63e6002ca638077450c0568d3a6ae30f82a3212"
+  },
+  "identity_before": {
+    "code": {
+      "bin": {
+        "entries": 1,
+        "sha256": "dfc758a3d0c0ecaf9e2e4f5dc9a06a322a8f6b3a74392e62abe8f940aad6687e"
+      },
+      "src": {
+        "entries": 342,
+        "sha256": "ecf364ef3592361b0186def6185bce46edf8ba5a00adfde1ce3e68260a7f470c"
+      }
+    },
+    "state": {
+      ".venv-krt": {
+        "entries": 4709,
+        "sha256": "ad87084c71ec076cee3f72dec5f596003546af031ab5c0a8584e1fca008dd9f2"
+      }
+    },
+    "state_manifest": "33cd344e95733941590ffc6cc63e6002ca638077450c0568d3a6ae30f82a3212"
+  },
+  "inputs": {
+    "files": {
+      "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+      "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+      "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+      "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+      "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+    },
+    "sha256": "e8e4c33e3917e6f250d0adaf667071a87f3c63f43c2c734150589dd6af0dc561",
+    "staged": {
+      "files": {
+        "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+        "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+        "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+        "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+        "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+        "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+      },
+      "path": "/work/routing/agent-ee-original/project",
+      "root": "/work/routing/agent-ee-original",
+      "sha256": "e8e4c33e3917e6f250d0adaf667071a87f3c63f43c2c734150589dd6af0dc561"
+    },
+    "staged_after": {
+      "files": {
+        "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+        "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+        "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+        "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+        "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1",
+        "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+      },
+      "sha256": "e8e4c33e3917e6f250d0adaf667071a87f3c63f43c2c734150589dd6af0dc561",
+      "status": "observed"
+    }
+  },
+  "missing_artifacts": [],
+  "omitted_design_files": {
+    "work/effective-configuration-output.kicad_pcb": "d3bea784d7b81b38b3d1beb338c7498abadbc39631bc2d75471a38620aab5a32",
+    "work/input/project/rc_filter.kicad_pcb": "d3bea784d7b81b38b3d1beb338c7498abadbc39631bc2d75471a38620aab5a32",
+    "work/input/project/rc_filter.kicad_prl": "de0d33298a7a72e86d7f59b1c0d05d45e07d1429c8ecfe19d9f7c232860d1a09",
+    "work/input/project/rc_filter.kicad_pro": "775949716890a68d1eee7a4fe781c3a511e1e71f9220ac8318492469fda6d24b",
+    "work/input/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "work/krt-out/rc_filter.kicad_pcb": "a46c5dca9f102c513f97e41627ffcb13228bc9302d8a2fa203ce0de41c5e5232",
+    "work/krt-out/rc_filter.kicad_prl": "de0d33298a7a72e86d7f59b1c0d05d45e07d1429c8ecfe19d9f7c232860d1a09",
+    "work/krt-out/rc_filter.kicad_pro": "767df57df62c211908beaf3477e5e8b0cdbfd8406a03d8d0d7aecc6a031ff267"
+  },
+  "process": {
+    "argv": [
+      "/usr/bin/python3",
+      "-B",
+      "-X",
+      "pycache_prefix=/work/routing/pycache",
+      "/opt/kicad-route/bin/kicad-route",
+      "run",
+      "--out",
+      "/work/routing/out",
+      "--json",
+      "--backend",
+      "builtin",
+      "--dir",
+      "/work/routing/agent-ee-original/project",
+      "--board",
+      "rc_filter.kicad_pcb",
+      "--schematic",
+      "rc_filter.kicad_sch",
+      "--name",
+      "rc_filter",
+      "--label",
+      "k91-native-positive",
+      "--protect",
+      "existing",
+      "--budget",
+      "300",
+      "--experiment-policy",
+      "/work/routing/attempt/agent-ee-experiment-policy.json"
+    ],
+    "cancelled": false,
+    "cwd": "/work/routing",
+    "duration_s": 20.81,
+    "env": {
+      "GIT_CEILING_DIRECTORIES": "/candidate:/work/routing/agent-ee-original:/work",
+      "GIT_CONFIG_GLOBAL": "/dev/null",
+      "GIT_CONFIG_NOSYSTEM": "1",
+      "GIT_OPTIONAL_LOCKS": "0",
+      "HOME": "/work/routing/home",
+      "KICAD_ROUTE_STATE": "/opt/kicad-route",
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "PATH": "/usr/bin:/bin",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPYCACHEPREFIX": "/work/routing/pycache",
+      "TMPDIR": "/work/routing/tmp",
+      "XDG_CACHE_HOME": "/work/routing/home/.cache",
+      "XDG_CONFIG_HOME": "/work/routing/home/.config",
+      "XDG_DATA_HOME": "/work/routing/home/.local/share"
+    },
+    "exit_code": 0,
+    "pid": 4,
+    "signal": null,
+    "timed_out": false,
+    "timeout_s": 900
+  },
+  "rejected_candidate_sha256": null,
+  "reproducibility": "deterministic backend, repeatability not qualified by this attempt",
+  "request": {
+    "backend": "builtin",
+    "board": "rc_filter.kicad_pcb",
+    "budget_s": 300,
+    "experiment_policy": {
+      "allowed_trace_layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "allowed_via_spans": [
+        [
+          "F.Cu",
+          "B.Cu"
+        ]
+      ],
+      "experiment_class": "current-policy",
+      "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "schema": "routability-policy/1"
+    },
+    "label": "k91-native-positive",
+    "name": "rc_filter",
+    "project": "project",
+    "schematic": "rc_filter.kicad_sch",
+    "state": "checkout",
+    "timeout_s": 900
+  },
+  "retained": {
+    "attempt/RESULT.md": "ec8ac1a4e22d68ac1f14572f1add9d78add8bb89f7b09b218c2c44dafcbe76ec",
+    "attempt/agent-ee-experiment-policy.json": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056",
+    "attempt/attempt.json": "d30442b9d4abfb3f9bd3fb4ee4bd2ec37e73d8c045730f23454078ecb2898b26",
+    "attempt/experiment-policy.json": "8293aa91c6470510dec55f3fda6d24bc75808324b96562174da3d3279a280cf6",
+    "attempt/facts/reference-facts.json": "679dbd907085f6dccfabc94e25a291594792d18b96247521f081a31097a709e8",
+    "attempt/facts/reference-facts.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/result.json": "aea27925a47c99c51cb00e800b8752c338a73cc3ab8a75b159570b03dd771d49",
+    "attempt/routability-experiment.json": "0fafa49a16058ef45dabb3bb474cd5de07858286c35e661096297cc9cda7ec19",
+    "attempt/snapshot.json": "def305b74fa85aab6fb982f9144eceb6f7863496d53c0c756f2bb5384f2af79a",
+    "attempt/validate/candidate-drc.json": "4a625afa8f5b68be08e4235e45de4429f3a93393de11e061f7420b9355ca45d9",
+    "attempt/validate/candidate-drc.log": "03dcee534676d86f5e4ab7b88855c0175a70d2ef61a06c039f11188a1db2da6c",
+    "attempt/validate/candidate-facts.json": "705bdc14af7f1b672ad896120f67b88c41da4e061a3834aa1cb6c3f26f2dd67c",
+    "attempt/validate/candidate-facts.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/candidate-pour.json": "93d972fea0594c8c3d03cb02a96cc6816777c6ea50660795c30fc7e6025df044",
+    "attempt/validate/candidate-pour.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/candidate-refill.json": "e79e645516e8d28243df5473c957e6f846ad958453bb01614bb0a2af9f2ee7eb",
+    "attempt/validate/candidate-refill.log": "39ea620fbef32074e32b192f2a4eb065bf4371eac75c3e6dc494e83abfd96ae3",
+    "attempt/validate/candidate-terminal-components.json": "afd91c67718832f486268ef0a8fe758cc1fbb2b522eda728341ee0fe0b367faf",
+    "attempt/validate/candidate-terminal-components.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/copper-ownership.json": "787fa22586b86783d82a6a5792ec60a1b2678824b8cb82f06c56d3fdcf372ef9",
+    "attempt/validate/custody-baseline/generation-mh1alccd/baseline-drc.json": "314c3af5577a0d416bf75125bebbeb5b8854a0225b14c1e17b6202e8e628e455",
+    "attempt/validate/custody-baseline/generation-mh1alccd/baseline-info.json": "1091429f8538d07b4b8ff72d01a8f30c6321e9675e17af9771db223b588c9eae",
+    "attempt/validate/custody-baseline/generation-mh1alccd/baseline-pour.json": "367ab8c7cddef2b4b3458ee17c3506f3ebf5edb8fdda490af07a813e025c292b",
+    "attempt/validate/custody-baseline/generation-mh1alccd/baseline-terminals.json": "afd91c67718832f486268ef0a8fe758cc1fbb2b522eda728341ee0fe0b367faf",
+    "attempt/validate/custody-baseline/generation-mh1alccd/generation.json": "5e2eecb81e522b4961d523d6657576459eeacc8fb2f6bf482b6bef0b85ddd5ff",
+    "attempt/validate/new-findings.json": "5ff88c9f28b8acc5f2c72b470a49c028151205a12102b200c793d6ef1aeebbbd",
+    "attempt/validate/pour-integrity.json": "569c7de6714aec8ada74ebf20ec2dd4160507302eaa6d406b621e17f938df964",
+    "attempt/validate/preservation.json": "8cf932380a356157f0ea95d874ec600410f58e45ef440c8e3d5e74d8444d53dc",
+    "attempt/validate/reference-terminal-components.json": "afd91c67718832f486268ef0a8fe758cc1fbb2b522eda728341ee0fe0b367faf",
+    "attempt/work/effective-configuration-request.json": "d3a1a475cd37ed5229a6b9cc772354c2a62f07855f3e424a64cc7d473482c1ba",
+    "attempt/work/effective-configuration.json": "5dab8f574ff5726c9151c5d4fbc57d680a7543c48053dbe77750c6a90a51b1f8",
+    "attempt/work/heartbeat.jsonl": "a009fe8b51c0b886ac25b4c416192025422445f1016c5d452baa3caac008a94f",
+    "attempt/work/krt-out/summary.json": "2f5ae1342aeed2ddc1ffc451f7fa7d36bc1aafa600f837c744179fdac38a8ba8",
+    "attempt/work/krt.log": "608062773a56ac37a22ef5388f90153dba47eb6fc69261a89e77f562daaab9f6",
+    "attempt/work/lock-existing.log": "7d6673ef947c6ce7bc0e3fd9db38acb716cb0a8fb55a2c8b77df2c36d6e97b22",
+    "attempt/work/locks.json": "f6eb756dec8618e5b7f52c1aa0130321f46a8a98e2c62d8171951c0db0133b78",
+    "attempt/work/restore-locks.log": "6342286bea06aeab664ee3fbd414804d2901430b5af29b2d059e9bde43f7eb09",
+    "kicad-route.stderr": "429816145758bca29bc16b36e719f682ed54c07b72ed3c5b3b9d333f82fc454d",
+    "kicad-route.stdout": "0eb9d095161224f8d8b64eedfc975291f7ad484fc3c42bc19715eb0f3c4ec594"
+  },
+  "schema": "agent-ee.kicad-route-attempt/1",
+  "semantics": {
+    "adapter_exit": 0,
+    "classification": "complete",
+    "coverage": "routing_complete",
+    "exit_code": 0,
+    "experiment": {
+      "comparison_eligible": true,
+      "contract": "agent-ee/AGENTEE-442: routability-experiment/1 as written by kicad-route a0ed43494d44fd8312054b204083881fe76f3a81 (unpinned, not qualified); routability-policy/1 five fields",
+      "identity_sha256": "ed8fc44e5f97f651227ebf56ba12df7174642c057a7c41936081d94607b7b134",
+      "ineligible_reasons": [],
+      "path": "attempt/routability-experiment.json",
+      "policy": {
+        "declared": {
+          "allowed_trace_layers": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "allowed_via_spans": [
+            [
+              "F.Cu",
+              "B.Cu"
+            ]
+          ],
+          "experiment_class": "current-policy",
+          "rule_areas_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "schema": "routability-policy/1"
+        },
+        "policy_sha256": "3899a9eeac2ab4027c50454e4b2d1ea73b4620fd7b928fbb8cb6f0051abc37bd",
+        "sha256": "eac2b8ec630bd62a5c6356ea323285a9dc4488cfa7e084009fa03cd3a25c8056"
+      },
+      "policy_copy": {
+        "path": "attempt/experiment-policy.json",
+        "sha256": "8293aa91c6470510dec55f3fda6d24bc75808324b96562174da3d3279a280cf6"
+      },
+      "policy_file": "attempt/agent-ee-experiment-policy.json",
+      "qualified": false,
+      "reference": {
+        "path": "routability-experiment.json",
+        "schema": "routability-experiment/1",
+        "sha256": "0fafa49a16058ef45dabb3bb474cd5de07858286c35e661096297cc9cda7ec19"
+      },
+      "schema": "routability-experiment/1",
+      "sha256": "0fafa49a16058ef45dabb3bb474cd5de07858286c35e661096297cc9cda7ec19",
+      "status": "retained"
+    },
+    "pair_coverage": {
+      "acceptance_ready": false,
+      "limitations": [
+        "Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.",
+        "Differential pair routing was not requested; pair geometry is unqualified"
+      ],
+      "pairs": [],
+      "status": "unknown"
+    },
+    "proposal": "eligible",
+    "reasons": []
+  },
+  "state_write_probe": [
+    {
+      "directory": "/opt/kicad-route",
+      "errno": "EROFS",
+      "refused": true
+    },
+    {
+      "directory": "/opt/kicad-route/.venv-krt",
+      "errno": "EROFS",
+      "refused": true
+    }
+  ],
+  "tool": {
+    "commit": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "resolved": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+    },
+    "kicad_route": {
+      "path": "/opt/kicad-route/bin/kicad-route",
+      "resolved": "/opt/kicad-route/bin/kicad-route",
+      "sha256": "4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9"
+    },
+    "kicad_share_templates": {
+      "fp-lib-table": "4042e1c92709d4f872d4cdeaddfa7ec0f6bd49be240e0d9668b76e89888b1e77",
+      "sym-lib-table": "70d7bba56bcfd2f59d98e2354a8979661f2c49f3686d13e989b20202514654c3"
+    },
+    "pin": "bd1e633f2e585f4fc931ceab001299b78d0d8bb7",
+    "python": {
+      "path": "/usr/bin/python3",
+      "resolved": "/usr/bin/python3.12",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    }
+  },
+  "tool_version": {
+    "reason": "kicad-route at the pin has no --version; identity is the pinned code",
+    "status": "unknown",
+    "value": null
+  }
+}
