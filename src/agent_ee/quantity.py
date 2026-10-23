@@ -31,10 +31,20 @@ Grammar of one quantity (only these shapes produce a fact)::
     head       := ('thermal' WS)? ('spoke' | 'via') WS 'count' WS? (':' | 'of' | 'is' | '=')? WS?
                   immediately before the NUMBER: multiplies the quantity by that count
 
-A fact is (dimension vector, exact canonical value): metres, seconds and counts, each
+Consume or reject: every token of the quote is classified explicitly. It is WS, part of a
+quantity, the sign immediately before a NUMBER, a prose WORD, allow-listed prose
+punctuation (, ; : . ( ) [ ] { } " ' and typographic quotes, ? ! & =), or a hyphen or slash
+joining two WORDs. Any other token, for example a spaced sign ('- 3', U+2212 then a space
+then '3'), a superscript outside a unit power ('mm' WS U+207B U+00B9), U+200B or another
+stray character, rejects the quote. Nothing is skipped.
+
+A fact is (dimension vector, exact canonical value, denominator flag): metres, seconds and
+counts, each
 with an integer exponent, and the value as an exact Fraction scaled to SI base units.
 A count fact needs an unsigned integer literal. A head-form count must not repeat a
-count noun.
+count noun. The denominator flag records whether any '/' or 'per' term occurred BEFORE
+cancellation. A count qualifies only from a fact without one, so '3 spokes/mm*mm' and
+'3 spokes /s*s' are refused with 'count fact has a denominator'.
 
 Fail-closed rules: the whole quote states nothing, with reason, when it contains any of
 the following.
@@ -72,6 +82,10 @@ OPS = '/*·×'
 RANGE = '-–—~'
 OPEN = '([{"“:'
 TERMINATORS = ',;:.)]}"\'’”'
+# Prose punctuation a quote may carry outside a quantity; any other PUNCT rejects the quote.
+PROSE_PUNCT = ',;:.()[]{}"\'‘’“”?!&='
+JOINERS = '-/'
+SUPERSCRIPT_CHARS = '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻'
 PREFIX = {'n': Fraction(1, 10 ** 9), 'u': Fraction(1, 10 ** 6), '\u00b5': Fraction(1, 10 ** 6),
           '\u03bc': Fraction(1, 10 ** 6), 'm': Fraction(1, 1000)}
 # The allow-list. Lengths are exactly the spellings the round-2 model accepted (nm um µm μm
@@ -149,16 +163,39 @@ class _Parser:
     def parse(self):
         if PLUS_MINUS in self.quote:
             raise OutsideGrammar('quote states a tolerance (±) and no explicit tolerance fact exists')
+        # Consume or reject: every token is explicitly classified; there is no skipping path.
         i = 0
         while i < len(self.tokens):
             kind, text, _ = self.tokens[i]
-            if kind == 'word' and self.tok(i + 1)[1] in ('-', '.') and self.tok(i + 2)[0] == 'num':
+            if kind == 'ws':
+                i += 1
+            elif kind == 'word' and self.tok(i + 1)[1] in ('-', '.') and self.tok(i + 2)[0] == 'num':
                 i = self.designator(i)
             elif kind == 'num':
                 i = self.quantity(i)
-            else:
+            elif kind == 'word':
+                self.prose_word(i)
                 i += 1
+            elif text in SIGNS and self.tok(i + 1)[0] == 'num':
+                i += 1  # the sign of the next quantity, whose position quantity() validates
+            elif self.prose_punct(i):
+                i += 1
+            else:
+                self.fail(i, f'{text!r} outside the grammar')
         return self.facts
+
+    def prose_word(self, i):
+        """A prose WORD; superscript characters are parsed only as a unit power (mm\u00b2)."""
+        text = self.tokens[i][1]
+        if any(c in SUPERSCRIPT_CHARS for c in text) and _unit(text) is None:
+            self.fail(i, f'superscript in {text!r} outside the grammar')
+
+    def prose_punct(self, i):
+        """Allow-listed prose punctuation, or a hyphen, slash or apostrophe joining two words."""
+        text = self.tokens[i][1]
+        if text in PROSE_PUNCT:
+            return True
+        return (text in JOINERS and self.tok(i - 1)[0] == 'word' and self.tok(i + 1)[0] == 'word')
 
     def designator(self, i):
         """WORD ('-'|'.') NUMBER ... is an identifier; a unit term right after it is ambiguous."""
@@ -186,16 +223,16 @@ class _Parser:
             self.fail(i, 'range (between)')
         head = self.head(i)
         i += 1
-        dims, scale, count_term = {}, Fraction(1), False
+        dims, scale, count_term, denominator = {}, Fraction(1), False, False
         # A unit expression starts adjacent, after one WS, or with a leading denominator.
         j = i + 1 if self.tok(i)[0] == 'ws' else i
         first = self.tok(j)
         if first[0] == 'word' and first[1] not in ('per',):
-            dims, scale, count_term, i = self.unit_expr(j, start)
+            dims, scale, count_term, denominator, i = self.unit_expr(j, start)
         elif (first[0] == 'punct' and first[1] == '/') or (first[0] == 'word' and first[1] == 'per'):
             if first[1] == 'per' and self.tok(j - 1)[0] != 'ws':
                 self.fail(j, 'per without spacing')
-            dims, scale, count_term, i = self.unit_expr(j, start, leading=True)
+            dims, scale, count_term, denominator, i = self.unit_expr(j, start, leading=True)
         self.after(i)
         value = sign * Fraction(literal.replace('−', '-')) * scale
         integer = not signed and literal.isdigit()
@@ -207,7 +244,7 @@ class _Parser:
             dims = _combine({head: 1}, dims, 1)
         elif count_term and not integer:
             self.fail(start, 'a count must be an unsigned integer literal')
-        self.facts.append((tuple(sorted(dims.items())), value))
+        self.facts.append((tuple(sorted(dims.items())), value, denominator))
         return i
 
     def head(self, i):
@@ -222,7 +259,7 @@ class _Parser:
         return COUNT_NOUNS.get(noun[1]) if noun[0] == 'word' and noun[1] in ('spoke', 'via') else None
 
     def unit_expr(self, j, start, leading=False):
-        dims, scale, count_term, sign = {}, Fraction(1), False, 1
+        dims, scale, count_term, sign, denominator = {}, Fraction(1), False, 1, False
         if leading:
             sign = -1
             j = self.skip_ws(j + 1)
@@ -250,6 +287,8 @@ class _Parser:
                 term_scale = term_scale ** power
                 j = k + 1
             count_term = count_term or any(key in ('spoke', 'via') for key in term_dims)
+            # Recorded BEFORE cancellation: a count never qualifies once any denominator occurred.
+            denominator = denominator or sign == -1
             dims = _combine(dims, term_dims, sign)
             scale = scale * term_scale if sign == 1 else scale / term_scale
             # One operator, then the next term.
@@ -262,7 +301,7 @@ class _Parser:
             if nxt[0] == 'word' and nxt[1] == 'per' and k > j:
                 sign, j = -1, self.skip_ws(k + 1)
                 continue
-            return dims, scale, count_term, j
+            return dims, scale, count_term, denominator, j
 
     def skip_ws(self, j):
         return j + 1 if self.tok(j)[0] == 'ws' else j
@@ -278,6 +317,9 @@ class _Parser:
                 self.fail(i + 1, 'juxtaposed numerals (grouping)')
             if nxt[0] == 'punct' and nxt[1] in RANGE and self.tok(i + 2)[0] in ('ws', 'num'):
                 self.fail(i + 1, 'range')
+            if nxt[0] == 'punct' and nxt[1] not in PROSE_PUNCT and not (
+                    nxt[1] in SIGNS and self.tok(i + 2)[0] == 'num'):
+                self.fail(i + 1, f'{nxt[1]!r} after a quantity outside the grammar')
             if nxt[0] == 'word':
                 if _unit(nxt[1]) or nxt[1] == 'thermal':
                     self.fail(i + 1, 'unit term juxtaposed after a quantity')
@@ -310,11 +352,22 @@ def count(kind, n):
 
 
 def unqualified(quote, governed):
-    """None when every governed fact is exactly stated by ``quote``; otherwise the reason."""
+    """None when every governed fact is exactly stated by ``quote``; otherwise the reason.
+
+    A length matches a fact of equal dimension vector and exact value. A count matches only
+    such a fact that had NO denominator, even one that cancels ('3 spokes/mm*mm').
+    """
     try:
-        stated = set(facts(quote))
+        stated = facts(quote)
     except OutsideGrammar as exc:
         return 'quote has a quantity outside the closed grammar: ' + str(exc)
-    if any(fact is None or fact not in stated for fact in governed):
-        return 'cited quote does not state the declared value'
+    for fact in governed:
+        if fact is None:
+            return 'cited quote does not state the declared value'
+        equal = [denominator for dims, value, denominator in stated if (dims, value) == fact]
+        is_count = any(key in ('spoke', 'via') for key, _ in fact[0])
+        if is_count and equal and all(equal):
+            return 'count fact has a denominator'
+        if not equal or (is_count and all(equal)):
+            return 'cited quote does not state the declared value'
     return None

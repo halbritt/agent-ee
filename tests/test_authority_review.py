@@ -21,7 +21,6 @@ from test_scaffold_producer import ProducerFixture
 from toolchain import require_toolchain
 
 SCHEMA = 'fome-mc.constraint-provenance/1'
-OUTSIDE = 'quote has a quantity outside the closed grammar: '
 RULE = b'(version 1)\n(rule "uncited template" (constraint clearance (min 4mm)))\n'
 FINDING = {'type': 'clearance',
            'description': "Clearance violation (rule 'uncited template' min 4.0000 mm; actual 0.1000 mm)"}
@@ -235,16 +234,35 @@ class TypedLiteralTest(unittest.TestCase):
 
     def test_exponent_and_signed_literals_never_qualify_their_suffix(self):
         for quote in ('Captured length: 1e-3 mm', 'Captured length: -3 mm', 'Captured length: \u22123 mm',
-                      'Captured length: x-3 mm', 'Captured length: 1-3 mm', 'Captured length: 13 mm',
-                      'Captured length: 3.3 mm', 'Captured length: 1/3 mm', 'Captured length: 1\u20193 mm',
-                      "Captured length: 1'3 mm", 'Captured length: 1 3 mm', 'Captured length: 1\u20093 mm',
-                      'Captured length: 1,3 mm'):
+                      'Captured length: 13 mm', 'Captured length: 3.3 mm'):
             with self.subTest(quote=quote):
                 setting, rows = self.setting(quote)
-                # Third-HOLD grammar: an in-grammar mismatch or an out-of-grammar quote, never hard.
-                self.assertEqual(setting['enforcement'], 'advisory')
-                self.assertTrue(setting['unsourced_reason'] == 'cited quote does not state the declared value'
-                                or setting['unsourced_reason'].startswith(OUTSIDE), setting)
+                self.assertEqual((setting['enforcement'], setting['unsourced_reason']),
+                                 ('advisory', 'cited quote does not state the declared value'))
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(self.locality(quote, 3000000)['enforcement'], 'advisory')
+        # Third-HOLD grammar: these quotes are outside the closed grammar; each has its exact reason.
+        for quote, reason in (
+                ('Captured length: x-3 mm',
+                 "quote has a quantity outside the closed grammar: unit term after a designator at 'th: x-3 mm'"),
+                ('Captured length: 1-3 mm',
+                 "quote has a quantity outside the closed grammar: '-' joined to a quantity at 'ength: 1-3 mm'"),
+                ('Captured length: 1/3 mm',
+                 "quote has a quantity outside the closed grammar: operator without a unit term at 'ngth: 1/3 mm'"),
+                ('Captured length: 1\u20193 mm',
+                 "quote has a quantity outside the closed grammar: '\u2019' joined to a quantity at 'ength: 1\u20193 mm'"),
+                ("Captured length: 1'3 mm",
+                 'quote has a quantity outside the closed grammar: "\'" joined to a quantity at "ength: 1\'3 mm"'),
+                ('Captured length: 1 3 mm',
+                 "quote has a quantity outside the closed grammar: juxtaposed numerals (grouping) at 'ngth: 1 3 mm'"),
+                ('Captured length: 1\u20093 mm',
+                 "quote has a quantity outside the closed grammar: juxtaposed numerals (grouping) at 'ngth: 1\\u20093 mm'"),
+                ('Captured length: 1,3 mm',
+                 "quote has a quantity outside the closed grammar: ',' joined to a quantity at 'ength: 1,3 mm'"),
+        ):
+            with self.subTest(quote=quote):
+                setting, rows = self.setting(quote)
+                self.assertEqual((setting['enforcement'], setting['unsourced_reason']), ('advisory', reason))
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(self.locality(quote, 3000000)['enforcement'], 'advisory')
         for quote in ('Captured length: 3 mm', 'Captured length: 3mm', 'Captured length: +3 mm'):
@@ -283,13 +301,21 @@ class CountFactTest(unittest.TestCase):
     def test_bound_count_rule_needs_an_explicit_spoke_count(self):
         for quote in ('Captured board thickness: 3 mm. This record states no thermal spoke count.',
                       'Captured board thickness: 3mm.', 'Captured value: 3', 'Captured: 3 vias',
-                      'Captured: 4 thermal spokes', 'Captured: 3.0 thermal spokes'):
+                      'Captured: 4 thermal spokes'):
             with self.subTest(quote=quote), tempfile.TemporaryDirectory() as root:
                 rule, hard, rows = self.sources(root, quote)
                 self.assertIsNone(rule['citation'])
-                # Third-HOLD grammar: a non-integer count literal is outside the closed grammar.
-                self.assertTrue(rule['unsourced_reason'] == 'cited quote does not state the declared value'
-                                or rule['unsourced_reason'].startswith(OUTSIDE), rule)
+                self.assertEqual(rule['unsourced_reason'], 'cited quote does not state the declared value')
+                self.assertEqual(hard, [])
+                self.assertEqual([r['unsourced_reason'] for r in rows], [rule['unsourced_reason']])
+        # Third-HOLD grammar: a non-integer count literal is outside the closed grammar (exact reason).
+        for quote, reason in (('Captured: 3.0 thermal spokes',
+                               "quote has a quantity outside the closed grammar: "
+                               "a count must be an unsigned integer literal at 'ptured: 3.0 thermal '"),):
+            with self.subTest(quote=quote), tempfile.TemporaryDirectory() as root:
+                rule, hard, rows = self.sources(root, quote)
+                self.assertIsNone(rule['citation'])
+                self.assertEqual(rule['unsourced_reason'], reason)
                 self.assertEqual(hard, [])
                 self.assertEqual([r['unsourced_reason'] for r in rows], [rule['unsourced_reason']])
         for quote in ('Captured: 3 thermal spokes', 'Captured: spoke count: 3', 'Captured: 3 spokes'):

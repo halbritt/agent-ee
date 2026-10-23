@@ -691,7 +691,15 @@ So:
 - `3 mm/s`, `3 mm^2` and `3 spokes per mm` have other dimensions than a 3 mm
   length or a count of 3;
 - `1e-3 mm` is 0.001 mm and `-3 mm` is −3 mm;
-- a count needs an unsigned integer literal, with no denominator.
+- a count needs an unsigned integer literal, with no denominator. The parser
+  records denominators before cancellation, so `3 spokes/mm*mm` is refused with
+  `count fact has a denominator`.
+
+The parser consumes or rejects every token (post-redesign conformance round 1,
+449 ruling). Outside a quantity, only prose words, allow-listed prose
+punctuation and word-joining `-`/`/` are consumed. A spaced sign (`- 3 mm`,
+`− 3 mm`), a superscript outside a unit power (`3 mm ⁻¹`) or any other stray
+character rejects the quote; nothing is skipped.
 
 Anything outside the grammar fails the WHOLE quote closed, with the reason
 `quote has a quantity outside the closed grammar: …`. That includes:
