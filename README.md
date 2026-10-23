@@ -216,10 +216,10 @@ replayable Stage-A scoring sample. It uses the shared
 same with tracing on and off. It is experimental and off by default: its
 provisional 5% overhead gate is not met.
 
-An optional [Rust placement scorer](docs/placement-scoring.md) prepares native
-peer state and scores lazy candidates without per-call arrays. Its explicit
-verification mode compares every result with Python; normal placement stays
-on Python. The benchmark reports scorer and complete placement timings separately.
+The [Rust placement planner](crates/placement-engine/README.md) runs the complete
+planning operation by default. Python remains the independent parity reference
+and powers the explicit Python trace diagnostic. The CI image includes the
+pinned, locked Rust build; a missing planner is an error.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

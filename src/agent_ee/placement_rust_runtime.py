@@ -2,6 +2,8 @@
 from contextlib import contextmanager
 import hashlib
 import json
+import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,8 +14,26 @@ from . import placement_runtime
 _SCHEMA = 'agent-ee.rust-planning-output/1'
 
 
+_INSTALLED = Path('/usr/local/libexec/agent-ee/agent-ee-placement')
+
+
+def resolve_executable():
+    """Resolve a prebuilt planner; never compile, change backend or ignore a bad override."""
+    configured = os.environ.get('AGENT_EE_RUST_PLANNER')
+    candidate = configured if configured is not None else (
+        _INSTALLED if _INSTALLED.exists() else shutil.which('agent-ee-placement'))
+    if candidate is None or not str(candidate):
+        raise placement_runtime.PlanningProcessError(
+            'Rust placement planner is not installed; build with scripts/build_placement_engine.py '
+            'and install agent-ee-placement (see docs/installation.md)')
+    path = Path(candidate)
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise placement_runtime.PlanningProcessError(f'Rust placement planner is not executable: {path}')
+    return path.resolve(strict=True)
+
+
 @contextmanager
-def experimental(executable):
+def using(executable):
     if placement_runtime.active() is not None:
         raise ValueError('a planning runtime is already active in this context')
     session = Session(executable)
@@ -25,14 +45,14 @@ def experimental(executable):
 
 
 class Session:
-    def __init__(self, executable):
-        self.executable = Path(executable).resolve(strict=True)
+    def __init__(self, executable=None):
+        self.executable = resolve_executable() if executable is None else Path(executable).resolve(strict=True)
         self.calls = []
 
     def plan(self, facts, request, policy, netlist, *, heartbeat):
-        from . import placement_scoring, placement_trace
-        if placement_scoring.active() is not None or placement_trace.active() is not None:
-            raise ValueError('Rust planning cannot run with an active scalar scorer or Python placement trace')
+        from . import placement_trace
+        if placement_trace.active() is not None:
+            raise ValueError('Rust planning cannot run with an active Python placement trace')
         started = time.perf_counter_ns()
         record = {'status': 'starting', 'exit_code': None, 'error': None,
                   'boundary': 'whole planner including serialization, executable identity, startup and IPC'}

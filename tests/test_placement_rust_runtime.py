@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -15,18 +16,37 @@ from test_placer_search import promotion_case
 class RustRuntimeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        configured = os.environ.get('AGENT_EE_RUST_PLANNER')
-        if configured is None:
+        try:
+            cls.binary = placement_rust_runtime.resolve_executable()
+        except placement_runtime.PlanningProcessError:
             if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-                raise AssertionError('set AGENT_EE_RUST_PLANNER to the built standalone planner')
-            raise unittest.SkipTest('set AGENT_EE_RUST_PLANNER to exercise the standalone planner')
-        cls.binary = Path(configured).resolve(strict=True)
+                raise
+            raise unittest.SkipTest('install the standalone Rust planner or set AGENT_EE_RUST_PLANNER')
+
+    def test_default_dispatch_runs_rust_without_a_reference_fallback(self):
+        facts, policy = promotion_case()
+        expected = placer_runner._plan_local(facts, {'policy': policy}, heartbeat=lambda _: None)
+        with mock.patch.dict(os.environ, {'AGENT_EE_RUST_PLANNER': str(self.binary)}), \
+                mock.patch.object(placer_runner, '_plan_local', side_effect=AssertionError('Python planner called')):
+            actual = placer_runner._plan(facts, {'policy': policy})
+        self.assertEqual(actual, expected)
+
+    def test_reference_context_is_explicit_and_restored(self):
+        facts, policy = promotion_case()
+        with placement_runtime.python_reference(), \
+                mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=AssertionError('Rust called')):
+            self.assertEqual(placer_runner._plan(facts, {'policy': policy}),
+                             placer_runner._plan_local(facts, {'policy': policy}))
+            with self.assertRaisesRegex(ValueError, 'already active'):
+                with placement_runtime.python_reference():
+                    self.fail('nested reference admitted')
+        self.assertIsNone(placement_runtime.active())
 
     def test_complete_search_has_no_caller_python_planning(self):
         facts, policy = promotion_case()
         expected_heartbeat, actual_heartbeat = [], []
         expected = placer_runner._plan_local(facts, {'policy': policy}, heartbeat=expected_heartbeat.append)
-        with placement_rust_runtime.experimental(self.binary) as session:
+        with placement_rust_runtime.using(self.binary) as session:
             with mock.patch.object(placer_runner, '_plan_local', side_effect=AssertionError('Python planner called')), \
                     mock.patch.object(placer_runner, '_heartbeat', actual_heartbeat.append):
                 with mock.patch('agent_ee.placer._wire_cost', side_effect=AssertionError('Python scorer called')):
@@ -57,7 +77,7 @@ class RustRuntimeTest(unittest.TestCase):
         facts, policy = promotion_case()
         policy['step_budget'] = 1
         expected = placer_runner._plan_local(facts, {'policy': policy}, heartbeat=lambda _: None)
-        with placement_rust_runtime.experimental(self.binary):
+        with placement_rust_runtime.using(self.binary):
             with mock.patch.object(placer_runner, '_plan_local', side_effect=AssertionError('Python fallback')):
                 actual = placer_runner._plan(facts, {'policy': policy})
         self.assertEqual(actual, expected)
@@ -66,12 +86,12 @@ class RustRuntimeTest(unittest.TestCase):
     def test_invalid_input_and_nested_runtime_are_visible(self):
         facts, policy = promotion_case()
         policy['gap_nm'] = -1
-        with placement_rust_runtime.experimental(self.binary) as session:
+        with placement_rust_runtime.using(self.binary) as session:
             with mock.patch.object(placer_runner, '_plan_local', side_effect=AssertionError('Python fallback')):
                 with self.assertRaisesRegex(ValueError, 'gap'):
                     placer_runner._plan(facts, {'policy': policy})
                 with self.assertRaisesRegex(ValueError, 'already active'):
-                    with placement_rust_runtime.experimental(self.binary):
+                    with placement_rust_runtime.using(self.binary):
                         self.fail('nested runtime admitted')
         self.assertEqual(session.calls[0]['status'], 'error')
         self.assertNotEqual(session.calls[0]['exit_code'], 0)
@@ -89,7 +109,7 @@ class RustRuntimeTest(unittest.TestCase):
             with self.subTest(request=request):
                 with self.assertRaises(ValueError) as expected:
                     placer_runner._plan_local(facts, request, heartbeat=lambda _: None)
-                with placement_rust_runtime.experimental(self.binary):
+                with placement_rust_runtime.using(self.binary):
                     with self.assertRaises(ValueError) as actual:
                         placer_runner._plan(facts, request)
                 self.assertEqual(str(actual.exception), str(expected.exception))
@@ -102,13 +122,36 @@ class RustRuntimeTest(unittest.TestCase):
             with self.subTest(request=request):
                 original = copy.deepcopy((facts, request, effective))
                 expected = placer_runner._plan_local(facts, request, effective, heartbeat=lambda _: None)
-                with placement_rust_runtime.experimental(self.binary):
+                with placement_rust_runtime.using(self.binary):
                     actual = placer_runner._plan(facts, request, effective)
                 self.assertEqual(actual, expected)
                 self.assertEqual((facts, request, effective), original)
 
 
 class RustTransportTest(unittest.TestCase):
+    def test_bad_explicit_binary_never_uses_installed_binary_or_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = str(Path(directory) / 'missing')
+            with mock.patch.dict(os.environ, {'AGENT_EE_RUST_PLANNER': missing}), \
+                    mock.patch.object(placement_rust_runtime.shutil, 'which', side_effect=AssertionError('PATH fallback')), \
+                    mock.patch.object(placer_runner, '_plan_local', side_effect=AssertionError('Python fallback')):
+                with self.assertRaisesRegex(placement_runtime.PlanningProcessError, 'not executable'):
+                    placer_runner._plan({}, {})
+
+    def test_installed_binary_is_resolved_with_cleared_environment(self):
+        # The production Bubblewrap sandbox mounts /usr and clears caller env.
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(placement_rust_runtime, '_INSTALLED', Path(sys.executable)), \
+                mock.patch.object(placement_rust_runtime.shutil, 'which', side_effect=AssertionError('PATH searched')):
+            self.assertEqual(placement_rust_runtime.resolve_executable(), Path(sys.executable).resolve())
+
+    def test_json_validation_rejects_lossy_input_before_starting_child(self):
+        for payload, reason in [({'tuple': (1, 2)}, 'JSON-native values'), ({1: 2}, 'keys must be strings')]:
+            with self.subTest(payload=payload):
+                with mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=AssertionError('child started')):
+                    with self.assertRaisesRegex(ValueError, reason):
+                        placement_rust_runtime.Session(sys.executable).plan(payload, {}, None, None, heartbeat=self.fail)
+
     def test_callback_failure_and_malformed_records_reap_owned_child_and_retain_stderr(self):
         heartbeat = json.dumps({'schema': placement_rust_runtime._SCHEMA, 'kind': 'heartbeat',
                                 'record': {'status': 'packing', 'steps_used': 17}})

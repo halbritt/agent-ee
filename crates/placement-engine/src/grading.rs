@@ -1470,7 +1470,13 @@ fn capacity_impossibility(sides: &BTreeMap<String, CapacitySide>, p: &Value) -> 
     }
     None
 }
-pub fn capacity_proofs(c: &Value, p: &Value) -> Result<(Option<Value>, Value)> {
+pub struct CapacityProofs {
+    pub early: Option<Value>,
+    pub deferred: Option<Value>,
+    pub diagnostic: Value,
+}
+
+pub fn capacity_proofs(c: &Value, p: &Value, defer: bool) -> Result<CapacityProofs> {
     let o = outline(c)?;
     let fixed = fixed_refs(c, p)?;
     let empty = json!([]);
@@ -1522,7 +1528,7 @@ pub fn capacity_proofs(c: &Value, p: &Value) -> Result<(Option<Value>, Value)> {
         .as_ref()
         .is_some_and(|r| r["outcome"] == "defect" || p["capacity_proof"] != true)
     {
-        return Ok((region_failure, Value::Null));
+        return Ok(CapacityProofs { early: region_failure, deferred: None, diagnostic: Value::Null });
     }
     let sides = board_capacity(c, &o, &fixed, p, &margin, false)?;
     let mut capacity = capacity_diagnostic(&sides, p, &margin)?;
@@ -1537,7 +1543,7 @@ pub fn capacity_proofs(c: &Value, p: &Value) -> Result<(Option<Value>, Value)> {
     if !omitted.is_empty() {
         capacity["excluded_access_overhang_refs"] = json!(omitted);
     }
-    let mut proof = if p["capacity_proof"] == true {
+    let mut proof = if defer || p["capacity_proof"] == true {
         capacity_impossibility(&sides, p)
     } else {
         None
@@ -1619,11 +1625,14 @@ pub fn capacity_proofs(c: &Value, p: &Value) -> Result<(Option<Value>, Value)> {
         failure["proof"] = proof;
         failure["capacity"] = capacity.clone();
         let failure = policy::soft_proof(failure, &binding);
+        if defer {
+            return Ok(CapacityProofs { early: region_failure, deferred: Some(failure), diagnostic: capacity });
+        }
         if failure["outcome"] == "defect" || region_failure.is_none() {
-            return Ok((Some(failure), capacity));
+            return Ok(CapacityProofs { early: Some(failure), deferred: None, diagnostic: capacity });
         }
     }
-    Ok((region_failure, capacity))
+    Ok(CapacityProofs { early: region_failure, deferred: None, diagnostic: capacity })
 }
 
 #[cfg(test)]

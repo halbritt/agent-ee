@@ -889,7 +889,8 @@ def _plan(facts, request, policy=None, netlist=None):
     runtime = active()
     if runtime is not None:
         return runtime.plan(facts, request, policy, netlist, heartbeat=_heartbeat)
-    return _plan_local(facts, request, policy, netlist)
+    from .placement_rust_runtime import Session
+    return Session().plan(facts, request, policy, netlist, heartbeat=_heartbeat)
 
 
 def _plan_local(facts, request, policy=None, netlist=None, *, heartbeat=None):
@@ -1084,7 +1085,8 @@ def traced_place_candidate(source, netlist, destination, request, trace_path, *,
     persist = functools.partial(_persist_trace, trace_path=trace_path, source=source, netlist=netlist,
                                 request=request, experiment=experiment)
     try:
-        with placement_trace.recording(limits) as recorder:
+        from .placement_runtime import python_reference
+        with python_reference(), placement_trace.recording(limits) as recorder:
             report = place_candidate(source, netlist, destination, request)
     except BaseException as exc:
         state = {'status': 'failed' if isinstance(exc, Exception) else 'interrupted',
@@ -1113,7 +1115,7 @@ def main(argv=None):
     parser.add_argument('--destination', required=True)
     parser.add_argument('--result', required=True)
     parser.add_argument('--skip-visuals', action='store_true')
-    parser.add_argument('--trace', help='opt-in placement trace: fresh file directly inside the writable root')
+    parser.add_argument('--trace', help='Python-reference placement trace: fresh file directly inside the writable root')
     parser.add_argument('--trace-experiment', help='experiment identifier recorded in the trace')
     args = parser.parse_args(argv)
     request = read_json(args.request)

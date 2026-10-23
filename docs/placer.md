@@ -2221,7 +2221,12 @@ for resolution provenance, path safety and publication checks.
 an opt-in, bounded timing and Stage-A replay trace. Tracing is off by default and
 leaves plans and boards unchanged. See [placement trace](placement-trace.md).
 
-The opt-in [Rust scorer](placement-scoring.md) accelerates the exact Stage-A
-wire cost while retaining lazy ordering and generation invalidation. Its fast
-mode and full Python verification mode have separate benchmark timings;
-ordinary placement continues to use Python.
+
+## Rust runtime
+
+Normal `placer_runner` requests use the complete
+[Rust planner](../crates/placement-engine/README.md). KiCad capture, board writes,
+side-change authorization and independent native validation remain in the common
+runner. The installed executable is required; process failures never switch to
+Python. The Python implementation remains the parity reference. `--trace`
+explicitly runs that reference to collect Python search internals.

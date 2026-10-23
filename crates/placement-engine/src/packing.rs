@@ -329,6 +329,7 @@ struct Attempt {
     steps: u64,
     deadline: Option<Instant>,
     copper: bool,
+    capacity_failure: Option<Value>,
 }
 impl Attempt {
     fn early(plan: Value) -> Self {
@@ -337,6 +338,7 @@ impl Attempt {
             steps: 0,
             deadline: None,
             copper: false,
+            capacity_failure: None,
         }
     }
 }
@@ -361,6 +363,7 @@ pub fn pack_arranged(
     let mut used = legacy.steps;
     let deadline = legacy.deadline;
     let copper = legacy.copper;
+    let capacity_failure = legacy.capacity_failure;
     let legacy_record = json!({"status":legacy.plan["status"],"steps_used":legacy.steps});
     let mut result = legacy.plan;
     if result["search"].get("locality_clusters").is_some() {
@@ -417,7 +420,21 @@ pub fn pack_arranged(
                 "reason":aligned.plan["reason"],"steps_used":aligned.steps,"prior_steps_used":used});
         }
     }
-    Ok(result)
+    Ok(proved_after_search(result, capacity_failure))
+}
+
+fn proved_after_search(mut result: Value, proof: Option<Value>) -> Value {
+    if !matches!(result["status"].as_str(), Some("packing_search_exhausted" | "packing_budget_exhausted" | "locality_cluster_exhausted")) {
+        return result;
+    }
+    if let Some(proof) = proof {
+        let steps = result["steps_used"].clone();
+        let search_failure = json!({"status":result["status"], "outcome":result["outcome"], "reason":result["reason"]});
+        result.as_object_mut().unwrap().extend(proof.as_object().unwrap().clone());
+        result["steps_used"] = steps;
+        result["search_failure"] = search_failure;
+    }
+    result
 }
 
 fn attempt(
@@ -559,8 +576,11 @@ fn attempt(
             return Ok(Attempt::early(plan));
         }
     }
-    let (proof, capacity) = grading::capacity_proofs(&prepared.capture.raw, policy)?;
-    if let Some(mut plan) = proof {
+    // Only the first pass retains a default proof. Search and retries keep their
+    // budgets; successful plans and judge refusals retain their own verdicts.
+    let proofs = grading::capacity_proofs(&prepared.capture.raw, policy,
+        remaining.is_none() && policy.get("capacity_proof").is_none())?;
+    if let Some(mut plan) = proofs.early {
         if let Some(carried) = prepared.carried {
             plan["carried_fixed_pairs"] = json!(carried);
         }
@@ -608,7 +628,7 @@ fn attempt(
     }
     let queue = queue(&search, policy)?;
     let clusters = clusters(&queue, &search.fixed, policy)?;
-    let mut plan = run(&mut search, policy, &queue, &clusters, joint, &capacity)?;
+    let mut plan = run(&mut search, policy, &queue, &clusters, joint, &proofs.diagnostic)?;
     if let Some(carried) = carried {
         plan["carried_fixed_pairs"] = json!(carried);
     }
@@ -620,6 +640,7 @@ fn attempt(
         steps: search.steps,
         deadline: search.deadline,
         copper,
+        capacity_failure: proofs.deferred,
     })
 }
 

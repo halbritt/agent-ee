@@ -1,5 +1,10 @@
 # Matched telemetry scorer comparison: method
 
+Historical scalar comparison, superseded by the complete Rust-planner results in
+[the result table](scorer-results-2026-10-22.md). Reproduction requires an isolated
+checkout of `6f48b9f2653ff2d3b5a10c1a9c2a5a0b3f9b061c`; its C/PyPy experiment
+tools are retired from the shipping tree.
+
 The result table is in `scorer-results-2026-10-22.md`; machine-readable measurements and evidence hashes are in `scorer-four-way-2026-10-22.json`.
 
 One frozen iter8n telemetry-pod input is executed 16 times, with four fresh workers per implementation. The four round orders are CPython/C/PyPy/Rust, C/Rust/CPython/PyPy, Rust/PyPy/C/CPython, and PyPy/CPython/Rust/C. Each implementation occupies every position once. Runs are serial on one isolated `c2d-highcpu-4` Spot VM (AMD EPYC 7B13).

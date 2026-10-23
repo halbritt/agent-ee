@@ -4038,13 +4038,26 @@
     },
     {
       "paths": [
-        "src/agent_ee/data/placement_score.rs"
+        "crates/placement-engine/src/",
+        "crates/placement-engine/Cargo.toml",
+        "crates/placement-engine/Cargo.lock",
+        "crates/placement-engine/.gitignore"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original Rust port of the agent-ee AGENTEE-431 integer Manhattan scorer, with owned prepared-state and bounded integer fast paths. No third-party source, designs, or libraries."
+      "reviewed": "Original complete Rust implementation of agent-ee placement planning, with owned manifest and dependency lock metadata. No vendored third-party source or design data."
+    },
+    {
+      "paths": [
+        "crates/placement-engine/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original Rust planner build, protocol, runtime and parity documentation."
     }
   ]
 }
