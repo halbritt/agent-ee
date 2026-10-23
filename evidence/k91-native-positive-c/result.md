@@ -132,6 +132,11 @@ Separately, every ae-ci-exec image rebuild changes the extension digest. Either 
 
 Status of this section: **INCOMPLETE**. The preflight was EXACT, and the ONE attempt ran (no retry).
 - **The native positive was ACCEPTED.** It went through the actual consumer `campaign.run_implementation_steps` (run_step, then verify_campaign_receipt, then adopt), into the disposable OUT/positive/design copy only.
+  - **R1 scope qualifiers (agent-510, verbatim):**
+    - The RC fixture was ALREADY CONNECTED. baseline_unconnected_total=0 and unconnected_total=0; new_tracks, new_vias and new_track_length_mm are all 0; backend successful, failed and total_iterations are all 0; gained, lost and worsened are empty; terminal metrics are 3 nets, 0 incomplete, 0 deficit; native DRC 0 violations, parity and preservation PASS.
+    - So the positive proves real run_step → verify → adopt PLUMBING on the bd1 runtime. It is NOT evidence of routing work or algorithmic improvement. Changed board/tree hashes must not be read as newly routed copper.
+    - Bare stage_receipts.adopt ACCEPTS a sidecar-tampered result, while the full consumer refuses it. That is the known AGENTEE-465 boundary and must be retained as a stated limitation.
+    - Control A stays INCOMPLETE.
 - **Controls:**
   - (b) candidate-board bytes: REFUSED.
   - (c) stale input: REFUSED.
@@ -259,6 +264,11 @@ The preflight was a separate admitted run: queued 01:24:01Z, admitted 01:26:42Z,
 
 What the positive verified:
 - Adapter: classification complete, proposal eligible, coverage routing_complete.
+  - **R1 scope qualifiers (agent-510, verbatim):**
+    - The RC fixture was ALREADY CONNECTED. baseline_unconnected_total=0 and unconnected_total=0; new_tracks, new_vias and new_track_length_mm are all 0; backend successful, failed and total_iterations are all 0; gained, lost and worsened are empty; terminal metrics are 3 nets, 0 incomplete, 0 deficit; native DRC 0 violations, parity and preservation PASS.
+    - So the positive proves real run_step → verify → adopt PLUMBING on the bd1 runtime. It is NOT evidence of routing work or algorithmic improvement. Changed board/tree hashes must not be read as newly routed copper.
+    - Bare stage_receipts.adopt ACCEPTS a sidecar-tampered result, while the full consumer refuses it. That is the known AGENTEE-465 boundary and must be retained as a stated limitation.
+    - Control A stays INCOMPLETE.
 - Experiment: `status: retained`, `qualified: false`, schema routability-experiment/1. The sidecar is comparison_eligible true with ineligible_reasons [].
 - policy_qualification: actual trace layers [F.Cu], via spans [[F.Cu, B.Cu]], coverage board-and-footprint.
 - Declared policy sha eac2b8ec…; producer policy_sha256 3899a9ee….
