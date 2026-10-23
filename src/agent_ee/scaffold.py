@@ -150,10 +150,14 @@ def board(record, seed):
         native_layer = ['layer', Q(label), ['type', Q(native_type)], ['thickness', layer['thickness_mm']]]
         if layer['kind'] == 'dielectric':
             for field in ('epsilon_r', 'loss_tangent'):
-                # Unknown material data stays absent here. KiCad may serialize its
-                # own default; saved evidence must not promote that to source data.
                 if layer.get(field) is not None:
                     native_layer.append([field, layer[field]])
+                elif field == 'loss_tangent' and any(
+                        key in layer for key in ('dielectric_type', 'epsilon_r', 'loss_tangent')):
+                    # KiCad 10.0.7 saves 0.02 even when the field is omitted.
+                    # This is its serialization default, not sourced material data;
+                    # the bound declaration and saved checks retain unknown loss.
+                    native_layer.append([field, '0.02'])
         stackup.append(native_layer)
     node = ['kicad_pcb', ['version', '20260206'], ['generator', Q('pcbnew')],
             ['generator_version', Q('10.0')],

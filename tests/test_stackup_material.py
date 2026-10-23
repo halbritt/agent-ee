@@ -94,6 +94,12 @@ class StackupMaterialTest(unittest.TestCase):
         self.assertEqual([(l['dielectric_type'], l['epsilon_r'], l['loss_tangent']) for l in declared],
                          [(kind, er, None) for kind, er in MATERIALS])
         generated = board(record, 'authored-stackup-material')
+        # KiCad's observed serialization default is explicit, while the sourced
+        # unknown stays null. The native number is not an impedance input.
+        self.assertEqual(generated.count(b'(loss_tangent 0.02)'), 3)
+        self.assertEqual([layer['loss_tangent'] for layer in declared], [None] * 3)
+        self.assertEqual([layer['loss_tangent'] for layer in self.envelope['stackup']['layers']
+                          if layer['kind'] == 'dielectric'], [None] * 3)
         saved = self.native_save(generated, 'correct')
         facts = board_facts(saved)
         layers = [l for l in facts['stackup'] if l['type'] in ('core', 'prepreg')]

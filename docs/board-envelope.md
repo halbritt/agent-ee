@@ -98,11 +98,12 @@ bytes, hashes and quote presence; it does not interpret the material claim.
 Numeric material values use the same
 exact 32-place decimal limits as copper weights; excess precision is refused.
 
-KiCad may write its default `loss_tangent: 0.02` when an input omits loss or
-declares it `null`. Such a saved value remains a **tool default**, while the
-envelope retains unknown loss. Native load/save with KiCad 10.0.7 confirms this
-behavior. A different saved value is still unqualified when the source declares
-unknown loss; it is not necessarily a KiCad default.
+When any material field is declared and loss is omitted or `null`, the scaffold
+explicitly writes `loss_tangent: 0.02`, the serialization default verified by
+native load/save with KiCad 10.0.7. This is a **tool default**; the envelope
+retains unknown loss. Legacy layers without material fields keep their original
+emission behavior. A different saved value is still unqualified when the source
+declares unknown loss; it is not necessarily a KiCad default.
 
 `stackup/1` compares supplied type, permittivity and numeric loss exactly with
 saved values. Declared unknown loss produces an unknown result and retains
