@@ -23,10 +23,20 @@ passing tool fixtures do not complete the PCB outcome.
 The full [direct owner change request](functional-block-placement-request.md)
 defines required block behavior and placement acceptance. The [org chart](org-chart.md)
 and [campaign process](campaign-process.md) define delegation and integration.
-Agent-529 retains consequential decisions and acceptance; detailed investigations,
-implementation, native runs and independent reviews stay with existing agents
-selected by 449. Agent-519 consolidates replies and returns decision-changing
-findings, exact artifact references and material exceptions.
+Chief agent-531 (replaced 529) retains consequential decisions and acceptance;
+integrator agent-530 (replaced 449) dispatches, verifies and lands; detailed
+investigations, implementation, native runs and independent reviews stay with the
+agents it dispatches. Agent-532 (replaced 519) is the relay and owner-decision
+contact; on 2026-10-23 about 22:40Z the owner named it owner delegate ("owner
+decision contact, that's you"), for owner-reserved questions the owner has not
+ruled on, never changing hard limits. The owner's own word overrides 532.
+
+Owner power ruling, 2026-10-23 about 22:42Z, verbatim via 532: "250ma continuous
+is a good target, but I doubt it will draw more than 100ma". The 5 V sensor/ADC
+rail design target is 250 mA continuous, with an expected draw of 100 mA or less.
+It replaces the agent-chosen 350 mA (150 mA AUX + 200 mA direct). The AUX versus
+direct split is a chief allocation, not owner text. Unchanged: 5.00 V +/-1% and
+a total under 2 A at 12 V.
 
 ## Current evidence and unresolved questions
 
