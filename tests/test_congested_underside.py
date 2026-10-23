@@ -273,6 +273,8 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         # These are real Stage-A search products, including the initially
         # unconstrained C1-before-C2 order. No retained layout is transplanted.
         self.assertEqual(request['policy']['priority_refs'], ['C1', 'C2'])
+        self.assertEqual(request['policy']['step_budget'], fixture.CHAIN_STEP_BUDGET)
+        self.assertEqual(request['blocks']['arrangement']['step_budget'], fixture.STEP_BUDGET)
         for bundle in candidates:
             for variant in bundle['variants'].values():
                 if variant['status'] == 'packed':

@@ -30,6 +30,7 @@ from test_placement import MM, rectangle
 
 NAMESPACE = uuid.UUID('a87979ad-5c32-4d51-9742-0a823863a095')
 STEP_BUDGET = 1000
+CHAIN_STEP_BUDGET = 20000
 CITATION = 'tests/underside_fixture.py: authored access, spacing and underside shadow constraints'
 SOURCE_TEXT = 'Original fixture: connector A is front-only; the U1/C1 maximum pad-pair distance is 3 mm.'
 SOURCE_PATH = 'fixture-sources/underside-access-and-distance.txt'
@@ -107,6 +108,14 @@ def policy():
 def chain_policy():
     """Authored U1-C2-C1 electrical chain, C1 searched before its C2 peer."""
     result = policy()
+    # The taller bridge enlarges Stage A's synthetic plane. At 1,000 steps,
+    # its first distant C1 pose exhausts C2's search before the first backjump.
+    # A feasible frame still exists: U1(0,0) F/0, C2(-2.5,-.6) F/270,
+    # C1(-2.5,-1) B/0 mm. The F courtyards have exactly .5 mm separation;
+    # all four pad-pair squared distances (including 1.6 mm thickness) are
+    # <=6.29 mm^2, below the authored 16 mm^2 bound. These coordinates are
+    # arithmetic evidence only: the producer must discover its own candidate.
+    result['step_budget'] = CHAIN_STEP_BUDGET
     result['priority_refs'] = ['C1', 'C2']
     text = 'Original synthetic chain: each declared pad-pair maximum distance is 4 mm.'
     path = 'fixture-sources/underside-chain-distance.txt'
