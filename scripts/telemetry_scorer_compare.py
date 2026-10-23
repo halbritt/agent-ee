@@ -164,17 +164,20 @@ def worker(config_path):
             context = placement_runtime.experimental(config['pypy'])
         elif config['backend'] == 'rust':
             context = placement_scoring.experimental(config['library'])
+        elif config['backend'] == 'c':
+            from placement_scoring_c import experimental
+            context = experimental(config['c_library'])
         else:
             context = nullcontext(None)
         with context as session:
             restore_probe = (record_first_native_call(session.native, first_native_invocation)
-                             if config['backend'] == 'rust' and session.native is not None else None)
+                             if config['backend'] in ('c', 'rust') and session.native is not None else None)
             try:
                 report = place_candidate(config['board'], config['netlist'], arm / 'proposal', request)
             finally:
                 if restore_probe is not None:
                     restore_probe()
-                if config['backend'] == 'rust':
+                if config['backend'] in ('c', 'rust'):
                     events = list(session.events)
                 elif config['backend'] == 'pypy':
                     planning_calls = list(session.calls)
@@ -198,20 +201,21 @@ def worker(config_path):
                 'pypy_planning_calls': planning_calls,
                 'invocation_probe': ('first native call only; both hooks removed before dispatch; '
                                      'setup and one-call recording overhead included; no oracle'
-                                     if config['backend'] == 'rust' else None),
+                                     if config['backend'] in ('c', 'rust') else None),
                 'status': report.get('status') if report is not None else None,
                 'boundary': 'scorer context/library loading and complete place_candidate; imports and external result serialization excluded'}
     save(arm / 'worker-metadata.json', metadata)
     return 1 if failure or events else (0 if report is not None and report.get('status') == 'placed' else 2)
 
 
-def run_arm(config, backend, root):
+def run_arm(config, backend, root, *, worker_script=None, timeout_seconds=TIMEOUT_SECONDS):
     arm = root / backend
     arm.mkdir()
     specification = {**config, 'backend': backend, 'arm_root': str(arm)}
     save(arm / 'worker-input.json', specification)
-    argv = [shutil.which('timeout'), '--signal=TERM', '--kill-after=5s', f'{TIMEOUT_SECONDS}s',
-            sys.executable, '-B', str(Path(__file__).resolve()), '--worker', str(arm / 'worker-input.json')]
+    script = Path(worker_script).resolve() if worker_script is not None else Path(__file__).resolve()
+    argv = [shutil.which('timeout'), '--signal=TERM', '--kill-after=5s', f'{timeout_seconds}s',
+            sys.executable, '-B', str(script), '--worker', str(arm / 'worker-input.json')]
     before_cpu, before_environment = usage(resource.RUSAGE_CHILDREN), environment()
     started = time.perf_counter_ns()
     with (arm / 'stdout.log').open('wb') as stdout, (arm / 'stderr.log').open('wb') as stderr:
@@ -219,7 +223,7 @@ def run_arm(config, backend, root):
     elapsed = time.perf_counter_ns() - started
     after_cpu = usage(resource.RUSAGE_CHILDREN)
     record = {'backend': backend, 'argv': argv, 'exit_code': process.returncode,
-              'timeout_s': TIMEOUT_SECONDS, 'process_wall_ns': elapsed,
+              'timeout_s': timeout_seconds, 'process_wall_ns': elapsed,
               'process_tree_cpu': cpu_delta(before_cpu, after_cpu),
               'environment_before': before_environment, 'environment_after': environment(),
               'boundary': 'GNU timeout plus Python worker process, imports, runner and metadata writes'}
