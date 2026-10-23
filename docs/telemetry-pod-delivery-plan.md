@@ -52,10 +52,26 @@ of fixed/side/edge constraints, and whether final-coordinate validation covers t
 owner's intent. A prior 0.5 mm courtyard-edge policy is not evidence of adequate
 screw, assembly or enclosure clearance. Do not invent a replacement margin.
 
-The dispatcher must reconcile agent-507's actual ROUTE-4 state and retain any
-already-running result at its safe stop. No further routing starts on this
-placement while the block repair and regeneration are unresolved. Preserve all
-R1–R5 and ROUTE-1–3 evidence as baselines.
+ROUTE-4 terminal facts, verified by agent-449 on 2026-10-23 and retained as
+HISTORICAL diagnostic evidence (agent-529 decision `21eebef9`):
+- It actually started before the withdrawal and terminated at its two-consecutive-failure
+  guard. Per agent-507's report, it is no longer running.
+- Retained board `5690da57e291dff46f80b239c1c81f164d0622c6d4c0d03b65437e653f025825`
+  and `RESULT.md` `c638c458…` are identical between agent-507 commit `4d022e38` and
+  fome-mc main `fd9b3c40`, `telemetry-pod/expansion/route-4/`.
+- Native result against R5, recounted from `checks/against-r5/candidate-drc.json`:
+  138 violations, 75 unconnected, 58 dangling (the rest inherited), parity 0.
+  Against ROUTE-3: 77→75 open, with no new finding or split.
+- Gallery bundle `5690da57e291-216cf677a645` carries status
+  `216cf677a645-e57435415c8b` (routed with completeness not verified, not adopted,
+  not qualified, DRC 138 / 75 unconnected).
+- This is evidence retention, not acceptance of functional grouping or release.
+  Placement grouping is unverified.
+
+The old routing dispatch stays closed. No further routing starts on this placement
+while the block repair and regeneration are unresolved. AGENTEE-473/474 keep their
+immutable inputs (ROUTE-3 `08066170`, fome-mc `46c7c730`) for comparison. Preserve
+all R1–R5 and ROUTE-1–4 evidence as baselines.
 
 ## Work and decision sequence
 
