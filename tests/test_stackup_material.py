@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import time
 import unittest
 
 from agent_ee.board_envelope import board_facts, round_trip, source_inventory, validate
@@ -178,6 +179,86 @@ class StackupMaterialTest(unittest.TestCase):
                 layer.update(declaration)
                 with self.assertRaisesRegex(ValueError, 'material declaration requires dielectric_type'):
                     self.record(changed)
+
+    def test_material_declarations_require_explicit_er(self):
+        for declaration in ({'dielectric_type': 'core'},
+                            {'dielectric_type': 'prepreg', 'loss_tangent': None},
+                            {'dielectric_type': 'prepreg', 'loss_tangent': 0},
+                            {'dielectric_type': 'prepreg', 'loss_tangent': 0.018}):
+            with self.subTest(declaration=declaration):
+                changed = copy.deepcopy(self.envelope)
+                layer = changed['stackup']['layers'][1]
+                for field in ('dielectric_type', 'epsilon_r', 'loss_tangent'):
+                    layer.pop(field)
+                layer.update(declaration)
+                with self.assertRaisesRegex(ValueError, 'material declaration requires epsilon_r'):
+                    self.record(changed)
+
+    def test_unavailable_saved_materials_do_not_invent_mismatches(self):
+        record = self.record()
+        generated = board(record, 'unavailable-material')
+        for value in (b'4.4 4.1', b'nan'):
+            with self.subTest(value=value):
+                facts = saved_structure(generated.replace(b'(epsilon_r 4.4)', b'(epsilon_r ' + value + b')', 1))
+                self.assertIn('unavailable', facts['stackup'])
+                result = compare_saved('stackup/1', record, facts)
+                self.assertEqual((result['status'], result['defects']), ('unknown', []), result)
+                self.assertIn(facts['stackup']['unavailable'], result['unknown'])
+                self.assertIs(result['impedance_qualified'], False)
+                self.assertTrue(all(row['serialized_value'] is None for row in result['material_evidence']))
+        for materials in (None, [], [{'name': 'dielectric 1', 'dielectric_type': 'prepreg'}]):
+            with self.subTest(materials=materials):
+                facts = saved_structure(generated)
+                if materials is None:
+                    del facts['stackup_material']
+                else:
+                    facts['stackup_material'] = materials
+                result = compare_saved('stackup/1', record, facts)
+                self.assertEqual((result['status'], result['defects']), ('unknown', []), result)
+                self.assertTrue(any('unavailable' in reason for reason in result['unknown']))
+
+    def public_check(self, payload, name):
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import digest, write_json
+        run = self.root / name
+        inputs = run / 'inputs'
+        shutil.copytree(self.source, inputs)
+        (inputs / 'board.kicad_pcb').write_bytes(payload)
+        spec = {'id': 'stackup', 'kind': 'board_envelope',
+                'params': {'criterion': 'stackup/1', 'envelope': 'envelope.json'}}
+        manifest = {'candidate_id': 'owned-material-public-boundary',
+                    'scope': {'board': 'board.kicad_pcb', 'checks': [spec],
+                              'envelope': {'path': 'envelope.json', 'profile': 'fab-profile.json'}},
+                    'files': {p.relative_to(inputs).as_posix(): digest(p)
+                              for p in inputs.rglob('*') if p.is_file()}}
+        write_json(run / 'candidate.json', manifest)
+        result, = run_checks(run, time.monotonic() + 60)
+        self.assertEqual(json.loads((run / 'checks/stackup.json').read_text()), result)
+        judgment = json.loads((run / 'work/stackup/envelope-judgment.json').read_text())
+        for field in ('status', 'defects', 'unknown', 'material_evidence', 'impedance_qualified'):
+            self.assertEqual(result['details'][field], judgment[field])
+        self.assertIn('work/stackup/envelope-judgment.json', result['evidence'])
+        return result, judgment
+
+    def test_public_material_defect_survives_unknown_loss(self):
+        require_toolchain(native=True)
+        generated = board(self.record(), 'public-material-boundary')
+        for name, before, after, expected in (
+                ('correct', b'(epsilon_r 4.4)', b'(epsilon_r 4.4)', 'unknown'),
+                ('wrong-er', b'(epsilon_r 4.4)', b'(epsilon_r 4.1)', 'defect'),
+                ('wrong-type', b'(type "prepreg")', b'(type "core")', 'defect')):
+            with self.subTest(control=name):
+                result, judgment = self.public_check(generated.replace(before, after, 1), name)
+                self.assertEqual((result['execution'], result['outcome']),
+                                 ('ok' if expected == 'defect' else 'unsupported', expected), result)
+                self.assertEqual(judgment['status'], expected)
+                self.assertEqual(bool(judgment['defects']), expected == 'defect')
+                self.assertEqual(len(judgment['unknown']), 3)
+                self.assertEqual(len(judgment['material_evidence']), 3)
+                self.assertIs(judgment['impedance_qualified'], False)
+                for row in judgment['material_evidence']:
+                    self.assertEqual((row['source_value'], row['serialized_value'], row['qualification'],
+                                      row['used_for_impedance']), (None, '0.02', 'unqualified', False))
 
     def test_native_zero_loss_is_known_and_compared(self):
         require_toolchain(native=True)

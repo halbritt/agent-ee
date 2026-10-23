@@ -461,6 +461,8 @@ def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
                    ['dielectric_type', 'epsilon_r', 'loss_tangent'] if sourced else [])
             if any(field in layer for field in ('epsilon_r', 'loss_tangent')) and 'dielectric_type' not in layer:
                 raise ValueError('dielectric material declaration requires dielectric_type')
+            if any(field in layer for field in ('dielectric_type', 'loss_tangent')) and 'epsilon_r' not in layer:
+                raise ValueError('dielectric material declaration requires epsilon_r')
             if 'dielectric_type' in layer:
                 if layer['dielectric_type'] not in ('core', 'prepreg'):
                     raise ValueError('dielectric_type must be core or prepreg')
