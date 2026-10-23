@@ -1,5 +1,6 @@
 """Consume planned-plane obligations on the saved post-routing board."""
 import argparse
+import copy
 import time
 from pathlib import Path
 
@@ -63,17 +64,91 @@ def binding_inputs(params):
     for declaration in declarations:
         if not isinstance(declaration, dict) or set(declaration) != {'plan', 'producer', 'composition'}:
             raise ValueError('plane obligation requires plan, producer and composition bindings')
-        for link in declaration.values():
-            if not isinstance(link, dict) or set(link) != {'path', 'sha256'}:
-                raise ValueError('plane binding requires path and sha256')
-            paths.add(_relative(link['path'], 'plane binding'))
+        for kind, link in declaration.items():
+            late = kind == 'producer' and isinstance(link, dict) and set(link) == {'path', 'stage'}
+            if late and link['stage'] != 'add-planes':
+                raise ValueError('late plane producer must name add-planes')
+            if not isinstance(link, dict) or (not late and set(link) != {'path', 'sha256'}):
+                raise ValueError('plane binding requires path and sha256, or an add-planes producer stage')
+            path = _relative(link['path'], 'plane binding')
+            if late:
+                continue
+            paths.add(path)
             value = link['sha256']
             if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
                 raise ValueError('plane binding requires a SHA-256 digest')
     return sorted(paths)
 
 
-def bound_plans(inputs, files, params):
+def complete_bindings(inputs, files, params, producer_receipts=None, *, board=None):
+    """Resolve late report hashes only from validated producing-stage outputs."""
+    from .stage_receipts import ADOPTABLE, validate_receipt
+    binding_inputs(params)
+    completed, evidence = copy.deepcopy(params), []
+    for declaration in completed.get('plane_obligations', []):
+        producer = declaration['producer']
+        if 'stage' not in producer:
+            continue
+        path = producer['path']
+        anchor = (producer_receipts or {}).get(path)
+        if not isinstance(anchor, dict) or set(anchor) != {'path', 'sha256'}:
+            raise ValueError('late plane producer has no authenticated stage receipt: ' + path)
+        receipt_path = Path(anchor['path'])
+        if receipt_path.is_symlink() or not receipt_path.is_file() or digest(receipt_path) != anchor['sha256']:
+            raise ValueError('stale plane producer stage receipt: ' + path)
+        receipt = validate_receipt(receipt_path.parent)
+        if receipt['status'] not in ADOPTABLE or receipt['spec']['step'] != 'add-planes':
+            raise ValueError('plane producer stage was not adopted successfully: ' + path)
+        expected = receipt['outputs'].get(path)
+        if (not expected or files.get(path) != expected or not (Path(inputs)/path).is_file()
+                or digest(Path(inputs)/path) != expected):
+            raise ValueError('missing or stale adopted plane producer report: ' + path)
+        report = read_json(Path(inputs)/path)
+        if not isinstance(report, dict):
+            raise ValueError('adopted plane report is not an object: ' + path)
+        native = board if board is not None else report.get('board_path')
+        plan = declaration['plan']
+        if (receipt['spec']['writes'].get(path) != 'out/planes.json' or
+                receipt['spec']['writes'].get(native) != 'out/board.kicad_pcb' or
+                report.get('schema') != 'agent-ee.add-planes/1' or report.get('execution') != 'ok' or
+                report.get('board_path') != native or report.get('plan_path') != plan['path'] or
+                report.get('board_before') != receipt['inputs'].get(native) or
+                report.get('board_after') != receipt['outputs'].get(native) or
+                report.get('plan_sha256') != plan['sha256'] or
+                receipt['inputs'].get(plan['path']) != plan['sha256']):
+            raise ValueError('adopted plane report differs from producing plan or board: ' + path)
+        declaration['producer'] = {'path': path, 'sha256': expected}
+        evidence.append({'plan': dict(plan), 'composition': dict(declaration['composition']),
+                         'producer': dict(declaration['producer']), 'receipt': dict(anchor),
+                         'board': native, 'board_after': report['board_after']})
+    return completed, evidence
+
+
+def producing_receipts(ctx):
+    """Authenticate the add-planes predecessor through the anchored owned-router input."""
+    from .rf_review import retained_routing
+    from .stage_receipts import validate_receipt, after_tree
+    routing = retained_routing(ctx.run_dir)
+    board = ctx.scope['board']
+    if routing.get('status') != 'verified' or routing.get('board', {}).get('sha256') != ctx.manifest['files'].get(board):
+        raise ValueError('late plane binding requires verified routing evidence for this board')
+    link = routing.get('receipt') or {}
+    path = Path(link.get('path', ''))
+    if path.is_symlink() or not path.is_file() or digest(path) != link.get('sha256'):
+        raise ValueError('anchored routing receipt is missing or stale')
+    routed = validate_receipt(path.parent)
+    index = routed['binding'].get('receipt_index')
+    if type(index) is not int or index <= 1 or routed['outputs'].get(board) != ctx.manifest['files'][board]:
+        raise ValueError('routing receipt does not bind this saved board or a plane predecessor')
+    prior = path.parent.parent / f'{index - 1}-add-planes'
+    receipt = validate_receipt(prior, binding={**routed['binding'], 'receipt_index': index - 1})
+    if receipt['spec']['step'] != 'add-planes' or after_tree(receipt) != routed['inputs']:
+        raise ValueError('plane producer does not precede the routed input')
+    return {name: {'path': str(prior/'receipt.json'), 'sha256': digest(prior/'receipt.json')}
+            for name, output in receipt['spec']['writes'].items() if output == 'out/planes.json'}
+
+
+def bound_plans(inputs, files, params, *, producer_receipts=None, board=None):
     """Resolve explicit scope bindings against captured producer and composition facts.
 
     The producer report is provenance, not a substitute for saved-board checks.
@@ -83,6 +158,7 @@ def bound_plans(inputs, files, params):
     from .stage_receipts import _relative
     inputs = Path(inputs)
     binding_inputs(params)
+    params, _ = complete_bindings(inputs, files, params, producer_receipts, board=board)
     declarations = params.get('plane_obligations', [])
     plans, producers, compositions = set(), set(), set()
     composition_plans = {}
@@ -153,7 +229,14 @@ def check_captured(ctx, drc):
     """Final DRC consumes every bound planned-plane obligation."""
     from .checks import CheckError
     try:
-        paths = bound_plans(ctx.inputs, ctx.manifest['files'], ctx.params)
+        binding_inputs(ctx.params)
+        anchors = (producing_receipts(ctx) if any('stage' in d['producer']
+                   for d in ctx.params.get('plane_obligations', [])) else None)
+        params, bindings = complete_bindings(ctx.inputs, ctx.manifest['files'], ctx.params,
+                                            anchors, board=ctx.scope['board'])
+        paths = bound_plans(ctx.inputs, ctx.manifest['files'], params)
+        if bindings:
+            ctx.result['details']['plane_bindings'] = bindings
     except (ValueError, OSError, TypeError) as exc:
         raise CheckError('malformed', 'final planned-plane binding failed: ' + str(exc)) from exc
     for index, path in enumerate(paths):
