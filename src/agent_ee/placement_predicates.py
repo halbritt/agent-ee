@@ -19,7 +19,7 @@ from .symbol_library import LibraryError, nanometres
 
 CRITERIA = ('courtyard-overlap/1', 'outline-containment/1', 'edge-clearance/1',
             'footprint-keepout/1', 'connector-edge/1', 'ratsnest-mst/1', 'imu-axes/1',
-            'placement-groups/1', 'keep-apart/1', 'electrical-locality/1')
+            'placement-groups/1', 'keep-apart/1', 'electrical-locality/1', 'mechanical-access/1')
 SIDE_LAYER = {'F': 'F.Cu', 'B': 'B.Cu'}
 AXES = {'x+': (1, 0), 'x-': (-1, 0), 'y+': (0, 1), 'y-': (0, -1)}
 INSERTIONS = ('through_edge', 'from_top', 'from_bottom')
@@ -692,3 +692,9 @@ def routing_feedback(result, digests, board_sha256, footprints):
             unattributed.append({**record, 'reason': 'no unique board footprint for the blocker reference'})
     return {**out, 'status': 'applicable', 'blockers': blockers, 'unattributed': unattributed,
             'method': blocked.get('method')}
+
+
+def mechanical_access(facts, binding):
+    """Fresh native coordinates against an immutable source-board-bound declaration."""
+    from .mechanical_reservations import grade
+    return {**grade(facts, binding), 'criterion': 'mechanical-access/1'}

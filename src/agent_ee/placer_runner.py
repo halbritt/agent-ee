@@ -752,7 +752,8 @@ def _saved_judgment(output, plan):
             raise ValueError('native saved placement differs from planned transform')
     # Envelope-bound fixed-courtyard overhangs (AGENTEE-212) are judged as declared, nowhere else.
     policy = plan['policy']
-    judgment = judge(facts, plan.get('judge_policy'), overhangs=policy.get('fixed_overhangs'))
+    judgment = judge(facts, plan.get('judge_policy'), overhangs=policy.get('fixed_overhangs'),
+             mechanical=policy.get('mechanical_reservations'))
     if 'judge_policy' in plan:
         if judgment['score'] <= plan['before']['score']:
             raise ValueError('saved-board placement score did not strictly improve')

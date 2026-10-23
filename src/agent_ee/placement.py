@@ -466,7 +466,7 @@ def _point_segment_distance(p, a, b):
     return math.dist(p, (a[0]+t*dx, a[1]+t*dy))
 
 
-def judge(capture, policy=None, overhangs=None):
+def judge(capture, policy=None, overhangs=None, mechanical=None):
     """Return geometric facts and advisory score; malformed envelopes raise ValueError.
 
     ``policy`` is a captured declaration, never inferred from reference prefixes
@@ -485,6 +485,12 @@ def judge(capture, policy=None, overhangs=None):
     unknown += access_unknown
     associations, advisories, score = _advisories(capture, policy)
     advisories += [row for row in access if row['status'] == 'info']
+    mechanics = None
+    if mechanical is not None:
+        from .mechanical_reservations import grade
+        mechanics = grade(capture, mechanical)
+        failures += mechanics['defects']
+        unknown += mechanics['unknown']
     verdict = 'hard_fail' if failures else 'unknown' if unknown else 'pass'
     off_board = sorted({f['ref'] for f in failures if f['kind'] == 'outside_outline'})
     return {'schema': 'agent-ee.placement-judgment/1', 'board_sha256': capture['board_sha256'],
@@ -492,6 +498,7 @@ def judge(capture, policy=None, overhangs=None):
             'score': score, 'hard_failures': failures, 'off_board': off_board, 'unknown': unknown,
             'associations': associations, 'advisories': advisories, 'policy': policy,
             'authority': 'standalone-unsealed',
+            **({'mechanical_reservations': mechanics} if mechanics is not None else {}),
             **({'access_directions': access} if access or access_unknown else {}),
             **({'declared_overhangs': declared} if access_lanes and overhangs is None else {}),
             **({} if overhangs is None else {'declared_overhangs': declared, 'overhangs': overhangs})}

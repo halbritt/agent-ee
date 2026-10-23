@@ -4127,6 +4127,28 @@
         "AE-RUN"
       ],
       "reviewed": "Original benchmark measurement receipt: timing, tool versions, input and output hashes, and validation metadata. The rights notice is the retained GCC --version banner, not copied compiler source. No captured board or library bytes."
+    },
+    {
+      "paths": [
+        "src/agent_ee/mechanical_reservations.py",
+        "crates/placement-engine/src/mechanical.rs",
+        "tests/test_mechanical_reservations.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-489 captured mechanical reservation validation, native transform and conservative face-projection checks, with authored regression geometry. No producer design files, stock library bytes or vendor prose are copied."
+    },
+    {
+      "paths": [
+        "docs/mechanical-reservations.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-489 producer interface and consumer boundary documentation. External source declarations are described, not copied."
     }
   ]
 }

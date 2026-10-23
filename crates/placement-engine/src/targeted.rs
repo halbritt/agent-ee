@@ -243,10 +243,11 @@ pub fn plan(capture: &Value, packing_policy: &Value, spec: &Value) -> Result<Val
         scoring.is_object(),
         "explicit placement judge policy required"
     );
-    let before = grading::judge(
+    let before = grading::judge_mechanical(
         capture,
         Some(scoring),
         packing_policy.get("fixed_overhangs"),
+        packing_policy.get("mechanical_reservations"),
     )?;
     let margin = policy::edge_margin_nm(packing_policy)?;
     let mut record = json!({"schema":"agent-ee.packing-plan/1","mode":mode,"board_sha256":capture["board_sha256"],"policy":packing_policy,"request":spec,"judge_policy":scoring,"before":before,"after":null,"judgment":null,"placements":[],"reasons":[],"status":"blocked","outcome":"unknown","steps_used":0,"step_budget":packing_policy["step_budget"],"pad_shapes":pad_shapes(),"min_courtyard_edge_mm":Rat::new(margin.clone(),1_000_000.into()).to_f64().context("edge margin outside float range")?,"authority":"standalone-unsealed-plan"});
@@ -367,10 +368,11 @@ pub fn plan(capture: &Value, packing_policy: &Value, spec: &Value) -> Result<Val
             .map(|fp| parts[&fp.reference].to_value())
             .collect::<Result<Vec<_>>>()?
     );
-    let mut after = grading::judge(
+    let mut after = grading::judge_mechanical(
         &proposed,
         Some(scoring),
         packing_policy.get("fixed_overhangs"),
+        packing_policy.get("mechanical_reservations"),
     )?;
     after["basis"] = json!("transformed-proposal-not-native");
     if before["unknown"].as_array().is_some_and(|a| !a.is_empty())

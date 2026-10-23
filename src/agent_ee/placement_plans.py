@@ -136,7 +136,8 @@ def plan(capture, policy, spec):
     scoring = copy.deepcopy(spec['judge_policy'])
     if not isinstance(scoring, dict):
         raise ValueError('explicit placement judge policy required')
-    before = judge(capture, scoring, overhangs=policy.get('fixed_overhangs'))
+    before = judge(capture, scoring, overhangs=policy.get('fixed_overhangs'),
+                   mechanical=policy.get('mechanical_reservations'))
     record = {'schema': 'agent-ee.packing-plan/1', 'mode': spec['mode'],
               'board_sha256': capture['board_sha256'], 'policy': copy.deepcopy(policy),
               'request': copy.deepcopy(spec), 'judge_policy': copy.deepcopy(scoring),
@@ -194,7 +195,8 @@ def plan(capture, policy, spec):
         if not inside(escape['position_nm'], outline):
             reasons.append(f"{escape['ref']} pad {escape['pad']}: escape target outside outline")
     proposed['footprints'] = list(parts.values())
-    after = judge(proposed, scoring, overhangs=policy.get('fixed_overhangs'))
+    after = judge(proposed, scoring, overhangs=policy.get('fixed_overhangs'),
+                   mechanical=policy.get('mechanical_reservations'))
     after['basis'] = 'transformed-proposal-not-native'
     record['after'] = after
     record['judgment'] = after

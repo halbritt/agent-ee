@@ -11,6 +11,7 @@ pub mod geometry;
 pub mod grading;
 pub mod groups;
 pub mod locality;
+pub mod mechanical;
 pub mod netlist;
 pub mod packing;
 pub mod policy;

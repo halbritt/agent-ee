@@ -210,6 +210,13 @@ pub fn prepare(raw: &Value, policy: &Value, seed: Option<&Value>) -> Result<Prep
             }
         }
     }
+    if let Some(binding) = policy.get("mechanical_reservations") {
+        let mut fixed_capture = raw.clone();
+        fixed_capture["footprints"] = json!(prepared.placed.iter().map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?);
+        if crate::mechanical::grade(&fixed_capture, binding, true)?["status"] != "pass" {
+            prepared.conflict = Some("fixed placement violates source-bound mechanical reservations".into());
+        }
+    }
     Ok(prepared)
 }
 
@@ -461,6 +468,15 @@ fn attempt(
         })
         .collect::<Result<BTreeSet<_>>>()?;
     policy::validate(policy, &refs)?;
+    if let Some(binding) = policy.get("mechanical_reservations") {
+        let mechanics = crate::mechanical::grade(capture, binding, false)?;
+        if !mechanics["unknown"].as_array().context("mechanical coverage missing")?.is_empty() {
+            let mut plan = failure(capture, policy, "mechanical_geometry_unavailable", "unknown", 0,
+                "required mechanical geometry or identity is unresolved")?;
+            plan["mechanical_reservations"] = mechanics;
+            return Ok(Attempt::early(plan));
+        }
+    }
     if let Some(locality) = policy.get("electrical_locality") {
         let initial = locality::grade(capture, locality)?;
         let infeasible = initial["defects"]
@@ -1132,7 +1148,7 @@ fn finish(search: &Search, progress: &Progress<'_>) -> Result<Value> {
             .map(PreparedFootprint::to_value)
             .collect::<Result<Vec<_>>>()?
     );
-    let mut judgment = grading::judge(&proposed, None, policy.get("fixed_overhangs"))?;
+    let mut judgment = grading::judge_mechanical(&proposed, None, policy.get("fixed_overhangs"), policy.get("mechanical_reservations"))?;
     judgment["basis"] = json!("transformed-proposal-not-native");
     if judgment["verdict"] != "pass" {
         return progress.stopped(

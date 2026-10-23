@@ -1639,6 +1639,14 @@ def _spacing(fp, entry):
                for p in entry['polygons'] for a, b in edges(c) for d, e in edges(p))
 
 
+def _mechanical(capture, policy, *, partial=False):
+    binding = policy.get('mechanical_reservations')
+    if binding is None:
+        return None
+    from .mechanical_reservations import grade
+    return grade(capture, binding, partial=partial)
+
+
 def _initial_reservations(capture, policy, outline, obstacles, bands, groups, carried=None, seed=None):
     """Fixed parts and declared obstacles become exact polygon obstacles, never boxes.
 
@@ -1702,6 +1710,9 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups, ca
             raise ValueError(f"fixed placement {fp['ref']} in group {group['id']} needs a fixed anchor")
         if not placement_groups.admits(fp, group, positions):
             raise ValueError(f"fixed placement {fp['ref']} violates declared group {group['id']}")
+    mechanics = _mechanical({**capture, 'footprints': placed}, policy, partial=True)
+    if mechanics is not None and mechanics['status'] != 'pass':
+        raise ValueError('fixed placement violates source-bound mechanical reservations')
     return fixed, placed, exact
 
 
@@ -1779,6 +1790,7 @@ class _Search:
                          if 'electrical_locality' in policy else None)
         self.best = []
         self.policy = policy
+        self.capture = capture
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
         self.exact, self.obstacles, self.outline, self.margin_nm = exact, obstacles, outline, margin_nm
@@ -1891,6 +1903,10 @@ class _Search:
         if (not _fits(proposed, self.outline, self.margin_nm) or _near(proposed, self.exact, self.gap) or
                 _in_keepouts(proposed, self.obstacles)):
             return set()
+        mechanics = _mechanical({**self.capture, 'footprints': self.placed + [proposed]},
+                                 self.policy, partial=True)
+        if mechanics is not None and mechanics['status'] != 'pass':
+            return {fp['ref'] for fp in self.placed} - self.fixed
         own = proposed.get('packing_keepouts', [])
         hit = [fp['ref'] for fp in self.placed if (fp.get('packing_keepouts') and
                _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
@@ -2216,6 +2232,11 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
     margin_nm = _edge_margin_nm(policy)
+    mechanics = _mechanical(capture, policy)
+    if mechanics is not None and mechanics['unknown']:
+        return {**_failure(capture, policy, 'mechanical_geometry_unavailable', 'unknown', 0,
+                           'required mechanical geometry or identity is unresolved', margin_nm),
+                'mechanical_reservations': mechanics}
     locality = policy.get('electrical_locality')
     if locality:
         initial = electrical_locality.grade(capture, locality)
@@ -2440,7 +2461,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
         state['trace_judge'] = placement_trace.now()
     placed, steps = search.placed, search.steps
     proposed_capture = {**capture, 'footprints': placed}
-    judgment = judge(proposed_capture, overhangs=policy.get('fixed_overhangs'))
+    judgment = judge(proposed_capture, overhangs=policy.get('fixed_overhangs'),
+                     mechanical=policy.get('mechanical_reservations'))
     judgment['basis'] = 'transformed-proposal-not-native'
     if judgment['verdict'] != 'pass':
         return stopped('judge_rejected', 'independent full-polygon judge rejected complete proposal')
