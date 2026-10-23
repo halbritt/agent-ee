@@ -122,6 +122,25 @@ def apply(board_path, plan, output):
         board.BuildConnectivity()
         if not k.ZONE_FILLER(board).Fill(planned):
             raise ValueError('native zone fill failed')
+        # AGENTEE-487 H2: native per-polygon connectivity of the fresh fill, one record per planned zone. A fill
+        # polygon is connected when a same-net pad present on the zone layer, or a same-net via or track endpoint on
+        # that layer, lies inside that polygon's outline; otherwise it is an island.
+        islands = {}
+        for uid, zone in zip(zone_ids(plan), planned):
+            layer, net = zone.GetLayer(), zone.GetNetCode()
+            fill = zone.GetFilledPolysList(layer)
+            points = [p.GetPosition() for fp in board.GetFootprints() for p in fp.Pads()
+                      if p.GetNetCode() == net and p.IsOnLayer(layer)]
+            for t in board.GetTracks():
+                if t.GetNetCode() == net and t.IsOnLayer(layer):
+                    points += [t.GetStart(), t.GetEnd()]
+            flags = []
+            for i in range(fill.OutlineCount()):
+                outline = fill.COutline(i)
+                flags.append(not any(outline.PointInside(pt) for pt in points))
+            islands[uid] = dict(layer=board.GetLayerName(layer), polygons=fill.OutlineCount(), islands=flags,
+                                method='same-net pad/via/track point inside fill outline')
+        write_json(output.with_name('islands.json'), islands)
         if not k.SaveBoard(str(copied), board):
             raise ValueError('native plane save failed')
         shutil.copyfile(copied, output)
