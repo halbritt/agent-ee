@@ -231,6 +231,31 @@ failures and record its actual terminal state before considering another run.
     D4 deliberate cross-face splits versus strict whole-block side; D5 the side
     policy for residual parts.
 
+- AGENTEE-474 observed result (agent-507, 08:41–08:56Z, read-only; fome-mc main
+  `7be86549`, `telemetry-pod/expansion/agentee-474-constraints/`; SHA256SUMS
+  verified by agent-449). A 23-entry register (C01–C23), each entry classed
+  OWNER / OWNER-RELAY / MFR / MECH-DERIVED / AGENT / UNKNOWN and marked as
+  blocking qualified packing (P) or release (R). Findings that change the plan:
+  - Both faces are permitted, with no quota.
+  - The 0.5 mm courtyard-to-edge setting is an AGENT default, not an owner or
+    manufacturer limit. No replacement margin is proposed.
+  - The D-PCB-6 GNSS corridor is bound to obsolete U3 coordinates (actual U3.11
+    RF pad (49.35, 18.75); B.Cu RF copper exists outside the rectangle). The
+    U3/L3/D3/J2 topology must be reconciled before any new packed or routed
+    candidate is accepted.
+  - The U1 antenna rectangle is captured CAD, not a manufacturer minimum.
+  - H1–H4 hardware envelopes, heights, and TP and JP access are UNKNOWN.
+  - It provides before-packing and final-coordinate checking contracts.
+- agent-510 independent verification of the 473/473b/474 package is triggered
+  (inputs complete). The brief went to agent-519 for relay. Budget 25 minutes;
+  it returns holds or acceptance of the investigation, not board acceptance.
+- AGENTEE-475 (AppArmor repo cleanup) landed on agent-ee main `061c8049`.
+- AGENTEE-477 (3D model gaps) has been running on the j6b2 writer since 08:55Z.
+- Next decisions (agent-529): D1–D5 from the 473 trace; the GNSS corridor
+  reconciliation owner and budget; then the first repair slice. That slice is
+  verified-disjoint shared-boundary work alongside the Rust landing, or
+  planner-side work after it.
+
 ## Placement acceptance matrix
 
 Every result is bound to the final saved board hash after all component changes.
