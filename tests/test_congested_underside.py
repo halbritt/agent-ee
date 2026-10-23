@@ -142,7 +142,20 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
                       eligibility, root / 'variants' / block['id'], compact=False,
                       member_sides=(mixed_sides if mixed and block['id'] == 'b' else None))
                       for block in derivation['blocks']]
-        self.assertTrue(all(row['status'] == 'packed' for bundle in candidates for row in bundle['variants'].values()))
+        if chain:
+            by_block = {bundle['block_id']: bundle for bundle in candidates}
+            self.assertEqual(by_block['a']['variants']['F']['status'], 'packed')
+            self.assertEqual(by_block['b']['variants']['F']['status'], 'packed')
+            # Both eligible faces were attempted with the same finite Stage-A
+            # budget. Preserve the B search limit as a typed retained result;
+            # this fixture's full-pipeline refinement uses its packed F layout.
+            failed = by_block['b']['variants']['B']
+            self.assertEqual(failed['status'], 'packing_budget_exhausted')
+            self.assertIsNone(failed['candidate'])
+            self.assertEqual(failed['failure']['status'], failed['status'])
+            self.assertEqual(failed['failure']['plan']['steps_used'], policy['step_budget'])
+        else:
+            self.assertTrue(all(row['status'] == 'packed' for bundle in candidates for row in bundle['variants'].values()))
         request = {'policy': policy, 'blocks': {'arrangement': rules, 'side_eligibility': eligibility,
             'allocation_text': allocation, 'contract': fixture.contract(facts['board_sha256'], eligibility, policy, chain=chain),
             'candidates': [{'candidate': bundle} for bundle in candidates]}}
