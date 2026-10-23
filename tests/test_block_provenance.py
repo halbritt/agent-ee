@@ -378,5 +378,91 @@ class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
             build_packet(run, [], 'run-355')
 
 
+class RefinementProvenanceTests(unittest.TestCase):
+    """Authored evidence records test identity checks, not physical qualification."""
+
+    def plan(self):
+        policy = {'ground_nets': ['GND']}
+        final = [{'reference': 'C1', 'position_nm': [4500000, 2000000], 'rotation_deg': 0, 'side': 'B'},
+                 {'reference': 'U1', 'position_nm': [2000000, 2000000], 'rotation_deg': 0, 'side': 'B'}]
+        metrics = lambda wire: {'internal_hpwl_nm': wire, 'whole_board_hpwl_nm': wire,
+            'declared_pair_distance_squared_nm2': [wire**2], 'thermal_minimum_distance_squared_nm2': None}
+        witness = {'schema': 'agent-ee.block-member-refinement/1',
+            'source_capture_sha256': '1'*64, 'final_capture_sha256': '2'*64,
+            'policy_sha256': blocks.digest(policy), 'contract_sha256': '3'*64,
+            'step_budget': 64, 'steps_used': 2, 'status': 'refined', 'termination': 'complete',
+            'rejected': {'outside_block_window': 1}, 'skipped': [], 'final_member_poses': final,
+            'moves': [{'block': 'device', 'reference': 'C1', 'starting_candidate_sha256': 'c'*64,
+                'before_position_nm': [6000000, 2000000], 'after_position_nm': final[0]['position_nm'],
+                'side': 'B', 'rotation_deg': 0, 'block_window_nm': [1000000, 1000000, 7000000, 3000000],
+                'before_capture_sha256': '1'*64, 'after_capture_sha256': '2'*64,
+                'before': metrics(4000000), 'after': metrics(2500000)}]}
+        return {'status': 'planned', 'board_sha256': 'a'*64, 'policy': policy,
+            'placements': [{'ref': p['reference'], 'uuid': p['reference']+'-owned', 'fixed': False,
+                            **{k: p[k] for k in ('position_nm', 'rotation_deg', 'side')}} for p in final],
+            'block_arrangement': {'derivation_sha256': 'd'*64, 'policy_sha256': blocks.digest(policy),
+                'rules': [], 'residual': {'references': []}, 'member_refinement': witness,
+                'arranged': [{'block': 'device', 'position_nm': [2000000, 2000000],
+                              'rotation_deg': 0, 'selected_face': 'B'}],
+                'blocks': [{'block': 'device', 'references': ['C1', 'U1'], 'anchor': 'U1',
+                    'candidate_sha256': 'c'*64, 'candidate_set_sha256': 'e'*64, 'selected_face': 'B',
+                    'provenance': {'class': 'search-derived', 'enforcement': 'advisory',
+                                   'citation': 'Original authored provenance fixture'}}]}}
+
+    def artifact(self, plan):
+        return arrangement.provenance_artifact(plan, plan_sha256=blocks.digest(plan))
+
+    def test_final_member_poses_and_complete_witness_are_bound_to_the_plan(self):
+        plan = self.plan()
+        artifact = self.artifact(plan)
+        row = artifact['blocks'][0]
+        self.assertEqual(row['candidate_role'], 'starting-layout')
+        self.assertEqual((row['selected_face'], row['candidate_set_sha256']), ('B', 'e'*64))
+        self.assertEqual(row['final_member_poses'], artifact['member_refinement']['final_member_poses'])
+        self.assertEqual(artifact['member_refinement_sha256'], blocks.digest(plan['block_arrangement']['member_refinement']))
+        self.assertEqual(arrangement.check_roster(artifact, plan), artifact)
+        changed = copy.deepcopy(plan)
+        changed['placements'][0]['position_nm'] = [4500001, 2000000]
+        with self.assertRaisesRegex(ValueError, 'row .* differs'):
+            arrangement.check_roster(artifact, changed)
+        changed = copy.deepcopy(artifact)
+        changed['member_refinement']['moves'][0]['before']['whole_board_hpwl_nm'] += 1
+        changed['member_refinement_sha256'] = blocks.digest(changed['member_refinement'])
+        with self.assertRaisesRegex(ValueError, 'member refinement differs'):
+            arrangement.check_roster(changed, plan)
+
+    def test_witness_hash_chain_candidate_identity_final_pose_and_budget_mutations_refuse(self):
+        artifact = self.artifact(self.plan())
+        mutations = [
+            lambda a: a.pop('member_refinement_sha256'),
+            lambda a: a.update(member_refinement_sha256='0'*64),
+            lambda a: a['member_refinement']['moves'][0].update(before_capture_sha256='0'*64),
+            lambda a: a['member_refinement']['moves'][0].update(starting_candidate_sha256='0'*64),
+            lambda a: a['member_refinement']['moves'][0].update(reference='U1'),
+            lambda a: a['member_refinement'].update(final_capture_sha256='0'*64),
+            lambda a: a['member_refinement'].update(steps_used=65),
+            lambda a: a['member_refinement']['final_member_poses'][0]['position_nm'].__setitem__(0, 42),
+            lambda a: a['blocks'][0].pop('candidate_role'),
+            lambda a: a['blocks'][0].update(selected_face='unknown'),
+        ]
+        for index, mutate in enumerate(mutations):
+            changed = copy.deepcopy(artifact)
+            mutate(changed)
+            if index > 1:
+                changed['member_refinement_sha256'] = blocks.digest(changed['member_refinement'])
+            with self.subTest(mutation=index), self.assertRaises(ValueError):
+                arrangement.validate_provenance(changed)
+
+    def test_unchanged_refinement_keeps_native_selection_and_explicit_starting_layout_role(self):
+        plan = self.plan()
+        witness = plan['block_arrangement']['member_refinement']
+        witness.update(moves=[], rejected={}, steps_used=0, status='unchanged',
+                       final_capture_sha256=witness['source_capture_sha256'])
+        artifact = self.artifact(plan)
+        self.assertEqual(artifact['blocks'][0]['candidate_role'], 'starting-layout')
+        self.assertEqual(artifact['blocks'][0]['selected_face'], 'B')
+        self.assertEqual(arrangement.check_roster(artifact, plan), artifact)
+
+
 if __name__ == '__main__':
     unittest.main()

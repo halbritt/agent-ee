@@ -4040,6 +4040,7 @@
       "paths": [
         "crates/placement-engine/src/arrangement.rs",
         "crates/placement-engine/src/block_contract.rs",
+        "crates/placement-engine/src/block_refinement.rs",
         "crates/placement-engine/src/block_variants.rs",
         "crates/placement-engine/src/blocks.rs",
         "crates/placement-engine/src/constraints.rs",
@@ -4073,8 +4074,10 @@
     {
       "paths": [
         "src/agent_ee/block_contract.py",
+        "src/agent_ee/block_refinement.py",
         "src/agent_ee/block_variants.py",
         "tests/test_block_contract.py",
+        "tests/test_block_refinement.py",
         "tests/test_block_variants.py",
         "tests/test_congested_underside.py"
       ],

@@ -1128,3 +1128,15 @@ The offline arrangement CLI accepts `--side-eligibility` and `--contract` paths;
 `--runner-section` retains both full records. Programmatic `request_section`
 accepts the same optional keyword paths; `request_section_from_bytes` accepts
 their already-bound bytes. Missing records for a candidate set are refused.
+
+When a selected block undergoes bounded member refinement, its `/2` candidate
+hash continues to identify the starting layout. The provenance artifact marks
+this explicitly with `candidate_role: "starting-layout"`, records every final
+member position, rotation and side, and retains the complete `member_refinement`
+witness with its canonical JSON hash. The selected native face and candidate-set
+hash are retained even when refinement leaves the layout unchanged. Move records
+bind their starting candidate, before/after capture hashes and guarded metrics;
+the hash chain must end at the witness's final capture and member poses. Review
+input validation compares the complete witness and roster against the published
+plan. These identity checks do not substitute for native save/reload or the
+independent saved-board contract judgment.

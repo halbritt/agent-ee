@@ -1542,6 +1542,7 @@ def _roster(plan):
     if len(listed) != len(set(listed)) or set(listed) != members:
         raise ValueError('arranged plan provenance records do not cover exactly the placed block members')
     poses = {a['block']: a for a in record['arranged']}
+    members_by_ref = {p['ref']: p for p in plan['placements']}
     rows = []
     for block in record['blocks']:
         provenance, pose = block['provenance'], poses[block['block']]
@@ -1552,6 +1553,15 @@ def _roster(plan):
                      'reuse': 'mapped' if 'mapping' in block else 'own-board',
                      **({'mapping': block['mapping']} if 'mapping' in block else {}),
                      'position_nm': pose['position_nm'], 'rotation_deg': pose['rotation_deg']})
+        if 'candidate_set_sha256' in block:
+            if block.get('selected_face') != pose.get('selected_face'):
+                raise ValueError('selected native face differs between block provenance and arranged pose')
+            rows[-1].update(candidate_set_sha256=block['candidate_set_sha256'], selected_face=pose['selected_face'])
+        if 'member_refinement' in record:
+            rows[-1].update(candidate_role='starting-layout', final_member_poses=[{
+                'reference': ref, 'position_nm': members_by_ref[ref]['position_nm'],
+                'rotation_deg': members_by_ref[ref]['rotation_deg'], 'side': members_by_ref[ref]['side']}
+                for ref in sorted(block['references'], key=blocks._natural)])
     return rows
 
 
@@ -1575,6 +1585,9 @@ def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256, res
                           for r in (record['rules'] if rules is None else rules)]}
     if reserved_area is not None:
         document['reserved_area'] = reserved_area
+    if 'member_refinement' in record:
+        document['member_refinement'] = copy.deepcopy(record['member_refinement'])
+        document['member_refinement_sha256'] = digest(document['member_refinement'])
     return validate_provenance(document)
 
 
@@ -1584,7 +1597,13 @@ def check_roster(document, plan):
     Every block, its references, anchor, candidate hash, class, enforcement, citation,
     mapping and pose must equal the plan's, and every rule keeps the plan's enforcement.
     """
+    validate_provenance(document)
     expected = {r['block']: r for r in _roster(plan)}
+    witness = plan['block_arrangement'].get('member_refinement')
+    if document.get('member_refinement') != witness:
+        raise ValueError('block provenance member refinement differs from the placement plan')
+    if witness is not None and witness['policy_sha256'] != digest(plan['policy']):
+        raise ValueError('member refinement policy differs from the placement plan')
     for key, value in (('source_sha256', plan['board_sha256']),
                        ('derivation_sha256', plan['block_arrangement']['derivation_sha256']),
                        ('policy_sha256', plan['block_arrangement']['policy_sha256'])):
@@ -1610,10 +1629,111 @@ def _sha256(value, label):
         raise ValueError(f'{label} must be a lowercase SHA-256')
 
 
+def _refinement_point(value):
+    if not isinstance(value, list) or len(value) != 2 or any(type(n) is not int for n in value):
+        raise ValueError('member refinement position must be integer [x, y]')
+
+
+def _refinement_poses(value):
+    if not isinstance(value, list):
+        raise ValueError('final member poses must be a list')
+    found = {}
+    for pose in value:
+        blocks._keys(pose, {'reference', 'position_nm', 'rotation_deg', 'side'}, label='final member pose')
+        ref = blocks._text(pose['reference'], 'final member reference')
+        if ref in found or pose['side'] not in ('F', 'B'):
+            raise ValueError('final member poses need unique references and F/B sides')
+        _refinement_point(pose['position_nm'])
+        if type(pose['rotation_deg']) is not int or pose['rotation_deg'] not in (0, 90, 180, 270):
+            raise ValueError('final member rotation must be a quarter turn')
+        found[ref] = pose
+    return found
+
+
+def _validate_refinement(document):
+    """Check retained witness identity and its move chain, not physical acceptance."""
+    present = {'member_refinement', 'member_refinement_sha256'} & set(document)
+    if not present:
+        if any('candidate_role' in row or 'final_member_poses' in row for row in document['blocks']):
+            raise ValueError('final member poses require the full refinement witness')
+        return
+    if len(present) != 2:
+        raise ValueError('member refinement needs its full witness and canonical hash')
+    witness = document['member_refinement']
+    _sha256(document['member_refinement_sha256'], 'member refinement hash')
+    if digest(witness) != document['member_refinement_sha256']:
+        raise ValueError('member refinement canonical hash mismatch')
+    blocks._keys(witness, {'schema', 'source_capture_sha256', 'final_capture_sha256', 'policy_sha256',
+                          'contract_sha256', 'step_budget', 'steps_used', 'moves', 'rejected', 'skipped',
+                          'status', 'termination', 'final_member_poses'}, label='member refinement')
+    if witness['schema'] != 'agent-ee.block-member-refinement/1':
+        raise ValueError('unknown member refinement schema')
+    for key in ('source_capture_sha256', 'final_capture_sha256', 'policy_sha256', 'contract_sha256'):
+        _sha256(witness[key], 'member refinement ' + key)
+    if (any(type(witness[key]) is not int or witness[key] < 0 for key in ('steps_used', 'step_budget'))
+            or witness['steps_used'] > witness['step_budget']
+            or witness['termination'] not in ('complete', 'budget_exhausted')
+            or not isinstance(witness['moves'], list)
+            or len(witness['moves']) > witness['steps_used']
+            or witness['status'] != ('refined' if witness['moves'] else 'unchanged')):
+        raise ValueError('member refinement status or finite budget is inconsistent')
+    if (not isinstance(witness['rejected'], dict)
+            or any(type(n) is not int or n < 0 for n in witness['rejected'].values())
+            or sum(witness['rejected'].values()) + len(witness['moves']) != witness['steps_used']
+            or not isinstance(witness['skipped'], list)):
+        raise ValueError('member refinement attempt accounting is inconsistent')
+    rows = {row['block']: row for row in document['blocks']}
+    for skipped in witness['skipped']:
+        blocks._keys(skipped, {'block', 'reason'}, label='skipped member refinement')
+        if skipped['block'] not in rows or skipped['reason'] != 'reference_layout_immutable':
+            raise ValueError('unknown skipped member refinement block or reason')
+    final = _refinement_poses(witness['final_member_poses'])
+    roster = {}
+    for row in rows.values():
+        if row.get('candidate_role') != 'starting-layout' or 'final_member_poses' not in row:
+            raise ValueError('refined provenance must distinguish each starting candidate from final member poses')
+        own = _refinement_poses(row['final_member_poses'])
+        if set(own) != set(row['references']):
+            raise ValueError('final member poses must cover exactly their block')
+        roster.update(own)
+    if final != roster:
+        raise ValueError('refinement final poses differ from the block roster')
+    last_hash, last_poses = witness['source_capture_sha256'], {}
+    for move in witness['moves']:
+        blocks._keys(move, {'block', 'reference', 'starting_candidate_sha256', 'before_position_nm',
+                           'after_position_nm', 'side', 'rotation_deg', 'block_window_nm',
+                           'before_capture_sha256', 'after_capture_sha256', 'before', 'after'},
+                     label='member refinement move')
+        row, ref = rows.get(move['block']), move['reference']
+        if (row is None or ref not in row['references'] or ref == row['anchor']
+                or row['class'] != 'search-derived' or move['starting_candidate_sha256'] != row['candidate_sha256']):
+            raise ValueError('refinement move differs from its movable starting block candidate')
+        for key in ('before_position_nm', 'after_position_nm'):
+            _refinement_point(move[key])
+        after_pose = {key: move[key] for key in ('reference', 'side', 'rotation_deg')}
+        after_pose['position_nm'] = move['after_position_nm']
+        _refinement_poses([after_pose])
+        if ref in last_poses and {**after_pose, 'position_nm': move['before_position_nm']} != last_poses[ref]:
+            raise ValueError('member refinement pose chain is broken')
+        if move['before_position_nm'] == move['after_position_nm'] or move['before_capture_sha256'] != last_hash:
+            raise ValueError('member refinement capture chain is broken')
+        _sha256(move['after_capture_sha256'], 'refinement move capture')
+        if not isinstance(move['before'], dict) or not isinstance(move['after'], dict):
+            raise ValueError('member refinement must retain both metric records')
+        window = move['block_window_nm']
+        if (not isinstance(window, list) or len(window) != 4 or any(type(n) is not int for n in window)
+                or window[0] > window[2] or window[1] > window[3]):
+            raise ValueError('member refinement block window must be ordered integer bounds')
+        last_hash, last_poses[ref] = move['after_capture_sha256'], after_pose
+    if last_hash != witness['final_capture_sha256'] or any(final[ref] != pose for ref, pose in last_poses.items()):
+        raise ValueError('member refinement does not end at its recorded final capture and poses')
+
+
 def validate_provenance(document):
     """Refuse a block provenance artifact whose classes, enforcement or identities are inconsistent."""
     blocks._keys(document, {'schema', 'authority', 'source_sha256', 'board_sha256', 'derivation_sha256',
-                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, {'reserved_area'}, label='block provenance')
+                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'},
+                 {'reserved_area', 'member_refinement', 'member_refinement_sha256'}, label='block provenance')
     if document['schema'] != PROVENANCE_ARTIFACT or document['authority'] != PROVENANCE_AUTHORITY:
         raise ValueError(f'block provenance must be {PROVENANCE_ARTIFACT} with its fixed authority statement')
     for key in ('source_sha256', 'board_sha256', 'derivation_sha256', 'policy_sha256', 'plan_sha256'):
@@ -1627,7 +1747,8 @@ def validate_provenance(document):
     seen, references = set(), set()
     for row in document['blocks']:
         blocks._keys(row, {'block', 'references', 'anchor', 'candidate_sha256', 'class', 'enforcement', 'citation',
-                           'reuse', 'position_nm', 'rotation_deg'}, {'method', 'source', 'mapping'},
+                           'reuse', 'position_nm', 'rotation_deg'}, {'method', 'source', 'mapping', 'selected_face',
+                           'candidate_set_sha256', 'candidate_role', 'final_member_poses'},
                      label='block provenance row')
         label = f"block provenance row {row['block']!r}"
         if not isinstance(row['block'], str) or not row['block'].strip() or row['block'] in seen:
@@ -1644,6 +1765,10 @@ def validate_provenance(document):
                 or type(row['rotation_deg']) is not int or row['rotation_deg'] not in (0, 90, 180, 270)):
             raise ValueError(f'{label}: pose needs integer position_nm [x, y] and a rotation of 0, 90, 180 or 270')
         _sha256(row['candidate_sha256'], label + ' candidate_sha256')
+        if 'candidate_set_sha256' in row or 'selected_face' in row:
+            _sha256(row.get('candidate_set_sha256'), label + ' candidate_set_sha256')
+            if row.get('selected_face') not in ('F', 'B'):
+                raise ValueError('native candidate set provenance needs its selected F/B face')
         # Fail closed: an unknown class, or a class whose enforcement was relabelled, refuses.
         if row['class'] not in blocks.PROVENANCE or row['enforcement'] != blocks.PROVENANCE[row['class']]:
             raise ValueError(f"{label}: class {row['class']!r} does not carry enforcement {row['enforcement']!r}")
@@ -1658,6 +1783,7 @@ def validate_provenance(document):
         blocks._keys(rule, {'rule', 'enforcement', 'status'}, {'id'}, label='block provenance rule')
         if rule['enforcement'] not in ('hard', 'advisory') or rule['status'] not in ('pass', 'defect'):
             raise ValueError(f"block provenance rule {rule['rule']!r} has an unknown enforcement or status")
+    _validate_refinement(document)
     return document
 
 
