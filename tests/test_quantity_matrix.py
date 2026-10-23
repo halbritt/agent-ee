@@ -114,6 +114,31 @@ LENGTHS = [
      "quote has a quantity outside the closed grammar: '\u2212' outside the grammar at 'offset: \u2212 3 mm'"),
     ('L48', 'conf H1: spaced superscript', 'Captured inverse length: 3 mm \u207b\u00b9', 3, A,
      "quote has a quantity outside the closed grammar: '\u207b' after a quantity outside the grammar at 'h: 3 mm \u207b\xb9'"),
+    # Conformance round 2 (final, agent-521 GO): designator components and reciprocal powers.
+    ('L49', 'conf2 H1: superscript designator component before the fact', 'Captured: D-1.\xb9, 3 mm', 3, A,
+     "quote has a quantity outside the closed grammar: superscript in '\xb9' outside the grammar at 'ed: D-1.\xb9, 3 mm'"),
+    ('L50', 'conf2 H1: superscript word designator component before the fact', 'Captured: D-1.foo\xb9, 3 mm', 3, A,
+     "quote has a quantity outside the closed grammar: superscript in 'foo\xb9' outside the grammar at 'ed: D-1.foo\xb9, 3 mm'"),
+    ('L51', 'conf2 H1: superscript designator component after the fact', 'Captured: 3 mm ; D-1.\xb9', 3, A,
+     "quote has a quantity outside the closed grammar: superscript in '\xb9' outside the grammar at 'm ; D-1.\xb9'"),
+    ('L52', 'conf2 H1: superscript in the designator initial word', 'Captured: D\xb9-1, 3 mm', 3, A,
+     "quote has a quantity outside the closed grammar: superscript in 'D\xb9' outside the grammar at 'ptured: D\xb9-1, 3 mm'"),
+    ('L53', 'conf2 H1 control: supported designator before the fact', 'Captured: D-1, 3 mm', 3, H,
+     None),
+    ('L54', 'conf2 H1 control: supported designator R12.3 before the fact', 'Captured: R12.3, 3 mm', 3, H,
+     None),
+    ('L55', 'conf2 H1 control: supported identifier U5-A before the fact', 'Captured: U5-A, 3 mm', 3, H,
+     None),
+    ('L56', 'conf2 H1 control: supported designator after the fact', 'Captured: 3 mm ; D-1', 3, H,
+     None),
+    ('L57', 'conf2 H1 control: supported designator U5-A.2 after the fact', 'Captured: 3 mm ; U5-A.2', 3, H,
+     None),
+    ('L58', 'conf2 H2 control: positive power on a length', 'Captured: 3 mm^1', 3, H,
+     None),
+    ('L59', 'conf2 H2 control: length reciprocal power cancels (not count-only rule)', 'Captured: 3 mm*mm^-1*mm', 3, H,
+     None),
+    ('L60', 'conf2 H2 control: length reciprocal U+2212 power cancels', 'Captured: 3 mm*s^\u22121*s', 3, H,
+     None),
 ]
 # (row, reviewer case, quote, expected, exact advisory reason or None) for a bound
 # thermal_spoke_count (min 3) rule.
@@ -145,6 +170,12 @@ COUNTS = [
     ('C14', 'conf H2: cancelled length denominator', '3 spokes/mm*mm', A, 'count fact has a denominator'),
     ('C15', 'conf H2: head form, cancelled denominator', 'spoke count: 3 /mm*mm', A, 'count fact has a denominator'),
     ('C16', 'conf H2: cancelled time denominator', '3 spokes /s*s', A, 'count fact has a denominator'),
+    # Conformance round 2 (final): a reciprocal power is a denominator before cancellation.
+    ('C17', 'conf2 H2: reciprocal ASCII power, length', 'Captured: 3 spokes*mm^-1*mm', A, 'count fact has a denominator'),
+    ('C18', 'conf2 H2: reciprocal U+2212 power, length', 'Captured: 3 spokes*mm^\u22121*mm', A, 'count fact has a denominator'),
+    ('C19', 'conf2 H2: reciprocal ASCII power, time', 'Captured: 3 spokes*s^-1*s', A, 'count fact has a denominator'),
+    ('C20', 'conf2 H2: reciprocal U+2212 power, time', 'Captured: 3 spokes*s^\u22121*s', A, 'count fact has a denominator'),
+    ('C21', 'conf2 H2 control: positive power on a count', 'Captured: 3 spokes^1', H, None),
 ]
 CLASSES = ('owner', 'manufacturer', 'datasheet', 'engineering')
 COUNT_RULE = b'(version 1) (rule "matrix count" (constraint thermal_spoke_count (min 3)))'

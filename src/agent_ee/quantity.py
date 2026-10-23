@@ -42,8 +42,8 @@ A fact is (dimension vector, exact canonical value, denominator flag): metres, s
 counts, each
 with an integer exponent, and the value as an exact Fraction scaled to SI base units.
 A count fact needs an unsigned integer literal. A head-form count must not repeat a
-count noun. The denominator flag records whether any '/' or 'per' term occurred BEFORE
-cancellation. A count qualifies only from a fact without one, so '3 spokes/mm*mm' and
+count noun. The denominator flag records whether any '/' or 'per' term, or any negative integer
+power ('^-n', '^' U+2212 'n'), occurred BEFORE cancellation. A count qualifies only from a fact without one, so '3 spokes/mm*mm' and
 '3 spokes /s*s' are refused with 'count fact has a denominator'.
 
 Fail-closed rules: the whole quote states nothing, with reason, when it contains any of
@@ -198,9 +198,17 @@ class _Parser:
         return (text in JOINERS and self.tok(i - 1)[0] == 'word' and self.tok(i + 1)[0] == 'word')
 
     def designator(self, i):
-        """WORD ('-'|'.') NUMBER ... is an identifier; a unit term right after it is ambiguous."""
+        """WORD ('-'|'.') NUMBER ... is an identifier; a unit term right after it is ambiguous.
+
+        Consume or reject: the initial WORD and every WORD component pass the same
+        validation as prose words (conformance round 2, H1); NUMBER components are
+        complete NUMBER tokens.
+        """
+        self.prose_word(i)
         i += 1
         while self.tok(i)[1] in ('-', '.') and self.tok(i + 1)[0] in ('num', 'word'):
+            if self.tok(i + 1)[0] == 'word':
+                self.prose_word(i + 1)
             i += 2
         if self.tok(i)[0] == 'ws' and self.tok(i + 1)[0] == 'word' and _unit(self.tok(i + 1)[1]):
             self.fail(i + 1, 'unit term after a designator')
@@ -276,6 +284,7 @@ class _Parser:
                 self.fail(j, f'unit term {text!r} outside the grammar')
             term_dims, term_scale = term
             j += 1
+            reciprocal = False
             if self.tok(j)[1] == '^':
                 k, negative = j + 1, 1
                 if self.tok(k)[1] in ('-', '−'):
@@ -283,12 +292,13 @@ class _Parser:
                 if self.tok(k)[0] != 'num' or not self.tok(k)[1].isdigit():
                     self.fail(j, 'power without an integer exponent')
                 power = negative * int(self.tok(k)[1])
+                reciprocal = negative == -1  # a reciprocal factor ('^-1', U+2212 '^−1')
                 term_dims = {key: value * power for key, value in term_dims.items()}
                 term_scale = term_scale ** power
                 j = k + 1
             count_term = count_term or any(key in ('spoke', 'via') for key in term_dims)
             # Recorded BEFORE cancellation: a count never qualifies once any denominator occurred.
-            denominator = denominator or sign == -1
+            denominator = denominator or sign == -1 or reciprocal
             dims = _combine(dims, term_dims, sign)
             scale = scale * term_scale if sign == 1 else scale / term_scale
             # One operator, then the next term.
