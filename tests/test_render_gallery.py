@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import hashlib
 import html
 import ipaddress
@@ -284,8 +285,13 @@ def strip_wrappers(token):
     return token.lstrip("([{'").rstrip(")]}'.,;:!?")
 
 
+@functools.lru_cache(maxsize=None)
 def token_leaks(token):
-    """The candidates of one token that have no allowed shape."""
+    """The candidates of one token that have no allowed shape (a tuple; tokens repeat across surfaces)."""
+    return tuple(_token_leaks(token))
+
+
+def _token_leaks(token):
     core = strip_wrappers(token)
     if not core or any(shape.fullmatch(core) for shape in TOKEN_SHAPES.values()):
         return []
@@ -296,7 +302,7 @@ def token_leaks(token):
     schemes = [m for m in SCHEME.finditer(core) if not re.match(r'\d+(?![A-Za-z0-9])', core[m.end():])]
     if schemes:
         found += [core[m.start():] for m in schemes if not allowed_uri(core[m.start():])]
-        return found + token_leaks(core[:schemes[0].start()])
+        return found + list(token_leaks(core[:schemes[0].start()]))
     for m in re.finditer('//', core):
         if core[m.end():] and not allowed_uri('https:' + core[m.start():]):
             found.append(core[m.start():])
@@ -340,11 +346,10 @@ def published_forms(body):
 
 def leak_candidates(body):
     """Every URL-ish or host-ish candidate in any decoded form of body that has no allowed shape."""
-    found = []
-    for form in published_forms(body):
-        for token in TOKEN.findall(without_css(form)):
-            found += token_leaks(token)
-    return sorted(set(found))
+    tokens = set()
+    for form in set(published_forms(body)):
+        tokens.update(TOKEN.findall(without_css(form)))
+    return sorted({candidate for token in tokens for candidate in token_leaks(token)})
 
 
 def assert_no_uri_leak(test, body, where):
