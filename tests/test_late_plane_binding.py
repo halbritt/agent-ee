@@ -8,6 +8,7 @@ import unittest
 from agent_ee import add_planes, final_planes, stage_receipts, routing_adapter, rf_review
 from agent_ee.executor import execute
 from agent_ee.storage import digest, read_json, write_json
+from agent_ee.scaffold import schematic as empty_schematic
 from tests.test_add_planes import PlaneFixture
 from tests.toolchain import require_kicad_route
 
@@ -18,8 +19,8 @@ class LatePlaneBindingTests(PlaneFixture, unittest.TestCase):
         # A coordinator output slot is captured empty; no report digest is invented.
         (self.source/report_path).write_bytes(b'')
         schematic = self.source/'project/pod.kicad_sch'
-        schematic.write_text('(kicad_sch (version 20250114) (generator "eeschema") '
-                             '(uuid "d59616d7-b33b-41fe-bc77-f86de4d10183") (paper "A4") (lib_symbols))')
+        schematic.write_bytes(empty_schematic('d59616d7-b33b-41fe-bc77-f86de4d10183', '/', {},
+                                             'Late plane binding fixture'))
         plan_link = {'path': self.plan_path, 'sha256': digest(self.source/self.plan_path)}
         write_json(self.source/'composition.json', {'schema': 'pod-capture.scope-composition/4', 'planes': [plan_link]})
         params = {'plane_obligations': [dict(plan=plan_link,
