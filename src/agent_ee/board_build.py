@@ -698,6 +698,11 @@ def build(project_dir, netlist_path, fpdir, envelope_path, template_board, reque
     placed = placed_dir / f'{name}.kicad_pcb'
     shutil.copyfile(root / 'proposal' / 'candidate.kicad_pcb', placed)
     shutil.copyfile(root / 'proposal' / 'placement-result.json', placed_dir / 'placement-result.json')
+    if execution:
+        published_execution = placed_dir / execution['path']
+        shutil.copyfile(root / 'proposal' / execution['path'], published_execution)
+        if digest(published_execution) != execution['sha256']:
+            raise BoardBuildError('planning execution differs from the placer-published receipt')
     if digest(placed) != report['board_sha256']:
         raise BoardBuildError('placed board differs from the placer-published candidate')
     judgment = judge(extract(placed))

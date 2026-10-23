@@ -331,6 +331,12 @@ class NativeBoardBuildTest(unittest.TestCase):
         self.assertEqual(execution['implementation'], 'rust')
         self.assertEqual(hashlib.sha256((self.root / 'row1' / execution['path']).read_bytes()).hexdigest(),
                          execution['sha256'])
+        published_result = self.root / 'row1' / first['placed']['placement_result']
+        published_execution = json.loads(published_result.read_text())['planning_execution']
+        published_receipt = published_result.parent / published_execution['path']
+        self.assertEqual(hashlib.sha256(published_receipt.read_bytes()).hexdigest(),
+                         published_execution['sha256'])
+        self.assertEqual(published_receipt.read_bytes(), (self.root / 'row1' / execution['path']).read_bytes())
         board = self.root / 'row1/placed/rc_filter.kicad_pcb'
         self.assertEqual(board.read_bytes(), (self.root / 'row2/placed/rc_filter.kicad_pcb').read_bytes())
         facts = extract(board)
