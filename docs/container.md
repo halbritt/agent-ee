@@ -299,9 +299,13 @@ the binary it relies on. The pcbnew hash is the `_pcbnew` native extension that
 
 ## Project CI
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on pushes to
-`main` and on manual dispatch only; there is no pull-request trigger in this
-repository. One job:
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs once a day
+(scheduled, 12:00 UTC) and on manual dispatch only; there is no push or
+pull-request trigger. Per-push runs were dropped on 2026-10-22 by owner decision
+(AGENTEE-16, relayed by agent-519: "run it once a day or some shit until this
+project stops moving so goddamned fast"). This is temporary, and restoring
+per-push runs needs the owner. The landing gate is the local strict gate; a red
+daily run is a defect to fix. One job:
 
 1. Builds the image from the checkout.
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
@@ -314,9 +318,8 @@ repository. One job:
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
    a time, with both inputs mounted read-only. Native 3D board render tests run
    when renderer-related files or the pinned KiCad image inputs changed.
-   GitHub's preceding push commit is the
-   comparison base; manual dispatch, an unknown base, or a dirty checkout runs
-   them. Every selected test must pass without a skip, and every module must
+   A push event's preceding commit would be the comparison base; scheduled
+   and manual runs have no base, so they run them, as does a dirty checkout. Every selected test must pass without a skip, and every module must
    produce a valid result. The job summary gives the module and test counts,
    names render tests omitted by change selection, and names tests that did not
    execute because a [required external input](#required-external-inputs) is absent.

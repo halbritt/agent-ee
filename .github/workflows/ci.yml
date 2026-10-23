@@ -2,9 +2,13 @@ name: CI
 
 # Changes are integrated directly on main under the owner's no-PR workflow.
 # Consumer projects may call action.yml from any trigger.
+# Owner decision 2026-10-22 (AGENTEE-16, relayed by agent-519): hosted project CI
+# runs once a day and on manual dispatch, not on every push, "until this project
+# stops moving so goddamned fast". This is temporary; restoring per-push runs needs
+# the owner (through agent-519). The landing gate is the local strict gate.
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 permissions:
@@ -42,7 +46,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Select native board render regressions from the push
+      - name: Select native board render regressions
         id: render-selection
         env:
           RENDER_BASE: ${{ github.event.before }}
