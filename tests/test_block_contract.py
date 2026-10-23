@@ -129,6 +129,22 @@ class BlockContractTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 block_contract.membership(board, allocation)
 
+    def test_fixed_and_shared_faces_cannot_exceed_default_permission(self):
+        for role, reference in (('fixed', 'H1'), ('shared', 'TP1')):
+            board, contract = fixture()
+            eligibility = contract['eligibility']
+            eligibility['default']['faces'] = ['F']
+            eligibility['blocks']['device']['eligible_faces'] = ['F']
+            eligibility['fixed']['H1']['eligible_faces'] = ['F']
+            eligibility['shared']['TP1']['eligible_faces'] = ['F']
+            with self.subTest(role=role):
+                self.assertEqual(block_contract.judge(board, contract, original_capture=board)['status'], 'pass')
+                eligibility[role][reference]['eligible_faces'] = ['B']
+                with self.assertRaisesRegex(ValueError, 'role eligibility exceeds default permission'):
+                    block_contract.judge(board, contract, original_capture=board)
+                with self.assertRaisesRegex(ValueError, 'role eligibility exceeds default permission'):
+                    block_contract.check_complete(board, contract)
+
     def test_fixed_role_does_not_freeze_pose_or_side(self):
         board, contract = fixture()
         final = moved(board, 'H1', MM, 2*MM, 'B')

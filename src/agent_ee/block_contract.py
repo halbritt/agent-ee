@@ -245,6 +245,9 @@ def _eligible(record, ref, role):
         if not isinstance(entry, dict):
             raise ValueError(f'{ref}: role eligibility must be an object')
         base = _faces(entry.get('eligible_faces'), ref)
+        default = _faces(record.get('default', {}).get('faces'), 'default eligibility')
+        if not set(base) <= set(default):
+            raise ValueError(f'{ref}: role eligibility exceeds default permission')
     member = record.get('members', {}).get(ref)
     if member is not None:
         if not isinstance(member, dict):

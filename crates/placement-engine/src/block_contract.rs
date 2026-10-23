@@ -192,6 +192,14 @@ fn member_faces(
             .map(|entry| faces(&entry["eligible_faces"]))
             .transpose()?
     };
+    if role["role"] != "block" {
+        if let Some(allowed) = &base {
+            ensure!(
+                allowed.is_subset(&faces(&eligibility["default"]["faces"])?),
+                "{reference}: role eligibility exceeds default permission"
+            );
+        }
+    }
     if let Some(member) = eligibility.get("members").and_then(|v| v.get(reference)) {
         let allowed = faces(&member["eligible_faces"])?;
         ensure!(
@@ -716,6 +724,29 @@ mod tests {
         );
         section["contract"] = contract;
         assert!(validate(&capture, &section, &json!({"electrical_locality":{}})).is_err());
+    }
+    #[test]
+    fn fixed_and_shared_faces_cannot_exceed_default_permission() {
+        for role in ["fixed", "shared"] {
+            let (capture, mut contract) = fixture();
+            contract["eligibility"]["default"]["faces"] = json!(["F"]);
+            contract["eligibility"]["blocks"]["device"]["eligible_faces"] = json!(["F"]);
+            contract["eligibility"]["fixed"] = json!({});
+            contract["eligibility"][role] = json!({"H1":{"eligible_faces":["F"]}});
+            if role == "shared" {
+                contract["allocation"]["fixed"] = json!([]);
+                contract["allocation"]["shared"] = json!([{"reference":"H1","role":"mechanical"}]);
+            }
+            assert_eq!(
+                check_complete(&capture, &contract).unwrap()["status"],
+                "pass"
+            );
+            contract["eligibility"][role]["H1"]["eligible_faces"] = json!(["B"]);
+            assert_eq!(
+                check_complete(&capture, &contract).unwrap_err().to_string(),
+                "H1: role eligibility exceeds default permission"
+            );
+        }
     }
     #[test]
     fn split_needs_template_and_exact_thickness() {
