@@ -445,6 +445,7 @@ def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
         expected = 'copper' if index % 2 == 0 else 'dielectric'
         if layer['kind'] != expected:
             raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
+        material = {}
         if layer['kind'] == 'copper':
             fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm', 'copper_weight_oz']
                    + (['source'] if sourced else []), ['role'])
@@ -456,7 +457,22 @@ def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
             copper.append(layer['name'])
         else:
             fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm']
-                   + (['source'] if sourced else []))
+                   + (['source'] if sourced else []),
+                   ['dielectric_type', 'epsilon_r', 'loss_tangent'] if sourced else [])
+            if 'dielectric_type' in layer:
+                if layer['dielectric_type'] not in ('core', 'prepreg'):
+                    raise ValueError('dielectric_type must be core or prepreg')
+                material['dielectric_type'] = layer['dielectric_type']
+            for field in ('epsilon_r', 'loss_tangent'):
+                if field not in layer:
+                    continue
+                if field == 'loss_tangent' and layer[field] is None:
+                    material[field] = None
+                    continue
+                number = scaled(decimal(layer[field], field), field)
+                if number < 0 or (field == 'epsilon_r' and number == 0):
+                    raise ValueError(f'{field} must be {"positive" if field == "epsilon_r" else "nonnegative"}')
+                material[field] = fixed_point(number, MAX_PLACES)
             weight = None
         label = layer['name']
         if not isinstance(label, str) or not label.strip() or len(label) > 64 or label in names:
@@ -468,7 +484,7 @@ def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
             thickness = length(layer['thickness_mm'], f'stackup layer {label} thickness_mm', positive=True)
             summed += thickness
         records.append({'name': label, 'kind': layer['kind'],
-                        'thickness_mm': None if thickness is None else mm(thickness),
+                        'thickness_mm': None if thickness is None else mm(thickness), **material,
                         **({'role': layer['role']} if 'role' in layer else {}),
                         **({'copper_weight_oz': fixed_point(weight, MAX_PLACES)} if weight is not None else {})})
     if len(layers) % 2 == 0:
@@ -2059,8 +2075,16 @@ def saved_facts(root):
             kind, value = one(layer, 'type'), one(layer, 'thickness')
             if kind is None:
                 continue
+            material = {}
+            for field in ('epsilon_r', 'loss_tangent'):
+                entries = children(layer, field)
+                if entries:
+                    if len(entries) != 1 or len(atoms(entries[0])) != 1:
+                        raise ValueError(f'native {field} needs exactly one numeric value')
+                    material[field] = fixed_point(scaled(atoms(entries[0])[0], 'native ' + field), MAX_PLACES)
             stackup.append({'name': layer[1], 'type': atoms(kind)[0] if atoms(kind) else None,
-                            'thickness_nm': nanometres(atoms(value)[0]) if value and atoms(value) else None})
+                            'thickness_nm': nanometres(atoms(value)[0]) if value and atoms(value) else None,
+                            **material})
     segments, other = [], []
     for item, path in edge_cuts_items(root):
         # Only a board-level straight line or rectangle solely on Edge.Cuts is compared.
@@ -2113,6 +2137,7 @@ def round_trip(raw, pcb):
         {'board_mm': None if facts['thickness_nm'] is None else mm(facts['thickness_nm'])})
     for index, layer in enumerate(record['stackup']['layers']):
         pointer = f'/stackup/layers/{index}'
+        found = None
         if facts['stackup'] is None:
             add(pointer + '/thickness_mm', 'not_in_board', {'reason': 'board saves no stackup section'})
         else:
@@ -2122,6 +2147,21 @@ def round_trip(raw, pcb):
             found = native[position] if position < len(native) else None
             add(pointer + '/thickness_mm', 'match' if found and found['thickness_nm'] is not None and
                 mm(found['thickness_nm']) == layer['thickness_mm'] else 'mismatch', {'board': found and found['name']})
+        if layer['kind'] == 'dielectric':
+            material_declared = any(field in layer for field in ('dielectric_type', 'epsilon_r', 'loss_tangent'))
+            for field in ('dielectric_type', 'epsilon_r', 'loss_tangent'):
+                if field not in layer and not (field == 'loss_tangent' and material_declared):
+                    continue
+                actual = None if found is None else found.get('type' if field == 'dielectric_type' else field)
+                if field == 'loss_tangent' and layer.get(field) is None:
+                    add(pointer + '/' + field, 'not_compared', {
+                        'source_value': None, 'serialized_value': actual, 'qualification': 'unqualified',
+                        'origin': ('KiCad serialization/tool default' if actual == '0.02' else 'unqualified saved value'),
+                        'used_for_impedance': False,
+                        'reason': 'loss tangent is unknown; native serialization does not establish a sourced value'})
+                else:
+                    add(pointer + '/' + field, 'match' if actual == layer[field] else 'mismatch',
+                        {'declared': layer[field], 'board': actual})
         if layer['kind'] == 'copper':
             if 'role' in layer:
                 actual = facts['copper_types'].get(layer['name'])

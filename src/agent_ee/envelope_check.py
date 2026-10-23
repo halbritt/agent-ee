@@ -207,7 +207,7 @@ def saved_structure(pcb):
         stacks = children(setup, 'stackup')
         if len(stacks) != 1:
             raise ValueError('missing or duplicate saved stackup')
-        layers = []
+        layers, materials = [], []
         for layer in children(stacks[0], 'layer'):
             if len(layer) < 3 or not isinstance(layer[1], str):
                 raise ValueError('malformed stackup layer')
@@ -221,6 +221,13 @@ def saved_structure(pcb):
                     raise ValueError('dielectric sublayers unsupported')
                 layers.append({'name': layer[1], 'kind': 'copper' if kind == 'copper' else 'dielectric',
                                'thickness_mm': envelope.mm(thickness)})
+                if kind != 'copper':
+                    material = {'name': layer[1], 'dielectric_type': kind}
+                    for key in ('epsilon_r', 'loss_tangent'):
+                        if children(layer, key):
+                            material[key] = envelope.fixed_point(
+                                envelope.scaled(token(layer, key), 'native ' + key), envelope.MAX_PLACES)
+                    materials.append(material)
             elif (layer[1], kind) not in (
                     ('F.Paste', 'Top Solder Paste'), ('B.Paste', 'Bottom Solder Paste'),
                     ('F.Mask', 'Top Solder Mask'), ('B.Mask', 'Bottom Solder Mask'),
@@ -229,6 +236,7 @@ def saved_structure(pcb):
         if len({l['name'] for l in layers}) != len(layers) or not layers:
             raise ValueError('missing or duplicate structural stackup layer')
         result['stackup'] = {'thickness_mm': envelope.mm(total), 'layers': layers}
+        result['stackup_material'] = materials
     except ValueError as exc:
         result['stackup'] = {'unavailable': str(exc)}
     return result
@@ -257,7 +265,7 @@ def compare_saved(criterion, record, facts):
         authority = record['fab_profile'].get('stackup', {})
         if authority.get('execution') != 'ready':
             expected = {'thickness_mm': record['stackup']['thickness_mm'], 'layers': [
-                {k: v for k, v in layer.items() if k not in ('copper_weight_oz', 'role')}
+                {k: layer[k] for k in ('name', 'kind', 'thickness_mm')}
                 for layer in record['stackup']['layers']]}
             if source != expected:
                 defects.append('saved structural stackup differs in name, order, kind or exact thickness')
@@ -275,12 +283,33 @@ def compare_saved(criterion, record, facts):
                     unknown.append(layers['unavailable'])
                 elif layers['types'].get(layer['name']) != ('power' if layer['role'] == 'plane' else 'signal'):
                     defects.append(f"saved copper role differs for {layer['name']}")
+    material_evidence = []
+    material_declared = False
     if field == 'stackup':
         reason = envelope.stackup_authority_reason(record)
         if reason:
             unknown.append(reason)
+        material_fields = ('dielectric_type', 'epsilon_r', 'loss_tangent')
+        saved_materials = {row['name']: row for row in facts.get('stackup_material', [])}
+        for layer in record['stackup']['layers']:
+            if layer['kind'] != 'dielectric' or not any(key in layer for key in material_fields):
+                continue
+            material_declared = True
+            actual = saved_materials.get(layer['name'], {})
+            for key in material_fields:
+                if key in layer and layer[key] is not None and actual.get(key) != layer[key]:
+                    defects.append(f"saved layer {layer['name']} {key} differs from sourced envelope")
+            if layer.get('loss_tangent') is None:
+                serialized = actual.get('loss_tangent')
+                material_evidence.append({'name': layer['name'], 'source_value': None,
+                    'serialized_value': serialized, 'qualification': 'unqualified',
+                    'origin': ('KiCad serialization/tool default' if serialized == '0.02'
+                               else 'unqualified saved value'), 'used_for_impedance': False})
+                unknown.append(f"layer {layer['name']} loss tangent is unknown; saved value is unqualified material data")
     return {'criterion': criterion, 'status': 'unknown' if unknown else 'defect' if defects else 'pass',
-            'defects': defects, 'unknown': unknown, 'saved': source}
+            'defects': defects, 'unknown': unknown, 'saved': source,
+            **({'material_evidence': material_evidence, 'impedance_qualified': False}
+               if material_declared else {})}
 
 
 def compare_stackup(declared, saved, profile):

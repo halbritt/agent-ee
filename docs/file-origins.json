@@ -2257,7 +2257,8 @@
     },
     {
       "paths": [
-        "tests/test_board_envelope.py"
+        "tests/test_board_envelope.py",
+        "tests/test_stackup_material.py"
       ],
       "kind": "owned-source",
       "origins": [
