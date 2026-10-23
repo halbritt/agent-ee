@@ -797,7 +797,10 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
                               proposal['position_nm'], proposal['rotation_deg'])
             expected_custom.update({p['uuid']: p['custom_geometry']['bbox_nm'] for p in moved['pads']})
     placement_trace.phase('export')  # Trace phases (AGENTEE-430) are no-ops unless tracing is on.
-    _apply_plan(board, plan, output, changes)
+    if changes:
+        _apply_plan(board, plan, output, changes)
+    else:
+        _apply_plan(board, plan, output)  # unchanged call without side changes
     placement_trace.phase('native_checks')
     if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
         raise ValueError('native saved board changed footprint pad geometry')

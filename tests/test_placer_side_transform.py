@@ -73,7 +73,8 @@ class SideTransformTest(unittest.TestCase):
         changes = runner._side_changes(self.source, self.authorization(), plan)
         expected = {**runner._pad_inventory(k.LoadBoard(str(self.source))), **runner._flipped_inventory(self.source, changes)}
         for ref, mutate in (('C1', lambda pad: pad.SetNumber('9')), ('C1', lambda pad: pad.SetShape(k.PAD_SHAPE_CIRCLE)),
-                            ('C1', lambda pad: pad.SetNetCode(0)), ('U1', lambda pad: pad.SetNumber('9'))):
+                            ('C1', lambda pad: pad.SetSize(k.PADSTACK.ALL_LAYERS, k.VECTOR2I(400000, 300000))),
+                            ('U1', lambda pad: pad.SetNumber('9'))):
             with self.subTest(ref=ref):
                 out = self.scratch / f'corrupt-{ref}-{len(list(self.scratch.iterdir()))}.kicad_pcb'
                 runner._apply_plan(k.LoadBoard(str(self.source)), plan, out, changes)
