@@ -1,20 +1,18 @@
 # Telemetry-pod scorer benchmark
 
-**PyPy completed the same workload in 70.18 seconds versus CPython’s 95.35: 26.4% less time.**
+**Rust completed the full workload in 56.45 seconds on average: 1.70× faster than CPython and 1.24× faster than PyPy.**
 
-One test, four implementations. Each ran four times on the same isolated 4-vCPU AMD EPYC 7B13 Spot VM, using the same frozen telemetry-pod board, netlist, models and search budget. Execution order rotated each round.
+One workload, four implementations, four measured runs each. All used the same frozen telemetry-pod board, netlist, models, constraints and search budgets on one isolated 4-vCPU AMD EPYC 7B13 Spot VM. Execution order rotated each round; every run started a fresh process.
 
 | Implementation | Run 1 | Run 2 | Run 3 | Run 4 | Mean | Speedup vs CPython |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Python (CPython) | 95.85 s | 94.76 s | 95.63 s | 95.15 s | 95.35 s | 1.000× |
-| C (original kernel) | 95.08 s | 94.82 s | 95.91 s | 95.24 s | 95.26 s | 1.001× |
-| Rust | 94.71 s | 94.10 s | 96.00 s | 94.36 s | 94.79 s | 1.006× |
-| Python (PyPy) | 70.11 s | 70.00 s | 70.70 s | 69.91 s | 70.18 s | 1.359× |
+| Python (CPython) | 96.26 s | 95.67 s | 95.68 s | 95.95 s | 95.89 s | 1.000× |
+| CPython + original C scorer | 97.01 s | 96.17 s | 95.74 s | 95.28 s | 96.05 s | 0.998× |
+| Greenfield Rust planner | 55.97 s | 56.10 s | 57.98 s | 55.74 s | 56.45 s | 1.699× |
+| Python (PyPy) | 70.29 s | 70.34 s | 70.13 s | 69.83 s | 70.15 s | 1.367× |
 
-C and Rust changed mean total time by less than 1%.
+Times cover the complete placement call: capture, planning, board writing and native validation. Backend initialization and Rust/PyPy process startup and communication are included. Rust implements the complete pure planner independently, including geometry, block arrangement, search, ranking and grading. PyPy runs the original Python planner. The C row uses the original compiled scorer under CPython. KiCad capture, board application and validation are common to all four.
 
-Times cover the full placement call, including planner execution, board writing and native checks. Library loading and PyPy startup are included. C and Rust replace the scorer under CPython; PyPy runs the whole pure Python planner, with KiCad operations remaining in CPython. C uses the original kernel with a fast adapter; full-output parity comparison runs outside the timer.
+All 16 runs produced byte-identical boards and matching complete plans, apart from recorded elapsed time. Each returned 309 footprint placements using 4,277 search steps. Validation findings also matched; no fallback occurred. The candidate's 9 existing silkscreen conflicts remain.
 
-All 16 runs produced byte-identical boards and matching normalized placement plans and validation findings. Each placed 309 components using 4,277 search steps. No fallback occurred. Existing board defects remained unchanged.
-
-Measured October 22, 2026. Source: `1ce28a5c2332`. All 24 preflight tests passed. The Spot VM and boot disk were deleted after the evidence was retrieved and verified.
+Measured October 22, 2026 (PDT; October 23 UTC). Source: `0995743eb6a1546f31bf47048043aaeb6efc69cf`. The interrupted attempt is preserved separately and excluded from this table. Four observations on this board establish this result; they do not establish performance on every board. The Spot VM and boot disk were deleted after evidence retrieval.

@@ -1,0 +1,212 @@
+{
+  "all_outputs_equal": true,
+  "artifact_count_per_run": 32,
+  "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+  "cleanup": {
+    "disk_absent": true,
+    "disk_listing": "disks-after-delete.json",
+    "instance": "agent-ee-rust524-greenfield-20261023-0310",
+    "instance_absent": true,
+    "instance_id": "4446414296925565120",
+    "instance_listing": "instances-after-delete.json",
+    "project": "heath-stuff",
+    "released_reservations": [
+      "84825dbe28",
+      "2e13f23dff"
+    ],
+    "verified_at": "2026-10-23T05:23:37.936655+00:00",
+    "zone": "us-west1-b"
+  },
+  "counters": {
+    "arrangement_step_budget": 200000,
+    "arrangement_steps_used": 101,
+    "placements": 309,
+    "policy_step_budget": 200000,
+    "residual_steps_used": 4176,
+    "step_budget": 200000,
+    "steps_used": 4277
+  },
+  "environment": {
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cpu_model": "AMD EPYC 7B13",
+    "cpus": 4,
+    "host": "3c2da49fce85",
+    "platform": "Linux-7.0.0-1014-gcp-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
+  },
+  "evidence_archive": {
+    "archive": "/home/halbritt/agent524-rust-planner/build/rust-planner/cloud/agent524-greenfield-evidence.tar.zst",
+    "bytes": 39591512,
+    "files": 1072,
+    "sha256": "a7b9f8f0a06a23ebb4e69bc2259f516b63b3f2628c25f73036d497d24d677eac"
+  },
+  "exact_plan_comparison": "Canonical JSON bytes; only block_arrangement.search.elapsed_s removed; integer/float spellings retained",
+  "independent_audit": {
+    "path": "build/rust-planner/cloud/independent-audit.json",
+    "sha256": "c6490ff24fc0beab0bde66c8b546c40473584506a459d4e66690fae55f28d6f2"
+  },
+  "interrupted_attempt": {
+    "archive": {
+      "archive": "/home/halbritt/agent524-rust-planner/build/rust-planner/cloud/agent524-interrupted-evidence.tar.zst",
+      "bytes": 16926077,
+      "files": 436,
+      "sha256": "17013ad7ee11420ed52e1225ce7b83222a1e0bfe762f4658dd2340480d79d9c5"
+    },
+    "excluded_from_results": true,
+    "reason": "VM stopped under owner pause"
+  },
+  "limitations": [
+    "Four observations per backend on one host and input.",
+    "Runtime witnesses prove the selected backend executed; retained complete plans, not an in-timer per-query oracle, establish parity.",
+    "Rust implements the complete pure planner; PyPy executes the original pure planner; C replaces only scoring.",
+    "Runtime/model invariance is verified in retained worker records; this offline audit does not rerun the host.",
+    "Audit pass and native DRC execution success do not mean board acceptance; candidate outcomes and open defects are retained separately.",
+    "Separate self/children high-water RSS are not a simultaneous aggregate peak."
+  ],
+  "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+  "open_silkscreen_conflicts": 9,
+  "public_report": {
+    "anonymous_public_fetch_verified": true,
+    "code": "7vhrf8uprvqtufej",
+    "expires_at": "2026-11-22T05:24:47.768103824Z",
+    "raw_url": "https://pastebin.harm.org/raw/7vhrf8uprvqtufej",
+    "sha256": "f8f53c093143af058e920fc8c57d23bd3ab1637eed70c4005ec76b75522e7ee8",
+    "size": 2010,
+    "url": "https://pastebin.harm.org/p/7vhrf8uprvqtufej"
+  },
+  "runs": 16,
+  "runtime_identity": {
+    "board": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_pcb",
+      "sha256": "0365485efbac76fe77e6810baba0fd15077803289e184d1ff4069773a612907c"
+    },
+    "c_library": {
+      "path": "/opt/agent-ee/build/four-way-scoring/placement_score_original.so",
+      "sha256": "06f04731ee0385f005bc7927d6c71bb819ad7803e33bf7cfe6372793989f82c6"
+    },
+    "netlist": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/native.xml",
+      "sha256": "7791d44380d40bb46b0dbe1cd7495ce59408e8691afe2bf360eaf70b3eab7556"
+    },
+    "project": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_pro",
+      "sha256": "a91ee4d1a8ecfa583df33e707defdb3174e505d91853fc1e4959600d770aa57f"
+    },
+    "pypy": {
+      "path": "/opt/agent-ee/build/pypy-scoring/pypy3.12-v8.0.1-linux64/bin/pypy3.12",
+      "sha256": "c57b82bb92345e3f9dbd908c001d85eaf55af28ef1c52025b803df6af191e2af"
+    },
+    "request": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/request.json",
+      "sha256": "306a8b7c197faf2fb3bd170b372b03a26af7964812819a552435634ff26d2bc1"
+    },
+    "rules": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_dru",
+      "sha256": null
+    },
+    "rust_planner": {
+      "path": "/opt/agent-ee/build/rust-planner/agent-ee-placement",
+      "sha256": "330c199999dcc8e77165c36f3235ca92028b5c645d3b980164631a707467c391"
+    }
+  },
+  "rust_executable_sha256": "330c199999dcc8e77165c36f3235ca92028b5c645d3b980164631a707467c391",
+  "schema": "agent-ee.greenfield-rust-benchmark/1",
+  "source_package": {
+    "files": 629,
+    "launch_sha256": "0a6f1723eac332d18f2fb8f78d12114041f256d2d4bbc2926a284a3a09537f73",
+    "rust_executable_sha256": "330c199999dcc8e77165c36f3235ca92028b5c645d3b980164631a707467c391",
+    "source_revision": "0995743eb6a1546f31bf47048043aaeb6efc69cf",
+    "source_sha256": "731e88197f6e3ed8d79813611cdc8bcaa9751487034e00615ae8824046e8dc8d"
+  },
+  "source_revision": "0995743eb6a1546f31bf47048043aaeb6efc69cf",
+  "status": "completed",
+  "summary": {
+    "mean_runner_ns": {
+      "c": 96051142066,
+      "pypy": 70147160176,
+      "python": 95888296041.25,
+      "rust": 56447753586.5
+    },
+    "mean_wall_reduction_percent": {
+      "c": -0.16982888576928534,
+      "pypy": 26.844919482328134,
+      "python": 0.0,
+      "rust": 41.13175860147014
+    },
+    "median_runner_ns": {
+      "c": 95958530030.0,
+      "pypy": 70209313288.0,
+      "python": 95813496493.0,
+      "rust": 56035293615.5
+    },
+    "per_round_speedup_vs_cpython": {
+      "c": [
+        0.9922653229115813,
+        0.9947351226593156,
+        0.9993049992321353,
+        1.0070514199267817
+      ],
+      "pypy": [
+        1.3694592806493986,
+        1.3600098261001143,
+        1.3643332366373444,
+        1.3740798114949972
+      ],
+      "python": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "rust": [
+        1.719810933230213,
+        1.7053004084966892,
+        1.6502497799570408,
+        1.7212886230207831
+      ]
+    },
+    "ratio_of_mean_cpython_to_backend": {
+      "c": 0.9983045904374765,
+      "pypy": 1.3669590586513438,
+      "python": 1.0,
+      "rust": 1.6987088050246621
+    },
+    "runner_wall_ns": {
+      "c": [
+        97010405014,
+        96172466562,
+        95744593498,
+        95277103190
+      ],
+      "pypy": [
+        70290560820,
+        70342234656,
+        70128065756,
+        69827779472
+      ],
+      "python": [
+        96260060857,
+        95666130322,
+        95678050932,
+        95948942054
+      ],
+      "rust": [
+        55971304169,
+        56099283062,
+        57977920733,
+        55742506382
+      ]
+    }
+  },
+  "verification_reused": {
+    "exact_oracle_cases": 179,
+    "packaged_runtime_preflight_tests": 34,
+    "runtime_and_harness_tests": 17,
+    "rust_unit_tests": 44
+  }
+}
