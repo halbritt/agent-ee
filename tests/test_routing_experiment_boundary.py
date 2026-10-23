@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -1495,6 +1496,25 @@ K91_PROTECTED = {
 _KEEP = object()
 
 
+def disposable_copy(src, dst):
+    """copytree(src, dst, symlinks=True), then the COPY made owner-writable and traversable: the
+    external receipt stores are deployed read-only (:ro mounts, a-w byte copies) and copytree keeps
+    their modes, so the test could not edit, reseal or remove its own copy. Only entries of dst are
+    changed: a symlink is copied as a link and never chmodded or followed, so its target (the
+    original, or external evidence) keeps its mode. The source is never written."""
+    shutil.copytree(src, dst, symlinks=True)
+    # os.walk never descends through a link; a linked directory is listed and skipped below.
+    entries = [Path(dst)]
+    for parent, dirs, files in os.walk(dst):
+        entries += [Path(parent) / name for name in dirs + files]
+    for entry in entries:
+        info = entry.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            continue
+        os.chmod(entry, stat.S_IMODE(info.st_mode) | (0o700 if stat.S_ISDIR(info.st_mode) else 0o600))
+    return dst
+
+
 def external_receipt(variable, build_name, original):
     """An external native receipt copy, or None when it is absent."""
     for where in (os.environ.get(variable), Path(__file__).resolve().parents[1] / 'build' / build_name, original):
@@ -1506,6 +1526,39 @@ def external_receipt(variable, build_name, original):
 def final_receipt():
     """The external clean receipt copy, or None when it is absent."""
     return external_receipt('AGENT_EE_K91_FINAL_RECEIPT', 'k91-final-clean-receipt', K91_FINAL_RUN)
+
+
+class DisposableCopyTest(unittest.TestCase):
+    def test_a_read_only_store_copy_is_writable_and_the_store_and_link_targets_are_untouched(self):
+        # agent-521 fd37d2b0: the deployed K91 stores are read-only. The test's own copy must be
+        # editable and removable, while the store and anything a link in it names keep their modes
+        # and bytes.
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-k91-ro-')
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        store, outside = root / 'store', root / 'outside.json'
+        (store / 'work/input').mkdir(parents=True)
+        (store / 'work/input/rules.kicad_dru').write_text('rules')
+        (store / 'snapshot.json').write_text('{}')
+        outside.write_text('external')
+        (store / 'external-link').symlink_to(outside)
+        (store / 'dir-link').symlink_to(store / 'work')
+        read_only = [outside, store / 'snapshot.json', store / 'work/input/rules.kicad_dru',
+                     store / 'work/input', store / 'work', store]
+        for path in read_only:
+            os.chmod(path, 0o555 if path.is_dir() else 0o444)
+        self.addCleanup(lambda: [os.chmod(path, 0o755) for path in reversed(read_only)])
+        before = {path: (stat.S_IMODE(path.lstat().st_mode), path.read_bytes() if path.is_file() else None)
+                  for path in read_only}
+        copy = disposable_copy(store, root / 'copy')
+        self.assertTrue((copy / 'external-link').is_symlink())
+        self.assertTrue((copy / 'dir-link').is_symlink())
+        (copy / 'snapshot.json').write_text('{"edited": true}')
+        (copy / 'work/input/rules.kicad_dru').write_text('edited')
+        (copy / 'work/input/rules.kicad_dru').unlink()
+        shutil.rmtree(copy)
+        self.assertEqual({path: (stat.S_IMODE(path.lstat().st_mode), path.read_bytes() if path.is_file() else None)
+                          for path in read_only}, before)
 
 
 class NativeReceiptCase:
@@ -1528,7 +1581,7 @@ class NativeReceiptCase:
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.run_copy = self.root / 'run'
-        shutil.copytree(self.source, self.run_copy, symlinks=True)
+        disposable_copy(self.source, self.run_copy)
         self.policy = attempt.validate_experiment_policy(json.loads((self.run_copy / 'experiment-policy.json').read_text()))
 
     def retained(self, run=None):
@@ -1683,7 +1736,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         for scenario, reason, detail in cases:
             with self.subTest(detail=detail, scenario=sorted(scenario)):
                 if not self.run_copy.exists():
-                    shutil.copytree(self.source, self.run_copy, symlinks=True)
+                    disposable_copy(self.source, self.run_copy)
                 attempt_dir, observed = self.retained()
                 result = self.resealed(attempt_dir, **scenario)
                 self.assert_refused(self.grade(attempt_dir, observed, result=result), reason, detail, attempt_dir,
@@ -1717,13 +1770,13 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                              (reference_dir, absent)):
             with self.subTest(detail=detail):
                 if not self.run_copy.exists():
-                    shutil.copytree(self.source, self.run_copy, symlinks=True)
+                    disposable_copy(self.source, self.run_copy)
                 attempt_dir, observed = self.retained()
                 result = self.resealed(attempt_dir, edit_attempt=edit)
                 self.assert_refused(self.grade(attempt_dir, observed, result=result), 'run_mismatch', detail,
                                     attempt_dir, observed, result=result)
         if not self.run_copy.exists():
-            shutil.copytree(self.source, self.run_copy, symlinks=True)
+            disposable_copy(self.source, self.run_copy)
         attempt_dir, observed = self.retained()
         board = 'work/input/route_demo/route_demo.kicad_pcb'
         self.assertEqual(observed[board], K91_PREPARED_BOARD)
@@ -1760,7 +1813,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         for entry in (None, self.RUN + '/' + name, 'missing.kicad_dru'):
             with self.subTest(entry=entry):
                 if not self.run_copy.exists():
-                    shutil.copytree(self.source, self.run_copy, symlinks=True)
+                    disposable_copy(self.source, self.run_copy)
                 (self.run_copy / name).unlink()
                 if entry is not None:
                     (self.run_copy / name).symlink_to(entry)
@@ -1791,15 +1844,15 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         project = PurePosixPath(record['candidate_dir']).name
         self.assertEqual(PurePosixPath(record['candidate_dir']).parent.name, 'candidate')
         genuine = self.root / 'owning-run'
-        shutil.copytree(self.run_copy, genuine, symlinks=True)
+        disposable_copy(self.run_copy, genuine)
         self.assertEqual((genuine / record['candidate_dir']).resolve(), (genuine / 'candidate' / project).resolve())
         orphan = self.root / 'orphan/candidate'
-        shutil.copytree(genuine / 'candidate', orphan, symlinks=True)
+        disposable_copy(genuine / 'candidate', orphan)
         other = self.root / 'other-owner'
-        shutil.copytree(self.run_copy, other, symlinks=True)
+        disposable_copy(self.run_copy, other)
         (other / 'attempt.json').write_text(json.dumps({**record, 'candidate_dir': 'candidate/elsewhere'}))
         neutral = self.root / 'neutral/input'
-        shutil.copytree(genuine / 'candidate', neutral, symlinks=True)
+        disposable_copy(genuine / 'candidate', neutral)
         request = dict(project=project, board=record['board'], schematic=record['schematic'], name=project)
         for label, design, detail in (
                 ('genuine owning run', genuine / 'candidate', 'is the candidate of the kicad-route run'),
@@ -1845,11 +1898,11 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         record = json.loads((self.run_copy / 'attempt.json').read_text())
         project = PurePosixPath(record['candidate_dir']).name
         capture = self.root / 'campaign/runs/2'
-        shutil.copytree(self.run_copy / 'candidate' / project, capture / 'inputs' / project, symlinks=True)
+        disposable_copy(self.run_copy / 'candidate' / project, capture / 'inputs' / project)
         (capture / 'result.json').write_text(json.dumps({'candidate_id': 'captured', 'findings': []}))
         (capture / 'candidate.json').write_text(json.dumps({'candidate_id': 'captured', 'files': {}}))
         neutral = self.root / 'neutral-capture'
-        shutil.copytree(capture / 'inputs', neutral, symlinks=True)
+        disposable_copy(capture / 'inputs', neutral)
         request = dict(project=project, board=record['board'], schematic=record['schematic'], name=project)
         for label, policy in (('capture run inputs', self.policy), ('capture run inputs, no policy', None)):
             with self.subTest(label):
@@ -1955,7 +2008,7 @@ class ProtectedNativeReceiptCase(NativeReceiptCase):
         self.assert_refused(self.grade(attempt_dir, observed, result=result), 'run_mismatch',
                             'the sidecar effective input', attempt_dir, observed, result=result)
         # The unchanged receipt with an observed work input that is the original board.
-        shutil.copytree(self.source, self.run_copy, symlinks=True)
+        disposable_copy(self.source, self.run_copy)
         attempt_dir, observed = self.retained()
         seen = {**observed, f'work/input/{self.project}/route_demo.kicad_pcb': K91_ORIGINAL_BOARD}
         self.assert_refused(self.grade(attempt_dir, seen), 'run_mismatch', 'the sidecar effective input',
