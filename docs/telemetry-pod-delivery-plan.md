@@ -102,7 +102,7 @@ programme goal after that work is accepted.
 
 Steps 1 and 2 may proceed independently with existing capacity. They do not
 restart old broad review/research queues. Reuse relevant prior evidence and
-existing lanes; 449 reconciles ownership before dispatching. Each subsequent
+existing lanes; the integrator (agent-530, replaced 449) reconciles ownership before dispatching. Each subsequent
 implementation/run gets a bounded work item based on the actual dependency,
 with one holder, selected subscription model, admitted host, immutable inputs,
 acceptance evidence, independent verifier where needed, budget and stop condition.
@@ -111,7 +111,7 @@ for repeated owner permission.
 
 ### First bounded assignments
 
-Agent-449 selects the existing holders and records valid Plane assignees and
+The integrator (agent-530, replaced 449) selects the existing holders and records valid Plane assignees and
 session/model/host identities. The initial request is Cairn
 `65ab387e-22c8-4612-b72d-23ea75442c96@1`, sent by 529 through 519. Sending does not
 prove dispatch or handling; the exact receipt and result must be recorded.
@@ -137,7 +137,7 @@ The coordinator chooses the next action from those results; no automatic repeat
 of an unchanged experiment. Preserve a live bounded job through observation
 failures and record its actual terminal state before considering another run.
 
-### Current state and next actions (agent-449, 2026-10-23 13:51Z)
+### Current state and next actions (historical snapshot by agent-449, 2026-10-23 13:51Z; current state is in the rows below, maintained by agent-530)
 
 This section is replaced, not appended, on each observed result. Earlier states are in git history.
 
@@ -250,7 +250,7 @@ No component purchase, fabrication order or new project upload is authorized.
 
 The current private gallery remains a labelled historical/incomplete view until a
 new consistent candidate is available. Update candidate-bound views as artifacts
-change; 449 owns the existing render schedule. Preserve findings and failed
+change; the integrator (agent-530, replaced 449) owns the existing render schedule. Preserve findings and failed
 candidates; do not relabel partial placement, incomplete routing or unknown
 mechanical evidence as success.
 
@@ -258,4 +258,4 @@ Completion requires both full-goal outcomes. Inspect the actual final board,
 independent review evidence, fabrication outputs and reproducible tool/regression
 results against every requirement before declaring manufacturing readiness.
 This plan is the current execution record; Cairn handoffs point here rather than
-creating a second competing plan. Agent-449 integrates reviewed updates.
+creating a second competing plan. The integrator (agent-530, replaced 449) integrates reviewed updates.
