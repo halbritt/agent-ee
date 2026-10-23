@@ -426,6 +426,22 @@ pub fn isolate(capture: &Value, policy: &Value, block: &Value) -> Result<(String
         sub["search_timeout_s"] = t.clone();
     }
     let mut deferred = json!({"groups":[],"obligations":[],"obstacles":rows(&policy["obstacles"])?.len(),"board_rule_areas":capture.get("rule_areas").and_then(Value::as_array).into_iter().flatten().filter(|a|a["owner"]=="board").count()});
+    if let Some(bound) = policy.get("mechanical_reservations") {
+        let selected = crate::mechanical::for_block(bound, &members)?;
+        let included: BTreeSet<_> = refs(&selected["selection"]["reservation_ids"])?
+            .into_iter()
+            .collect();
+        let mut excluded = Vec::new();
+        for row in rows(&selected["document"]["reservations"])? {
+            let id = text(&row["id"])?;
+            if !included.contains(id) {
+                excluded.push(id.to_owned());
+            }
+        }
+        excluded.sort();
+        deferred["mechanical_reservations"] = json!(excluded);
+        sub["mechanical_reservations"] = selected;
+    }
     let mut internal_groups = Vec::new();
     for group in policy
         .get("groups")
@@ -694,7 +710,10 @@ pub fn evidence(capture: &Value, framed: &[Value], sub: &Value) -> Result<(Value
             .collect(),
     );
     framed_capture["footprints"] = json!(framed);
-    let grade = json!({"electrical_locality":match sub.get("electrical_locality"){Some(p)=>locality::grade(&framed_capture,p)?,None=>Value::Null},"groups":match sub.get("groups"){Some(p)=>groups::grade(&framed_capture,p)?,None=>Value::Null}});
+    let mut grade = json!({"electrical_locality":match sub.get("electrical_locality"){Some(p)=>locality::grade(&framed_capture,p)?,None=>Value::Null},"groups":match sub.get("groups"){Some(p)=>groups::grade(&framed_capture,p)?,None=>Value::Null}});
+    if let Some(bound) = sub.get("mechanical_reservations") {
+        grade["mechanical_reservations"] = crate::mechanical::grade(&framed_capture, bound, false)?;
+    }
     let gap = exact::integer(&sub["gap_nm"])?;
     let gap2 = BigRational::from_integer(&gap * &gap);
     let mut minimum = BTreeMap::<String, (BigRational, Value)>::new();
@@ -938,9 +957,20 @@ fn validate_candidate(doc: &Value) -> Result<()> {
             "obstacles",
             "fixed_refs",
         ],
-        &["search_timeout_s", "groups", "electrical_locality"],
+        &[
+            "search_timeout_s",
+            "groups",
+            "electrical_locality",
+            "mechanical_reservations",
+        ],
     )?;
     policy::validate(&doc["block_policy"], &member_set)?;
+    if let Some(bound) = doc["block_policy"].get("mechanical_reservations") {
+        ensure!(
+            crate::mechanical::for_block(bound, &member_set)? == *bound,
+            "block policy mechanical selection must exactly cover block members"
+        );
+    }
     ensure!(
         doc["block_policy"]["fixed_refs"] == json!([doc["frame"]["anchor"]])
             && rows(&doc["block_policy"]["obstacles"])?.is_empty()
@@ -1001,8 +1031,11 @@ fn validate_candidate(doc: &Value) -> Result<()> {
     keys(
         &doc["deferred"],
         &["groups", "obligations", "obstacles", "board_rule_areas"],
-        &[],
+        &["mechanical_reservations"],
     )?;
+    if let Some(ids) = doc["deferred"].get("mechanical_reservations") {
+        refs(ids)?;
+    }
     refs(&doc["deferred"]["groups"])?;
     refs(&doc["deferred"]["obligations"])?;
     for k in ["obstacles", "board_rule_areas"] {
@@ -1149,7 +1182,25 @@ fn validate_pins(members: &[Value]) -> Result<()> {
     Ok(())
 }
 fn validate_grade(grade: &Value, sub: &Value) -> Result<()> {
-    keys(grade, &["electrical_locality", "groups"], &[])?;
+    keys(
+        grade,
+        &["electrical_locality", "groups"],
+        &["mechanical_reservations"],
+    )?;
+    ensure!(
+        sub.get("mechanical_reservations").is_some()
+            == grade.get("mechanical_reservations").is_some(),
+        "mechanical grade must match block policy coverage"
+    );
+    if let Some(r) = grade.get("mechanical_reservations") {
+        ensure!(
+            r["schema"] == "agent-ee.mechanical-reservation-grade/1"
+                && r["status"] == "pass"
+                && r["defects"] == json!([])
+                && r["unknown"] == json!([]),
+            "block mechanical grade must pass with no defects or unknowns"
+        );
+    }
     for kind in ["electrical_locality", "groups"] {
         let r = &grade[kind];
         if sub.get(kind).is_none() {
@@ -1888,7 +1939,7 @@ fn admission_evidence(
         }
     }
     let mut failed = Vec::new();
-    for kind in ["electrical_locality", "groups"] {
+    for kind in ["electrical_locality", "groups", "mechanical_reservations"] {
         let g = &grade[kind];
         if g.is_null() {
             continue;
@@ -1896,7 +1947,7 @@ fn admission_evidence(
         let usable = if kind == "groups" {
             g["status"] == "pass" && groups::violations(g).is_empty()
         } else {
-            g["status"] == "pass" || g["status"] == "info"
+            g["status"] == "pass" || kind == "electrical_locality" && g["status"] == "info"
         };
         if !usable {
             failed.push(kind);

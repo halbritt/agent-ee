@@ -110,6 +110,47 @@ class EngineFixture:
 
 
 class WholePlannerParityTest(EngineFixture, unittest.TestCase):
+    def test_physical_and_mechanical_blockers_keep_bounded_search_parity(self):
+        from agent_ee import mechanical_reservations, placer
+        from agent_ee.placement import intersection_area
+        from test_mechanical_reservations import bound, reservation
+        from test_placer_copper_extent import board
+        from test_placer_packing_scope import area, lands_part
+
+        front = rectangle(0, 0, 8, 8)
+        facts = board([part('F1', 6, 6, side='B'), part('A1', 0, 0, side='B'), lands_part()], front)
+        facts['rule_areas'] = [area('fixed-footprint-pad-keepout', ['F.Cu'], front, owner='F1')]
+        binding = bound(facts, [reservation('whole-front-access', polygons=[front])])
+        policy = request(fixed_refs=['F1'], priority_refs=['A1'], gap_nm=0, step_budget=40,
+                         mechanical_reservations=binding)
+
+        # The same C1 pose violates both predicates. Its rectangular native pad
+        # lands enter fixed footprint F1's F.Cu pad keepout; its courtyard
+        # obstructs access. A1 is on B and owns neither restriction, so moving
+        # A1 cannot resolve either collision.
+        proposed = placer.transform(facts['footprints'][2], [4*MM, 4*MM], 0)
+        for pad in proposed['pads']:
+            x, y = pad['position_nm']
+            w, h = pad['size_nm']
+            land = [[x-w//2, y-h//2], [x+w//2, y-h//2],
+                    [x+w//2, y+h//2], [x-w//2, y+h//2]]
+            self.assertGreater(intersection_area(land, front), 0)
+        obstruction = mechanical_reservations.grade(
+            {**facts, 'footprints': facts['footprints'][:2] + [proposed]}, binding)
+        self.assertEqual(obstruction['status'], 'defect', obstruction)
+        self.assertEqual({row['ref'] for row in obstruction['defects']}, {'C1'})
+
+        plan = self.compare(facts, {'policy': policy})
+        self.assertEqual((plan['status'], plan['outcome']), ('packing_search_exhausted', 'unknown'))
+        self.assertEqual((plan['steps_used'], plan['step_budget']), (37, 40))
+        self.assertEqual(plan['search']['backjumps'], 0)
+        self.assertEqual(plan['search']['unplaced'], 'C1')
+        self.assertEqual([p['ref'] for p in plan['search']['partial']['placements']], ['A1', 'F1'])
+        self.assertEqual(plan['placements'], [])
+        exhausted = self.compare(facts, {'policy': {**policy, 'step_budget': 36}})
+        self.assertEqual(exhausted['status'], 'packing_budget_exhausted')
+        self.assertEqual((exhausted['steps_used'], exhausted['step_budget']), (36, 36))
+
     def test_backjump_anchor_and_candidate_budget(self):
         from test_placer_search import anchor_case, promotion_case
         for name, factory, budget in [('promotion', promotion_case, None),

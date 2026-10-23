@@ -1903,10 +1903,6 @@ class _Search:
         if (not _fits(proposed, self.outline, self.margin_nm) or _near(proposed, self.exact, self.gap) or
                 _in_keepouts(proposed, self.obstacles)):
             return set()
-        mechanics = _mechanical({**self.capture, 'footprints': self.placed + [proposed]},
-                                 self.policy, partial=True)
-        if mechanics is not None and mechanics['status'] != 'pass':
-            return {fp['ref'] for fp in self.placed} - self.fixed
         own = proposed.get('packing_keepouts', [])
         hit = [fp['ref'] for fp in self.placed if (fp.get('packing_keepouts') and
                _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
@@ -1915,6 +1911,10 @@ class _Search:
         escaped = _copper_escapes(proposed, self.outline, self.obstacles, self.placed, self.pad_keepouts)
         if escaped is not None:
             return escaped[1] - self.fixed
+        mechanics = _mechanical({**self.capture, 'footprints': self.placed + [proposed]},
+                                 self.policy, partial=True)
+        if mechanics is not None and mechanics['status'] != 'pass':
+            return {fp['ref'] for fp in self.placed} - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
                 proposed, {'region': group['region']}, {}):
             return set()

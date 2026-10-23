@@ -331,6 +331,13 @@ def _filter_policy(policy, block):
     internal, deferred['obligations'] = _locality(policy.get('electrical_locality'), members)
     if internal:
         sub['electrical_locality'] = internal
+    if 'mechanical_reservations' in policy:
+        from . import mechanical_reservations
+        selected = mechanical_reservations.for_block(policy['mechanical_reservations'], members)
+        sub['mechanical_reservations'] = selected
+        included = set(selected['selection']['reservation_ids'])
+        deferred['mechanical_reservations'] = sorted(row['id'] for row in selected['document']['reservations']
+                                                     if row['id'] not in included)
     return sub, deferred
 
 
@@ -496,17 +503,31 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     plane = _plane(board, members, anchor, sub)
     plan = placer.pack(_isolated(capture, board, members, areas, plane), sub, heartbeat=heartbeat)
     base = {'schema': CANDIDATE, 'block_id': block_id, 'block_policy': sub, 'deferred': deferred}
+    def failure(result):
+        if 'mechanical_reservations' in sub:
+            from . import mechanical_reservations
+            bound = sub['mechanical_reservations']
+            ids = bound['selection']['reservation_ids']
+            if ids:
+                result['reason'] = ((result.get('reason') + '; ') if result.get('reason') else '') + (
+                    'unresolved block mechanical reservations: ' + ', '.join(ids))
+            result['mechanical_reservations'] = {
+                'status': 'unresolved', 'reservation_ids': bound['selection']['reservation_ids'],
+                'initial_grade': mechanical_reservations.grade(
+                    _isolated(capture, board, members, areas, plane), bound)}
+        return result
+
     if plan['status'] != 'planned':
-        return {**base, 'status': plan['status'], 'outcome': plan['outcome'], 'reason': plan.get('reason'),
-                'plan': plan}
+        return failure({**base, 'status': plan['status'], 'outcome': plan['outcome'], 'reason': plan.get('reason'),
+                        'plan': plan})
     touching = _touching(board, members, plan, plane)
     recovery = None
     if touching:
         recovery, recovered = _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat)
         if recovered is None:
-            return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
-                    'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan,
-                    'recovery': recovery}
+            return failure({**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
+                            'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan,
+                            'recovery': recovery})
         plan = recovered
     poses = {p['ref']: p for p in plan['placements']}
     result = candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan)
@@ -518,8 +539,9 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
         result['search']['recovery'] = recovery
     if result['status'] == 'packed':
         validate_candidate(result)
-    return {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
-            'candidate': result}
+    output = {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
+              'candidate': result}
+    return output if result['status'] == 'packed' else failure(output)
 
 
 def _plane(board, members, anchor, sub):
@@ -700,6 +722,10 @@ def _evidence(capture, framed, sub):
     grade = {'electrical_locality': (electrical_locality.grade(framed_capture, sub['electrical_locality'])
                                      if 'electrical_locality' in sub else None),
              'groups': placement_groups.grade(framed_capture, sub['groups']) if 'groups' in sub else None}
+    if 'mechanical_reservations' in sub:
+        from . import mechanical_reservations
+        grade['mechanical_reservations'] = mechanical_reservations.grade(
+            framed_capture, sub['mechanical_reservations'])
     return _outline(framed), grade, _witness(framed, sub['gap_nm'])
 
 
@@ -828,8 +854,13 @@ def _pins(rows):
 
 def _block_policy(sub, refs, anchor):
     _keys(sub, {'schema', 'step_budget', 'gap_nm', 'priority_refs', 'ground_nets', 'obstacles', 'fixed_refs'},
-          {'search_timeout_s', 'groups', 'electrical_locality'}, label='block policy')
+          {'search_timeout_s', 'groups', 'electrical_locality', 'mechanical_reservations'}, label='block policy')
     placer._validate_policy(sub, set(refs))
+    if 'mechanical_reservations' in sub:
+        from . import mechanical_reservations
+        bound = sub['mechanical_reservations']
+        if mechanical_reservations.for_block(bound, refs) != bound:
+            raise ValueError('block policy mechanical selection must exactly cover block members')
     if sub['fixed_refs'] != [anchor] or sub['obstacles'] or anchor in sub['priority_refs']:
         raise ValueError('block policy fixes exactly the anchor and has no obstacles')
     if 'groups' in sub:
@@ -875,7 +906,14 @@ def _locality_floor(row):
 
 
 def _grade(grade, sub, refs):
-    _keys(grade, {'electrical_locality', 'groups'}, label='block grade')
+    _keys(grade, {'electrical_locality', 'groups'}, {'mechanical_reservations'}, label='block grade')
+    if ('mechanical_reservations' in sub) != ('mechanical_reservations' in grade):
+        raise ValueError('mechanical grade must match block policy coverage')
+    if 'mechanical_reservations' in grade:
+        record = grade['mechanical_reservations']
+        if (not isinstance(record, dict) or record.get('schema') != 'agent-ee.mechanical-reservation-grade/1'
+                or record.get('status') != 'pass' or record.get('defects') != [] or record.get('unknown') != []):
+            raise ValueError('block mechanical grade must pass with no defects or unknowns')
     for key in ('electrical_locality', 'groups'):
         if key not in sub:
             if grade[key] is not None:
@@ -1031,7 +1069,9 @@ def _validate_candidate(document):
         raise ValueError('placer judgment must pass')
     _text(judgment['basis'], 'placer judgment basis')
     deferred = _keys(document['deferred'], {'groups', 'obligations', 'obstacles', 'board_rule_areas'},
-                     label='deferred record')
+                     {'mechanical_reservations'}, label='deferred record')
+    if 'mechanical_reservations' in deferred:
+        _texts(deferred['mechanical_reservations'], 'deferred mechanical reservations')
     _texts(deferred['groups'], 'deferred groups')
     _texts(deferred['obligations'], 'deferred obligations')
     _count(deferred['obstacles'], 'deferred obstacles')

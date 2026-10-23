@@ -933,6 +933,10 @@ def _plan(facts, request, policy=None, netlist=None, *, execution=None):
 def _plan_local(facts, request, policy=None, netlist=None, *, heartbeat=None):
     heartbeat = _heartbeat if heartbeat is None else heartbeat
     policy = _effective_policy(request) if policy is None else policy
+    for global_policy in (policy, request.get('policy')):
+        binding = global_policy.get('mechanical_reservations') if isinstance(global_policy, dict) else None
+        if isinstance(binding, dict) and 'selection' in binding:
+            raise ValueError('global policy cannot use a block mechanical selection')
     if sum(key in request for key in ('targeted', 'targeted_plans', 'blocks')) > 1:
         raise ValueError('targeted, targeted_plans and blocks cannot be combined')
     if 'blocks' in request:

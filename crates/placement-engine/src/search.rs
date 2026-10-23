@@ -530,16 +530,6 @@ impl Search {
                 y: key.y.exact(),
             };
             let proposed = scan.origins[key.rotation].at(&position, key.rotation as i64 * 90)?;
-            if let Some(binding) = &self.mechanical {
-                let mut current = self.capture.raw.clone();
-                let mut members = self.placed.iter().map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?;
-                members.push(proposed.to_value()?);
-                current["footprints"] = Value::Array(members);
-                if crate::mechanical::grade(&current, binding, true)?["status"] != "pass" {
-                    conflicts.extend(self.placed.iter().filter(|fp| !self.fixed.contains(&fp.reference)).map(|fp| fp.reference.clone()));
-                    continue;
-                }
-            }
             let context = AdmissionContext {
                 outline: &self.capture.outline,
                 margin: &self.margin,
@@ -553,6 +543,16 @@ impl Search {
             if let Some(blockage) = constraints::blockers(&proposed, &context)? {
                 conflicts.extend(blockage.blockers);
                 continue;
+            }
+            if let Some(binding) = &self.mechanical {
+                let mut current = self.capture.raw.clone();
+                let mut members = self.placed.iter().map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?;
+                members.push(proposed.to_value()?);
+                current["footprints"] = Value::Array(members);
+                if crate::mechanical::grade(&current, binding, true)?["status"] != "pass" {
+                    conflicts.extend(self.placed.iter().filter(|fp| !self.fixed.contains(&fp.reference)).map(|fp| fp.reference.clone()));
+                    continue;
+                }
             }
             if let Some(group) = &scan.group {
                 if !group.region.is_empty()

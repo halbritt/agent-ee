@@ -282,7 +282,7 @@ pub fn admit(
     }
     if admitted.is_empty() {
         return Ok(
-            json!({"status":"refused", "problems":[{"kind":"no_packed_eligible_face","block":bid}]}),
+            json!({"status":"refused", "problems":[{"kind":"no_packed_native_variant"}]}),
         );
     }
     let mut result = admitted[0].clone();

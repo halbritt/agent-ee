@@ -4132,13 +4132,14 @@
       "paths": [
         "src/agent_ee/mechanical_reservations.py",
         "crates/placement-engine/src/mechanical.rs",
-        "tests/test_mechanical_reservations.py"
+        "tests/test_mechanical_reservations.py",
+        "tests/test_stage_a_mechanical.py"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original AGENTEE-489 captured mechanical reservation validation, native transform and conservative face-projection checks, with authored regression geometry. No producer design files, stock library bytes or vendor prose are copied."
+      "reviewed": "Original AGENTEE-489/493 captured mechanical reservation validation, native transform and conservative face-projection checks, with authored regression geometry and Stage-A attachment cases. No producer design files, stock library bytes or vendor prose are copied."
     },
     {
       "paths": [
