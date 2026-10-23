@@ -18,16 +18,19 @@ import underside_fixture as fixture
 
 
 class CongestedUndersideTest(EngineFixture, unittest.TestCase):
-    def test_public_planner_moves_block_after_residual_conflict(self):
-        require_toolchain(native=True)
+    def artifact_root(self):
         retained = os.environ.get('AGENT_EE_479_TEST_OUTPUT')
         if retained:
-            root = Path(retained)
+            root = Path(retained).resolve() / self._testMethodName
             root.mkdir(parents=True, exist_ok=False)
-        else:
-            temporary = tempfile.TemporaryDirectory(prefix='agent-ee-underside-')
-            self.addCleanup(temporary.cleanup)
-            root = Path(temporary.name)
+            return root
+        temporary = tempfile.TemporaryDirectory(prefix='agent-ee-underside-')
+        self.addCleanup(temporary.cleanup)
+        return Path(temporary.name)
+
+    def test_public_planner_moves_block_after_residual_conflict(self):
+        require_toolchain(native=True)
+        root = self.artifact_root()
         source, netlist = fixture.write_board(root / 'inputs')
         witness, _ = fixture.write_board(root / 'witness', witness=True)
         facts, witness_facts = extract(source), extract(witness)
@@ -105,17 +108,21 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         untouched = copy.deepcopy([facts, request])
         session = placement_rust_runtime.Session(self.binary)
         actual = session.plan(facts, request, None, netlist, heartbeat=lambda _: None)
+        root = Path(netlist).parent.parent
+        for name, document in (('facts', facts), ('request', request), ('python-plan', expected),
+                               ('rust-plan', actual), ('rust-execution', session.calls)):
+            (root / f'{name}.json').write_text(json.dumps(blocks._plain(document), indent=2) + '\n')
         self.assertEqual(session.calls[-1]['status'], 'ok')
         self.assertIsNone(first_difference(normalized(expected), normalized(actual)))
         self.assertIsNone(first_difference(untouched, [facts, request]))
         return actual
 
-    def inputs(self, root, *, capacity_proof=False, spare_front=False):
+    def inputs(self, root, *, capacity_proof=False, spare_front=False, underside_reserve=True, mixed=False):
         source, netlist = fixture.write_board(root / 'inputs', spare_front=spare_front)
         facts = extract(source)
         policy, rules = fixture.policy(), fixture.arrangement_policy()
         policy['capacity_proof'] = capacity_proof
-        if spare_front:
+        if spare_front and underside_reserve:
             # The wider front has two slots; this literal underside reservation
             # leaves B's closest legal slot 5 mm farther from front connector A.
             rules['keepouts'] = [{'id': 'spare-front-underside-reserve', 'side': 'B',
@@ -127,68 +134,114 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
             inventory_sha256=hashlib.sha256(netlist.read_bytes()).hexdigest(), allocation_raw=allocation.encode())
         eligibility = fixture.eligibility(facts['board_sha256'])
         candidates = [block_variants.produce(source, facts, inventory, derivation, block['id'], policy,
-                      eligibility, root / 'variants' / block['id'], compact=False)
+                      eligibility, root / 'variants' / block['id'], compact=False,
+                      member_sides=({'F': {'U1': 'F', 'C1': 'B'}, 'B': {'U1': 'B', 'C1': 'F'}}
+                                    if mixed and block['id'] == 'b' else None))
                       for block in derivation['blocks']]
         self.assertTrue(all(row['status'] == 'packed' for bundle in candidates for row in bundle['variants'].values()))
         request = {'policy': policy, 'blocks': {'arrangement': rules, 'side_eligibility': eligibility,
             'allocation_text': allocation, 'contract': fixture.contract(facts['board_sha256'], eligibility, policy),
             'candidates': [{'candidate': bundle} for bundle in candidates]}}
+        if mixed:
+            request['blocks']['contract']['templates'] = [
+                {'relationship': 'device-support', 'role': role, 'template': 'decoupler-under-device'}
+                for role in ('supply', 'return')]
         return source, netlist, facts, request
 
     def test_same_input_without_side_choice_exhausts_without_claiming_infeasible(self):
         require_toolchain(native=True)
-        with tempfile.TemporaryDirectory(prefix='agent-ee-no-side-choice-') as directory:
-            _, netlist, facts, request = self.inputs(Path(directory))
-            original = copy.deepcopy(request)
-            request['blocks']['arrangement']['side_choice'] = False
-            plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
-            self.assert_plan_parity(facts, request, netlist, plan)
-            self.assertIn(plan['status'], ('arrangement_search_exhausted', 'arrangement_budget_exhausted'))
-            self.assertEqual(plan['outcome'], 'unknown')
-            record = plan['block_arrangement']
-            self.assertTrue(record['residual_failures'])
-            self.assertTrue(all(row['selected_face'] == 'F' for failure in record['residual_failures']
-                                for row in failure['arranged']))
-            self.assertLessEqual(record['search']['steps_used'], fixture.STEP_BUDGET)
-            self.assertLessEqual(record['residual_budget']['steps_used'], fixture.STEP_BUDGET)
-            self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual_budget']['steps_used'])
-            del request['blocks']['arrangement']['side_choice']
-            self.assertIsNone(first_difference(original, request))
+        root = self.artifact_root()
+        _, netlist, facts, request = self.inputs(root)
+        original = copy.deepcopy(request)
+        request['blocks']['arrangement']['side_choice'] = False
+        plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
+        self.assert_plan_parity(facts, request, netlist, plan)
+        self.assertIn(plan['status'], ('arrangement_search_exhausted', 'arrangement_budget_exhausted'))
+        self.assertEqual(plan['outcome'], 'unknown')
+        record = plan['block_arrangement']
+        self.assertTrue(record['residual_failures'])
+        self.assertTrue(all(row['selected_face'] == 'F' for failure in record['residual_failures']
+                            for row in failure['arranged']))
+        self.assertLessEqual(record['search']['steps_used'], fixture.STEP_BUDGET)
+        self.assertLessEqual(record['residual_budget']['steps_used'], fixture.STEP_BUDGET)
+        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + record['residual_budget']['steps_used'])
+        del request['blocks']['arrangement']['side_choice']
+        self.assertIsNone(first_difference(original, request))
 
     def test_capacity_proof_of_one_arrangement_does_not_end_global_search(self):
         require_toolchain(native=True)
-        with tempfile.TemporaryDirectory(prefix='agent-ee-pose-capacity-') as directory:
-            _, netlist, facts, request = self.inputs(Path(directory), capacity_proof=True)
-            plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
-            self.assert_plan_parity(facts, request, netlist, plan)
-            self.assertEqual(plan['status'], 'planned', plan)
-            record = plan['block_arrangement']
-            self.assertTrue(any(row['status'] == 'packing_infeasible' and row['steps_used'] == 0
-                                and 'proof' in row for row in record['residual_failures']))
-            self.assertEqual(next(row['selected_face'] for row in record['arranged'] if row['block'] == 'b'), 'B')
-            self.assertEqual(record['contract_check']['status'], 'pass')
-            charged = sum(max(1, row['steps_used']) for row in record['residual_failures']) + record['residual']['steps_used']
-            self.assertEqual(record['residual_budget']['steps_used'], charged)
-            self.assertEqual(plan['steps_used'], record['search']['steps_used'] + charged)
+        root = self.artifact_root()
+        _, netlist, facts, request = self.inputs(root, capacity_proof=True)
+        plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
+        self.assert_plan_parity(facts, request, netlist, plan)
+        self.assertEqual(plan['status'], 'planned', plan)
+        record = plan['block_arrangement']
+        self.assertTrue(any(row['status'] == 'packing_infeasible' and row['steps_used'] == 0
+                            and 'proof' in row for row in record['residual_failures']))
+        self.assertEqual(next(row['selected_face'] for row in record['arranged'] if row['block'] == 'b'), 'B')
+        self.assertEqual(record['contract_check']['status'], 'pass')
+        charged = sum(max(1, row['steps_used']) for row in record['residual_failures']) + record['residual']['steps_used']
+        self.assertEqual(record['residual_budget']['steps_used'], charged)
+        self.assertEqual(plan['steps_used'], record['search']['steps_used'] + charged)
 
     def test_spare_front_prefers_shorter_inter_block_wire(self):
         require_toolchain(native=True)
-        with tempfile.TemporaryDirectory(prefix='agent-ee-spare-front-') as directory:
-            _, netlist, facts, request = self.inputs(Path(directory), spare_front=True)
-            plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
-            self.assert_plan_parity(facts, request, netlist, plan)
-            self.assertEqual(plan['status'], 'planned', plan)
-            record = plan['block_arrangement']
-            self.assertEqual(next(row['selected_face'] for row in record['arranged'] if row['block'] == 'b'), 'F')
-            self.assertEqual(record['adjustments'], [])
-            self.assertEqual(record['objective']['terms'], ['pad-locality', 'inter-block-wire', 'thermal-spread'])
-            placed = {row['ref']: row for row in plan['placements']}
-            self.assertTrue(all(3000000 <= placed[ref]['position_nm'][0] <= 7500000 for ref in ('U1', 'C1')))
-            # Every B member must be beyond the underside obstacle; its pad's
-            # 0.4-mm offset cannot erase the five-millimetre x-distance penalty.
-            self.assertGreater(8000000 + 1000000 - 400000 - 1500000, 6500000 - 1500000 + 800000)
+        root = self.artifact_root()
+        _, netlist, facts, request = self.inputs(root, spare_front=True)
+        plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
+        self.assert_plan_parity(facts, request, netlist, plan)
+        self.assertEqual(plan['status'], 'planned', plan)
+        record = plan['block_arrangement']
+        self.assertEqual(next(row['selected_face'] for row in record['arranged'] if row['block'] == 'b'), 'F')
+        self.assertEqual(record['adjustments'], [])
+        self.assertEqual(record['objective']['terms'], ['pad-locality', 'inter-block-wire', 'thermal-spread'])
+        placed = {row['ref']: row for row in plan['placements']}
+        self.assertTrue(all(3000000 <= placed[ref]['position_nm'][0] <= 7500000 for ref in ('U1', 'C1')))
+        actual = {fp['ref']: placer_runner.transform(fp, placed[fp['ref']]['position_nm'],
+                                                    placed[fp['ref']]['rotation_deg'])
+                  for fp in facts['footprints'] if fp['ref'] in ('J1', 'U1', 'C1')}
+        target = next(p['position_nm'] for p in actual['J1']['pads'] if p['net'] == 'VCC')
+        pads = [p['position_nm'] for ref in ('U1', 'C1') for p in actual[ref]['pads'] if p['net'] == 'VCC']
+        centroid = [sum(p[axis] for p in pads) // len(pads) for axis in (0, 1)]
+        actual_front_wire = sum(abs(a-b) for a, b in zip(centroid, target))
+        # H2 and the authored reserve exclude the entire left underside strip;
+        # beyond x=7.5, gap .5 and a 1-mm half-courtyard put every member origin
+        # at x>=9. Any quarter-turn puts its VCC pad at x>=8.6. This lower bound
+        # applies to their centroid too, regardless of y or candidate ordering.
+        pad_offset = max(abs(p['position_nm'][axis]-fp['position_nm'][axis])
+                         for fp in facts['footprints'] if fp['ref'] in ('U1', 'C1')
+                         for p in fp['pads'] for axis in (0, 1))
+        self.assertEqual(pad_offset, 400000)
+        for fp in facts['footprints']:
+            if fp['ref'] in ('U1', 'C1'):
+                bounds = placement.box(fp['courtyards']['F']['polygons'])
+                self.assertEqual((bounds[2]-bounds[0], bounds[3]-bounds[1]), (2000000, 2000000))
+        lower_back_wire = 7500000 + request['policy']['gap_nm'] + 1000000 - pad_offset - target[0]
+        self.assertLess(actual_front_wire, lower_back_wire)
 
-    def saved_board_checks(self, root, source, netlist, facts, request, candidates, plan):
+    def test_native_cross_face_members_keep_template_cohesion(self):
+        require_toolchain(native=True)
+        root = self.artifact_root()
+        source, netlist, facts, request = self.inputs(root, spare_front=True, underside_reserve=False, mixed=True)
+        original = source.read_bytes()
+        plan = placer_runner._plan_local(facts, request, netlist=netlist, heartbeat=lambda _: None)
+        self.assert_plan_parity(facts, request, netlist, plan)
+        self.assertEqual(plan['status'], 'planned', plan)
+        placements = {row['ref']: row for row in plan['placements']}
+        self.assertEqual((placements['U1']['side'], placements['C1']['side']), ('F', 'B'))
+        selected = next(row for row in plan['block_arrangement']['arranged'] if row['block'] == 'b')
+        self.assertEqual(selected['selected_face'], 'F')
+        check = plan['block_arrangement']['contract_check']
+        self.assertEqual(check['status'], 'pass')
+        self.assertEqual({row['classification'] for row in check['relationships']}, {'deliberate_cross_face'})
+        self.assertTrue(all(row['dz_nm'] == 1600000 and not row['exceeded'] for row in check['relationships']))
+        candidates = [entry['candidate'] for entry in request['blocks']['candidates']]
+        self.saved_board_checks(root, source, netlist, facts, request, candidates, plan,
+                                classification='deliberate_cross_face')
+        self.assertEqual(source.read_bytes(), original)
+
+    def saved_board_checks(self, root, source, netlist, facts, request, candidates, plan, *,
+                           classification='same_face'):
         import pcbnew as k
         writable = (root / 'published').resolve()
         writable.mkdir()
@@ -207,9 +260,11 @@ class CongestedUndersideTest(EngineFixture, unittest.TestCase):
         self.assertEqual((checked['status'], checked['unknown'], checked['defects']), ('pass', [], []))
         block = next(row for row in checked['blocks'] if row['id'] == 'b')
         self.assertEqual({row['reference'] for row in block['members']}, {'U1', 'C1'})
-        self.assertGreater(block['anchor_spread_squared_nm2'], 0)
+        self.assertGreaterEqual(block['anchor_spread_squared_nm2'], 0)
+        if classification == 'same_face':
+            self.assertGreater(block['anchor_spread_squared_nm2'], 0)
         self.assertEqual({row['net'] for row in block['internal_connections']['nets']}, {'VCC', 'GND'})
-        self.assertEqual({row['classification'] for row in checked['relationships']}, {'same_face'})
+        self.assertEqual({row['classification'] for row in checked['relationships']}, {classification})
         self.assertTrue(all(not row['exceeded'] for row in checked['relationships']))
         for label, reference in (('pin-bound', 'C1'), ('forbidden-side', 'J1')):
             mutated = root / label
