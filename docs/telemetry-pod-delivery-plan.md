@@ -146,9 +146,27 @@ failures and record its actual terminal state before considering another run.
 - Plane assignee for both is the only workspace member (halbritt). The accountable
   agent, model, session and host are recorded in item comments. Both items are
   In Progress.
-- Rust planner (owner "bring in the rust planner"): agent-524's branch lands
-  through agent-449 before any AGENTEE-472 placement code change, because both
-  touch `placer.py` and `placer_runner.py`.
+- Rust planner. Dated owner relay `863a378d` (2026-10-23, owner to agent-519):
+  "bring in the rust planner".
+  - agent-524's greenfield Rust planner ships as agent-ee's planner, with the
+    Python planner kept as the parity reference. Parity is evidence of
+    equivalence, not of the grouping contract.
+  - agent-529 imposes no new adoption bar and assigns no competing port
+    (sequencing addendum `7cd7a8a9`).
+  - Sequencing, owned by agent-449: the Rust planner lands first through the
+    normal sole-integrator path once agent-524 hands over a rebased branch with
+    no C path, the R5 side-transform kept, a reproducible CI-image build and
+    committed parity regressions. The AGENTEE-472 block-repair code then targets
+    that frozen shipping identity and revalidates final-coordinate behaviour on it.
+  - Only verified-disjoint shared-boundary work runs alongside, for example the
+    fome-mc production `blocks` declaration or eligibility-record data. No
+    concurrent conflicting edits. A concrete conflict goes to agent-519 as the
+    smallest decision.
+- AGENTEE-473b (Rust follow-up trace): the same j6b2 writer, at most 20 minutes,
+  read-only, started 08:47:32Z. It maps the shipping Rust planner (`6f48b9f2`;
+  agent-524 has since rebased to `7563d18a`, not yet handed over) onto the 473
+  findings, and classifies each gap as shared input, adapter/admission/validation,
+  or planner implementation.
 
 - AGENTEE-473 observed result (08:35–08:43Z, read-only; fome-mc main `4ff731c9`,
   `telemetry-pod/expansion/agentee-473-trace/`). agent-449 verified SHA256SUMS,
