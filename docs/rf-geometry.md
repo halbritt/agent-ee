@@ -53,7 +53,10 @@ clipped to the RF corridor plus a margin:
 
 It also lists unfilled zones and the board's `max_error`. The coordinator then
 evaluates the native report in pure Python ([rf_geometry.py](../src/agent_ee/rf_geometry.py)).
-It first checks that the report binds the candidate board by SHA-256. The
+It first checks that the report binds the candidate board by SHA-256. Native
+report schema `agent-ee.rf-geometry-native/2` also echoes the complete probe
+request; evaluation refuses a net, layer, margin, guard or other request mismatch.
+Old native reports need a fresh extraction. The
 check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
 `rf-geometry.json`.
 
@@ -80,7 +83,7 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
 - `net`, `ground_net`, `signal_layer` and `reference_layer` are required. The
   nets must differ, and so must the layers. Layers are KiCad copper layer names.
   At least one of `cpw`, `stitching`, `topology` or `guard` must be present.
-- `cpw` requires `width_tolerance_mm` and `gap_tolerance_mm`, each a positive
+- `cpw` requires `width_tolerance_mm` and `gap_tolerance_mm`, each a nonnegative
   number or `null`. Targets are given either as `width_mm` and `gap_mm`, or
   through `source`, never both. `source` uses JSON pointers (RFC 6901) into the
   captured record and requires its declared `sha256` (64 lowercase hex digits).
@@ -152,7 +155,7 @@ whose tolerance, pitch or bound is `null` is not offered, and that item reports
   within `search_mm` of some graded edge sample. Ground vias or pads alone do
   not count. A side with no such conductor gives `coplanar_ground_absent`, a
   defect stating that the structure is not grounded CPW there.
-- `gap`: two measurements against `target ± tolerance`.
+- `gap` with positive tolerance: two measurements against `target ± tolerance`.
   - The minimum distance from each track to signal-layer ground copper is
     exact on pcbnew polygons, transitions included. Below the lower bound is
     `gap_below_tolerance`.
@@ -164,12 +167,87 @@ whose tolerance, pitch or bound is `null` is not offered, and that item reports
   - Points within the gap of other RF-net copper are counted as transitions and
     exempt from the maximum-gap test. These are bends, junctions and pad or via
     launches.
-  - A tolerance that does not exceed the native polygon error makes the gap
+  - A positive tolerance that does not exceed the native polygon error makes the gap
     `unknown`.
 - `reference`: for every track segment, the strip of half-width
   `width/2 + gap` must lie wholly inside ground copper on the reference layer.
   This is exact convex containment. Holes give `reference_void`. No ground
-  under any strip gives `reference_absent`.
+  under any strip gives `reference_absent`. Geometric containment alone no longer
+  passes: the supplying filled reference zone must share a native connectivity
+  component with a physical ground pad and a via spanning the signal and reference
+  layers. Otherwise the result is `unknown`, reason `reference_unanchored`.
+  Multi-island supplying zones remain unknown because zone-level membership cannot
+  identify the connected island. Remote zones outside the RF strip do not participate.
+
+### Zero-tolerance exact CAD mode
+
+Zero is a supported declaration, not an error allowance. `null` remains unknown;
+negative, boolean and nonfinite tolerances refuse. With zero width or gap tolerance,
+the corresponding target must be an integer number of native nanometres. The parser
+uses the original JSON decimal token, including source-unit conversion, rather than
+rounding a binary float. Source-bound exact declarations require the capability
+loader's `decimal_document` from captured bytes. An inverse result such as
+0.29286522460874 mm is not an exact 0.293 mm declaration; the former refuses at zero
+width tolerance. This checker does not alter the source calculation or choose a
+manufacturing nominal.
+
+```json
+{"cpw": {"width_mm": 0.293, "gap_mm": 0.2032,
+         "width_tolerance_mm": 0, "gap_tolerance_mm": 0}}
+```
+
+Exact width compares native integers; a one-nanometre mismatch is a defect.
+Exact gaps use [rf_exact.py](../src/agent_ee/rf_exact.py), with retained native
+primitives before polygon union. The policy permits PASS only for axis-aligned
+ordinary straight intervals. Each side needs an explicit parallel ground track
+covering that interval, in the physical ground-terminal/reference component.
+The certificate reports the track IDs, exact gap and squared centre separation.
+For a 293000 nm signal and 1000000 nm ground flank, the required centre offset is
+849700 nm and its square is 721990090000 nm². No polygon error or grid residual is
+added to the allowed gap. Missing explicit flanks and unequal gaps are defects.
+
+RF pads, vias and adjacent segments conservatively delimit transitions using
+expanded native bounding boxes. These intervals are located and UNKNOWN, with the
+responsible object IDs. Non-axis straight sections (including directions whose
+integer grid can realize exact spacing) and arcs are also located UNKNOWN. For
+non-axis straight sections, squared-distance and floating residual diagnostics are
+reported but never used to grant PASS. This is a deliberate scope limit, not a
+claim that every non-axis separation is mathematically impossible.
+
+Every remaining signal-layer copper primitive is checked for intrusion into each
+ordinary interval's gap. Straight tracks, circular vias and saved filled-zone
+polygons use integer/rational distance comparisons. Unsupported pad/arc/graphic
+boundaries use conservative outer bounding boxes; possible intrusion is UNKNOWN.
+The F.Cu pour can remain behind explicit flanks; its nominal clearance setting
+alone is not a certificate of the physical gap.
+
+`gap.intervals` preserves each local status and certificate. Any ungraded interval
+keeps the aggregate gap UNKNOWN unless a definite defect takes precedence. Thus a
+fixture with passing ordinary spans and ungraded launches does **not** claim that
+its entire CPW geometry passes. Native DRC and electrical RF qualification remain
+separate requirements.
+
+`exact_cpw.geometry_sha256` binds the extracted copper geometry, net names, layer
+membership and filled polygons independently of generated UUIDs or primitive order.
+It is not the file hash, nor a replacement for candidate binding. Connectivity
+memberships retain native UUIDs separately. A second refill must preserve the
+geometry digest and native membership, including vias on the reloaded saved board.
+
+Reproduce the retained controls through host admission:
+
+```sh
+AE_CI_WEIGHT=2 AE_CI_MAX_WAIT=120 AGENT_EE_SKIP_VISUALS=1 ae-ci-exec . -- \
+  env PYTHONPATH=src:tests python3 -m unittest test_rf_geometry test_rf_exact
+AE_CI_WEIGHT=2 AE_CI_MAX_WAIT=120 AGENT_EE_SKIP_VISUALS=1 ae-ci-exec . -- \
+  env PYTHONPATH=src:tests python3 scripts/probe_exact_cpw.py build/exact-cpw-controls
+```
+
+The second command creates a fresh output directory and retains boards, refills,
+native facts, evaluations, native DRC and connectivity receipts. Its fixture emitter
+is a diagnostic witness, not a production router. It does not modify a pod input;
+optional `--pod PATH` snapshots report current RF limitations. The production
+emitter still needs a compatible axis-aligned RF layout and native board validation.
+
 
 **Topology** (`sections.topology`): tracks are split at T-junctions. Pieces are
 joined at shared endpoints, pads and RF vias. Then each branch is routed by
