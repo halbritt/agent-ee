@@ -264,6 +264,41 @@ class ScaffoldConstraintTest(ScaffoldFixture, unittest.TestCase):
             check_proposal(run / 'inputs', manifest, {'mutable_inputs': manifest['scope']['mutable_inputs'],
                                                      'baseline': baseline})
 
+    def test_owner_only_rules_are_sealed_without_changing_native_settings(self):
+        from agent_ee.design_rule_provenance import PROJECT_KEY, finding_sources
+
+        self.build('without-rules')
+        control = read_json(self.root / 'without-rules/inputs/project/design.kicad_pro')
+        source_project = (self.source / 'project/design.kicad_pro').read_bytes()
+        raw = (b'(version 1)\n# Captured owner bytes, with no generated rules.\n'
+               b'(rule "captured margin" (constraint clearance (min 0.15mm)))\n')
+        rule = self.source / 'project/design.kicad_dru'
+        rule.write_bytes(raw)
+        self.scope['inputs'].append({'path': 'source/project/design.kicad_dru',
+                                     'at': 'project/design.kicad_dru'})
+        write_json(self.scope_path, self.scope)
+
+        receipt = self.build('with-rules')
+        board = self.root / 'with-rules/inputs/project/design.kicad_pcb'
+        project = read_json(board.with_suffix('.kicad_pro'))
+        record = project[PROJECT_KEY]
+        self.assertNotIn('generated_rules', record)
+        self.assertEqual(board.with_suffix('.kicad_dru').read_bytes(), raw)
+        self.assertEqual(rule.read_bytes(), raw)
+        self.assertEqual((self.source / 'project/design.kicad_pro').read_bytes(), source_project)
+        self.assertEqual({k: v for k, v in project.items() if k != PROJECT_KEY},
+                         {k: v for k, v in control.items() if k != PROJECT_KEY})
+        native_rows = [row for row in record['unsourced_geometry']
+                       if row['setting'].startswith('native_rules.')]
+        self.assertEqual([row['value'] for row in native_rows],
+                         [['constraint', 'clearance', ['min', '0.15mm']]])
+        self.assertEqual(record['unsourced_geometry'],
+                         receipt['constraint_provenance']['unsourced_geometry'])
+        # Exercise the unchanged downstream verifier against actual saved files.
+        sources = finding_sources(board)
+        self.assertEqual(sources['rules']['captured margin']['class'], 'default')
+        self.assertIsNone(sources['rules']['captured margin']['citation'])
+
     def test_uncaptured_document_refuses_without_publishing(self):
         write_json(self.source / 'constraints.json', document())
         with self.assertRaises(ValueError):
