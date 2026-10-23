@@ -4,8 +4,10 @@ Original fixtures: a part whose pad copper reaches beyond its courtyard must
 not be placed with that copper off the board or inside a footprint keep-out.
 """
 import copy
+from contextlib import nullcontext
 from fractions import Fraction
 import hashlib
+from itertools import product
 import json
 import math
 from pathlib import Path
@@ -73,6 +75,27 @@ def courtyard_only():
     """The pre-AGENTEE-366 search: no copper gate and no copper alignment."""
     return [patch.object(placer, '_copper_escapes', lambda *a, **k: None),
             patch.object(placer, '_cache_copper_extent', lambda fp: fp.pop('_packing_copper', None))]
+
+
+def misplaced_native_write():
+    """Inject a bad writer pose after real planning, without replacing any gate.
+
+    C1's 4 mm courtyard fits at (2, 2) mm, but the native copper in these
+    fixtures escapes the outline or enters the board's pad-only keepout.
+    Python search monkeypatches cannot induce this fault in the Rust default.
+    """
+    from agent_ee import placer_runner
+    original = placer_runner._apply_plan
+
+    def write(board, plan, output, changes=None):
+        faulty = copy.deepcopy(plan)
+        placement, = [p for p in faulty['placements'] if p['ref'] == 'C1']
+        if placement['fixed']:
+            raise AssertionError('publication fixture requires movable C1')
+        placement['position_nm'] = [2 * MM, 2 * MM]
+        return original(board, faulty, output, changes)
+
+    return patch.object(placer_runner, '_apply_plan', write)
 
 
 def _axis_box(poly):
@@ -918,12 +941,24 @@ class NativeBoard:
         self.netlist.write_text('<export><components><comp ref="C1"/></components>'
                                 '<nets><net code="1" name="SIGNAL"><node ref="C1" pin="1"/></net></nets></export>')
 
-    def place(self, source, name):
+    def place(self, source, name, engine='rust'):
         from agent_ee.placer_runner import place_candidate
+        from agent_ee.placement_runtime import python_reference
         config = {'policy': request(fixed_refs=[]), 'authorization': {
             'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
             'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'writable_root': str(self.scratch)}}
-        return place_candidate(source, self.netlist, self.scratch / name, config)
+        with python_reference() if engine == 'python-reference' else nullcontext():
+            result = place_candidate(source, self.netlist, self.scratch / name, config)
+        if result['status'] == 'placed':
+            self.execution(self.scratch / name, engine)
+        return result
+
+    def execution(self, directory, engine):
+        record = json.loads((directory / 'planning-execution.json').read_text())
+        self.assertEqual(record['implementation'], engine)
+        if engine == 'rust':
+            self.assertEqual((record['status'], record['exit_code']), ('ok', 0))
+            self.assertRegex(record['executable_sha256'], r'^[0-9a-f]{64}$')
 
     def setback(self, source, facts):
         """S from the saved board's own m_MaxError, which the facts must carry exactly (ruling 366e)."""
@@ -932,29 +967,25 @@ class NativeBoard:
         self.assertEqual(facts['max_error_nm'], max_error)
         return max_error + 50
 
-    def refused(self, source, name, patches):
-        """Native publication refuses a placement under patches; returns the retained failed board.
+    def refused(self, source, name, engine='rust', finding='copper_outside_outline'):
+        """Native publication refuses a bad saved pose; return its retained board.
 
-        The AGENTEE-331 structural refusal: the saved board has copper outside
-        its outline, so no candidate is published and the failed board is kept
-        only as an unknown, not-placed diagnostic.
+        The saved board has copper outside its outline or inside a pad keepout.
+        No candidate is published; the board is retained as an unknown,
+        not-placed diagnostic. The real planner and native gate both execute.
         """
-        for p in patches:
-            p.start()
-        try:
+        with misplaced_native_write():
             with self.assertRaises(ValueError) as caught:
-                self.place(source, name)
-        finally:
-            for p in patches:
-                p.stop()
+                self.place(source, name, engine)
         message = str(caught.exception)
         self.assertIn('saved-board placement introduced native DRC collisions', message)
-        self.assertIn("'copper_outside_outline'", message)
+        self.assertIn(repr(finding), message)
         self.assertFalse((self.scratch / name).exists())
         retained = Path(re.search(r'diagnostics retained at (\S+): ', message).group(1))
         self.assertEqual(retained.parent, self.scratch)
         failure = json.loads((retained / 'failure.json').read_text())
         self.assertEqual((failure['status'], failure['outcome']), ('not_placed', 'unknown'))
+        self.execution(retained, engine)
         return retained / 'failed-candidate.kicad_pcb'
 
 
@@ -1030,17 +1061,17 @@ class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
 
     def test_saved_custom_copper_lies_inside_the_outline_every_turn_and_side(self):
         from agent_ee.placement_probe import extract
-        for back in (False, True):
+        for engine, back in product(('rust', 'python-reference'), (False, True)):
             for rotation in (0, 90, 180, 270):
-                with self.subTest(back=back, rotation=rotation):
+                with self.subTest(engine=engine, back=back, rotation=rotation):
                     source = self.source(rotation, back)
                     facts = extract(source)
                     setback = self.setback(source, facts)
                     pad = facts['footprints'][0]['pads'][0]
                     self.assertEqual(pad['custom_geometry']['status'], 'proven', pad)
                     self.assertEqual(pad['layers'][0], ('B' if back else 'F') + '.Cu')
-                    name = f'placed-{back}-{rotation}'
-                    report = self.place(source, name)
+                    name = f'placed-{engine}-{back}-{rotation}'
+                    report = self.place(source, name, engine)
                     # The native publication gate (AGENTEE-331 copper containment and edge clearance) accepts it.
                     self.assertEqual((report['status'], report['outcome'], report['open_defects']),
                                      ('placed', 'info', []), report)
@@ -1050,9 +1081,8 @@ class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
                     # The saved native copper extent sits the structural setback from the outline corner.
                     self.assertTrue(setback <= box[0] <= setback + 1 and setback <= box[1] <= setback + 1,
                                     (box, setback))
-                    # Courtyard-only gating saves the same copper off the board (independent native
-                    # geometry); only the AGENTEE-331 publication gate refuses it (ruling 366f F3).
-                    box = self.saved_copper(self.refused(source, name + '-legacy', courtyard_only()))
+                    # A bad native write must be caught independently of either planner.
+                    box = self.saved_copper(self.refused(source, name + '-bad-write', engine))
                     self.assertTrue(box[0] < 0 or box[1] < 0, box)
 
 
@@ -1132,11 +1162,11 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
                     ys.append(chain.CPoint(j).y)
         return min(xs), min(ys), max(xs), max(ys)
 
-    def boundary(self, name, configure, reach, check_facts, mutant):
+    def boundary(self, name, configure, reach, check_facts):
         from agent_ee.placement_probe import extract
-        for back in (False, True):
+        for engine, back in product(('rust', 'python-reference'), (False, True)):
             for rotation in (0, 90, 180, 270):
-                with self.subTest(name, back=back, rotation=rotation):
+                with self.subTest(name, engine=engine, back=back, rotation=rotation):
                     source = self.stock_source(name, rotation, back, configure, reach)
                     facts = extract(source)
                     setback = self.setback(source, facts)
@@ -1146,8 +1176,8 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
                         self.assertEqual(('copper_centroid_offset_nm' in pad) + ('copper_centroid_reason' in pad), 1)
                         self.assertEqual(pad['layers'][0], ('B' if back else 'F') + '.Cu')
                         check_facts(pad)
-                    tag = f'{name}-{back}-{rotation}'
-                    report = self.place(source, tag)
+                    tag = f'{name}-{engine}-{back}-{rotation}'
+                    report = self.place(source, tag, engine)
                     # The native publication gate (AGENTEE-331 copper containment and edge clearance) accepts it.
                     self.assertEqual((report['status'], report['outcome'], report['open_defects']),
                                      ('placed', 'info', []), report)
@@ -1156,9 +1186,8 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
                     # The structural setback from the outline corner, within the native polygon error (1 nm).
                     self.assertTrue(setback <= x0 <= setback + 1 and setback <= y0 <= setback + 1,
                                     (x0, y0, setback))
-                    # The superseded bound saves the same board with copper off it (independent native
-                    # geometry); only the AGENTEE-331 publication gate refuses it (ruling 366f F3).
-                    x0, y0, _, _ = self.saved_lands(self.refused(source, tag + '-legacy', mutant()))
+                    # Independently check rejection of native copper outside the board.
+                    x0, y0, _, _ = self.saved_lands(self.refused(source, tag + '-bad-write', engine))
                     self.assertTrue(x0 < 0 or y0 < 0, (x0, y0))
 
     def test_rounded_chamfered_land_is_bounded_by_its_native_land_box(self):
@@ -1173,8 +1202,7 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
             self.assertEqual((pad['shape'], pad['copper_centroid_reason']),
                              (5, 'curved asymmetric copper centroid not qualified'), pad)
             self.assertIn('copper_land_offset_nm', pad)
-        # Before H1, a land without a centroid was no constraint: courtyard-only gating.
-        self.boundary('rounded-chamfer', configure, 4 * MM, check_facts, courtyard_only)
+        self.boundary('rounded-chamfer', configure, 4 * MM, check_facts)
 
     def test_missing_board_setback_refuses_copper_near_its_courtyard_edge(self):
         # Native circles 1 nm inside the courtyard edges (AGENTEE-366 review H1): only the
@@ -1218,12 +1246,7 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
         def check_facts(pad):
             self.assertEqual((pad['shape'], pad['size_nm']), (0, [1_200_000, 800_000]), pad)
 
-        def rectangular_circle():
-            # Before H2, a circle was boxed as a rectangle of its recorded size.
-            original = placer._copper_box
-            return [patch.object(placer, '_copper_box', lambda fp, pad: original(
-                fp, {**pad, 'shape': 1} if pad['shape'] == 0 else pad))]
-        self.boundary('unequal-circle', configure, 2_300_000, check_facts, rectangular_circle)
+        self.boundary('unequal-circle', configure, 2_300_000, check_facts)
 
     def test_copper_box_contains_every_native_land_vertex(self):
         # Every packing stock shape, unequal circles and rounded chamfers included, offset

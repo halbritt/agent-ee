@@ -386,16 +386,11 @@ class NativeKeepoutComparisonTest(unittest.TestCase):
         maker.setUp()
         self.addCleanup(maker.doCleanups)
         source = maker.source(['F.Cu'])
-        patches = fixture.courtyard_only()
-        for mutant in patches:
-            mutant.start()
-        try:
-            with self.assertRaisesRegex(ValueError, 'introduced native DRC.*items_not_allowed'):
-                maker.place(source, 'regression')
-        finally:
-            for mutant in patches:
-                mutant.stop()
-        self.assertFalse((maker.scratch / 'regression').exists())
+        for engine in ('rust', 'python-reference'):
+            with self.subTest(engine=engine):
+                failed = maker.refused(source, 'regression-' + engine, engine, 'items_not_allowed')
+                self.assertTrue(any(x0 < 3 * fixture.MM for x0, _, _, _ in maker.saved_lands(failed)))
+                self.assertEqual(maker.not_allowed(failed.parent), ['Pad 1 [SIGNAL] of C1 on F.Cu'])
 
 
 if __name__ == '__main__':
