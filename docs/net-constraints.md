@@ -10,7 +10,7 @@ per-net minimums from it. It is a stage 3 transform that feeds stages 4 and 5 of
 PYTHONPATH=src python3 -m agent_ee.net_constraints constraints.json \
   --project template/board.kicad_pro --board design/board.kicad_pcb \
   --envelope requirements/envelope.json \
-  [--rules template/board.kicad_dru] --out NEW_DIRECTORY
+  [--rules template/board.kicad_dru] [--sources CAPTURED_INPUT_ROOT] --out NEW_DIRECTORY
 ```
 
 `--board` is required: every class net must exist in the saved native board.
@@ -23,6 +23,11 @@ The Python `emit(..., board_raw=...)` API performs the same check. Omitting
 `board_raw` supports planning transforms such as the scaffold producer; this
 does not prove board membership. DRC and router setup independently refuse
 unmatched emitted literal assignments when applying the resulting project.
+
+For envelopes with `mechanical_reservations`, pass `captured=(files, inputs)`
+to `emit`, or `--sources CAPTURED_INPUT_ROOT` to the CLI. The envelope validator
+checks the reservation document, cited source and original-board hashes against
+that capture. Omitting or changing those inputs refuses emission.
 
 The command runs offline and uses only the standard library. The same inputs
 always produce the same bytes. Exit codes:

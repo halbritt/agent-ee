@@ -363,7 +363,7 @@ def _content_step(plan, scope):
         SOURCE.parent, plan['envelope'], plan['parts'], scope['board'], **plan['envelope_content']))
 
 
-def _validate_content(plan, scope, sources):
+def _validate_content(plan, scope, sources, *, captured):
     """Every declared content input is captured, distinct from native outputs, and sufficient."""
     content = plan['envelope_content']
     natives = {scope['board'], scope['schematic']}
@@ -372,8 +372,8 @@ def _validate_content(plan, scope, sources):
             raise ValueError(f'uncaptured pod envelope_content {key}: {content[key]}')
         if content[key] in natives:
             raise ValueError(f'envelope_content {key} collides with a native output')
-    from .board_envelope import validate as envelope_record
-    record = envelope_record(Path(sources[plan['envelope']]).read_bytes())
+    from .board_envelope import validate as envelope_record, captured_bytes
+    record = envelope_record(captured_bytes(*captured, plan['envelope'], 'envelope'), captured=captured)
     if record['fixed_footprints'] and not {'intent', 'layout'} <= content.keys():
         raise ValueError('envelope fixed footprints require declared envelope_content intent and layout')
     if any('antenna' in area for area in record['keepouts']) and 'antenna_facts' not in content:
@@ -389,11 +389,13 @@ def _constraint_paths(scope):
 def _apply_constraints(plan, scope, inputs, out):
     """Apply after scaffold metadata; preserve emitter record bytes without hash rewriting."""
     from .net_constraints import emit
+    from .board_envelope import source_inventory
     project, rules, record = _constraint_paths(scope)
     rules_path = inputs / rules
     artifacts = emit((inputs / plan['net_constraints']).read_bytes(), (inputs / project).read_bytes(),
                      envelope_raw=(inputs / plan['envelope']).read_bytes(),
-                     rules_raw=rules_path.read_bytes() if rules_path.exists() else b'(version 1)\n')
+                     rules_raw=rules_path.read_bytes() if rules_path.exists() else b'(version 1)\n',
+                     captured=source_inventory(inputs))
     if 'project' not in artifacts:
         raise ValueError('net constraints could not be applied: ' + artifacts['record'].decode())
     for key, rel in (('project', project), ('rules', rules), ('record', record)):
@@ -454,7 +456,6 @@ def build(plan_path, out, *, dry_run=False):
     for key in ('envelope', 'parts', 'spec', 'spec_record', *(['net_constraints'] if 'net_constraints' in plan else [])):
         if plan[key] not in sources:
             raise ValueError(f'uncaptured pod {key}: {plan[key]}')
-    content_spec = _validate_content(plan, scope, sources) if 'envelope_content' in plan else None
     if out.exists() or out.is_symlink():
         raise ValueError('pod output must not exist')
     out = out.resolve()
@@ -472,6 +473,8 @@ def build(plan_path, out, *, dry_run=False):
         initial = read_json(preview / 'scope.json')
         prepared_scope = _final_scope(initial, plan, preview / 'inputs')
         files, _, _ = candidate.source_manifest(prepared_scope, preview)
+        content_spec = (_validate_content(plan, scope, sources, captured=(files, preview / 'inputs'))
+                        if 'envelope_content' in plan else None)
         outputs = sorted(p for p in files if before.get(p) != files[p])
         if not {scope['schematic'], scope['board']} <= set(outputs):
             # Empty input placeholders may already equal the scaffold; still receipt-own both outputs.

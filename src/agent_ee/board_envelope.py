@@ -2121,9 +2121,9 @@ def saved_facts(root):
             'footprints': footprints}
 
 
-def round_trip(raw, pcb):
+def round_trip(raw, pcb, *, profile=None, captured=None):
     """Compare board-derivable envelope fields with a saved board, field by field."""
-    envelope, record, facts = load(raw), validate(raw), board_facts(pcb)
+    envelope, record, facts = load(raw), validate(raw, profile=profile, captured=captured), board_facts(pcb)
     results = []
 
     def add(field, status, detail):
@@ -2229,15 +2229,15 @@ def main():
         declares = isinstance(load(raw), dict) and 'constraint_provenance' in load(raw)
         if args.sources and not args.profile and not declares:
             raise ValueError('--sources needs --profile or a constraint_provenance declaration')
-        artifacts = derive(raw, source_path=args.source_path,
-                           profile=args.profile.read_bytes() if args.profile else None,
-                           captured=source_inventory(args.sources) if args.sources else None)
+        profile = args.profile.read_bytes() if args.profile else None
+        captured = source_inventory(args.sources) if args.sources else None
+        artifacts = derive(raw, source_path=args.source_path, profile=profile, captured=captured)
         if args.original_requirements:
             artifacts['stage-one-requirements.json'] = stage_one_requirements(
                 args.original_requirements.read_bytes(), artifacts['dialog-requirements.json'])
         trip = None
         if args.board:
-            trip = round_trip(raw, args.board.read_bytes())
+            trip = round_trip(raw, args.board.read_bytes(), profile=profile, captured=captured)
             artifacts['round-trip.json'] = canonical(trip) + b'\n'
         write_artifacts(artifacts, args.out)
     except (ValueError, OSError) as exc:

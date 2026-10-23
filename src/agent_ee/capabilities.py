@@ -311,13 +311,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     raise ValueError('connector-edge/1 needs the AGENTEE-85 envelope validator') from None
                 if inputs is not None:
                     from .placement_check import connector_declarations
-                    connector_declarations(validate((Path(inputs) / params['envelope']).read_bytes()), params)
+                    connector_declarations(validate((Path(inputs) / params['envelope']).read_bytes(), captured=(files, Path(inputs))), params)
             if params['criterion'] == 'imu-axes/1':
                 prerequisite(params['facts_check'], ('datasheet_facts',))
                 if inputs is not None:
                     from .board_envelope import validate
                     from .imu_axes import envelope_declaration
-                    envelope_declaration(validate((Path(inputs) / params['envelope']).read_bytes()), params)
+                    envelope_declaration(validate((Path(inputs) / params['envelope']).read_bytes(), captured=(files, Path(inputs))), params)
             result['predicates'] = predicate_names(params)
         elif kind == 'placement_congestion':
             from .placement_congestion import capability as congestion_capability

@@ -31,6 +31,13 @@ manifest paths are relative to this captured inventory, as they are for checks.
 absent from the planning inputs. Existing native files at those paths are
 replaced with empty files in the output, leaving the sources unchanged.
 
+Envelopes with `mechanical_reservations` require the reservation document, its
+cited source and immutable original board in the captured inputs, with their
+declared SHA-256 values. Both scaffold modes validate against that inventory.
+`write_envelope_content(..., captured=(files, inputs))` accepts an existing
+capture for the same input root; when omitted it inventories the stage's input
+copy. Missing or changed reservation dependencies refuse before board mutation.
+
 The parts closure is qualified through the existing catalog/selection and CAD
 readers. An invalid pin, unsupported schema or missing dependency refuses the
 operation. Missing required datasheet provenance is retained explicitly in the
