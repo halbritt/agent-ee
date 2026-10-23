@@ -346,6 +346,7 @@ class TelemetryCompatibilityParityTest(EngineFixture, unittest.TestCase):
             facts = extract(root / 'seed.kicad_pcb')
             self.assertEqual(facts['board_sha256'], self.INPUTS['seed.kicad_pcb'][2])
             self.assertEqual(len(facts['footprints']), 309)
+            board = {fp['ref']: fp for fp in facts['footprints']}
             request_ = json.loads(original_bytes['request.json'])
             original_request = copy.deepcopy(request_)
             inventory = read_native_inventory(root / 'native.xml')
@@ -367,8 +368,27 @@ class TelemetryCompatibilityParityTest(EngineFixture, unittest.TestCase):
                     anchor, poses, request_['policy'], old['block_policy'], old['deferred'], old_plan))
                 self.assertEqual(current['status'], 'packed', old['block_id'])
                 for before, after in zip(old['members'], current['members'], strict=True):
-                    for key in ('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'pins'):
+                    for key in ('reference', 'fpid', 'side', 'value', 'pose', 'pins'):
                         self.assertIsNone(first_difference(before[key], after[key]), (old['block_id'], key))
+                    # f9b17ff1 (AGENTEE-370) canonicalized custom copper rings as
+                    # well as courtyards. First prove every historical pad field
+                    # against its raw-order hash, then change only ring labeling.
+                    fp = board[before['reference']]
+                    local = blocks.placer.transform(fp, [0, 0], 0)
+                    legacy_pads = [blocks._number({k: v for k, v in pad.items()
+                                                  if k not in blocks.INSTANCE_PAD_KEYS}) for pad in local['pads']]
+                    legacy = {'side': fp['side'], 'pads': [json.loads(p) for p in sorted(
+                        map(blocks.canonical, legacy_pads))]}
+                    self.assertEqual(blocks.digest(legacy), before['pad_geometry_sha256'], before['reference'])
+                    canonical_pads = copy.deepcopy(legacy)
+                    for pad in canonical_pads['pads']:
+                        custom = pad.get('custom_geometry')
+                        if isinstance(custom, dict) and isinstance(custom.get('merged_polygons_nm'), list):
+                            custom['merged_polygons_nm'] = sorted(blocks.canonical_ring(ring)
+                                                                 for ring in custom['merged_polygons_nm'])
+                    canonical_pads['pads'] = [json.loads(p) for p in sorted(
+                        map(blocks.canonical, canonical_pads['pads']))]
+                    self.assertEqual(blocks.digest(canonical_pads), after['pad_geometry_sha256'], before['reference'])
                     self.assertEqual(set(before['courtyard']), set(after['courtyard']))
                     for side, record in before['courtyard'].items():
                         canonical = copy.deepcopy(record)
