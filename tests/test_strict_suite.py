@@ -352,6 +352,7 @@ class RenderChangeSelectionTests(unittest.TestCase):
                         self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'run')
                 previous = git('rev-parse', 'HEAD')
                 gallery_installer = root / 'scripts/install_render_gallery.sh'
+                gallery_installer.parent.mkdir(parents=True, exist_ok=True)
                 gallery_installer.write_text('changed\n')
                 git('add', 'scripts/install_render_gallery.sh')
                 git('commit', '-qm', 'gallery deployment')
