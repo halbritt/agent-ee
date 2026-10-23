@@ -835,9 +835,26 @@ class NativeArrangementTests(unittest.TestCase):
             inventory = read_native_inventory(netlist)
             derivation = blocks.derive(inventory, read_sheet_names(netlist), facts,
                                        inventory_sha256=hashlib.sha256(netlist.read_bytes()).hexdigest())
+            # This test crosses the native executable boundary: process-local owner
+            # fixture pins are not production authority. Capture the same numeric
+            # authored limits so both planning implementations verify identical facts.
+            locality = copy.deepcopy(obligations())
+            locality['source_records'] = {}
+            for obligation in locality['obligations']:
+                for pair in obligation.values():
+                    if not isinstance(pair, dict) or 'max_distance_nm' not in pair:
+                        continue
+                    limit = pair['max_distance_nm']
+                    text = f'Original native arrangement fixture maximum pad-pair distance: {limit} nm.'
+                    path = f'fixture-sources/native-arrangement-{limit}nm.txt'
+                    locality['source_records'][path] = text
+                    pair['provenance'] = {'class': 'datasheet', 'basis': 'Authored numeric fixture requirement',
+                        'derivation': {'kind': 'numeric', 'value_nm': limit, 'source': {
+                            'path': path, 'sha256': hashlib.sha256(text.encode()).hexdigest(),
+                            'locator': 'native arrangement fixture numeric limit', 'quote': text}}}
             pol = {'schema': 'agent-ee.packing-policy/1', 'step_budget': 20000, 'gap_nm': 250000,
                    'fixed_refs': [], 'priority_refs': [], 'ground_nets': ['GND'], 'obstacles': [],
-                   'electrical_locality': obligations()}
+                   'electrical_locality': locality}
             candidates = []
             for block in derivation['blocks']:
                 packed = blocks.pack_block(facts, inventory, derivation, block['id'], pol)
