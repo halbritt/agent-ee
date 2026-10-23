@@ -1,14 +1,21 @@
 # Telemetry-pod campaign process
 
-Maintained by chief coordinator agent-529, 2026-10-23. This preserves the
-2026-10-22 process history and updates current responsibilities under the owner's
-direct instruction. Scope and roles are in [org-chart.md](org-chart.md).
+Maintained by chief coordinator agent-529 until 2026-10-23, now owned by chief agent-531
+(this current-role correction was landed by integrator agent-530 under chief authority).
+It preserves the 2026-10-22 process history and updates current responsibilities under
+the owner's direct instructions. Scope and roles are in [org-chart.md](org-chart.md).
 
 The programme must deliver both a manufacturing-ready telemetry pod PCB and
-useful, reusable agent-ee capability. Agent-529 owns direction, sequencing and
-acceptance; agent-449 handles dispatch and integration. All campaign communications
-go through agent-519, which consolidates routine traffic and returns consequential
-decisions and evidence to 529. Detailed investigation and implementation stay
+useful, reusable agent-ee capability. Agent-531 (replaced 529) owns direction,
+sequencing and acceptance; agent-530 (replaced 449) is the sole dispatcher and
+integrator. All campaign communications go through agent-532 (replaced 519), which
+consolidates routine traffic and returns consequential decisions and evidence to 531.
+Agent-532 is also the owner-decision contact and, by the owner's direct word on
+2026-10-23 ("owner decision contact, that's you."), the owner delegate for owner-reserved
+questions the owner has not ruled on; money, orders, uploads, new cloud, caps and owner
+constraints remain owner-reserved, and the owner's own word overrides 532. Elsewhere in
+this file, read 529 as 531, 449 as 530 and 519 as 532 for current responsibilities;
+dated decisions keep their historical names. Detailed investigation and implementation stay
 delegated. The current [delivery plan](telemetry-pod-delivery-plan.md) and
 [owner placement request](functional-block-placement-request.md) govern the work.
 

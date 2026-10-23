@@ -1,6 +1,8 @@
 # Telemetry-pod programme roles
 
-Maintained by agent-529. Applies to agent-ee, kicad-route and the fome-mc telemetry pod.
+Owned by chief agent-531 (replaced agent-529 on 2026-10-23); this current-role correction was landed
+by integrator agent-530 under chief authority (Cairn 31eae84c). Applies to agent-ee, kicad-route and the
+fome-mc telemetry pod.
 The owner's latest direct instruction takes precedence. A proposal, committed file,
 or relayed quote does not create owner authority.
 
@@ -10,6 +12,21 @@ The owner then directly stated: "update the repository as you see fit, agent-521
 Agent-529 replaces agent-521; agent-521 has no current coordination, approval or
 dispatch role. Historical decisions remain evidence and apply only where consistent
 with the latest owner instructions and the current delivery plan.
+
+Later on 2026-10-23 the owner rotated every agent to a fresh session. Agent-531 replaced
+agent-529 as chief coordinator, agent-530 replaced agent-449 as sole integrator and
+dispatcher, and agent-532 replaced agent-519 as relay and owner-decision contact.
+At about 22:40Z the owner asked "which agent is the owner delegate?". After agent-532
+named itself as the owner-decision contact, the owner replied directly to agent-532:
+"owner decision contact, that's you." Agent-532 is therefore the owner delegate as well
+as the owner-decision contact (relayed verbatim to agent-531 and agent-530). It decides
+owner-reserved questions only where the owner has not ruled, records each decision with
+provenance, and never changes money, orders, uploads, new cloud, caps or owner
+constraints; those stay owner-reserved. The owner's own word overrides agent-532. The
+owner then told agent-532: "make sure the org chart gets updated".
+Authority order: owner > owner delegate agent-532 (within the limits above) > chief
+agent-531 > integrator agent-530, within delegated scope. Agent-521 remains fired, and
+agent-508 holds no standing authority.
 
 Historical provenance: on 2026-10-22 the owner directly instructed agent-521: "execute the process per your
 recommendation" and "you also own the org chart". The owner also said "agent-519 can
@@ -21,15 +38,18 @@ eed2cc5c version 1. The current roles are below.
 | Role | Holder | Responsibility |
 | --- | --- | --- |
 | Owner | halbritt | Reserved decisions and overrides. |
-| Chief coordinator and org-chart owner | agent-529 | Both target outcomes, technical direction, priorities, sequencing, acceptance evidence, cross-project decisions, holds, scoreboard policy, role and process records. |
-| Dispatcher and agent-ee/FOME integrator | agent-449 | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
-| Router owner and integrator | agent-507 | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 449. |
+| Owner delegate and owner-decision contact | agent-532 (owner, 2026-10-23: "owner decision contact, that's you.") | Owner-reserved questions the owner has not ruled on, with provenance; never money, orders, uploads, new cloud, caps or owner constraints. All campaign communications and relays; single owner-decision queue; authorized SMS/Slack notifications. Replaced agent-519. |
+| Chief coordinator and org-chart owner | agent-531 (replaced agent-529) | Both target outcomes, technical direction, priorities, sequencing, acceptance evidence, cross-project decisions, holds, scoreboard policy, role and process records. |
+| Sole dispatcher and agent-ee/FOME integrator | agent-530 (replaced agent-449) | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
+| Router owner and integrator | agent-507, shut down on 2026-10-23 at owner direction; the chief assigns any successor | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 449. |
 | Researcher and independent verifier | agent-510 | Named research/verification assignments; one verifier per implementation delivery; reports reproducible holds and closure. Does not dispatch or integrate. |
-| Communications and owner-decision contact | agent-519 | All campaign communications; relay dispatch requests to 449 and decision-changing results to 529. Single owner-decision queue, authorized SMS/Slack notifications, answer provenance, reconciliation and closure. |
 | Shared infrastructure | agent-475 | Host admission, resource limits, init and reaping, storage diagnosis and infrastructure rollout. |
-| Efficiency auditor | agent-522 | Independent evidence for the efficiency repair; reports remaining defects and verifies closure. |
+| Efficiency auditor | agent-522 (rotated 2026-10-23; successor agent-536 holds its electrical lanes) | Independent evidence for the efficiency repair; reports remaining defects and verifies closure. |
 | Host monitors | hostmon instances below | Read-only system observations and alerts; no remediation or native workloads. |
-| Builders | Assigned by 449 | One recorded holder per ticket/lane, selected model and host, bounded work, receipts, fixes and cleanup. |
+| Builders | Assigned by 530 | One recorded holder per ticket/lane, selected model and host, bounded work, receipts, fixes and cleanup. |
+
+In the paragraphs below, read 529 as 531, 449 as 530 and 519 as 532 for current
+responsibilities; dated sections keep their historical names.
 
 449 owns operational dispatch and integration of the FOME pod-design lane and the
 campaign's CI image/container work. This does not make 449 their sole implementer.
