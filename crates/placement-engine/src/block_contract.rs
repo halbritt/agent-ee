@@ -210,6 +210,87 @@ fn member_faces(
     }
     Ok(base)
 }
+fn routing_obligations(contract: &Value, capture: &Value) -> Result<Vec<Value>> {
+    let Some(declarations) = contract.get("routing_obligations") else {
+        return Ok(vec![]);
+    };
+    let declarations = declarations
+        .as_array()
+        .context("routing_obligations must be an explicit list")?;
+    let mut ids = BTreeSet::new();
+    let mut rows = vec![];
+    for row in declarations {
+        ensure!(
+            crate::policy::keys(
+                row,
+                &["id", "stage", "kind", "pairs", "requirement", "source"],
+                &[]
+            ) && row["stage"] == "routing"
+                && matches!(
+                    row["kind"].as_str(),
+                    Some("no-via" | "rf-corridor" | "controlled-impedance")
+                ),
+            "routing obligation needs id, routing stage, supported kind, pairs, requirement and source"
+        );
+        let id = row["id"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .context("routing obligation id must be nonempty text")?;
+        ensure!(ids.insert(id), "duplicate routing obligation id");
+        let pairs = row["pairs"]
+            .as_array()
+            .context("routing pairs must be an explicit list")?;
+        ensure!(
+            !pairs.is_empty()
+                && pairs
+                    .iter()
+                    .all(|p| crate::policy::keys(p, &["from", "to"], &[])),
+            "routing pairs need nonempty explicit from/to endpoints"
+        );
+        let obligations: Vec<_> = pairs.iter().enumerate().map(|(i, pair)| json!({"id":i.to_string(),"kind":"single-leg","metric":"pad-centre-to-centre","leg":pair})).collect();
+        locality::validate(
+            &json!({"schema":"agent-ee.electrical-locality/1","obligations":obligations}),
+        )?;
+        for pair in pairs {
+            ensure!(
+                pair["from"]["net"] == pair["to"]["net"],
+                "routing endpoints must declare the same net"
+            );
+            for end in ["from", "to"] {
+                locality::resolve(blocks::rows(&capture["footprints"])?, &pair[end])?;
+            }
+        }
+        ensure!(
+            row["requirement"]
+                .as_str()
+                .is_some_and(|s| !s.trim().is_empty()),
+            "routing requirement must be nonempty text"
+        );
+        let verification = crate::source_authority::verified_reference(
+            &row["source"],
+            &contract["relationships"]["source_records"],
+        );
+        ensure!(
+            verification["enforcement"] == "verified",
+            "routing obligation source is not verified: {}",
+            verification["reason"].as_str().unwrap_or("unavailable")
+        );
+        let mut out = row.clone();
+        out["status"] = json!("pending");
+        out["evidence_required"] = match row["kind"].as_str().unwrap() {
+            "no-via" => json!(["final-native-connectivity", "terminal-path-via-count"]),
+            "rf-corridor" => json!(["final-native-connectivity", "rf-geometry"]),
+            _ => json!([
+                "final-native-connectivity",
+                "rf-geometry",
+                "impedance-qualification"
+            ]),
+        };
+        rows.push(out);
+    }
+    Ok(rows)
+}
+
 fn declaration(capture: &Value, contract: &Value) -> Result<Value> {
     blocks::keys(
         contract,
@@ -221,13 +302,14 @@ fn declaration(capture: &Value, contract: &Value) -> Result<Value> {
             "templates",
             "thickness_nm",
         ],
-        &[],
+        &["routing_obligations"],
     )?;
     ensure!(
         contract["schema"] == SCHEMA,
         "expected agent-ee.block-contract/1"
     );
     let members = membership(capture, &contract["allocation"])?;
+    routing_obligations(contract, capture)?;
     let eligibility = &contract["eligibility"];
     ensure!(
         eligibility_schema(&eligibility["schema"]),
@@ -596,9 +678,6 @@ pub fn check_complete(capture: &Value, contract: &Value) -> Result<Value> {
                 if hard && exceeded {
                     defects.push(json!({"kind":"pin_distance_exceeded","relationship":id,"role":role,"distance_squared_nm2":number(&squared)}));
                 }
-                if !hard {
-                    unknown.push(json!({"kind":"required_numeric_authority_missing","relationship":id,"role":role,"reason":authority["reason"]}));
-                }
                 if !cross {
                     row["classification"] = json!("same_face");
                     return Ok(());
@@ -615,14 +694,15 @@ pub fn check_complete(capture: &Value, contract: &Value) -> Result<Value> {
                     defects.push(json!({"kind":if template.is_none(){"cross_face_template_missing"}else{"same_face_required"},"relationship":id,"role":role}));
                     return Ok(());
                 }
-                if exceeded || &bound * &bound < &dz * &dz {
+                if hard && (exceeded || &bound * &bound < &dz * &dz) {
                     row["classification"] = json!("lost_cohesion");
                     return Ok(());
                 }
-                if !hard {
-                    return Ok(());
-                }
-                let allowance = Rat::from_integer(&bound * &bound - &dz * &dz);
+                let allowance = if hard {
+                    Rat::from_integer(&bound * &bound - &dz * &dz)
+                } else {
+                    Rat::zero()
+                };
                 let (outer, inner) = geometry::courtyard_bounds(
                     &device["courtyards"][device["side"].as_str().unwrap()],
                 )?;
@@ -664,9 +744,12 @@ pub fn check_complete(capture: &Value, contract: &Value) -> Result<Value> {
             unknown.push(json!({"kind":"block_pin_relationships_missing","block":block["id"],"references":missing}));
         }
     }
+    let advisories: Vec<_> = measured.iter().filter(|row| row["constraint_provenance"]["enforcement"] == "advisory" && row.get("exceeded").is_some())
+        .map(|row| json!({"kind":"engineering_target","relationship":row["relationship"],"role":row["role"],"exceeded":row["exceeded"]})).collect();
     Ok(
         json!({"schema":"agent-ee.block-contract-check/1","status":if !defects.is_empty(){"defect"}else if !unknown.is_empty(){"unknown"}else{"pass"},
-        "contract_sha256":blocks::digest(contract),"board_sha256":capture["board_sha256"],"defects":defects,"unknown":unknown,"relationships":measured}),
+        "contract_sha256":blocks::digest(contract),"board_sha256":capture["board_sha256"],"defects":defects,"unknown":unknown,"relationships":measured,"advisories":advisories,
+        "routing_obligations":routing_obligations(contract, capture)?}),
     )
 }
 
@@ -775,12 +858,13 @@ mod tests {
         );
     }
     #[test]
-    fn ungoverned_number_and_missing_thickness_are_unknown() {
+    fn engineering_number_is_advisory_but_missing_thickness_is_unknown() {
         let (capture, mut contract) = fixture();
         contract["relationships"]["obligations"][0]["supply"]["provenance"] =
             json!({"class":"engineering","basis":"estimate"});
         let report = check_complete(&capture, &contract).unwrap();
-        assert_eq!(report["status"], "unknown");
+        assert_eq!(report["status"], "pass");
+        assert_eq!(report["advisories"].as_array().unwrap().len(), 1);
         assert!(report["defects"].as_array().unwrap().is_empty());
         contract["thickness_nm"] = Value::Null;
         assert_eq!(
@@ -788,6 +872,88 @@ mod tests {
             "board_thickness_missing"
         );
     }
+    #[test]
+    fn explicit_single_leg_keeps_side_source_and_missing_leg_refusals() {
+        let (mut capture, mut contract) = fixture();
+        let mut leg = contract["relationships"]["obligations"][0]["supply"].clone();
+        leg["provenance"] = json!({"class":"engineering","basis":"test target"});
+        leg["max_distance_nm"] = json!(1);
+        contract["relationships"]["obligations"] =
+            json!([{"id":"signal","kind":"single-leg","metric":"pad-centre-to-centre","leg":leg}]);
+        let report = check_complete(&capture, &contract).unwrap();
+        assert_eq!(report["status"], "pass");
+        assert_eq!(report["relationships"][0]["role"], "leg");
+        assert_eq!(report["advisories"][0]["exceeded"], true);
+        let mut omitted = contract.clone();
+        omitted["relationships"]["obligations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("leg");
+        assert!(check_complete(&capture, &omitted).is_err());
+        contract["relationships"]["obligations"][0]["leg"]["to"]["pad"] = json!("99");
+        assert_eq!(
+            check_complete(&capture, &contract).unwrap()["status"],
+            "unknown"
+        );
+        contract["relationships"]["obligations"][0]["leg"]["to"]["pad"] = json!("1");
+        contract["templates"] =
+            json!([{"relationship":"signal","role":"leg","template":"same-face-only"}]);
+        capture["footprints"][1]["side"] = json!("B");
+        let report = check_complete(&capture, &contract).unwrap();
+        assert_eq!(report["status"], "defect");
+        assert!(
+            report["defects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["kind"] == "same_face_required")
+        );
+    }
+
+    #[test]
+    fn advisory_under_device_uses_qualitative_region_not_numeric_radius() {
+        let (mut capture, mut contract) = fixture();
+        for role in ["supply", "return"] {
+            contract["relationships"]["obligations"][0][role]["provenance"] =
+                json!({"class":"engineering","basis":"test target"});
+            contract["relationships"]["obligations"][0][role]["max_distance_nm"] = json!(1);
+        }
+        contract["templates"] = json!([
+            {"relationship":"support","role":"supply","template":"decoupler-under-device"},
+            {"relationship":"support","role":"return","template":"decoupler-under-device"}]);
+        flip(&mut capture, 2000000);
+        let report = check_complete(&capture, &contract).unwrap();
+        assert_eq!(report["status"], "pass");
+        assert!(
+            report["relationships"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["classification"] == "deliberate_cross_face" && r["exceeded"] == true)
+        );
+        flip(&mut capture, 9000000);
+        assert_eq!(
+            check_complete(&capture, &contract).unwrap()["status"],
+            "defect"
+        );
+    }
+
+    #[test]
+    fn routing_is_pending_and_cannot_claim_qualification() {
+        let (capture, mut contract) = fixture();
+        let source = contract["relationships"]["obligations"][0]["supply"]["provenance"]["derivation"]["source"].clone();
+        contract["routing_obligations"] = json!([{"id":"route","stage":"routing","kind":"controlled-impedance","pairs":[{"from":{"reference":"U1","pad":"1","net":"VCC"},"to":{"reference":"C1","pad":"1","net":"VCC"}}],"requirement":"Authored test obligation only","source":source}]);
+        let report = check_complete(&capture, &contract).unwrap();
+        assert_eq!(report["status"], "pass");
+        assert_eq!(report["routing_obligations"][0]["status"], "pending");
+        assert_eq!(
+            report["routing_obligations"][0]["evidence_required"][2],
+            "impedance-qualification"
+        );
+        contract["routing_obligations"][0]["source"]["sha256"] = json!("0".repeat(64));
+        assert!(check_complete(&capture, &contract).is_err());
+    }
+
     #[test]
     fn rational_region_distance_and_closed_boundary() {
         let polygon = vec![

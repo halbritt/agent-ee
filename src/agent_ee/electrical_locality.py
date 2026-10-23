@@ -115,7 +115,11 @@ def _validated(document):
         raise ValueError('locality source_records must map source paths to captured UTF-8 text')
     ids = set()
     for obligation in document['obligations']:
-        if (not isinstance(obligation, dict) or set(obligation) - {
+        single = isinstance(obligation, dict) and obligation.get('kind') == 'single-leg'
+        if single:
+            if set(obligation) != {'id', 'metric', 'kind', 'leg'}:
+                raise ValueError('single-leg locality needs exactly id, metric, kind and leg')
+        elif (not isinstance(obligation, dict) or set(obligation) - {
                 'id', 'metric', 'supply', 'return', 'switch', 'kind', 'ic', 'inductor', 'return_net'}
                 or not {'id', 'metric', 'supply', 'return'} <= obligation.keys()):
             raise ValueError('locality obligation needs id, metric, supply and return; optional switch')
@@ -145,6 +149,8 @@ def _validated(document):
                 raise ValueError('locality limit must be nonnegative integer nanometres')
             if 'citation' in pair and (not isinstance(pair['citation'], str) or not pair['citation'].strip()):
                 raise ValueError('locality citation must be nonempty text')
+        if single:
+            continue
         supply, ground = obligation['supply'], obligation['return']
         if supply['to']['reference'] != ground['to']['reference']:
             raise ValueError('supply and return must name the same capacitor reference')
@@ -182,7 +188,7 @@ def _validated(document):
 
 
 def roles(obligation):
-    return [r for r in ('supply', 'return', 'switch') if r in obligation]
+    return [r for r in ('supply', 'return', 'switch', 'leg') if r in obligation]
 
 
 def resolve(footprints, endpoint):

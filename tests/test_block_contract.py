@@ -362,18 +362,23 @@ class BlockContractTest(unittest.TestCase):
         report = block_contract.judge(moved(board, 'C1', side='B'), contract, original_capture=board)
         self.assertTrue(any(d['kind'] == 'same_face_required' for d in report['defects']))
 
-    def test_engineering_number_is_not_promoted_to_hard_or_deliberate(self):
+    def test_engineering_number_is_advisory_and_template_remains_required(self):
         board, contract = fixture()
         for pair in (contract['relationships']['obligations'][0][r] for r in ('supply', 'return')):
             pair['provenance'] = {'class': 'engineering', 'basis': 'layout estimate'}
         report = block_contract.judge(moved(board, 'C1', 10*MM), contract, original_capture=board)
-        self.assertEqual(report['status'], 'unknown')
+        self.assertEqual(report['status'], 'info')
         self.assertFalse(report['defects'])
         self.assertTrue(all(a['exceeded'] for a in report['advisories']))
         contract['templates'] = [{'relationship': 'support', 'role': role, 'template': 'decoupler-under-device'}
                                  for role in ('supply', 'return')]
-        report = block_contract.judge(moved(board, 'C1', side='B'), contract, original_capture=board)
-        self.assertEqual({r['classification'] for r in report['relationships']}, {'unknown'})
+        report = block_contract.judge(moved(board, 'C1', MM, side='B'), contract, original_capture=board)
+        self.assertEqual(report['status'], 'defect')
+        self.assertEqual({r['classification'] for r in report['relationships']}, {'lost_cohesion'})
+        inside = moved(board, 'C1', -2*MM, side='B')
+        report = block_contract.judge(inside, contract, original_capture=board)
+        self.assertEqual(report['status'], 'info', report)
+        self.assertEqual({r['classification'] for r in report['relationships']}, {'deliberate_cross_face'})
 
     def test_missing_endpoint_thickness_and_required_bound_are_unknown(self):
         board, contract = fixture()

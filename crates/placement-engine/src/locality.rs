@@ -14,7 +14,7 @@ use std::{
 };
 
 pub fn roles(o: &Value) -> impl Iterator<Item = &'static str> + '_ {
-    ["supply", "return", "switch"]
+    ["supply", "return", "switch", "leg"]
         .into_iter()
         .filter(|r| o.get(*r).is_some())
 }
@@ -51,14 +51,22 @@ pub fn validate(d: &Value) -> Result<()> {
     }
     let mut ids = BTreeSet::new();
     for o in d["obligations"].as_array().unwrap() {
-        ensure!(
-            policy::keys(
-                o,
-                &["id", "metric", "supply", "return"],
-                &["switch", "kind", "ic", "inductor", "return_net"]
-            ),
-            "locality obligation needs id, metric, supply and return; optional switch"
-        );
+        let single = o["kind"] == "single-leg";
+        if single {
+            ensure!(
+                policy::keys(o, &["id", "metric", "kind", "leg"], &[]),
+                "single-leg locality needs exactly id, metric, kind and leg"
+            );
+        } else {
+            ensure!(
+                policy::keys(
+                    o,
+                    &["id", "metric", "supply", "return"],
+                    &["switch", "kind", "ic", "inductor", "return_net"]
+                ),
+                "locality obligation needs id, metric, supply and return; optional switch"
+            );
+        }
         ensure!(
             o["id"]
                 .as_str()
@@ -121,6 +129,9 @@ pub fn validate(d: &Value) -> Result<()> {
                     "locality citation must be nonempty text"
                 );
             }
+        }
+        if single {
+            continue;
         }
         let s = &o["supply"];
         let g = &o["return"];

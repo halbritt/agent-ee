@@ -1530,7 +1530,7 @@ diagnostics but cannot establish a coordinator capture binding.
 ```
 
 These example limits have no recorded provenance and are advisory (AGENTEE-337),
-with no manufacturer or pod acceptance claim. Each obligation requires explicit supply and return pad
+with no manufacturer or pod acceptance claim. Each legacy paired obligation requires explicit supply and return pad
 identities ending at the same capacitor, with distinct physical pads on each
 shared footprint. The supply source may differ from the return source
 (AGENTEE-330): a buck output loop declares inductor pad 2 → capacitor positive
@@ -1543,6 +1543,13 @@ with the identical pair structure: `from` selects the return-source IC switch
 pad and `to` selects its inductor pad. Shared rail membership never assigns a capacitor to
 an IC. Select the explicit `buck-output-loop` kind below to bind component and
 return-net roles. Multiple selected supply/return pins require separate obligations.
+
+An independent physical relationship uses `kind: "single-leg"`, `id`, `metric`,
+and exactly one nonempty `leg` with the same endpoint/limit/provenance structure.
+No return is invented and no omitted legacy return is accepted. The `leg` role
+participates in the same scoring, hard-limit legality, immutable-policy binding
+and native final-coordinate reporting. See [block contracts](block-contract.md)
+for template and advisory-target semantics.
 
 An endpoint may add `uuid` with the canonical native pad UUID from the captured
 `placement-probe.json`. The UUID must occur exactly once across the board and
