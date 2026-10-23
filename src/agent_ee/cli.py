@@ -58,6 +58,18 @@ def _runtime_files(checkpoint):
         files["pcbnew"] = {"path": path, "sha256": fingerprint(path)}
     else:
         files["pcbnew"] = {"path": None, "sha256": None, "diagnostic": diagnostic}
+    from .placement_rust_runtime import resolve_executable
+    from .placement_runtime import PlanningProcessError
+    files["agent-ee-placement-build"] = {"path": None, "sha256": None}
+    try:
+        planner = resolve_executable()
+    except (OSError, PlanningProcessError) as exc:
+        files["agent-ee-placement"] = {"path": None, "sha256": None, "diagnostic": str(exc)}
+    else:
+        files["agent-ee-placement"] = {"path": str(planner), "sha256": fingerprint(str(planner))}
+        receipt = planner.with_name(planner.name + '.json')
+        if receipt.is_file():
+            files["agent-ee-placement-build"] = {"path": str(receipt), "sha256": fingerprint(str(receipt))}
     return files
 
 
@@ -104,6 +116,14 @@ def doctor(checks_only=False):
     """Probe versions and hash the probed binaries; real runs establish integration."""
     checks, skipped = {}, {}
     probes = dict(DOCTOR_PROBES)
+    from .placement_rust_runtime import resolve_executable
+    from .placement_runtime import PlanningProcessError
+    try:
+        planner = resolve_executable()
+    except (OSError, PlanningProcessError) as exc:
+        checks["agent-ee-placement"] = {"error": str(exc)}
+    else:
+        probes["agent-ee-placement"] = [str(planner), "--version"]
     if shutil.which("pdftotext"):
         probes["pdftotext"] = ["pdftotext", "-v"]
     for name, command in probes.items():
@@ -115,7 +135,7 @@ def doctor(checks_only=False):
         except (OSError, subprocess.TimeoutExpired) as exc:
             checks[name] = {"error": str(exc)}
             continue
-        record = {"path": shutil.which(command[0]), "exit_code": p.returncode,
+        record = {"path": command[0] if name == "agent-ee-placement" else shutil.which(command[0]), "exit_code": p.returncode,
                   "version_output": p.stdout.strip(), "diagnostics": p.stderr.strip()}
         # The hashed file is the one runtime_files() fingerprints in each result.
         try:
@@ -124,6 +144,18 @@ def doctor(checks_only=False):
         except (OSError, subprocess.TimeoutExpired) as exc:
             record.update(sha256=None, hash_error=str(exc))
         record.setdefault("binary", None)
+        if name == "agent-ee-placement":
+            receipt = Path(command[0]).with_name(Path(command[0]).name + '.json')
+            if receipt.is_file():
+                try:
+                    record["build_receipt"] = {"path": str(receipt), "sha256": digest(receipt)}
+                    declared = read_json(receipt)
+                    if (not isinstance(declared, dict)
+                            or declared.get("schema") != "agent-ee.placement-engine-install/1"
+                            or declared.get("binary_sha256") != record.get("sha256")):
+                        raise ValueError("Rust executable differs from its build receipt")
+                except (OSError, ValueError) as exc:
+                    record["error"] = str(exc)
         if name == "kicad-cli":
             # Which ERC JSON coordinate correction the erc check will apply (AGENTEE-66).
             from .kicad_quirks import erc_coordinate_regime
@@ -144,7 +176,7 @@ def doctor(checks_only=False):
     if skipped:
         report["skipped"] = skipped
     print(json.dumps(report, indent=2))
-    return 0 if all(c.get("exit_code") == 0 and c.get("sha256") for c in checks.values()) else 1
+    return 0 if all(c.get("exit_code") == 0 and c.get("sha256") and not c.get("error") for c in checks.values()) else 1
 
 
 def artifacts(run):

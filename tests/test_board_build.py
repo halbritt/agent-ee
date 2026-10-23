@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # Also run as tests.test_board_build.
 from agent_ee import board_build  # noqa: E402
@@ -324,8 +325,18 @@ class NativeBoardBuildTest(unittest.TestCase):
                                    self.template / 'rc_filter.kicad_pcb', self.request, self.root / 'row2', 'row')
         self.assertEqual(first['placement']['status'], 'placed')
         self.assertEqual((first['status'], first['placer']),
-                         ('placed', 'agent_ee.placer.pack (AGENTEE-54)'))
+                         ('placed', 'agent-ee-placement (Rust)'))
         self.assertNotIn('placer_reason', first)
+        execution = first['placement']['planning_execution']
+        self.assertEqual(execution['implementation'], 'rust')
+        self.assertEqual(hashlib.sha256((self.root / 'row1' / execution['path']).read_bytes()).hexdigest(),
+                         execution['sha256'])
+        published_result = self.root / 'row1' / first['placed']['placement_result']
+        published_execution = json.loads(published_result.read_text())['planning_execution']
+        published_receipt = published_result.parent / published_execution['path']
+        self.assertEqual(hashlib.sha256(published_receipt.read_bytes()).hexdigest(),
+                         published_execution['sha256'])
+        self.assertEqual(published_receipt.read_bytes(), (self.root / 'row1' / execution['path']).read_bytes())
         board = self.root / 'row1/placed/rc_filter.kicad_pcb'
         self.assertEqual(board.read_bytes(), (self.root / 'row2/placed/rc_filter.kicad_pcb').read_bytes())
         facts = extract(board)
@@ -336,6 +347,20 @@ class NativeBoardBuildTest(unittest.TestCase):
         refs = {f['ref']: f for f in facts['footprints']}
         self.assertEqual({(f['ref'], p['number']): p['net'] for f in facts['footprints'] for p in f['pads']}, EXPECTED)
         self.assertEqual(refs['J1']['position_nm'], [103_810_000, 112_460_000])
+
+    def test_planner_process_failure_retains_board_build_receipt(self):
+        from agent_ee.placement_runtime import PlanningProcessError
+        with patch('agent_ee.placer_runner.place_candidate',
+                   side_effect=PlanningProcessError('Rust placement planner is not installed')):
+            receipt = self.build('planner-failed', self.placeholders)
+        out = self.root / 'planner-failed'
+        self.assertEqual((receipt['status'], receipt['outcome']), ('placement_failed', 'unknown'))
+        self.assertEqual(receipt['placement'], {
+            'status': 'not_placed', 'execution': 'failed', 'outcome': 'unknown',
+            'error': 'Rust placement planner is not installed'})
+        self.assertEqual(json.loads((out / 'build-receipt.json').read_text()), receipt)
+        self.assertTrue((out / receipt['unplaced']['board']).is_file())
+        self.assertFalse((out / 'placed').exists())
 
     def test_board_too_small_is_typed_defect_with_budget_and_no_placed_board(self):
         # A 2mm strip is narrower than every stock RC courtyard at any angle.

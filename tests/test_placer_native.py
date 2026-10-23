@@ -92,6 +92,14 @@ class NativePlacerTest(unittest.TestCase):
         self.assertEqual(report['native_drc_comparison']['blocking_findings'], [])
         self.assertEqual(report['open_defects'], report['native_drc_comparison']['open_defects'])
         self.assertEqual(json.loads((destination / 'placement-result.json').read_text()), report)
+        execution_path = destination / report['planning_execution']['path']
+        self.assertEqual(hashlib.sha256(execution_path.read_bytes()).hexdigest(),
+                         report['planning_execution']['sha256'])
+        execution = json.loads(execution_path.read_bytes())
+        self.assertEqual((execution['implementation'], execution['status']), ('rust', 'ok'))
+        self.assertEqual(execution['plan_sha256'],
+                         hashlib.sha256((destination / 'placement-plan.json').read_bytes()).hexdigest())
+        self.assertEqual(len(execution['executable_sha256']), 64)
         self.assertEqual(self.source.read_bytes(), original)
 
     def test_imu_axes_reserved_in_recorded_effective_policy(self):

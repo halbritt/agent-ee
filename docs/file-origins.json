@@ -4035,6 +4035,58 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-454 repair measurement notes."
+    },
+    {
+      "paths": [
+        "crates/placement-engine/src/arrangement.rs",
+        "crates/placement-engine/src/blocks.rs",
+        "crates/placement-engine/src/constraints.rs",
+        "crates/placement-engine/src/exact.rs",
+        "crates/placement-engine/src/footprint.rs",
+        "crates/placement-engine/src/geometry.rs",
+        "crates/placement-engine/src/grading.rs",
+        "crates/placement-engine/src/groups.rs",
+        "crates/placement-engine/src/lib.rs",
+        "crates/placement-engine/src/locality.rs",
+        "crates/placement-engine/src/main.rs",
+        "crates/placement-engine/src/netlist.rs",
+        "crates/placement-engine/src/packing.rs",
+        "crates/placement-engine/src/policy.rs",
+        "crates/placement-engine/src/progress.rs",
+        "crates/placement-engine/src/quantity.rs",
+        "crates/placement-engine/src/rank.rs",
+        "crates/placement-engine/src/search.rs",
+        "crates/placement-engine/src/source_authority.rs",
+        "crates/placement-engine/src/targeted.rs",
+        "crates/placement-engine/Cargo.toml",
+        "crates/placement-engine/Cargo.lock",
+        "crates/placement-engine/.gitignore"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original complete Rust implementation of agent-ee placement planning, with owned manifest and dependency lock metadata. No vendored third-party source or design data."
+    },
+    {
+      "paths": [
+        "crates/placement-engine/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original Rust planner build, protocol, runtime and parity documentation."
+    },
+    {
+      "paths": [
+        "docs/benchmarks/scorer-four-way-2026-10-22.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Original benchmark measurement receipt: timing, tool versions, input and output hashes, and validation metadata. The rights notice is the retained GCC --version banner, not copied compiler source. No captured board or library bytes."
     }
   ]
 }

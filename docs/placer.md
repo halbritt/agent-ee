@@ -2220,3 +2220,20 @@ for resolution provenance, path safety and publication checks.
 `placer_runner --trace PATH` and `python3 -m agent_ee.placement_trace pack` record
 an opt-in, bounded timing and Stage-A replay trace. Tracing is off by default and
 leaves plans and boards unchanged. See [placement trace](placement-trace.md).
+
+
+## Rust runtime
+
+Normal `placer_runner` requests use the
+[Rust planner](../crates/placement-engine/README.md). For block requests, Python
+`blocks.pack_block` produces Stage-A candidates; Rust performs admission,
+Stage-B arrangement and residual packing. KiCad capture, board writes,
+side-change authorization and independent native validation remain in the common
+runner. The installed executable is required; process failures never switch to
+Python. The Python implementation remains the parity reference. `--trace`
+explicitly runs that reference to collect Python search internals.
+
+A successful placement includes `planning-execution.json`, bound to
+`placement-plan.json` and linked by hash from the placement result. It records
+the selected implementation and, for Rust, input, executable and available build
+receipt hashes plus process outcome. The pure plan contains no runtime fields.

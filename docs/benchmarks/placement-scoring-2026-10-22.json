@@ -1,0 +1,1257 @@
+{
+  "boundaries": {
+    "checked_placement": "complete untraced checked Rust pack(), including full Python oracle and library loading",
+    "checked_score": "Rust preparation, batch wrapper, full Python oracle comparison and release; library preloaded",
+    "reference_placement": "complete untraced Python pack()",
+    "reference_score": "Python oracle over pre-captured snapshots; result lists included",
+    "rust_batch_score": "Rust preparation, batch conversion/call, result lists and release; library preloaded",
+    "rust_placement": "complete untraced Rust pack(), including context and library loading",
+    "rust_scalar_score": "Rust preparation, checked-generation scalar wrapper calls, result lists and release; library preloaded"
+  },
+  "cases": [
+    {
+      "all_outputs_exact": true,
+      "arm_order": [
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ]
+      ],
+      "case": "search-promotion",
+      "environment": {
+        "after": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707434623787646
+        },
+        "before": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707434564447415
+        }
+      },
+      "footprints": 3,
+      "full_placement_regression_each": {
+        "checked_placement": [
+          0.22765997428637985,
+          0.09831146950215963,
+          0.14045718950632224,
+          0.177999373359367,
+          0.12727050612429291
+        ],
+        "rust_placement": [
+          0.14015984245853663,
+          0.05424903437962003,
+          0.4623493830691947,
+          0.14901963219251613,
+          0.11827376534530676
+        ]
+      },
+      "gate": {
+        "kind": "measurement",
+        "met": false,
+        "promotion_authorized": false
+      },
+      "input_sha256": {
+        "capture": "ba847bf67a1874d5ed09c066b5eba34dadf18737041d609f74775bd224e67cb4",
+        "policy": "aaeafa396a550f5649ac013ce959eb87fe5fb046e9ff14087528df3d82adc860",
+        "trace": "60e91caeffe7bd23668ac48ec4037319682d3dc3b6b13c5d218bf28459c1ad73"
+      },
+      "median_ns": {
+        "checked_placement": 2483869,
+        "checked_score": 79166,
+        "reference_placement": 2169230,
+        "reference_score": 8159,
+        "rust_batch_score": 58891,
+        "rust_placement": 2425793,
+        "rust_scalar_score": 55519
+      },
+      "raw_ns": {
+        "checked_placement": [
+          2560965,
+          2703352,
+          2483869,
+          2466382,
+          2445309
+        ],
+        "checked_score": [
+          79140,
+          165809,
+          79166,
+          149271,
+          70038
+        ],
+        "reference_placement": [
+          2086054,
+          2461371,
+          2177959,
+          2093704,
+          2169230
+        ],
+        "reference_score": [
+          11904,
+          8159,
+          4901,
+          8291,
+          5018
+        ],
+        "rust_batch_score": [
+          100894,
+          59503,
+          57120,
+          58891,
+          56349
+        ],
+        "rust_placement": [
+          2378435,
+          2594898,
+          3184937,
+          2405707,
+          2425793
+        ],
+        "rust_scalar_score": [
+          55519,
+          56788,
+          53421,
+          55632,
+          48708
+        ]
+      },
+      "requests": 4,
+      "sampled_queries": 3,
+      "scope": "sampled trace requests for replay; complete untraced pack for placement; no physical acceptance",
+      "speedup": {
+        "checked_placement": 0.8733270554928622,
+        "checked_score": 0.10306192052143597,
+        "rust_batch_score": 0.13854408992885162,
+        "rust_placement": 0.8942354108532756,
+        "rust_scalar_score": 0.1469586988238261
+      },
+      "status": "planned",
+      "steps_used": 3,
+      "trace_coverage": "complete",
+      "workload_kind": "fixture"
+    },
+    {
+      "all_outputs_exact": true,
+      "arm_order": [
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ]
+      ],
+      "case": "search-anchor",
+      "environment": {
+        "after": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707434681366107
+        },
+        "before": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707434624286491
+        }
+      },
+      "footprints": 3,
+      "full_placement_regression_each": {
+        "checked_placement": [
+          0.15661200489977234,
+          0.19166847388480335,
+          0.17427046702449256,
+          0.1711459196420395,
+          0.15875569548476198
+        ],
+        "rust_placement": [
+          0.08586305875876254,
+          0.16867679424553117,
+          0.1736565248387385,
+          0.3926182039493258,
+          0.260169615734515
+        ]
+      },
+      "gate": {
+        "kind": "measurement",
+        "met": false,
+        "promotion_authorized": false
+      },
+      "input_sha256": {
+        "capture": "05c515b36c7c74b987f843e65f40e149094bb59361fb9c0e216d677e16b37db4",
+        "policy": "4e3a982bda4441762e9217444c3e17bb7cdfa5aca9b531e15f60934002b66553",
+        "trace": "982a7c8957d1af841f1c4f7c8fa0d655ceb316354504c795f477bd2bafa30ed5"
+      },
+      "median_ns": {
+        "checked_placement": 2740860,
+        "checked_score": 85979,
+        "reference_placement": 2334096,
+        "reference_score": 11498,
+        "rust_batch_score": 62520,
+        "rust_placement": 2848196,
+        "rust_scalar_score": 65477
+      },
+      "raw_ns": {
+        "checked_placement": [
+          3033769,
+          2774949,
+          2740860,
+          2672863,
+          2711756
+        ],
+        "checked_score": [
+          85943,
+          197504,
+          84558,
+          117408,
+          85979
+        ],
+        "reference_placement": [
+          2622979,
+          2328625,
+          2334096,
+          2282263,
+          2340231
+        ],
+        "reference_score": [
+          13880,
+          11498,
+          7656,
+          11716,
+          7709
+        ],
+        "rust_batch_score": [
+          119545,
+          62520,
+          62912,
+          61282,
+          61876
+        ],
+        "rust_placement": [
+          2848196,
+          2721410,
+          2739427,
+          3178321,
+          2949088
+        ],
+        "rust_scalar_score": [
+          67539,
+          67506,
+          57524,
+          65477,
+          59562
+        ]
+      },
+      "requests": 4,
+      "sampled_queries": 6,
+      "scope": "sampled trace requests for replay; complete untraced pack for placement; no physical acceptance",
+      "speedup": {
+        "checked_placement": 0.851592565837,
+        "checked_score": 0.13373032949906372,
+        "rust_batch_score": 0.18390914907229686,
+        "rust_placement": 0.8194997816161528,
+        "rust_scalar_score": 0.17560364708218154
+      },
+      "status": "planned",
+      "steps_used": 6,
+      "trace_coverage": "complete",
+      "workload_kind": "fixture"
+    },
+    {
+      "all_outputs_exact": true,
+      "arm_order": [
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ]
+      ],
+      "case": "cluster-three-cap",
+      "environment": {
+        "after": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707436962630857
+        },
+        "before": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707434681997787
+        }
+      },
+      "footprints": 4,
+      "full_placement_regression_each": {
+        "checked_placement": [
+          0.15439424515740563,
+          -0.03411247420059127,
+          -0.01850780305077493,
+          -0.03031492124076418,
+          0.2524158787396691
+        ],
+        "rust_placement": [
+          -0.004958099971696162,
+          -0.051342573521007684,
+          -0.057333356583407435,
+          0.0023105153652653865,
+          0.3042335720871501
+        ]
+      },
+      "gate": {
+        "kind": "measurement",
+        "met": false,
+        "promotion_authorized": false
+      },
+      "input_sha256": {
+        "capture": "c2ec14b5199ed8c3a469aeec0f30865ef2db5dab9d049fe181dea5e14adccd40",
+        "policy": "f628e6c76d7129307967e972fc2e2d0730deae284930ad971a7e222799d1a4af",
+        "trace": "f59fe8dc3dae41bcd03f211e0887105c4aba16748f78453efb9f321ac567c6ea"
+      },
+      "median_ns": {
+        "checked_placement": 119157698,
+        "checked_score": 1539820,
+        "reference_placement": 117543040,
+        "reference_score": 519426,
+        "rust_batch_score": 717339,
+        "rust_placement": 115055846,
+        "rust_scalar_score": 1059880
+      },
+      "raw_ns": {
+        "checked_placement": [
+          128413875,
+          117145561,
+          119157698,
+          113979732,
+          144094154
+        ],
+        "checked_score": [
+          1250755,
+          1703550,
+          1388112,
+          1577313,
+          1539820
+        ],
+        "reference_placement": [
+          111239185,
+          121282818,
+          121404631,
+          117543040,
+          115052960
+        ],
+        "reference_score": [
+          519426,
+          507178,
+          491644,
+          932741,
+          711138
+        ],
+        "rust_batch_score": [
+          802472,
+          710797,
+          717339,
+          892420,
+          716500
+        ],
+        "rust_placement": [
+          110687650,
+          115055846,
+          114444096,
+          117814625,
+          150055933
+        ],
+        "rust_scalar_score": [
+          984657,
+          1135523,
+          1095357,
+          1059880,
+          1026594
+        ]
+      },
+      "requests": 11,
+      "sampled_queries": 501,
+      "scope": "sampled trace requests for replay; complete untraced pack for placement; no physical acceptance",
+      "speedup": {
+        "checked_placement": 0.9864494025388104,
+        "checked_score": 0.33732903845904066,
+        "rust_batch_score": 0.7241011571934608,
+        "rust_placement": 1.021617276187774,
+        "rust_scalar_score": 0.49008000905762916
+      },
+      "status": "packing_budget_exhausted",
+      "steps_used": 500,
+      "trace_coverage": "complete",
+      "workload_kind": "fixture"
+    },
+    {
+      "all_outputs_exact": true,
+      "arm_order": [
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ]
+      ],
+      "case": "pod-80x50-90",
+      "environment": {
+        "after": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            25.08740234375,
+            17.29296875,
+            15.31787109375
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707467672506295
+        },
+        "before": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            23.32568359375,
+            16.24853515625,
+            14.93212890625
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707436963610806
+        }
+      },
+      "footprints": 90,
+      "full_placement_regression_each": {
+        "checked_placement": [
+          -0.1965368976935794,
+          0.15533133730242699,
+          0.6000969148446365,
+          0.12355265628410961,
+          0.11364224911155363
+        ],
+        "rust_placement": [
+          -0.5625568103710004,
+          -0.44176423612546534,
+          -0.4950395994915048,
+          -0.5669309438478634,
+          -0.43609923347529
+        ]
+      },
+      "gate": {
+        "kind": "measurement",
+        "met": false,
+        "promotion_authorized": false
+      },
+      "input_sha256": {
+        "capture": "41e958dca98beeb8ec058358b471777263d773025bed6ee15e3338ac40fd501a",
+        "policy": "ebd4998678b497ad20a3a55d19b5195cb87a529918a40bba83203fd50f04d07b",
+        "trace": "5b1d9400fe84cd91b561c25815f0365cc82a3da254f8d90532290d237bff9cd9"
+      },
+      "median_ns": {
+        "checked_placement": 2383531904,
+        "checked_score": 150399412,
+        "reference_placement": 1851542007,
+        "reference_score": 101391371,
+        "rust_batch_score": 42622177,
+        "rust_placement": 918723218,
+        "rust_scalar_score": 36682455
+      },
+      "raw_ns": {
+        "checked_placement": [
+          1153933816,
+          2397961493,
+          2721343001,
+          2383531904,
+          2061955405
+        ],
+        "checked_score": [
+          108836384,
+          150399412,
+          142277259,
+          235085931,
+          164234334
+        ],
+        "reference_placement": [
+          1436200135,
+          2075561716,
+          1700736359,
+          2121424297,
+          1851542007
+        ],
+        "reference_score": [
+          101391371,
+          84713128,
+          72445855,
+          150348684,
+          163456687
+        ],
+        "rust_batch_score": [
+          32012705,
+          27531146,
+          42622177,
+          60185425,
+          70773852
+        ],
+        "rust_placement": [
+          628255968,
+          1158652780,
+          858804513,
+          918723218,
+          1044085957
+        ],
+        "rust_scalar_score": [
+          34994315,
+          36682455,
+          34345362,
+          78923764,
+          62384359
+        ]
+      },
+      "requests": 90,
+      "sampled_queries": 8192,
+      "scope": "sampled trace requests for replay; complete untraced pack for placement; no physical acceptance",
+      "speedup": {
+        "checked_placement": 0.7768060515123695,
+        "checked_score": 0.6741473896187838,
+        "rust_batch_score": 2.378840738238218,
+        "rust_placement": 2.0153425653383237,
+        "rust_scalar_score": 2.7640290433123957
+      },
+      "status": "planned",
+      "steps_used": 182,
+      "trace_coverage": "partial",
+      "workload_kind": "fixture"
+    },
+    {
+      "all_outputs_exact": true,
+      "arm_order": [
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ],
+        [
+          "checked_placement",
+          "rust_placement",
+          "reference_placement",
+          "checked_score",
+          "rust_scalar_score",
+          "rust_batch_score",
+          "reference_score"
+        ],
+        [
+          "reference_score",
+          "rust_batch_score",
+          "rust_scalar_score",
+          "checked_score",
+          "reference_placement",
+          "rust_placement",
+          "checked_placement"
+        ]
+      ],
+      "case": "pod-85x55-112",
+      "environment": {
+        "after": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            21.6005859375,
+            17.87060546875,
+            15.669921875
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707538308611759
+        },
+        "before": {
+          "cpu_affinity": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+          "cpus": 12,
+          "gc": {
+            "enabled": true,
+            "forced_collections": false,
+            "thresholds": [
+              700,
+              10,
+              10
+            ]
+          },
+          "host": "proximal",
+          "load_average": [
+            25.08740234375,
+            17.29296875,
+            15.31787109375
+          ],
+          "machine": "x86_64",
+          "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "unix_time_ns": 1792707467675636806
+        }
+      },
+      "footprints": 112,
+      "full_placement_regression_each": {
+        "checked_placement": [
+          0.3750489079995658,
+          0.30157772853773235,
+          0.01917706986502532,
+          -0.3426095272222319,
+          -0.014895813184818696
+        ],
+        "rust_placement": [
+          -0.6612798711330361,
+          -0.571723161937868,
+          -0.6866539204127715,
+          -0.6910870781743161,
+          -0.6770341750547177
+        ]
+      },
+      "gate": {
+        "kind": "measurement",
+        "met": false,
+        "promotion_authorized": false
+      },
+      "input_sha256": {
+        "capture": "2269372562bd334dd31e01250cbfb96175e8a26914c94ad21bfc414337c182a0",
+        "policy": "ebd4998678b497ad20a3a55d19b5195cb87a529918a40bba83203fd50f04d07b",
+        "trace": "dff31b802bcf1e9f8dc733f55626dbb3e659e4b40cce83b2417a7a3c266fe1a8"
+      },
+      "median_ns": {
+        "checked_placement": 4613330788,
+        "checked_score": 103369557,
+        "reference_placement": 4104535593,
+        "reference_score": 62452480,
+        "rust_batch_score": 38993884,
+        "rust_placement": 1512477770,
+        "rust_scalar_score": 42990481
+      },
+      "raw_ns": {
+        "checked_placement": [
+          5643937185,
+          4973571914,
+          3865871809,
+          4612552749,
+          4613330788
+        ],
+        "checked_score": [
+          93377997,
+          95018518,
+          103369557,
+          167629552,
+          155556972
+        ],
+        "reference_placement": [
+          4104535593,
+          3821187014,
+          3793130677,
+          7016458163,
+          4683089210
+        ],
+        "reference_score": [
+          62148321,
+          55422470,
+          62452480,
+          118475948,
+          117624895
+        ],
+        "rust_batch_score": [
+          36485152,
+          38993884,
+          36534837,
+          73070353,
+          73810268
+        ],
+        "rust_placement": [
+          1390288825,
+          1636525892,
+          1188562627,
+          2167474592,
+          1512477770
+        ],
+        "rust_scalar_score": [
+          41095211,
+          42990481,
+          42083712,
+          64971773,
+          81521722
+        ]
+      },
+      "requests": 112,
+      "sampled_queries": 8192,
+      "scope": "sampled trace requests for replay; complete untraced pack for placement; no physical acceptance",
+      "speedup": {
+        "checked_placement": 0.8897119633555313,
+        "checked_score": 0.6041670469768967,
+        "rust_batch_score": 1.6015968042578164,
+        "rust_placement": 2.7137824266997326,
+        "rust_scalar_score": 1.4527048441258426
+      },
+      "status": "planned",
+      "steps_used": 128,
+      "trace_coverage": "partial",
+      "workload_kind": "fixture"
+    }
+  ],
+  "environment_after": {
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+    "cpus": 12,
+    "gc": {
+      "enabled": true,
+      "forced_collections": false,
+      "thresholds": [
+        700,
+        10,
+        10
+      ]
+    },
+    "host": "proximal",
+    "load_average": [
+      21.6005859375,
+      17.87060546875,
+      15.669921875
+    ],
+    "machine": "x86_64",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "unix_time_ns": 1792707538320627406
+  },
+  "environment_before": {
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "cpu_model": "11th Gen Intel(R) Core(TM) i5-11400F @ 2.60GHz",
+    "cpus": 12,
+    "gc": {
+      "enabled": true,
+      "forced_collections": false,
+      "thresholds": [
+        700,
+        10,
+        10
+      ]
+    },
+    "host": "proximal",
+    "load_average": [
+      24.05078125,
+      16.27001953125,
+      14.931640625
+    ],
+    "machine": "x86_64",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "unix_time_ns": 1792707428112152884
+  },
+  "exit_status": "zero means all measured scores and plans matched with no rollback; no promotion",
+  "gate": {
+    "g0_workloads_complete": true,
+    "kind": "measurement",
+    "met": false,
+    "promotion_authorized": false
+  },
+  "library": {
+    "path": "/home/halbritt/.cache/agent-worktrees/agent-ee/rust-placement-scorer-agent524/build/rust-scoring/placement_score-native.so",
+    "sha256": "800678f80cff9223188040649b855a05d9c8e8959f4898918d738baf47191518"
+  },
+  "replay_setup_excluded": "trace generation/validation and immutable snapshot capture; library loading",
+  "runs": 5,
+  "schema": "agent-ee.placement-scoring-benchmark/1",
+  "source": {
+    "files_sha256": {
+      "scripts/placement_scoring_benchmark.py": "9a623f30208fb36be2be7f9657d45600954cfae633b7e3103389a1c16efa8413",
+      "scripts/placement_trace_overhead.py": "82e60f92b810650ea3e5e0a27e490e6c087458a5d926cf169d56357648dc1f6e",
+      "scripts/qualify_pod_placement.py": "98e632bd4fed8ba9723e94b4f038a6eda57e832a98ec848d00bb6e7d2c3c8fa3",
+      "src/agent_ee/data/placement_score.rs": "09fcdbf3e9bf04a06584de072befc563431283d8f171bf4d46e823c466111411",
+      "src/agent_ee/placement_scoring.py": "5382ba82dc65b24ad9ad7df29127d944401aad77c2629ad5a8424386e2c178cd",
+      "src/agent_ee/placement_trace.py": "c9fd52872bc4eef2780425bd2c2f86d607f53e057cbe6a4e97700c98f4786c19",
+      "src/agent_ee/placer.py": "1bcc7aef74e44e81093d64ca49be6e44075996354345872f764b3f0c4e66bf10",
+      "tests/test_placer_clusters.py": "b18eabe517473e97329aa00073ae027af8dd1888305ff8ecd1d6addc4df63b1b",
+      "tests/test_placer_search.py": "9cb8eb36cf924f69137a5322d3f8ee7e5786e56111a6f6f139b3268a707bf6f0"
+    },
+    "git_head": "3cd1a5e2f52937d37f5f4ab5fdd999f12d862343"
+  },
+  "status": "passed-parity",
+  "warmups": 1
+}

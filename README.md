@@ -216,6 +216,13 @@ replayable Stage-A scoring sample. It uses the shared
 same with tracing on and off. It is experimental and off by default: its
 provisional 5% overhead gate is not met.
 
+The [Rust placement planner](crates/placement-engine/README.md) runs the complete
+captured planning request by default. For block requests, Python still prepares
+Stage-A candidates; Rust admits them, arranges blocks and packs residual parts.
+The Python whole-plan implementation remains the independent parity reference
+and powers the explicit Python trace diagnostic. The CI image includes the
+pinned, locked Rust build; a missing planner is an error.
+
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 

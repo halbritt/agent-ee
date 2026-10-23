@@ -1,0 +1,1294 @@
+{
+  "arms": [
+    {
+      "arm": "round-1/python",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 937064,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/python/.placement-staging-4oh_ajnr/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/python/.placement-staging-4oh_ajnr/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/python/.placement-staging-4oh_ajnr/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/python/.placement-staging-4oh_ajnr/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 97302901106,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "1375e30f19eecd24b7737bac4b0699085746f6427caeeeabc554af62c4fde8a5",
+      "runner_wall_ns": 95848523043,
+      "self_maxrss_kib": 937064,
+      "status": "placed"
+    },
+    {
+      "arm": "round-1/c",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 939224,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/c/.placement-staging-74t9pgyq/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/c/.placement-staging-74t9pgyq/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/c/.placement-staging-74t9pgyq/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/c/.placement-staging-74t9pgyq/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "batch_size": 1,
+        "method": "score",
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 96527887327,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "10d7e886e408a79472ee02c182d41133c06863fa5839ed0e8ca2f76596f70653",
+      "runner_wall_ns": 95075371618,
+      "self_maxrss_kib": 939224,
+      "status": "placed"
+    },
+    {
+      "arm": "round-1/pypy",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 1884724,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/pypy/.placement-staging-xxjrhqh2/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/pypy/.placement-staging-xxjrhqh2/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/pypy/.placement-staging-xxjrhqh2/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/pypy/.placement-staging-xxjrhqh2/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 71542956525,
+      "pypy_call_count": 1,
+      "raw_plan_sha256": "f5691f3ce93a75ca87e8a335f72e0dddc3d88cb558dc5534394bca8fadd1aea9",
+      "runner_wall_ns": 70106332948,
+      "self_maxrss_kib": 559440,
+      "status": "placed"
+    },
+    {
+      "arm": "round-1/rust",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 939316,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/rust/.placement-staging-7ufeaqnv/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/rust/.placement-staging-7ufeaqnv/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/rust/.placement-staging-7ufeaqnv/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-1/rust/.placement-staging-7ufeaqnv/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "method": "one",
+        "pose_nm_rotation_deg": [
+          66575000,
+          24457031,
+          0
+        ],
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 96153224227,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "e354132513338bb316bff2763a30c61b118bfde523f4f4c83f4cafe3aa0f6467",
+      "runner_wall_ns": 94709529584,
+      "self_maxrss_kib": 939316,
+      "status": "placed"
+    },
+    {
+      "arm": "round-2/c",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 939184,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/c/.placement-staging-75ts0boo/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/c/.placement-staging-75ts0boo/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/c/.placement-staging-75ts0boo/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/c/.placement-staging-75ts0boo/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "batch_size": 1,
+        "method": "score",
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 96273521344,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "e69aa7b1c897c3d42d35e8651140d6bb16191c6155d46dd01141113e3c959bd4",
+      "runner_wall_ns": 94822686149,
+      "self_maxrss_kib": 939184,
+      "status": "placed"
+    },
+    {
+      "arm": "round-2/rust",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 939184,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/rust/.placement-staging-d_pcr6f3/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/rust/.placement-staging-d_pcr6f3/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/rust/.placement-staging-d_pcr6f3/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/rust/.placement-staging-d_pcr6f3/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "method": "one",
+        "pose_nm_rotation_deg": [
+          66575000,
+          24457031,
+          0
+        ],
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 95542787763,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "2b503657a06f852da7b727a4cf6a5ea18602c6716f656df79f41944112215cf0",
+      "runner_wall_ns": 94097986071,
+      "self_maxrss_kib": 939184,
+      "status": "placed"
+    },
+    {
+      "arm": "round-2/python",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 938736,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/python/.placement-staging-kal31v11/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/python/.placement-staging-kal31v11/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/python/.placement-staging-kal31v11/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/python/.placement-staging-kal31v11/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 96199807153,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "f5ca8bcffab4702950f5483773868cf98b11d15285bd46f4871f8fa4228c1173",
+      "runner_wall_ns": 94758366213,
+      "self_maxrss_kib": 938736,
+      "status": "placed"
+    },
+    {
+      "arm": "round-2/pypy",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 1867836,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/pypy/.placement-staging-q95650d6/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/pypy/.placement-staging-q95650d6/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/pypy/.placement-staging-q95650d6/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-2/pypy/.placement-staging-q95650d6/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 71427822320,
+      "pypy_call_count": 1,
+      "raw_plan_sha256": "c16f1c2fd351ae265e359019679eb1579f02c5008e91a767fda5b2e2854c5550",
+      "runner_wall_ns": 69998896339,
+      "self_maxrss_kib": 559644,
+      "status": "placed"
+    },
+    {
+      "arm": "round-3/rust",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 938780,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/rust/.placement-staging-jp1kfk1z/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/rust/.placement-staging-jp1kfk1z/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/rust/.placement-staging-jp1kfk1z/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/rust/.placement-staging-jp1kfk1z/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "method": "one",
+        "pose_nm_rotation_deg": [
+          66575000,
+          24457031,
+          0
+        ],
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 97460316044,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "99c929e3f1cf5fada08e53934d22914840f30f802dbf49e08b0386e3c14db866",
+      "runner_wall_ns": 96004472444,
+      "self_maxrss_kib": 938780,
+      "status": "placed"
+    },
+    {
+      "arm": "round-3/pypy",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 1870148,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/pypy/.placement-staging-at138scm/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/pypy/.placement-staging-at138scm/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/pypy/.placement-staging-at138scm/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/pypy/.placement-staging-at138scm/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 72145842033,
+      "pypy_call_count": 1,
+      "raw_plan_sha256": "2a8485b576ba53aa03d9f9e1420713b81abc30b03eabc599e3844db6d5c2f166",
+      "runner_wall_ns": 70700030738,
+      "self_maxrss_kib": 559896,
+      "status": "placed"
+    },
+    {
+      "arm": "round-3/c",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 938452,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/c/.placement-staging-k357xqpv/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/c/.placement-staging-k357xqpv/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/c/.placement-staging-k357xqpv/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/c/.placement-staging-k357xqpv/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "batch_size": 1,
+        "method": "score",
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 97367085761,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "d4dceab2b4c69d3fc00f726cf943cc44035331708ff12082a905d430b0fb6790",
+      "runner_wall_ns": 95908776848,
+      "self_maxrss_kib": 938452,
+      "status": "placed"
+    },
+    {
+      "arm": "round-3/python",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 938776,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/python/.placement-staging-b5eufsik/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/python/.placement-staging-b5eufsik/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/python/.placement-staging-b5eufsik/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-3/python/.placement-staging-b5eufsik/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 97078981050,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "690cebe88f780d42f8f6b13cfb76234bef3d2330d58ce7ee7cc7513640156b5d",
+      "runner_wall_ns": 95630230595,
+      "self_maxrss_kib": 938776,
+      "status": "placed"
+    },
+    {
+      "arm": "round-4/pypy",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 1886092,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/pypy/.placement-staging-0i2soaq0/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/pypy/.placement-staging-0i2soaq0/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/pypy/.placement-staging-0i2soaq0/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/pypy/.placement-staging-0i2soaq0/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 71345063422,
+      "pypy_call_count": 1,
+      "raw_plan_sha256": "74714e46d3ec9c636150ea00e97a0a1561afbe72aa79c5de293a2284f3798fa2",
+      "runner_wall_ns": 69912669532,
+      "self_maxrss_kib": 559896,
+      "status": "placed"
+    },
+    {
+      "arm": "round-4/python",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 938892,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/python/.placement-staging-o50veia6/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/python/.placement-staging-o50veia6/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/python/.placement-staging-o50veia6/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/python/.placement-staging-o50veia6/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": null,
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 96592754538,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "a62d5fbfe5912f0b352e738c055b1b1f6f503d57dac3f7652dc7bb655c1e54eb",
+      "runner_wall_ns": 95149905880,
+      "self_maxrss_kib": 938892,
+      "status": "placed"
+    },
+    {
+      "arm": "round-4/rust",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 939096,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/rust/.placement-staging-h7l0ae1j/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/rust/.placement-staging-h7l0ae1j/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/rust/.placement-staging-h7l0ae1j/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/rust/.placement-staging-h7l0ae1j/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "method": "one",
+        "pose_nm_rotation_deg": [
+          66575000,
+          24457031,
+          0
+        ],
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 95809152254,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "c265b8d43100eea7d687f7ee7290b85aa83a24257e76274d8a59dc79837d1e16",
+      "runner_wall_ns": 94362294046,
+      "self_maxrss_kib": 939096,
+      "status": "placed"
+    },
+    {
+      "arm": "round-4/c",
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate_outcome": "defect",
+      "candidate_verdict": "defect",
+      "children_maxrss_kib": 939304,
+      "counters": {
+        "arrangement_step_budget": 200000,
+        "arrangement_steps_used": 101,
+        "placements": 309,
+        "policy_step_budget": 200000,
+        "residual_steps_used": 4176,
+        "step_budget": 200000,
+        "steps_used": 4277
+      },
+      "native_drc_execution_records": {
+        "baseline/native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/c/.placement-staging-ndg3gq9n/baseline/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/c/.placement-staging-ndg3gq9n/baseline/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        },
+        "native-drc-execution.json": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--output",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/c/.placement-staging-ndg3gq9n/native-drc.json",
+            "/opt/agent-ee/build/four-way-scoring/matched/round-4/c/.placement-staging-ndg3gq9n/candidate.kicad_pcb"
+          ],
+          "execution": "ok",
+          "exit_code": 0
+        }
+      },
+      "native_witness": {
+        "batch_size": 1,
+        "method": "score",
+        "returned": true
+      },
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "open_defects_count": 9,
+      "open_silkscreen_conflicts_count": 9,
+      "placement_judgment_outcome": "pass",
+      "process_wall_ns": 96692124856,
+      "pypy_call_count": 0,
+      "raw_plan_sha256": "cdd19ba31464f9c70e729d2587837adbbd204ad9ab0c74d940090192dfe51c93",
+      "runner_wall_ns": 95244930766,
+      "self_maxrss_kib": 939304,
+      "status": "placed"
+    }
+  ],
+  "backend_definitions": {
+    "c": "Original unmodified C kernel from 50e586818acf6265039a3509acc910eb0158f357 with benchmark fast adapter; no full oracle inside timer",
+    "pypy": "Original Python scorer and complete pure planner in PyPy; native KiCad remains in CPython",
+    "python": "Unchanged CPython reference placement",
+    "rust": "Opt-in prepared Rust scalar scorer under CPython"
+  },
+  "c_build": {
+    "argv": [
+      "cc",
+      "-O3",
+      "-std=c11",
+      "-shared",
+      "-fPIC",
+      "/home/halbritt/.cache/agent-worktrees/agent-ee/scorer-four-way-agent524/scripts/data/placement_score_original.c",
+      "-o",
+      "/home/halbritt/.cache/agent-worktrees/agent-ee/scorer-four-way-agent524/build/four-way-scoring/placement_score_original.so"
+    ],
+    "compiler": "/usr/bin/x86_64-linux-gnu-gcc-13",
+    "compiler_sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+    "compiler_target": "x86_64-linux-gnu",
+    "compiler_version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+    "elf_dynamic": "\nDynamic section at offset 0x2e78 contains 17 entries:\n  Tag        Type                         Name/Value\n 0x000000000000000c (INIT)               0x1000\n 0x000000000000000d (FINI)               0x1350\n 0x0000000000000019 (INIT_ARRAY)         0x3e68\n 0x000000000000001b (INIT_ARRAYSZ)       8 (bytes)\n 0x000000000000001a (FINI_ARRAY)         0x3e70\n 0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)\n 0x000000006ffffef5 (GNU_HASH)           0x2f0\n 0x0000000000000005 (STRTAB)             0x3a8\n 0x0000000000000006 (SYMTAB)             0x318\n 0x000000000000000a (STRSZ)              103 (bytes)\n 0x000000000000000b (SYMENT)             24 (bytes)\n 0x0000000000000003 (PLTGOT)             0x3fe8\n 0x0000000000000007 (RELA)               0x410\n 0x0000000000000008 (RELASZ)             168 (bytes)\n 0x0000000000000009 (RELAENT)            24 (bytes)\n 0x000000006ffffff9 (RELACOUNT)          3\n 0x0000000000000000 (NULL)               0x0\n",
+    "host_libc": [
+      "glibc",
+      "2.39"
+    ],
+    "host_platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "library": "/home/halbritt/.cache/agent-worktrees/agent-ee/scorer-four-way-agent524/build/four-way-scoring/placement_score_original.so",
+    "library_sha256": "06f04731ee0385f005bc7927d6c71bb819ad7803e33bf7cfe6372793989f82c6",
+    "schema": "agent-ee.historical-c-build/1",
+    "source_commit": "50e586818acf6265039a3509acc910eb0158f357",
+    "source_modifications": [],
+    "source_sha256": "1828e54cc2b44e4187a23f48ecf19a0b4bd3b61b1ad31969535ff86dec04248c"
+  },
+  "cleanup": {
+    "delete_exit": 0,
+    "disks": [],
+    "instance": "agent-ee-fourway524-20261023-0020",
+    "instance_id": "1423666865765816436",
+    "instances": [],
+    "project": "heath-stuff",
+    "readback_exit_codes": {
+      "disks_list": 0,
+      "instances_list": 0
+    },
+    "verified_at": "2026-10-23T00:49:24.298275+00:00",
+    "zone": "us-west1-b"
+  },
+  "cloud": {
+    "creationTimestamp": "2026-10-22T17:13:15.980-07:00",
+    "disks": [
+      {
+        "autoDelete": true,
+        "boot": true,
+        "diskSizeGb": "100",
+        "source": "https://www.googleapis.com/compute/v1/projects/heath-stuff/zones/us-west1-b/disks/agent-ee-fourway524-20261023-0020"
+      }
+    ],
+    "id": "1423666865765816436",
+    "machineType": "https://www.googleapis.com/compute/v1/projects/heath-stuff/zones/us-west1-b/machineTypes/c2d-highcpu-4",
+    "name": "agent-ee-fourway524-20261023-0020",
+    "scheduling": {
+      "automaticRestart": false,
+      "instanceTerminationAction": "DELETE",
+      "maxRunDuration": {
+        "nanos": 0,
+        "seconds": "7200"
+      },
+      "onHostMaintenance": "TERMINATE",
+      "preemptible": true,
+      "provisioningModel": "SPOT"
+    },
+    "zone": "https://www.googleapis.com/compute/v1/projects/heath-stuff/zones/us-west1-b"
+  },
+  "container_image": "sha256:c61213c757f40b99bd36ccdb900572ae5aecf73e382258e203b0feeee1640845",
+  "correctness": {
+    "artifact_count": 32,
+    "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+    "common_comparison_sha256": {
+      "baseline/candidate.kicad_pcb": "0365485efbac76fe77e6810baba0fd15077803289e184d1ff4069773a612907c",
+      "baseline/candidate.kicad_prl": "94e008de06328751884a592b98da2b6533a14f8144eefaf93b0002d473a91d75",
+      "baseline/candidate.kicad_pro": "a91ee4d1a8ecfa583df33e707defdb3174e505d91853fc1e4959600d770aa57f",
+      "baseline/copper-containment.json": "8c82833dab1ef515c195ff70f6e08b662812504ae4a43187aabe7110447e3697",
+      "baseline/copper-containment.stderr.txt": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+      "baseline/copper-containment.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline/native-drc-execution.json": "db27691f683b0457fe82825384515a03e542ebdc297d80214daaa3128e5f0f02",
+      "baseline/native-drc.json": "2a715c8fb895c5a9c42fb2a74335e8fdb5d511d60ed887d9960f21719cf1b438",
+      "baseline/native-drc.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline/native-drc.stdout.txt": "a17c4d19d3576c9f5e1f273ef72c65891f14f0c0574b765ec3ada5ff9c2b9643",
+      "block-provenance.json": "8bb7ced77bf1ff25b4b1c05856923f7b543e80fc3190f2a94793eabdc6ac31f2",
+      "candidate.kicad_pcb": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "candidate.kicad_prl": "94e008de06328751884a592b98da2b6533a14f8144eefaf93b0002d473a91d75",
+      "candidate.kicad_pro": "a91ee4d1a8ecfa583df33e707defdb3174e505d91853fc1e4959600d770aa57f",
+      "copper-containment.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "copper-containment.stderr.txt": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+      "copper-containment.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "native-drc-comparison.json": "80c5a90f408f4e858f766830a9f74fbe4a259188de5e10fa0afa39ea9ab717c2",
+      "native-drc-execution.json": "a03c34aa176913bc5414ba9abe9f587c4aed16ffb374ba09a1e29c904608499a",
+      "native-drc.json": "8dedb3a362180f1fa73f674a487967a5cc0279e8ee6eb68ac7e53e4608cd83b6",
+      "native-drc.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "native-drc.stdout.txt": "4d8a65908e896a31f5e0d2317a3becac2ac7f4cc4ad555986736071e48b3f73a",
+      "placement-judgment.json": "32b86835d7e28456263e03cc4ee78b1afb3d5fc82b632de04b27ca6276ab814e",
+      "placement-plan.json": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "placement-probe.json": "907cd9a3a48708856607e8f80f03e130cb0346cb048624a8d3ca78a20f906537",
+      "placement-result.json": "b736eae02f0e8cf39357d3af46128145b64cec163b51b1af43fb61f8dca91ee3",
+      "placement-silkscreen.json": "fcab10a58428f009ec174269926d9997aa4cebeb8cecef9934b0ea14af6ad5ff",
+      "placement-write-scope.json": "baf0fa34075ea31e203245c4f30dc57b9b1e578a0e4417a8477a182ffc9ff1c3",
+      "pre-artwork-drc.json": "5b7c8822dcc3769a0e059f0ccc507d8df3103d5c277ee52e2e7b1fa196a075a3",
+      "project-models.json": "c22f73eddfd6107055e1c3710bf9447e20c96449d816ce8adc9793584a4ddfc0",
+      "raw-report.json": "b736eae02f0e8cf39357d3af46128145b64cec163b51b1af43fb61f8dca91ee3",
+      "visuals/manifest.json": "efeffea64d8ad7afe4a2b0ae9289056dd34f6b523eaf66acc63f180d65312437"
+    },
+    "counters": {
+      "arrangement_step_budget": 200000,
+      "arrangement_steps_used": 101,
+      "placements": 309,
+      "policy_step_budget": 200000,
+      "residual_steps_used": 4176,
+      "step_budget": 200000,
+      "steps_used": 4277
+    },
+    "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+    "raw_files_unchanged": true,
+    "status": "pass"
+  },
+  "date": "2026-10-22",
+  "host": {
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cpu_model": "AMD EPYC 7B13",
+    "cpus": 4,
+    "host": "0c33deddbd62",
+    "platform": "Linux-7.0.0-1014-gcp-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
+  },
+  "inputs": {
+    "board": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_pcb",
+      "sha256": "0365485efbac76fe77e6810baba0fd15077803289e184d1ff4069773a612907c"
+    },
+    "c_library": {
+      "path": "/opt/agent-ee/build/four-way-scoring/placement_score_original.so",
+      "sha256": "06f04731ee0385f005bc7927d6c71bb819ad7803e33bf7cfe6372793989f82c6"
+    },
+    "library": {
+      "path": "/opt/agent-ee/build/rust-scoring/placement_score-cloud.so",
+      "sha256": "4805e8710ac3bc06a97b9df22c3347723e9f5a02c0a1b8369f159da724ed84e1"
+    },
+    "netlist": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/native.xml",
+      "sha256": "7791d44380d40bb46b0dbe1cd7495ce59408e8691afe2bf360eaf70b3eab7556"
+    },
+    "project": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_pro",
+      "sha256": "a91ee4d1a8ecfa583df33e707defdb3174e505d91853fc1e4959600d770aa57f"
+    },
+    "pypy": {
+      "path": "/opt/agent-ee/build/pypy-scoring/pypy3.12-v8.0.1-linux64/bin/pypy3.12",
+      "sha256": "c57b82bb92345e3f9dbd908c001d85eaf55af28ef1c52025b803df6af191e2af"
+    },
+    "request": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/request.json",
+      "sha256": "306a8b7c197faf2fb3bd170b372b03a26af7964812819a552435634ff26d2bc1"
+    },
+    "rules": {
+      "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_dru",
+      "sha256": null
+    }
+  },
+  "measurement": "One full telemetry-pod placement workload, four implementations, four balanced serial rounds on one isolated Spot VM.",
+  "orders": [
+    [
+      "python",
+      "c",
+      "pypy",
+      "rust"
+    ],
+    [
+      "c",
+      "rust",
+      "python",
+      "pypy"
+    ],
+    [
+      "rust",
+      "pypy",
+      "c",
+      "python"
+    ],
+    [
+      "pypy",
+      "python",
+      "rust",
+      "c"
+    ]
+  ],
+  "preflight": {
+    "log_sha256": "1fa7a9f901ce609b08fb3d2256cfee2095d1942f435631c903cb04d42d210a2e",
+    "passed": 24,
+    "seconds": 5.927,
+    "tests": 24
+  },
+  "retained_evidence": {
+    "archive": "build/four-way-scoring/agent524-fourway-evidence.tar.zst",
+    "archive_sha256": "fe55ba7260fb958ea3004578e1f8e4a329c6acf7ab9c79972be1fc755694208d",
+    "audit_script_sha256": "a3af443075c13b1aed200ee392ce20d012d5faf5a3a241bfed8dd33b326802fe",
+    "directory": "build/four-way-scoring/retrieved/build/four-way-scoring/matched",
+    "independent_audit_sha256": "3b90e884862a35730f73e8fd5b3afda7de9c0b7247e565097d8cae2d18079bbc",
+    "manifest_sha256": "0ca6dbd6ab038dc40555a3108a8909c104fdcd113406f2f26ee85ed891754309"
+  },
+  "runtime_and_model_identity_sha256": "93cb92fca4430ed90051d99327f428c0bd5c3babaa18e8f5e35b406a70c55a69",
+  "schema": "agent-ee.scorer-four-way-result/1",
+  "source_archive_sha256": "09f3fbf52d9e09dd60b7f3fb7706b2abc22827772abd7c79b578de0785cef903",
+  "source_revision": "1ce28a5c2332773c3ca5962990c041d79523441e",
+  "summary": {
+    "interpretation": "Four matched observations per backend on one host/input; no earlier timings pooled, no confidence interval or automatic promotion.",
+    "mean_runner_ns": {
+      "c": 95262941345.25,
+      "pypy": 70179482389.25,
+      "python": 95346756432.75,
+      "rust": 94793570536.25
+    },
+    "mean_wall_reduction_percent": {
+      "c": 0.0879055466969314,
+      "pypy": 26.395521971689718,
+      "python": 0.0,
+      "rust": 0.5801832355882719
+    },
+    "median_runner_ns": {
+      "c": 95160151192.0,
+      "pypy": 70052614643.5,
+      "python": 95390068237.5,
+      "rust": 94535911815.0
+    },
+    "per_round_speedup_vs_cpython": {
+      "c": [
+        1.008131984254623,
+        0.9993216819875896,
+        0.9970957167617573,
+        0.9990023103042255
+      ],
+      "pypy": [
+        1.3671877990550978,
+        1.353712289320842,
+        1.352619363765007,
+        1.3609823014475018
+      ],
+      "python": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "rust": [
+        1.0120261758663873,
+        1.0070180050559394,
+        0.9961018290140775,
+        1.0083466795923386
+      ]
+    },
+    "ratio_of_mean_cpython_to_backend": {
+      "c": 1.000879828885361,
+      "pypy": 1.3586129903881292,
+      "python": 1.0,
+      "rust": 1.0058356900512408
+    },
+    "runner_wall_ns": {
+      "c": [
+        95075371618,
+        94822686149,
+        95908776848,
+        95244930766
+      ],
+      "pypy": [
+        70106332948,
+        69998896339,
+        70700030738,
+        69912669532
+      ],
+      "python": [
+        95848523043,
+        94758366213,
+        95630230595,
+        95149905880
+      ],
+      "rust": [
+        94709529584,
+        94097986071,
+        96004472444,
+        94362294046
+      ]
+    }
+  },
+  "timing_boundary": "Same complete place_candidate worker for all arms; context/library/startup/IPC included; imports and external report serialization excluded. One fresh worker per arm, no warmup or persistent worker."
+}

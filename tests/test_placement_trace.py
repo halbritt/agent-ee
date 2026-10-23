@@ -1260,18 +1260,52 @@ class NativePlacementTraceTest(unittest.TestCase):
                      '--trace', str(self.scratch / 'trace.json'), '--trace-experiment', 'ee430-native'])
         self.assertEqual(code, 0)
         traced_report = json.loads((self.scratch / 'on.json').read_text())
-        self.assertEqual(canonical(traced_report), canonical(json.loads(json.dumps(plain))))
+        # The ordinary run uses Rust; tracing explicitly selects the Python reference.
+        # Validate each execution identity before comparing the complete engineering result.
+        comparable_reports = []
+        for directory, report, implementation in (
+                ('off', plain, 'rust'), ('on', traced_report, 'python-reference')):
+            destination = self.scratch / directory
+            link = report['planning_execution']
+            self.assertEqual(set(link), {'path', 'sha256', 'implementation'})
+            self.assertEqual((link['path'], link['implementation']), ('planning-execution.json', implementation))
+            execution_bytes = (destination / link['path']).read_bytes()
+            self.assertEqual(hashlib.sha256(execution_bytes).hexdigest(), link['sha256'])
+            execution = json.loads(execution_bytes)
+            self.assertEqual(execution['schema'], 'agent-ee.planning-execution/1')
+            self.assertEqual(execution['implementation'], implementation)
+            self.assertEqual(execution['plan_sha256'],
+                             hashlib.sha256((destination / 'placement-plan.json').read_bytes()).hexdigest())
+            if implementation == 'rust':
+                from agent_ee.placement_rust_runtime import resolve_executable
+                executable = resolve_executable()
+                self.assertEqual(execution['executable_sha256'], hashlib.sha256(executable.read_bytes()).hexdigest())
+                self.assertEqual((execution['status'], execution['exit_code'], execution['error']), ('ok', 0, None))
+                self.assertRegex(execution['input_sha256'], r'^[0-9a-f]{64}$')
+                self.assertGreater(execution['wall_ns'], 0)
+                build_receipt = executable.with_name(executable.name + '.json')
+                if build_receipt.is_file():
+                    self.assertEqual(execution['build_receipt_sha256'],
+                                     hashlib.sha256(build_receipt.read_bytes()).hexdigest())
+                else:
+                    self.assertNotIn('build_receipt_sha256', execution)
+            else:
+                self.assertEqual(set(execution), {'schema', 'implementation', 'plan_sha256'})
+            self.assertEqual(canonical(json.loads((destination / 'placement-result.json').read_bytes())),
+                             canonical(report))
+            comparable_reports.append({key: value for key, value in report.items() if key != 'planning_execution'})
+        self.assertEqual(canonical(comparable_reports[0]), canonical(comparable_reports[1]))
         on, off = self.files(self.scratch / 'on'), self.files(self.scratch / 'off')
         self.assertEqual(set(on), set(off))
-        for name in ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json', 'placement-judgment.json',
-                     'placement-result.json'):
+        for name in ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json', 'placement-judgment.json'):
             self.assertEqual(on[name], off[name], name)
-        # Native DRC records name their per-run staging directory and KiCad stamps each report's
-        # date; those two run facts differ between any two runs. Every other byte is identical.
+        # Execution identity and its report link are checked above. Native DRC records name
+        # the staging directory and KiCad stamps each report's date; all other bytes agree.
+        execution_artifacts = {'planning-execution.json', 'placement-result.json'}
         run_facts = re.compile(rb'\.placement-staging-[A-Za-z0-9_]+|"date": "[0-9T:-]+"')
-        self.assertEqual({k: run_facts.sub(b'RUN', v) for k, v in on.items()},
-                         {k: run_facts.sub(b'RUN', v) for k, v in off.items()})
-        self.assertEqual({k for k in on if on[k] != off[k]} - {
+        self.assertEqual({k: run_facts.sub(b'RUN', v) for k, v in on.items() if k not in execution_artifacts},
+                         {k: run_facts.sub(b'RUN', v) for k, v in off.items() if k not in execution_artifacts})
+        self.assertEqual({k for k in on if on[k] != off[k]} - execution_artifacts - {
             'baseline/native-drc-execution.json', 'baseline/native-drc.json', 'baseline/native-drc.stdout.txt',
             'native-drc-execution.json', 'native-drc.json', 'native-drc.stdout.txt', 'pre-artwork-drc.json'}, set())
         document = json.loads((self.scratch / 'trace.json').read_text())

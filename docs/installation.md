@@ -17,6 +17,7 @@ bindings. A virtual environment that hides system bindings is insufficient.
 | --- | --- |
 | `git` | Source revision provenance, checkout and evidence archives |
 | `/usr/bin/python3` | Source launcher, geometry probe, orchestration |
+| `agent-ee-placement` | Complete Rust placement planner; installed at `/usr/local/libexec/agent-ee/agent-ee-placement` in the image |
 | `kicad-cli` | JSON ERC/DRC, schematic parity, native XML netlist |
 | `pcbnew` / `_pcbnew` | Saved-board geometry and runtime identity |
 | `ngspice` | Passive transient check; also included in runtime fingerprints |
@@ -84,12 +85,59 @@ The package's console entry point also exists in `pyproject.toml`; the documente
 installation method is the source launcher, which avoids a required package
 installation or extra interpreter environment.
 
+## Rust placement engine
+
+Placement uses the standalone Rust executable for the complete planning request.
+Python retains KiCad capture, board writing and native checks, and remains the
+independent parity reference. A missing or failed planner is an error; planning
+does not compile an executable or fall back to the reference implementation.
+
+The [image build](../Dockerfile) compiles and tests the planner with the existing
+digest-pinned Rust 1.99.1 toolchain and committed
+[Cargo.lock](../crates/placement-engine/Cargo.lock). It fetches locked dependencies
+before running the Rust tests and release build offline. The CPU target is
+portable `x86-64`, not the build host's CPU. The final image contains the binary
+and its adjacent `.json` receipt, with no Rust compiler or Cargo installation.
+The source launcher and Python wheel alone do not include this executable.
+
+On the project's configured build hosts, acquire it through `ae-ci-exec`, which
+builds this checkout's CI image under native admission, then copy the artifacts:
+
+```sh
+ae-ci-exec . -- sh -eu -c '
+  mkdir -p build/placement-engine
+  cp /usr/local/libexec/agent-ee/agent-ee-placement build/placement-engine/
+  cp /usr/local/libexec/agent-ee/agent-ee-placement.json build/placement-engine/
+'
+sudo install -D -m 755 build/placement-engine/agent-ee-placement \
+  /usr/local/libexec/agent-ee/agent-ee-placement
+sudo install -D -m 644 build/placement-engine/agent-ee-placement.json \
+  /usr/local/libexec/agent-ee/agent-ee-placement.json
+./scripts/install.sh
+agent-ee doctor --checks-only
+```
+
+The explicit system installation keeps the executable available under the tool
+sandbox's `/usr` mount and cleared environment. The link installer does not
+elevate privileges or build software. Use the container directly if the host is
+not a compatible Linux amd64 environment. `AGENT_EE_RUST_PLANNER` can select a
+development executable for direct callers; it is not a substitute for installing
+the binary where sandboxed callers can resolve it.
+
+[scripts/build_placement_engine.py](../scripts/build_placement_engine.py) separates
+dependency acquisition (`fetch`), offline unit tests and compilation (`build`),
+and compiler-free receipt validation (`verify`). Verification checks the binary,
+Cargo lock, compiler identity, Rust sources, compiled locality data and build
+script against the receipt. Rebuilding an updated checkout requires installing
+the new binary and receipt together.
+
 ## Container image
 
 The [Dockerfile](../Dockerfile) pins the demonstrated toolchain: KiCad
 10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, ngspice
 42, Bubblewrap 0.9.0 and Python 3.12, the installed kicad-happy analyzer and
-the pinned kicad-route with KRT for the routing stage, with this checkout
+the pinned kicad-route with KRT for the routing stage, the Rust placement engine,
+and this checkout
 installed through the source launcher. It contains no reviewer harness or credential, so it supports
 checks-only reviews and CI, not agent reviews. The
 [container reference](container.md) explains how each pin is enforced.
@@ -192,7 +240,9 @@ is no API-key or OpenRouter fallback. Do not copy credential contents into a
 scope, report, issue or archive.
 
 `doctor` probes executable versions and the Python binding import, and prints
-the SHA-256 of each probed binary. It does not
+the SHA-256 of each probed binary, including the resolved Rust planner. An
+adjacent planner build receipt is hashed and checked against that binary when
+present. It does not
 read the credential file, validate subscription access, run a real sandboxed
 check, or perform inference. A passing doctor report is prerequisite evidence
 only. Run the fixture described in the [operator guide](operator-guide.md) for
