@@ -22,7 +22,8 @@ from .storage import digest, identity, json_bytes, read_json, write_json
 SCHEMA = 'agent-ee.pod-plan/1'
 ORDER = ['schematic', 'placement', 'routing', 'verification']
 STEPS = [('binding-fill', 'schematic'), ('emit-schematic', 'schematic'),
-         ('forward-annotate', 'schematic'), ('place-board', 'placement'),
+         ('forward-annotate', 'schematic'), ('block-variants', 'schematic'),
+         ('place-board', 'placement'),
          ('add-planes', 'routing')]
 # Coordinator capture directory of the adopted binding-fill --ratings receipt (AGENTEE-256).
 RATING_PROVENANCE = 'rating-provenance'
@@ -243,7 +244,9 @@ def validate_configuration(plan, scope, files, inputs):
     normalized = [stage_receipts.validate_step(s) for s in raw_steps]
     # The owned placement adapter replaces the generic placement step; the campaign forbids both.
     placer = 'placement_adapter' in plan
-    expected = [s for s in STEPS if not (placer and s[0] == 'place-board')]
+    stage_blocks = 'stage_owned' in plan.get('placement_adapter', {}).get('blocks', {})
+    expected = [s for s in STEPS if not (placer and s[0] == 'place-board')
+                and not (s[0] == 'block-variants' and not stage_blocks)]
     if [(s['step'], s['stage']) for s in normalized] != expected:
         raise ValueError('pod requires ' + ', '.join(name for name, _ in expected) + ' in that order; '
                          'routing uses the owned routing_adapter' +
@@ -281,6 +284,10 @@ def validate_configuration(plan, scope, files, inputs):
             _validate_policy(policy, set(declaration['subjects'].get('placement', {}).get('references', [])))
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise ValueError(f'invalid pod placement policy {placement["policy"]}: {exc}') from exc
+    if stage_blocks:
+        from .block_variant_stage import validate_step_contract
+        validate_step_contract(next(s for s in normalized if s['step'] == 'block-variants'),
+                               scope, plan['placement_adapter'], sorted(mutable))
     rating = _rating_provenance(scope, normalized)
     from .routing_adapter import campaign_spec, validate_campaign_step
     from .campaign import validate_routing_predecessors
