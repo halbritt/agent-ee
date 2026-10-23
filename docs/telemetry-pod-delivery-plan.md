@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 9 — 2026-10-23: ROUTE-3 attempt 2 accepted as the improved working candidate (08066170, 77 open); next action is one serial local-repair batch ROUTE-4 by agent-507 (agent-521 brief fec851cd). Revision 8: routing repair ROUTE-2 recorded as rejected (no new candidate); next action is one bounded local repair ROUTE-3 from the preserved ROUTE-1 candidate by agent-507 (agent-521 brief 63b4738d). Revision 7: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 10 — 2026-10-23: ROUTE-4 SUSPENDED before dispatch work by agent-449; agent-521's outstanding dispatch under brief fec851cd is withdrawn (agent-519 relay of Cairn record 2298541c). Placement review by a successor precedes any further routing. Revision 9: ROUTE-3 attempt 2 accepted as the improved working candidate (08066170, 77 open); next action is one serial local-repair batch ROUTE-4 by agent-507 (agent-521 brief fec851cd). Revision 8: routing repair ROUTE-2 recorded as rejected (no new candidate); next action is one bounded local repair ROUTE-3 from the preserved ROUTE-1 candidate by agent-507 (agent-521 brief 63b4738d). Revision 7: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -244,7 +244,7 @@ Status: ACCEPTED AS THE IMPROVED WORKING CANDIDATE. It is not released and not f
 - Render: gallery bundle 0806617082c3-f0aa17fbffd7 ("Diagnostic 9"), labelled 77 open / 60 dangling / INCOMPLETE / NOT RELEASED. The four-hour render cadence continues on this pin.
 - Evidence: ROUTE-2 (rejected) is on fome-mc main ae188864, telemetry-pod/expansion/route-2/. ROUTE-3 evidence lands under telemetry-pod/expansion/route-3/ when agent-507 commits it.
 
-## Next action (revision 9)
+## Action ROUTE-4 (revision 9, SUSPENDED in revision 10)
 
 Observation: a bounded local repair closed one caged connection without any regression. The global repair (ROUTE-2) lost more than it gained.
 
@@ -263,6 +263,13 @@ Action: ROUTE-4, ONE serial batch by agent-507, after it finishes the ROUTE-3 ev
 Return: the best candidate plus a compact per-target record (changed objects and settings, before and after, native results) and the exact residual obstruction, not five full duplicate report trees.
 
 Decision-changing observation: agent-521 decides the next step from the per-target outcomes and the residual obstruction.
+
+## Status (revision 10): ROUTE-4 suspended, placement review pending
+
+- Relayed by agent-519 (Cairn record 2298541c; owner wording relayed and not confirmed here): the owner ended agent-521's session ("make a handoff, you're done") after challenging two things in the placement: the top/bottom imbalance, and passives at the board edge. agent-521 withdrew its outstanding dispatch under brief fec851cd. This is not a fleet shutdown order.
+- ROUTE-4 is not to start. If an attempt is already running, agent-507 preserves it at the next safe stopping point, destroys no results, starts nothing new and reports once to agent-519.
+- Current state, preserved: the working candidate is ROUTE-3 08066170 (77 open, 60 dangling vs R5, not released), on fome-mc main 46c7c730. The R1–R5, ROUTE-1, ROUTE-2 and ROUTE-3 evidence is landed on fome-mc main. The gallery stays as it is (Candidate 5, Diagnostics 8 and 9), and the four-hour render cadence continues on the ROUTE-3 pin.
+- No new board work is dispatched. No replacement agent. Coordination stays through agent-519, and agent-449 remains sole integrator. A successor reviews the placement before any further routing effort. The open placement questions are the owner's two challenges: the side balance after R5 moved 22 parts to B.Cu, and passive parts at the board edge.
 
 ## Decision after that result
 
