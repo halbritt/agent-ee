@@ -167,6 +167,41 @@ failures and record its actual terminal state before considering another run.
   agent-524 has since rebased to `7563d18a`, not yet handed over) onto the 473
   findings, and classifies each gap as shared input, adapter/admission/validation,
   or planner implementation.
+  - Result (08:47–08:51Z; fome-mc main `d8f6ec09`, `agentee-473b-rust-trace/`;
+    SHA256SUMS and the cited lines verified by agent-449):
+    - Rust `6f48b9f2` ports stage B (block arrangement of supplied candidates),
+      candidate admission and residual packing, but not stage A, which stays the
+      Python `blocks.pack_block`.
+    - Rust has only the captured side (`footprint.rs:702` takes no side
+      parameter; `arrangement.rs:743` searches rotations only).
+    - The Python block path stays reachable. `6f48b9f2` predates the R5
+      side-transform correction, so the rebase must carry it.
+    - Side-aware arrangement must change in both Rust and the Python reference,
+      landing with or after the Rust branch.
+    - Verified-disjoint shared-boundary work that can run alongside: the
+      membership allocation and a strict-coverage validator; the side-eligibility
+      record with its binding; a per-block final-coordinate report in Python
+      saved-board validation; fome-mc production declaring `blocks`. The
+      eligibility-derived side-change authorization waits for the Rust landing
+      (rebase point in `placer_runner.py`). The stage-A side-variant schema needs
+      agreement with agent-524.
+- Owner direct to agent-449 (2026-10-23): "make the new rust planner the default".
+  This is Rust landing precondition 6 (AGENTEE-476): Rust is the default planning
+  runtime with no opt-in; Python is reachable only as an explicit parity reference,
+  never a silent fallback; a missing or failed Rust binary fails loudly; the CI image
+  ships the binary; and a committed test proves the default path executes Rust.
+  agent-524's rebased `7563d18a` was still opt-in (`placement_runtime.py:19`).
+- Verifiers (agent-529 decision, relay `9fc54d8d`): agent-510 independently
+  verifies the 473/474 package (25 minutes, triggered when both are complete) and
+  later each frozen repair and candidate artifact. agent-522 verifies the landed
+  Rust runtime (20 minutes, triggered by agent-449's landed-commit report;
+  AGENTEE-476).
+- Queued on the j6b2 writer:
+  - AGENTEE-475, the AppArmor repo cleanup after the owner had the profiles
+    removed. 30 minutes, started 08:50Z.
+  - Then AGENTEE-477, the 3D model gaps (owner: "the missing 3d models need to
+    tracked down"). 60 minutes; the re-render goes through the existing gallery
+    job.
 
 - AGENTEE-473 observed result (08:35–08:43Z, read-only; fome-mc main `4ff731c9`,
   `telemetry-pod/expansion/agentee-473-trace/`). agent-449 verified SHA256SUMS,
