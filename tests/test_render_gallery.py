@@ -1,7 +1,6 @@
 import contextlib
 import hashlib
 import html
-from html.parser import HTMLParser
 import itertools
 import json
 import multiprocessing
@@ -160,9 +159,6 @@ def random_texts(seed, rounds):
             else:
                 parts += [rng.choice(separators), rng.choice(WRAPPERS).format(rng.choice(plain))]
         yield ''.join(parts + [rng.choice(separators)])
-
-
-LEAKS = ('hidden', 'file:', 'C:', '\\', 'private-', 'Alice', 'localhost')
 
 
 # The structural leak oracle (AGENTEE-452; agent-449's positive-oracle redesign after the fourth review).
@@ -547,69 +543,72 @@ def page_text_re():
         rf'Adoption: {_alternation(ADOPTION.values())}', rf'Published {time_t}']) + ')'
 
 
-class PageParser(HTMLParser):
-    """The elements, attributes, text nodes and style content of an HTML surface, as events."""
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.events, self.stack = [], []
-
-    def handle_starttag(self, tag, attrs):
-        self.events.append(('tag', '/'.join(self.stack + [tag]), tag, attrs))
-        if tag not in ('meta', 'img'):
-            self.stack.append(tag)
-
-    handle_startendtag = handle_starttag
-
-    def handle_endtag(self, tag):
-        self.events.append(('end', '/'.join(self.stack), tag, None))
-        if tag in self.stack:
-            del self.stack[len(self.stack) - 1 - self.stack[::-1].index(tag):]
-
-    def handle_data(self, data):
-        self.events.append(('text', '/'.join(self.stack), data, self.stack[-1] if self.stack else None))
-
-    def handle_decl(self, decl):
-        self.events.append(('decl', '/'.join(self.stack), decl, None))
-
-    def unknown_decl(self, data):
-        self.events.append(('other', '/'.join(self.stack), data, None))
-
-    handle_comment = handle_pi = unknown_decl
-
-
+# Raw HTML syntax: the surface is consumed from its first byte to its last by these tokens only, with no tolerance;
+# any byte no token consumes (a closing tag with anything after its name, an unterminated or unquoted tag, a comment,
+# CDATA, a processing instruction, a stray "<") is uncovered. Text and attribute values are covered as published: their
+# raw bytes must be exactly html.escape of their decoded value (what page and the status templates emit through
+# html.escape, render_gallery.py:1080-1170), so no entity or character reference other than that spelling passes, and
+# the decoded value must then match its grammar. <style> holds exactly PAGE_CSS.
+_DOCTYPE = '<!doctype html>'
+_START_TAG = re.compile(r'<([a-z][a-z0-9]*)((?: [a-z][a-z-]*="[^"<>]*")*)>')
+_ATTRIBUTE = re.compile(r' ([a-z][a-z-]*)="([^"<>]*)"')
+_END_TAG = re.compile(r'</([a-z][a-z0-9]*)>')
+_TEXT = re.compile(r'[^<]+')
+_VOID = ('meta', 'img')
 _PAGE_TEXT = {}
+
+
+def _published(raw, where):
+    """The decoded value of raw text or attribute bytes, which must be its canonical html.escape spelling."""
+    value = html.unescape(raw)
+    if html.escape(value) != raw:
+        raise Uncovered(where + ' raw', raw)
+    return value
 
 
 def check_html(body, path='html'):
     if 'pattern' not in _PAGE_TEXT:
         _PAGE_TEXT['pattern'] = re.compile(page_text_re())
-    parser = PageParser()
-    parser.feed(body)
-    parser.close()
-    for kind, where, value, extra in parser.events:
-        here = f'{path}:{where or "(top)"}'
-        if kind == 'decl':
-            if value != 'doctype html':
-                raise Uncovered(here + ' <!...>', value)
-        elif kind == 'tag':
-            grammar = ATTRIBUTES.get(value)
+    p, stack = 0, []
+    while p < len(body):
+        here = f'{path}:{"/".join(stack) or "(top)"}@{p}'
+        if body.startswith(_DOCTYPE, p) and not stack:
+            p += len(_DOCTYPE)
+        elif stack and stack[-1] == 'style':
+            close = body.find('</style>', p)
+            if close < 0 or body[p:close] != PAGE_CSS:
+                raise Uncovered(here + ' style', body[p:close if close >= 0 else len(body)])
+            p = close
+            stack.pop()
+            p += len('</style>')
+        elif (match := _START_TAG.match(body, p)):
+            tag, grammar = match[1], ATTRIBUTES.get(match[1])
             if grammar is None:
-                raise Uncovered(here + ' <tag>', value)
-            names = [name for name, _ in extra]
-            for name, attribute in extra:
-                if name not in grammar or names.count(name) > 1 or not grammar[name].accepts(attribute):
-                    raise Uncovered(f'{here} @{name}', attribute)
-        elif kind == 'end':
-            if value not in ATTRIBUTES:
-                raise Uncovered(here + ' </tag>', value)
-        elif kind == 'text':
-            if extra == 'style':
-                if value != PAGE_CSS:
-                    raise Uncovered(here + ' style', value)
-            elif not (_PAGE_TEXT['pattern'].fullmatch(value) or _fixture_text(value)):
-                raise Uncovered(here + ' text', value)
+                raise Uncovered(here + ' <tag>', match[0])
+            names = []
+            for attribute in _ATTRIBUTE.finditer(match[2]):
+                name, value = attribute[1], _published(attribute[2], f'{here} @{attribute[1]}')
+                if name not in grammar or name in names or not grammar[name].accepts(value):
+                    raise Uncovered(f'{here} @{name}', value)
+                names.append(name)
+            if tag not in _VOID:
+                stack.append(tag)
+            p = match.end()
+        elif (match := _END_TAG.match(body, p)):
+            if not stack or stack[-1] != match[1]:
+                raise Uncovered(here + ' </tag>', match[0])
+            stack.pop()
+            p = match.end()
+        elif (match := _TEXT.match(body, p)):
+            if not _fixture_text(match[0]):  # a registered control is covered as its exact raw bytes only
+                value = _published(match[0], here + ' text')
+                if not _PAGE_TEXT['pattern'].fullmatch(value):
+                    raise Uncovered(here + ' text', value)
+            p = match.end()
         else:
-            raise Uncovered(here + ' markup', value)
+            raise Uncovered(here + ' markup', body[p:p + 200])
+    if [tag for tag in stack if tag != 'body']:  # only the stored viewer page's <body> stays open (_with_status)
+        raise Uncovered(f'{path}:{"/".join(stack)} unclosed', stack[-1])
 
 
 _SEGMENT_END = re.compile(r'>(?=[\[{])')
@@ -654,9 +653,10 @@ def check_publication(body, where):
 
 
 def assert_no_uri_leak(test, body, where):
+    """The leak oracle: body is covered by the publisher's field grammars (check_publication), else
+    LeakOracleFailure. The earlier marker-substring list (hidden, file:, C:, \\, private-, Alice, localhost) is
+    covered by the grammar and its cases are LeakRegressionTests rows L-1..L-7."""
     check_publication(body, where)
-    for leak in LEAKS:
-        test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
 
 
 # The Diagnostic 6 bundle as the render job published it (2026-10-22, run 20261022T231757Z): its stored manifest
@@ -745,7 +745,7 @@ class StructuralOracleTests(unittest.TestCase):
         self.assertEqual((len(stored), json.loads(served[3])['attached']), (4, 'matched'))
         self.assertIn('Retained evidence: board: telemetry-pod.kicad_pcb', served[0])
         for n, body in enumerate(stored + served):
-            check_publication(body, f'diagnostic 6 surface {n}')
+            assert_no_uri_leak(self, body, f'diagnostic 6 surface {n}')  # the full wrapper, bytes unchanged
 
     def test_every_variable_allowance_has_a_staged_witness(self):
         for name, witness in REAL_BASENAMES.items():
@@ -787,6 +787,18 @@ class StructuralOracleTests(unittest.TestCase):
                          ('<p>Visual', '<!-- x --><p>Visual'), ('</html>', '<script>x</script></html>'),
                          ('Board SHA-256: ', 'Board SHA-256: 0x0a000001 ')):
             self.assertIn(old, body)
+            with self.assertRaises(LeakOracleFailure, msg=new):
+                check_publication(body.replace(old, new, 1), new)
+
+    def test_escaped_text_is_covered_only_in_its_published_spelling(self):
+        manifest, _ = diagnostic_6()
+        body = page([{'id': D6_ID, **manifest, 'label': 'not published'}],
+                    statuses={('bundles', D6_ID): False}).decode()
+        for spelling in ('&lt;redacted&gt;', 'publication&#x27;s bytes', '2384×1568'):  # entity, quote, raw non-ASCII
+            self.assertIn(spelling, body)
+        check_publication(body, 'escaped')
+        for old, new in (('&lt;redacted&gt;', '&#60;redacted&#62;'), ('&#x27;', "'"), ('2384×1568', '2384&#215;1568'),
+                         ('2384×1568', r'2384\u00d71568'), ('2384×1568', '2384x1568')):
             with self.assertRaises(LeakOracleFailure, msg=new):
                 check_publication(body.replace(old, new, 1), new)
 
@@ -839,13 +851,27 @@ def inject(body, probe, mode):
     return json.dumps(data)
 
 
+def edit_html(body, old, new):
+    """body with its first old replaced by new, or new appended when old is None."""
+    if old is None:
+        return body + new
+    assert old in body, old
+    return body.replace(old, new, 1)
+
+
 def run_real_publication_test(probe, mode='append', fixture=False):
     """(testsRun, failures, errors, skips, failure text) of DiagnosticSupplementTests.REAL_PUBLICATION_TEST with probe
     injected into every surface it checks; with fixture, probe is registered as the exact control value."""
     original = DiagnosticSupplementTests.surfaces
 
     def surfaces(self, *args, **kwargs):
-        return [inject(body, probe, mode) for body in original(self, *args, **kwargs)]
+        bodies = original(self, *args, **kwargs)
+        if mode == 'surface':  # probe is one more published body, checked with the served page (bodies[3])
+            assert not bodies[3].lstrip().startswith(('{', '['))
+            return bodies[:3] + [bodies[3] + probe] + bodies[4:]
+        if mode == 'html':  # probe is (old, new): a raw edit of each HTML body, the JSON left untouched
+            return [body if body.lstrip()[:1] in '[{' else edit_html(body, *probe) for body in bodies]
+        return [inject(body, probe, mode) for body in bodies]
     result = unittest.TestResult()
     with mock.patch.object(DiagnosticSupplementTests, 'surfaces', surfaces), (
             publication_fixtures(probe) if fixture else contextlib.nullcontext()):
@@ -902,7 +928,37 @@ class LeakRegressionTests(unittest.TestCase):
         ('g-04', 'g', 'https://bob!x@example.org/'), ('g-05', 'g', 'https://b%40b@example.org/'),
         ('g-06', 'g', 'intranet.corp:443'), ('g-07', 'g', 'https://example.org.evil.test/'), ('g-08', 'g', '10.0.0.1'),
         ('req-01', 'req', 'https://example.org/?q=%2Fhome%2Fbob'), ('req-02', 'req', 'https://%2525252e/'),
-        ('req-03', 'req', 'bob@intranet.corp'), ('req-04', 'req H5', 0.5), ('req-05', 'req H5', 1e20))
+        ('req-03', 'req', 'bob@intranet.corp'), ('req-04', 'req H5', 0.5), ('req-05', 'req H5', 1e20),
+        # r5 H2: the allow-list matrix values (AllowListMatrixTests.LEAK_ROWS at 36e4824e) missing above
+        ('a-g05', 'r5 H2 (al g-05)', 'https://bob$x@example.org/'), ('a-g06', 'r5 H2 (al g-06)', 'https://bob(x)@example.org/'),
+        ('a-g07', 'r5 H2 (al g-07)', 'https://bob*x=y&z@example.org/'), ('a-g09', 'r5 H2 (al g-09)', 'https://:secret@example.org/'),
+        ('a-g10', 'r5 H2 (al g-10)', 'example.org:65536'), ('a-g12', 'r5 H2 (al g-12)', '%6C%6F%63%61%6C%68%6F%73%74:80'),
+        ('a-g13', 'r5 H2 (al g-13)', '%256cocalhost'), ('a-g14', 'r5 H2 (al g-14)', 'https://\u0435xample.org/'),
+        ('a-g15', 'r5 H2 (al g-15)', 'fe80::1%eth0'), ('a-g16', 'r5 H2 (al g-16)', '[fe80::1%25eth0]:80'),
+        ('a-g18', 'r5 H2 (al g-18)', 'https://192.168.1.2/'), ('a-g19', 'r5 H2 (al g-19)', 'bob@localhost'),
+        ('a-g20', 'r5 H2 (al g-20)', 'https://example.org/?u=http://intranet.corp'),
+        ('a-g21', 'r5 H2 (al g-21)', 'x=https://intranet.corp/'), ('a-g22', 'r5 H2 (al g-22)', 'intranet.corp'),
+        ('a-g24', 'r5 H2 (al g-24)', 'https://example.org:8443@intranet.corp/'),
+        ('a-g25', 'r5 H2 (al g-25)', 'https://example.org/%zz'), ('a-g26', 'r5 H2 (al g-26)', 'bob:secret@example.org'),
+        ('a-g27', 'r5 H2 (al g-27)', 'https://example.org\\@intranet.corp/'),
+        # r5 H3: the removed marker-substring list, each marker as a leaf
+        ('L-1', 'r5 H3', 'hidden'), ('L-2', 'r5 H3', 'file:'), ('L-3', 'r5 H3', 'C:'), ('L-4', 'r5 H3', '\\'),
+        ('L-5', 'r5 H3', 'private-'), ('L-6', 'r5 H3', 'Alice'), ('L-7', 'r5 H3', 'localhost'))
+    # r5 H1: raw HTML syntax the earlier event parser dropped, as (old, new) edits of each HTML body (old None:
+    # appended); the three reviewed bypasses first, then variants.
+    RAW_HTML = (
+        ('h1-01', 'r5 H1', ('</p>', '</p data-endpoint="http://buildbox.lan/">')),
+        ('h1-02', 'r5 H1', (None, '</p /home/sam/projects/board>')),
+        ('h1-03', 'r5 H1', (None, '<p endpoint="http://buildbox.lan/"')),
+        ('h1-04', 'r5 H1 var', ('</h2>', '</h2 title="&#47;home&#47;sam">')),
+        ('h1-05', 'r5 H1 var', ('</p>', '</p\n data-x="buildbox.lan">')), ('h1-06', 'r5 H1 var', ('</p>', '</p >')),
+        ('h1-07', 'r5 H1 var', (None, '<!-- http://buildbox.lan/ -->')), ('h1-08', 'r5 H1 var', (None, '<![CDATA[buildbox]]>')),
+        ('h1-09', 'r5 H1 var', (None, '<')), ('h1-10', 'r5 H1 var', (None, '<p>')),
+        ('h1-11', 'r5 H1 var', ('<h2>', "<h2 title='buildbox.lan'>")), ('h1-12', 'r5 H1 var', ('<h2>', '<h2 title=buildbox>')),
+        ('h1-13', 'r5 H1 var', ('<h2>Diagnostic 1', '<h2>&#68;iagnostic 1')),
+        ('h1-14', 'r5 H1 var', ('<h2>Diagnostic 1', '<h2>Diagnostic \uff11')),
+        ('h1-15', 'r5 H1 var', (None, '&#x2F;home&#x2F;sam')), ('h1-16', 'r5 H1 var', ('</p>', '</p/>')),
+        ('h1-17', 'r5 H1 var', ('</p>', '</P>')), ('h1-18', 'r5 H1 var', ('<h2>', '<h2 >')))
     # The coordinator's clean controls: exact fixture values, covered only where a test registers them.
     CONTROLS = ('email@example.com in prose', 'commit: user@host', 'version fd00a1b', 'a1fd00b2c3d4e5f6 plain prose',
                 'https://example.org/x', 'https://example.org:0/x', 'https://example.org:65535/x',
@@ -917,6 +973,23 @@ class LeakRegressionTests(unittest.TestCase):
                 ran, failures, errors, skips, detail = run_real_publication_test(value, mode)
                 self.assertEqual((ran, failures, errors, skips), (1, 1, 0, 0), (row, finding, value, mode, detail))
                 self.assertRegex(detail, self.MESSAGE, (row, mode))
+
+    def test_raw_html_syntax_fails_the_real_publication_test(self):
+        for row, finding, edit in self.RAW_HTML:
+            ran, failures, errors, skips, detail = run_real_publication_test(edit, 'html')
+            self.assertEqual((ran, failures, errors, skips), (1, 1, 0, 0), (row, finding, edit, detail))
+            self.assertRegex(detail, self.MESSAGE, row)
+
+    def test_real_diagnostic_6_json_passes_and_a_changed_leaf_fails_the_real_publication_test(self):
+        manifest, _ = diagnostic_6()
+        stored = gallery._encode(manifest).decode()
+        self.assertIn('2384\\u00d71568', stored)  # unchanged ensure_ascii spelling of "2384×1568"
+        self.assertEqual(run_real_publication_test(stored, 'surface')[:4], (1, 0, 0, 0))
+        changed = gallery._encode({**manifest, 'label': 'Diagnostic 6 intranet.corp'}).decode()
+        ran, failures, errors, skips, detail = run_real_publication_test(changed, 'surface')
+        self.assertEqual((ran, failures, errors, skips), (1, 1, 0, 0), detail)
+        self.assertIn("LeakOracleFailure: leak oracle: surface[1]$.label = 'Diagnostic 6 intranet.corp' matches no "
+                      "published field grammar", detail)
 
     def test_registered_controls_pass_the_real_publication_test(self):
         ran, failures, errors, skips, detail = run_real_publication_test(list(self.CONTROLS), fixture=True)
