@@ -284,6 +284,7 @@ def compare_saved(criterion, record, facts):
                 elif layers['types'].get(layer['name']) != ('power' if layer['role'] == 'plane' else 'signal'):
                     defects.append(f"saved copper role differs for {layer['name']}")
     material_evidence = []
+    material_defects = []
     material_declared = False
     if field == 'stackup':
         reason = envelope.stackup_authority_reason(record)
@@ -298,7 +299,7 @@ def compare_saved(criterion, record, facts):
             actual = saved_materials.get(layer['name'], {})
             for key in material_fields:
                 if key in layer and layer[key] is not None and actual.get(key) != layer[key]:
-                    defects.append(f"saved layer {layer['name']} {key} differs from sourced envelope")
+                    material_defects.append(f"saved layer {layer['name']} {key} differs from sourced envelope")
             if layer.get('loss_tangent') is None:
                 serialized = actual.get('loss_tangent')
                 material_evidence.append({'name': layer['name'], 'source_value': None,
@@ -306,7 +307,13 @@ def compare_saved(criterion, record, facts):
                     'origin': ('KiCad serialization/tool default' if serialized == '0.02'
                                else 'unqualified saved value'), 'used_for_impedance': False})
                 unknown.append(f"layer {layer['name']} loss tangent is unknown; saved value is unqualified material data")
-    return {'criterion': criterion, 'status': 'unknown' if unknown else 'defect' if defects else 'pass',
+    defects.extend(material_defects)
+    status = 'defect' if defects else 'pass'
+    # A sourced material difference survives unknown loss. Preserve the legacy
+    # authority-unknown result for comparisons without a material defect.
+    if unknown and not material_defects:
+        status = 'unknown'
+    return {'criterion': criterion, 'status': status,
             'defects': defects, 'unknown': unknown, 'saved': source,
             **({'material_evidence': material_evidence, 'impedance_qualified': False}
                if material_declared else {})}
