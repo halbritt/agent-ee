@@ -253,7 +253,9 @@ def verify_saved(saved_capture, policy, contract, block_records, entries):
 
     def pose_matches(fp, position, side, rotation):
         return (fp['position_nm'] == position and fp['side'] == side
-                and type(rotation) is int and (fp['rotation_deg'] - rotation) % 360 == 0)
+                and type(rotation) in (int, float)
+                and (type(rotation) is int or math.isfinite(rotation))
+                and rotation % 90 == 0 and (fp['rotation_deg'] - rotation) % 360 == 0)
 
     for pose in final:
         if not pose_matches(saved[pose['reference']], pose.get('position_nm'), pose.get('side'), pose.get('rotation_deg')):

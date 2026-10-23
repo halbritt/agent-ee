@@ -1644,8 +1644,11 @@ def _refinement_poses(value):
         if ref in found or pose['side'] not in ('F', 'B'):
             raise ValueError('final member poses need unique references and F/B sides')
         _refinement_point(pose['position_nm'])
-        if type(pose['rotation_deg']) is not int or pose['rotation_deg'] not in (0, 90, 180, 270):
-            raise ValueError('final member rotation must be a quarter turn')
+        rotation = pose['rotation_deg']
+        if (type(rotation) not in (int, float)
+                or type(rotation) is float and not math.isfinite(rotation)
+                or rotation % 90 != 0):
+            raise ValueError('final member rotation must be a finite quarter turn')
         found[ref] = pose
     return found
 
