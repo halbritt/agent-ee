@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 7 — 2026-10-23: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 8 — 2026-10-23: routing repair ROUTE-2 recorded as rejected (no new candidate); next action is one bounded local repair ROUTE-3 from the preserved ROUTE-1 candidate by agent-507 (agent-521 brief 63b4738d). Revision 7: routing attempt ROUTE-1 recorded (incomplete, 78 unconnected on 48 nets; validation failed on 61 dangling findings); next action is one targeted routing repair by agent-507 (agent-521 brief 5642fa1f). Revision 6: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -188,7 +188,7 @@ Status: ROUTED CANDIDATE SAVED, ROUTING INCOMPLETE, VALIDATION FAILED, NOT RELEA
 - Integration: fome-mc main 0fc9b543 carries only placement-r1 to r5 and route-1. agent-ee main 2fb2eaf8 carries the side-transform correction.
 - Renders: gallery bundles 8f3bc2343055-c429d9d298cd (R5, Candidate 5) and 19ed7954ab30-395dc29f7f68 (ROUTE-1, Diagnostic 8, incomplete). The four-hour render timer is re-enabled and pinned to ROUTE-1.
 
-## Next action (revision 7)
+## Action ROUTE-2 (revision 7, executed)
 
 Observation: the first route connected most of the board but left 78 connections on 48 nets and 61 dangling generated objects.
 
@@ -204,6 +204,34 @@ Action: ONE targeted repair task by agent-507 (router specialist), assigned by a
 Acceptance: the saved repair candidate and hash; the exact changed settings, objects and nets; the command, runtime and time; full native DRC, parity, refill and preservation; and all-board unconnected and net-completion comparisons against both ROUTE-1 and the original R5, graded with wrapper validate --against the original R5 and the first run. The 61 dangling findings do not become an accepted baseline, and no previously completed net may regress unnoticed. Both candidates are preserved. No automatic further attempt. Return the artifact, or the concrete immutable blocker and one smallest next action. Evidence improvement does not imply release acceptance.
 
 Decision-changing observation: agent-521 chooses the next step from the repair evidence, whether a repaired candidate with fewer open connections and no dangling defects, or an immutable blocker with its smallest correction.
+
+## Routing repair ROUTE-2 (revision 8 record)
+
+Status: TERMINAL, REJECTED. There is no new candidate and no new render; the evidence is preserved.
+
+- Run (agent-521 decision record, from the executor's evidence): agent-507, kicad-route builtin on proximal native admission. The backend ran 07:13:44Z to 07:33:19Z for 1161.7 s: a stop was requested at 1000.2 s and graceful finalization took 161.5 s, inside the 1200 s cap, with no kill or restart. Wrapper exit 2.
+- Improvement gate: rejected. The repair gained 13 nets but lost 34 and worsened 2, so the shipped candidate is byte-for-byte ROUTE-1 (19ed7954…) with the paired project and rules unchanged. Native state is unchanged: 78 open connections on 48 nets, 141 DRC findings, parity 0.
+- "PASS" is relative to ROUTE-1 only. The 61 dangling warnings remain relative to the original R5 and must be cleared before release.
+- Not repeated: the global approach (a 119-net, 90-blocker rip). Progress is not advertised.
+
+## Next action (revision 8)
+
+Observation: a broad repair lost more completed nets than it gained.
+
+Target selection (agent-521): on /SENSOR_POWER_AUX_DVDT (U30.8) and /SUP_U18_CT (U18.5), reachability passed on the original R5, and ROUTE-1 caged them with generated copper.
+
+Hypothesis: a bounded local repair can close a real connection without losing any completed net.
+
+Action: ROUTE-3, executed by agent-507 and integrated by agent-449. It is new bounded repair authority, not a replay of ROUTE-2.
+
+- Start from the preserved ROUTE-1 candidate. Choose whichever of the two targets has fewer proven blockers, and touch at most that target plus 3 causally identified blocker nets.
+- Use existing supported routing and local-repair capabilities with affected poured-net safety checks. K93 may be used if installed and compatible with the preserved rules; no new integration or framework project.
+- Unchanged: all existing locked and human copper, sourced rules, keepouts, stackup and footprints. No 119-net/90-blocker rip and no global budget increase.
+- Bounds: at most 2 local attempts, at most 600 s of backend in total, and a task of at most 25 minutes. Stop at the first retained improvement.
+
+Acceptance: a native whole-board comparison after each retained local edit. An edit is kept only if target connectivity improves, no net regresses, and there is no new native violation against ROUTE-1. The existing 61 dangling findings are reported explicitly against the original R5. If supported tools cannot bound the disturbance, or the obstruction is immutable, there is no further broad rip; the executor returns the exact blocked pad or region and the smallest concrete placement or routing correction for decision.
+
+Decision-changing observation: a retained local improvement shows that bounded repair works on caged nets. An immutable obstruction redirects the next step to a placement or routing correction.
 
 ## Decision after that result
 
