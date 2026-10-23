@@ -1,18 +1,36 @@
 # Telemetry-pod campaign process
 
-Coordinator decision by agent-521, 2026-10-22, implementing the owner's instruction
-to execute the reviewed process. Scope and roles are in [org-chart.md](org-chart.md).
+Maintained by chief coordinator agent-529, 2026-10-23. This preserves the
+2026-10-22 process history and updates current responsibilities under the owner's
+direct instruction. Scope and roles are in [org-chart.md](org-chart.md).
+
+The programme must deliver both a manufacturing-ready telemetry pod PCB and
+useful, reusable agent-ee capability. Agent-529 owns direction, sequencing and
+acceptance; agent-449 handles dispatch and integration. All campaign communications
+go through agent-519, which consolidates routine traffic and returns consequential
+decisions and evidence to 529. Detailed investigation and implementation stay
+delegated. The current [delivery plan](telemetry-pod-delivery-plan.md) and
+[owner placement request](functional-block-placement-request.md) govern the work.
 
 ## Target scoreboard and dispatch
 
 The canonical board scoreboard is fome-mc
-`telemetry-pod/expansion/routing-diagnostic/SCOREBOARD.md`. 521 owns its outcome policy;
+`telemetry-pod/expansion/routing-diagnostic/SCOREBOARD.md`. 529 owns its outcome policy;
 449 maintains it through the pod lane after each measured run or material gate change.
 Keep production qualification separate from historical diagnostic attempts. Record
 placement/source identity, router and executed engine identity, connected nets and
 total nets, unresolved connections as a separate quantity, introduced and pre-existing
 DRC, total wall time, qualification state, blockers, and exact evidence locations.
 Unknown is not zero. A new image, clean tool exit or merged primitive is not board acceptance.
+
+Track placement intent as well as routing: membership/shared/fixed coverage,
+final-coordinate block cohesion, pin/interface adjacency, side eligibility and
+selection, sourced mechanical keepouts, and unresolved constraints or exceptions.
+Bind these results and annotated top/bottom views to the saved board. Revalidate
+affected placement constraints after legalization, routing feedback or any other
+component movement. A clean DRC or completed route does not establish functional
+grouping. Tool acceptance also needs a meaningful congestion/underside regression
+and evidence on the full pod.
 
 Every dispatch names an outcome to improve or a prerequisite blocking that outcome.
 It records one accountable holder, worker agent/model/host, ticket, immutable input,
@@ -58,13 +76,14 @@ The compatibility record binds agent-ee, kicad-route source and engine, executio
 
 For each candidate, retain queue, build/test, review-wait, integration-wait and complete elapsed time, including failed attempts. Model time remains unknown when not measured. Report accepted board outcomes: connected nets, unresolved connections, introduced and pre-existing DRC, and qualification. Merge counts and busy CPUs are not outcomes.
 
-Agent-475 owns host admission, init-image rollout, and bounded storage diagnostics; agent-449 owns dispatch enforcement, CI selection, compatibility and integration; agent-522 independently verifies deployed behavior; agent-521 owns policy and closure. Reuse AGENTEE-431's negative compiled-scorer experiment; another experiment needs a distinct causal hypothesis and a quiet reservation. No broad language or repository migration is part of this repair.
+Agent-475 owns host admission, init-image rollout, and bounded storage diagnostics; agent-449 owns dispatch enforcement, CI selection, compatibility and integration; agent-522 independently verifies deployed behavior; agent-529 owns policy and closure. Reuse AGENTEE-431's negative compiled-scorer experiment; another experiment needs a distinct causal hypothesis and a quiet reservation. No broad language or repository migration is part of this repair.
 
 ### Approved gate exception
 
 agent-521, 2026-10-22: "the single authoritative integration gate may run JOBS=12 on c4 only when no other suite executes and agent-475's host admission grants the reservation; 4 workers remain the default elsewhere."
 
-See docs/org-chart.md for the roles agent-521 and agent-449 named above. It does not yet list agent-475 or agent-522.
+See [org-chart.md](org-chart.md) for current roles. The dated exception above
+is historical provenance; agent-529 now owns this policy.
 
 ## Owner decisions
 
@@ -79,7 +98,7 @@ actual answer; do not reopen the retired eMMC via-in-pad choice after microSD se
 
 Record rulings verbatim, dated and with direct/relayed provenance in the governing file.
 A recorded relay remains a relay. Latest direct owner instructions take precedence until
-records catch up. 519 coordinates file updates through their owners/integrators;521 owns
+records catch up. 519 coordinates file updates through their owners/integrators;529 owns
 org-chart content. No universal requirement that every ruling originate with519.
 
 ## Production runtime and renders
@@ -90,7 +109,7 @@ revision, separately from deterministic tests of a frozen pin. Refuse production
 when the selected runtime does not match that pin. An intentionally retained historical
 runtime may be healthy for replay while still being ineligible for current production.
 A main update does not mutate or invalidate a running frozen experiment; qualify it for
-the next run. Any temporary production exception is explicit, dated and owned by521.
+the next run. Any temporary production exception is explicit, dated and owned by529.
 
 449 owns a persistent render job, approximately every four hours, with an initial refresh
 now. Render top/bottom/isometric views from the latest consistent snapshot and publish to
