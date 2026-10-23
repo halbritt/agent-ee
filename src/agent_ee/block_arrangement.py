@@ -1362,7 +1362,7 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         plan['placements'] = [{**p, 'fixed': p['ref'] in fixed,
                                **({'side': poses[p['ref']]['side']} if has_sets and p['ref'] in poses else {})}
                               for p in plan['placements']]
-        complete = {**capture, 'footprints': [
+        complete = {**(residual_capture if has_sets else capture), 'footprints': [
             placer.transform(fp, *next(([p['position_nm'], p['rotation_deg']] for p in plan['placements']
                                         if p['ref'] == fp['ref'])))
             for fp in copy.deepcopy((residual_capture if has_sets else capture)['footprints'])]}
