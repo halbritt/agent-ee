@@ -65,7 +65,7 @@ def cpu_delta(before, after):
 
 def input_identity(config):
     board = Path(config['board'])
-    paths = {key: Path(config[key]) for key in ('board', 'netlist', 'request', 'library', 'pypy')
+    paths = {key: Path(config[key]) for key in ('board', 'netlist', 'request', 'library', 'pypy', 'rust_planner')
              if key in config}
     paths.update(project=board.with_suffix('.kicad_pro'), rules=board.with_suffix('.kicad_dru'))
     return {key: {'path': str(path), 'sha256': sha(path.read_bytes()) if path.is_file() else None}
@@ -74,7 +74,12 @@ def input_identity(config):
 
 def source_identity():
     modules = sorted((ROOT / 'src' / 'agent_ee').rglob('*.py'))
+    modules.extend(sorted((ROOT / 'src' / 'agent_ee' / 'data').glob('*.json')))
     modules.append(ROOT / 'src/agent_ee/data/placement_score.rs')
+    crate = ROOT / 'crates' / 'placement-engine'
+    if crate.is_dir():
+        modules.extend(sorted((crate / 'src').glob('*.rs')))
+        modules.extend(crate / name for name in ('Cargo.toml', 'Cargo.lock'))
     module_names = {path.relative_to(ROOT).as_posix() for path in modules}
     manifest_path = ROOT / 'SOURCE.json'
     if manifest_path.exists() or manifest_path.is_symlink():
@@ -158,12 +163,17 @@ def worker(config_path):
     report, failure, events = None, None, []
     first_native_invocation = {}
     planning_calls = []
+    scalar = config['backend'] == 'c' or (config['backend'] == 'rust' and 'rust_planner' not in config)
     started = time.perf_counter_ns()
     try:
         if config['backend'] == 'pypy':
             context = placement_runtime.experimental(config['pypy'])
         elif config['backend'] == 'rust':
-            context = placement_scoring.experimental(config['library'])
+            if 'rust_planner' in config:
+                from agent_ee import placement_rust_runtime
+                context = placement_rust_runtime.experimental(config['rust_planner'])
+            else:
+                context = placement_scoring.experimental(config['library'])
         elif config['backend'] == 'c':
             from placement_scoring_c import experimental
             context = experimental(config['c_library'])
@@ -171,15 +181,15 @@ def worker(config_path):
             context = nullcontext(None)
         with context as session:
             restore_probe = (record_first_native_call(session.native, first_native_invocation)
-                             if config['backend'] in ('c', 'rust') and session.native is not None else None)
+                             if scalar and session.native is not None else None)
             try:
                 report = place_candidate(config['board'], config['netlist'], arm / 'proposal', request)
             finally:
                 if restore_probe is not None:
                     restore_probe()
-                if config['backend'] in ('c', 'rust'):
+                if scalar:
                     events = list(session.events)
-                elif config['backend'] == 'pypy':
+                elif config['backend'] in ('pypy', 'rust'):
                     planning_calls = list(session.calls)
     except Exception as exc:
         failure = {'type': type(exc).__name__, 'message': str(exc)}
@@ -198,12 +208,13 @@ def worker(config_path):
                 'environment_before': before_environment, 'environment_after': environment(),
                 'scorer_events': events, 'exception': failure, 'verified_source': verified_source,
                 'first_native_invocation': first_native_invocation or None,
-                'pypy_planning_calls': planning_calls,
+                'pypy_planning_calls': planning_calls if config['backend'] == 'pypy' else [],
+                'rust_planning_calls': planning_calls if config['backend'] == 'rust' and 'rust_planner' in config else [],
                 'invocation_probe': ('first native call only; both hooks removed before dispatch; '
                                      'setup and one-call recording overhead included; no oracle'
-                                     if config['backend'] in ('c', 'rust') else None),
+                                     if scalar else None),
                 'status': report.get('status') if report is not None else None,
-                'boundary': 'scorer context/library loading and complete place_candidate; imports and external result serialization excluded'}
+                'boundary': 'backend imports/setup, context/library loading and complete place_candidate; common imports and external result serialization excluded'}
     save(arm / 'worker-metadata.json', metadata)
     return 1 if failure or events else (0 if report is not None and report.get('status') == 'placed' else 2)
 

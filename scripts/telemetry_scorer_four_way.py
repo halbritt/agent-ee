@@ -115,7 +115,12 @@ def require_success(record, expected_identity):
     if (identity.get('before_sha256') != expected_identity or identity.get('after_sha256') != expected_identity
             or identity.get('unchanged') is not True):
         raise ValueError(f'{backend} lacks stable matched source/input/runtime/model identity')
-    if backend in ('c', 'rust') and (metadata.get('first_native_invocation') or {}).get('returned') is not True:
+    rust_calls = metadata.get('rust_planning_calls', [])
+    if backend == 'rust' and rust_calls:
+        if any(call.get('status') != 'ok' or call.get('exit_code') != 0 or not call.get('executable_sha256')
+               or not call.get('input_sha256') for call in rust_calls):
+            raise ValueError('Rust lacks successful whole-planning runtime evidence')
+    elif backend in ('c', 'rust') and (metadata.get('first_native_invocation') or {}).get('returned') is not True:
         raise ValueError(f'{backend} lacks an actual successful native scorer invocation')
     if backend == 'pypy':
         calls = metadata.get('pypy_planning_calls', [])
@@ -170,8 +175,11 @@ def summarize(rounds):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('board', 'netlist', 'request', 'models', 'c-library', 'rust-library', 'pypy', 'pypy-root', 'out'):
+    for name in ('board', 'netlist', 'request', 'models', 'c-library', 'pypy', 'pypy-root', 'out'):
         parser.add_argument('--' + name, type=Path, required=True)
+    rust = parser.add_mutually_exclusive_group(required=True)
+    rust.add_argument('--rust-library', type=Path)
+    rust.add_argument('--rust-planner', type=Path)
     args = parser.parse_args()
     validate_orders()
     if shutil.which('timeout') is None or shutil.which('kicad-cli') is None:
@@ -180,7 +188,10 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     config = {name: str(getattr(args, name).resolve(strict=True))
               for name in ('board', 'netlist', 'request', 'models', 'c_library', 'pypy', 'pypy_root')}
-    config['library'] = str(args.rust_library.resolve(strict=True))
+    if args.rust_planner is not None:
+        config['rust_planner'] = str(args.rust_planner.resolve(strict=True))
+    else:
+        config['library'] = str(args.rust_library.resolve(strict=True))
     config['kicad_cli'] = str(Path(shutil.which('kicad-cli')).resolve())
     if any(Path(value).is_relative_to(root) for value in config.values()):
         raise ValueError('all frozen inputs/runtimes must be outside the writable result root')
@@ -195,7 +206,8 @@ def main():
                 'termination_grace_s': 5, 'changes': ['authorization.writable_root per arm', 'skip_visuals=True for every arm'],
                 'backend_definitions': {'python': 'Unchanged CPython reference placement',
                                         'c': 'Original unmodified C kernel from 50e586818acf6265039a3509acc910eb0158f357 with benchmark fast adapter; no full oracle inside timer',
-                                        'rust': 'Opt-in prepared Rust scalar scorer under CPython',
+                                        'rust': ('Greenfield complete Rust placement planner; native KiCad capture, apply and independent validation remain in CPython'
+                                                 if args.rust_planner is not None else 'Opt-in prepared Rust scalar scorer under CPython'),
                                         'pypy': 'Original Python scorer and complete pure planner in PyPy; native KiCad remains in CPython'},
                 'boundary': 'Same complete place_candidate worker for all arms; context/library/startup/IPC included; imports and external report serialization excluded. One fresh worker per arm, no warmup or persistent worker.',
                 'correctness': 'All sixteen outputs must match round-one CPython; no fallback, missing witness, mismatch or rerun accepted.',

@@ -60,6 +60,21 @@ class MatchedHarnessTest(unittest.TestCase):
             with mock.patch.object(four.pair, 'comparison_artifacts', side_effect=[reference, actual]):
                 self.assertEqual(four.compare_to_reference(Path('round-1/python'), Path('round-4/c'))['status'], 'different')
 
+    def test_complete_rust_planner_requires_its_process_witness(self):
+        record = self.record('rust')
+        record['worker']['first_native_invocation'] = None
+        call = {'status': 'ok', 'exit_code': 0, 'input_sha256': 'input', 'executable_sha256': 'binary'}
+        record['worker']['rust_planning_calls'] = [call]
+        four.require_success(record, 'pin')
+        for key, value in [('status', 'error'), ('exit_code', 1), ('input_sha256', ''), ('executable_sha256', '')]:
+            broken = copy.deepcopy(record)
+            broken['worker']['rust_planning_calls'][0][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'whole-planning'):
+                four.require_success(broken, 'pin')
+        record['worker']['rust_planning_calls'] = []
+        with self.assertRaisesRegex(ValueError, 'native scorer'):
+            four.require_success(record, 'pin')
+
     def test_summary_requires_all_sixteen_parity_records(self):
         rows = [{'arms': [self.record(backend, (index + 1) * 100) for backend in order],
                  'comparisons': {backend: {'status': 'equal'} for backend in order}}
