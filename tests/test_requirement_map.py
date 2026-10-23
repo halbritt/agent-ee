@@ -103,8 +103,10 @@ class RequirementMapTests(unittest.TestCase):
                      'three W1 calculation submissions', 'solver status 6 and null geometry',
                      'single authorized W2 continuation', 'solver status 0 and valid geometry',
                      'HTTP acceptance is not a successful calculation',
-                     'rf-net-constraints.json', 'upper W2 width 0.321716796875 mm',
-                     '0.335 mm', 'recorded_not_enforced', '/POD_GNSS_RF',
+                     'rf-net-constraints.json', 'upper W2 width 0.28016522460874 mm',
+                     '0.293 mm', '0.29286522460874 mm', 'two-flank 0.2032 mm gap',
+                     '4cf9d43d@2', 'W2_CoatedCoplanarWaveguideWithLowerGnd1B',
+                     '50.0087997251 ohm', 'recorded_not_enforced', '/POD_GNSS_RF',
                      'Unmatched constraint nets are refused',
                      'RF maximum length remains unbound', '15 mm is a test value only'):
             self.assertIn(fact, limitation)

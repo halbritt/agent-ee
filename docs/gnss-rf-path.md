@@ -39,7 +39,9 @@ A net need not have routed copper to exist: pad nets count. Generated scaffold
 settings are planning output until populated-board checks establish membership.
 They do not qualify a net by declaring a class alone.
 
-## Captured calculation
+## Captured calculations
+
+### Historical uncoated inverse (calculation 4)
 
 The host fetched the [JLCPCB calculator page](https://jlcpcb.com/pcb-impedance-calculator/)
 and public client on 2026-10-19 UTC (2026-10-18 local). Decision a2
@@ -55,7 +57,8 @@ exactly one further calculation on 2026-10-18 at 20:00: preserve attempt 3's
 uncoated model and physical inputs, change only the inverse target/bounds to
 W2/2–150, and use a fresh request identity. That request returned **solver
 status 0, `dResultValid: 1`** and calculated widths. No further calculation,
-hidden field, gap/model sweep, login, payment, upload or captcha bypass occurred.
+hidden field, gap/model sweep, login, payment, upload or captcha bypass occurred
+within that historical continuation.
 The successful request needs no new recipe/support call.
 
 | Submission | Inverse target | Input gap | Model and variation | Solver result |
@@ -72,37 +75,67 @@ precision. T1 models the fixture's copper rather than the client's 1.6 mil
 plated-copper default. The model is
 `SurfaceCoplanarWaveguideWithLowerGnd1B`; it does not model solder mask.
 
+The historical uncoated result reports 49.6637289254 ohm, W1
+13.166015625 mil (0.334416796875 mm), W2 12.666015625 mil
+(0.321716796875 mm) and D1 8 mil (0.2032 mm). Its requested
+50 ±0.5 ohm solver search tolerance is historical calculator input, not an
+acceptance band or fabrication tolerance. These widths are superseded by the
+adopted coated inverse below.
+
+### Historical coated forward point
+
+The `historical_forward_point` in
+[capture metadata](../fixtures/telemetry-pod/rf-source-capture.json), under
+`w2_continuation.dimension_mapping.adopted_inverse`, retains the coated forward
+point: 0.335 mm width, T1 0.035 mm and 47.394 ohm. It has its own inputs and
+is distinct from the uncoated inverse above and the adopted coated inverse
+below. No width sensitivity is inferred from comparing these calculations.
+
+### Adopted coated inverse (agent-529 4cf9d43d@2)
+
+Chief engineering direction `4cf9d43d@2` adopts the **0.293 mm CAD nominal
+lower/drawn width with a two-flank 0.2032 mm gap**, AGENT-selected CONDITIONAL.
+The [adopted decoded result](../fixtures/telemetry-pod/rf-inverse-50ohm-result.json)
+explicitly names model `W2_CoatedCoplanarWaveguideWithLowerGnd1B` and reports
+50.0087997251 ohm and effective Er 3.1696914377. Its basis is T1 0.04064 mm
+(JLC 1.6 mil calculator parameter, not a fabricated-copper specification),
+H1 0.2104 mm, Er1 4.4, mask C1 1.2 / C2 0.6 mil, CEr 3.8 and taper
+0.5 mil. The JLC guide's 0.7 mil taper is a recorded difference, not merged
+into this basis.
+
 | Source field | Result in mil | Converted mm | Declaration |
 | --- | --- | --- | --- |
-| W1, lower width (ADOPTED inverse, agent-529 4cf9d43d v2) | 11.5301269531 | 0.29286522460874 | RF_50 `track_width_mm` |
+| W1, lower width | 11.5301269531 | 0.29286522460874 | RF_50 `track_width_mm` |
 | W2, upper width | 11.0301269531 | 0.28016522460874 | Retained taper metadata; no separate KiCad width |
-| D1, selected gap preserved in result | 8 | 0.2032 | RF_50 `clearance_mm` |
+| D1, gap on both flanks | 8 | 0.2032 | RF_50 `clearance_mm` |
 
 The unit conversion is exactly 0.0254 mm/mil. KiCad represents planar copper;
-the declaration uses the lower W1 width and retains W2 explicitly. The existing
-emitter rounds the minimum upward to **0.293 mm** (adopted CAD nominal lower/drawn width, AGENT-selected
-CONDITIONAL; it replaces the earlier forward point 0.335 mm / 47.394 ohm at T1 0.035 mm, kept as history with its own
-inputs). The adopted inverse (`rf-inverse-50ohm-result.json`, agent-510 inverse-50ohm packet) reports 50.0087997251 ohm
-and eff Er 3.1696914377 at T1 0.04064 mm (JLC 1.6 mil calculator basis), H1 0.2104 mm, Er1 4.4, mask C1 1.2 / C2 0.6 mil,
-CEr 3.8, taper 0.5 mil (the JLC guide's 0.7 mil is a recorded difference, not merged). No tolerance band; impedance is
-not verified. The rest of this paragraph describes the earlier forward capture. The rounding is a small difference from the
-solver geometry. The server reports 49.6637289254 ohm for its modeled geometry
-within the requested 50 ±0.5 ohm target. This numeric result does not verify the
-rounded KiCad route or actual pod impedance. A minimum clearance also does not
-hold the coplanar gap to an exact value or establish return-plane continuity.
+the declaration uses lower W1 and retains W2 explicitly. The existing emitter
+rounds the minimum upward to 0.293 mm. A minimum clearance does not enforce
+an exact coplanar gap or establish return-plane continuity. No acceptance or
+fabrication tolerance band is established, and neither the calculated geometry
+nor the rounded KiCad route verifies actual pod impedance.
+
+### Retained decoded results
 
 [Capture metadata](../fixtures/telemetry-pod/rf-source-capture.json) records
-URLs, UTC timestamps, tools, raw hashes, fresh request identities, all received
-socket frames/payloads and sent control frames. Its `w2_continuation` binds the
-single new result, upper/lower/gap mapping and constraint-file hash. Earlier
-records remain historical. Raw vendor bytes stay in worker scratch; no owner
-evidence store or vendor code/text is committed. The one exception is the
-513-byte decoded W2 result (`calc-4-result.json`), committed byte-for-byte as
-[rf-w2-calc-4-result.json](../fixtures/telemetry-pod/rf-w2-calc-4-result.json)
-and listed under `committed_decoded_results` (AGENTEE-264). It holds only the
-calculator's numbers and identifiers for agent-ee's own inputs, so `rf_geometry`
-can bind its `dErEff` by SHA-256 and JSON pointer. Hashes establish byte identity,
-not vendor authentication or committed offline replay. Checks use no network.
+URLs, UTC timestamps, tools, raw hashes, request identities and transport
+observations for the historical workflow. Its `w2_continuation` retains the
+historical calculation, while `dimension_mapping.adopted_inverse` identifies
+the adopted result and basis; the mapping binds the current constraint hash.
+Raw vendor pages, scripts and transport frames stay in worker scratch.
+Two decoded result files are committed:
+
+- [rf-w2-calc-4-result.json](../fixtures/telemetry-pod/rf-w2-calc-4-result.json)
+  is the 513-byte historical uncoated W2 result, listed under
+  `committed_decoded_results` (AGENTEE-264).
+- [rf-inverse-50ohm-result.json](../fixtures/telemetry-pod/rf-inverse-50ohm-result.json)
+  is the adopted coated inverse, bound by `adopted_inverse.result_path` and
+  `result_sha256`; its effective Er is at `/impedance_calc_result/dErEff`.
+
+These files hold calculator numbers and identifiers for agent-ee's inputs.
+Hashes establish byte identity, not vendor authentication, impedance
+qualification or committed offline replay. Checks use no network.
 
 The RF maximum length remains a scope limitation until a design bound is
 captured. The controls' 15 mm maximum is test-only. The spec's 500 mm antenna
