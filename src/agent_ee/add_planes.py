@@ -205,7 +205,12 @@ def _polygon_coverage(uid, zone, saved_board_sha256, facts_board_sha256):
         if (not isinstance(r, dict) or type(r.get('index')) is not int or type(r.get('isolated')) is not bool or
                 not isinstance(r.get('digest'), str) or re.fullmatch(r'[0-9a-f]{64}', r['digest']) is None):
             raise ValueError('native polygon evidence is malformed for zone ' + uid)
-        recomputed = polygon_digest(polygon_nm(r.get('outline_mm'), r.get('holes_mm')))
+        if not isinstance(r.get('holes_nm'), list):
+            raise ValueError('native polygon nanometre holes are malformed for zone ' + uid)
+        nm = [r.get('outline_nm'), *r['holes_nm']]
+        recomputed = polygon_digest(nm)
+        if polygon_nm(r.get('outline_mm'), r.get('holes_mm')) != nm:
+            raise ValueError('native polygon display geometry disagrees with nanometres for zone ' + uid)
         if recomputed != r['digest']:
             raise ValueError('native polygon geometry and digest disagree for zone ' + uid)
         indexes.append(r['index'])

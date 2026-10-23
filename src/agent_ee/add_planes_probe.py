@@ -120,7 +120,7 @@ def _polygon_evidence(k, board, zone):
         holes = [fill.CHole(i, h) for h in range(fill.HoleCount(i))]
         nm = [[[outline.CPoint(n).x, outline.CPoint(n).y] for n in range(outline.PointCount())],
               *[[[c.CPoint(n).x, c.CPoint(n).y] for n in range(c.PointCount())] for c in holes]]
-        records.append(dict(index=i, outline_mm=_chain_mm(k, outline), holes_mm=[_chain_mm(k, c) for c in holes],
+        records.append(dict(index=i, outline_nm=nm[0], holes_nm=nm[1:], outline_mm=_chain_mm(k, outline), holes_mm=[_chain_mm(k, c) for c in holes],
                             digest=polygon_digest(nm),
                             isolated=not any(bool(unit.Collide(shape, 0)) for shape in shapes)))
     return records

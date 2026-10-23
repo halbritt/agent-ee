@@ -63,8 +63,11 @@ polygon must be covered exactly once (indexes 0..n-1, n the saved polygon count,
 unique identities) and marked isolated; flags must be exact booleans and vertices
 finite. The writer and consumer share `plane_polygon_identity.polygon_digest`:
 SHA256 of `json.dumps([outline_nm, *holes_nm]).encode()`, retaining native vertex
-and hole order and the default JSON separators. The consumer recovers integer
-nanometres from millimetres (allowing only binary-float round-trip error), validates
+and hole order and the default JSON separators. The writer retains authoritative `outline_nm` and `holes_nm` integer arrays from
+the reloaded native fill. The consumer rejects Boolean, float and nonfinite nm
+coordinates without coercion. Millimetre display arrays must reproduce those
+exact nm arrays (allowing only binary-float round-trip error); contradictions
+refuse. The consumer validates
 nonempty chains with nonzero area (including KiCad's opposite-direction bridges
 for fractured holes), recomputes the digest and requires exact
 lowercase hexadecimal equality. Coverage uniqueness uses these recomputed identities,

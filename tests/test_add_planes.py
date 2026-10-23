@@ -335,6 +335,7 @@ class PolygonEvidenceBoundaryTests(PlaneFixture, unittest.TestCase):
     def test_changed_geometry_old_digest_refuses(self):
         def mutate(records):
             records[0]['outline_mm'][0][0] += 1
+            records[0]['outline_nm'][0][0] += 1_000_000
         self.assert_refused('changed_geometry_old_digest', mutate)
 
     def test_empty_hole_refuses(self):
@@ -343,9 +344,21 @@ class PolygonEvidenceBoundaryTests(PlaneFixture, unittest.TestCase):
     def test_duplicate_geometry_distinct_stale_digest_refuses(self):
         def mutate(records):
             self.assertNotEqual(records[0]['digest'], records[1]['digest'])
-            for field in ('outline_mm', 'holes_mm'):
+            for field in ('outline_mm', 'holes_mm', 'outline_nm', 'holes_nm'):
                 records[1][field] = copy.deepcopy(records[0][field])
         self.assert_refused('duplicate_geometry', mutate)
+
+    def test_noninteger_authoritative_coordinates_refuse(self):
+        for value in (True, 1.0, float('nan')):
+            with self.subTest(value=value):
+                def mutate(records):
+                    records[0]['outline_nm'][0][0] = value
+                self.assert_refused('noninteger-' + str(value), mutate)
+
+    def test_contradictory_display_geometry_refuses(self):
+        def mutate(records):
+            records[0]['outline_mm'][0][0] += 1
+        self.assert_refused('display_geometry', mutate)
 
     def test_truthful_saved_native_evidence_publishes(self):
         report = self.run_plan('truthful', phase=planes.PRE_ROUTING)
@@ -368,7 +381,8 @@ class PhaseAndAttributionTests(unittest.TestCase):
 
     def zone(self, isolated=(True, True), records=None, count=None):
         recs = records if records is not None else [
-            dict(index=i, outline_mm=self.SQUARES[i], holes_mm=[], digest=planes.polygon_digest(planes.polygon_nm(self.SQUARES[i], [])), isolated=f)
+            dict(index=i, outline_mm=self.SQUARES[i], holes_mm=[], outline_nm=planes.polygon_nm(self.SQUARES[i], [])[0],
+                 holes_nm=[], digest=planes.polygon_digest(planes.polygon_nm(self.SQUARES[i], [])), isolated=f)
             for i, f in enumerate(isolated)]
         return dict(uuid=self.UID, fill_polygons=len(isolated) if count is None else count, layer='In2.Cu', net='/+3V3',
                     polygon_evidence=recs)
@@ -399,7 +413,7 @@ class PhaseAndAttributionTests(unittest.TestCase):
 
     def test_markers_never_fill_missing_native_coverage(self):
         # the reviewer's cases: [anchor, anchor] and [anchor, point-in-polygon-0] with polygon 1 not covered
-        one_record = self.zone(records=[dict(index=0, outline_mm=self.SQUARES[0], holes_mm=[], digest='0' * 64, isolated=True)], count=2)
+        one_record = self.zone(records=self.zone()['polygon_evidence'][:1], count=2)
         for markers in ([self.ANCHOR, self.ANCHOR], [self.ANCHOR, dict(x=0.5, y=0.5)]):
             with self.subTest(markers=markers), self.assertRaises(ValueError):
                 self.defer(markers, zone=one_record)
@@ -419,10 +433,10 @@ class PhaseAndAttributionTests(unittest.TestCase):
             self.defer([self.ANCHOR], facts_sha='c' * 64)
 
     def test_malformed_evidence_refuses(self):
-        bad = [dict(index=0, outline_mm=self.SQUARES[0], holes_mm=[], digest='0' * 64, isolated='true'),
-               dict(index=1, outline_mm=self.SQUARES[1], holes_mm=[], digest='1' * 64, isolated=True)]
-        nan = [dict(index=0, outline_mm=[[float('nan'), 0], [1, 0], [1, 1]], holes_mm=[], digest='0' * 64, isolated=True),
-               dict(index=1, outline_mm=self.SQUARES[1], holes_mm=[], digest='1' * 64, isolated=True)]
+        bad = copy.deepcopy(self.zone()['polygon_evidence'])
+        bad[0]['isolated'] = 'true'
+        nan = copy.deepcopy(self.zone()['polygon_evidence'])
+        nan[0]['outline_mm'][0][0] = float('nan')
         for recs in (bad, nan):
             with self.subTest(), self.assertRaises(ValueError):
                 self.defer([self.ANCHOR], zone=self.zone(records=recs))
