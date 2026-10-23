@@ -1085,17 +1085,102 @@ Experiment evidence is never dropped and is never qualified.
   change repairs. The producer itself marked the receipt not comparison-eligible
   (`origin predecessor is missing or does not own this input`): kicad-route
   `experiment._origin` reads any `--dir` whose parent directory is named
-  `candidate` as a run candidate with a missing predecessor, and the adapter's
-  `--dir` was always `/candidate/<project>`. So every adapter-run K91 receipt was
-  `ineligible`. Agent-ee does not relabel that receipt. agent-507 adjudicated that
-  this is the intended producer contract. The consumer now routes a staged copy
-  of the original (see the router invocation above). The read-only mount is
-  unchanged. A fresh adapter-run attempt is needed for a positive. This change
-  does not run one. Records, receipts and negative controls are in
+  `candidate` as a run candidate with a missing predecessor. For a top-level
+  project input the adapter's `--dir` is `/candidate/<project>`, so every
+  adapter-run K91 receipt for a top-level project is `ineligible`. A nested
+  project path (`/candidate/nested/project`) does not meet that rule (review
+  probe of the producer's `_origin`; not a receipt and not a route). Agent-ee does
+  not relabel it. agent-507 adjudicated that this is the intended producer
+  contract. The consumer now routes a staged copy of the original (see the
+  router invocation above). The read-only mount is unchanged. A fresh
+  adapter-run attempt is needed for a positive. This change does not run one.
+  Records, receipts and negative controls are in
   `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`).
   They predate staging: they record `--dir /candidate/project` and no
   `inputs.staged`, which the current `verify` requires. They are kept as they
-  are, as the record of that attempt. They are not re-graded.
+  are, as the record of that attempt. They are not re-graded. The
+  harness's recorded `controls_refused: false` is a harness defect: it counted
+  the mismatched-runtime control's verified `not_run` as accepted. The record is
+  kept as written. `scripts/k91_classify.py` re-derives it (`CLASSIFIER_V1`) and
+  classifies with `CLASSIFIER_V2`.
+
+  **Boundary.** Under coordinator boundary ruling a01d6f91 (agent-521; a
+  coordinator decision, not owner text), the protected boundary is the
+  production routing consumer, `campaign.run_implementation_steps`: `run_step`,
+  then `verify_campaign_receipt`, then `adopt`, in its own order. The generic
+  `stage_receipts.adopt` is not that boundary.
+
+  **Harness plumbing.** `scripts/k91_consumer.py` calls that function and
+  observes `run_step`, `verify_campaign_receipt` and `adopt` with pass-through
+  observers. Each call is recorded as made (an explicit boolean `accepted`,
+  with a value or an error) or as not called. The design digest is recorded
+  before and after. The proposed pin takes the production adapter shape: a
+  copy of the adapter source with that pin's constants, mounted at the
+  production path. For the board, sidecar and stale controls, replay plumbing
+  stands in for `run_step` only. It returns the retained receipt, as written,
+  from a disposable copy placed at its own path, so the consumer's own checks
+  find any change.
+
+  **Controls.** A required control (mismatched runtime, candidate-board
+  tamper, stale input) is refused only when all of these hold:
+  - the consumer call was observed to raise;
+  - the design digest is unchanged;
+  - every layer record is schema-valid;
+  - no consumer adoption succeeded;
+  - for the runtime control, the production binding preflight was also
+    observed to refuse.
+
+  This lane's third-HOLD root redesign (review round 3, H4) narrows that
+  further. Up to round 3 the classifier inferred a refusal from the absence of
+  success, so a wrong replay binding, invalid or missing receipt JSON, or a
+  campaign finalization error counted as refused. Now a required control is
+  refused only on a positive match of its contract, in
+  `k91_classify.CONTRACTS`. Each contract names:
+  - the raising origin (file and function);
+  - the reason pattern;
+  - the production path the root exception took;
+  - each consumer layer's outcome;
+  - the preconditions, such as a replayed `run_step` that succeeded and an
+    applied tamper.
+
+  `observe` records the full exception chain: each link's type, message,
+  origin frame and frames. Every link must be the contract refusal. The one
+  exception is the board tamper: campaign finalization (`bind_implementation`)
+  was observed to raise the same refusal again around it. Anything else is
+  incomplete: unrelated exceptions, replay or plumbing failures, other
+  finalization errors.
+
+  The chain must also be complete (review round 4, H1). Every non-terminal
+  link names its `cause` or `context`, the last link is null-terminated, and
+  no link repeats. A truncated, dangling, prematurely ended or cyclic chain is
+  malformed, so the control is incomplete even when the remaining links match
+  the contract.
+
+  `scripts/k91_control_matrix.py` is the lane's regression gate. It runs the
+  positives, every intended control, each plumbing failure in each control
+  slot, and every round-1 to round-3 counterexample through the actual
+  consumer. `tests/test_k91_control_matrix.py` runs it, and
+  `tests/test_k91_reason_probe.py` is the round-3 reviewer's probe.
+
+  Anything missing or malformed is incomplete. A skipped adoption is never a
+  refusal. The bare `stage_receipts.adopt` runs on another design copy as a
+  diagnostic (`direct_adopt`), and its result stays visible: it accepts a
+  tampered sidecar, which only `verify_campaign_receipt` refuses. The
+  sidecar control is reported beside the required ones. The positive needs
+  the consumer to verify a delivered candidate with a retained, unqualified
+  record and to adopt exactly that board.
+
+  On the synthetic router (`tests/test_k91_harness_classifier.py`), the
+  consumer refuses each control at its own layer:
+  - the runtime at the live binding, before `run_step`;
+  - the board and the sidecar at `verify_campaign_receipt`;
+  - the stale input after `run_step`.
+
+  It accepts and adopts the positive and an untampered replay. The round-2
+  low-level observations (direct `run_step`, `verify`, bare adoption) are
+  kept apart as `low_level`. The successor `scripts/k91_native_positive_v2.py`
+  takes the exact runtime and input identities and the router and total
+  limits.
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal
