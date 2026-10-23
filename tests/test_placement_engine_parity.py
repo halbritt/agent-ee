@@ -72,7 +72,7 @@ class EngineFixture:
             cls.binary = placement_rust_runtime.resolve_executable()
         except (placement_runtime.PlanningProcessError, OSError) as error:
             # A configured path is an assertion, not an optional prerequisite.
-            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1' or os.environ.get('AGENT_EE_RUST_PLANNER'):
+            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1' or 'AGENT_EE_RUST_PLANNER' in os.environ:
                 raise AssertionError(f'Rust planner prerequisite: {error}') from error
             raise unittest.SkipTest(str(error)) from error
 
