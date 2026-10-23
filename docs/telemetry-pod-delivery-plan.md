@@ -1,6 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 5 — 2026-10-23: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
+Revision 6 — 2026-10-23: placement R5 recorded (complete 309/309 placement, unrouted); next action is the first bounded all-net routing attempt (agent-521 brief b9e0f217). Revision 5: R4 recorded (stopped at the admission interface: the existing write/admission path cannot represent a declared side change); next action is the minimum side-transform correction plus R4 board execution in one 60-minute task (agent-521 brief 81bf1861). Revision 4: placement attempt R3 recorded (blocked on front-side fragmentation); next action is one 30-minute task placing the 22 remaining parts on B.Cu under the owner's double-sided permission (agent-521 brief d7978659). Revision 3: R2 recorded; one targeted constructive front-side placement authorized. Revision 2: first placement attempt recorded and one placement with a larger search allowance authorized. Revision 1: owner resumed 2026-10-22 after stopping the campaign.
 Decision owner: agent-521. Sole integrator: agent-449. Communications: agent-519.
 
 ## Destination and current evidence
@@ -121,7 +121,7 @@ Status: STOPPED at the admission interface, before any new tool code. Nothing wa
 - No side-specific package limitation was found for the 22. Back-side test-point access was not assessed.
 - Evidence: fome-mc writer branch commit c1091ec, telemetry-pod/expansion/placement-r4/ (interface-probe.json, RESULT.md, SHA256SUMS).
 
-## Next action (revision 5)
+## Action R5 (revision 5, executed)
 
 Decision (agent-521, brief 81bf1861): authorize the minimum side-transform write/admission correction that R4 demonstrated, then finish the board in the same bounded task. This resolves R4's stop-before-new-tool-code condition. It does not authorize a new placer or scorer, a general redesign, a broad review or a research queue.
 
@@ -141,6 +141,39 @@ Acceptance for the correction:
 Execution: one existing ordinary-model writer (the R4 writer), local native admission, no extra agents, total bound 60 minutes for the fix, the focused checks and the R4 board execution. The runtime is the qualified 7d5b0d4d runtime with the traceable targeted correction. The exact patch, commit and module hashes are recorded and distinguished from the unmodified image; the patched runtime is not labelled unchanged. Agent-449 integrates the same correction into agent-ee main with the required checks, preserving input/provenance compatibility without reopening the AGENTEE-348 prep barrier. If applying the correction exposes another concrete incompatibility, that exact evidence is returned and scope does not expand.
 
 Deliverable: the R4 artifact, namely 287 retained R2 poses plus 22 explicit B-side poses suited to their nets and test access; whole-board 309-reference native placement and preservation checks; the full DRC, parity and unconnected delta against the original; the board and paired project with hashes; and a candidate-bound render. A code commit or passing fixture without a placed board does not complete the task. An invalid or partial placement is not routed. No automatic retries.
+
+## Placement R5 (revision 6 record)
+
+Status: COMPLETE PLACEMENT, UNROUTED, NOT RELEASED. This is the first complete placement and the input to routing.
+
+- Run: one task (06:29:33Z to about 06:45Z of the 60-minute bound) on proximal native admission with the runtime "7d5b0d4d + R5 side-transform patch": image d96f8e00 and the 7d5b0d4d snapshot with only agent_ee/placer_runner.py overlaid (unmodified 76308585…, patched b4be6263…).
+- Board: telemetry-pod.kicad_pcb SHA256 8f3bc234305516b91b6e519d3e0a3cd05b69b6dd16006a317c39b6d810ace5fd, with the original project 10002b98… and rules ff622083…. FOME writer commit 9d5aefdd, telemetry-pod/expansion/placement-r5/.
+- Poses: all 287 R2 poses retained. R7, R70–R84 and TP1–TP6 moved to B.Cu under the bound agent-ee.side-changes/1 authorization, each at the first clear back-side pose near its on-board peer pads.
+- Whole-board admission under policy r1 plus the authorization: status placed. That covers the declared-transform pad inventory, saved sides, no courtyard overlaps, the judge, groups, locality, netlist binding and the reserved area. The 9 sourced-fixed poses are unchanged. 309 footprints, 235 nets, four copper layers at 1.6 mm, stackup and setup byte-equal.
+- Native DRC went from 21 to 80. The 4 courtyard overlaps were resolved; 17 findings are inherited; 63 are new silkscreen findings (silk_overlap 35, silk_over_copper 27, silk_edge_clearance 1). These remain open for pre-fabrication correction; severities are unchanged and nothing is suppressed. Schematic parity 0. Unrouted: 0 tracks, 0 vias, 499 unconnected.
+- agent-ee correction: writer commit 02b6510d (rebased by agent-449 onto main as 0e78994e, module b4be6263) adds explicitly authorized footprint side changes to placer_runner. The 139 focused native tests passed (new test_placer_side_transform, plus test_placer_native, test_placer_gate_hardening, test_placer_pad_keepout and test_placement_defects).
+
+## Next action (revision 6)
+
+Observation: the board is completely placed and unrouted.
+
+Hypothesis (agent-521 prediction): an actual builtin all-net route on the complete placement produces copper and reveals the specific remaining connectivity and geometry blockers.
+
+Action: ONE isolated all-net routing attempt of the R5 board, with a 1500-second backend budget and a 40-minute total task including setup and checks.
+
+- Executor: assigned by agent-449, namely the existing pod-capture-j6b2 writer, started 06:52:13Z. agent-507 was held to communications through agent-519.
+- Runtime: the qualified kicad-route runtime b5774496d8466b67ffa0362b6665fee2108155a3, with the actual version recorded, under proximal native admission.
+- Command form: kicad-route run --backend builtin --dir ISOLATED_POD_PROJECT --board telemetry-pod.kicad_pcb --budget 1500 --out RUN_ROOT.
+- Inputs: the R5 PCB, project and rules, paired with the original schematic, library and constraint context from the verified emission tree.
+- Scope: all nets, with telemetry-pod explicitly selected and never the separate fome-mc board.
+- Preserved: rules, sourced RF and layer restrictions, stackup, fixed placement, pad/net identities and input copper. Existing qualified runtime-specific settings are documented, with no other-board tuning. The 63 silkscreen findings are neither suppressed nor re-graded.
+- No automatic retry, optimization, research, review or cloud. A demonstrated input or runtime refusal returns the exact blocker and the smallest remedy.
+
+Return: the saved candidate with hashes and the complete structured result.json, reporting process, routing scope/completeness and native validation separately. Also routed and unconnected counts and the remaining nets; track and via counts; the before/after native DRC delta including inherited findings, schematic parity, and refill, preservation and rule checks; the exact command and runtime, elapsed time, logs and candidate-bound renders. An incomplete or invalid result stays labelled so. A timeout keeps inspectable partial evidence, and process exit alone is not success.
+
+Decision-changing observation: agent-521 chooses the next repair from the routed evidence (remaining nets and their geometric or constraint causes, or a runtime refusal).
+
+Integration does not delay routing. Agent-449 integrates the focused agent-ee side-transform correction and the FOME placement artifacts through the sole-integrator path, without repeated broad suites. Landed branches and worktrees are cleaned up only when no executing worker depends on them. The R5 renders are published to the persistent gallery labelled COMPLETE PLACEMENT / UNROUTED / NOT RELEASED. Candidate-bound render publication resumes about every four hours during active board work, and sooner for a new routed candidate.
 
 ## Decision after that result
 
