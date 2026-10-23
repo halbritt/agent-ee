@@ -65,8 +65,8 @@ class PlaneFixture:
     def save(self):
         write_json(self.source/self.plan_path,self.plan)
 
-    def run_plan(self,name='run'):
-        return planes.generate(self.source,self.board,self.plan_path,self.root/name)
+    def run_plan(self,name='run',phase=None):
+        return planes.generate(self.source,self.board,self.plan_path,self.root/name,phase=phase)
 
     def assert_ok(self,report):
         self.assertEqual(report['execution'],'ok',report)
@@ -126,17 +126,19 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
         self.assertIn('no native filled copper',str(report['findings']))
         self.assertFalse((self.root/'run/board.kicad_pcb').exists())
 
-    def test_wholly_unconnected_zone_refuses_always_but_preserves_never(self):
+    def test_wholly_unconnected_zone_defers_only_with_pre_routing_phase_and_preserves_never(self):
+        # AGENTEE-487 H1: a wholly unconnected 'always' zone is DEFERRED only when the caller declares the
+        # pre-routing phase (the routing-turn step); without it the zone is refused exactly as before.
         before = stage_receipts.file_tree(self.source)
-        for policy in ('always', 'never'):
-            with self.subTest(policy=policy):
+        cases = (('always', None), ('always', planes.PRE_ROUTING), ('never', None), ('never', planes.PRE_ROUTING))
+        for policy, phase in cases:
+            with self.subTest(policy=policy, phase=phase):
                 self.plan['zones'] = [dict(self.plan['zones'][0], island_removal=policy,
                     outline={'polygon_mm': [[35,11],[49,11],[49,30],[35,30]]})]
                 self.save()
-                name = 'isolated-' + policy
-                report = self.run_plan(name)
+                name = f'isolated-{policy}-{phase or "nophase"}'
+                report = self.run_plan(name, phase=phase)
                 uid = planes.zone_ids(self.plan)[0]
-                # The producer's inspect child reloads the saved fill in a fresh process.
                 facts = read_json(self.root/name/'verify/facts.json')
                 self.assertEqual(facts['zones'][0]['uuid'], uid)
                 self.assertGreater(facts['zones'][0]['filled_area_mm2'], 0)
@@ -145,18 +147,47 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
                             and any(i['uuid']==uid for i in v['items'])]
                 self.assertTrue(isolated, native)
                 self.assertTrue(all(v['severity']=='warning' for v in isolated))
-                if policy == 'always':
+                self.assertEqual(report['phase'], phase)
+                if policy == 'always' and phase is None:
                     self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
                     self.assertEqual(report['drc']['planned_zone_errors'], isolated)
                     self.assertIn(uid, str(report['findings']))
+                    self.assertEqual(report['deferred_connectivity'], [])
                     self.assertFalse((self.root/name/'board.kicad_pcb').exists())
+                elif policy == 'always':
+                    self.assert_ok(report)
+                    self.assertEqual(report['drc']['planned_zone_errors'], [])
+                    # saved-native POSITIVE: the verified saved fill's evidence covers every polygon, all isolated
+                    ev = facts['zones'][0]['polygon_evidence']
+                    self.assertEqual(sorted(r['index'] for r in ev), list(range(facts['zones'][0]['fill_polygons'])))
+                    self.assertTrue(ev and all(r['isolated'] is True for r in ev), ev)
+                    self.assertEqual(read_json(self.root/name/'verify/facts.json')['board_sha256'],
+                                     digest(self.root/name/'board.kicad_pcb'))
+                    self.assertEqual(report['deferred_connectivity'], [dict(
+                        zone=uid, net=facts['zones'][0]['net'], layer=facts['zones'][0]['layer'], island_removal='always',
+                        obligation='connected fill under island_removal always after routing')])
+                    self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
                 else:
                     self.assert_ok(report)
                     self.assertEqual(report['drc']['planned_zone_errors'], [])
+                    self.assertEqual(report['deferred_connectivity'], [])
                     self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
-        # Only the explicitly rewritten plan changes in the captured inputs.
         after = stage_receipts.file_tree(self.source)
         self.assertEqual({p for p in before[0] if before[0][p]!=after[0][p]}, {self.plan_path})
+
+    def test_pad_edge_contact_is_native_connectivity(self):
+        # AGENTEE-487 H2 (Astra delta probe): the GND pad centred at (20,20) touches a fill that starts at x=20.5;
+        # its centre lies outside the polygon, but native shape collision must report the polygon connected.
+        self.plan['zones'] = [dict(self.plan['zones'][0], island_removal='always',
+                                   outline={'polygon_mm': [[20.5, 11], [30, 11], [30, 30], [20.5, 30]]})]
+        self.save()
+        report = self.run_plan('pad-edge', phase=planes.PRE_ROUTING)
+        self.assert_ok(report)
+        uid = planes.zone_ids(self.plan)[0]
+        ev = read_json(self.root/'pad-edge'/'verify/facts.json')['zones'][0]['polygon_evidence']
+        self.assertTrue(ev)
+        self.assertTrue(all(r['isolated'] is False for r in ev), ev)
+        self.assertEqual(report['deferred_connectivity'], [])
 
     def test_split_zone_removes_secondary_island_only_under_always(self):
         prepare = r"""
@@ -267,6 +298,154 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
                        lambda p:p['zones'][0].update(island_removal='guess')):
             plan=copy.deepcopy(self.plan);mutate(plan)
             with self.assertRaises(ValueError):planes.validate_plan(plan)
+
+
+class PolygonEvidenceBoundaryTests(PlaneFixture, unittest.TestCase):
+    """Corrupt only the serialized proof after real native saved-board inspection."""
+    def setUp(self):
+        super().setUp()
+        self.plan['zones'] = [dict(self.plan['zones'][0], outline={
+            'polygon_mm': [[25, 21], [35, 21], [35, 29], [25, 29]]})]
+        self.save()
+
+    def assert_refused(self, label, mutate):
+        read = planes.read_json
+        applied = []
+
+        def intercept(path):
+            result = read(path)
+            if Path(path).name == 'facts.json':
+                records = result['zones'][0]['polygon_evidence']
+                self.assertEqual(len(records), 2)
+                mutate(records)
+                applied.append(True)
+            return result
+
+        with patch.object(planes, 'read_json', side_effect=intercept):
+            report = self.run_plan(label, phase=planes.PRE_ROUTING)
+        self.assertEqual(applied, [True], report)
+        actual = (report['execution'], report['outcome'],
+                  (self.root/label/'board.kicad_pcb').exists())
+        print('REQUIRED_REFUSAL', label, 'actual=', actual, flush=True)
+        self.assertEqual(actual, ('failed', 'unknown', False), report)
+
+    def test_nonhex_digest_refuses(self):
+        self.assert_refused('nonhex_digest', lambda r: r[0].update(digest='z'*64))
+
+    def test_changed_geometry_old_digest_refuses(self):
+        def mutate(records):
+            records[0]['outline_mm'][0][0] += 1
+            records[0]['outline_nm'][0][0] += 1_000_000
+        self.assert_refused('changed_geometry_old_digest', mutate)
+
+    def test_empty_hole_refuses(self):
+        self.assert_refused('empty_hole', lambda r: r[0].update(holes_mm=[[]]))
+
+    def test_duplicate_geometry_distinct_stale_digest_refuses(self):
+        def mutate(records):
+            self.assertNotEqual(records[0]['digest'], records[1]['digest'])
+            for field in ('outline_mm', 'holes_mm', 'outline_nm', 'holes_nm'):
+                records[1][field] = copy.deepcopy(records[0][field])
+        self.assert_refused('duplicate_geometry', mutate)
+
+    def test_noninteger_authoritative_coordinates_refuse(self):
+        for value in (True, 1.0, float('nan')):
+            with self.subTest(value=value):
+                def mutate(records):
+                    records[0]['outline_nm'][0][0] = value
+                self.assert_refused('noninteger-' + str(value), mutate)
+
+    def test_contradictory_display_geometry_refuses(self):
+        def mutate(records):
+            records[0]['outline_mm'][0][0] += 1
+        self.assert_refused('display_geometry', mutate)
+
+    def test_truthful_saved_native_evidence_publishes(self):
+        report = self.run_plan('truthful', phase=planes.PRE_ROUTING)
+        self.assert_ok(report)
+        facts = read_json(self.root/'truthful/verify/facts.json')
+        self.assertEqual(facts['board_sha256'], digest(self.root/'truthful/board.kicad_pcb'))
+        records = facts['zones'][0]['polygon_evidence']
+        self.assertEqual(len(records), 2)
+        self.assertTrue(all(r['isolated'] is True for r in records))
+        self.assertEqual(len(report['deferred_connectivity']), 1)
+
+
+class PhaseAndAttributionTests(unittest.TestCase):
+    """AGENTEE-487 H2 contract (agent-529 a76ba613): deferral only pre-routing, only for a wholly unconnected planned
+    always-zone, proven by complete unique native polygon evidence of the VERIFIED SAVED fill. DRC anchor markers are
+    zone-level corroboration only."""
+    UID = '10000000-0000-0000-0000-000000000001'
+    SAVED = 'b' * 64
+    SQUARES = [[[0, 0], [1, 0], [1, 1], [0, 1]], [[5, 0], [6, 0], [6, 1], [5, 1]]]
+
+    def zone(self, isolated=(True, True), records=None, count=None):
+        recs = records if records is not None else [
+            dict(index=i, outline_mm=self.SQUARES[i], holes_mm=[], outline_nm=planes.polygon_nm(self.SQUARES[i], [])[0],
+                 holes_nm=[], digest=planes.polygon_digest(planes.polygon_nm(self.SQUARES[i], [])), isolated=f)
+            for i, f in enumerate(isolated)]
+        return dict(uuid=self.UID, fill_polygons=len(isolated) if count is None else count, layer='In2.Cu', net='/+3V3',
+                    polygon_evidence=recs)
+
+    def defer(self, markers, zone=None, phase=None, facts_sha=None):
+        errors = [dict(type='isolated_copper', severity='warning', items=[dict(uuid=self.UID, pos=p)]) for p in markers]
+        return planes.wholly_unconnected(errors, [zone or self.zone()], {self.UID}, phase or planes.PRE_ROUTING,
+                                         saved_board_sha256=self.SAVED, facts_board_sha256=facts_sha or self.SAVED)
+
+    ANCHOR = dict(x=9.0, y=9.0)
+
+    def test_step_declares_phase_only_when_given(self):
+        self.assertEqual(planes._phase_argv(None), [])
+        self.assertEqual(planes._phase_argv(planes.PRE_ROUTING), ['--phase', 'pre-routing'])
+        with self.assertRaises(ValueError):
+            planes._phase_argv('post-routing')
+
+    def test_no_phase_or_post_routing_never_defers(self):
+        errors = [dict(type='isolated_copper', severity='warning', items=[dict(uuid=self.UID, pos=self.ANCHOR)])]
+        for phase in (None, 'post-routing'):
+            self.assertEqual(planes.wholly_unconnected(errors, [self.zone()], {self.UID}, phase,
+                                                       saved_board_sha256=self.SAVED, facts_board_sha256=self.SAVED), set())
+
+    def test_complete_native_coverage_defers_with_repeated_anchor_markers_as_corroboration(self):
+        # repeated anchors are NOT polygon witnesses; the complete native evidence is the attribution
+        self.assertEqual(self.defer([self.ANCHOR, self.ANCHOR]), {self.UID})
+        self.assertEqual(self.defer([self.ANCHOR]), {self.UID})
+
+    def test_markers_never_fill_missing_native_coverage(self):
+        # the reviewer's cases: [anchor, anchor] and [anchor, point-in-polygon-0] with polygon 1 not covered
+        one_record = self.zone(records=self.zone()['polygon_evidence'][:1], count=2)
+        for markers in ([self.ANCHOR, self.ANCHOR], [self.ANCHOR, dict(x=0.5, y=0.5)]):
+            with self.subTest(markers=markers), self.assertRaises(ValueError):
+                self.defer(markers, zone=one_record)
+
+    def test_duplicate_native_identity_refuses(self):
+        valid = self.zone()['polygon_evidence']
+        dup_index = copy.deepcopy(valid)
+        dup_index[1]['index'] = 0
+        duplicate_geometry = copy.deepcopy(valid)
+        duplicate_geometry[1] = dict(copy.deepcopy(valid[0]), index=1)
+        for recs in (dup_index, duplicate_geometry):
+            with self.subTest(recs=recs[1]), self.assertRaisesRegex(ValueError, 'missing or duplicate'):
+                self.defer([self.ANCHOR], zone=self.zone(records=recs))
+
+    def test_stale_evidence_refuses(self):
+        with self.assertRaises(ValueError):
+            self.defer([self.ANCHOR], facts_sha='c' * 64)
+
+    def test_malformed_evidence_refuses(self):
+        bad = copy.deepcopy(self.zone()['polygon_evidence'])
+        bad[0]['isolated'] = 'true'
+        nan = copy.deepcopy(self.zone()['polygon_evidence'])
+        nan[0]['outline_mm'][0][0] = float('nan')
+        for recs in (bad, nan):
+            with self.subTest(), self.assertRaises(ValueError):
+                self.defer([self.ANCHOR], zone=self.zone(records=recs))
+        for pos in (dict(x=float('nan'), y=0), dict(x='9', y=9), None):
+            with self.subTest(pos=pos), self.assertRaises(ValueError):
+                self.defer([pos])
+
+    def test_partial_isolation_is_not_deferred(self):
+        self.assertEqual(self.defer([self.ANCHOR], zone=self.zone(isolated=(True, False))), set())
 
 
 class PlannedZoneClassificationTests(unittest.TestCase):

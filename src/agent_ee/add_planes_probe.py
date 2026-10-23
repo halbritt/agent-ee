@@ -6,6 +6,7 @@ import shutil
 from .add_planes import SIBLINGS, validate_plan, zone_ids
 from .catalog import strict_json
 from .storage import write_json
+from .plane_polygon_identity import polygon_digest
 
 _REMOVED = []
 
@@ -94,8 +95,35 @@ def inspect(board, plan):
         if not actual.IsFilled() or fill.OutlineCount() == 0 or fill.Area() <= 0:
             raise ValueError('planned plane has no native filled copper')
         facts.append(dict(uuid=uid, net=actual.GetNetname(), layer=board.GetLayerName(actual.GetLayer()),
-                          filled_area_mm2=fill.Area()/1e12, fill_polygons=fill.OutlineCount()))
+                          filled_area_mm2=fill.Area()/1e12, fill_polygons=fill.OutlineCount(),
+                          polygon_evidence=_polygon_evidence(k, board, actual)))
     return dict(pcbnew_version=k.Version(), zones=facts)
+
+
+def _chain_mm(k, chain):
+    return [[k.ToMM(chain.CPoint(n).x), k.ToMM(chain.CPoint(n).y)] for n in range(chain.PointCount())]
+
+
+def _polygon_evidence(k, board, zone):
+    """AGENTEE-487 H2: one record per filled polygon of the SAVED (reloaded) zone fill: index, full identity
+    (outline and holes, digest of their exact nm vertices) and isolation from KiCad's native shape collision
+    (SHAPE_POLY_SET.Collide(effective shape, 0) against every same-net pad, track, arc and via on the layer)."""
+    layer, net = zone.GetLayer(), zone.GetNetCode()
+    fill = zone.GetFilledPolysList(layer)
+    shapes = [p.GetEffectiveShape(layer) for fp in board.GetFootprints() for p in fp.Pads()
+              if p.GetNetCode() == net and p.IsOnLayer(layer)]
+    shapes += [t.GetEffectiveShape(layer) for t in board.GetTracks() if t.GetNetCode() == net and t.IsOnLayer(layer)]
+    records = []
+    for i in range(fill.OutlineCount()):
+        unit = fill.UnitSet(i)
+        outline = fill.COutline(i)
+        holes = [fill.CHole(i, h) for h in range(fill.HoleCount(i))]
+        nm = [[[outline.CPoint(n).x, outline.CPoint(n).y] for n in range(outline.PointCount())],
+              *[[[c.CPoint(n).x, c.CPoint(n).y] for n in range(c.PointCount())] for c in holes]]
+        records.append(dict(index=i, outline_nm=nm[0], holes_nm=nm[1:], outline_mm=_chain_mm(k, outline), holes_mm=[_chain_mm(k, c) for c in holes],
+                            digest=polygon_digest(nm),
+                            isolated=not any(bool(unit.Collide(shape, 0)) for shape in shapes)))
+    return records
 
 
 def apply(board_path, plan, output):
@@ -146,7 +174,10 @@ def main(argv=None):
         apply(args.board, plan, args.output)
     else:
         import pcbnew as k
-        write_json(args.output, inspect(k.LoadBoard(str(args.board)),plan))
+        import hashlib
+        facts = inspect(k.LoadBoard(str(args.board)), plan)
+        facts['board_sha256'] = hashlib.sha256(args.board.read_bytes()).hexdigest()  # the saved board inspected
+        write_json(args.output, facts)
     return 0
 
 

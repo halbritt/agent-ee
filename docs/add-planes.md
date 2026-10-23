@@ -47,9 +47,44 @@ zone without filled copper is a refusal. Engineering must choose the intended
 policy in the captured plan. In KiCad 10, `always` removes disconnected secondary
 islands when the zone has a connected main pour. A wholly unconnected zone can
 retain its fill and emit native DRC `isolated_copper` warnings instead. The
-producer refuses any `isolated_copper` violation attributed to a planned
+producer refuses an `isolated_copper` violation attributed to a planned
 `always` zone, including warnings and exclusions, and reports the exact zone
-UUIDs. `never` retains disconnected copper; its isolated-copper warnings remain
+UUIDs. Exception (AGENTEE-487): only when the caller declares the pre-routing
+phase (`step(..., phase='pre-routing')`, argv `--phase pre-routing`, as the
+routing-turn step does) may a wholly unconnected planned `always` zone be
+deferred. Wholly unconnected is proven by the native polygon evidence of the VERIFIED
+SAVED fill: the `inspect` child reloads the saved, spliced board and records for every
+filled polygon its index, full identity (outline and holes, digest of the exact nm
+vertices) and isolation by KiCad's native shape collision
+(`SHAPE_POLY_SET.Collide(effective shape, 0)` against every same-net pad, track, arc
+and via on the zone layer, so edge contact counts as connected), bound to the saved
+board's sha256 (`verify/facts.json`, `polygon_evidence`, `board_sha256`). Every saved
+polygon must be covered exactly once (indexes 0..n-1, n the saved polygon count,
+unique identities) and marked isolated; flags must be exact booleans and vertices
+finite. The writer and consumer share `plane_polygon_identity.polygon_digest`:
+SHA256 of `json.dumps([outline_nm, *holes_nm]).encode()`, retaining native vertex
+and hole order and the default JSON separators. The writer retains authoritative `outline_nm` and `holes_nm` integer arrays from
+the reloaded native fill. The consumer rejects Boolean, float and nonfinite nm
+coordinates without coercion. Millimetre display arrays must reproduce those
+exact nm arrays (allowing only binary-float round-trip error); contradictions
+refuse. The consumer validates
+nonempty chains with nonzero area (including KiCad's opposite-direction bridges
+for fractured holes), recomputes the digest and requires exact
+lowercase hexadecimal equality. Coverage uniqueness uses these recomputed identities,
+not labels supplied by the evidence. Empty holes, self-intersections and off-grid
+coordinates refuse. Missing, duplicate, stale, malformed or contradictory evidence refuses;
+partial isolation is not deferred. KiCad 10 DRC places every `isolated_copper` marker
+of a zone at the zone anchor, so the markers are ZONE-LEVEL corroboration only (the
+zone must have at least one, each with a finite position); they are never polygon
+witnesses and never fill missing coverage. The raw DRC findings are kept. Flags must be
+exact booleans and positions/vertices finite numbers; duplicate, unmappable,
+ambiguous or non-finite evidence and a malformed or missing native record fail
+closed; partial isolation is not deferred. A deferred zone
+keeps its definition and `always` policy and is listed in
+`deferred_connectivity` as `{zone, net, layer, island_removal: "always",
+obligation}`; the report also records `phase`. Without the phase input (any
+other caller and every post-routing use) the zone is refused as before. The
+post-routing consumer that discharges the obligation is a separate component. `never` retains disconnected copper; its isolated-copper warnings remain
 in the native report without causing this policy refusal.
 
 Zone UUIDs are deterministic from the complete plan and list index. The same
@@ -135,3 +170,29 @@ reference names or invent a mechanical envelope. Native fill only respects the
 keepouts actually present in the captured board. Full fresh DRC, schematic
 parity, routing checks and pour integrity are still required after routing;
 owner and bench obligations remain open. No fabrication is authorized here.
+
+### Final DRC obligation binding (AGENTEE-487c)
+
+A final full `drc` check declares `params.plane_obligations`, a list of objects
+with `plan`, `producer`, and `composition` links. Each link is
+`{"path": "captured/relative/path", "sha256": "<captured file digest>"}`.
+`plan` names the plane-plan input; `producer` names the existing
+`agent-ee.add-planes/1` report (`out/planes.json`), not a second receipt format.
+`composition` names the captured `pod-capture.scope-composition/*` record,
+whose `planes` list must contain the exact plan path/hash link. Capture all
+three files as immutable inputs. The producer must have succeeded and bind the
+same plan hash and planned UUIDs. Its result is provenance, never final-board
+acceptance. Final DRC still inspects the saved board and native DRC findings.
+
+Plan filenames are unrestricted. Captured plane plans and producer reports
+without these bindings fail final DRC, including renamed files. Missing files,
+stale hashes and declared-but-absent obligations fail. A scope with no plane
+artifacts or declarations keeps its ordinary DRC behavior. Placement DRC
+projections defer this gate to the full DRC check.
+
+The pod composition producer must supply these links before this consumer can
+accept its candidate. Existing composition records without the plane binding
+are deliberately not grandfathered into acceptance. The hardcoded pod reference
+net list and corridor discovery in `plane_reference.py` remain a separate
+follow-up. The empty-fill `UnFill` fixture proves refusal of empty saved fill;
+it does not prove that island removal caused that empty fill.

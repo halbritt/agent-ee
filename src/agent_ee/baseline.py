@@ -81,6 +81,9 @@ def compile_baseline(scope, files, inputs=None):
             waiver = input_path(params, scope, files, inputs)
             if waiver:
                 paths.add(waiver)
+        if spec.get('kind') == 'drc':
+            from .final_planes import binding_inputs
+            paths.update(binding_inputs(params))
         if spec.get("kind") in ("catalog", "part_selection"):
             from .catalog_checks import capability
             paths.update(capability(spec["kind"], params, scope, files, inputs, spec["id"])["immutable_inputs"])

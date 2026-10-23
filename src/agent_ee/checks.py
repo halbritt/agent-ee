@@ -462,6 +462,9 @@ def check_drc(ctx):
         sources, classified = drc_admissible(ctx.inputs, ctx.scope['board'], report, ctx.console())
     except ValueError as exc:
         raise CheckError('malformed', str(exc)) from exc
+    if projection is None:
+        from .final_planes import check_captured
+        check_captured(ctx, report)
     from .violation_waivers import classify
     unwaived = classify(ctx, report)
     carried = []
