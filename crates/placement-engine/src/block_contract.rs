@@ -811,4 +811,244 @@ mod tests {
             Rat::new(1.into(), 9.into())
         );
     }
+
+    // Authored geometry for the adopted return topology, not a recapture of the
+    // historical board: those capacitor return lands were still on /GND.
+    fn named_return_fixture(device: &str, capacitor: &str) -> (Value, Value) {
+        let (mut capture, mut contract) = fixture();
+        capture["footprints"][0]["ref"] = json!(device);
+        capture["footprints"][1]["ref"] = json!(capacitor);
+        capture["footprints"][0]["pads"][0]["number"] = json!("5");
+        capture["footprints"][0]["pads"][1]["number"] = json!("3");
+        for fp in capture["footprints"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .take(2)
+        {
+            fp["pads"][0]["net"] = json!("/+3V3");
+            fp["pads"][1]["net"] = json!("/+5V_CAN");
+        }
+        contract["allocation"]["blocks"][0]["references"] = json!([device, capacitor]);
+        contract["allocation"]["blocks"][0]["anchor"]["member"] = json!(device);
+        let quote = "Authored return-path regression maximum distance: 5 mm";
+        let path = "fixture/named-return-limits.txt";
+        let source = json!({
+            "path":path,
+            "sha256":format!("{:x}", Sha256::digest(quote.as_bytes())),
+            "locator":"numeric maximum distance", "quote":quote
+        });
+        contract["relationships"]["source_records"] =
+            json!({"fixture/named-return-limits.txt":quote});
+        for (role, from_pad, to_pad, net) in [
+            ("supply", "5", "1", "/+3V3"),
+            ("return", "3", "2", "/+5V_CAN"),
+        ] {
+            contract["relationships"]["obligations"][0][role] = json!({
+                "from":{"reference":device,"pad":from_pad,"net":net},
+                "to":{"reference":capacitor,"pad":to_pad,"net":net},
+                "max_distance_nm":5000000,
+                "citation":"fixture/named-return-limits.txt numeric maximum distance",
+                "provenance":{"class":"datasheet","basis":"authored numeric fixture",
+                    "derivation":{"kind":"numeric","value_nm":5000000,"source":source}}
+            });
+        }
+        (capture, contract)
+    }
+
+    fn assert_named_return_unknown(capture: &Value, contract: &Value, reason: &str) {
+        let strict = check_complete(capture, contract).unwrap();
+        assert_eq!(strict["status"], "unknown");
+        assert_eq!(strict["defects"], json!([]));
+        assert_eq!(strict["unknown"].as_array().unwrap().len(), 1);
+        assert_eq!(strict["unknown"][0]["role"], "return");
+        assert_eq!(
+            strict["unknown"][0]["kind"],
+            "relationship_requirement_missing"
+        );
+        assert!(
+            strict["unknown"][0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains(reason)
+        );
+        assert_eq!(strict["relationships"][0]["role"], "supply");
+        assert_eq!(strict["relationships"][0]["exceeded"], false);
+        assert_eq!(
+            strict["relationships"][0]["distance_squared_nm2"],
+            json!(4000000000000_i64)
+        );
+
+        let generic = locality::grade(capture, &contract["relationships"]).unwrap();
+        assert_eq!(generic["status"], "unknown");
+        assert_eq!(generic["defects"], json!([]));
+        assert_eq!(generic["unknown"].as_array().unwrap().len(), 1);
+        assert_eq!(generic["unknown"][0]["role"], "return");
+        assert_eq!(
+            generic["unknown"][0]["kind"],
+            "electrical_locality_unavailable"
+        );
+        assert!(
+            generic["unknown"][0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains(reason)
+        );
+        assert_eq!(generic["measured"].as_array().unwrap().len(), 1);
+        assert_eq!(generic["measured"][0]["role"], "supply");
+        assert_eq!(
+            generic["measured"][0]["distance_squared_nm"],
+            json!(4000000000000_i64)
+        );
+    }
+
+    #[test]
+    fn named_return_adopted_rail_endpoints_pass() {
+        for (device, capacitor) in [("U100", "C133"), ("U21", "C84")] {
+            let (capture, contract) = named_return_fixture(device, capacitor);
+            let strict = check_complete(&capture, &contract).unwrap();
+            let generic = locality::grade(&capture, &contract["relationships"]).unwrap();
+            assert_eq!(strict["status"], "pass");
+            assert_eq!(generic["status"], "pass");
+            assert_eq!(strict["relationships"].as_array().unwrap().len(), 2);
+            assert_eq!(generic["measured"].as_array().unwrap().len(), 2);
+            for (index, role, from_pad, to_pad, net) in [
+                (0, "supply", "5", "1", "/+3V3"),
+                (1, "return", "3", "2", "/+5V_CAN"),
+            ] {
+                assert_eq!(strict["relationships"][index]["role"], role);
+                assert_eq!(
+                    strict["relationships"][index]["constraint_provenance"]["enforcement"],
+                    "hard"
+                );
+                assert_eq!(strict["relationships"][index]["exceeded"], false);
+                let measured = &generic["measured"][index];
+                assert_eq!(measured["role"], role);
+                assert_eq!(
+                    measured["from"],
+                    json!({"reference":device,"pad":from_pad,"net":net})
+                );
+                assert_eq!(
+                    measured["to"],
+                    json!({"reference":capacitor,"pad":to_pad,"net":net})
+                );
+                assert_eq!(measured["distance_squared_nm"], json!(4000000000000_i64));
+            }
+        }
+    }
+
+    #[test]
+    fn named_return_declaration_is_required() {
+        for (device, capacitor) in [("U100", "C133"), ("U21", "C84")] {
+            let (capture, mut contract) = named_return_fixture(device, capacitor);
+            contract["relationships"]["obligations"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("return");
+            for error in [
+                check_complete(&capture, &contract).unwrap_err(),
+                locality::grade(&capture, &contract["relationships"]).unwrap_err(),
+            ] {
+                assert!(error.to_string().contains("supply and return"));
+            }
+        }
+    }
+
+    #[test]
+    fn named_return_missing_native_pad_is_unknown() {
+        for (device, capacitor) in [("U100", "C133"), ("U21", "C84")] {
+            for endpoint in 0..2 {
+                let (mut capture, contract) = named_return_fixture(device, capacitor);
+                capture["footprints"][endpoint]["pads"]
+                    .as_array_mut()
+                    .unwrap()
+                    .remove(1);
+                assert_named_return_unknown(&capture, &contract, "pad missing or duplicated");
+            }
+        }
+    }
+
+    #[test]
+    fn named_return_stale_ground_rail_is_unknown() {
+        for (device, capacitor) in [("U100", "C133"), ("U21", "C84")] {
+            let (mut capture, contract) = named_return_fixture(device, capacitor);
+            // Historical native evidence cannot satisfy the adopted +5V_CAN
+            // declaration by relabeling only the request.
+            capture["footprints"][1]["pads"][1]["net"] = json!("/GND");
+            assert_named_return_unknown(
+                &capture,
+                &contract,
+                "native pad net differs from declaration",
+            );
+        }
+    }
+
+    #[test]
+    fn named_return_missing_native_centroid_is_unknown() {
+        for (device, capacitor) in [("U100", "C133"), ("U21", "C84")] {
+            for endpoint in 0..2 {
+                let (mut capture, contract) = named_return_fixture(device, capacitor);
+                capture["footprints"][endpoint]["pads"][1]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("copper_centroid_offset_nm");
+                assert_named_return_unknown(
+                    &capture,
+                    &contract,
+                    "native copper centroid unavailable",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn named_return_five_mm_boundary_and_return_only_overrun() {
+        for (device, capacitor) in [("U100", "C133"), ("U21", "C84")] {
+            let (mut capture, contract) = named_return_fixture(device, capacitor);
+            capture["footprints"][1]["pads"][1]["position_nm"][0] = json!(5000000);
+            let strict_at_bound = check_complete(&capture, &contract).unwrap();
+            let generic_at_bound = locality::grade(&capture, &contract["relationships"]).unwrap();
+            assert_eq!(strict_at_bound["status"], "pass");
+            assert_eq!(generic_at_bound["status"], "pass");
+            assert_eq!(
+                strict_at_bound["relationships"][1]["distance_squared_nm2"],
+                json!(25000000000000_i64)
+            );
+            assert_eq!(
+                generic_at_bound["measured"][1]["distance_squared_nm"],
+                json!(25000000000000_i64)
+            );
+
+            capture["footprints"][1]["pads"][1]["position_nm"][0] = json!(5000001);
+            let strict = check_complete(&capture, &contract).unwrap();
+            let generic = locality::grade(&capture, &contract["relationships"]).unwrap();
+            assert_eq!(strict["status"], "defect");
+            assert_eq!(generic["status"], "defect");
+            assert_eq!(strict["unknown"], json!([]));
+            assert_eq!(generic["unknown"], json!([]));
+            assert_eq!(strict["defects"].as_array().unwrap().len(), 1);
+            assert_eq!(generic["defects"].as_array().unwrap().len(), 1);
+            assert_eq!(strict["defects"][0]["role"], "return");
+            assert_eq!(generic["defects"][0]["role"], "return");
+            assert_eq!(strict["defects"][0]["kind"], "pin_distance_exceeded");
+            assert_eq!(
+                generic["defects"][0]["kind"],
+                "electrical_locality_distance"
+            );
+            assert_eq!(strict["relationships"][1]["exceeded"], true);
+            assert_eq!(
+                strict["relationships"][1]["distance_squared_nm2"],
+                json!(25000010000001_i64)
+            );
+            assert_eq!(
+                generic["measured"][1]["distance_squared_nm"],
+                json!(25000010000001_i64)
+            );
+            assert_eq!(
+                strict["relationships"][0],
+                strict_at_bound["relationships"][0]
+            );
+            assert_eq!(generic["measured"][0], generic_at_bound["measured"][0]);
+        }
+    }
 }
