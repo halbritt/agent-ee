@@ -158,6 +158,79 @@ def validate(document):
     return copy.deepcopy(document)
 
 
+def _custom_geometry(pad):
+    """Require the probe's complete, qualified anchor and primitive evidence."""
+    from .footprint_library import _custom_primitives
+    geometry = pad.get('custom_geometry')
+    if pad.get('shape') != 6 or not isinstance(geometry, dict) or geometry.get('status') != 'proven':
+        raise ValueError('mechanical custom-pad geometry is not native qualified')
+    _fields(geometry, ('status', 'anchor', 'primitives', 'merged_polygons_nm', 'bbox_nm'),
+            label='mechanical custom-pad geometry')
+    if type(geometry['anchor']) is not int or geometry['anchor'] not in (0, 1):
+        raise ValueError('mechanical custom-pad anchor is unsupported')
+    if not isinstance(geometry['primitives'], list):
+        raise ValueError('mechanical custom-pad primitives are missing')
+    _custom_primitives(['pad', ['primitives', *geometry['primitives']]], 0)
+    polygons = geometry['merged_polygons_nm']
+    if not isinstance(polygons, list) or not 1 <= len(polygons) <= 64:
+        raise ValueError('mechanical custom-pad merged copper is missing')
+    for polygon in polygons:
+        if not isinstance(polygon, list) or not 3 <= len(polygon) <= 1024:
+            raise ValueError('mechanical custom-pad merged contour is invalid')
+        simple_polygon([_point(point) for point in polygon])
+    box = geometry['bbox_nm']
+    if (not isinstance(box, list) or len(box) != 4 or any(type(v) is not int for v in box)
+            or box[0] >= box[2] or box[1] >= box[3]):
+        raise ValueError('mechanical custom-pad bounds are invalid')
+    return geometry
+
+
+def _custom_follows(before, after, source, current, flipped):
+    """Compare pad-local copper and board-space bounds under one rigid owner move."""
+    from decimal import Decimal
+    from .placer import rotate
+    old, new = _custom_geometry(before), _custom_geometry(after)
+
+    def reflected(node):
+        if not isinstance(node, list):
+            return node
+        if node and node[0] in ('start', 'end', 'center', 'xy'):
+            y = Decimal(node[2]).copy_negate()
+            return [node[0], node[1], str(y.normalize()) if y else '0']
+        result = [reflected(child) for child in node]
+        if result and result[0] == 'gr_rect':
+            start = next(n for n in result[1:] if n[0] == 'start')
+            end = next(n for n in result[1:] if n[0] == 'end')
+            for axis in (1, 2):
+                start[axis], end[axis] = sorted((start[axis], end[axis]), key=Decimal)
+        return result
+
+    def contours(polygons, reflect=False):
+        rings = []
+        for polygon in polygons:
+            points = [tuple((x, -y if reflect else y)) for x, y in polygon]
+            # Native polygonization can choose a different starting vertex or winding.
+            index = min(range(len(points)), key=points.__getitem__)
+            ring = points[index:] + points[:index]
+            rings.append(min(ring, [ring[0], *reversed(ring[1:])]))
+        return sorted(rings)
+
+    box = old['bbox_nm']
+    corners = []
+    for x in (box[0], box[2]):
+        for y in (box[1], box[3]):
+            local = rotate([x - source['position_nm'][0], y - source['position_nm'][1]],
+                           -_angle(source['rotation_deg']) // 90)
+            corners.append(_move(local, current['position_nm'], current['rotation_deg'], flipped))
+    expected_box = [min(p[0] for p in corners), min(p[1] for p in corners),
+                    max(p[0] for p in corners), max(p[1] for p in corners)]
+    if (old['anchor'] != new['anchor']
+            or (reflected(old['primitives']) if flipped else old['primitives']) != new['primitives']
+            or contours(old['merged_polygons_nm'], flipped) != contours(new['merged_polygons_nm'])
+            or expected_box != new['bbox_nm']):
+        raise ValueError('mechanical native custom-pad geometry changed independently of owner')
+
+
 def _native_owner(fp):
     """Keep immutable identity and source poses, not courtyard/cache state."""
     for key in ('ref', 'uuid'):
@@ -172,7 +245,7 @@ def _native_owner(fp):
     seen = set()
     for pad in pads:
         if pad.get('shape') == 6 or 'custom_geometry' in pad:
-            raise ValueError('mechanical attachments do not support custom-pad geometry')
+            _custom_geometry(pad)
         _text(pad.get('uuid'), 'mechanical pad uuid')
         if not isinstance(pad.get('number'), str) or not isinstance(pad.get('net'), str) or pad['uuid'] in seen:
             raise ValueError('mechanical pad identity missing or ambiguous')
@@ -315,6 +388,8 @@ def _current_owner(source, current):
         angle = (_angle(current['rotation_deg']) + (-relative if flipped else relative)) % 360
         if expected != after['position_nm'] or angle != _angle(after['rotation_deg']):
             raise ValueError('mechanical native pad pose changed independently of owner')
+        if before.get('shape') == 6:
+            _custom_follows(before, after, source, current, flipped)
         for key in ('copper_centroid_offset_nm', 'copper_land_offset_nm'):
             if (key in before) != (key in after):
                 raise ValueError('mechanical native pad copper offset coverage changed')

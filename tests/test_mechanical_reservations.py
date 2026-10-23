@@ -177,7 +177,7 @@ class MechanicalReservationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mechanics().bind(binding['document'], changed_source)
 
-    def test_custom_pads_refuse_and_exact_copper_offsets_follow_native_transform(self):
+    def test_unqualified_custom_pads_refuse_and_exact_copper_offsets_follow_native_transform(self):
         facts = simple_capture()
         source = facts['footprints'][0]
         source['pads'][0]['copper_centroid_offset_nm'] = [[1, 2], [3, 4]]
@@ -212,7 +212,7 @@ class MechanicalReservationTests(unittest.TestCase):
                 rejected = mechanics().grade(changed, binding)
                 self.assertEqual(rejected['status'], 'unknown', rejected)
                 self.assertEqual(rejected['unknown'][0]['reason'],
-                                 'mechanical attachments do not support custom-pad geometry')
+                                 'mechanical custom-pad geometry is not native qualified')
                 unsupported = copy.deepcopy(facts)
                 unsupported['footprints'][0]['pads'][0][key] = value
                 with self.assertRaisesRegex(ValueError, 'custom-pad geometry'):
