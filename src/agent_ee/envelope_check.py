@@ -245,7 +245,8 @@ def saved_structure(pcb):
 def compare_saved(criterion, record, facts):
     field = CRITERIA[criterion]
     source = facts[{'layer_count': 'layers'}.get(field, field)]
-    defects, unknown = [], []
+    defects, unknown, manufacturing_uncertainty = [], [], []
+    nominal = field == 'stackup' and record['stackup'].get('thickness_basis') == 'nominal-design'
     if 'unavailable' in source:
         unknown.append(source['unavailable'])
     elif field == 'outline':
@@ -271,17 +272,19 @@ def compare_saved(criterion, record, facts):
                     and actual['name'] == 'dielectric ' + str((index + 1) // 2)):
                 actual['name'] = declared['name']
         authority = record['fab_profile'].get('stackup', {})
-        if authority.get('execution') != 'ready':
+        if authority.get('execution') != 'ready' or nominal:
             expected = {'thickness_mm': record['stackup']['thickness_mm'], 'layers': [
                 {k: layer[k] for k in ('name', 'kind', 'thickness_mm')}
                 for layer in record['stackup']['layers']]}
             if compared != expected:
                 defects.append('saved structural stackup differs in name, order, kind or exact thickness')
-        else:
+        if authority.get('execution') == 'ready':
             found, unpublished = compare_stackup(record['stackup'], compared, authority['expected'])
             defects.extend(found)
             # An unpublished layer is unknown, but never masks a proven difference.
-            if not found:
+            if nominal:
+                manufacturing_uncertainty.extend(unpublished)
+            elif not found:
                 unknown.extend(unpublished)
     if field in ('layer_count', 'stackup'):
         for layer in record['stackup']['layers']:
@@ -331,6 +334,11 @@ def compare_saved(criterion, record, facts):
         status = 'unknown'
     return {'criterion': criterion, 'status': status,
             'defects': defects, 'unknown': unknown, 'saved': source,
+            **({'thickness_basis': 'nominal-design', 'manufacturing_uncertainty': manufacturing_uncertainty,
+                'physical_layer_thickness_qualified': False,
+                'finished_thickness_tolerance': record['fab_profile'].get(
+                    'finished_thickness_tolerance', {}).get('expected')}
+               if nominal else {}),
             **({'material_evidence': material_evidence, 'impedance_qualified': False}
                if material_declared else {})}
 

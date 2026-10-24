@@ -89,6 +89,18 @@ passes. For example, `0.025` requests a 25 micrometre search grid. It does not
 change native widths or clearance requirements. Omission uses the router
 default; the pinned CLI rejects non-finite, sub-nanometre or incompatible
 controls. The chosen value is retained in the configuration and routing record.
+
+The captured native project can also declare the router's existing assembly
+policy under `kicad_routing_tools.same_net_pad_clearance`. A positive value in
+millimetres keeps newly routed vias away from same-net SMD pads and paste
+openings in both single-ended and coupled-pair routing. For example, `0.15`
+selects an engineering routing margin. This project setting survives the normal
+snapshot and routing chain; the final project remains byte-identical to its
+captured input. It does not establish final assembly acceptance: inspect saved
+geometry and the selected manufacturing profile. The acquisition qualification
+exercised this setting on the same native placement, retaining a complete route
+and eliminating its three measured via-center-in-pad sites.
+
 `job-report.json` records `setup`, `import`, `prepare`, `search`, `judge`,
 `export` and `final_validation` separately. Queue time (admission) is outside
 the process and must be recorded by the caller.

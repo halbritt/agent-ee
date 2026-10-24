@@ -7,6 +7,20 @@ with [implementation review dispositions](closed-loop-review.md) and
 single-writer campaigns and empirical re-review while preserving the original
 candidate/reviewer/adjudicator information boundary.
 
+## Nominal manufacturing dimensions (2026-10-24)
+
+Agent-selected implementation decision under the owner's continuing delivery
+goal; not an owner ruling. New engineering designs may explicitly select
+`envelope/1` `stackup.thickness_basis: "nominal-design"` when their requirements
+specify nominal dimensions. The checker then verifies saved design dimensions,
+published supplier bounds and finished-thickness tolerance, and records
+unpublished physical layer dimensions separately. It does not invent a supplier
+guarantee, qualify controlled impedance, or change an exact physical requirement.
+The derived statement changes, so a baseline cannot acquire this interpretation
+without a new captured declaration. Existing strict checks and the historical
+RC decision retain their behavior. Native public-build and negative tests are
+recorded in the [acceptance map](system-acceptance.md).
+
 ## Small standalone Python CLI and skill
 
 The owner requested a working reusable review capability and authorized ordinary

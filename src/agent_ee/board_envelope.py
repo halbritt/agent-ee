@@ -423,7 +423,10 @@ def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
         raise ValueError(f'layer_count must be an integer from 2 to {MAX_COPPER}')
     sourced = schema == SCHEMAS[1]
     fields(value, 'stackup', ['nominal_thickness_mm', 'physical_thickness_mm', 'layers']
-           if sourced else ['thickness_mm', 'layers'])
+           if sourced else ['thickness_mm', 'layers'],
+           ['thickness_basis'] if not sourced and not unpublished else [])
+    if 'thickness_basis' in value and value['thickness_basis'] != 'nominal-design':
+        raise ValueError('thickness_basis must be nominal-design when explicitly declared')
     layers = value['layers']
     gaps = unpublished and isinstance(layers, list) and any(
         isinstance(layer, dict) and layer.get('kind') == 'dielectric' and layer.get('thickness_mm') is None
@@ -498,6 +501,7 @@ def validate_stackup(value, count, *, schema=SCHEMA, unpublished=False):
     if total is not None and summed != total:
         raise ValueError(f'stackup layers sum to {mm(summed)} mm, not thickness_mm {mm(total)}')
     return {'thickness_mm': None if nominal is None else mm(nominal), 'layers': records,
+            **({'thickness_basis': value['thickness_basis']} if 'thickness_basis' in value else {}),
             **({'nominal_thickness_mm': mm(nominal), 'physical_thickness_mm': mm(total),
                 'sources': [layer['source'] for layer in layers]} if sourced else {})}
 
@@ -1313,7 +1317,11 @@ def derive_requirements(record, source_path):
                        for l in record['stackup']['layers'])
     out.append(obligation(eid, 'stackup', '/stackup', record['stackup'],
                           f"the saved design and manufacturing request specify {record['stackup']['thickness_mm']} mm thickness and stackup, "
-                          f'top to bottom: {layers}.', source_path, CHECK_KINDS['stackup']))
+                          f'top to bottom: {layers}.' +
+                          (' Dimensions are nominal design values. Published supplier bounds remain required; '
+                           'unpublished dielectric thickness is not a guaranteed physical dimension.'
+                           if record['stackup'].get('thickness_basis') == 'nominal-design' else ''),
+                          source_path, CHECK_KINDS['stackup']))
     if record['fab_profile']['status'] == 'referenced':
         profile = {k: record['fab_profile'][k] for k in ('name', 'sha256')}
         out.append(obligation(eid, 'fab-profile', '/fab_profile', profile,
@@ -1489,6 +1497,13 @@ def stackup_authority_reason(record):
     missing = [u['reason'] for u in record['unresolved']
                if u['predicate'].startswith('stackup_layer_source_') or
                u['predicate'] == 'finished_thickness_tolerance']
+    if record['stackup'].get('thickness_basis') == 'nominal-design':
+        tolerance = record['fab_profile'].get('finished_thickness_tolerance', {})
+        if tolerance.get('execution') != 'ready':
+            missing.append('nominal design needs source-verified finished-thickness tolerance')
+        elif Fraction(record['stackup']['thickness_mm']) < Fraction(str(
+                tolerance['expected']['min_nominal_thickness_mm'])):
+            missing.append('nominal design is below finished-thickness tolerance applicability')
     return '; '.join(missing) if missing else None
 
 

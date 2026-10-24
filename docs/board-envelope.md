@@ -62,6 +62,20 @@ separate original snapshot. `original_board_path` cannot name the current
 candidate board, even when its hash matches. Omitting the optional field adds
 no mechanical restriction or judgment to legacy packing.
 
+Version 1 may explicitly add `stackup.thickness_basis: "nominal-design"` when
+the engineering requirement selects nominal board dimensions. This changes the
+derived requirement statement and its bound identity. Native `stackup/1` then
+requires exact agreement with every declared design dimension, the published
+supplier stackup bounds and a source-verified finished-thickness tolerance.
+Unpublished dielectric thicknesses remain visible as `manufacturing_uncertainty`;
+the result explicitly sets `physical_layer_thickness_qualified: false`. This is
+not source authority for impedance or an exact manufactured core dimension.
+An absent or unsupported tolerance, changed saved dimension, or conflict with a
+published value cannot pass. Omitting the field preserves the existing strict
+behavior, including unknown results for unpublished dielectric thickness.
+Profiles and version 2 physical stackups cannot use this declaration. The
+historical RC fixtures and their exact-stackup decision remain unchanged.
+
 Version 2 changes `stackup` to `{nominal_thickness_mm,
 physical_thickness_mm, layers}` and requires `source` on each layer, in the
 fab profile's existing path/hash/source/as_of/page/quote format. Layers must

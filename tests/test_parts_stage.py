@@ -402,6 +402,9 @@ class PartsProducerTests(unittest.TestCase):
         self.planning_inputs()
         shutil.copyfile(ROOT / 'fixtures/board-envelope/rc-jlc-2layer.envelope.json', self.bundle / 'envelope.json')
         shutil.copytree(ROOT / 'fixtures/board-envelope/jlc-2layer', self.bundle, dirs_exist_ok=True)
+        envelope = read_json(self.bundle / 'envelope.json')
+        envelope['stackup']['thickness_basis'] = 'nominal-design'
+        write_json(self.bundle / 'envelope.json', envelope)
         spec = b'# Checks\n\n- Native ERC must pass.\n- Native DRC must pass.\n- Assembly properties must be verified.\n'
         record = capture_spec(spec, 'QUAL', {'Checks': 'CHECKS'})
         (self.bundle / 'spec.md').write_bytes(spec)
@@ -477,13 +480,15 @@ class PartsProducerTests(unittest.TestCase):
         for cid in ['envelope-outline', 'envelope-layer_count', 'envelope-fixed_footprints']:
             check = verified_checks[cid]
             self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
-        # This captured supplier profile does not publish a core thickness.
-        # Native naming must agree, but unknown manufacturing data stays open.
+        # Nominal design acceptance preserves unpublished physical dimensions;
+        # it never manufactures an exact core-thickness guarantee.
         stackup = verified_checks['envelope-stackup']
-        self.assertEqual((stackup['execution'], stackup['outcome']), ('unsupported', 'unknown'), stackup)
-        self.assertEqual(stackup['details']['status'], 'unknown', stackup)
+        self.assertEqual((stackup['execution'], stackup['outcome']), ('ok', 'pass'), stackup)
+        self.assertEqual(stackup['details']['status'], 'pass', stackup)
         self.assertEqual(stackup['details']['defects'], [], stackup)
-        self.assertTrue(any('no published profile thickness' in s for s in stackup['details']['unknown']))
+        self.assertTrue(any('no published profile thickness' in s
+                            for s in stackup['details']['manufacturing_uncertainty']))
+        self.assertFalse(stackup['details']['physical_layer_thickness_qualified'])
         assembly = verified_checks['assembly_readiness']
         self.assertEqual((assembly['execution'], assembly['outcome']), ('ok', 'pass'), assembly)
         self.assertEqual(assembly['details']['rating_provenance']['records'], 2)

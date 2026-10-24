@@ -184,6 +184,58 @@ class PublishedCopperWeightAuthorityTests(unittest.TestCase):
         result = self.compare(pcb=PCB)
         self.assertEqual((result['status'], result['unknown']), ('unknown', ['missing or duplicate saved stackup']))
 
+    def test_explicit_nominal_design_checks_saved_dimensions_and_reports_physical_uncertainty(self):
+        self.envelope['stackup']['thickness_basis'] = 'nominal-design'
+        result = self.compare()
+        self.assertEqual((result['status'], result['defects'], result['unknown']), ('pass', [], []), result)
+        self.assertEqual(result['thickness_basis'], 'nominal-design')
+        self.assertEqual(len(result['manufacturing_uncertainty']), 2)
+        self.assertFalse(result['physical_layer_thickness_qualified'])
+        self.assertEqual(result['finished_thickness_tolerance']['percent'], 10)
+        changed = self.pcb.replace(b'(thickness 1.53)', b'(thickness 1.54)')
+        self.assertNotEqual(changed, self.pcb)
+        wrong = self.compare(pcb=changed)
+        self.assertEqual(wrong['status'], 'defect', wrong)
+        self.assertIn('saved structural stackup differs in name, order, kind or exact thickness', wrong['defects'])
+        wrong = self.compare(pcb=self.pcb.replace(b'(thickness 0.035)', b'(thickness 0.036)', 1))
+        self.assertEqual(wrong['status'], 'defect', wrong)
+        self.assertTrue(any('profile tolerance' in s for s in wrong['defects']))
+
+    def test_nominal_design_requires_captured_finished_tolerance_and_explicit_basis(self):
+        from hashlib import sha256
+        from agent_ee.storage import canonical
+        self.envelope['stackup']['thickness_basis'] = 'nominal-design'
+        profile = json.loads(self.profile)
+        del profile['finished_thickness_tolerance']
+        self.profile = canonical(profile)
+        self.envelope['fab_profile']['sha256'] = sha256(self.profile).hexdigest()
+        self.files['fab-profile.json'] = sha256(self.profile).hexdigest()
+        result = self.compare()
+        self.assertEqual(result['status'], 'unknown', result)
+        self.assertTrue(any('finished-thickness tolerance' in s for s in result['unknown']))
+        for value in ['nominal', 'physical', None, True]:
+            self.envelope['stackup']['thickness_basis'] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'thickness_basis'):
+                self.compare()
+
+
+    def test_nominal_basis_changes_obligation_and_cannot_relabel_published_physical_authority(self):
+        from agent_ee.board_envelope import derive_requirements, validate_stackup, SCHEMAS
+        before = validate(json.dumps(self.envelope).encode(), profile=self.profile,
+                          captured=(self.files, self.root))
+        self.envelope['stackup']['thickness_basis'] = 'nominal-design'
+        after = validate(json.dumps(self.envelope).encode(), profile=self.profile,
+                         captured=(self.files, self.root))
+        def obligation(record):
+            return next(r for r in derive_requirements(record, 'envelope.json')['requirements']
+                        if r['source']['locator'] == '/stackup')
+        self.assertEqual(obligation(before)['id'], obligation(after)['id'])
+        self.assertNotEqual(obligation(before)['statement'], obligation(after)['statement'])
+        self.assertIn('not a guaranteed physical dimension', obligation(after)['statement'])
+        for kwargs in [dict(schema=SCHEMAS[1]), dict(unpublished=True)]:
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, 'thickness_basis'):
+                validate_stackup(self.envelope['stackup'], 2, **kwargs)
+
 
 class EnvelopeRegistrationTests(unittest.TestCase):
     def describe(self, criterion, *, params=None, files=None, board='board.kicad_pcb'):

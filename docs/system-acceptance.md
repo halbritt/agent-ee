@@ -145,6 +145,27 @@ two-layer profile does not publish core thickness: its exact stackup check stays
 unknown, and therefore cannot authorize manufacturing. Nominal stackup selection,
 electrical coverage and assembly geometry remain the next integration work.
 
+An explicit envelope/1 `thickness_basis: "nominal-design"` now distinguishes
+nominal engineering dimensions from guaranteed physical layer dimensions.
+Native checks require the exact saved design, all published supplier bounds and
+captured finished-thickness tolerance; unknown physical dimensions remain in
+the result as manufacturing uncertainty. Exact legacy and envelope/2 physical
+requirements retain their existing checks. The 114-test native envelope,
+requirement-map and parts suite passes, including public build/resume
+(`build/agent545/nominal-stackup-native.log`). No existing qualification
+requirement was changed to obtain this result.
+
+A targeted ordinary kicad-route run on the acquisition-06 placement also
+exercises the preserved project setting
+`kicad_routing_tools.same_net_pad_clearance: 0.15`. All connections complete and
+native validation passes. Independent pcbnew measurement finds zero via centers
+in pads, with 10 vias and 216.6868 mm of copper; board SHA-256 is
+`f548487488b3bbfa88d78c35175078e923cb677203503fa821619d9aea6472dc`.
+The exact policy delta and artifacts are under
+`build/agent545/acquisition-pad-clearance-*`. This is routing/assembly-policy
+evidence; complete software electrical coverage and final package acceptance
+remain open.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through
