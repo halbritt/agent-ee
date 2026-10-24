@@ -348,6 +348,57 @@ class CapabilityTests(unittest.TestCase):
                 self.assertEqual(descriptor['status'], 'unsupported')
                 self.assertIn(message, descriptor['unsupported_reasons'][0]['message'])
 
+    def sourced(self):
+        scope = self.scope()
+        sources = {}
+        for requirement in scope['baseline']['requirements']:
+            requirement['source'] = {'path': SYSTEM, 'locator': requirement['id']}
+            sources[requirement['id']] = {**requirement['source'], 'sha256': digest(self.ws.root / SYSTEM)}
+        document = {**self.ws.document, 'requirement_sources': sources}
+        self.ws.write(document)
+        return scope, document
+
+    def test_external_source_binding_and_independent_evaluation(self):
+        scope, document = self.sourced()
+        descriptor = self.describe(scope)
+        self.assertEqual(descriptor['status'], 'supported', descriptor)
+        self.assertIn(SYSTEM, descriptor['immutable_inputs'])
+        report = self.ws.evaluate(document)
+        self.assertEqual(report['outcome'], 'pass', report)
+        sources = document['requirement_sources']
+        self.assertEqual(report['inputs']['requirement_sources'], sources)
+        self.assertEqual(report['parameters']['vin']['origin']['requirement_source'], sources['R-VIN'])
+        self.assertEqual(assertion(report, 'vout-band')['requirement_source'], sources['R-VOUT'])
+        # The evaluator independently verifies bytes, even outside scope capture.
+        (self.ws.root / SYSTEM).write_text('changed requirement')
+        self.assertEqual(self.describe(scope)['status'], 'unsupported')
+        stale = self.ws.evaluate(document)
+        self.assertEqual((stale['execution'], stale['outcome']), ('failed', 'unknown'))
+        self.assertIn('sha256', stale['error'])
+
+    def test_external_binding_refuses_wrong_or_incomplete_authority(self):
+        scope, document = self.sourced()
+        for field, value in (('locator', 'elsewhere'), ('path', DOC), ('sha256', '0' * 64)):
+            with self.subTest(field=field):
+                broken = copy.deepcopy(document)
+                broken['requirement_sources']['R-VIN'][field] = value
+                self.ws.write(broken)
+                self.assertEqual(self.describe(scope)['status'], 'unsupported')
+        for mutation in ('missing', 'extra', 'unmapped', 'missing-source'):
+            with self.subTest(mutation=mutation):
+                broken, bound = copy.deepcopy(document), copy.deepcopy(scope)
+                if mutation == 'missing':
+                    del broken['requirement_sources']['R-VIN']
+                elif mutation == 'extra':
+                    broken['requirement_sources']['OTHER'] = broken['requirement_sources']['R-VIN']
+                elif mutation == 'unmapped':
+                    bound['baseline']['requirements'][0]['checks'] = []
+                else:
+                    broken['requirement_sources']['R-VIN']['path'] = 'absent.md'
+                    bound['baseline']['requirements'][0]['source']['path'] = 'absent.md'
+                self.ws.write(broken)
+                self.assertEqual(self.describe(bound)['status'], 'unsupported')
+
 
 class PipelineTests(unittest.TestCase):
     """Capture, immutable baseline and sandboxed evaluation through run_checks."""
@@ -393,6 +444,62 @@ class PipelineTests(unittest.TestCase):
         untoleranced['parameters']['r2']['lcsc'] = 'C900005'
         _, unknown = self.run_scope(untoleranced)
         self.assertEqual((unknown['execution'], unknown['outcome']), ('ok', 'unknown'))
+
+    def test_spec_record_map_capture_and_sandbox_keep_requirement_sources(self):
+        from agent_ee.requirement_map import compile_map, write_map_outputs
+        from agent_ee.spec_record import capture as capture_spec
+        from agent_ee.candidate import capture
+        from agent_ee.storage import json_bytes
+        spec = (b'# Electrical\n\n- Supply input is 10 V plus or minus 1 percent.\n'
+                b'- Divider output must be 3.3 V plus or minus 10 percent.\n'
+                b'- Capacitor voltage rating must cover the supply.\n')
+        record = capture_spec(spec, 'CALC', {'Electrical': 'E'})
+        original = ('R-VIN', 'R-VOUT', 'R-C1-RATING')
+        remap = dict(zip(original, [r['id'] for r in record['requirements']]))
+        document = copy.deepcopy(self.ws.document)
+        for entry in [*document['parameters'].values(), *document['assertions']]:
+            if 'requirement' in entry:
+                entry['requirement'] = remap[entry['requirement']]
+        document['requirement_sources'] = {r['id']: dict(path='requirements-map/spec.md',
+            sha256=hashlib.sha256(spec).hexdigest(), locator=json.dumps(r['locator'], sort_keys=True))
+            for r in record['requirements']}
+        # A retained native fixture supplies only the stage subject. This exercise
+        # proves arithmetic provenance, not the fixture's electrical correctness.
+        shutil.copyfile(TESTS.parent / 'fixtures/hardware-interface/interface.kicad_sch',
+                        self.ws.root / 'requirements/interface.kicad_sch')
+        check = dict(id='intervals', kind='interval_assertions', params=self.ws.params(), stage='verification')
+        declaration = dict(schema='agent-ee.requirement-map/1', spec_record_sha256=hashlib.sha256(json_bytes(record)).hexdigest(),
+            scope=dict(schema='agent-ee.scope/3', name='Sourced arithmetic', scope='Arithmetic qualification only.',
+                schematic='requirements/interface.kicad_sch', board='unused.kicad_pcb',
+                stages=dict(schema='agent-ee.stages/1', order=['verification'], finding_retry_limit=3,
+                            subjects=dict(verification=dict(path='requirements/interface.kicad_sch',
+                                                           kind='symbols', references=['R1']))),
+                inputs=[dict(path=str(self.ws.root / p), at=p) for p in ('requirements', 'snapshot')]),
+            requirements=[dict(id=r['id'], checks=[check]) for r in record['requirements']], prose=[])
+        (self.ws.root / 'spec.md').write_bytes(spec)
+        write_json(self.ws.root / 'spec-record.json', record)
+        write_json(self.ws.root / 'map.json', declaration)
+        for variant, expected in (('control', 'pass'), ('wrong-resistor', 'defect')):
+            if variant == 'wrong-resistor':
+                document['parameters']['r2']['lcsc'] = 'C900003'
+            self.ws.write(document)
+            files = {p.relative_to(self.ws.root).as_posix(): digest(p) for name in ('requirements', 'snapshot')
+                     for p in (self.ws.root / name).rglob('*') if p.is_file()}
+            scope, receipt = compile_map(json_bytes(declaration), json_bytes(record), spec,
+                                         files=files, inputs=self.ws.root)
+            compiled = self.ws.root / ('compiled-' + variant)
+            write_map_outputs(compiled, self.ws.root / 'map.json', self.ws.root / 'spec-record.json',
+                              self.ws.root / 'spec.md', scope, receipt)
+            run = self.ws.root / ('run-' + variant)
+            run.mkdir()
+            capture(compiled / 'scope.json', run)
+            result, = run_checks(run, time.monotonic() + 120)
+            self.assertEqual((result['execution'], result['outcome']), ('ok', expected), result['summary'])
+            report = read_json(run / 'work/intervals/intervals.json')
+            self.assertEqual(report['inputs']['requirement_sources'], document['requirement_sources'])
+            self.assertEqual(read_json(run / 'baseline.json')['baseline_id'], receipt['baseline_id'])
+            if expected == 'defect':
+                self.assertEqual(result['details']['requirements'][remap['R-VOUT']], ['defect'])
 
     def test_unverifiable_catalog_pin_is_failed_unknown(self):
         _, result = self.run_scope(params={**self.ws.params(), 'manifest_sha256': '0' * 64})

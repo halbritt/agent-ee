@@ -1,6 +1,6 @@
 # Interval assertions
 
-`interval_assertions` checks owner-declared algebraic relations, such as
+`interval_assertions` checks authored algebraic relations, such as
 divider outputs, rating margins, current limits and RC products, across part
 tolerances. It evaluates them forward, in the worst case. It reports a verdict
 per assertion and per requirement ID. Pinned catalog claims and declared
@@ -24,8 +24,10 @@ pins the same snapshot. Catalog parameters can then cite a logical `part` ID
 instead of an LCSC number. All of these files are captured as immutable baseline inputs.
 
 The capability refuses any requirement ID cited by the document unless the
-baseline declares it, sources it from the assertion document, and binds it to
-this check. Each assertion publishes one predicate,
+baseline declares it and binds it to this check. By default, the baseline must
+source it from the assertion document. An explicit `requirement_sources` map
+instead binds the calculation to a captured specification (see below).
+Each assertion publishes one predicate,
 `interval-assertion:<assertion id>`.
 
 ## Document
@@ -63,6 +65,39 @@ this check. Each assertion publishes one predicate,
   A relation `lhs <= rhs` or `lhs >= rhs` is evaluated as one difference, so a
   parameter shared by both sides stays correlated.
 - An assertion may use at most 12 parameters.
+
+### Requirements captured from a specification
+
+The normal [build workflow](build-workflow.md) compiles requirement sources from
+the captured specification. In this case add `requirement_sources` to the
+assertion document, with exactly one entry for every requirement cited by an
+assertion or declared parameter:
+
+```json
+{
+  "requirement_sources": {
+    "R-VIN": {
+      "path": "requirements-map/spec.md",
+      "sha256": "<SHA-256 of the captured specification bytes>",
+      "locator": "<exact source locator from the compiled baseline>"
+    }
+  }
+}
+```
+
+For a requirement-map input, derive the locator with
+`json.dumps(record_requirement['locator'], sort_keys=True)` from the verified
+spec record. The path and locator must equal the baseline source; the hash must
+match both the captured inventory and the actual source bytes. Missing, extra,
+unmapped or mismatched bindings refuse coverage. Evaluation independently
+rechecks source bytes and retains the bindings in its report. Changed source
+bytes fail rather than producing an electrical pass.
+
+This records provenance, not authorship or approval. Identify agent-selected
+limits, assumptions and owner requirements in the specification. The numeric
+bounds and equations remain explicit engineering declarations; the checker
+does not interpret specification prose or establish that an equation models
+the circuit.
 
 ## Semantics
 
@@ -112,14 +147,15 @@ This runs in the sandbox with a 300 s ceiling. `intervals.json`
 (`agent-ee.interval-assertion-result/1`) records:
 
 - the input hashes: the assertion document, the catalog manifest pin, the
-  database hash and date, and the parts manifest;
+  database hash and date, the parts manifest, and explicit requirement sources;
 - every resolved parameter interval;
 - per assertion, the target, computed interval, corner hull, monotonicity,
   verdict, reasons and witness.
 
 Each operand origin carries one of two traces:
 
-- **Declared**: the requirement ID, document path and document hash.
+- **Declared**: the requirement ID, document path and document hash, plus the
+  source path, hash and locator when `requirement_sources` is present.
 - **Catalog**: the LCSC number, attribute, role, raw claim text, catalog
   manifest/database hashes, and the row's raw-source provenance. It also carries
   the reference or part ID, and the parts manifest hash when one is used.
@@ -151,7 +187,7 @@ for static algebraic relations that neither one simulates.
 
 ## Limits
 
-The owner declares the equation. Nothing proves that it describes the netlist.
+The author declares the equation. Nothing proves that it describes the netlist.
 Catalog claims are snapshot claims, not datasheet facts. There is no temperature,
 aging, loading or distribution model. The worst-case box assumes independent
 parameters; a correlated-tolerance declaration (for example, a matched resistor

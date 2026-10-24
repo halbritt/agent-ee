@@ -64,6 +64,16 @@ retiring build output. The retained predecessor evidence is
 `~/.cache/agent-ee-evidence/agent544-tooling-repair-20261024/`; see
 [placement-job report](benchmarks/placement-job-2026-10-24.md).
 
+The interval calculation checker now accepts explicit, hash-verified source
+bindings to the requirement compiler's captured specification. A real
+spec-record → map → candidate capture → sandbox check exercise passes the
+declared divider case and rejects a wrong-resistor case. Missing bindings,
+wrong locators and altered source bytes reject. This closes the source-binding
+interface; it does not derive equations from circuits or qualify the fresh
+multiblock design. The focused interval, requirement-map, parts-stage and CLI
+suite passes 70 tests in the native executor, with no skips; retained log:
+`build/agent545/interval-source-final.log`.
+
 ## KRT comparison inventory
 
 Initial observed upstream main on 2026-10-24:

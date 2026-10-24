@@ -1,4 +1,4 @@
-"""Worst-case interval verification of owner-declared design assertions.
+"""Worst-case interval verification of authored design assertions.
 
 A captured agent-ee.interval-assertions/1 document declares named parameters
 (captured requirement intervals, or pinned catalog part intervals and ratings)
@@ -45,7 +45,7 @@ DIMENSIONS = {'1': (0, 0, 0), 'V': (1, 0, 0), 'A': (0, 1, 0), 's': (0, 0, 1), 'H
               'ohm': (1, -1, 0), 'F': (-1, 1, 1), 'H': (1, -1, 1), 'W': (1, 1, 0)}
 ROLES = ('toleranced', 'rating')
 LIMIT = ('Forward worst-case arithmetic over declared relations and captured interval claims only: '
-         'the owner-declared equation is not derived from the schematic, catalog claims are not '
+         'the authored equation is not derived from the schematic, catalog claims are not '
          'authenticated datasheet facts, and no temperature, aging, loading or physical validation is implied.')
 
 
@@ -317,7 +317,8 @@ def safe_requirement(value):
 
 def validate_document(document):
     """Validate and compile the complete document; malformed input raises ValueError."""
-    exact_fields(document, ('schema', 'correlation', 'parameters', 'assertions'))
+    exact_fields(document, ('schema', 'correlation', 'parameters', 'assertions') +
+                 (('requirement_sources',) if isinstance(document, dict) and 'requirement_sources' in document else ()))
     if document['schema'] != SCHEMA:
         raise ValueError('unsupported interval assertion schema')
     if document['correlation'] != CORRELATION:
@@ -367,7 +368,20 @@ def validate_document(document):
                 raise ValueError(f'{label}: expression unit differs from declared unit {unit}')
         compiled.append({**assertion, 'node': node, 'sides': sides, 'target_interval': target,
                          'symbols': sorted(names)})
-    return {'parameters': parameters, 'assertions': compiled}
+    result = {'parameters': parameters, 'assertions': compiled}
+    if 'requirement_sources' in document:
+        sources = document['requirement_sources']
+        if not isinstance(sources, dict) or set(sources) != set(cited_requirements(result)):
+            raise ValueError('requirement_sources must bind exactly every cited requirement')
+        for rid, source in sources.items():
+            exact_fields(source, ('path', 'sha256', 'locator'))
+            if str(safe_relative(source['path'])) != source['path'] or source['path'] == '.':
+                raise ValueError(f'requirement {rid} needs a canonical source path')
+            nonempty(source['locator'])
+            if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
+                raise ValueError(f'requirement {rid} needs a source sha256')
+        result['requirement_sources'] = sources
+    return result
 
 
 def cited_requirements(compiled):
@@ -378,6 +392,19 @@ def cited_requirements(compiled):
 
 def load_document(raw):
     return validate_document(strict_json(raw.decode('utf-8')))
+
+
+def verify_sources(compiled, root, files=None):
+    """Verify authored source bindings in both capability audit and evaluation."""
+    from .parts_manifest import read_captured
+    sources = compiled.get('requirement_sources', {})
+    for rid, source in sources.items():
+        path = source['path']
+        if files is not None and files.get(path) != source['sha256']:
+            raise ValueError(f'requirement {rid} source must be captured with matching sha256')
+        if hashlib.sha256(read_captured(root, path)).hexdigest() != source['sha256']:
+            raise ValueError(f'requirement {rid} source sha256 mismatch')
+    return sources
 
 
 # ---------------------------------------------------------------- capability
@@ -401,6 +428,8 @@ def capability(params, scope, files, inputs, cid):
     if inputs is None:
         raise ValueError('interval assertions require captured inputs')
     compiled = load_document((Path(inputs) / path).read_bytes())
+    sources = verify_sources(compiled, inputs, files)
+    paths.extend(source['path'] for source in sources.values())
     parts = None
     if 'parts_manifest' in params:
         from .parts_manifest import load_manifest
@@ -419,9 +448,12 @@ def capability(params, scope, files, inputs, cid):
     requirements = {r['id']: r for r in scope.get('baseline', {}).get('requirements', [])}
     for rid in cited_requirements(compiled):
         requirement = requirements.get(rid)
-        if requirement is None or cid not in requirement['checks'] or requirement['source']['path'] != path:
-            raise ValueError(f'requirement {rid} must be a baseline requirement sourced from {path} and bound to {cid}')
-    return {'immutable_inputs': sorted(paths),
+        expected = {k: v for k, v in sources[rid].items() if k != 'sha256'} if sources else None
+        if (requirement is None or cid not in requirement['checks'] or
+                (requirement['source'] != expected if sources else requirement['source']['path'] != path)):
+            raise ValueError(f'requirement {rid} needs an exact baseline source binding and check {cid}; '
+                             f'without requirement_sources it must be sourced from {path}')
+    return {'immutable_inputs': sorted(set(paths)),
             'predicates': [PREDICATE + a['id'] for a in compiled['assertions']]}
 
 
@@ -551,9 +583,14 @@ def evaluate(compiled, document_input, catalog=None, rows=None, parts=None):
     operands = {}
     for name, parameter in sorted(compiled['parameters'].items()):
         interval, origin, unknown = resolve(name, parameter, document_input, catalog, rows or {}, parts)
+        if parameter['source'] == 'declared' and 'requirement_sources' in compiled:
+            origin['requirement_source'] = compiled['requirement_sources'][parameter['requirement']]
         operands[name] = {'interval': interval, 'origin': origin, 'unknown': unknown}
     units = {name: p['unit'] for name, p in compiled['parameters'].items()}
     assertions = [evaluate_assertion(a, operands) for a in compiled['assertions']]
+    if 'requirement_sources' in compiled:
+        for assertion in assertions:
+            assertion['requirement_source'] = compiled['requirement_sources'][assertion['requirement']]
     verdicts = {a['verdict'] for a in assertions}
     outcome = 'defect' if 'defect' in verdicts else 'unknown' if 'unknown' in verdicts else 'pass'
     return {'execution': 'ok', 'outcome': outcome,
@@ -577,6 +614,8 @@ def evaluate_inputs(root, params):
         return {**report, 'execution': 'malformed', 'outcome': 'unknown', 'error': str(exc)}
     try:
         catalog = rows = parts = None
+        if 'requirement_sources' in compiled:
+            report['inputs']['requirement_sources'] = verify_sources(compiled, root)
         if 'snapshot' in params:
             snapshot = load_catalog(root / params['snapshot'], params['manifest_sha256'])
             catalog = {'snapshot': params['snapshot'], 'manifest_sha256': params['manifest_sha256'],
@@ -632,14 +671,17 @@ def check_interval_assertions(ctx):
         if (report.get('schema') != RESULT_SCHEMA or report.get('correlation') != CORRELATION
                 or report['inputs']['assertions'] != {'path': ctx.params['assertions'], 'sha256': expected}):
             raise ValueError('interval report is not bound to the captured assertion document')
+        compiled = load_document((ctx.inputs / ctx.params['assertions']).read_bytes())
         ctx.result['details']['report'] = report
         ctx.result['limitations'].append(LIMIT)
         if report.get('execution') != 'ok':
             raise CheckError(report['execution'] if report.get('execution') in ('malformed', 'failed') else 'malformed',
                              'interval assertions not evaluated: ' + str(report.get('error')))
+        if report['inputs'].get('requirement_sources', {}) != verify_sources(compiled, ctx.inputs):
+            raise ValueError('interval report is not bound to the captured requirement sources')
         assertions = report['assertions']
         verdicts = {a['id']: a['verdict'] for a in assertions}
-        declared = [a['id'] for a in load_document((ctx.inputs / ctx.params['assertions']).read_bytes())['assertions']]
+        declared = [a['id'] for a in compiled['assertions']]
         aggregate = 'defect' if 'defect' in verdicts.values() else 'unknown' if 'unknown' in verdicts.values() else 'pass'
         if (list(verdicts) != declared or report['outcome'] != aggregate
                 or not set(verdicts.values()) <= {'pass', 'defect', 'unknown'}):
