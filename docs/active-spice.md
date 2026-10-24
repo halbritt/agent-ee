@@ -96,6 +96,13 @@ text and include depth 16. Include cycles and repeated include expansion are ref
 model input, not every possible nonlinear solver cost; the normal run deadline
 and per-invocation 600-second timeout also apply.
 
+Full comment lines may contain non-ASCII vendor text. Before parsing and
+staging, those bytes become literal ASCII escapes such as `\x96`; active
+statements remain strictly ASCII. Original captured bytes and their hashes stay
+unchanged, and the model manifest separately binds the staged files. This
+normalizes comments only, without interpreting an encoding or changing circuit
+statements. Comment encodings cannot introduce directives or logical newlines.
+
 The initial dialect accepts ASCII `.SUBCKT`, `.ENDS`, `.MODEL`, `.PARAM`, and
 captured `.INCLUDE` outside subcircuits, plus R/C/L, literal DC V/I, E/F/G/H,
 D/Q/J/M/S and X device statements. Supported `.MODEL` types are D, NPN, PNP,

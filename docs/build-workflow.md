@@ -2,8 +2,9 @@
 
 `agent-ee build run` composes the existing requirements, parts, native scaffold,
 schematic, placement/routing, artwork and final package producers. The public path is
-being qualified. Fresh execution currently establishes requirements through a
-hierarchical native PCB, cancellation/resumption and honest rejection. A complete
+being qualified. Fresh execution establishes the captured requirements, parts,
+native schematic, placement, routing and artwork on a sourced 17-part multiblock
+design. Native checks, cancellation/resumption and honest rejection also run. A complete
 manufacturing run through this command remains an open requirement in the
 [system acceptance map](system-acceptance.md).
 

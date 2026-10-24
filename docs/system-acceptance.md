@@ -226,6 +226,30 @@ authorize a package. The 19-test native parts/build/artwork regression passes,
 including diagnostic routing and refusal when resuming toward manufacturing.
 Log: `build/agent545/build-diagnostic-native-final.log`.
 
+At `9a12901a269a42b68ebf5ca4e2b213a81251475c`, the updated TPS acquisition
+circuit completes requirements, parts, scaffold, schematic, placement/routing
+and artwork through `agent-ee build run ... --through artwork`. The source
+contains the original requirements and all eight hard locality constraints;
+every stage consumes the preceding candidate without native-file substitution.
+Seed 6 completes routing with zero opens/errors, all three fixed connectors and
+all eight locality distances passing, in 279.455 seconds. Final artwork board:
+`e802bb4a77374a33acf1d40e4b0551befa3dc92c64dd1340103da44182a26087`.
+The independent native review passes ERC, zero-finding DRC, exact topology,
+parts and assembly checks. Resuming toward manufacturing refuses missing final
+coverage and retains `accepted:false`. This is the current circuit, superseding
+the earlier TLV board for continuing electrical analysis. Replay plan and run:
+`build/agent545/acquisition-flow-build.json` and
+`build/agent545/acquisition-flow-build-native/`; native review:
+`build/agent545/acquisition-flow-native-review/`.
+
+The active-SPICE loader also now accepts vendor text encodings on full comment
+lines while preserving original captured bytes and strict ASCII statements.
+The actual TI TPS7A20 model previously refused on a comment's byte `0x96`; its
+eight subcircuits now parse unchanged electrically. The 48-test native active
+and vendor-model suite passes, including analytic response, source preservation
+and unsafe-statement rejection (`build/agent545/spice-comment-native-final.log`).
+This establishes model compatibility, not a simulated or accepted TPS circuit.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through

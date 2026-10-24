@@ -47,6 +47,23 @@ class ModelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
 
+    def test_comment_encoding_does_not_admit_non_ascii_statements_or_control_code(self):
+        active = b'.subckt x a b\nR1 a b 1k\n.ends x\n'
+        for raw in (active.replace(b'1k', b'1k\xa0'), b'\xa0* comment\n' + active,
+                    b'* punctuation \x96\n' + active + b'.control\nquit\n.endc\n'):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'root.lib'
+                path.write_bytes(raw)
+                with self.assertRaises(ValueError):
+                    capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
+        # A legacy NEL byte inside a comment must not become a logical newline.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'root.lib'
+            path.write_bytes(b'\t* comment\x85.control\n' + active)
+            models = capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
+            self.assertEqual(models['subcircuits']['x']['line'], 2)
+            self.assertEqual(models['staged']['root.lib'].split('\n', 1)[1], active.decode('ascii'))
+
     def test_bare_subcircuit_end_is_accepted_without_admitting_directives(self):
         for end in ('.ends', '.ENDS', '  .Ends  '):
             with self.subTest(end=end), tempfile.TemporaryDirectory() as tmp:
@@ -444,6 +461,23 @@ class NativeActiveTests(unittest.TestCase):
         self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'],
                                .1 * (1-math.exp(-1)) * gain, delta=3e-6)
         self.assertEqual((run / 'work/active/models/design/owned.lib').read_text(), model.read_text())
+        verify_evidence(run, results, required=True)
+
+    def test_vendor_encoded_comments_preserve_native_response_and_original_capture(self):
+        model = self.source / 'owned.lib'
+        active = model.read_bytes()
+        original = b'* Vendor comment with legacy punctuation \x96 and \xb0C\r\n' + active
+        model.write_bytes(original)
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        gain = 1e6 / (1 + 1e6)
+        self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'],
+                               .1 * (1-math.exp(-1)) * gain, delta=3e-6)
+        self.assertEqual((run / 'inputs/design/owned.lib').read_bytes(), original)
+        staged = (run / 'work/active/models/design/owned.lib').read_bytes()
+        self.assertEqual(staged.split(b'\n', 1)[1], active)
+        self.assertIn(b'\\x96', staged.split(b'\n', 1)[0])
         verify_evidence(run, results, required=True)
 
     def test_directive_after_bare_subcircuit_end_refused_before_solver(self):

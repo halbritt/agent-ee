@@ -89,7 +89,11 @@ def capture_models(inputs, files, declared):
         total += path.stat().st_size
         if total > 2_000_000:
             raise ValueError('model closure exceeds 2 MB')
-        originals[rel] = path.read_bytes().decode('ascii')
+        # Vendor headers often contain legacy punctuation. Escape it only on
+        # full comment lines; executable statements remain strictly ASCII.
+        originals[rel] = ''.join(line.decode('ascii', errors='backslashreplace'
+            if line.lstrip(b' \t').startswith(b'*') else 'strict')
+            for line in path.read_bytes().splitlines(keepends=True))
         parsed[rel] = logical_lines(originals[rel])
     includes, staged, model_names = {}, {}, set()
     for rel, lines in parsed.items():
