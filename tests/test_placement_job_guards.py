@@ -165,6 +165,51 @@ class FinalInventoryTests(Fixture):
 
 
 class ControllerBoundaryTests(Fixture):
+    def test_native_rejection_tries_next_legal_placement_and_retains_both_results(self):
+        """Controller fault injection only; normal native entrypoint runs separately."""
+        problem, _ = self.problem()
+        out = self.dir / 'portfolio'
+        config = {'budget_s': 60, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
+                  'search': {'shortlist': 3}, 'router': {'checkout': 'unused'}}
+        values = [(self.board, self.board.read_bytes()), (self.project, b'{}'),
+                  (self.board, json.dumps(intent()).encode()), (self.board, json.dumps(groups()).encode())]
+        output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
+                  'shortlist': [{'seed': n, 'cost': str(n + 1), 'poses': [n]} for n in range(3)]}
+        selected = []
+        def materialized(_board, poses, directory, *_args, **_kwargs):
+            return {'board': str(self.board), 'board_sha256': f'candidate-{poses[0]}',
+                    'integrity': 'preserved', 'problems': []}
+        def routed(directory, *_args, **_kwargs):
+            selected.append(str(directory))
+            return {'status': 'routed', 'board': str(self.board), 'preflight': {
+                k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
+        failed = {'integrity': 'preserved', 'edge_intent': {'status': 'pass'},
+                  'eligibility': 'ineligible', 'physical_checks': 'FAILED'}
+        passed = {**failed, 'eligibility': 'eligible', 'physical_checks': 'PASS'}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(job, 'verified_input', side_effect=values))
+            stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
+            stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+            stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
+            stack.enter_context(patch.object(job, 'materialize', side_effect=materialized))
+            stack.enter_context(patch.object(job, 'check_edge_intent', side_effect=[
+                {'status': 'pass'}, {'status': 'failed'}, {'status': 'pass'}]))
+            stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
+            stack.enter_context(patch.object(job, 'route', side_effect=routed))
+            stack.enter_context(patch.object(job, 'final_checks', side_effect=[failed, passed]))
+            report = job.run_job(config, out)
+        self.assertEqual(report['status'], 'completed')
+        self.assertEqual([Path(p).name for p in selected], ['a1-00-seed0', 'a1-02-seed2'])
+        self.assertEqual([t['status'] for t in report['routing_trials']], ['verification_failed', 'completed'])
+        self.assertEqual(report['route_selection']['seed'], 2)
+        self.assertEqual(report['routed_candidate'], 'shortlist_alternative')
+        self.assertEqual(json.loads((out / 'incumbent.json').read_text())['seed'], 0)
+        self.assertEqual(json.loads((out / 'routed-incumbent.json').read_text())['placement']['seed'], 2)
+        state = json.loads((out / 'checkpoint.json').read_text())
+        self.assertEqual(len(state['routing_trials']), 2)
+        for trial in state['routing_trials']:
+            self.assertEqual(job.digest(trial['path']), trial['sha256'])
+
     def test_cancel_and_deadline_between_judge_route_and_final_preserve_incumbent(self):
         problem, _ = self.problem()
         for mode in ('cancel', 'deadline', 'cancel-after-route', 'deadline-after-route', 'integrity-failure'):

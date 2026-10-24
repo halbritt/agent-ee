@@ -47,10 +47,10 @@ observations must not be read as fresh execution evidence.
 | Architecture, circuits, parts | Captured catalog/selection/CAD closure → `parts/1`; `catalog`, `parts_manifest`, `rung1_parts`, connectivity IR and electrical checks | Select and substantiate topology, values, ratings, package/pin map and sourcing; carry calculations and provenance into downstream checks. `rung1_parts` projects exactly three RC roles; stage driver lacks a declared parts producer. | Existing modules and historical AGENTEE-101; no fresh multiblock intent-to-parts run. |
 | Native schematic | Connectivity intent + captured libraries/layout → native sheets; `schematic_emitter`, `schematic_stage`, `schematic_regenerate`, forward annotation | All pins accounted for; native connectivity agrees with selected parts; editable hierarchy and dependencies; stable regeneration. Explicit hierarchical stage output sets now supported; preserving manual edits during regeneration remains flat-only. | Fresh native stage exercise carries a child value edit and cross-sheet nets through receipts to the PCB; stale child and omitted output reject. Complete intent-to-package entrypoint still missing. |
 | Board/mechanics | Envelope + parts + scope/plan → native empty project, fixed mechanics; `agent-ee scaffold`, `scaffold.content_step` | Preserve outline, stackup, locks, holes, keepouts, heights/access and rule provenance; every footprint assigned a block/shared/fixed role. | Existing scaffold/campaign path. No fresh whole workflow proving these survive placement and routing. |
-| Placement/legalization | Native board + floorplan intent/groups → candidate poses/board; `placement_job`, `placer_runner`, `blocks`, Rust engine | Block and pin locality, permitted sides, anchors, body/courtyard/hole/access keepouts; final coordinates establish compliance. Distinct planners currently have different supported domains. | Retained esp_prog run: zero native errors/opens, but CON1/CON2 declared east and measured nearest south; no complete intent qualification. |
-| Routing/repair | Placed native project + routing policy → saved copper; `routing_adapter`, `kicad_route_attempt`, `placement_job.route` | Retain valid geometry and all native rules; route selection/feedback must revise permitted placement/circuits and reject stale feedback. | esp_prog route exercised. Routing-guided placement repair and broad KRT coverage not demonstrated. |
+| Placement/legalization | Native board + floorplan intent/groups → candidate poses/board; `placement_job`, `placer_runner`, `blocks`, Rust engine | Block and pin locality, permitted sides, anchors, body/courtyard/hole/access keepouts; final coordinates establish compliance. Distinct planners currently have different supported domains. | Saved-board edge enforcement repaired; terminal-space preferences exercised. Latest completed esp_prog run passes all three declared edges but has two open pair connections. Full intent qualification remains open. |
+| Routing/repair | Placed native project + routing policy → saved copper; `routing_adapter`, `kicad_route_attempt`, `placement_job.route` | Retain valid geometry and all native rules; route selection/feedback must revise permitted placement/circuits and reject stale feedback. | Short explicit coupled-pair case passes native checks. Portfolio controller now tries legal alternatives after rejection; full-board exercise ongoing. Broad KRT coverage and placement/circuit repair remain unqualified. |
 | Electrical verification | Emitted native netlist + sourced requirements/models → individual checks; `checks`, passive/active SPICE, pin contracts, ratings/DC-path checks | Consequential functional electrical errors must fail even with clean ERC/DRC; missing/stale/skipped required checks cannot pass. | Historical RC wrong-value evidence and bounded electrical modules. Fresh integrated multiblock functional proof missing. |
-| Physical/assembly verification | Final reloaded board + declared intent/parts/profile → native DRC, connectivity, placement and assembly reports | Refill zones; check final grouping/sides/pins/mechanics, preservation and every required coverage item. Annotated top/bottom views required. | esp_prog retains 262 warnings and six geometric via-in-pad sites; requirements-based disposition outstanding. |
+| Physical/assembly verification | Final reloaded board + declared intent/parts/profile → native DRC, connectivity, placement and assembly reports | Refill zones; check final grouping/sides/pins/mechanics, preservation and every required coverage item. Annotated top/bottom views required. | Latest completed esp_prog attempt has 250 warnings, six geometric via-in-pad sites and two opens; requirements-based disposition outstanding. |
 | Manufacturing | Accepted native project + profile/population/rotation inputs → Gerbers, drills, BOM, CPL, bound package; `fab_export`, `fab_stage`, `fab_package`, `fab_consistency`, `fab_roundtrip` | Exact native/package identity, current exports, layers/outline/drills, parts/population, coordinate/orientation validation. Physical and supplier-preview obligations explicit. | Existing release gates; no newly accepted package for this goal. |
 | Operation | Installed CLI + captured inputs → bounded diagnostics, checkpoints, replay | One documented ordinary intent-to-package command; clean setup, interruption/resume, truthful failures; subscription routes only when inference is used. | Installation/doctor and placement-job checkpoint implementations exist. No integrated end-to-end resume qualification. |
 
@@ -67,7 +67,7 @@ retiring build output. The retained predecessor evidence is
 Initial observed upstream main on 2026-10-24:
 [`222bb144744c3ddd979674e528bf8647e9ced8d6`](https://github.com/drandyhaas/KiCadRoutingTools/tree/222bb144744c3ddd979674e528bf8647e9ced8d6).
 Reference clone: `~/.cache/agent-ee-qualification/upstream/KiCadRoutingTools`.
-This is distinct from agent-ee's installed kicad-route checkout
+This is distinct from the initial installed kicad-route checkout
 `b5774496d8466b67ffa0362b6665fee2108155a3` and its owned/patched engine.
 The [detailed source-backed inventory](research/krt-2026-10-24/krt-latest-capability-map.md)
 covers 69 capability rows, 107 declared tools and 127 hash-bound source files.
@@ -154,7 +154,7 @@ path, starting with an original multiblock design. Reuse current receipt,
 preservation and check implementations. Keep all rows above open until native
 exercises establish their full criteria.
 
-The next integration slice removes the flat-only stage-runner and presence-gate
+The integrated hierarchy repair removes the flat-only stage-runner and presence-gate
 obstructions to hierarchical schematic production. The
 [native hierarchy exercise](benchmarks/hierarchical-stages-2026-10-24.md) carries
 an edited child sheet into the real PCB and exercises public scaffold/review
@@ -165,5 +165,17 @@ The [terminal-space preference](benchmarks/differential-escape-2026-10-24.md)
 now survives native capture and Rust placement search, with 99 strict Rust and
 82 native regression tests passing. A fresh public esp_prog run has a feasible
 placement with clear inferred terminal regions, but still rejects two open pair
-connections. Short-leg deferral and terminal polarity/clearance remain active
-routing blockers. The source audit and matched failures do not close KRT parity.
+connections. The current dependency update to kicad-route
+`be1f3a831ac275bb0dc5f8b70bfb9a1afa5e9bfa` fixes short-leg deferral and
+generated pad tails, qualified through its normal native entrypoint. Agent-ee's
+39 re-pin checks pass with the rebuilt executor. Its placement controller now
+tries each distinct eligible shortlist candidate after a routing/final-check
+failure, retaining every trial. Native job/guard/resume checks pass 39 tests;
+three focused controller checks also pass. These invocations overlap.
+
+A fresh six-seed, 100,000-step, 1,200-second public esp_prog exercise is running
+at `build/agent545/board-run-portfolio`. This is a declared bounded search
+experiment, not acceptance evidence yet. Terminal polarity/clearance remains
+the last measured complete-board routing failure. The source audit and matched
+failures do not close KRT parity. Parts/circuit production and the complete
+build entrypoint remain required independent work.

@@ -904,6 +904,13 @@ def _rank(entry):
     return (entry['placement_introduced_errors'], len(entry.get('engine_violations', [])), int(entry['engine_cost']))
 
 
+def _placement_eligible(entry):
+    return (entry.get('integrity') == 'preserved' and entry.get('placement_introduced_errors') == 0
+            and entry.get('status') == 'checked' and entry.get('engine_feasible') is True
+            and entry.get('edge_intent', {}).get('status') == 'pass'
+            and not entry.get('engine_violations'))
+
+
 def promote(job_dir, entry):
     """Atomically replace the incumbent pointer only with a strictly better, fully checked candidate.
 
@@ -911,11 +918,7 @@ def promote(job_dir, entry):
     replaces or edits the incumbent; candidate directories are never overwritten."""
     job_dir = Path(job_dir)
     pointer = job_dir / 'incumbent.json'
-    eligible = (entry.get('integrity') == 'preserved' and entry.get('placement_introduced_errors') == 0
-                and entry.get('status') == 'checked' and entry.get('engine_feasible') is True
-                and entry.get('edge_intent', {}).get('status') == 'pass'
-                and not entry.get('engine_violations'))
-    if not eligible:
+    if not _placement_eligible(entry):
         return False
     current = read_json(pointer) if pointer.exists() else None
     if current is not None and _rank(current) <= _rank(entry):
@@ -1009,7 +1012,8 @@ def board_metrics(path, groups=None, edges=None):
 
 # ---------------------------------------------------------------- router
 
-def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None):
+def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
+          design_name='board'):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1021,7 +1025,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     if check['problems']:
         raise JobRefusal('router preflight: ' + '; '.join(check['problems']))
     route_dir = Path(route_dir)
-    staged = route_dir / 'candidate' / 'esp_prog'
+    if not isinstance(design_name, str) or not design_name or Path(design_name).name != design_name or design_name in ('.', '..'):
+        raise JobRefusal('design name must be one nonempty path component')
+    staged = route_dir / 'candidate' / design_name
     staged.mkdir(parents=True)
     for name in ('board.kicad_pcb', 'board.kicad_pro'):
         shutil.copyfile(Path(candidate_dir) / name, staged / name)
@@ -1033,8 +1039,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         raise JobStopped('deadline')
     argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(route_dir / 'out'),
             '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged),
-            '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', 'esp_prog',
-            '--label', 'ee515', '--protect', 'existing', '--budget', str(int(remaining)), '--diff-pairs', 'auto']
+            '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
+            '--label', 'placement-job', '--protect', 'existing', '--budget', str(int(remaining)), '--diff-pairs', 'auto']
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -1136,6 +1142,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
+        report['design_name'] = board_path.stem
         _, project_bytes = verified_input(config['inputs']['project'], 'project')
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
@@ -1150,7 +1157,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         capture_cancel = None if _cancelled(job_dir) else job_dir
         problem, record = capture(board_path, intent, groups, clock=clock, cancel_dir=capture_cancel)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
-                                       'engine': report['preflight']['engine_sha256']}))
+                                       'engine': report['preflight']['engine_sha256'],
+                                       'controller': digest(Path(__file__)),
+                                       'router': report['preflight'].get('router'),
+                                       'kicad_cli': report['preflight'].get('kicad_cli'),
+                                       'pcbnew': record.get('pcbnew_version')}))
     report['identity'] = identity
     state = load_checkpoint(job_dir, identity) if resume else None
     if resume and state is None:
@@ -1242,23 +1253,59 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         write_json(job_dir / f'job-report-a{attempt}.json', report)
         write_json(job_dir / 'job-report.json', report)
         return report
-    with clock.phase('export'):
+    # Placement score orders attempts, but only fresh routing and saved-board
+    # verification can select a routed result. Keep the placement incumbent
+    # separately: a lower-ranked placement may be the first routable one.
+    queue = [selected]
+    seen = {selected['board_sha256']}
+    if incumbent is not None:
+        for entry in sorted((e for e in trials if _placement_eligible(e)), key=_rank):
+            if entry['board_sha256'] not in seen:
+                queue.append(entry)
+                seen.add(entry['board_sha256'])
+    report['routing_trials'] = []
+    for number, selected in enumerate(queue):
+        if number:
+            report['routed_candidate'] = 'shortlist_alternative'
+        suffix = f'a{attempt}' + (f'-r{number + 1}' if number else '')
+        # Equal shares of the remaining job time prevent one failed routing
+        # search from taking the entire portfolio budget. This is scheduling
+        # policy, not an engineering relaxation; the outer deadline still wins.
+        budget = clock.remaining() / (len(queue) - number)
+        trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
+                 'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
+                 'budget_basis': 'agent-default/equal-remaining-share'}
+        report['routing_trials'].append(trial)
+        with clock.phase('export'):
+            _check_stop(clock, job_dir)
+            routed = route(selected['directory'], job_dir / f'route-{suffix}', config['router']['checkout'],
+                           budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
+                           clock=clock, cancel_dir=job_dir, design_name=report['design_name'])
+            report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
+            report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
+                                                                           'adapter_sha256', 'problems')}
+        with clock.phase('final_validation'):
+            _check_stop(clock, job_dir)
+            report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', groups, intent,
+                                           clock=clock, cancel_dir=job_dir)
         _check_stop(clock, job_dir)
-        routed = route(selected['directory'], job_dir / f'route-a{attempt}', config['router']['checkout'],
-                       budget_s=clock.remaining(), timeout_s=clock.remaining(), home=job_dir / f'route-home-a{attempt}',
-                       clock=clock, cancel_dir=job_dir)
-        report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
-        report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
-                                                                       'adapter_sha256', 'problems')}
-    with clock.phase('final_validation'):
-        _check_stop(clock, job_dir)
-        report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-a{attempt}', groups, intent,
-                                       clock=clock, cancel_dir=job_dir)
+        status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
+        trial.update(status=status, route=report['route'], final=report['final'])
+        receipt = job_dir / f'routing-trial-{suffix}.json'
+        write_json(receipt, trial)
+        state.setdefault('routing_trials', []).append({'path': str(receipt), 'sha256': digest(receipt)})
+        checkpoint(job_dir, state)
+        report['route_selection'] = {k: trial[k] for k in ('seed', 'board_sha256', 'directory', 'status')}
+        if status == 'completed':
+            tmp = job_dir / '.routed-incumbent.json.tmp'
+            write_json(tmp, {'placement': selected, 'trial': str(receipt), 'trial_sha256': digest(receipt)})
+            os.replace(tmp, job_dir / 'routed-incumbent.json')
+            break
     _check_stop(clock, job_dir)
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
-    report['status'] = _completion_status(routed, incumbent, report['final'])
-    report['validity'] = ('integrity-valid incumbent; physical checks ' + report['final'].get('physical_checks', 'unavailable')
+    report['status'] = status
+    report['validity'] = ('integrity-valid placement; physical checks ' + report['final'].get('physical_checks', 'unavailable')
                           if incumbent is not None else
                           'NO valid incumbent: exploratory route of the best diagnostic candidate (engine violations: '
                           + ', '.join(sorted({v['kind'] for v in selected.get('engine_violations', [])})) + ')')

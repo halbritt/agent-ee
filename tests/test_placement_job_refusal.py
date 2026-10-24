@@ -137,6 +137,25 @@ class RefusalReportTests(fixture.Fixture):
             self.assertEqual(report['status'], status)
             self.assertEqual(snapshot(out), before)
 
+    def test_changed_router_identity_cannot_reuse_placement_checkpoint(self):
+        out = self.dir / 'runtime-change'
+        out.mkdir()
+        (out / 'CANCEL').touch()
+        config = self.config()
+        first = job.run_job(config, out)
+        self.assertEqual(first['status'], 'cancelled')
+        (out / 'CANCEL').unlink()
+        before = snapshot(out)
+        preflight = job.preflight
+        def changed(*args, **kwargs):
+            record = preflight(*args, **kwargs)
+            record['router']['commit'] = 'different-router-build'
+            return record
+        with patch.object(job, 'preflight', side_effect=changed):
+            with self.assertRaisesRegex(job.JobRefusal, 'different job identity'):
+                job.run_job(config, out, resume=True)
+        self.assertEqual(snapshot(out), before)
+
     def test_refusal_on_owned_resume_preserves_incumbent_diagnostic_and_old_reports(self):
         out = self.dir / 'job'
         out.mkdir()

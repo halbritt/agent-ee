@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = 'b5774496d8466b67ffa0362b6665fee2108155a3'
+PIN = 'be1f3a831ac275bb0dc5f8b70bfb9a1afa5e9bfa'
 # SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
 PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
  'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
@@ -55,7 +55,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/corpus.py': '7ec0dfdd8cd3baf33fc3536f36539af0706a0f21f469ddf8efee4fff100be41d',
  'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
  'src/kicad_route/determinism.py': 'c05ab76de1e24be3f9eeb66807e1f739ed722025e55b65481d877c56dd683abc',
- 'src/kicad_route/diff_pairs.py': '6a9025e0d547eb22fe645cb3da5b6887ae650f884238992ca6c568c5477fb708',
+ 'src/kicad_route/diff_pairs.py': '567cd4c07aec85f00c4d8b06218d7f2f852ada074f51abc3b992393c0df91663',
  'src/kicad_route/engine.py': '4f4451f6356a9b5ba63b01d4e1d97f7490b80deb0a1518e28b29e9ae13c9d1c1',
  'src/kicad_route/evidence.py': 'ae818865ecdd317abe9c82129782217817df4ae75548d4b9d85b08cda3b99881',
  'src/kicad_route/experiment_policy.py': '575e7aef8a2ba825ef05211603b16e00c05ebf4439e2976ef0a7884bd330265d',
@@ -172,12 +172,12 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/design_rules.py': 'e3e9260afde28bd4d5e8ac42f489826c708be2b28a143ca254360c2e9b0031ff',
  'src/kicad_route/router/py_router/diff_pair_custody.py': 'f07e2cec713bfeda971b68fbbdba2a6630244f5e1e54bf01df3529257835b173',
  'src/kicad_route/router/py_router/diff_pair_loop.py': '636f07595a727b3e81ec882762094ea90b6bc86b80c5ebad4b017abac3494a4f',
- 'src/kicad_route/router/py_router/diff_pair_multipoint.py': '22aae608463906465d714ca94ddf4b7aff565814ab7ff7590c6207ff00d905f7',
+ 'src/kicad_route/router/py_router/diff_pair_multipoint.py': 'a3c46016755d178225969c3ad3f1dbe0652f91d8e4f4d9fb54b0fc56df63105f',
  'src/kicad_route/router/py_router/diff_pair_routing.py': 'aa355c8a1a10fbb672000a78dfa7974bb7ab95fc9c079eca716639586d6726a0',
  'src/kicad_route/router/py_router/diff_xnet.py': '204665ebc1494103a7e6960aa43bfd0eada9d17c70d31dc6cda8be63e5909f24',
  'src/kicad_route/router/py_router/dup_trap.py': 'f3a3cc3b91d7318b46a091d14586ce31469c3101ddcd61b325bbda90e63fa1ee',
  'src/kicad_route/router/py_router/effective_config_evidence.py': 'fe9254c32d895f936e97f03f34f9a6edbb16fcad086179f62325cf0eeeb1722e',
- 'src/kicad_route/router/py_router/effective_config_fields.json': '9aefa28f407fdcf30ea56be8378ad4bb2a481a91c93f0fbb00cff147813356fb',
+ 'src/kicad_route/router/py_router/effective_config_fields.json': 'fb142e91c38a05e90aa9b8073895a7416cd0a7cbc1aeef4924b0342d90e2c614',
  'src/kicad_route/router/py_router/env_knobs.py': '7b9c9fc08f0bad191aba5a5c1e8e7c058e2457c9c83b43c8b090a27b52fbc382',
  'src/kicad_route/router/py_router/fab_notes.py': '0683295464406c4a6ac992b48a78da47322bfcd1f830607c85b4b06f281cda14',
  'src/kicad_route/router/py_router/fab_tiers.py': '66e7156a4ee1507c575dd9b11c75c1d1c62b7cc1a518e8259965c888f0a8b39b',
@@ -224,7 +224,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/pack_river.py': '34d54fb0f9ae956ab0507fa818cf604fdc8816a0b54508f23db9c742e7c31dc0',
  'src/kicad_route/router/py_router/paste_apertures.py': '0c7a864b934ae7ec812f0fb091d16385f442b8472fa34885b85f20219e7e6031',
  'src/kicad_route/router/py_router/pcb_io_utils.py': 'a128f2dc42e869dc46ac240d739e6523eb31a75ffec85798c396784ab7606892',
- 'src/kicad_route/router/py_router/pcb_modification.py': '3c8da17cd58610d263a77a8703ff09df27974ff86d19e9162876089c00212a20',
+ 'src/kicad_route/router/py_router/pcb_modification.py': '2f536eab83f50a51a54d2099982befb498cde47ae165b922d5ae3dbbd230df8a',
  'src/kicad_route/router/py_router/phase3_routing.py': 'a98915bd729750687ff251a07118e04e510bd4366fa3ac8700cf10455c4ed8f3',
  'src/kicad_route/router/py_router/place_motion.py': '9fa0574956f290e947a1c842f0d6ffe38a7e8ff42b881ecf7b94780e78d00f09',
  'src/kicad_route/router/py_router/plane_blocker_detection.py': 'c439b516ff466034902153e29a52969d16002891506ada7d6b61d5f7ca1931d1',
@@ -256,13 +256,13 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/rip_restore.py': '9a5a68cf13050035de319d8158807cea3104b79241ef15523a729edf42ae544b',
  'src/kicad_route/router/py_router/rip_up_reroute.py': 'e438891f67059b0376eae91c4bff82bb26f2dec9e702aee454927abc29cc5149',
  'src/kicad_route/router/py_router/route.py': '73fcddf34b99667dc0df4759457968e614bbd8047c50077a1a6b5ac65ab58c3c',
- 'src/kicad_route/router/py_router/route_diff.py': '7eda4eea111d2a9b17706fa90bec282eacc2bc8572cc2e9f720f3a0804f3729a',
+ 'src/kicad_route/router/py_router/route_diff.py': '3e5ca724a11f119e0cfed9c3772065074c91ae54022ae4bb6e8179d30bb4c931',
  'src/kicad_route/router/py_router/route_planes.py': '05cde89b474e1a48a2746dfdee7d819f2796009f9f6a2a55a602f32e6b940fcf',
  'src/kicad_route/router/py_router/route_render.py': '5fca0a39fbca4d58e0a77f503867e0fb48bed766ede31b9664a5a0b6c9f7131f',
  'src/kicad_route/router/py_router/route_summary.py': '3c8575595d90ca286dc06e36df2905aea583a10e986d13633fd36b5e8d026410',
  'src/kicad_route/router/py_router/route_trace.py': '4511cbacf524a9b72739ed06e4d1b1ff28cf035fef5aa634939cfba3f0c73e3b',
  'src/kicad_route/router/py_router/routing_common.py': 'a698bbb0c09d6be2bb9e87e741e4cb23bb563e0fe9a7ebe6ed29356a00166311',
- 'src/kicad_route/router/py_router/routing_config.py': '001b54db7e0d92296add49a18665b625dfcae1ebc9951796de26037041a75a8f',
+ 'src/kicad_route/router/py_router/routing_config.py': '559f8a9eaf818f1b11e5f00da67f93a04ec50416ef0c8a9874a986df151b2731',
  'src/kicad_route/router/py_router/routing_constants.py': '5bd4f2aa4d42b5b8f581111bd2ef534a5a1aa53af81b7757fbecfff529c2f718',
  'src/kicad_route/router/py_router/routing_context.py': '2285fa2acee5d0cd1893dd0d95f100b54abd35a7fc625849ab69b4d050911f0e',
  'src/kicad_route/router/py_router/routing_defaults.py': '814cb2693c8029539b9a37726fa84c8b93ed76edbd32da31ac6722a80e75ddf9',
@@ -332,10 +332,12 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/tests/test_no_stub_swap_reaches_config.py': 'b721f346a41811d4da00979e40093958f8eba12162bfb7a1d5f63906d41e9297',
  'src/kicad_route/router/tests/test_obstacle_addremove_parity.py': 'af04343976986e529a4d39eec6e2443788331d70c448061120b2ea0cee28c85d',
  'src/kicad_route/router/tests/test_obstacle_lifecycle.py': 'e15624c1914319b803bd3751a9ed6fdaabdf50c493a6ffec0d22e3f73d69f517',
+ 'src/kicad_route/router/tests/test_pad_body_dangles.py': '1c48335567168558d42797514c37f394bdb3c142140c31b0a2a2ece41dc0da0c',
  'src/kicad_route/router/tests/test_parser_cache.py': '1ba66204abcaa32a31242d058e3ff3fbabc362a9419b553cd25cc6cd8a4ab47e',
  'src/kicad_route/router/tests/test_parser_legacy_tokens.py': 'e7218781732cd73c1f65fd75d3f7dff6dfdbeba0a790f85638d608b9fa21a033',
  'src/kicad_route/router/tests/test_pass_rule_floors.py': '6407e91ca4cec60c45d8d2f730c931b9830c61e17cb3a2142b8a6aa5d636e902',
  'src/kicad_route/router/tests/test_pour_launch_forbidden_layer_welds.py': 'be2c95e968234c53a85c07c1fea626a868dbb28211cf4b88d91335c00e728a2b',
+ 'src/kicad_route/router/tests/test_required_coupling.py': '7ba2a24715aa0055d4f2d029fe60cdb0cf3318eda631557bd5eae6d70b2e42b8',
  'src/kicad_route/router/tests/test_rescue_custody.py': 'ff760f15c2e66b9998c91cce0bb7783bc4935286e78973a0054feec86081600d',
  'src/kicad_route/router/tests/test_routable_layers.py': 'ba0c95ddadd2411dcc051f0f83d99e93a5fbc394515b389e186e9270cf08660c',
  'src/kicad_route/router/tests/test_stub_swap_via_hole_to_hole.py': '8b9e1d29d762ada6e5b74480daf05f7c6f40ba4679481966920230200f9b2114',
@@ -347,6 +349,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/spokes.py': 'fc5b3f90c31cbcc9a9944628bfe6b9bc93dc31de21c893f8e476160f21033506',
  'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
  'src/kicad_route/statemanifest.py': '40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322'}
+
 RESULT_SCHEMA = 'kicad-route/route/1'
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'

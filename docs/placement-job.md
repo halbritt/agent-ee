@@ -203,6 +203,16 @@ the process and must be recorded by the caller.
    state). The sandboxed `routing_adapter.step` refuses a candidate without a
    schematic, so a schematic-less board is routed by this direct process call;
    the router's preflight identity is recorded either way.
+   The input board's stem supplies the routing project name. The placement
+   incumbent routes first; on rejection, the job tries the remaining distinct,
+   eligible shortlist placements in score order. Failed edge/integrity/native
+   placement checks never enter this queue. Each attempt receives an equal
+   share of the remaining job time, recorded as an agent scheduling default.
+   Every routed result receives fresh final checks. The first passing result
+   stops the queue; this establishes a routable choice, not globally optimal
+   copper length or via count. `routing_trials` retains failures as well as the
+   selected result. `routed-incumbent.json` binds that result to its receipt and
+   placement; `incumbent.json` continues to identify the best placement score.
 8. **Final checks, independent of the search**: reload the routed board; footprint
    UUIDs, refs, poses, sides, locks, FPIDs and pads must be unchanged by routing.
    The shared S-expression reader compares complete saved native content,
@@ -257,12 +267,17 @@ phase starts. The report says `cancelled` or `deadline` and the incumbent stays
 intact. An interrupted child is recorded without claiming solver completion or
 native DRC evidence. The engine also checks its deadline internally.
 Finished seeds are checkpointed atomically (`checkpoint.json`, bound to the job
-identity: problem, config and engine hashes). `--resume` refuses a checkpoint of
+identity: problem, config, engine and controller hashes, router identity and
+native tool versions). `--resume` refuses a checkpoint of
 another identity, skips completed seeds and restarts unfinished ones from their
 start: it is restart at a seed boundary, not continuation of an interrupted PRNG
 state. Diagnostic candidates of earlier seeds are not carried across a resume.
 Each attempt writes its own `candidates/aN-*`, `input-drc-aN`, `route-aN`,
-`final-aN` and `job-report-aN.json`; `incumbent.json` carries across attempts
+`final-aN` and `job-report-aN.json`; later routing trials use `-r2`, `-r3`, etc.
+Completed routing-trial receipts are hash-bound in the checkpoint. Resume
+retains these receipts but runs fresh routing and final checks; it does not
+adopt old copper or reuse old verification as a passing result.
+`incumbent.json` carries across attempts
 and is still replaced only by a strictly better checked candidate.
 
 ## Tests

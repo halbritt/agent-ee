@@ -364,6 +364,11 @@ class EntryPointTests(Fixture):
         report = json.loads((self.dir / 'job/job-report.json').read_text())
         self.assertEqual(report['status'], 'completed', report.get('route'))
         self.assertEqual(report['routed_candidate'], 'incumbent')
+        self.assertEqual(report['design_name'], self.board.stem)
+        argv = report['route']['argv']
+        self.assertEqual(argv[argv.index('--name') + 1], self.board.stem)
+        self.assertEqual(report['routing_trials'][-1]['status'], 'completed')
+        self.assertEqual(report['route_selection']['board_sha256'], report['routing_trials'][-1]['board_sha256'])
         self.assertEqual(set(report['phases']), set(job.PHASES))
         self.assertEqual(report['claims'], {'accepted': False, 'clean': False, 'superiority': None})
         final = report['final']

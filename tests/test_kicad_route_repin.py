@@ -1,4 +1,4 @@
-"""The kicad-route b577449 re-pin (AGENTEE-450).
+"""The kicad-route current owned-engine re-pin (AGENTEE-450).
 
 Policy cases use the coordinator-owned fixture router from kicad_route_fixture.py,
 which mirrors the pin's result contract. Native cases run the real pinned
@@ -64,7 +64,7 @@ class RepinPolicyTest(unittest.TestCase):
             return Case(Path(self.tmp.name) / str(self.count), scenario).run(argv)
 
     def test_new_pin_identity(self):
-        self.assertEqual(attempt.PIN, 'b5774496d8466b67ffa0362b6665fee2108155a3')
+        self.assertEqual(attempt.PIN, 'be1f3a831ac275bb0dc5f8b70bfb9a1afa5e9bfa')
         self.assertNotEqual(attempt.PIN, OLD_PIN)
         self.assertEqual(attempt.default_layout(attempt.parse_request(REQUEST))['pin'], attempt.PIN)
         # The pin's owned engine and the modules added since 5f1c072 are byte-pinned.
