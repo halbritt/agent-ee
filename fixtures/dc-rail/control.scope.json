@@ -1,0 +1,115 @@
+{
+  "baseline": {
+    "reference_architectures": [
+      "requirements.md"
+    ],
+    "requirements": [
+      {
+        "checks": [
+          "drc"
+        ],
+        "id": "R-native",
+        "intent": "acceptance",
+        "source": {
+          "locator": "Native prerequisite",
+          "path": "requirements.md"
+        },
+        "statement": "All native DRC and parity checks pass"
+      },
+      {
+        "checks": [
+          "dc"
+        ],
+        "id": "R-dc",
+        "intent": "acceptance",
+        "source": {
+          "locator": "Analytic bound",
+          "path": "requirements.md"
+        },
+        "statement": "Ideal DC drop is at most 12mV at 1A total injection"
+      }
+    ],
+    "targets": [
+      "requirements.md"
+    ]
+  },
+  "board": "project/rc_filter.kicad_pcb",
+  "checks": [
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "dc",
+      "kind": "dc_path",
+      "params": {
+        "contract": "contract.json",
+        "qualification": "qualification.json"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "at": "project",
+      "include": [
+        "*.kicad_sch",
+        "*.kicad_pro",
+        "*-lib-table",
+        "*.kicad_sym"
+      ],
+      "path": "../rc/control"
+    },
+    {
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ],
+      "path": "/usr/share/kicad/symbols"
+    },
+    {
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ],
+      "path": "/usr/share/kicad/footprints"
+    },
+    {
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ],
+      "path": "/usr/share/kicad/template"
+    },
+    {
+      "at": "project/rc_filter.kicad_pcb",
+      "path": "rc_filter.kicad_pcb"
+    },
+    {
+      "at": "contract.json",
+      "path": "contract.json"
+    },
+    {
+      "at": "qualification.json",
+      "path": "qualification.json"
+    },
+    {
+      "at": "requirements.md",
+      "path": "requirements.md"
+    }
+  ],
+  "limitations": [
+    "Ideal pad and junction contacts. Declared material/dimensions are analytic fixture conditions, not supplier guarantees. No thermal or physical qualification."
+  ],
+  "name": "Multilayer ideal copper bound",
+  "requirements": [
+    "requirements.md"
+  ],
+  "schema": "agent-ee.scope/3",
+  "schematic": "project/rc_filter.kicad_sch",
+  "scope": "Owned analytic rail check with native connectivity; not physical hardware acceptance."
+}

@@ -651,6 +651,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             from .dc_path import load_inputs, limits
             captured(scope.get('board'))
             contract, dependencies = load_inputs(params, files, inputs)
+            if contract['schema'] == 'agent-ee.dc-path/2':
+                source = prerequisite(contract['drc_check'], ('drc',))
+                if source.get('params', {}).get('projection'):
+                    raise ValueError('whole-net DC requires full DRC, not a projection')
             for path in dependencies:
                 captured(path, immutable=True)
             result['predicates'] = bounds(limits(contract))

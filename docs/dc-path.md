@@ -1,11 +1,75 @@
 # PCB DC path resistance
 
-The optional `dc_path` check extracts saved KiCad 10.0.7 copper geometry and
-solves a bounded, ideal one-dimensional resistor network. It reports two-terminal
-DC voltage drop and total copper loss at explicitly declared fixed currents.
+The optional `dc_path` check extracts saved KiCad 10.0.7 copper geometry. Contract
+version 1 solves an isolated, ideal one-dimensional resistor network; version 2
+bounds voltage drop on complete multilayer nets with distributed loads. Both
+models require explicitly declared physical parameters and ideal contacts.
 There are no material, thickness, temperature, current or tolerance defaults.
 The [owned analytic expectations](../fixtures/dc-path/EXPECTATIONS.md) and
 [native tests](../tests/test_dc_path.py) define the qualified domain.
+
+## Multilayer net bounds
+
+Use [`agent-ee.dc-path/2`](../fixtures/dc-rail/contract.json) for straight/arc
+tracks, through vias, SMD pads and circular plated holes on a native board with
+other nets. The public check kind and parameters remain `dc_path`, `contract`
+and `qualification`. The contract explicitly names an earlier **full** `drc`
+check, source/sink reference and pad identities, net names, and a maximum **total
+positive current injection into each net**, including all loads and sources.
+Using only one load's current when other loads share that net is invalid.
+
+Every enabled copper layer needs a minimum thickness. Declare a minimum track
+width factor, maximum board height, minimum barrel plating, minimum hole diameter
+factor, resistivity upper bound at the stated temperature, and drop limits.
+No default material, dimension, load or tolerance is inferred from the board.
+Each bound sums every relevant track and barrel resistance, including branches
+that the selected load may not use. The circular barrel uses the hole lower
+bound as its outer diameter and full board height, deliberately overestimating
+its resistance. A `1e-12` relative arithmetic allowance is added.
+
+In the connected passive resistor model, a branch cannot carry more than the
+total positive injected current. Summing the nonnegative branch resistances
+therefore bounds any terminal voltage difference. This avoids an optimistic
+shortest-path estimate and works with distributed loads. It can be loose; a
+failed upper bound means the declared model has not established the budget,
+not that a measured board necessarily exceeds it. Supply and return paths must
+both be included in a rail budget.
+
+The native prerequisite must belong to the same captured board and candidate,
+retain the raw report, pass full schematic parity/connectivity, and have zero
+raw findings. Waived findings or advisory numeric violations cannot establish
+this prerequisite. Ignored conductive checks refuse. KiCad's five default
+nonconductive omissions are retained explicitly: missing courtyard, track/via
+centering, tuning profiles, footprint filters and footprint component type.
+Contract compilation rejects missing, forward and projected DRC prerequisites.
+
+The report accounts for every native conductor as a modeled rail conductor,
+an ideal rail pad contact, or an explicitly excluded other-net object. Ambiguous
+terminals, zones, copper graphics, non-through vias, nonplated/slotted rail holes,
+missing layers, malformed geometry or stale qualifications refuse. Zone support
+remains a whole-system implementation gap. Version 1's stricter endpoint model
+and solver are unchanged.
+
+**These are ideal-model bounds.** Pad spreading, solder/package/contact
+resistance, self-heating and AC effects are not modeled. Declared supplier
+minima and current/temperature envelopes require separate substantiation before
+physical acceptance. Native DRC and a passing copper bound do not supply it.
+
+Replay the [native analytic case](../fixtures/dc-rail/requirements.md):
+
+```sh
+ae-ci-exec . -- bin/agent-ee review fixtures/dc-rail/control.scope.json \
+  --out build/dc-rail-control --checks-only --max-seconds 180
+ae-ci-exec . -- bin/agent-ee verify build/dc-rail-control
+```
+
+The checks-only review exits 1 because independent engineering review remains
+incomplete. Its `dc` check must be `ok/pass`, at approximately 11.6373224084 mV;
+`verify` must exit zero. The [native tests](../tests/test_dc_rail.py) also prove
+rejection of a disconnected route, an exceeded drop budget, altered sealed
+geometry, stale DRC and an ignored connectivity check. Qualification pins the
+model, probe, dispatcher and native tool identities. Regenerating that file
+without rerunning the native oracles does not establish qualification.
 
 ## Captured inputs
 

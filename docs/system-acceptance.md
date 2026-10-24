@@ -36,7 +36,7 @@ individual checks never means the whole design is accepted.
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Selected height maxima, complete body/hardware/access and broader side/keepout cases remain open. |
 | Placement and routing feedback | Placement constraints + seed/route policy → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Acquisition and esp_prog both route with zero native errors/opens. Search/legalization/final reload enforce declared hard constraints; portfolio can reject and retry candidates. Zones, netclasses, broader multilayer/paired/bus/fanout/plane features and routed constraint coverage still require qualification. |
-| Electrical verification | Final native netlist + source-bound calculations/models → individual checks; `electrical_topology`, interval checks, passive/active SPICE | Native topology, selected parts and assembly checks pass acquisition. Current-limited stimuli and vendor comment encodings now work generally. A silent ngspice inverse-switch defect is reproduced on 42/47; corrected 47 passes the supported-image switch oracle, 139 native regressions and the unchanged actual startup case. Clean ERC is not functional acceptance. |
+| Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `electrical_topology`, interval checks, passive/active SPICE, `dc_path` | Native topology, selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. New whole-net copper model exercises two/four-layer native controls and actual supply/return copper; disconnected and exceeded-budget negatives reject. Physical material/contact bounds and component obligations remain open. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Complete mechanical/fabrication requirement coverage and remaining routing-feature cases are still unmet. |
 | Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | Earlier targeted package exercise validates 9 plots/2 drills/12 BOM rows/17 placements and rejects stale coordinates. It used the prior circuit, so does not qualify the current TPS design. Current default build correctly refuses missing manufacturing coverage; no complete package is accepted. |
 | Operation and reproducibility | Clean installation + captured plan → bounded run/journal/resume/diagnostics; installer, doctor, build workflow | Receipted resume, source/runtime drift refusal and targeted negative cases exercised. Corrected native-image 47 passes the targeted requalification and both ordinary RC integration gates. Full fresh intent-to-package run, complete-suite clean setup and interrupted/resumed qualification remain required. |
@@ -48,6 +48,14 @@ kicad-route `80e144437b48a3de77b226d0e9465c16b9ab8b7e`.
 This iteration replaces ngspice 42 with corrected maintained 47. The supported
 image passes 139 native regressions, 20 switch checks, both RC integration gates
 and the unchanged actual acquisition startup case. The observed image and binary are recorded in the simulator report.
+
+The next integrated feature adds `dc_path/2` through the existing public review
+workflow. The unchanged acquisition board's ideal copper bounds are 1.556 mV
+supply and 3.551 mV return at declared 20 mA/25 °C. Every native conductor is
+accounted for; full DRC/parity is a prerequisite. Independent two/four-layer
+controls, disconnected-route and exceeded-bound cases are retained at
+`build/agent545/dc-rail-public`. These nominal model conditions do not close
+physical manufacturing tolerance, contact/spreading or full electrical acceptance.
 
 The actual fresh TPS acquisition build used agent-ee `9a12901a` and completed
 requirements, parts, scaffold, schematic, placement-routing and artwork in
@@ -70,6 +78,7 @@ Immutable evidence under `~/.cache/agent-ee-qualification/agent545/`:
 
 See [electrical disposition](qualification/acquisition-electrical-2026-10-24.md),
 [simulator correction](benchmarks/ngspice-inverse-switch-2026-10-24.md) and
+[native copper qualification](benchmarks/dc-rail-2026-10-24.md), and
 [retained iteration history](system-qualification-history.md).
 
 ## Bounded qualification suite and negatives

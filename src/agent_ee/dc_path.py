@@ -13,7 +13,10 @@ TOOLS = {'/usr/bin/python3': 'e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865
          '/usr/lib/python3/dist-packages/_pcbnew.so': 'ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8'}
 
 
-def qualification():
+def qualification(c=None):
+    if c is not None and c.get('schema') == 'agent-ee.dc-path/2':
+        from .dc_rail import qualification as rail_qualification
+        return rail_qualification()
     return {'schema': 'agent-ee.dc-qualification/1', 'policy': POLICY,
             'pcbnew_version': '10.0.7', 'tools': TOOLS,
             'model_sha256': digest(__file__),
@@ -36,6 +39,9 @@ def exact_fields(record, fields, label):
 
 
 def validate_contract(c):
+    if isinstance(c, dict) and c.get('schema') == 'agent-ee.dc-path/2':
+        from .dc_rail import validate_contract as validate_rail
+        return validate_rail(c)
     exact_fields(c, 'schema net layer stackup material temperature_c dimensions terminals loads', 'contract')
     if c['schema'] != 'agent-ee.dc-path/1' or c['layer'] != 'F.Cu' or not isinstance(c['net'], str) or not c['net']:
         raise ValueError('unsupported DC schema/net/layer')
@@ -99,6 +105,9 @@ def condition(c, load):
 
 
 def limits(c):
+    if c.get('schema') == 'agent-ee.dc-path/2':
+        from .dc_rail import limits as rail_limits
+        return rail_limits(c)
     return {f'{load["id"]}_{metric}': {'max': load[bound], 'unit': unit,
             'condition': condition(c, load)} for load in c['loads']
             for metric, bound, unit in (('drop', 'max_drop_v', 'V'), ('loss', 'max_loss_w', 'W'))}
@@ -114,7 +123,7 @@ def load_inputs(params, files, inputs):
         if any(p not in files or digest(Path(inputs) / p) != files[p] for p in paths):
             raise ValueError('DC contract/qualification must be unchanged captured inputs')
         c = validate_contract(read_json(Path(inputs) / paths[0]))
-        if read_json(Path(inputs) / paths[1]) != qualification():
+        if read_json(Path(inputs) / paths[1]) != qualification(c):
             raise ValueError('DC model/probe/tool identity requires explicit requalification')
     except OSError as exc:
         raise ValueError('DC captured dependency unavailable: ' + str(exc)) from exc
@@ -442,6 +451,12 @@ def check_dc_path(ctx):
         board = ctx.candidate_path(ctx.scope['board'])
         if digest(ctx.inputs / ctx.scope['board']) != ctx.manifest['files'][ctx.scope['board']]:
             raise ValueError('native board differs from captured candidate')
+        receipt.update(contract=c, board_sha256=ctx.manifest['files'][ctx.scope['board']],
+                       qualification=qualification(c))
+        write_json(ctx.work / 'analysis.json', receipt)
+        if c['schema'] == 'agent-ee.dc-path/2':
+            from .dc_rail import check
+            return check(ctx, c, receipt)
         ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.dc_geometry_probe',
                      board, '--out', '/work/geometry.json'], timeout=60)
         ctx.evidence('geometry.json')
@@ -472,6 +487,10 @@ def check_dc_path(ctx):
         ctx.result.update(execution='ok', outcome='defect' if failed else 'pass',
                           summary='qualified DC path ' + ('violates limits' if failed else 'meets limits'))
         ctx.result['limitations'].append('ideal 1D copper only; ideal endpoint/pad contacts; externally declared temperature; no via, zone, contact spreading, self-heating, RLC or hardware validation')
+    except CheckError as exc:
+        receipt.update(error=str(exc), execution=exc.execution)
+        write_json(ctx.work / 'analysis.json', receipt)
+        raise
     except (ValueError, KeyError, TypeError, OSError, OverflowError, ZeroDivisionError) as exc:
         receipt['error'] = str(exc)
         write_json(ctx.work / 'analysis.json', receipt)

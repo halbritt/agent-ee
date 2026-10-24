@@ -1,0 +1,40 @@
+{
+  "barrels": {
+    "height_max_m": 0.0016,
+    "hole_factor_min": 1,
+    "plating_min_m": 2e-05
+  },
+  "contact_model": "ideal-pad-and-junction/1",
+  "drc_check": "drc",
+  "layers": {
+    "B.Cu": {
+      "thickness_min_m": 3.5e-05
+    },
+    "F.Cu": {
+      "thickness_min_m": 3.5e-05
+    }
+  },
+  "material": {
+    "rho_upper_ohm_m": 1.724e-08,
+    "temperature_c": 20
+  },
+  "model": "whole-net-ideal-copper-bound/1",
+  "paths": [
+    {
+      "id": "rail",
+      "max_drop_v": 0.012,
+      "max_injected_current_a": 1,
+      "net": "/IN",
+      "sink": {
+        "pad": "1",
+        "ref": "R1"
+      },
+      "source": {
+        "pad": "1",
+        "ref": "J1"
+      }
+    }
+  ],
+  "schema": "agent-ee.dc-path/2",
+  "width_factor_min": 1
+}

@@ -104,3 +104,15 @@ distinction when selecting engineering margins and physical validation obligatio
 Next: establish applicable capacitor and regulator models/bounds, then carry their
 checks and the existing placement constraints into the complete build scope.
 No requirement, native severity, or failed result has been weakened.
+
+## Subsequent native model evidence
+
+The [ngspice 47 correction](../benchmarks/ngspice-inverse-switch-2026-10-24.md)
+establishes the unchanged circuit's nominal startup under the declared 20 mA
+source. The [native copper check](../benchmarks/dc-rail-2026-10-24.md) now computes
+the actual saved board's ideal supply/return bounds: approximately 5.1072 mV
+combined at 20 mA/25 °C. The earlier unknown records remain valid historical
+evidence; they are not rewritten as passes. These later model results still
+require applicable physical dimension/material/contact bounds, capacitor
+corners and the remaining component/operating conditions before closing the
+corresponding whole-design requirements.
