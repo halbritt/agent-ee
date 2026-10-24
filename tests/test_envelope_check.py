@@ -146,6 +146,17 @@ class PublishedCopperWeightAuthorityTests(unittest.TestCase):
             'envelope layer core thickness 1.53 mm has no published profile thickness',
             'saved layer core thickness 1.53 mm has no published profile thickness'])
 
+    def test_native_dielectric_position_name_preserves_authored_label_without_granting_authority(self):
+        native = (ROOT / 'tests/fixtures/envelope/rc-explicit-stackup.kicad_pcb').read_bytes()
+        actual, logical = self.compare(pcb=native), self.compare()
+        self.assertEqual((actual['status'], actual['defects'], actual['unknown']),
+                         (logical['status'], [], logical['unknown']))
+        self.assertEqual(actual['saved']['layers'][1]['name'], 'dielectric 1')
+        for name in [b'dielectric 2', b'unrelated']:
+            wrong = self.compare(pcb=native.replace(b'dielectric 1', name))
+            self.assertEqual(wrong['status'], 'defect', wrong)
+            self.assertTrue(wrong['defects'])
+
     def test_published_copper_weight_thickness_and_nominal_still_prove_defects(self):
         cases = []
         heavy = json.loads(json.dumps(self.envelope))

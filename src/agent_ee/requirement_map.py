@@ -74,7 +74,7 @@ def indexed(entries, expected, label):
         if rid in found:
             refuse('duplicate_mapping', rid, 'duplicate mapping')
         if rid not in expected:
-            refuse('unknown_requirement', rid, 'not present in the spec record')
+            refuse('unknown_requirement', rid, 'not present in the spec record or declared envelope')
         found[rid] = entry
     missing = expected - found.keys()
     if missing:
@@ -194,9 +194,34 @@ def compilation_inputs(inputs, files, provenance):
         yield root
 
 
-def account_requirements(declaration, record, spec_raw):
+def envelope_sources(scope, files, inputs):
+    """Derive field obligations from captured bytes, with their original authority."""
+    declared = scope.get('envelope')
+    if declared is None:
+        return []
+    from . import board_envelope as envelope
+    if inputs is None or files is None:
+        raise ValueError('declared envelope requirements need captured inputs')
+    envelope.fields(declared, 'scope envelope', ['path', 'profile', 'dialog'])
+    raw = envelope.captured_bytes(files, inputs, declared['path'], 'envelope')
+    profile = (envelope.captured_bytes(files, inputs, declared['profile'], 'profile')
+               if declared['profile'] is not None else None)
+    record = envelope.validate(raw, profile=profile, captured=(files, inputs))
+    derived = envelope.derive_requirements(record, declared['path'])['requirements']
+    return [dict(id=row['id'], text=row['statement'], locator=row['source']['locator'],
+                 text_sha256=sha256(row['statement'].encode()),
+                 baseline={key: row[key] for key in ('id', 'statement', 'source', 'intent')})
+            for row in derived]
+
+
+def account_requirements(declaration, record, spec_raw, *, files=None, inputs=None):
     """Build executable obligations and a receipt for every declared source."""
     sources = list(record['requirements'])
+    derived = envelope_sources(declaration['scope'], files, inputs)
+    collisions = {r['id'] for r in sources} & {r['id'] for r in derived}
+    if collisions:
+        refuse('duplicate_source', sorted(collisions)[0], 'spec and envelope requirement IDs collide')
+    sources += derived
     mapping = indexed(declaration['requirements'], {r['id'] for r in sources}, 'requirements')
     prose_sources, prose_entries = prose_mappings(record, declaration['prose'], spec_raw)
     sources += prose_sources
@@ -225,13 +250,15 @@ def account_requirements(declaration, record, spec_raw):
                    'locator': source['locator'], 'text_sha256': source['text_sha256']}
         if 'parent_id' in source:
             receipt['parent_id'] = source['parent_id']
+        if 'baseline' in source:
+            receipt['source'] = source['baseline']['source']
         receipts.append(receipt)
         if mode == 'checks':
             ids = [check['id'] for check in entry['checks']]
-            requirements.append({'id': rid, 'statement': source['text'], 'intent': 'acceptance',
-                                 'source': {'path': f'{PROVENANCE}/spec.md',
-                                            'locator': json.dumps(source['locator'], sort_keys=True)},
-                                 'checks': ids})
+            requirement = source.get('baseline', {'id': rid, 'statement': source['text'], 'intent': 'acceptance',
+                'source': {'path': f'{PROVENANCE}/spec.md',
+                           'locator': json.dumps(source['locator'], sort_keys=True)}})
+            requirements.append({**requirement, 'checks': ids})
         elif mode == 'limitation':
             limitations.append(f'{rid}: NOT CHECKED: {entry[mode]["reason"]}')
         elif mode == 'bench':
@@ -254,7 +281,6 @@ def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None):
     if declaration['spec_record_sha256'] != sha256(record_raw):
         refuse('spec_record_hash', 'spec-record', 'map names different spec-record bytes')
     record = verify(record_raw, spec_raw)
-    scope, receipts = account_requirements(declaration, record, spec_raw)
     provenance = {'spec.md': spec_raw, 'spec-record.json': record_raw, 'requirement-map.json': map_raw}
     files = dict(files)
     if any(p == PROVENANCE or p.startswith(PROVENANCE + '/') for p in files):
@@ -262,15 +288,16 @@ def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None):
     for name, raw in provenance.items():
         path = f'{PROVENANCE}/{name}'
         files[path] = sha256(raw)
-    scope.setdefault('inputs', []).append({'path': PROVENANCE, 'at': PROVENANCE})
-    scope.setdefault('requirements', []).append(f'{PROVENANCE}/spec.md')
     from .capabilities import compile_coverage
     from .cli import validate_scope
-    # A map consisting entirely of limitations cannot create a passing scope.
-    if not scope['baseline']['requirements']:
-        compile_coverage(scope, files, inputs)
-    validate_scope(scope)
     with compilation_inputs(inputs, files, provenance) as captured:
+        scope, receipts = account_requirements(declaration, record, spec_raw, files=files, inputs=captured)
+        scope.setdefault('inputs', []).append({'path': PROVENANCE, 'at': PROVENANCE})
+        scope.setdefault('requirements', []).append(f'{PROVENANCE}/spec.md')
+        # A map consisting entirely of limitations cannot create a passing scope.
+        if not scope['baseline']['requirements']:
+            compile_coverage(scope, files, captured)
+        validate_scope(scope)
         baseline = compile_baseline(scope, files, captured)
     coverage = baseline['coverage']
     for receipt in receipts:

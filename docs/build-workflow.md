@@ -65,9 +65,11 @@ requirements. When `parts.ratings` is supplied, the build captures its adopted
 `compile-parts` receipt and exact report under `build-generated/parts-ratings/`
 and derives `rating_provenance` on every assembly check. An authored declaration
 of that parameter is refused; it must identify this build's actual producer.
-The build first accounts for every source
-requirement and paragraph, then copies the compiler provenance into
-`requirements-map/`. Once the scaffold exists, the ordinary coverage compiler
+The build captures compiler provenance under `requirements-map/` and accounts
+for every source requirement and paragraph. A declared scope envelope also
+derives its exact field requirements from the captured envelope and profile;
+the same requirement map binds their IDs to checks. Once the scaffold exists,
+the ordinary coverage compiler
 and scaffold must reproduce the same authored acceptance baseline. For a rated
 build, that comparison removes only the derived rating parameter. The final
 baseline retains the parameter and immutable receipt/report hashes;

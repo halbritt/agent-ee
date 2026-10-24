@@ -114,11 +114,12 @@ def _requirements(plan, candidate, stage_dir):
     if declaration['spec_record_sha256'] != spec_record.sha256(raw['record']):
         raise ValueError('requirement map names different spec-record bytes')
     record = spec_record.verify(raw['record'], raw['spec'])
-    scope, accounting = requirement_map.account_requirements(declaration, record, raw['spec'])
     provenance = candidate / requirement_map.PROVENANCE
     provenance.mkdir()
     for key, filename in [('map', 'requirement-map.json'), ('record', 'spec-record.json'), ('spec', 'spec.md')]:
         (provenance / filename).write_bytes(raw[key])
+    scope, accounting = requirement_map.account_requirements(declaration, record, raw['spec'],
+        files=_inventory(candidate), inputs=candidate)
     write_json(stage_dir / 'scope.json', _scope(scope, candidate))
     write_json(stage_dir / 'accounting.json', dict(requirements=accounting,
         coverage='pending native scaffold', acceptance=False))

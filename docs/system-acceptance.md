@@ -122,6 +122,29 @@ on the valid acquisition-05 placement each leave one ADC connection open;
 resolution alone does not close this board. The retained routing evidence is
 `~/.cache/agent-ee-qualification/agent545/routing-grid-20261024/`.
 
+Acquisition attempt 06 now completes placement and routing through the ordinary
+placement entrypoint at revision `934c3c43`. Seed 6 from a six-seed portfolio
+produces zero opens and zero native errors in 292.889 seconds; all eight sourced
+pin-distance limits and all three fixed connector checks pass. The saved board
+SHA-256 is `1e82cd311d30ad196614ec85072d61fd4e639fc83884a8e9ea9cfadb1210176b`.
+There are 123 track segments, nine vias and 214.7516 mm of copper. The 35 native
+warnings and three geometric via-in-pad sites still need disposition. Native
+isometric/top/bottom renders resolve all 17 component models. Evidence is under
+`build/agent545/acquisition-placement-06/` and
+`build/agent545/acquisition-renders-06/`. This closes routing for this candidate,
+not its electrical acceptance or manufacturing package.
+
+The requirement-map compiler and public build now account for obligations
+derived from captured envelope/profile bytes alongside spec-record requirements.
+Original field identity and acceptance intent survive into the baseline; missing
+or deferred physical checks still refuse. Native verification also recognizes
+KiCad's positional dielectric names without changing authored labels or supplier
+authority. All 69 targeted map, public-build, parts and envelope tests pass with
+no skips (`build/agent545/envelope-map-native-final-02.log`). The captured JLC
+two-layer profile does not publish core thickness: its exact stackup check stays
+unknown, and therefore cannot authorize manufacturing. Nominal stackup selection,
+electrical coverage and assembly geometry remain the next integration work.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through

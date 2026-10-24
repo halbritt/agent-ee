@@ -34,7 +34,8 @@ Input paths in the resulting scope are relative to the output directory.
 The compiler reserves the `requirements-map/` input destination.
 
 `requirements` is a list with exactly one entry per spec-record requirement
-ID. Each entry has `id` and exactly one of these dispositions:
+ID and, when `scope.envelope` is declared, every requirement derived from its
+captured envelope. Each entry has `id` and exactly one of these dispositions:
 
 | Disposition | Value | Result |
 | --- | --- | --- |
@@ -56,6 +57,16 @@ maps containing only limitations or bench obligations cannot compile into a
 passing empty check set. Unknown kinds never become fallback checks.
 Specialized kinds retain their own source-binding and one-requirement-per-check
 rules; a map must satisfy those contracts to use them.
+
+A declared `scope.envelope` uses the ordinary `{path, profile, dialog}`
+contract and requires captured inputs. The compiler derives its `R-envelope-…`
+IDs from the verified envelope and manufacturing sources. Map entries bind
+those IDs to checks in the same authored execution order as other requirements.
+The resulting baseline retains each derived statement, field locator, source
+path and authority intent. It does not recast geometry as specification prose.
+The ordinary envelope coverage validator still rejects missing obligations,
+wrong field predicates, stale sources and deferred required physical checks.
+No new declaration is needed in the [build plan](build-workflow.md).
 
 The compiler does not establish that a chosen predicate covers the meaning of
 a whole requirement. The owner reviews that relationship, including requirements

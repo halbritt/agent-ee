@@ -400,6 +400,8 @@ class PartsProducerTests(unittest.TestCase):
              [('C38', 'SYNTHETIC-10K'), ('C39', 'SYNTHETIC-100N'), ('C3', 'J-C3')]])
         self.save()
         self.planning_inputs()
+        shutil.copyfile(ROOT / 'fixtures/board-envelope/rc-jlc-2layer.envelope.json', self.bundle / 'envelope.json')
+        shutil.copytree(ROOT / 'fixtures/board-envelope/jlc-2layer', self.bundle, dirs_exist_ok=True)
         spec = b'# Checks\n\n- Native ERC must pass.\n- Native DRC must pass.\n- Assembly properties must be verified.\n'
         record = capture_spec(spec, 'QUAL', {'Checks': 'CHECKS'})
         (self.bundle / 'spec.md').write_bytes(spec)
@@ -409,12 +411,15 @@ class PartsProducerTests(unittest.TestCase):
         template['schema'] = 'agent-ee.scope/3'
         template['stages'] = dict(schema='agent-ee.stages/1', order=['verification'], finding_retry_limit=3,
             subjects=dict(verification=dict(path=template['schematic'], kind='symbols', references=['R1', 'C1', 'J1'])))
-        write_json(self.bundle / 'requirement-map.json', dict(schema='agent-ee.requirement-map/1',
+        declaration = dict(schema='agent-ee.requirement-map/1',
             spec_record_sha256=digest(self.bundle / 'spec-record.json'), scope=template,
             requirements=[dict(id=r['id'], checks=[dict(id=kind, kind=kind,
                 params=dict(catalog='assembly-catalog/catalog-manifest.json') if kind == 'assembly_readiness' else {},
                 stage='verification')])
-                for r, kind in zip(record['requirements'], ['erc', 'drc', 'assembly_readiness'])], prose=[]))
+                for r, kind in zip(record['requirements'], ['erc', 'drc', 'assembly_readiness'])], prose=[])
+        from tests.test_requirement_map_envelope import add_rc_envelope
+        derived = add_rc_envelope(template, declaration['requirements'], self.bundle)
+        write_json(self.bundle / 'requirement-map.json', declaration)
         write_json(self.bundle / 'placement.json', dict(edge_connectors=[], fixed_poses=[]))
         write_json(self.bundle / 'groups.json', dict(groups=[dict(name='filter', anchor='J1', refs=['R1', 'C1', 'J1'])]))
         plan = dict(schema='agent-ee.build-plan/1', source=str(self.bundle),
@@ -456,6 +461,10 @@ class PartsProducerTests(unittest.TestCase):
         self.assertEqual(project['board']['design_settings']['rules']['min_clearance'], 0.25)
         scaffold_dir = out / second['completed'][2]['directory']
         scope = read_json(scaffold_dir / 'scope.json')
+        baseline = {r['id']: r for r in scope['baseline']['requirements']}
+        for row in derived:
+            self.assertEqual(baseline[row['id']]['source'], row['source'])
+            self.assertEqual(baseline[row['id']]['statement'], row['statement'])
         assembly_check = next(c for c in scope['checks'] if c['kind'] == 'assembly_readiness')
         self.assertIn('rating_provenance', assembly_check['params'])
         provenance = assembly_check['params']['rating_provenance']
@@ -464,7 +473,18 @@ class PartsProducerTests(unittest.TestCase):
         write_json(self.root / 'final.scope.json', scope)
         review = self.root / 'assembly-review'
         run_review(self.root / 'final.scope.json', review, 120, checks_only=True)
-        assembly = next(c for c in verify(review)['checks'] if c['id'] == 'assembly_readiness')
+        verified_checks = {c['id']: c for c in verify(review)['checks']}
+        for cid in ['envelope-outline', 'envelope-layer_count', 'envelope-fixed_footprints']:
+            check = verified_checks[cid]
+            self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
+        # This captured supplier profile does not publish a core thickness.
+        # Native naming must agree, but unknown manufacturing data stays open.
+        stackup = verified_checks['envelope-stackup']
+        self.assertEqual((stackup['execution'], stackup['outcome']), ('unsupported', 'unknown'), stackup)
+        self.assertEqual(stackup['details']['status'], 'unknown', stackup)
+        self.assertEqual(stackup['details']['defects'], [], stackup)
+        self.assertTrue(any('no published profile thickness' in s for s in stackup['details']['unknown']))
+        assembly = verified_checks['assembly_readiness']
         self.assertEqual((assembly['execution'], assembly['outcome']), ('ok', 'pass'), assembly)
         self.assertEqual(assembly['details']['rating_provenance']['records'], 2)
         # The receipt must belong to this parts output, and altered producer evidence

@@ -262,15 +262,23 @@ def compare_saved(criterion, record, facts):
         if [l['name'] for l in source['copper']] != record['copper_layers']:
             defects.append('saved copper layer set differs from exact envelope layer set')
     else:
+        # KiCad assigns positional names to dielectric layers when it saves a
+        # board. Keep the authored logical label and native evidence distinct;
+        # only the exact positional alias is equivalent, never arbitrary names.
+        compared = {**source, 'layers': [dict(layer) for layer in source['layers']]}
+        for index, (declared, actual) in enumerate(zip(record['stackup']['layers'], compared['layers'])):
+            if (declared['kind'] == actual['kind'] == 'dielectric'
+                    and actual['name'] == 'dielectric ' + str((index + 1) // 2)):
+                actual['name'] = declared['name']
         authority = record['fab_profile'].get('stackup', {})
         if authority.get('execution') != 'ready':
             expected = {'thickness_mm': record['stackup']['thickness_mm'], 'layers': [
                 {k: layer[k] for k in ('name', 'kind', 'thickness_mm')}
                 for layer in record['stackup']['layers']]}
-            if source != expected:
+            if compared != expected:
                 defects.append('saved structural stackup differs in name, order, kind or exact thickness')
         else:
-            found, unpublished = compare_stackup(record['stackup'], source, authority['expected'])
+            found, unpublished = compare_stackup(record['stackup'], compared, authority['expected'])
             defects.extend(found)
             # An unpublished layer is unknown, but never masks a proven difference.
             if not found:
@@ -293,11 +301,11 @@ def compare_saved(criterion, record, facts):
         material_fields = ('dielectric_type', 'epsilon_r', 'loss_tangent')
         saved_materials = ({row['name']: row for row in facts.get('stackup_material', [])}
                            if 'unavailable' not in source else {})
-        for layer in record['stackup']['layers']:
+        for index, layer in enumerate(record['stackup']['layers']):
             if layer['kind'] != 'dielectric' or not any(key in layer for key in material_fields):
                 continue
             material_declared = True
-            actual = saved_materials.get(layer['name'])
+            actual = saved_materials.get(layer['name']) or saved_materials.get('dielectric ' + str((index + 1) // 2))
             if actual is None:
                 if 'unavailable' not in source:
                     unknown.append(f"saved material data unavailable for layer {layer['name']}")
