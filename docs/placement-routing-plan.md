@@ -45,6 +45,13 @@ Status 2026-10-24 05:26Z (b98f9bcb pushed to main at 05:26:02Z; this status writ
 - Limits: the native agreement covers the {USB1, Fid1} subproblem only, not whole-board legality; derived occupancy is not body proof.
 - AGENTEE-515 remains INCOMPLETE: the end-to-end esp_prog run and the matched stock-KRT comparison are outstanding, and the U2 fixture qualification awaits the chief's next decision. The architecture proposal is [placement-architecture.md](placement-architecture.md).
 
+Status 2026-10-24 06:21Z: the U2 v2 fixture (derived board b4aa540d) is PARTLY qualified (chief 0bd42912, a delegated engineering disposition).
+- Criterion 4 is corrected to the as-built control reference 6ae64855 under the unchanged project 9a9ab694. There, the U2 pad-2 clearance is removed, there are zero new findings, zero mask bridges before and after, and the 357 unrelated findings are preserved. It is accepted on the existing sealed DRC delta. This corrects an erroneous expected baseline. It is not a defect waiver. The original builder HOLD (exit 24) stays on record.
+- Criteria 1, 2, 3 and 5 are accepted.
+- The 513 final placement stays FAILED: 353 -> 352 findings, with a U2 mask / Y1 pad 3 bridge.
+- Qualification stays OPEN only for criterion 6, the one bounded capture-compatibility check. The reviewer ran capture without authority, recorded as diagnostic evidence only: no refusal, 21 of 21 footprints. Its full output was not retained, so all-77-pad semantics are unproven. The chief decides between reuse and one minimal check.
+- No full workflow, stock comparison, 516 or pod release.
+
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
 ## AGENTEE-512 — Qualify a coherent placement-routing workflow before full-pod production
