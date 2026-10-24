@@ -8,9 +8,9 @@ the owner's direct instructions. Scope and roles are in [org-chart.md](org-chart
 The programme must deliver both a manufacturing-ready telemetry pod PCB and
 useful, reusable agent-ee capability. Agent-531 (replaced 529) owns direction,
 sequencing and acceptance; agent-530 (replaced 449) is the sole dispatcher and
-integrator. All campaign communications go through agent-532 (replaced 519), which
+integrator. All campaign communications go through agent-542 (replaced 532 on 2026-10-24; 532 replaced 519), which
 consolidates routine traffic and returns consequential decisions and evidence to 531.
-Agent-532 is also the owner-decision contact: it forwards owner decisions verbatim and
+Agent-542 is also the owner-decision contact: it forwards owner decisions verbatim and
 holds no owner authority (owner, 2026-10-23: "you're not deciding on my behalf, you're
 forwarding my decisions"). No current agent is owner delegate or holds owner-reserved
 authority; money, orders, uploads, new cloud, caps and owner constraints remain

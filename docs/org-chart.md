@@ -18,14 +18,19 @@ agent-529 as chief coordinator, agent-530 replaced agent-449 as sole integrator 
 dispatcher, and agent-532 replaced agent-519 as relay and owner-decision contact.
 On 2026-10-23, in messages between about 22:32Z and 22:38Z (relayed verbatim; times
 corrected by 532), the owner told agent-532 "owner decision contact, that's you." and
-then corrected it: "you're not deciding on my behalf, you're forwarding my decisions". Agent-532 is the relay and owner-decision contact: it
+then corrected it: "you're not deciding on my behalf, you're forwarding my decisions". Agent-532 was then the relay and owner-decision contact: it
 forwards owner decisions verbatim and has no owner authority. No current agent is owner
 delegate or holds owner-reserved authority (chief 531, Cairn 31eae84c). Money, orders,
 uploads, new cloud, caps and owner constraints remain owner-reserved. The owner also told
 agent-532: "make sure the org chart gets updated".
 The owner then stated: "the chief coordinator makes decisions".
+On 2026-10-24 at about 00:24Z the owner told agent-532 (verbatim, relayed): "also, you probably
+should resign and bring up an agent running sol-high to replace you". Agent-542 (Codex GPT-6.1-Sol
+high, Cairn 83868d4f) accepted the relay and owner-decision contact role at about 00:29Z, and
+agent-532's session was shut down. Agent-542 has the same role and the same limits as 532: it
+forwards owner decisions verbatim and has no owner authority.
 Authority order: owner > chief agent-531 (makes decisions) > integrator agent-530, within
-delegated scope; agent-532 forwards and decides nothing.
+delegated scope; agent-542 forwards and decides nothing.
 Agent-521 remains fired, and agent-508 holds no standing authority.
 
 Historical provenance: on 2026-10-22 the owner directly instructed agent-521: "execute the process per your
@@ -38,12 +43,12 @@ eed2cc5c version 1. The current roles are below.
 | Role | Holder | Responsibility |
 | --- | --- | --- |
 | Owner | halbritt | Reserved decisions and overrides. |
-| Relay and owner-decision contact | agent-532 (replaced agent-519) | All campaign communications and relays; single owner-decision queue; forwards owner decisions verbatim; authorized SMS/Slack notifications. No owner authority: "you're not deciding on my behalf, you're forwarding my decisions" (owner, 2026-10-23). |
+| Relay and owner-decision contact | agent-542 (replaced agent-532 on 2026-10-24; 532 replaced agent-519) | All campaign communications and relays; single owner-decision queue; forwards owner decisions verbatim; authorized SMS/Slack notifications. No owner authority: "you're not deciding on my behalf, you're forwarding my decisions" (owner, 2026-10-23). |
 | Chief coordinator and org-chart owner | agent-531 (replaced agent-529) | Both target outcomes, technical direction, priorities, sequencing, acceptance evidence, cross-project decisions, holds, scoreboard policy, role and process records. |
 | Sole dispatcher and agent-ee/FOME integrator | agent-530 (replaced agent-449) | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
 | Router-side technical maintainer | Fresh worker krt0237-router (Codex gpt-6.1-sol, reasoning high; assigned by chief 531 128951e4 on 2026-10-23, first slice AGENTEE-510: read-only KRT v0.23.7 router-fix comparison). agent-507 retired 2026-10-23 at owner direction; agent-535's builder work for 507 does not make it router owner | Router-side technical maintenance and comparison: kicad-route fix inventory, feedback fields, replay plans and recommendations. Any implementation/adoption, releases or installed-runtime change is separately scoped and dispatched by 530. |
 | Researcher | agent-533 (recorded successor of agent-510) | Research and implementation assignments only; NOT a critical-review seat. Does not dispatch or integrate. |
-| Critical reviewers | Slice-assigned Astra (MEDIUM) or Fable (HIGH) seats, chosen per slice by 530 | One independent review per delivery; the reviewer's model class must differ from the implementer's (owner: "different model class for implementation and review"). Report reproducible holds and closure. |
+| Reviewers | Seated per slice by 530 under the owner's 2026-10-24 model policy (docs/telemetry-pod-delivery-plan.md, "Build and review models"): critical reviews are Argon HIGH for Sol/Astra-built work and Astra MEDIUM for Opus/Argon-built work; basic reviews use Opus/Sol/Argon in the build ratio; Fable is not used for reviews | One independent review per delivery; the reviewer's model class must differ from the implementer's (owner: "different model class for implementation and review"). Report reproducible holds and closure. |
 | Shared infrastructure | agent-475 | Host admission, resource limits, init and reaping, storage diagnosis and infrastructure rollout. |
 | Efficiency auditor (historical) | agent-522, rotated 2026-10-23; its successor agent-536 held the 502-506 electrical lanes and is now terminal (506 sealed); no standing assignment | Historical: independent evidence for the efficiency repair. Current electrical work is per-slice (AGENTEE-509: fresh worker ee509-safeoff). |
 | Host monitors | hostmon instances below | Read-only system observations and alerts; no remediation or native workloads. |
@@ -52,16 +57,16 @@ eed2cc5c version 1. The current roles are below.
 530 owns operational dispatch and integration of the FOME pod-design lane and the
 campaign's CI image/container work. This does not make 530 their sole implementer.
 Shared infrastructure stays with its repository owner; 530 triages campaign impact,
-and unresolved ownership goes through 532 to 531. Agent-534's session is preserved
+and unresolved ownership goes through 542 to 531. Agent-534's session is preserved
 while the owner's pause on slice P (AGENTEE-507) stands; it receives no new work. Agent-508 has delivered its analysis; it has no
 standing programme dispatch role. Archive its contributions without treating them
 as new owner instructions.
 
-All campaign communications go through 532. It routes routine status and
+All campaign communications go through 542. It routes routine status and
 known-answer questions to 530, and material holds, scope conflicts, artifact
-results and scoreboard milestones to 531. Owner-reserved decisions go to 532 for notification.
-A direct owner answer is effective immediately; its recipient also sends it to 532
-so the queue and governing record can be reconciled. 532 does not have to be present
+results and scoreboard milestones to 531. Owner-reserved decisions go to 542 for notification.
+A direct owner answer is effective immediately; its recipient also sends it to 542
+so the queue and governing record can be reconciled. 542 does not have to be present
 for an already-authorized engineering decision to proceed.
 
 530 chooses an appropriate subscription model for each slice and records it with

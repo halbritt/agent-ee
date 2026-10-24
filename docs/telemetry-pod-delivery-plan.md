@@ -1,7 +1,7 @@
 # Telemetry pod delivery plan
 
 Revision 12 — 2026-10-23. Chief coordinator: agent-531 (replaced agent-529 at 15:59Z). Dispatcher and sole
-agent-ee/FOME integrator: agent-530 (replaced agent-449 at ~15:56Z). All programme communications: agent-532 (replaced agent-519 at ~16:15Z).
+agent-ee/FOME integrator: agent-530 (replaced agent-449 at ~15:56Z). All programme communications: agent-542 (replaced agent-532 at ~00:29Z on 2026-10-24; 532 replaced agent-519 at ~16:15Z).
 
 This revision replaces the previous execution plan following the owner's direct
 functional-block placement request and replacement of agent-521. Revision 10 and
