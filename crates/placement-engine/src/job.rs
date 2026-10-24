@@ -52,6 +52,27 @@ pub const OUTPUT_SCHEMA: &str = "agent-ee.placement-job-output/1";
 const CELL_NM: i64 = 2_000_000;
 const OCCUPANCY_RUNGS: [&str; 4] = ["courtyard", "fab+pads", "silk+pads", "pads"];
 
+// Mirrored at the native capture boundary in placement_job.py; parity is tested.
+pub const MAX_CONTOUR_VERTICES: usize = 2048;
+pub const MAX_ITEM_CONTOURS: usize = 16;
+pub const MAX_PROBLEM_CONTOUR_VERTICES: usize = 16384;
+
+fn contour_count(g: &Value, total: &mut usize) -> Result<()> {
+    let contours = g["polygons"].as_array().context("native copper polygons")?;
+    ensure!(contours.len() <= MAX_ITEM_CONTOURS,
+        "item contour count {} exceeds {}", contours.len(), MAX_ITEM_CONTOURS);
+    for (i, contour) in contours.iter().enumerate() {
+        let count = contour.as_array().context("native copper polygon")?.len();
+        ensure!(count <= MAX_CONTOUR_VERTICES,
+            "contour {i} vertex count {count} exceeds {MAX_CONTOUR_VERTICES}");
+        *total += count;
+        ensure!(*total <= MAX_PROBLEM_CONTOUR_VERTICES,
+            "contour {i} prepared contour vertex total {} exceeds {} (contour count {count})",
+            *total, MAX_PROBLEM_CONTOUR_VERTICES);
+    }
+    Ok(())
+}
+
 /// Axis-aligned box [x0, y0, x1, y1] in nanometres.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
@@ -167,6 +188,10 @@ pub struct Copper {
     clearance: i64,
     /// None preserves the legacy conservative-box contract and objective.
     polygons: Option<Vec<Polygon>>,
+    // Convex pieces and boundary edges are prepared once, then only transformed.
+    parts: Vec<Polygon>,
+    part_bounds: geometry::PolygonBounds,
+    edges: Vec<(Point, Point, geometry::Bounds)>,
 }
 
 fn rect_polygon(r: &Rect) -> Polygon {
@@ -182,26 +207,52 @@ impl Copper {
         } else { default_clearance };
         ensure!(clearance >= 0, "negative copper clearance");
         let polygons = if let Some(g) = value.get("geometry") {
+            contour_count(g, &mut 0)?;
             ensure!(g["status"] == "conservative_native_polygon", "unsupported copper geometry status");
             ensure!(matches!(text(g, "kind")?, "circle" | "rect" | "oval" | "roundrect" | "custom" | "hole"),
                 "unsupported copper geometry kind");
             ensure!(int(g, "tolerance_nm")? == 1000, "unsupported copper polygon tolerance");
             let contours = g["polygons"].as_array().context("native copper polygons")?
-                .iter().map(geometry::simple_polygon).collect::<Result<Vec<_>>>()?;
+                .iter().map(|p| geometry::simple_polygon_bounded(p, MAX_CONTOUR_VERTICES))
+                .collect::<Result<Vec<_>>>()?;
             ensure!(!contours.is_empty(), "empty native copper polygons");
             let envelope = rect_polygon(&bounds);
             ensure!(contours.iter().all(|p| geometry::contains(&envelope, p)),
                 "native copper polygon exceeds indexed bounds");
             Some(contours)
         } else { None };
-        Ok(Self { bounds, clearance: clearance.max(default_clearance), polygons })
+        Self::prepared(bounds, clearance.max(default_clearance), polygons)
+    }
+
+    fn prepared(bounds: Rect, clearance: i64, polygons: Option<Vec<Polygon>>) -> Result<Self> {
+        let fallback = vec![rect_polygon(&bounds)];
+        let contours = polygons.as_ref().unwrap_or(&fallback);
+        let parts: Vec<Polygon> = contours.iter().flat_map(|p| {
+            if geometry::convex(p) { vec![p.clone()] } else { geometry::triangles(p) }
+        }).collect();
+        let part_bounds = geometry::PolygonBounds::new(&parts)?;
+        let edges = contours.iter().flat_map(geometry::edges).map(|(a, b)| {
+            let bounds = geometry::Bounds {
+                x0: a.x.clone().min(b.x.clone()), x1: a.x.clone().max(b.x.clone()),
+                y0: a.y.clone().min(b.y.clone()), y1: a.y.clone().max(b.y.clone()),
+            };
+            (a.clone(), b.clone(), bounds)
+        }).collect();
+        Ok(Self { bounds, clearance, polygons, parts, part_bounds, edges })
     }
 
     fn at(&self, pose: &Pose) -> Self {
-        let polygons = self.polygons.as_ref().map(|contours| contours.iter().map(|p| p.iter()
-            .map(|point| crate::exact::rotate(point, pose.q)
-                .plus(&Point::new(pose.x, pose.y))).collect()).collect());
-        Self { bounds: place_rect(&self.bounds, pose), clearance: self.clearance, polygons }
+        let origin = Point::new(0, 0);
+        let position = Point::new(pose.x, pose.y);
+        let transform = |p: &Point| crate::exact::rotate(p, pose.q).plus(&position);
+        let polygons = self.polygons.as_ref().map(|contours| contours.iter()
+            .map(|p| p.iter().map(&transform).collect()).collect());
+        let parts = self.parts.iter().map(|p| p.iter().map(&transform).collect()).collect();
+        let part_bounds = self.part_bounds.at(&origin, &position, pose.q);
+        let edges = self.edges.iter().map(|(a, b, bounds)|
+            (transform(a), transform(b), bounds.at(&origin, &position, pose.q))).collect();
+        Self { bounds: place_rect(&self.bounds, pose), clearance: self.clearance,
+               polygons, parts, part_bounds, edges }
     }
 
     fn overlap(&self, other: &Self) -> i128 {
@@ -214,13 +265,19 @@ impl Copper {
         if boxed == 0 || (self.polygons.is_none() && other.polygons.is_none()) {
             return boxed;
         }
-        let a_box = vec![rect_polygon(&self.bounds)];
-        let b_box = vec![rect_polygon(&other.bounds)];
-        let a = self.polygons.as_ref().unwrap_or(&a_box);
-        let b = other.polygons.as_ref().unwrap_or(&b_box);
-        let limit = Rat::from_integer(crate::exact::Int::from(clearance).pow(2));
-        if a.iter().any(|x| b.iter().any(|y| geometry::positive_overlap(x, y)
-            || geometry::separation2(x, y) < limit)) { boxed } else { 0 }
+        if self.part_bounds.overlaps(&self.parts, &other.part_bounds, &other.parts) {
+            return boxed;
+        }
+        // Positive-area overlap is already excluded. Only original boundary
+        // edges contribute to separation; triangulation diagonals must not.
+        if clearance == 0 { return 0; }
+        let margin = crate::exact::Int::from(clearance);
+        let limit = Rat::from_integer(margin.pow(2));
+        if self.edges.iter().any(|(a, b, bounds)| {
+            let expanded = bounds.grown(&margin);
+            other.edges.iter().any(|(c, d, other_bounds)| expanded.meets(other_bounds)
+                && geometry::segment_distance2(a, b, c, d) < limit)
+        }) { boxed } else { 0 }
     }
 }
 
@@ -367,6 +424,17 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     ensure!(hole_to_hole_nm >= 0, "negative hole-to-hole clearance");
     ensure!(clearance_nm >= 0 && copper_edge_nm >= 0 && mask_web_nm >= 0, "negative rule");
     let rows = input["footprints"].as_array().context("footprints must be an array")?;
+    let mut vertices = 0;
+    for row in rows {
+        for key in ["copper_local_nm", "holes_local_nm"] {
+            for item in row[key].as_array().into_iter().flatten() {
+                if let Some(g) = item.get("geometry") {
+                    contour_count(g, &mut vertices).with_context(|| format!(
+                        "{} ({}) pad {}", row["native_ref"], row["uuid"], g["pad_uuid"]))?;
+                }
+            }
+        }
+    }
     let uuids: Vec<String> = rows.iter().map(|f| text(f, "uuid").map(str::to_string)).collect::<Result<_>>()?;
     let supplied: Vec<Option<String>> =
         rows.iter().map(|f| f.get("alias").and_then(Value::as_str).map(str::to_string)).collect();
@@ -1213,6 +1281,7 @@ fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
 /// Independent re-evaluation of explicit pose vectors (`{uuid: [x_nm, y_nm, quarter_turns]}`):
 /// predicted native pad positions, exact terms and named violations. Fixed parts must be unchanged.
 fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
+    let started = Instant::now();
     let index: BTreeMap<&str, usize> = p.footprints.iter().enumerate().map(|(i, f)| (f.uuid.as_str(), i)).collect();
     let mut out = Vec::new();
     for row in rows.as_array().context("evaluate must be an array of pose maps")? {
@@ -1230,7 +1299,8 @@ fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
                         "violations": violations(p, &poses), "poses": pose_rows(p, &poses)}));
     }
     Ok(json!({"schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": "evaluated", "evaluations": out,
-              "timing": {"prepare_s": prepare_s}, "engine_version": env!("CARGO_PKG_VERSION")}))
+              "timing": {"prepare_s": prepare_s, "evaluate_s": started.elapsed().as_secs_f64()},
+              "engine_version": env!("CARGO_PKG_VERSION")}))
 }
 
 /// Process entry: prepare once, run the declared seed portfolio, emit a shortlist.
@@ -1349,6 +1419,136 @@ pub fn run(input: &Value) -> Result<Value> {
 mod tests {
     use super::*;
 
+    fn star(n: usize) -> Value {
+        json!((0..n).map(|i| {
+            let angle = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+            let radius = if i % 2 == 0 { 900_000.0 } else { 1_000_000.0 };
+            [(radius * angle.cos()).round() as i64, (radius * angle.sin()).round() as i64]
+        }).collect::<Vec<_>>())
+    }
+
+    fn native_item(polygons: Value) -> Value {
+        json!({"rect_nm": [-1_000_000, -1_000_000, 1_000_000, 1_000_000], "clearance_nm": 0,
+            "geometry": {"status": "conservative_native_polygon", "kind": "custom", "pad_uuid": "pad-1",
+                         "tolerance_nm": 1000, "polygons": polygons}})
+    }
+
+    fn assert_same_boundary(raw: &Value, normalized: &Polygon) {
+        let mut original: Polygon = raw.as_array().unwrap().iter()
+            .map(|p| crate::exact::point(p).unwrap()).collect();
+        if original.first() == original.last() { original.pop(); }
+        assert_eq!(geometry::area(&original), geometry::area(normalized));
+        // Every original edge is a subdivision of a retained edge; normalization
+        // can change orientation and subdivision, but no part of the region.
+        for (a, b) in geometry::edges(&original) {
+            assert!(geometry::edges(normalized).any(|(c, d)|
+                geometry::on_segment(c, d, a) && geometry::on_segment(c, d, b)));
+        }
+        assert!(normalized.iter().all(|p| original.contains(p)));
+    }
+
+    #[test]
+    fn prepared_copper_matches_exact_reference_under_moves() {
+        let shape = Copper::parse(&native_item(json!([star(32)])), 0).unwrap();
+        let neighbour = Copper::prepared(
+            Rect { x0: -150_000, y0: -100_000, x1: 150_000, y1: 100_000 }, 0, None).unwrap();
+        let mut rng = Rng::new(544);
+        for turn in 0..4 {
+            let a = shape.at(&Pose { x: 30_000, y: -70_000, q: turn });
+            for _ in 0..24 {
+                let b = neighbour.at(&Pose { x: rng.range(-1_300_000, 1_300_000),
+                    y: rng.range(-1_300_000, 1_300_000), q: turn });
+                for clearance in [0, 50_000, 200_000] {
+                    let boxed = a.bounds.grown(clearance).overlap(&b.bounds);
+                    let rectangle = rect_polygon(&b.bounds);
+                    let limit = Rat::from_integer(crate::exact::Int::from(clearance).pow(2));
+                    let exact = a.polygons.as_ref().unwrap().iter().any(|p|
+                        geometry::positive_overlap(p, &rectangle)
+                        || geometry::separation2(p, &rectangle) < limit);
+                    assert_eq!(a.overlap_at_clearance(&b, clearance), if exact { boxed } else { 0 });
+                }
+            }
+        }
+        // Coincident boundaries, edge contact, exact clearance, and one nm inside.
+        let a = Copper::parse(&native_item(json!([[[0, 0], [100, 0], [100, 100], [0, 100]]])), 0).unwrap();
+        for (x, clearance, violation) in [(0, 0, true), (100, 0, false),
+                                         (100, 1, true), (150, 50, false), (149, 50, true)] {
+            let b = Copper::prepared(Rect { x0: x, y0: 0, x1: x + 100, y1: 100 }, 0, None).unwrap();
+            assert_eq!(a.overlap_at_clearance(&b, clearance) > 0, violation);
+        }
+    }
+
+    #[test]
+    fn native_complexity_boundaries_and_region_preservation() {
+        for count in [1118, MAX_CONTOUR_VERTICES] {
+            let raw = star(count);
+            let c = Copper::parse(&native_item(json!([raw])), 0).unwrap();
+            assert_same_boundary(&raw, &c.polygons.unwrap()[0]);
+        }
+        let over = native_item(json!([star(MAX_CONTOUR_VERTICES + 1)]));
+        assert_eq!(Copper::parse(&over, 0).unwrap_err().to_string(),
+            format!("contour 0 vertex count {} exceeds {}", MAX_CONTOUR_VERTICES + 1, MAX_CONTOUR_VERTICES));
+        let triangle = json!([[0, 0], [100, 0], [0, 100]]);
+        Copper::parse(&native_item(json!(vec![triangle.clone(); MAX_ITEM_CONTOURS])), 0).unwrap();
+        assert_eq!(Copper::parse(&native_item(json!(vec![triangle.clone(); MAX_ITEM_CONTOURS + 1])), 0)
+            .unwrap_err().to_string(), format!("item contour count {} exceeds {}", MAX_ITEM_CONTOURS + 1, MAX_ITEM_CONTOURS));
+        let mut i = input(vec![]);
+        let count = MAX_PROBLEM_CONTOUR_VERTICES / MAX_CONTOUR_VERTICES;
+        i["footprints"][0]["copper_local_nm"] = json!([native_item(json!(vec![star(MAX_CONTOUR_VERTICES); count]))]);
+        prepare(&i).unwrap();
+        i["footprints"][0]["copper_local_nm"][0]["geometry"]["polygons"][count - 1] = star(MAX_CONTOUR_VERTICES - 2);
+        i["footprints"][0]["copper_local_nm"].as_array_mut().unwrap().push(native_item(json!([triangle])));
+        let message = format!("{:#}", prepare(&i).unwrap_err());
+        assert!(message.contains(&format!("prepared contour vertex total {} exceeds {}",
+            MAX_PROBLEM_CONTOUR_VERTICES + 1, MAX_PROBLEM_CONTOUR_VERTICES)), "{message}");
+    }
+
+    #[test]
+    fn native_polygon_invalid_classes_keep_specific_refusals() {
+        for (raw, message) in [
+            (json!([[0, 0], [1, 1]]), format!("polygon needs 3..{MAX_CONTOUR_VERTICES} vertices")),
+            (json!([[0, 0], [100, 0], [100, 100], [100, 0], [0, 100]]), "repeated polygon vertex".into()),
+            (json!([[0, 0], [100, 0], [50, 0], [100, 100], [0, 100]]), "polygon edge reverses".into()),
+            (json!([[0, 0], [100, 100], [0, 100], [100, 0]]), "zero polygon area".into()),
+            (json!([[0, 0], [100, 100], [0, 100], [80, 0]]), "polygon self-intersection".into()),
+            (json!([[0, 0], [100.5, 0], [0, 100]]), "polygon coordinates must be integer nanometres".into()),
+        ] {
+            assert_eq!(Copper::parse(&native_item(json!([raw])), 0).unwrap_err().to_string(), message);
+        }
+        for raw in [json!([[0, 0], [0, 50], [0, 100], [100, 100], [100, 0], [0, 0]]),
+                    json!([[0, 0], [100, 0], [100, 100], [50, 100], [0, 100]])] {
+            let c = Copper::parse(&native_item(json!([raw])), 0).unwrap();
+            assert_same_boundary(&raw, &c.polygons.unwrap()[0]);
+        }
+    }
+
+    #[test]
+    fn retained_native_problem_region_prepare_and_evaluation() {
+        let path = match std::env::var("AGENT_EE_515_E2E_PROBLEM") {
+            Ok(path) => path,
+            Err(_) => {
+                assert_ne!(std::env::var("AGENT_EE_REQUIRE_TOOLCHAIN").ok().as_deref(), Some("1"),
+                    "AGENT_EE_515_E2E_PROBLEM required in strict mode");
+                return;
+            }
+        };
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(path).unwrap();
+        assert_eq!(format!("{:x}", Sha256::digest(&bytes)),
+            "2ccd682b4bf36ea2aa2d2dcc8bca05f1770cd5927df6eb67142ba70bbf626f11");
+        let input: Value = serde_json::from_slice(&bytes).unwrap();
+        let started = Instant::now();
+        let p = prepare(&input).unwrap();
+        let prepare_s = started.elapsed().as_secs_f64();
+        let u2 = input["footprints"].as_array().unwrap().iter().position(|f| f["native_ref"] == "U2").unwrap();
+        let raw = &input["footprints"][u2]["copper_local_nm"][1]["geometry"]["polygons"][0];
+        assert_eq!(raw.as_array().unwrap().len(), 1118);
+        assert_same_boundary(raw, &p.footprints[u2].copper[1].polygons.as_ref().unwrap()[0]);
+        let started = Instant::now();
+        evaluate_poses(&p, &json!([{}]), prepare_s).unwrap();
+        eprintln!("retained prepare_s={prepare_s:.6} evaluate_s={:.6}", started.elapsed().as_secs_f64());
+    }
+
     fn fp(uuid: &str, r: &str, role: &str, x: i64, y: i64, net: &str) -> Value {
         let occ = if role == "movable" || role == "fixed_body" {
             json!({"status": "derived", "label": "derived_occupancy", "rung": "pads", "local_rect_nm": [-1_000_000, -500_000, 1_000_000, 500_000]})
@@ -1462,8 +1662,8 @@ mod tests {
             assert_eq!(state.totals, full_evaluate(&p, &state.poses), "hole move {n}");
         }
         let hole = &p.footprints[0].holes[0];
-        let copper = Copper { bounds: Rect { x0: 800_000, y0: -250_000, x1: 1_800_000, y1: 250_000 },
-                              clearance: 1_016_000, polygons: None };
+        let copper = Copper::prepared(Rect { x0: 800_000, y0: -250_000, x1: 1_800_000, y1: 250_000 },
+                                      1_016_000, None).unwrap();
         assert_eq!(hole.overlap_at_clearance(&copper, hole.clearance), 0,
             "a copper override is not the drill rule");
         assert!(hole.overlap_at_clearance(&copper, p.hole_to_hole_nm) > 0);

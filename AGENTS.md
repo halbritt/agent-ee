@@ -1,5 +1,20 @@
 # Agent notes for agent-ee
 
+## Current owner direction — 2026-10-24
+
+Direct owner instruction to agent-544: "There was a whole group of agents working
+on agent-ee, it got increasingly complicated as work per agent diminished.
+You're now the sole agent. The tooling needs to be fixed and capable of running
+the test boar."
+
+Work proceeds with one agent, including verification and trunk integration.
+The dispatch, relay and sole-integrator assignments below and in the historical
+campaign documents are superseded. Preserve engineering constraints and evidence;
+do not restart historical assignments or launch agents from those documents.
+The immediate tooling qualification case is the existing esp_prog test board.
+
+## Historical programme context
+
 agent-ee is part of the telemetry-pod programme with kicad-route and fome-mc.
 Roles and process are recorded in:
 

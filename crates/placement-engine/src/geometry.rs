@@ -236,9 +236,15 @@ pub fn intersects(a: &Point, b: &Point, c: &Point, d: &Point) -> bool {
 }
 
 pub fn simple_polygon(raw: &Value) -> Result<Polygon> {
-    let raw = raw.as_array().context("polygon needs 3..512 vertices")?;
-    if !(3..=512).contains(&raw.len()) {
-        bail!("polygon needs 3..512 vertices");
+    simple_polygon_bounded(raw, 512)
+}
+
+/// The caller's preparation contract bounds the raw contour before normalization.
+pub fn simple_polygon_bounded(raw: &Value, max_vertices: usize) -> Result<Polygon> {
+    let message = format!("polygon needs 3..{max_vertices} vertices");
+    let raw = raw.as_array().context(message.clone())?;
+    if !(3..=max_vertices).contains(&raw.len()) {
+        bail!("{message}");
     }
     let mut p: Polygon = raw
         .iter()

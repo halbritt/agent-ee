@@ -198,6 +198,18 @@ the process and must be recorded by the caller.
 
 ## Cancellation, deadline and resume
 
+After the job owns its output directory, a `JobRefusal` produces a terminal
+`job-report.json` with status `refused`, the exact reason, elapsed time, completed
+phase timings and available runtime identities. Acceptance and clean claims stay
+false. When an attempt has been allocated, its `job-report-aN.json` is also
+written; before then, the attempt is null. The CLI prints the refused status and
+exits nonzero. Refusal never replaces the incumbent or diagnostic board.
+
+A nonempty directory without `--resume` is refused without writes. Resume captures
+the input in memory and checks the checkpoint identity before writing capture,
+problem or report files. A failed identity check, or cancellation/deadline before
+that check, leaves existing evidence untouched.
+
 A `CANCEL` file in the job directory stops the engine and controller. The same
 monotonic deadline is checked before judging, routing and final DRC. Nonblocking
 pipe I/O checks cancellation and remaining time at most every 50 ms during owned
@@ -216,6 +228,37 @@ Each attempt writes its own `candidates/aN-*`, `input-drc-aN`, `route-aN`,
 and is still replaced only by a strictly better checked candidate.
 
 ## Tests
+
+### Native contour complexity
+
+The whole-board job admits at most **2,048 raw vertices per contour**, **16
+contours per copper/drill item**, and **16,384 contour vertices per problem**.
+`job.rs` declares these bounds; native Python capture mirrors them, with a parity
+test. Capture refuses excess geometry with the reference, footprint UUID, pad
+UUID, contour index/count and applicable bound. Rust independently validates the
+same limits before preparing geometry. The older general planner's 512-vertex
+contract is unchanged.
+
+These limits admit the retained esp_prog input's 4,328 vertices in 111 contours,
+including U2's 1,118-vertex contour, with headroom. They do not simplify contours
+or substitute bounding boxes. Existing exact normalization and invalid-polygon
+checks remain in force. Preparation triangulates nonconvex copper once and
+records convex-piece and original-boundary edge bounds. Moves transform this
+prepared geometry. Exact overlap uses the convex pieces; exact clearance uses
+only original boundary edges, never triangulation diagonals. Bounding boxes only
+reject impossible pairs.
+
+On the retained input, the limit-only repair took 53.817 seconds to evaluate its
+saved poses. The prepared-geometry repair measured 0.042 seconds preparation and
+0.022 seconds evaluation in the release Rust test on proximal (2026-10-24).
+This measures geometry evaluation, not placement quality or routing throughput.
+An original synthetic case at the 16,384-vertex total limit (eight 2,048-vertex
+concave stars across two overlapping items) measured 1.238 seconds preparation
+and 0.031 seconds evaluation. These are measured cases, not worst-case latency
+guarantees; the controller deadline still bounds preparation and evaluation.
+Regression coverage compares transformed prepared results with the previous exact
+calculation, checks touching and exact-clearance boundaries, preserves the native
+U2 region, and kills limit-scale preparation at the controller deadline.
 
 `tests/test_placement_job.py`, `tests/test_placement_job_guards.py` (original
 synthetic boards built through pcbnew) and the `job::tests` Rust module. The

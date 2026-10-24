@@ -45,6 +45,10 @@ FAB = {'F': 'F.Fab', 'B': 'B.Fab'}
 SILK_OF = {'F': 'F.Silkscreen', 'B': 'B.Silkscreen'}
 COPPER = ('F.Cu', 'B.Cu')
 NM = 1_000_000
+# Mirrored from job.rs; the boundary tests pin both sides.
+MAX_CONTOUR_VERTICES = 2048
+MAX_ITEM_CONTOURS = 16
+MAX_PROBLEM_CONTOUR_VERTICES = 16384
 
 
 class JobRefusal(ValueError):
@@ -55,6 +59,28 @@ class JobStopped(Exception):
     def __init__(self, status):
         self.status = status
         super().__init__(status)
+
+
+def _geometry_complexity(row, total=0):
+    """Refuse raw native contours before they leave capture, without changing geometry."""
+    for key in ('copper_local_nm', 'holes_local_nm'):
+        for item in row.get(key, []):
+            if 'geometry' not in item:
+                continue
+            geometry = item['geometry']
+            contours = geometry['polygons']
+            owner = f'{row["native_ref"]} ({row["uuid"]}) pad {geometry.get("pad_uuid")}'
+            if len(contours) > MAX_ITEM_CONTOURS:
+                raise JobRefusal(f'{owner}: item contour count {len(contours)} exceeds {MAX_ITEM_CONTOURS}')
+            for index, contour in enumerate(contours):
+                count = len(contour)
+                if count > MAX_CONTOUR_VERTICES:
+                    raise JobRefusal(f'{owner}: contour {index} vertex count {count} exceeds {MAX_CONTOUR_VERTICES}')
+                total += count
+                if total > MAX_PROBLEM_CONTOUR_VERTICES:
+                    raise JobRefusal(f'{owner}: contour {index} prepared contour vertex total {total} '
+                                     f'exceeds {MAX_PROBLEM_CONTOUR_VERTICES} (contour count {count})')
+    return total
 
 
 def _check_stop(clock, cancel_dir):
@@ -494,6 +520,7 @@ def _capture_native(board_path, intent, groups):
     edges = _edge_rules(intent, facts['footprints'])
     settings = board.GetDesignSettings()
     rows, record = [], []
+    contour_vertices = 0
     native = {}
     for fp in board.GetFootprints():
         uuid = fp.m_Uuid.AsString()
@@ -528,6 +555,7 @@ def _capture_native(board_path, intent, groups):
             row['rotations'] = [0, 1, 2, 3]
         else:
             row['rotations'] = [q]
+        contour_vertices = _geometry_complexity(row, contour_vertices)
         rows.append(row)
         native[uuid] = {'ref': ref, 'side': captured['side'], 'locked': captured['locked']}
         record.append({'uuid': uuid, 'native_ref': ref, 'role': info['role'],
@@ -985,34 +1013,52 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     clock = Clock(float(config['budget_s']))
     report = {'schema': JOB_SCHEMA, 'status': 'running', 'config_sha256': sha256_bytes(canonical(config)),
               'claims': {'accepted': False, 'clean': False, 'superiority': None}}
+    ownership = {'established': False}
     try:
-        return _execute_job(config, job_dir, resume=resume, executable=executable, clock=clock, report=report)
+        return _execute_job(config, job_dir, resume=resume, executable=executable, clock=clock,
+                            report=report, ownership=ownership)
+    except JobRefusal as exc:
+        if not ownership['established']:
+            raise
+        report.update(status='refused', reason=str(exc), phases=clock.phases,
+                      elapsed_s=round(time.monotonic() - clock.start, 3))
+        report.setdefault('attempt', None)
+        if report['attempt'] is not None:
+            write_json(Path(job_dir) / f'job-report-a{report["attempt"]}.json', report)
+        write_json(Path(job_dir) / 'job-report.json', report)
+        return report
     except JobStopped as exc:
         report['status'] = exc.status
         report.setdefault('engine', {'status': exc.status, 'not_started': True})
         report['phases'] = clock.phases
         report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
+        if not ownership['established']:
+            return report
         # An interrupted trial never overwrites the incumbent or its board.
         pointer = Path(job_dir) / 'incumbent.json'
         report['incumbent'] = read_json(pointer) if pointer.exists() else None
-        write_json(Path(job_dir) / f'job-report-a{report.get("attempt", 1)}.json', report)
+        if report.get('attempt') is not None:
+            write_json(Path(job_dir) / f'job-report-a{report["attempt"]}.json', report)
         write_json(Path(job_dir) / 'job-report.json', report)
         return report
 
 
-def _execute_job(config, job_dir, *, resume, executable, clock, report):
+def _execute_job(config, job_dir, *, resume, executable, clock, report, ownership):
     job_dir = Path(job_dir).absolute()
     if job_dir.exists() and not resume:
         if any(p.name != 'CANCEL' for p in job_dir.iterdir()):
             raise JobRefusal(f'job directory {job_dir} is not empty; use resume')
-    job_dir.mkdir(parents=True, exist_ok=True)
+    ownership['established'] = not resume
+    if not resume:
+        job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
         _, project_bytes = verified_input(config['inputs']['project'], 'project')
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
         intent, groups = json.loads(intent_bytes), json.loads(groups_bytes)
-        report['preflight'] = preflight(config, executable, clock=clock)
+        report['preflight'] = {}
+        report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
     with clock.phase('import'):
         _check_stop(clock, None)
         # A pre-existing CANCEL still captures/checkpoints the initial identity,
@@ -1020,12 +1066,16 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report):
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
         problem, record = capture(board_path, intent, groups, clock=clock, cancel_dir=capture_cancel)
-        write_json(job_dir / 'capture.json', record)
-        write_json(job_dir / 'problem.json', problem)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256']}))
     report['identity'] = identity
     state = load_checkpoint(job_dir, identity) if resume else None
+    if resume and state is None:
+        raise JobRefusal('resume requires an identity-bound checkpoint')
+    ownership['established'] = True
+    job_dir.mkdir(parents=True, exist_ok=True)
+    write_json(job_dir / 'capture.json', record)
+    write_json(job_dir / 'problem.json', problem)
     state = state or {'identity': identity, 'completed_seeds': [], 'seed_results': {}, 'attempts': 0}
     # Each attempt writes its own candidate/route/final directories; nothing earlier is overwritten.
     state['attempts'] = attempt = state.get('attempts', 0) + 1
@@ -1179,21 +1229,25 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
             'metrics': board_metrics(board, groups['groups'], edges)}
 
 
-def preflight(config, executable=None, *, clock=None, cancel_dir=None):
+def preflight(config, executable=None, *, clock=None, cancel_dir=None, identities=None):
     """Runtime readiness before the budgeted work: imports, toolchain, engine and router."""
     import pcbnew
     from . import routing_adapter
+    identities = {} if identities is None else identities
+    identities.update(pcbnew_version=pcbnew.Version(), python=sys.version.split()[0])
     engine = Path(executable or rust_executable())
+    identities.update(engine=str(engine), engine_sha256=digest(engine))
     cli = _run_child(['kicad-cli', 'version'], clock=clock or Clock(60), cancel_dir=cancel_dir)
+    identities['kicad_cli'] = cli.stdout.decode().strip()
     router = routing_adapter.preflight(config['router']['checkout'])
+    identities['router'] = {k: router.get(k) for k in (
+        'checkout', 'commit', 'pin', 'executable_sha256', 'adapter_sha256')}
     problems = list(router['problems'])
     if cli.returncode != 0:
         problems.append('kicad-cli unavailable')
     if problems:
         raise JobRefusal('runtime preflight failed: ' + '; '.join(problems))
-    return {'pcbnew_version': pcbnew.Version(), 'kicad_cli': cli.stdout.decode().strip(), 'python': sys.version.split()[0],
-            'engine': str(engine), 'engine_sha256': digest(engine),
-            'router': {k: router[k] for k in ('checkout', 'commit', 'pin', 'executable_sha256', 'adapter_sha256')}}
+    return identities
 
 
 def main(argv=None):
