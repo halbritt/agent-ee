@@ -512,6 +512,23 @@ class PartsProducerTests(unittest.TestCase):
         self.assertFalse(incomplete['accepted'])
         self.assertIn('manufacturing coverage missing', incomplete['reason'])
         self.assertEqual(incomplete['completed'], second['completed'])
+        # Explicit routing diagnostics must remain available when a final
+        # electrical check needs the routed copper before it can be authored.
+        result = run('--resume', '--through', 'placement-routing')
+        diagnostic = read_json(out / 'build-report.json')
+        attempt = out / diagnostic['attempts'][-1]['directory']
+        self.assertTrue((attempt / 'placement-config.json').is_file(), result.stderr + result.stdout)
+        coverage = read_json(attempt / 'manufacturing-coverage.json')
+        self.assertEqual(coverage['status'], 'incomplete')
+        self.assertIn('manufacturing coverage missing', coverage['reason'])
+        self.assertFalse(diagnostic['accepted'])
+        # Returning to the default manufacturing run must reapply coverage,
+        # including when diagnostic routing has already produced a candidate.
+        result = run('--resume')
+        self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
+        incomplete = read_json(out / 'build-report.json')
+        self.assertFalse(incomplete['accepted'])
+        self.assertIn('manufacturing coverage missing', incomplete['reason'])
         pin = digest(out / 'build-report.json')
         board_path = candidate / 'project/acquisition.kicad_pcb'
         native_bytes = board_path.read_bytes()

@@ -209,6 +209,23 @@ earlier TLV regulator revision; the updated TPS circuit's complete public build,
 electrical and mechanical acceptance still remain open. A passing package
 consistency gate does not make this an accepted manufacturing design.
 
+The original package also passes the public freshness verifier, while a copied
+package with J1's placement X coordinate changed by 0.5 mm rejects as stale
+(exit 2). The original remains unchanged. The artwork, package, negative and
+17-model native renders are retained in
+`~/.cache/agent-ee-qualification/agent545/acquisition-artwork-package-20261024/`:
+1,305 files, manifest SHA-256
+`d60242bbbd6d6be12a0e8f73d7315693c39d12cdd739b3bbc373f3444591facd`.
+
+Explicit build routing/artwork checkpoints now permit incomplete manufacturing
+coverage, recording the reason while retaining all declared placement and native
+routing constraints. This resolves the circular prerequisite when electrical
+analysis needs the routed copper. Default manufacturing invocation and final
+package acceptance retain their coverage guards; diagnostic success cannot
+authorize a package. The 19-test native parts/build/artwork regression passes,
+including diagnostic routing and refusal when resuming toward manufacturing.
+Log: `build/agent545/build-diagnostic-native-final.log`.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through

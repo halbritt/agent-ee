@@ -99,12 +99,18 @@ candidate. Native helpers retain their existing finite timeouts; placement and
 routing share the declared job budget. Resumption within an interrupted router
 trial is not yet connected to the build journal.
 
-Before placement/routing, the build requires declared ERC, DRC, netlist,
+For a default manufacturing run, before placement/routing the build requires declared ERC, DRC, netlist,
 geometry, parts membership, placement, board envelope, manufacturing profile,
 assembly readiness and package checks. The profile and membership must name
 the same envelope and parts used by generation. Unresolved requirement
 limitations refuse this path. These are minimum coverage gates; the authored
 electrical and mechanical requirements still determine the necessary checks.
+An explicit `--through placement-routing` or `--through artwork` diagnostic can
+proceed with incomplete coverage, recorded in the placement stage's
+`manufacturing-coverage.json`. This permits analysis that needs the actual routed
+copper. Declared placement constraints and native routing checks remain active;
+the checkpoint is never accepted. Resuming toward the default package target
+reapplies manufacturing coverage, even after a successful diagnostic route.
 
 After routing, the artwork stage runs the existing bounded native silk repair
 through an ordinary implementation receipt. It selects visible Reference/Value

@@ -240,7 +240,7 @@ def _artwork(candidate, directory, board):
         raise ValueError(f'artwork retains {len(conflicts)} native silkscreen conflict(s); see {directory / "artwork.json"}')
 
 
-def _execute(stage, plan, previous, directory, completed, out):
+def _execute(stage, plan, previous, directory, completed, out, *, diagnostic=False):
     requirements_dir = out / completed[0]['directory'] if completed else None
     scope = read_json(requirements_dir / 'scope.json') if requirements_dir is not None else None
     scaffold_row = next((row for row in completed if row['stage'] == 'scaffold'), None)
@@ -281,7 +281,17 @@ def _execute(stage, plan, previous, directory, completed, out):
     elif stage == 'placement-routing':
         from . import placement_job
         accounting = read_json(requirements_dir / 'accounting.json')['requirements']
-        _manufacturing_coverage(plan, scope, accounting)
+        try:
+            _manufacturing_coverage(plan, scope, accounting)
+        except ValueError as exc:
+            if not diagnostic:
+                raise
+            # Final copper can be an input to unfinished electrical coverage.
+            # Only an explicit checkpoint may proceed; _package checks again.
+            coverage = dict(status='incomplete', reason=str(exc))
+        else:
+            coverage = dict(status='declared')
+        write_json(directory / 'manufacturing-coverage.json', coverage)
         placement = plan['placement']
         config = dict(schema=placement_job.CONFIG_SCHEMA,
             **{key: placement[key] for key in ('budget_s', 'search', 'router')}, inputs={})
@@ -379,7 +389,8 @@ def run(plan_path, out, *, resume=False, through='package'):
                 report['attempts'].append(dict(stage=stage, directory=str(directory.relative_to(out)), status='running'))
                 write_json(out / 'build-report.json', report)
                 before = tree_identity(previous)
-                candidate = _execute(stage, plan, previous, directory, report['completed'], out)
+                candidate = _execute(stage, plan, previous, directory, report['completed'], out,
+                                     diagnostic=through != 'package')
                 if tree_identity(previous) != before or _inventory(source) != source_files or _runtime() != pin['runtime']:
                     raise ValueError('build input or runtime changed during stage execution')
                 report['candidate'] = str(candidate.relative_to(out))
