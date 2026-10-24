@@ -1,0 +1,24 @@
+{
+  "schema": "agent-ee.krt-map-audit/1",
+  "audited_at": "2026-10-24T15:26:45.668998+00:00",
+  "method": "Static artifact/source guard only",
+  "capabilities": 69,
+  "source_files": 127,
+  "test_pointers": 49,
+  "declared_tools": 107,
+  "source_locator_hash_and_symbol_validation": "pass",
+  "capability_id_uniqueness": "pass",
+  "markdown_json_row_coverage": "pass",
+  "relative_doc_links": "pass",
+  "parity_labels": "all_unestablished",
+  "native_tests": "not_run_by_authorized_research_scope",
+  "issues_corrected": [
+    "route.py has a module-level CLI, not main()",
+    "route_diff symbol is batch_route_diff_pairs",
+    "net ordering argument is inside_out",
+    "place_pose has no flip verb; sides apply via intent/place_simple",
+    "edge_connector_side is fixed advisory WARN",
+    "analyze_power_paths CLI classifies roles; full path recommendation requires API/classification inputs"
+  ],
+  "runtime_claims": 0
+}

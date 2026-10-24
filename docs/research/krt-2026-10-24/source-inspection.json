@@ -1,0 +1,655 @@
+{
+  "metadata": {
+    "schema": "agent-ee.krt-capability-map/1",
+    "observed_at": "2026-10-24T15:26:45.233549+00:00",
+    "upstream_url": "https://github.com/drandyhaas/KiCadRoutingTools",
+    "revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+    "remote_main": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+    "source_version": "0.23.7",
+    "commit_date": "2026-10-24T01:31:07+00:00",
+    "commit_subject": "Placement: the schematic's layout notes become proximity rows",
+    "source_checkout": "/home/halbritt/.cache/agent-ee-qualification/upstream/KiCadRoutingTools",
+    "source_clean": true,
+    "method": "Read-only documentation and implementation inspection plus static AST/path/symbol validation. No native design, routing, installation, CLI help, benchmark or test workload executed by research agent.",
+    "native_exercises_executed": 0,
+    "capability_count": 69,
+    "declared_tool_count": 107
+  },
+  "files": [
+    {
+      "path": ".claude/skills/plan-pcb-placement/SKILL.md",
+      "sha256": "29780a6c580bf5d2e1e24deddfd35b32ef3ac5403314e77f1cf57dc13bb56a1a",
+      "bytes": 64964
+    },
+    {
+      "path": "README.md",
+      "sha256": "5f63ecdd596e624574e89449ef48c4c79f4b9c4812068514f91369eb00090b18",
+      "bytes": 68997
+    },
+    {
+      "path": "awx/baseline_bench.py",
+      "sha256": "97d7838acb11b63ce90572267fee6e46fa75ab5630c5c9fa181202a854a8ad26",
+      "bytes": 20801
+    },
+    {
+      "path": "awx/braid.py",
+      "sha256": "d2943840defcd3832e503c7c3878b0befc7778929382cc41651487d5d4d20f1d",
+      "bytes": 410131
+    },
+    {
+      "path": "awx/joint_escape.py",
+      "sha256": "b03df3211d10903c3d62034e4d862437e9c128fd0fd2c47114b14301cb9ae9d0",
+      "bytes": 138662
+    },
+    {
+      "path": "awx/route_bus.py",
+      "sha256": "f15ec864e8b985a98f10518b73d6add0b9f345e008f540a064269689276beb0a",
+      "bytes": 87746
+    },
+    {
+      "path": "awx/whole_route.py",
+      "sha256": "b0ab71573b4223ff8163cff09b25220aecd4571d9c7fc599b47a7e322f6f6f05",
+      "bytes": 96091
+    },
+    {
+      "path": "build_router.py",
+      "sha256": "a5053c05529c2313c72a280d6c8ae7841539544e236316b159edb427549b6cfd",
+      "bytes": 20940
+    },
+    {
+      "path": "check_complete.py",
+      "sha256": "78a10feea4924c00391422dd293c46a662366556e7d34d936ccd7450b8d297e2",
+      "bytes": 32301
+    },
+    {
+      "path": "docs/api-impedance.md",
+      "sha256": "93b8d215e51df652bf23aa3cd9e7ebb0b47005453d9afe9fd7b0fe3c98280b9d",
+      "bytes": 18646
+    },
+    {
+      "path": "docs/bus-routing.md",
+      "sha256": "d24c62fdf2337cd938627405d9bc12f8cb2253507c52f59c5b80dcd00bf35914",
+      "bytes": 13886
+    },
+    {
+      "path": "docs/claude-skills.md",
+      "sha256": "13f2381fdf02cd204ea79d00d5e9003d934ab8e1cf5a046d2b7c75f7d2b09a41",
+      "bytes": 22799
+    },
+    {
+      "path": "docs/configuration.md",
+      "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26",
+      "bytes": 68780
+    },
+    {
+      "path": "docs/differential-pairs.md",
+      "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b",
+      "bytes": 55039
+    },
+    {
+      "path": "docs/floorplan-intent.md",
+      "sha256": "4aa93a63494d0196b67d0180ba74389a2120978ae69d7dc26883591edf853b5c",
+      "bytes": 136483
+    },
+    {
+      "path": "docs/length-matching.md",
+      "sha256": "228ca5261e6622a0abb35a46ac3fdd4449a345899b17070f7f8d806dea9e09c4",
+      "bytes": 28235
+    },
+    {
+      "path": "docs/power-nets.md",
+      "sha256": "877dfdbffe4eed0ee56790f05bf7777210dc6bbd768690605cf5cad7f970e929",
+      "bytes": 10011
+    },
+    {
+      "path": "docs/rip-up-reroute.md",
+      "sha256": "f9d7a6cacd9ef102a707a4561d85e7245cb60ec5c88803a0e584a0c31d62151a",
+      "bytes": 25969
+    },
+    {
+      "path": "docs/route-plane.md",
+      "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4",
+      "bytes": 69644
+    },
+    {
+      "path": "install_plugin.py",
+      "sha256": "3ea178133d2012adee3aff36287af3cf7644674b128408f56368c91075cf78bc",
+      "bytes": 27847
+    },
+    {
+      "path": "kicad_routing_plugin/ai_plan.py",
+      "sha256": "8d3e6be1406029350b8ef5ac5754220cd7ffa2efebbf623d103aca924cb585ab",
+      "bytes": 109023
+    },
+    {
+      "path": "krt_registry.py",
+      "sha256": "cd5d8770f0d4e2444c7bf0c15cb4793faded171975b1d54341c73c5cd427abf3",
+      "bytes": 16379
+    },
+    {
+      "path": "movie3d/find_models.py",
+      "sha256": "135df1c80d21eb6c49e52dde892de97373d0d294f0d8309b7645df0bc136c4db",
+      "bytes": 16694
+    },
+    {
+      "path": "movie3d/make_movie.py",
+      "sha256": "95877ce3e5062b45875f5febb8890509994dac5f26c241c790e79b2f7951d2b2",
+      "bytes": 13739
+    },
+    {
+      "path": "movie3d/record.py",
+      "sha256": "a2c05f914195e4e6a7ad10c4a52c52b4a1a44f4fb1a77f623873b72a9caa586b",
+      "bytes": 39226
+    },
+    {
+      "path": "py_placer/beautify_labels.py",
+      "sha256": "67ab0ad7a45bb05050d093e0a21c915f9354eb14ca865af7171cb14a5682e0f6",
+      "bytes": 9047
+    },
+    {
+      "path": "py_placer/converge.py",
+      "sha256": "1ba9554a90362cfcbcd4b7951b70bee07e90353dab6558f97ab474580413de91",
+      "bytes": 117769
+    },
+    {
+      "path": "py_placer/judge_seeds.py",
+      "sha256": "dcfa942aa625012ba20af5fbf3d97f2e61b7bee2343f541bfcd3676641eca804",
+      "bytes": 15269
+    },
+    {
+      "path": "py_placer/place_fanout_clearance.py",
+      "sha256": "6ee1c74f8b36910a2f6872fdf8099708436b515cc914202699b43752227f740c",
+      "bytes": 22568
+    },
+    {
+      "path": "py_placer/place_pose.py",
+      "sha256": "d7e57f941278edc3d889848a0ef7ebf44fefa796d164c0a2efd1fc918f6a5529",
+      "bytes": 44713
+    },
+    {
+      "path": "py_placer/place_simple.py",
+      "sha256": "af0fa0cdf59ac457cc818004f784d9e1158e458bce939f370eaab48233b215fa",
+      "bytes": 50965
+    },
+    {
+      "path": "py_placer/placement/README.md",
+      "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434",
+      "bytes": 43040
+    },
+    {
+      "path": "py_placer/placement/edge_seat.py",
+      "sha256": "8dc7c93122d558d874e347199ffa929e62686b532c9ff94bd9381aba49b68311",
+      "bytes": 56224
+    },
+    {
+      "path": "py_placer/placement/fanout_clearance.py",
+      "sha256": "3ee3313a9aa00b811d8876562da68253e565b245a376ddacd576a2ceccf096c9",
+      "bytes": 286668
+    },
+    {
+      "path": "py_placer/placement/floorplan.py",
+      "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c",
+      "bytes": 584018
+    },
+    {
+      "path": "py_placer/placement/grouping.py",
+      "sha256": "91b65be6e5c4663308097513f3c05529a32b9a7ef1a789eee4f625b660cf1acd",
+      "bytes": 40967
+    },
+    {
+      "path": "py_placer/placement/groups.py",
+      "sha256": "dd8033b8f595b839dfbf2c4fea24ec1025ae2dac2a8cda3f6c605d37533ebbc1",
+      "bytes": 35014
+    },
+    {
+      "path": "py_placer/placement/legality.py",
+      "sha256": "b4051c9ee591894279348c20bb9e01bc8e0b103d7ef2fc0dee4df22e7683a0f5",
+      "bytes": 373840
+    },
+    {
+      "path": "py_placer/placement/replicate.py",
+      "sha256": "16e77e6ec7ccff22020a2f71be47d9b232673f2ec4656f725c66cbfc6ef8fc8e",
+      "bytes": 37007
+    },
+    {
+      "path": "py_placer/placement/schematic.py",
+      "sha256": "78f93afd425883eeb0edc2cb2dd81ff20ebccc99a07b439c34b86d3dee0ec50a",
+      "bytes": 32927
+    },
+    {
+      "path": "py_placer/placement/simple.py",
+      "sha256": "c970caf389fa9d04c7c40ac2163725e898632e93b62edc444bec930bdef416a7",
+      "bytes": 107064
+    },
+    {
+      "path": "py_placer/placement/simple_anneal.py",
+      "sha256": "d91a65e13f6a9ccdae0cfa3795b443997d31db12085e169ec395665f4b18e9d1",
+      "bytes": 60413
+    },
+    {
+      "path": "py_placer/placement/templates.py",
+      "sha256": "8cf508e30c82eca44f1ff69b895486d6053cc92a0eed95a056727217f0cf6fe1",
+      "bytes": 40121
+    },
+    {
+      "path": "py_router/add_rule_area.py",
+      "sha256": "b05bf598b4c5ebb36f5303b3fd6ea886095b84c4461b1e02ac3316f6035f179e",
+      "bytes": 8347
+    },
+    {
+      "path": "py_router/bga_fanout/README.md",
+      "sha256": "23f848b2bf6faf593600c5a6006a39e403b39cb7b59455d436cd9ad53b7a0ed4",
+      "bytes": 23008
+    },
+    {
+      "path": "py_router/bga_fanout/__init__.py",
+      "sha256": "a172a76e0faf241663cfa8d82c42461383372999ec482ab1833d5ce77ed0e4ff",
+      "bytes": 284533
+    },
+    {
+      "path": "py_router/bga_fanout/flip_frame.py",
+      "sha256": "a3301d6135095a3314afc9b41919ad0272a64f0386ba89c54ba04f684ce26037",
+      "bytes": 10179
+    },
+    {
+      "path": "py_router/bga_fanout/layer_assignment.py",
+      "sha256": "0bd0b19c70e005c4af50df1fb9ecd9c31e3f3d00687d8336227fdc2d03baebb5",
+      "bytes": 16803
+    },
+    {
+      "path": "py_router/bga_fanout/rotate_frame.py",
+      "sha256": "3dfe0e28ee9c6cb3704548675fc7a3548c12f5afe7a16cdf0d91ed971089fa32",
+      "bytes": 10387
+    },
+    {
+      "path": "py_router/bga_fanout/underpad.py",
+      "sha256": "34064c441c4e31b3724682297d0d68a7c33a48ff481cdbdc2762194016128d05",
+      "bytes": 213561
+    },
+    {
+      "path": "py_router/bus_corridor.py",
+      "sha256": "fdd384c622b4219b81e751dbbeab34e026f33c5390e9de52d06269831f16c2ca",
+      "bytes": 9907
+    },
+    {
+      "path": "py_router/bus_detection.py",
+      "sha256": "e77725dbebdc406e7e32dc19dde221addc695165bd0086939669a125c43dd584",
+      "bytes": 15811
+    },
+    {
+      "path": "py_router/check_connected.py",
+      "sha256": "fa70cd1777b8711f622fdde8690a9113d28579635594d77531e68415243ffd96",
+      "bytes": 126648
+    },
+    {
+      "path": "py_router/check_drc.py",
+      "sha256": "0e5ad6ead53725b002c2d156ec9c73bf61b7043bd99a3df92ef40d7eb962a87b",
+      "bytes": 330321
+    },
+    {
+      "path": "py_router/check_pads.py",
+      "sha256": "1a95ff9299b7174fd62a28dff939916a44658e895751950139b0a0b6ef95eb42",
+      "bytes": 17470
+    },
+    {
+      "path": "py_router/check_weird.py",
+      "sha256": "3684719b1adb2a790ce3a3776af61ebfee9302ee590c51688fe1bacc610e936f",
+      "bytes": 53710
+    },
+    {
+      "path": "py_router/cleanup_pipeline.py",
+      "sha256": "b55ef4765558d0b03d46b691bf85e7c908beba91e9c5e1bdfd2856bb303bce85",
+      "bytes": 46976
+    },
+    {
+      "path": "py_router/copy_board.py",
+      "sha256": "dcf576e7babe709c8f9e9cee9d09585cc6998daf067e6c77fbe2274b11f54dee",
+      "bytes": 4996
+    },
+    {
+      "path": "py_router/diff_pair_multipoint.py",
+      "sha256": "592c6d3991ef1b1c1f83b92d198efddce5ba69fd726c58e834509d5d473190f0",
+      "bytes": 67913
+    },
+    {
+      "path": "py_router/diff_pair_routing.py",
+      "sha256": "7ddfa8207f9e67964d74cf86fbb42d51bc96f8c427556a1fd5f5fdbf0cddb468",
+      "bytes": 308099
+    },
+    {
+      "path": "py_router/diff_xnet.py",
+      "sha256": "204665ebc1494103a7e6960aa43bfd0eada9d17c70d31dc6cda8be63e5909f24",
+      "bytes": 6360
+    },
+    {
+      "path": "py_router/env_knobs.py",
+      "sha256": "6b9fbf300e0ef6a45ef159af57ead144f38e467eb1667e9a5eaf07120cbc0c19",
+      "bytes": 42027
+    },
+    {
+      "path": "py_router/fab_tiers.py",
+      "sha256": "35179e3acc781fe251a836ac8a961c7466f0446517a36462149c6bc5d15dbacd",
+      "bytes": 65490
+    },
+    {
+      "path": "py_router/fix_kicad_drc_settings.py",
+      "sha256": "568b76c1a39c476781452e80ab3084c0dd808ec0f8107e6f25be9248674b3504",
+      "bytes": 147941
+    },
+    {
+      "path": "py_router/headless_plan.py",
+      "sha256": "ac5af701db8dae93c6bed9f46a58ca647ad65c84baa30823b6b7e376f8842c0a",
+      "bytes": 11709
+    },
+    {
+      "path": "py_router/impedance.py",
+      "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287",
+      "bytes": 69116
+    },
+    {
+      "path": "py_router/kicad_dru.py",
+      "sha256": "42c78c677a5ad970fddec2b02e4b556a071db8d0bc6c018603ee1e2979f6e3a9",
+      "bytes": 48158
+    },
+    {
+      "path": "py_router/kicad_exact_fill.py",
+      "sha256": "d58a4a93dec825b65a69c6f06f68722c4b9ac0dda11462501a0e03a998febb90",
+      "bytes": 54770
+    },
+    {
+      "path": "py_router/kicad_oracle.py",
+      "sha256": "16a014d5d5ce784f96b29e5bfe361e5b901f81f8f4cfed1adc9475c0e7cbeed4",
+      "bytes": 188355
+    },
+    {
+      "path": "py_router/kicad_parser.py",
+      "sha256": "2047cfabc5022e1d8e4e5acedff95b322e7b813d4bc275e07d83f602db5936ba",
+      "bytes": 533357
+    },
+    {
+      "path": "py_router/kicad_writer.py",
+      "sha256": "c24c2260056fc73a7c75716a10839e3e79ae467b59d0cbb4a859bbb5feeb0002",
+      "bytes": 94392
+    },
+    {
+      "path": "py_router/layer_swap_fallback.py",
+      "sha256": "3aefa517c4d401679b40c1b100a11f4721b6d78828699a11bdd9a2eb0bfd5ece",
+      "bytes": 36854
+    },
+    {
+      "path": "py_router/layer_swap_optimization.py",
+      "sha256": "119b61cba4c0f2d0f1bb5421514ac1bedb0ba6dd4c7b58c28641871ab6c7ab71",
+      "bytes": 128922
+    },
+    {
+      "path": "py_router/length_matching.py",
+      "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6",
+      "bytes": 194946
+    },
+    {
+      "path": "py_router/make_plan.py",
+      "sha256": "48c07717071b448f7e2da8a2b7985b7a9b65d6964bcce2e66de7366dc3cb46df",
+      "bytes": 7286
+    },
+    {
+      "path": "py_router/mps_layer_swap.py",
+      "sha256": "e744f54c365b8260a79885bb8faf24965384e0719c637885bba48b645bf3b432",
+      "bytes": 22580
+    },
+    {
+      "path": "py_router/net_ordering.py",
+      "sha256": "d6dab7157f9a42bfcee9f5c88505712b3da1f24bde4ac22269d1646cf2a08c87",
+      "bytes": 9028
+    },
+    {
+      "path": "py_router/net_queries.py",
+      "sha256": "4731f743713ea82c9fd964b6eaa53a3050e134fb070a8ec5e46056fe68ac8dde",
+      "bytes": 140640
+    },
+    {
+      "path": "py_router/net_rescue.py",
+      "sha256": "06b52e371245ca4e545182f957b1ab042c7b3f28d6eafa9c157686baa315437a",
+      "bytes": 115845
+    },
+    {
+      "path": "py_router/obstacle_costs.py",
+      "sha256": "66afaf065eeafe21af70b361cc2f0cf64c9a6efb7da1b418b0379167093358ec",
+      "bytes": 36947
+    },
+    {
+      "path": "py_router/obstacle_map.py",
+      "sha256": "4ec79ab239be2566663248690f779a46c26c281dfc8c17c2bead1103561e0ac3",
+      "bytes": 252983
+    },
+    {
+      "path": "py_router/pcb_modification.py",
+      "sha256": "963eb7fca57f2bdbe136686cc63a9d615bb65e0f5ee27bcdba79527f0d454f99",
+      "bytes": 413976
+    },
+    {
+      "path": "py_router/plane_region_connector.py",
+      "sha256": "ecdb94a140eb0c61ce635a3e6145509e41d5a6e50cd2c1a403d9925ca98211f2",
+      "bytes": 198748
+    },
+    {
+      "path": "py_router/plane_resistance.py",
+      "sha256": "13ac213ca844508852f397853234815a3b5d5675afcad593206933130322005a",
+      "bytes": 24686
+    },
+    {
+      "path": "py_router/plane_split_raster.py",
+      "sha256": "c0e938278fde7ef7b38c31cfc8ed3d4bef6ba0e377941692b3088a4fe4f2a59f",
+      "bytes": 19399
+    },
+    {
+      "path": "py_router/plane_zone_geometry.py",
+      "sha256": "8c2ba668b5a2bc40755b8701075296f3b7635813a260bc52af37282e1edaa095",
+      "bytes": 6972
+    },
+    {
+      "path": "py_router/polarity_swap.py",
+      "sha256": "586014b0c93f79222eaaf2a6f0554a4edb379e615441bb26cb6e78351776d4b0",
+      "bytes": 8795
+    },
+    {
+      "path": "py_router/protected_nets.py",
+      "sha256": "1a6eae693df34ed8677ed61a13a7aa25a6d48ab682c78ad0da83c6efbb740d4c",
+      "bytes": 25485
+    },
+    {
+      "path": "py_router/qfn_fanout/README.md",
+      "sha256": "362ace4e418d2332230178e0320e4db72d666fbe55559e928cbd10d6dcf6c491",
+      "bytes": 17755
+    },
+    {
+      "path": "py_router/qfn_fanout/__init__.py",
+      "sha256": "49d5dc7fed19fd91cabb8fc6b90331c346a8151e495718cf1730abe4b7101be9",
+      "bytes": 147730
+    },
+    {
+      "path": "py_router/redo_record.py",
+      "sha256": "f4b73957de7a9bcd7ccd4720931059cacb5759f8a5fb1a2a47e5fcba867f7723",
+      "bytes": 6330
+    },
+    {
+      "path": "py_router/repair_planes.py",
+      "sha256": "ee94f86bae7692e160ed248b43a023f95dc321f5f5ba35f04efae6a1cb50119f",
+      "bytes": 234262
+    },
+    {
+      "path": "py_router/rip_up_reroute.py",
+      "sha256": "4db4be1d0c9a3e35561c781d0766b4184f16b3280b8ba30b0057898ef86e4172",
+      "bytes": 42465
+    },
+    {
+      "path": "py_router/route.py",
+      "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1",
+      "bytes": 589556
+    },
+    {
+      "path": "py_router/route_diff.py",
+      "sha256": "be2adf36f8fd8f7008519ee0de1db886e965cf564fee4961423affb9bb60001a",
+      "bytes": 183942
+    },
+    {
+      "path": "py_router/route_movie.py",
+      "sha256": "de9effd9cbd7b91a807c550e439ebfafcf5f6df93ccaaad7a5cea846f1a78b2b",
+      "bytes": 16713
+    },
+    {
+      "path": "py_router/route_planes.py",
+      "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda",
+      "bytes": 257652
+    },
+    {
+      "path": "py_router/route_render.py",
+      "sha256": "52002f1e3565bcdb07f648f74f45a68d56687cc6c771881cf400006f90bf5b4c",
+      "bytes": 44587
+    },
+    {
+      "path": "py_router/routing_config.py",
+      "sha256": "0dbbc8677c1d4aa5a566aa70a8b6a8822b31aa8ed7c0c2493643fad0069986b6",
+      "bytes": 63416
+    },
+    {
+      "path": "py_router/run_plan.py",
+      "sha256": "136eda6866764ec7c718c30abe52e006985f27f4f9658544ff7a9cef7f7b567e",
+      "bytes": 5787
+    },
+    {
+      "path": "py_router/schematic_updater.py",
+      "sha256": "3dc6cccbadd5e61ee99b08c11557566cb030d6cadf9916352357df6bf52582d8",
+      "bytes": 13742
+    },
+    {
+      "path": "py_router/sense_branch.py",
+      "sha256": "7dff3cc3aab8f19ad7d78b9d202d9069bfe9b4087b7e7a3dc3bc668fae35a1a4",
+      "bytes": 56054
+    },
+    {
+      "path": "py_router/single_ended_routing.py",
+      "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3",
+      "bytes": 355092
+    },
+    {
+      "path": "py_router/tap_relocation.py",
+      "sha256": "b91f28de6b746fc9e25a3d173f626105b0dd4d923b1b6c4111c85a33dcb36884",
+      "bytes": 11125
+    },
+    {
+      "path": "py_router/target_swap.py",
+      "sha256": "01bc14831d34493d1b7ea5903815a79ab6e8b55e62170b8fd52b8f3b48c6e00b",
+      "bytes": 72767
+    },
+    {
+      "path": "py_tools/analyze_power_paths.py",
+      "sha256": "ac442d304e3b5688ec06cfd550ca7bea90c16d56c37673a09efc894f3feb3d95",
+      "bytes": 24468
+    },
+    {
+      "path": "py_tools/board_context.py",
+      "sha256": "7f9f9fff8acbc4ad8bdfc4bf91fc34ed92b2d65c212c547d9c8f54bd7f7465ef",
+      "bytes": 72219
+    },
+    {
+      "path": "py_tools/board_score.py",
+      "sha256": "39d24cdc26a3e64e57358282e10a8a16be381fb9b58dbfb003e8aa8d9578c782",
+      "bytes": 89188
+    },
+    {
+      "path": "py_tools/check_assembly.py",
+      "sha256": "d6d7ce29750dae0be34e0a106c731f13f9d4f1914fe0f10a66881faae8c87d4e",
+      "bytes": 72543
+    },
+    {
+      "path": "py_tools/check_floorplan.py",
+      "sha256": "262c304cb4b4c4aeaab7909e4b6a9da219ed5624cf8a2f8f31483784b9733c54",
+      "bytes": 59444
+    },
+    {
+      "path": "py_tools/check_impedance.py",
+      "sha256": "b1fd924912fc6d145bc4472de0d58a39bebf3c1879b40adaa00fbcc3c44e6736",
+      "bytes": 51835
+    },
+    {
+      "path": "py_tools/check_join.py",
+      "sha256": "1a77b3b32795f85dab9ea1129f058218528153a186ba3af15f497ac951fc2087",
+      "bytes": 14375
+    },
+    {
+      "path": "py_tools/check_orphan_stubs.py",
+      "sha256": "8623679031da81bf71307640df51168fe0f717986356c975e4313887f02c8cfc",
+      "bytes": 17944
+    },
+    {
+      "path": "py_tools/check_reachability.py",
+      "sha256": "8b69210949b51bd33ed910370a69fb548e21d5cbbc699d218117a4d82ff9681e",
+      "bytes": 37005
+    },
+    {
+      "path": "py_tools/fill_for_delivery.py",
+      "sha256": "d25675748a96a60f8038df7ba646da936a16daa18004f56b6718842d59e16d7c",
+      "bytes": 7434
+    },
+    {
+      "path": "py_tools/kicad_unconnected.py",
+      "sha256": "d422d32d21140b0593d06cb819d369ad9e88fd0c1b5e31e65d33e0b59ca008a1",
+      "bytes": 7178
+    },
+    {
+      "path": "py_tools/net_forensics.py",
+      "sha256": "421b741210c93c07b4fc6421bf058092beef712968fe18f8ff10c04abc36ca84",
+      "bytes": 9805
+    },
+    {
+      "path": "py_tools/quick_score.py",
+      "sha256": "5b2022da4530138ba234896a867ed187d92e62164e626142f85adf766858940b",
+      "bytes": 12323
+    },
+    {
+      "path": "py_tools/render_placement.py",
+      "sha256": "3c3bbf24ed8c7e12716ac782df80f4831b70798b548fd05b7355b36871aaa0ff",
+      "bytes": 162099
+    },
+    {
+      "path": "py_tools/route_review.py",
+      "sha256": "a022031e4313b4422608cdfe5e74757f1bb974cd3fd030303eb6607844ec31c0",
+      "bytes": 13807
+    },
+    {
+      "path": "py_tools/validate_pcb_data.py",
+      "sha256": "aee62719ce881563add66b4190eabb901d4501a33f53ed9774757c7783f4b900",
+      "bytes": 4251
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "25f5681decf5392c56852327747a6517a8b3e97255d76351277ee6c4835367f0",
+      "bytes": 2821
+    },
+    {
+      "path": "rust_router/Cargo.toml",
+      "sha256": "68c7645098bd26b47fbdcf60a90522c6b9e7b9763b5f4c33f4e8e99c0836dcce",
+      "bytes": 798
+    },
+    {
+      "path": "rust_router/src/dubins.rs",
+      "sha256": "578db6b9034dcea6a90849323843e47792b3c0921427d2951d325bfdb6147730",
+      "bytes": 6947
+    },
+    {
+      "path": "rust_router/src/pose_router.rs",
+      "sha256": "a4df246ef8a886d1cd3df989734bfd4a15ddc72e551905b046fbbe056c240a4c",
+      "bytes": 36327
+    },
+    {
+      "path": "rust_router/src/router.rs",
+      "sha256": "d3cb9ac9cfa5d25180f29d92f4c55a9082393ac67c9c81d9968ab26177d0681d",
+      "bytes": 78140
+    },
+    {
+      "path": "tests/gui_parity/replay_plan_vs_run.py",
+      "sha256": "067c05b83de8da04df2564b0bf5fd2f22b1a04764e1d1ac4771e5159718e28e2",
+      "bytes": 49190
+    }
+  ]
+}

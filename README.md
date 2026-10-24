@@ -224,8 +224,9 @@ and powers the explicit Python trace diagnostic. The CI image includes the
 pinned, locked Rust build; a missing planner is an error.
 
 The experimental [whole-board placement job](docs/placement-job.md) adds a
-separate capture, search, native shortlist check, routing and final-check entry
-point. It protects fixed native poses and complete routed-board geometry, with
+capture, search, native shortlist check, routing and final checks through
+`agent-ee place run`. It protects fixed native poses, declared connector edges
+and complete routed-board geometry, with
 one shared deadline and cancellation boundary. It makes no qualification claim.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
@@ -1118,3 +1119,5 @@ Rule capture uses a fresh native process so omitted settings retain KiCad's
 defaults after earlier loads at the same path. The supported placement domain
 is zone-free: board and footprint zones, including keepouts, refuse capture.
 AGENTEE-515 target workflow qualification remains incomplete.
+The continuing intent-to-manufacturing goal and its required qualification
+designs are tracked in the [system acceptance map](docs/system-acceptance.md).

@@ -1,0 +1,2777 @@
+{
+  "metadata": {
+    "schema": "agent-ee.krt-capability-map/1",
+    "observed_at": "2026-10-24T15:26:45.233549+00:00",
+    "upstream_url": "https://github.com/drandyhaas/KiCadRoutingTools",
+    "revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+    "remote_main": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+    "source_version": "0.23.7",
+    "commit_date": "2026-10-24T01:31:07+00:00",
+    "commit_subject": "Placement: the schematic's layout notes become proximity rows",
+    "source_checkout": "/home/halbritt/.cache/agent-ee-qualification/upstream/KiCadRoutingTools",
+    "source_clean": true,
+    "method": "Read-only documentation and implementation inspection plus static AST/path/symbol validation. No native design, routing, installation, CLI help, benchmark or test workload executed by research agent.",
+    "native_exercises_executed": 0,
+    "capability_count": 69,
+    "declared_tool_count": 107
+  },
+  "capabilities": [
+    {
+      "id": "P01",
+      "area": "Placement",
+      "feature": "Authored functional groups and coverage",
+      "entrypoints": "py_tools/check_groups.py BOARD --groups groups.json; py_placer/place_simple.py BOARD OUT --groups groups.json --intent intent.json",
+      "semantics": "Group schema carries name, role, refs, anchor, why, side, edge, near/apart and template candidates. Coverage reports missing/duplicate membership; double membership is refused by placement. High-fanout/common rails are excluded from signal-cohesion inference.",
+      "limitations": "A human/agent must supply functional meaning from the circuit. Proximity followers and template members can be folded into anchor groups; reconcile that change with required membership. A shared GND net is not proof that circuits form one block.",
+      "sources": [
+        {
+          "path": "py_placer/placement/grouping.py",
+          "line": 750,
+          "symbol": "analyze",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/grouping.py#L750",
+          "sha256": "91b65be6e5c4663308097513f3c05529a32b9a7ef1a789eee4f625b660cf1acd"
+        },
+        {
+          "path": "py_placer/place_simple.py",
+          "line": 152,
+          "symbol": "build",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/place_simple.py#L152",
+          "sha256": "af0fa0cdf59ac457cc818004f784d9e1158e458bce939f370eaab48233b215fa"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 111,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L111",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q1,Q2,Q6: author separate power, MCU, interface, analog blocks sharing GND; duplicate and omit a reference as negatives.",
+      "required_output_checks": "Every footprint exactly once or explicit fixed/shared role; input-to-final membership report; rail exclusion; no duplicate silently accepted.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P02",
+      "area": "Placement",
+      "feature": "Native/schematic block discovery",
+      "entrypoints": "py_tools/board_context.py BOARD --md; route.py --list-groups --group-by SOURCES; check_floorplan.py --emit-intent intent.json",
+      "semantics": "Read native KiCad groups, sheet paths, net prefixes and decap ownership; board_context adds schematic sheet geometry, notes and pin/net relationships.",
+      "limitations": "Derived groups and schematic drawn proximity are evidence for authored intent, not guaranteed electrical architecture. Schematic discovery errors are reported; no circuit synthesis occurs.",
+      "sources": [
+        {
+          "path": "py_placer/placement/groups.py",
+          "line": 724,
+          "symbol": "derive_groups",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/groups.py#L724",
+          "sha256": "dd8033b8f595b839dfbf2c4fea24ec1025ae2dac2a8cda3f6c605d37533ebbc1"
+        },
+        {
+          "path": "py_placer/placement/schematic.py",
+          "line": 571,
+          "symbol": "context",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/schematic.py#L571",
+          "sha256": "78f93afd425883eeb0edc2cb2dd81ff20ebccc99a07b439c34b86d3dee0ec50a"
+        },
+        {
+          "path": "py_tools/board_context.py",
+          "line": 252,
+          "symbol": "build_context",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/board_context.py#L252",
+          "sha256": "7f9f9fff8acbc4ad8bdfc4bf91fc34ed92b2d65c212c547d9c8f54bd7f7465ef"
+        }
+      ],
+      "exercise": "Q2: two sheet instances plus shared power; compare authored groups with discovered references and paths.",
+      "required_output_checks": "No collision between repeated sheet reference identities; no lost part; recorded derivation and override sources.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P03",
+      "area": "Placement",
+      "feature": "Layout notes and pin-specific proximity",
+      "entrypoints": "board_context.py BOARD --schematic ROOT.kicad_sch --md; intent proximity[] consumed by place_simple.py",
+      "semantics": "Latest commit extracts candidate proximity rows from native schematic layout-note clauses; pin ownership uses named or unambiguous nearby parts, verifies net relationships, leaves max_mm null.",
+      "limitations": "This is candidate extraction. Agent skill proposes 2 mm pin-local and 5 mm part-local defaults when no owner limit exists; these are agent-selected defaults, never owner requirements. Stale notes are rejected; unnamed subjects require judgment.",
+      "sources": [
+        {
+          "path": "py_placer/placement/schematic.py",
+          "line": 712,
+          "symbol": "_layout_note",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/schematic.py#L712",
+          "sha256": "78f93afd425883eeb0edc2cb2dd81ff20ebccc99a07b439c34b86d3dee0ec50a"
+        },
+        {
+          "path": "py_placer/placement/schematic.py",
+          "line": 759,
+          "symbol": "_stale",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/schematic.py#L759",
+          "sha256": "78f93afd425883eeb0edc2cb2dd81ff20ebccc99a07b439c34b86d3dee0ec50a"
+        },
+        {
+          "path": "py_placer/placement/schematic.py",
+          "line": 789,
+          "symbol": "section",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/schematic.py#L789",
+          "sha256": "78f93afd425883eeb0edc2cb2dd81ff20ebccc99a07b439c34b86d3dee0ec50a"
+        },
+        {
+          "path": ".claude/skills/plan-pcb-placement/SKILL.md",
+          "line": 218,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/.claude/skills/plan-pcb-placement/SKILL.md#L218",
+          "sha256": "29780a6c580bf5d2e1e24deddfd35b32ef3ac5403314e77f1cf57dc13bb56a1a"
+        }
+      ],
+      "exercise": "Q2: correct, stale-after-renumbering and ambiguous notes; declare actual limits then place.",
+      "required_output_checks": "Correct pad/net identities, stale exclusion, limit provenance, final saved pin-edge distances; null limits must not pass as enforced.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P04",
+      "area": "Placement",
+      "feature": "Multistart functional-block optimization",
+      "entrypoints": "place_simple.py BOARD OUT --groups groups.json --intent intent.json --seeds 6 --clustered-seeds 6 --judge 6 --jobs 1",
+      "semantics": "Anneals one objective with Manhattan signal MST, weaker power/ground wire terms, crossings, pin claims, decap sites, group cohesion, near/apart/edge hints, fanout halo, foreign-pad crossing and congestion. Scattered, clustered and optional anchored starts; part/group moves carry claimed satellites.",
+      "limitations": "Heuristic optimizer, no global optimum or routability guarantee. Scalar score cannot replace required final checks. Switch-loop area/inductance and return-path terms are not optimized.",
+      "sources": [
+        {
+          "path": "py_placer/placement/simple.py",
+          "line": 368,
+          "symbol": "Model",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/simple.py#L368",
+          "sha256": "c970caf389fa9d04c7c40ac2163725e898632e93b62edc444bec930bdef416a7"
+        },
+        {
+          "path": "py_placer/placement/simple_anneal.py",
+          "line": 1126,
+          "symbol": "anneal",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/simple_anneal.py#L1126",
+          "sha256": "d91a65e13f6a9ccdae0cfa3795b443997d31db12085e169ec395665f4b18e9d1"
+        },
+        {
+          "path": "py_placer/place_simple.py",
+          "line": 360,
+          "symbol": "_many_seeds",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/place_simple.py#L360",
+          "sha256": "af0fa0cdf59ac457cc818004f784d9e1158e458bce939f370eaab48233b215fa"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 181,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L181",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q1,Q2: identical groups, seeds and move budgets on KRT and agent-ee.",
+      "required_output_checks": "Per-seed cost breakdown, legality, block positions, required pin limits, actual final routing completion and runtime; retain all attempted seeds.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P05",
+      "area": "Placement",
+      "feature": "Fixed poses, locks and mechanical anchors",
+      "entrypoints": "intent fixed_poses[], must_lock; place_pose.py BOARD OUT set REF X Y --rot R --intent intent.json",
+      "semantics": "Native locked parts stay fixed. Declared poses are seated/held and checked; explicit fixed mechanical placement participates in legality.",
+      "limitations": "A fixed pose can conflict with another declaration. Error/waiver policies must be preserved. Fixed poses are not an enclosure or 3D collision solver.",
+      "sources": [
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 8348,
+          "symbol": "plan_check",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L8348",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 8961,
+          "symbol": "grade",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L8961",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/place_pose.py",
+          "line": 490,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/place_pose.py#L490",
+          "sha256": "d7e57f941278edc3d889848a0ef7ebf44fefa796d164c0a2efd1fc918f6a5529"
+        },
+        {
+          "path": "docs/floorplan-intent.md",
+          "line": 366,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/floorplan-intent.md#L366",
+          "sha256": "4aa93a63494d0196b67d0180ba74389a2120978ae69d7dc26883591edf853b5c"
+        }
+      ],
+      "exercise": "Q6: fixed connector and mounting holes, overlapping contradictory anchors, rotated anchor.",
+      "required_output_checks": "Final x/y/rotation/side/lock vs authored coordinates and tolerances; reject contradictory constraints, independently grade holes/outline.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P06",
+      "area": "Placement",
+      "feature": "Permitted sides and cross-board placement",
+      "entrypoints": "groups.side / intent blocks and side declarations applied by place_simple.py",
+      "semantics": "Declared side claims are reconciled; conflicting side claims refuse placement. Faces are applied before annealing. Opposite-side bodies may overlap while through-hole barriers remain.",
+      "limitations": "place_simple does not jointly search arbitrary top/bottom assignments: an outer strategy must enumerate permitted choices and regrade. The edge_connector_side check is fixed WARN (cannot be raised to error there), so required side correctness needs an independent gate. No height/enclosure volume optimization was identified in placement source.",
+      "sources": [
+        {
+          "path": "py_placer/place_simple.py",
+          "line": 110,
+          "symbol": "face_targets",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/place_simple.py#L110",
+          "sha256": "af0fa0cdf59ac457cc818004f784d9e1158e458bce939f370eaab48233b215fa"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 8219,
+          "symbol": "declared_side_claims",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L8219",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/legality.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/legality.py#L1",
+          "sha256": "b4051c9ee591894279348c20bb9e01bc8e0b103d7ef2fc0dee4df22e7683a0f5"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 557,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L557",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q2,Q6: permitted back decap under front IC, forbidden-side connector and back part intersecting a through-hole field.",
+      "required_output_checks": "Final side matches permissions; mirrored pad transformations correct; cross-board adjacency measured; drilling/hardware collisions rejected.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P07",
+      "area": "Placement",
+      "feature": "Edge seating and connector access",
+      "entrypoints": "intent edge_connectors[]; place_simple edge seating; check_floorplan.py BOARD --intent intent.json",
+      "semantics": "Seat probe searches edge positions and rotations using grader constraints. Edge reach is copper-edge clearance. For edge_receptacle or mount_mode=edge_mount, seat rectangle uses drawn fab/silk body; otherwise courtyard. At corners reached edges resolve using mating face, overhang, then parallel body span and gap.",
+      "limitations": "Nearest bbox edge alone is not equivalent. No universal maximum setback is implied. Failed seating can leave a movable part with diagnostics. Agent-ee parent is repairing seat-rectangle currency and corner identity; mating-face capture and connector rotation remain explicit evidence gaps.",
+      "sources": [
+        {
+          "path": "py_placer/placement/edge_seat.py",
+          "line": 451,
+          "symbol": "seats",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/edge_seat.py#L451",
+          "sha256": "8dc7c93122d558d874e347199ffa929e62686b532c9ff94bd9381aba49b68311"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 3673,
+          "symbol": "edge_reach_mm",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L3673",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 3691,
+          "symbol": "_nearest_edge",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L3691",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 3736,
+          "symbol": "edge_seat_rect",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L3736",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 4901,
+          "symbol": "rule_edge_connector",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L4901",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        }
+      ],
+      "exercise": "Q1,Q6: asymmetric courtyard/body, both corner edges reached, edge-mount overhang, wrong mating face and obstructed plug insertion.",
+      "required_output_checks": "Final native body/seat/pads and mating region; declared edge identity, along-edge position, allowed setback/overhang, access keepout; no invented constraints.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P08",
+      "area": "Placement",
+      "feature": "Keepouts, board shape and legalization",
+      "entrypoints": "intent keepouts/zones/exclusive zones; place_simple.py; place_pose.py --strict-legal",
+      "semantics": "Exact final legality uses same-side courtyards, opposite-side through-hole clusters, pads/custom copper, NPTH and real Edge.Cuts including curves/cutouts. Missing courtyards fall back to drawn body plus pads. Annealed soft overlap is followed by reseating/retry/shove.",
+      "limitations": "No general 3D height/collision analysis. Outline-only containers have exceptions; locked shields can remain solid obstacles. Legalization can damage soft template alignment; regrade every intent claim afterwards.",
+      "sources": [
+        {
+          "path": "py_placer/placement/legality.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/legality.py#L1",
+          "sha256": "b4051c9ee591894279348c20bb9e01bc8e0b103d7ef2fc0dee4df22e7683a0f5"
+        },
+        {
+          "path": "py_placer/placement/simple_anneal.py",
+          "line": 164,
+          "symbol": "Annealer",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/simple_anneal.py#L164",
+          "sha256": "d91a65e13f6a9ccdae0cfa3795b443997d31db12085e169ec395665f4b18e9d1"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 557,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L557",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 603,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L603",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q6: concave board, hole, courtyard missing, custom pad, opposite-side part and locked shield.",
+      "required_output_checks": "Final footprint/body/courtyard/hole/outline geometry, no illegal pad clearance, no wrong-side keepout, template/proximity still valid.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P09",
+      "area": "Placement",
+      "feature": "Decoupling and critical pin locality",
+      "entrypoints": "intent decaps.max_distance_mm / max_pin_distance_mm; proximity[] pads; place_simple.py",
+      "semantics": "Decaps prefer supply-pin sites on ICs in their group, distributing sites; error-graded decap bounds contribute penalties. Proximity can bind to specific pads for feedback, filters, clocks and protection.",
+      "limitations": "Automatically inferred owner is a heuristic; power connectivity alone does not identify the correct loop. Penalty minimization is not hard satisfaction, and post-fanout moves may violate limits with disclosure.",
+      "sources": [
+        {
+          "path": "py_placer/placement/simple.py",
+          "line": 368,
+          "symbol": "Model",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/simple.py#L368",
+          "sha256": "c970caf389fa9d04c7c40ac2163725e898632e93b62edc444bec930bdef416a7"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 3167,
+          "symbol": "tether_gate_spec",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L3167",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 6241,
+          "symbol": "rule_proximity",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L6241",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/groups.py",
+          "line": 386,
+          "symbol": "supply_owner_evidence",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/groups.py#L386",
+          "sha256": "dd8033b8f595b839dfbf2c4fea24ec1025ae2dac2a8cda3f6c605d37533ebbc1"
+        }
+      ],
+      "exercise": "Q2: shared rail with two ICs, multiple supply pins, clock and ESD adjacency; move one cap beyond authored pin limit.",
+      "required_output_checks": "Pin-edge distance per claim on final board, owner source and counts; negative must fail even if route and DRC pass.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P10",
+      "area": "Placement",
+      "feature": "Datasheet templates and ground-return diagnostics",
+      "entrypoints": "py_tools/fit_template.py; intent templates[]; place_simple.py",
+      "semantics": "Fit member poses/pad relationships to anchor templates; annealing carries templates. Template measurements and ground-return rows expose deviations.",
+      "limitations": "Template grade is normally warning; final legalizer may displace members. Return geometry is graded rather than fully priced; generic engineering proof of switch-loop inductance is absent.",
+      "sources": [
+        {
+          "path": "py_placer/placement/templates.py",
+          "line": 365,
+          "symbol": "fit",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/templates.py#L365",
+          "sha256": "8cf508e30c82eca44f1ff69b895486d6053cc92a0eed95a056727217f0cf6fe1"
+        },
+        {
+          "path": "py_placer/placement/templates.py",
+          "line": 199,
+          "symbol": "measure",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/templates.py#L199",
+          "sha256": "8cf508e30c82eca44f1ff69b895486d6053cc92a0eed95a056727217f0cf6fe1"
+        },
+        {
+          "path": "py_placer/placement/templates.py",
+          "line": 294,
+          "symbol": "ground_returns",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/templates.py#L294",
+          "sha256": "8cf508e30c82eca44f1ff69b895486d6053cc92a0eed95a056727217f0cf6fe1"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 368,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L368",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q2: authored regulator layout template and decap return relationship, constrained collision forcing legalization.",
+      "required_output_checks": "Final pad-relative position/angle, loop and return bounds, no warning treated as satisfied required template.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P11",
+      "area": "Placement",
+      "feature": "Arrays, replication and declared rotations",
+      "entrypoints": "place_pose.py replicate --from INSTANCE --to INSTANCE --intent intent.json; check_floorplan.py --suggest-arrays; intent arrays/replicate/blocks.rotation",
+      "semantics": "Dedicated replication maps repeated sheet circuitry and grades member offsets; array formation and declared rotations have independent floorplan checks.",
+      "limitations": "place_simple does not consume arrays, replicate, keep_away or block rotation/candidate-angle claims as a complete optimizer. Separate application and final grade are required. Availability of a grader is not automated constraint satisfaction.",
+      "sources": [
+        {
+          "path": "py_placer/placement/replicate.py",
+          "line": 552,
+          "symbol": "plan",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/replicate.py#L552",
+          "sha256": "16e77e6ec7ccff22020a2f71be47d9b232673f2ec4656f725c66cbfc6ef8fc8e"
+        },
+        {
+          "path": "py_placer/placement/replicate.py",
+          "line": 740,
+          "symbol": "measure_declared",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/replicate.py#L740",
+          "sha256": "16e77e6ec7ccff22020a2f71be47d9b232673f2ec4656f725c66cbfc6ef8fc8e"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 6883,
+          "symbol": "rule_array_formation",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L6883",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 345,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L345",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q6: two replicated channels and ordered connector/LED array; intentionally misrotate one member.",
+      "required_output_checks": "Correspondence maps, offsets, rotation candidates, array pitch/order, unmatched reference rejection.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P12",
+      "area": "Placement",
+      "feature": "Routing-informed seed selection",
+      "entrypoints": "py_placer/judge_seeds.py RUN/judge.json --chain CHAIN.txt --intent intent.json --jobs 1",
+      "semantics": "Fresh isolated directory per placement, shlex command chain with in/out/dir/seed/run placeholders, quick route and quick_score. Placement legality/floorplan/assembly precede routing cost; route gaps, vias, copper then segments rank candidates.",
+      "limitations": "Nonzero chain step can continue when output exists. Exit 0 means every candidate scored, not clean routing. Quick 2 omits expensive recovery/plane completion; full route must start from selected placement. Even all-bad candidates can be ranked.",
+      "sources": [
+        {
+          "path": "py_placer/judge_seeds.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/judge_seeds.py#L1",
+          "sha256": "dcfa942aa625012ba20af5fbf3d97f2e61b7bee2343f541bfcd3676641eca804"
+        },
+        {
+          "path": "py_placer/place_simple.py",
+          "line": 441,
+          "symbol": "judge_order",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/place_simple.py#L441",
+          "sha256": "af0fa0cdf59ac457cc818004f784d9e1158e458bce939f370eaab48233b215fa"
+        },
+        {
+          "path": "py_tools/quick_score.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/quick_score.py#L1",
+          "sha256": "5b2022da4530138ba234896a867ed187d92e62164e626142f85adf766858940b"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 268,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L268",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q1,Q2: matched twelve seeds, six shortlisted, one deliberately unroutable placement; final full-route selected seed.",
+      "required_output_checks": "Selection based on actual emitted board, failed seed retained; full non-quick native route/checks determine acceptance, not winning score.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P13",
+      "area": "Placement",
+      "feature": "Routing feedback and convergence ledger",
+      "entrypoints": "route_review.py BOARD --json REVIEW; converge.py where/record/verdict; check_reachability.py BOARD",
+      "semantics": "Reports open/costly nets, congestion cells, useful two-pad half-turns; reachability identifies constrained channels; convergence ledger binds scores to board hashes and detects incompatible/ungraded evidence.",
+      "limitations": "This is operator/agent-guided iteration, not a single closed-loop circuit-to-manufacturing solver. Route-review exit 0 may contain serious findings; congestion/airwire geometry remains an approximation.",
+      "sources": [
+        {
+          "path": "py_tools/route_review.py",
+          "line": 86,
+          "symbol": "review",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/route_review.py#L86",
+          "sha256": "a022031e4313b4422608cdfe5e74757f1bb974cd3fd030303eb6607844ec31c0"
+        },
+        {
+          "path": "py_tools/check_reachability.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/check_reachability.py#L1",
+          "sha256": "8b69210949b51bd33ed910370a69fb548e21d5cbbc699d218117a4d82ff9681e"
+        },
+        {
+          "path": "py_placer/converge.py",
+          "line": 417,
+          "symbol": "commensurability",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/converge.py#L417",
+          "sha256": "1ba9554a90362cfcbcd4b7951b70bee07e90353dab6558f97ab474580413de91"
+        },
+        {
+          "path": "py_placer/converge.py",
+          "line": 1568,
+          "symbol": "cmd_verdict",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/converge.py#L1568",
+          "sha256": "1ba9554a90362cfcbcd4b7951b70bee07e90353dab6558f97ab474580413de91"
+        }
+      ],
+      "exercise": "Q1,Q2: route failure, move implicated block with constraints, reroute; attempt to record stale score.",
+      "required_output_checks": "Failure-to-placement trace, unchanged required constraints, candidate hash validation, measurable final improvement without lost coverage.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "P14",
+      "area": "Placement",
+      "feature": "Post-fanout cap/via repair",
+      "entrypoints": "py_placer/place_fanout_clearance.py FANNED OUT --intent intent.json --max-displacement-cap 3",
+      "semantics": "Moves two-pad C/R/FB passives near BGAs, permits quarter-turns, grows move budget, optionally nudges a via, then reconnects copper and regrades actual final state. Run once after all fanouts.",
+      "limitations": "Only decap limits and declared rotations from intent are consumed; other floorplan constraints are not held. An otherwise impossible repair may break a decap limit and report it. Its --clearance means class ceiling and changes project rules; omission still invokes floor/severity provenance writer.",
+      "sources": [
+        {
+          "path": "py_placer/place_fanout_clearance.py",
+          "line": 52,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/place_fanout_clearance.py#L52",
+          "sha256": "6ee1c74f8b36910a2f6872fdf8099708436b515cc914202699b43752227f740c"
+        },
+        {
+          "path": "py_placer/placement/fanout_clearance.py",
+          "line": 3154,
+          "symbol": "repair_fanout_clearance",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/fanout_clearance.py#L3154",
+          "sha256": "3ee3313a9aa00b811d8876562da68253e565b245a376ddacd576a2ceccf096c9"
+        },
+        {
+          "path": "py_placer/placement/README.md",
+          "line": 504,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/README.md#L504",
+          "sha256": "ea63ff7885d082b0a3281e3fc85872aa0d3943e9f8fa447573e0f99309350434"
+        }
+      ],
+      "exercise": "Q3: initial cap-via conflict and constrained cap; move under-BGA passive then route.",
+      "required_output_checks": "Before/final violation counts, all moved poses, rerouted cap nets, final full floorplan grade and original rules unchanged or explicitly authorized changes.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R01",
+      "area": "Routing",
+      "feature": "Native PCB parsing and write preservation",
+      "entrypoints": "route.py BOARD OUT; copy_board.py IN OUT",
+      "semantics": "Reads native nets, pads, geometry, rules, stackup and writes copper while carrying sibling project/declarations. Writer and in-memory cleanup track explicit strip/add lists.",
+      "limitations": "Custom parser and pcbnew are distinct semantic models; unsupported rule/copper coverage must be tested. Native KiCad remains authority. Board edits do not automatically prove schematic/BOM identity.",
+      "sources": [
+        {
+          "path": "py_router/kicad_parser.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_parser.py#L1",
+          "sha256": "2047cfabc5022e1d8e4e5acedff95b322e7b813d4bc275e07d83f602db5936ba"
+        },
+        {
+          "path": "py_router/kicad_writer.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_writer.py#L1",
+          "sha256": "c24c2260056fc73a7c75716a10839e3e79ae467b59d0cbb4a859bbb5feeb0002"
+        },
+        {
+          "path": "py_router/copy_board.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/copy_board.py#L1",
+          "sha256": "dcf576e7babe709c8f9e9cee9d09585cc6998daf067e6c77fbe2274b11f54dee"
+        },
+        {
+          "path": "py_router/cleanup_pipeline.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/cleanup_pipeline.py#L1",
+          "sha256": "b55ef4765558d0b03d46b691bf85e7c908beba91e9c5e1bdfd2856bb303bce85"
+        }
+      ],
+      "exercise": "All Q cases: compare input/output native identities, unknown properties, custom pads, arcs, locked copper and project siblings.",
+      "required_output_checks": "Native reload, pin/net maps, UUID/footprint preservation, locked geometry, rule and sibling hashes; reject unmodelled material semantics.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R02",
+      "area": "Routing",
+      "feature": "Octilinear multilayer grid routing and vias",
+      "entrypoints": "route.py BOARD OUT --layers F.Cu In1.Cu In2.Cu B.Cu --grid-step 0.1 --layer-costs 1 -1 -1 3",
+      "semantics": "Rust GridRouter A* over grid/layers with via, turn, proximity and preferred-direction costs; forbidden layers still obstruct and span through vias. Single-ended two- and multi-terminal nets route through native geometry.",
+      "limitations": "Generated vias are through vias; existing blind/buried spans can be modelled but advanced HDI synthesis is not established. Weighted heuristics/grid resolution do not guarantee optimal copper or exact continuous-space routability.",
+      "sources": [
+        {
+          "path": "rust_router/src/router.rs",
+          "line": 949,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/rust_router/src/router.rs#L949",
+          "sha256": "d3cb9ac9cfa5d25180f29d92f4c55a9082393ac67c9c81d9968ab26177d0681d"
+        },
+        {
+          "path": "py_router/routing_config.py",
+          "line": 116,
+          "symbol": "GridRouteConfig",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/routing_config.py#L116",
+          "sha256": "0dbbc8677c1d4aa5a566aa70a8b6a8822b31aa8ed7c0c2493643fad0069986b6"
+        },
+        {
+          "path": "py_router/single_ended_routing.py",
+          "line": 2030,
+          "symbol": "route_net_with_obstacles",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/single_ended_routing.py#L2030",
+          "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3"
+        }
+      ],
+      "exercise": "Q1,Q4: route across obstacles with top/bottom and four-layer variants; forbid inner signal copper.",
+      "required_output_checks": "Zero unconnected, allowed layers, exact via drill/span/clearance, track widths, per-layer copper length and via count.",
+      "dependencies": "Core + compiled Rust grid_router",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R03",
+      "area": "Routing",
+      "feature": "Net ordering and routing scope",
+      "entrypoints": "route.py --ordering mps|inside_out|original|bus --nets PATTERNS; --component REFS; --group NAME --group-by SOURCES --group-scope SCOPE",
+      "semantics": "Maximum-planar-subset crossing analysis, inside-out package routing, original order and bus-first choices; exact/glob net/component/block scope and multipoint main/tap scheduling.",
+      "limitations": "Scope semantics matter: touching a block can select a board-wide net. --component excludes rails by default. Finite ordering heuristics do not guarantee completion; test automatic plane-net inclusion explicitly.",
+      "sources": [
+        {
+          "path": "py_router/net_ordering.py",
+          "line": 15,
+          "symbol": "order_nets_mps",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/net_ordering.py#L15",
+          "sha256": "d6dab7157f9a42bfcee9f5c88505712b3da1f24bde4ac22269d1646cf2a08c87"
+        },
+        {
+          "path": "py_router/net_ordering.py",
+          "line": 126,
+          "symbol": "order_nets_inside_out",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/net_ordering.py#L126",
+          "sha256": "d6dab7157f9a42bfcee9f5c88505712b3da1f24bde4ac22269d1646cf2a08c87"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 9030,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L9030",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 32,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L32",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        }
+      ],
+      "exercise": "Q1,Q4: exact net names including punctuation, two orders, block-local vs touching scope.",
+      "required_output_checks": "Declared/actual net roster, no unintended deletion or skipped required rail; order/event log and measured final coverage.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R04",
+      "area": "Routing",
+      "feature": "Obstacles, clearance rules and keepouts",
+      "entrypoints": "route.py --keepout --keepout-layer User.2; native rule areas; .kicad_dru; --net-clearances MAP.json",
+      "semantics": "Exact segment capsules and via/pad geometry build grid obstacles; board outline/cutouts, NPTH holes, same-net paste restrictions, class pair clearance and supported layer rules. User polygons and net-filtered native disallow rules constrain routes.",
+      "limitations": "Only a supported subset of KiCad custom rule language is interpreted; unsupported rules must remain in native final DRC. Explicit --net-clearances replaces auto map; omitted names fall back to base. Raster search still needs exact output checks.",
+      "sources": [
+        {
+          "path": "py_router/obstacle_map.py",
+          "line": 137,
+          "symbol": "build_base_obstacle_map",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/obstacle_map.py#L137",
+          "sha256": "4ec79ab239be2566663248690f779a46c26c281dfc8c17c2bead1103561e0ac3"
+        },
+        {
+          "path": "py_router/obstacle_map.py",
+          "line": 1142,
+          "symbol": "add_rule_area_keepout_obstacles",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/obstacle_map.py#L1142",
+          "sha256": "4ec79ab239be2566663248690f779a46c26c281dfc8c17c2bead1103561e0ac3"
+        },
+        {
+          "path": "py_router/kicad_dru.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_dru.py#L1",
+          "sha256": "42c78c677a5ad970fddec2b02e4b556a071db8d0bc6c018603ee1e2979f6e3a9"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 498,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L498",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        }
+      ],
+      "exercise": "Q4,Q6: slot, curved outline, custom pad, locked foreign copper, per-layer rule, net-filtered keepout and intentionally unsupported rule.",
+      "required_output_checks": "Native DRC at original severities; rule applicability roster; no wrong-layer copper/holes; no silent loss of explicit per-net constraints.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R05",
+      "area": "Routing",
+      "feature": "Guides and proximity/EMC separation",
+      "entrypoints": "route.py --guide-corridor --guide-corridor-layer User.1 --keep-away ...; sibling design brief keep_away",
+      "semantics": "Soft guide attraction, track/stub/BGA proximity costs and declared aggressor/victim separation influence search; hard polygons remain separate obstacles.",
+      "limitations": "Guides are preferences, not guaranteed waypoints or hard spacing. Placement keep_away is graded but not priced by place_simple. Use explicit final minimum separation checks for required EMC relationships.",
+      "sources": [
+        {
+          "path": "py_router/route.py",
+          "line": 9030,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L9030",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "py_router/obstacle_costs.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/obstacle_costs.py#L1",
+          "sha256": "66afaf065eeafe21af70b361cc2f0cf64c9a6efb7da1b418b0379167093358ec"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 451,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L451",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 6525,
+          "symbol": "rule_keep_away",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L6525",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        }
+      ],
+      "exercise": "Q2,Q4: sensitive clock beside switch node; preferred corridor blocked in one variant.",
+      "required_output_checks": "Final aggressor/victim gap and shared length; hard rule failures reject even when guide preference improved.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R06",
+      "area": "Routing",
+      "feature": "Progressive rip-up/reroute",
+      "entrypoints": "route.py --max-ripup 3 --ripup-blocker-select count --ripup-abandon-metric stranded; --rip-existing-nets PATTERNS",
+      "semantics": "Failure frontiers attribute blockers; progressively rip combinations, retry failed connection and restore victims. Strategies include count, target distance, bidirectional, mincut and route-cost weighting; history avoids unchanged retries.",
+      "limitations": "Automatic existing-copper authority is limited to small unprotected non-zone routes; explicit exact names can override some protection, never KiCad locks or protected sense branch. A victim restored as full_open/stub is not electrically restored.",
+      "sources": [
+        {
+          "path": "py_router/rip_up_reroute.py",
+          "line": 78,
+          "symbol": "rip_up_net",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/rip_up_reroute.py#L78",
+          "sha256": "4db4be1d0c9a3e35561c781d0766b4184f16b3280b8ba30b0057898ef86e4172"
+        },
+        {
+          "path": "py_router/rip_up_reroute.py",
+          "line": 637,
+          "symbol": "restore_net",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/rip_up_reroute.py#L637",
+          "sha256": "4db4be1d0c9a3e35561c781d0766b4184f16b3280b8ba30b0057898ef86e4172"
+        },
+        {
+          "path": "py_router/protected_nets.py",
+          "line": 460,
+          "symbol": "rip_refusal",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/protected_nets.py#L460",
+          "sha256": "1a6eae693df34ed8677ed61a13a7aa25a6d48ab682c78ad0da83c6efbb740d4c"
+        },
+        {
+          "path": "docs/rip-up-reroute.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/rip-up-reroute.md#L1",
+          "sha256": "f9d7a6cacd9ef102a707a4561d85e7245cb60ec5c88803a0e584a0c31d62151a"
+        }
+      ],
+      "exercise": "Q4: deliberately blocked route with one permitted victim, locked victim and coupled pair victim.",
+      "required_output_checks": "Blocker evidence, finite attempt/budget log, before/final connected components for every victim, locked copper unchanged; failure remains failure.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R07",
+      "area": "Routing",
+      "feature": "Fine-grid rescue and final reconciliation",
+      "entrypoints": "route.py full run; --quick 1|2 excludes subsets; escalation policy controls smaller geometry",
+      "semantics": "Fine-grid net_rescue, terminal escape, selective stub/layer moves and later whole-net reconciliation retry unresolved components; native oracle links and plane finalization add later repair passes.",
+      "limitations": "Default rescue may reduce widths/clearances and move a passive. Budgets apply to different stages; exact final config must be recorded. --quick outputs are probes, not completed boards.",
+      "sources": [
+        {
+          "path": "py_router/net_rescue.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/net_rescue.py#L1",
+          "sha256": "06b52e371245ca4e545182f957b1ab042c7b3f28d6eafa9c157686baa315437a"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 1922,
+          "symbol": "batch_route",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L1922",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "py_router/single_ended_routing.py",
+          "line": 1935,
+          "symbol": "route_oracle_links",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/single_ended_routing.py#L1935",
+          "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3"
+        }
+      ],
+      "exercise": "Q1,Q3,Q4: failed coarse-grid connection and timeout/interruption variant.",
+      "required_output_checks": "Per-stage attempts and delivered minima; all original requirements regraded; partial/cancelled result cannot pass acceptance.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R08",
+      "area": "Routing",
+      "feature": "Stub/layer optimization",
+      "entrypoints": "route.py/route_diff.py --no-stub-layer-swap (disable); --can-swap-to-top-layer; --mps-layer-swap",
+      "semantics": "Upfront and rescue switches exchange or relocate stubs onto common routable layers; multi-terminal stubs can collapse to one layer. Adds pad vias only when geometry permits.",
+      "limitations": "Enabled by default; alters existing unlocked stubs. Same-net-pad policy, all physical stack layers and forbidden-layer costs must survive every switch. Keep-input-copper only protects cleanup, not all transformations.",
+      "sources": [
+        {
+          "path": "py_router/layer_swap_optimization.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/layer_swap_optimization.py#L1",
+          "sha256": "119b61cba4c0f2d0f1bb5421514ac1bedb0ba6dd4c7b58c28641871ab6c7ab71"
+        },
+        {
+          "path": "py_router/layer_swap_fallback.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/layer_swap_fallback.py#L1",
+          "sha256": "3aefa517c4d401679b40c1b100a11f4721b6d78828699a11bdd9a2eb0bfd5ece"
+        },
+        {
+          "path": "py_router/mps_layer_swap.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/mps_layer_swap.py#L1",
+          "sha256": "e744f54c365b8260a79885bb8faf24965384e0719c637885bba48b645bf3b432"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 616,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L616",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        }
+      ],
+      "exercise": "Q3,Q4: stubs on different layers, omitted inner layer, forbidden target layer, locked stub.",
+      "required_output_checks": "Via count plus final native connectivity, no forbidden copper, original protected geometry intact; explicit opt-out reaches every rescue.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R09",
+      "area": "Routing",
+      "feature": "Permitted pin/target swaps and schematic sync",
+      "entrypoints": "route.py/route_diff.py --swappable-nets PATTERNS --schematic-dir DIR; route_diff.py --polarity-swap-nets PATTERNS",
+      "semantics": "Hungarian assignment minimizes target distance/layer/crossing costs for permitted nets; polarity swap is opt-in. Board net/pad changes can be propagated into native schematic symbol pin assignments.",
+      "limitations": "Only electrically interchangeable pins may be authorized. Schematics are searched non-recursively; repeated instances/multi-unit/shared definitions need verification. Swapping without successful schematic sync breaks design identity.",
+      "sources": [
+        {
+          "path": "py_router/target_swap.py",
+          "line": 36,
+          "symbol": "record_target_swap",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/target_swap.py#L36",
+          "sha256": "01bc14831d34493d1b7ea5903815a79ab6e8b55e62170b8fd52b8f3b48c6e00b"
+        },
+        {
+          "path": "py_router/target_swap.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/target_swap.py#L1",
+          "sha256": "01bc14831d34493d1b7ea5903815a79ab6e8b55e62170b8fd52b8f3b48c6e00b"
+        },
+        {
+          "path": "py_router/polarity_swap.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/polarity_swap.py#L1",
+          "sha256": "586014b0c93f79222eaaf2a6f0554a4edb379e615441bb26cb6e78351776d4b0"
+        },
+        {
+          "path": "py_router/schematic_updater.py",
+          "line": 14,
+          "symbol": "find_schematic_files",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/schematic_updater.py#L14",
+          "sha256": "3dc6cccbadd5e61ee99b08c11557566cb030d6cadf9916352357df6bf52582d8"
+        }
+      ],
+      "exercise": "Q4: explicitly swappable FPGA GPIO pair and non-swappable USB pair; repeated schematic instance negative.",
+      "required_output_checks": "Exact allowed permutation, schematic-to-PCB exported-netlist equality, firmware pinmap evidence where applicable, denied swap reported, no pad-net mutation outside scope.",
+      "dependencies": "Core + scipy",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R10",
+      "area": "Routing",
+      "feature": "Copper cleanup and preservation",
+      "entrypoints": "route.py/route_diff.py --keep-input-copper; smoothing controls; KICAD_BOARD_LEDGER=1 audit",
+      "semantics": "Shared pipeline snaps gaps, removes phantom/orphan/dead copper, prunes redundant cycles, repairs grazes, necks near pads, smooths/merges and closes soft joints. Protected length/impedance/pair geometry is excluded from selected smoothing.",
+      "limitations": "Default cleanup may remove input copper in scope. --keep-input-copper is a cleanup contract, not complete route immutability; root-owned wrapper also locks existing copper. Every strip/write must match final native geometry.",
+      "sources": [
+        {
+          "path": "py_router/cleanup_pipeline.py",
+          "line": 125,
+          "symbol": "run_post_route_cleanup",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/cleanup_pipeline.py#L125",
+          "sha256": "b55ef4765558d0b03d46b691bf85e7c908beba91e9c5e1bdfd2856bb303bce85"
+        },
+        {
+          "path": "py_router/cleanup_pipeline.py",
+          "line": 97,
+          "symbol": "_smooth_skip_net_ids",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/cleanup_pipeline.py#L97",
+          "sha256": "b55ef4765558d0b03d46b691bf85e7c908beba91e9c5e1bdfd2856bb303bce85"
+        },
+        {
+          "path": "py_router/pcb_modification.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/pcb_modification.py#L1",
+          "sha256": "963eb7fca57f2bdbe136686cc63a9d615bb65e0f5ee27bcdba79527f0d454f99"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 9333,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L9333",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        }
+      ],
+      "exercise": "Q1,Q4: good hand route, unused stub, redundant loop, deliberate soft joint, unmatched arc and meander.",
+      "required_output_checks": "No lost required geometry, final components, no orphan/dangling copper or fragile joints, preservation signatures and full native DRC.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R11",
+      "area": "Routing",
+      "feature": "Native-oracle reconnect and plane re-audit",
+      "entrypoints": "route.py normal finalize; repair_planes.py default oracle; py_tools/kicad_unconnected.py BOARD",
+      "semantics": "Reads exact missing links from kicad-cli after refill, attempts geometric welds, then regrades. After late reconciliation, verifies previously complete pours again and can restore earlier copper when pours lost exceed gains.",
+      "limitations": "kicad_unconnected extracts only unconnected_items, not all native DRC violations. Missing native tooling can leave partial model-only paths; acceptance must require actual native reports. Placement/pad mutations cannot be undone by copper-only restore.",
+      "sources": [
+        {
+          "path": "py_router/kicad_oracle.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_oracle.py#L1",
+          "sha256": "16a014d5d5ce784f96b29e5bfe361e5b901f81f8f4cfed1adc9475c0e7cbeed4"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 1922,
+          "symbol": "batch_route",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L1922",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "py_tools/kicad_unconnected.py",
+          "line": 65,
+          "symbol": "kicad_unconnected",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/kicad_unconnected.py#L65",
+          "sha256": "d422d32d21140b0593d06cb819d369ad9e88fd0c1b5e31e65d33e0b59ca008a1"
+        }
+      ],
+      "exercise": "Q5: narrow pour neck cut by late signal; model-connected/native-open defect.",
+      "required_output_checks": "Native report bound to final board and original rules, all missing links zero, all DRC checks separately inspected, re-audit verdict and restore identity retained.",
+      "dependencies": "Core + kicad-cli + pcbnew",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W01",
+      "area": "Power and planes",
+      "feature": "Per-net power widths",
+      "entrypoints": "route.py --power-nets VCC ... --power-nets-widths 0.8 ...; omit --track-width to use net-class widths",
+      "semantics": "Pattern-mapped power widths route trunks/taps at wider geometry; widths are at least run base width. Existing netclasses/custom width rules supply per-net geometry when not explicitly overridden.",
+      "limitations": "Name and width counts/order matter. A width setting is not current/temperature/drop proof; narrow fallback must be checked against engineering requirements.",
+      "sources": [
+        {
+          "path": "py_router/single_ended_routing.py",
+          "line": 6517,
+          "symbol": "_assign_wide_route_widths",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/single_ended_routing.py#L6517",
+          "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 9030,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L9030",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "docs/power-nets.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/power-nets.md#L1",
+          "sha256": "877dfdbffe4eed0ee56790f05bf7777210dc6bbd768690605cf5cad7f970e929"
+        }
+      ],
+      "exercise": "Q2,Q5: current-bearing rail and signal share obstacles; declare minimum copper widths from calculations.",
+      "required_output_checks": "Minimum width and neck extent by net, worst-case voltage drop/current/temperature margins, native width rule; no silent base-width rail fallback.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W02",
+      "area": "Power and planes",
+      "feature": "Pad neckdowns and tap fallback",
+      "entrypoints": "route.py --neckdown-length 2.5 --neckdown-taper-length 0.5 --no-power-tap-neckdown; --escalation off",
+      "semantics": "Widens where exact geometry fits, tap/main retries can fall back toward base width, pad-entry widths fit short pad dimension and taper in steps. Under escalation off only tightly bounded short pad-entry necks remain allowed.",
+      "limitations": "Off is not literally zero necks: source allows short pad-entry connections up to 2 mm. Power/impedance compliance requires segment-level geometry and maximum allowed neck length, not just nominal width.",
+      "sources": [
+        {
+          "path": "py_router/single_ended_routing.py",
+          "line": 2658,
+          "symbol": "_neckdown_allowed",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/single_ended_routing.py#L2658",
+          "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3"
+        },
+        {
+          "path": "py_router/single_ended_routing.py",
+          "line": 6740,
+          "symbol": "_apply_neckdown_widths",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/single_ended_routing.py#L6740",
+          "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3"
+        },
+        {
+          "path": "py_router/single_ended_routing.py",
+          "line": 2648,
+          "symbol": "_neck_path_ok",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/single_ended_routing.py#L2648",
+          "sha256": "98f65221431234185f3c3d52b454b2b88181c5a278b9345899a8a4a9b69077b3"
+        },
+        {
+          "path": "docs/power-nets.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/power-nets.md#L1",
+          "sha256": "877dfdbffe4eed0ee56790f05bf7777210dc6bbd768690605cf5cad7f970e929"
+        }
+      ],
+      "exercise": "Q5: wide rail entering fine-pitch pin, narrow neck allowed/forbidden variants.",
+      "required_output_checks": "Actual neck width/length/location, pad-local exception boundary, unchanged rule floors, reject consequential overlong narrow power segment.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W03",
+      "area": "Power and planes",
+      "feature": "Plane creation and replacement",
+      "entrypoints": "route_planes.py BOARD OUT --nets GND VCC --plane-layers In1.Cu In2.Cu; --skip-existing-zones",
+      "semantics": "Creates zones, classifies pads and thermal arrays. Same-net same-layer pours are replaced by run settings by default; preservation flag retains them. Other-net zones coexist with priority handling.",
+      "limitations": "Pour stage performs no pad tapping or signal routing; disconnected pad counts are expected. Final route must include every plane net. Replacement can change zone outlines/thermal settings; preserve authored zones explicitly.",
+      "sources": [
+        {
+          "path": "py_router/route_planes.py",
+          "line": 3171,
+          "symbol": "create_plane",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_planes.py#L3171",
+          "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda"
+        },
+        {
+          "path": "py_router/route_planes.py",
+          "line": 1927,
+          "symbol": "_geometric_plane_verification",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_planes.py#L1927",
+          "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L1",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        }
+      ],
+      "exercise": "Q5: pre-authored irregular pour and new plane; replacement/preserve variants.",
+      "required_output_checks": "Zone definitions, priorities, layers, clearances and thermal policy; final refill connectivity after routing; no unexpected authored pour replacement.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W04",
+      "area": "Power and planes",
+      "feature": "Multiple nets sharing a plane layer",
+      "entrypoints": "route_planes.py BOARD OUT --nets \"AGND|DGND\" --plane-layers In1.Cu",
+      "semantics": "Builds net spines and clipped Voronoi partition zones; seed points come from existing pads/vias, virtual drops or projected outer pads when the layer is virgin.",
+      "limitations": "Partition is geometrical rather than a deliberate return-current design. Virtual/projected seeds are not fabricated vias. Split domains still need explicit tie and return checks.",
+      "sources": [
+        {
+          "path": "py_router/route_planes.py",
+          "line": 1393,
+          "symbol": "_generate_multinet_layer_zones",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_planes.py#L1393",
+          "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda"
+        },
+        {
+          "path": "py_router/plane_zone_geometry.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/plane_zone_geometry.py#L1",
+          "sha256": "8c2ba668b5a2bc40755b8701075296f3b7635813a260bc52af37282e1edaa095"
+        },
+        {
+          "path": "py_router/plane_split_raster.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/plane_split_raster.py#L1",
+          "sha256": "c0e938278fde7ef7b38c31cfc8ed3d4bef6ba0e377941692b3088a4fe4f2a59f"
+        }
+      ],
+      "exercise": "Q5: virgin inner split plane with analog/digital placement, narrow bottleneck and declared star tie.",
+      "required_output_checks": "Each net has correct isolated polygon, no unintended bridge, all pads eventually connected, reference-plane continuity on relevant signals.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W05",
+      "area": "Power and planes",
+      "feature": "Disconnected-region and pad repair",
+      "entrypoints": "repair_planes.py BOARD OUT --rip-blocker-nets; normally route.py in-run finalize",
+      "semantics": "Fill-model/raster components plus cross-layer barrels identify split regions; MST selects joins, multi-source bidirectional A* routes wide-to-narrow straps, open-space anchors add vias. Repairs pads and restores ripped victims.",
+      "limitations": "Coarse fill models can disagree with KiCad; oracle required. Incomplete-pads status may exit 0; rip casualties exit 4. Explicit repair parameters needed outside normal chain; deleted bare islands and kept copper islands have different significance.",
+      "sources": [
+        {
+          "path": "py_router/plane_region_connector.py",
+          "line": 862,
+          "symbol": "find_disconnected_zone_regions",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/plane_region_connector.py#L862",
+          "sha256": "ecdb94a140eb0c61ce635a3e6145509e41d5a6e50cd2c1a403d9925ca98211f2"
+        },
+        {
+          "path": "py_router/plane_region_connector.py",
+          "line": 2195,
+          "symbol": "route_disconnected_regions",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/plane_region_connector.py#L2195",
+          "sha256": "ecdb94a140eb0c61ce635a3e6145509e41d5a6e50cd2c1a403d9925ca98211f2"
+        },
+        {
+          "path": "py_router/repair_planes.py",
+          "line": 866,
+          "symbol": "repair_planes",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/repair_planes.py#L866",
+          "sha256": "ee94f86bae7692e160ed248b43a023f95dc321f5f5ba35f04efae6a1cb50119f"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 638,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L638",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        }
+      ],
+      "exercise": "Q5: split retained island on secondary layer, isolated SMD pad, recoverable blocker and irreparable island.",
+      "required_output_checks": "Refilled native per-net connected components, all victim nets restored, region area/strap width, unconnected_pads status and exact failure signal.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W06",
+      "area": "Power and planes",
+      "feature": "Thermal via arrays and via-in-pad policy",
+      "entrypoints": "route_planes.py --thermal-vias / --no-thermal-vias; --same-net-pad-clearance VALUE",
+      "semantics": "Exposed/thermal SMD pads on active parts at least 2 mm on both axes receive lattice via arrays; missing fit defers to route. Positive same-net-pad clearance propagates via-in-pad/paste exclusion across chain.",
+      "limitations": "Thermal array heuristics are not thermal simulation. Manufacturing treatment of via-in-pad, filled/capped declarations and supplier capability must be independently validated; default may permit via-in-pad.",
+      "sources": [
+        {
+          "path": "py_router/route_planes.py",
+          "line": 2463,
+          "symbol": "compute_thermal_via_array",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_planes.py#L2463",
+          "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda"
+        },
+        {
+          "path": "py_router/protected_nets.py",
+          "line": 215,
+          "symbol": "persist_same_net_pad_clearance",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/protected_nets.py#L215",
+          "sha256": "1a6eae693df34ed8677ed61a13a7aa25a6d48ab682c78ad0da83c6efbb740d4c"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 84,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L84",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        }
+      ],
+      "exercise": "Q2,Q5: QFN exposed pad, large connector pad that must not get array, forbidden paste opening.",
+      "required_output_checks": "Via count/spacing/drill/annulus and pad mapping, thermal model, plating/capping profile, final paste-opening violations.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W07",
+      "area": "Power and planes",
+      "feature": "Area stitching and edge fence",
+      "entrypoints": "route_planes.py --stitch-vias --stitch-pitch 5 --stitch-edge-fence; optional --stitch-max-freq MHz",
+      "semantics": "Stitches nets owning at least two poured layers; sites require main-component fill, ring margin, obstacle/drill clearance and pcbnew fill confirmation when available. Fence samples real outer outlines; frequency option uses wavelength/20.",
+      "limitations": "Without pcbnew/source, model-only gate may continue. Interior cutouts are not fenced. Lattice coverage and wavelength estimate are not EMC certification.",
+      "sources": [
+        {
+          "path": "py_router/route_planes.py",
+          "line": 2656,
+          "symbol": "_stitch_plane_area_vias",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_planes.py#L2656",
+          "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda"
+        },
+        {
+          "path": "py_router/route_planes.py",
+          "line": 2514,
+          "symbol": "_stitch_pitch_from_freq",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_planes.py#L2514",
+          "sha256": "adc323f2b6d4ee0f85a58ac3621e89d1a04dbb2419b8ab270ba40556c09dccda"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 169,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L169",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        }
+      ],
+      "exercise": "Q5: two GND layers, concave outer outline and cutout, false isolated fill island.",
+      "required_output_checks": "Native same-net bond to two actual pours, maximum uncovered spacing, fence distance, no duplicate/isolated vias and explicit cutout coverage limitation.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W08",
+      "area": "Power and planes",
+      "feature": "Ground return vias and domains",
+      "entrypoints": "route_planes.py --add-gnd-vias --gnd-via-distance 2; route_diff.py default return vias; optional --gnd-via-net",
+      "semantics": "Single-ended return pass searches outward around signal vias. Ground domains derive from endpoint parts; two-pad ties excluded from seeding. Differential route reserves then exact-checks/nudges return-via sites.",
+      "limitations": "Ambiguous domains fall back board-wide; explicit override can choose wrong return domain. Differential sites can be skipped when no legal location, with gnd_vias_not_placed report. This is not complete return-path analysis.",
+      "sources": [
+        {
+          "path": "py_router/net_queries.py",
+          "line": 1695,
+          "symbol": "resolve_ground_domains",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/net_queries.py#L1695",
+          "sha256": "4731f743713ea82c9fd964b6eaa53a3050e134fb070a8ec5e46056fe68ac8dde"
+        },
+        {
+          "path": "py_router/net_queries.py",
+          "line": 1734,
+          "symbol": "resolve_return_net_id",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/net_queries.py#L1734",
+          "sha256": "4731f743713ea82c9fd964b6eaa53a3050e134fb070a8ec5e46056fe68ac8dde"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 215,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L215",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        },
+        {
+          "path": "docs/differential-pairs.md",
+          "line": 494,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/differential-pairs.md#L494",
+          "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b"
+        }
+      ],
+      "exercise": "Q4,Q5: AGND/DGND tie, signal transitions in each domain, crowded pair via and ambiguous endpoint domain.",
+      "required_output_checks": "Actual return net, distance and two-layer plane bonds, skipped-site roster, no domain short, reference continuity independently graded.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W09",
+      "area": "Power and planes",
+      "feature": "Kelvin/sense topology preservation",
+      "entrypoints": "Native KiCad copper group named sense:REF.PAD, read by route/route_diff/planes without CLI flag",
+      "semantics": "Valid pre-authored branch copper and sense pads become foreign to same-net route except join pad; held copper immutable and whole-net stripping refused. Reports invalid or poured-over branches and final taps.",
+      "limitations": "Does not synthesize a Kelvin branch from intent. Invalid preexisting branch is reported unprotected; native DRC does not detect same-net topology errors. Required branch validation must fail closed.",
+      "sources": [
+        {
+          "path": "py_router/sense_branch.py",
+          "line": 679,
+          "symbol": "resolve_sense_branches",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/sense_branch.py#L679",
+          "sha256": "7dff3cc3aab8f19ad7d78b9d202d9069bfe9b4087b7e7a3dc3bc668fae35a1a4"
+        },
+        {
+          "path": "py_router/sense_branch.py",
+          "line": 733,
+          "symbol": "shipped_reason",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/sense_branch.py#L733",
+          "sha256": "7dff3cc3aab8f19ad7d78b9d202d9069bfe9b4087b7e7a3dc3bc668fae35a1a4"
+        },
+        {
+          "path": "py_router/sense_branch.py",
+          "line": 1066,
+          "symbol": "stamp_base_obstacles",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/sense_branch.py#L1066",
+          "sha256": "7dff3cc3aab8f19ad7d78b9d202d9069bfe9b4087b7e7a3dc3bc668fae35a1a4"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 539,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L539",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        }
+      ],
+      "exercise": "Q5: shunt sense branch plus power load, illegally tapped branch and pour crossing it.",
+      "required_output_checks": "Only star join connects load to sense path, group/member identities preserved, final topology error rejected even with DRC clean.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "W10",
+      "area": "Power and planes",
+      "feature": "Plane and power-path calculations",
+      "entrypoints": "route_planes.py plane_resistance summary; analyze_power_paths.py BOARD classifies roles; Python API trace_power_paths/get_power_net_recommendations completes analysis",
+      "semantics": "Reports approximate R=rho L/(W t), width/path estimates and chart-fit current estimates using board copper stackup. Out-of-chart plane current values are labelled not rated.",
+      "limitations": "Diagonal/MST path and averaged widths are approximations, not worst-case field/thermal solutions. IPC-2152-labelled correction is an upstream estimator, not supplier qualification. Component/current assumptions still required.",
+      "sources": [
+        {
+          "path": "py_router/plane_resistance.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/plane_resistance.py#L1",
+          "sha256": "13ac213ca844508852f397853234815a3b5d5675afcad593206933130322005a"
+        },
+        {
+          "path": "py_tools/analyze_power_paths.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/analyze_power_paths.py#L1",
+          "sha256": "ac442d304e3b5688ec06cfd550ca7bea90c16d56c37673a09efc894f3feb3d95"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 450,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L450",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        }
+      ],
+      "exercise": "Q2,Q5: compare retained calculations with independently bounded rail/drop/load analysis.",
+      "required_output_checks": "Document source/load/current assumptions, minimum bottleneck widths, temperature and voltage margins; never use chart extrapolation as a rated current.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D01",
+      "area": "Differential and timing",
+      "feature": "Pair detection and terminal pairing",
+      "entrypoints": "route_diff.py BOARD OUT --nets PATTERNS --layers ALL_COPPER",
+      "semantics": "Suffix-aware P/N detection handles USB, indexed, polarity and KiCad auto names; nearest terminal pairs on same layer feed route. Bare pads derive escape direction from package and alternate launch sides.",
+      "limitations": "Must match electrical pair identity, not names alone. Defaults list only F.Cu/B.Cu; escaped inner-layer terminals require explicit layers. Short pairs may defer to single-ended under source threshold assumptions.",
+      "sources": [
+        {
+          "path": "py_router/route_diff.py",
+          "line": 345,
+          "symbol": "batch_route_diff_pairs",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_diff.py#L345",
+          "sha256": "be2adf36f8fd8f7008519ee0de1db886e965cf564fee4961423affb9bb60001a"
+        },
+        {
+          "path": "py_router/diff_pair_routing.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/diff_pair_routing.py#L1",
+          "sha256": "7ddfa8207f9e67964d74cf86fbb42d51bc96f8c427556a1fd5f5fdbf0cddb468"
+        },
+        {
+          "path": "docs/differential-pairs.md",
+          "line": 16,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/differential-pairs.md#L16",
+          "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b"
+        },
+        {
+          "path": "docs/differential-pairs.md",
+          "line": 120,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/differential-pairs.md#L120",
+          "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b"
+        }
+      ],
+      "exercise": "Q1,Q4: native USB pair, indexed lanes, confusing mixed suffix and inner fanout terminal.",
+      "required_output_checks": "Required pair roster, correct polarity and endpoints, every deferred/skipped pair accounted for; no required pair silently routed single-ended.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D02",
+      "area": "Differential and timing",
+      "feature": "Coupled pose routing and vias",
+      "entrypoints": "route_diff.py --diff-pair-gap G --min-turning-radius R --max-setback-angle A --max-turn-angle A",
+      "semantics": "Rust pose A* over x/y/heading/layer uses Dubins heuristic and setback distance/angle ladder; centerline offsets maintain layer pitch, miter corners, paired vias and approach/exit constraints.",
+      "limitations": "Fixed layer pitch, grid snapping and heuristic search; output can neck near obstacles. Every pair requires actual coupled length, gap, skew and topology checks, not success count.",
+      "sources": [
+        {
+          "path": "rust_router/src/pose_router.rs",
+          "line": 127,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/rust_router/src/pose_router.rs#L127",
+          "sha256": "a4df246ef8a886d1cd3df989734bfd4a15ddc72e551905b046fbbe056c240a4c"
+        },
+        {
+          "path": "rust_router/src/dubins.rs",
+          "line": 8,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/rust_router/src/dubins.rs#L8",
+          "sha256": "578db6b9034dcea6a90849323843e47792b3c0921427d2951d325bfdb6147730"
+        },
+        {
+          "path": "py_router/diff_pair_routing.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/diff_pair_routing.py#L1",
+          "sha256": "7ddfa8207f9e67964d74cf86fbb42d51bc96f8c427556a1fd5f5fdbf0cddb468"
+        },
+        {
+          "path": "docs/differential-pairs.md",
+          "line": 258,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/differential-pairs.md#L258",
+          "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b"
+        }
+      ],
+      "exercise": "Q4: facing, orthogonal, reversed bare-pad launches with obstacle and required layer change.",
+      "required_output_checks": "P/N no crossing, polarity, per-layer width/gap, skew, uncoupled extent, matched vias and returns, native pair rules.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D03",
+      "area": "Differential and timing",
+      "feature": "Multipoint and hybrid recovery",
+      "entrypoints": "route_diff.py normal fallback; --no-stub-layer-swap controls terminal switches",
+      "semantics": "Three-plus terminal pairs form a chain, at most two legs per terminal. Last-resort hybrid routes coupled middle and single-ended terminal legs, tries order/polarity, rejects plans bypassing coupled middle and re-asks seams.",
+      "limitations": "Terminals cannot be mid-track taps. Hybrid connectivity alone does not imply sufficient coupling. Some short/blocked pair paths defer to SE; measure final uncoupled/skew rules explicitly.",
+      "sources": [
+        {
+          "path": "py_router/diff_pair_multipoint.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/diff_pair_multipoint.py#L1",
+          "sha256": "592c6d3991ef1b1c1f83b92d198efddce5ba69fd726c58e834509d5d473190f0"
+        },
+        {
+          "path": "py_router/diff_pair_routing.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/diff_pair_routing.py#L1",
+          "sha256": "7ddfa8207f9e67964d74cf86fbb42d51bc96f8c427556a1fd5f5fdbf0cddb468"
+        },
+        {
+          "path": "docs/differential-pairs.md",
+          "line": 153,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/differential-pairs.md#L153",
+          "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b"
+        },
+        {
+          "path": "docs/differential-pairs.md",
+          "line": 556,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/differential-pairs.md#L556",
+          "sha256": "336a02eb32d58fbf572f232c3919b019d3c37a75e821d102841d485e9a0a7e5b"
+        }
+      ],
+      "exercise": "Q3,Q4: QFN crowded source, connector-resistor-IC chain and polarity mismatch with swap prohibited.",
+      "required_output_checks": "All pair terminals connected in intended topology, coupled middle on actual signal path, acceptable uncoupled legs/skew, no undeclared pin swap.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D04",
+      "area": "Differential and timing",
+      "feature": "Impedance width solving",
+      "entrypoints": "route.py --impedance 50; route_diff.py --impedance 100 --diff-pair-gap G; --coplanar-gap G",
+      "semantics": "Uses native dielectric/copper stackup with microstrip, symmetric/asymmetric stripline, differential and grounded-coplanar formula/inverse solvers; selects per-layer widths and persists declaration.",
+      "limitations": "Analytic approximations, not EM field solver or supplier impedance guarantee. Missing dielectric can produce applied:false; mixed pair layer rules/specs may require separate invocations. Fixed explicit widths/fab floors can make target unachievable.",
+      "sources": [
+        {
+          "path": "py_router/impedance.py",
+          "line": 1281,
+          "symbol": "calculate_layer_widths_for_impedance",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/impedance.py#L1281",
+          "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287"
+        },
+        {
+          "path": "py_router/impedance.py",
+          "line": 411,
+          "symbol": "cpwg_z0",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/impedance.py#L411",
+          "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287"
+        },
+        {
+          "path": "py_router/impedance.py",
+          "line": 1607,
+          "symbol": "achievability_note",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/impedance.py#L1607",
+          "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287"
+        },
+        {
+          "path": "docs/api-impedance.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/api-impedance.md#L1",
+          "sha256": "93b8d215e51df652bf23aa3cd9e7ebb0b47005453d9afe9fd7b0fe3c98280b9d"
+        }
+      ],
+      "exercise": "Q4: approved four-layer stackup, 50-ohm line/100-ohm pair/coplanar line; missing stackup negative.",
+      "required_output_checks": "Every required net/layer solved and achieved within allowed tolerance, applied true, actual necks and coplanar gaps; independent calculator/profile review.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D05",
+      "area": "Differential and timing",
+      "feature": "Post-route impedance and reference-plane audit",
+      "entrypoints": "py_tools/check_impedance.py BOARD --nets PATTERNS --json REPORT",
+      "semantics": "Samples actual copper for coplanar side-gap and adjacent reference fill voids/domain splits; default sample step 0.15 mm and minimum void length 0.30 mm. Reports declaration mismatch and impedance estimates.",
+      "limitations": "Diagnostic sampling/fill model has finite resolution; no end-to-end SI or EMC proof. Target spec with applied:false must be required elsewhere. Exit behavior and missing data must be inspected, not just zero crossings.",
+      "sources": [
+        {
+          "path": "py_tools/check_impedance.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/check_impedance.py#L1",
+          "sha256": "b1fd924912fc6d145bc4472de0d58a39bebf3c1879b40adaa00fbcc3c44e6736"
+        },
+        {
+          "path": "py_router/impedance.py",
+          "line": 458,
+          "symbol": "cpwg_applies",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/impedance.py#L458",
+          "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287"
+        }
+      ],
+      "exercise": "Q4,Q5: routed trace across narrow reference slot, wrong-domain plane and mismatched coplanar gap.",
+      "required_output_checks": "Per-net/layer coverage, all declared impedance targets measured, detection of slot/domain split, retained actual/correct reference layer.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D06",
+      "area": "Differential and timing",
+      "feature": "Length matching and absolute length windows",
+      "entrypoints": "route.py/route_diff.py --length-match-group PATTERNS --length-match-tolerance 0.1 --meander-amplitude A --meander-spacing S",
+      "semantics": "Shorter nets gain clearance-checked trombone meanders on suitable straight segments, iterating amplitude and sites. Group auto-detection covers DDR2-5/LPDDR4-5 byte lanes and command/address grouping; optional pad-to-die lengths.",
+      "limitations": "Space can be insufficient; warnings/tolerance failures remain. Absolute .kicad_dru length windows are graded, not synthesized. Through-via barrel model can differ from native used-span grading.",
+      "sources": [
+        {
+          "path": "py_router/length_matching.py",
+          "line": 1941,
+          "symbol": "apply_length_matching_to_group",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L1941",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "py_router/length_matching.py",
+          "line": 2812,
+          "symbol": "auto_group_ddr4_nets",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L2812",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "py_router/length_matching.py",
+          "line": 977,
+          "symbol": "generate_trombone_meander",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L977",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "docs/length-matching.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/length-matching.md#L1",
+          "sha256": "228ca5261e6622a0abb35a46ac3fdd4449a345899b17070f7f8d806dea9e09c4"
+        }
+      ],
+      "exercise": "Q4: deliberately unequal bus lengths, constrained meander corridor, absolute minimum length and package-delay data.",
+      "required_output_checks": "Final native path lengths and full required group membership, skew tolerance, absolute windows, no loops/stubs used to inflate useful path length.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D07",
+      "area": "Differential and timing",
+      "feature": "Delay matching",
+      "entrypoints": "route.py/route_diff.py --time-matching --time-match-tolerance PS --length-match-group PATTERNS",
+      "semantics": "Matches estimated propagation delay using per-layer effective dielectric and via barrel contributions, allowing different physical lengths across layers.",
+      "limitations": "Simplified effective-epsilon model; missing stackup falls back and can reduce to length ordering. Not waveform timing simulation. Package/driver/load data require separate proof.",
+      "sources": [
+        {
+          "path": "py_router/length_matching.py",
+          "line": 2157,
+          "symbol": "apply_time_matching_to_group",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L2157",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "py_router/impedance.py",
+          "line": 1670,
+          "symbol": "get_layer_ps_per_mm",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/impedance.py#L1670",
+          "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287"
+        },
+        {
+          "path": "py_router/impedance.py",
+          "line": 1741,
+          "symbol": "calculate_route_propagation_time_ps",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/impedance.py#L1741",
+          "sha256": "77eedb364a05eefc375e3810a370af51aed661befa512ac3841c15282d37c287"
+        }
+      ],
+      "exercise": "Q4: same logical bus on microstrip and stripline plus declared pad-to-die differences.",
+      "required_output_checks": "Delay calculation inputs, per-layer/native path and barrel lengths, final delay skew tolerance, missing dielectric fails required check.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D08",
+      "area": "Differential and timing",
+      "feature": "Pair intra-skew and AC-coupled composition",
+      "entrypoints": "route_diff.py --diff-pair-intra-match --ac-couple-match; repeatable --length-match-group",
+      "semantics": "Intra-pair meanders and regrade address P/N skew; AC-coupled topology composes paths through series capacitors for total-length matching.",
+      "limitations": "AC matching runs after groups and may perturb them; do not double-include composed nets without final recheck. Pair protection records must survive later routes and cleanup.",
+      "sources": [
+        {
+          "path": "py_router/length_matching.py",
+          "line": 4057,
+          "symbol": "run_intra_pair_matching",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L4057",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "py_router/length_matching.py",
+          "line": 4186,
+          "symbol": "apply_ac_coupled_length_matching",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L4186",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "py_router/length_matching.py",
+          "line": 4002,
+          "symbol": "regrade_intra_pair_reports",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/length_matching.py#L4002",
+          "sha256": "90b267fc46198680f9877f8c46d8b347280d49176dfc0cc06b2d0f0764e7bec6"
+        },
+        {
+          "path": "py_router/diff_xnet.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/diff_xnet.py#L1",
+          "sha256": "204665ebc1494103a7e6960aa43bfd0eada9d17c70d31dc6cda8be63e5909f24"
+        }
+      ],
+      "exercise": "Q4: asymmetric pair plus two AC coupling capacitors; route unrelated net afterwards.",
+      "required_output_checks": "End-to-end composed length/skew and coupling after final pass, capacitor endpoints correct, no later cleanup destroys meanders.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D09",
+      "area": "Differential and timing",
+      "feature": "Bus grouping, corridors and ordering",
+      "entrypoints": "route.py --bus; --ordering bus; --bus-detection-radius R --bus-attraction-radius R",
+      "semantics": "Geometric endpoint clique/group filtering and inflated-width corridor probes; middle-out member order and direction-aligned attraction, across-layer reduced bonus; multipoint taps deferred.",
+      "limitations": "--ordering bus alone only orders. route_diff accepts bus flags but ignores them for coupled pairs. Geometric bus grouping is not electrical bus identity and supplies no timing/coupling guarantee. Experimental awx route_bus is separate.",
+      "sources": [
+        {
+          "path": "py_router/bus_detection.py",
+          "line": 339,
+          "symbol": "filter_bus_groups_geometric",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bus_detection.py#L339",
+          "sha256": "e77725dbebdc406e7e32dc19dde221addc695165bd0086939669a125c43dd584"
+        },
+        {
+          "path": "py_router/bus_corridor.py",
+          "line": 79,
+          "symbol": "plan_bus_corridors",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bus_corridor.py#L79",
+          "sha256": "fdd384c622b4219b81e751dbbeab34e026f33c5390e9de52d06269831f16c2ca"
+        },
+        {
+          "path": "rust_router/src/router.rs",
+          "line": 949,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/rust_router/src/router.rs#L949",
+          "sha256": "d3cb9ac9cfa5d25180f29d92f4c55a9082393ac67c9c81d9968ab26177d0681d"
+        },
+        {
+          "path": "docs/bus-routing.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/bus-routing.md#L1",
+          "sha256": "d24c62fdf2337cd938627405d9bc12f8cb2253507c52f59c5b80dcd00bf35914"
+        }
+      ],
+      "exercise": "Q4: 8-bit bus with one unrelated near-parallel net and one multi-terminal lane; constrained layer crossing.",
+      "required_output_checks": "Correct intended bus membership, no omitted lane, final completion, copper/vias, timing separately, no added meander/cost exploitation.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D10",
+      "area": "Differential and timing",
+      "feature": "Persisted geometry commitments",
+      "entrypoints": "Automatic protected_nets, impedance_specs, same_net_pad_clearance and pour_served_pads project records",
+      "semantics": "Matched nets, coupled pairs, impedance declarations and pour commitments inform later routing/protection; exact-name rip can override some protection but locks/sense branches remain held.",
+      "limitations": "In route.py CLI the protection/impedance persistence calls sit inside the not no_fix_drc_settings block. Preserving authored rules by that flag can skip these record writes in this path; wrapper must preserve commitments separately and test replay.",
+      "sources": [
+        {
+          "path": "py_router/protected_nets.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/protected_nets.py#L1",
+          "sha256": "1a6eae693df34ed8677ed61a13a7aa25a6d48ab682c78ad0da83c6efbb740d4c"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 10100,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L10100",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "py_router/cleanup_pipeline.py",
+          "line": 97,
+          "symbol": "_smooth_skip_net_ids",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/cleanup_pipeline.py#L97",
+          "sha256": "b55ef4765558d0b03d46b691bf85e7c908beba91e9c5e1bdfd2856bb303bce85"
+        }
+      ],
+      "exercise": "Q4,Q5: route matched group, copy project, route another net under no-fix policy and replay.",
+      "required_output_checks": "Commitments retained with correct identity while original engineering rules unchanged; no stale/latest-record collision or loss.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "F01",
+      "area": "Fanout",
+      "feature": "BGA channel fanout",
+      "entrypoints": "bga_fanout.py BOARD -c REF -o OUT --layers ALL --diff-pairs PATTERNS --escape-method channel",
+      "semantics": "Grid inference, adjacent same-net joins, channels/45-degree stubs and layer assignment; coupled pair escapes; NC/single-pad nets skipped. Rotation and back-face transforms use local frame then map copper back.",
+      "limitations": "Requires feasible pitch/via/track/clearance. Staggered no-lead arrays refused in favor of QFN underpad. Documentation states BGA escapes use one --clearance rather than per-netclass map; verify heterogeneous classes natively.",
+      "sources": [
+        {
+          "path": "py_router/bga_fanout/__init__.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/__init__.py#L1",
+          "sha256": "a172a76e0faf241663cfa8d82c42461383372999ec482ab1833d5ce77ed0e4ff"
+        },
+        {
+          "path": "py_router/bga_fanout/layer_assignment.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/layer_assignment.py#L1",
+          "sha256": "0bd0b19c70e005c4af50df1fb9ecd9c31e3f3d00687d8336227fdc2d03baebb5"
+        },
+        {
+          "path": "py_router/bga_fanout/rotate_frame.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/rotate_frame.py#L1",
+          "sha256": "3dfe0e28ee9c6cb3704548675fc7a3548c12f5afe7a16cdf0d91ed971089fa32"
+        },
+        {
+          "path": "py_router/bga_fanout/flip_frame.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/flip_frame.py#L1",
+          "sha256": "a3301d6135095a3314afc9b41919ad0272a64f0386ba89c54ba04f684ce26037"
+        },
+        {
+          "path": "py_router/bga_fanout/README.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/README.md#L1",
+          "sha256": "23f848b2bf6faf593600c5a6006a39e403b39cb7b59455d436cd9ad53b7a0ed4"
+        }
+      ],
+      "exercise": "Q3: glasgow_revC and rotated/mirrored copies, with pair/rail selections and different net classes.",
+      "required_output_checks": "Every required ball reaches routable stub, pair polarity/layer/pitch, no false NC skip, exact transformed pad joins and native clearances.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "F02",
+      "area": "Fanout",
+      "feature": "Dense underpad and dogbone BGA fanout",
+      "entrypoints": "bga_fanout.py --escape-method auto|underpad|dogbone --same-net-pad-clearance VALUE",
+      "semantics": "Auto compares channel with underpad when balls drop. Deepest-first signal ball drops escape on inner layers; dogbone uses validated diagonal inter-ball sites with via-in-pad fallback when permitted; pair escapes can be coupled.",
+      "limitations": "Some pair escapes fall back SE. Dogbone fallback requires manufacturing authorization for via-in-pad. Full array routing and all pair couplings are not guaranteed by escaped-ball count.",
+      "sources": [
+        {
+          "path": "py_router/bga_fanout/underpad.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/underpad.py#L1",
+          "sha256": "34064c441c4e31b3724682297d0d68a7c33a48ff481cdbdc2762194016128d05"
+        },
+        {
+          "path": "py_router/bga_fanout/README.md",
+          "line": 177,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/README.md#L177",
+          "sha256": "23f848b2bf6faf593600c5a6006a39e403b39cb7b59455d436cd9ad53b7a0ed4"
+        },
+        {
+          "path": "py_router/bga_fanout/__init__.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/__init__.py#L1",
+          "sha256": "a172a76e0faf241663cfa8d82c42461383372999ec482ab1833d5ce77ed0e4ff"
+        }
+      ],
+      "exercise": "Q3: dense ulx3s subset or small native dense-array qualification design, one no-free-gap ball, explicit no-via-in-pad.",
+      "required_output_checks": "All required balls, no prohibited pad/paste overlap, matching copper span, per-pair coupling/deferred roster, final full routing, drill/annulus profile.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "F03",
+      "area": "Fanout",
+      "feature": "BGA plane drops and pour promises",
+      "entrypoints": "bga_fanout.py --plane-drop auto --plane-net-layers NET:LAYER,...",
+      "semantics": "Excluded plane-net balls get gap via or permitted on-pad fallback, or short fill contact if predicted/main pour serves ball. Promises are persisted and audited after route finalization.",
+      "limitations": "Future pour projections are promises, not connectivity. Detached promise welding is env opt-in KICAD_POUR_PROMISE_WELD=1; otherwise detached balls are named but may remain. Required acceptance must reject any unserved promised ball.",
+      "sources": [
+        {
+          "path": "py_router/bga_fanout/__init__.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/bga_fanout/__init__.py#L1",
+          "sha256": "a172a76e0faf241663cfa8d82c42461383372999ec482ab1833d5ce77ed0e4ff"
+        },
+        {
+          "path": "py_router/protected_nets.py",
+          "line": 335,
+          "symbol": "persist_pour_served_pads",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/protected_nets.py#L335",
+          "sha256": "1a6eae693df34ed8677ed61a13a7aa25a6d48ab682c78ad0da83c6efbb740d4c"
+        },
+        {
+          "path": "docs/route-plane.md",
+          "line": 130,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/route-plane.md#L130",
+          "sha256": "a66caba4e54546a61439f5ec536873cbed55da60440e772c1b3e2781881ea6d4"
+        }
+      ],
+      "exercise": "Q3,Q5: pour-served BGA rail ball whose fill is cut by later signal.",
+      "required_output_checks": "Every promised ball verified against final KiCad fill, no stale ref/net/layer promises; explicit detached counts block acceptance.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "F04",
+      "area": "Fanout",
+      "feature": "QFN/QFP surface and underpad escape",
+      "entrypoints": "qfn_fanout.py BOARD -c REF -o OUT --escape-method stub|underpad; --allow-via-in-pad",
+      "semantics": "Footprint-local pad axis determines escapes at any rotation/face; straight plus 45-degree fan, neighbour gap sharing, same-net-pad termination and staggered underpad via search; alternative orders rescue dropped legs.",
+      "limitations": "Single-line parts refused; default can escalate clearance per pad. --allow-via-in-pad also expands inward offset reach beyond pad, so name is narrower than behavior; positive same-net-pad clearance still forbids overlapping own pad.",
+      "sources": [
+        {
+          "path": "py_router/qfn_fanout/__init__.py",
+          "line": 1505,
+          "symbol": "generate_qfn_fanout",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/qfn_fanout/__init__.py#L1505",
+          "sha256": "49d5dc7fed19fd91cabb8fc6b90331c346a8151e495718cf1730abe4b7101be9"
+        },
+        {
+          "path": "py_router/qfn_fanout/__init__.py",
+          "line": 616,
+          "symbol": "_underpad_via_escape",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/qfn_fanout/__init__.py#L616",
+          "sha256": "49d5dc7fed19fd91cabb8fc6b90331c346a8151e495718cf1730abe4b7101be9"
+        },
+        {
+          "path": "py_router/qfn_fanout/__init__.py",
+          "line": 373,
+          "symbol": "_end_stubs_at_same_net_pads",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/qfn_fanout/__init__.py#L373",
+          "sha256": "49d5dc7fed19fd91cabb8fc6b90331c346a8151e495718cf1730abe4b7101be9"
+        },
+        {
+          "path": "py_router/qfn_fanout/README.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/qfn_fanout/README.md#L1",
+          "sha256": "362ace4e418d2332230178e0320e4db72d666fbe55559e928cbd10d6dcf6c491"
+        }
+      ],
+      "exercise": "Q3: qfn_csi_underpad_diff and two close QFNs, both fanout orders, rotated/back variant.",
+      "required_output_checks": "Required pin escape count and exact end contact, no long dangling tails, clearance/drill profile, order sensitivity measured and every escalated pin disclosed.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "F05",
+      "area": "Fanout",
+      "feature": "Placement rescue during routing",
+      "entrypoints": "route.py normal rescue; KICAD_RESCUE_CAP_MOVE=0 disables the default-enabled scoped rescue move",
+      "semantics": "A bare-ball rescue can queue a verified movable passive relocation where its escape via lands; writes move only for shipped via, updates model/native board and rewelds cap nets.",
+      "limitations": "Routing is not purely copper-only. Whole placement intent must be independently regraded; the scoped rescue is not a complete general floorplan constraint engine. Manufacturing placement files must be generated afterwards.",
+      "sources": [
+        {
+          "path": "py_router/net_rescue.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/net_rescue.py#L1",
+          "sha256": "06b52e371245ca4e545182f957b1ab042c7b3f28d6eafa9c157686baa315437a"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 6107,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L6107",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "py_router/env_knobs.py",
+          "line": 107,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/env_knobs.py#L107",
+          "sha256": "6b9fbf300e0ef6a45ef159af57ead144f38e467eb1667e9a5eaf07120cbc0c19"
+        }
+      ],
+      "exercise": "Q3: BGA escape blocked by movable passive and same situation with owner-fixed passive.",
+      "required_output_checks": "Moved-part roster and reasons, fixed pose unchanged, all final block/pin/side rules, rewelded nets, BOM/CPL reflects final coordinates.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "F06",
+      "area": "Fanout",
+      "feature": "Single plane-tap relocation",
+      "entrypoints": "KICAD_TAP_RELOCATION=1 route.py; KICAD_TAP_RELOCATION_MAX defaults 2",
+      "semantics": "Opt-in removal of one zone-backed preexisting tap via plus short stub permits blocked route; recomputes per-net obstacle cache and delegates lost connection to plane finalization.",
+      "limitations": "Depends on later repair reclaiming connectivity; zone presence is not proof repair succeeds. This differs from broad rip permission and needs explicit preserved geometry policy.",
+      "sources": [
+        {
+          "path": "py_router/tap_relocation.py",
+          "line": 84,
+          "symbol": "find_relocation_candidate",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/tap_relocation.py#L84",
+          "sha256": "b91f28de6b746fc9e25a3d173f626105b0dd4d923b1b6c4111c85a33dcb36884"
+        },
+        {
+          "path": "py_router/tap_relocation.py",
+          "line": 60,
+          "symbol": "plane_zone_net_ids",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/tap_relocation.py#L60",
+          "sha256": "b91f28de6b746fc9e25a3d173f626105b0dd4d923b1b6c4111c85a33dcb36884"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 1922,
+          "symbol": "batch_route",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L1922",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        }
+      ],
+      "exercise": "Q5: signal blocked by a single plane tap, with permitted and locked tap variants.",
+      "required_output_checks": "Exact removed copper, no obstacle-cache underflow, tap restored/replaced and final plane connectivity, locked geometry untouched.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V01",
+      "area": "Verification",
+      "feature": "Fast custom DRC and connectivity",
+      "entrypoints": "py_router/check_drc.py BOARD; check_connected.py BOARD; check_pads.py BOARD",
+      "semantics": "Source geometry checker covers segment/via/pad clearances, widths, holes, edges, selected pair/length rules and soft joints; connectivity graph grades components; pad checker catches model/geometry overlaps.",
+      "limitations": "These are KRT instruments, not full native KiCad DRC/ERC. Their finite model, tolerance and rule coverage must be explicit; use original native project for acceptance.",
+      "sources": [
+        {
+          "path": "py_router/check_drc.py",
+          "line": 3814,
+          "symbol": "run_drc",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/check_drc.py#L3814",
+          "sha256": "0e5ad6ead53725b002c2d156ec9c73bf61b7043bd99a3df92ef40d7eb962a87b"
+        },
+        {
+          "path": "py_router/check_connected.py",
+          "line": 1958,
+          "symbol": "run_connectivity_check",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/check_connected.py#L1958",
+          "sha256": "fa70cd1777b8711f622fdde8690a9113d28579635594d77531e68415243ffd96"
+        },
+        {
+          "path": "py_router/check_pads.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/check_pads.py#L1",
+          "sha256": "1a95ff9299b7174fd62a28dff939916a44658e895751950139b0a0b6ef95eb42"
+        }
+      ],
+      "exercise": "All Q cases plus missing segment and wrong-net short negatives.",
+      "required_output_checks": "Individual defect records and rule coverage; native ERC/DRC after saved reload/refill must also pass at authored severities.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V02",
+      "area": "Verification",
+      "feature": "Floorplan roster and assembly gates",
+      "entrypoints": "check_floorplan.py BOARD --intent intent.json --require-rules RULES; check_assembly.py BOARD --baseline INPUT --intent intent.json",
+      "semantics": "Rule roster tracks applicability/abstention; pin/side/edge/proximity/template/array/placement checks. Assembly grades pad/body/courtyard/hole/edge/testpoint and connector mating relationships with authored waivers.",
+      "limitations": "Several courtyard/body findings gate only when moved vs baseline or explicitly declared; unrequested rules may abstain; default template/keep-away severity may warn. Baseline-relative cleanliness is insufficient for required absolute placement constraints.",
+      "sources": [
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 7673,
+          "symbol": "rule_roster",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L7673",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_placer/placement/floorplan.py",
+          "line": 8961,
+          "symbol": "grade",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/placement/floorplan.py#L8961",
+          "sha256": "bd635734d8abafa518e65faeefb41bbe3a3fa12f051d2fbeb8ee3213243b4e5c"
+        },
+        {
+          "path": "py_tools/check_floorplan.py",
+          "line": 465,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/check_floorplan.py#L465",
+          "sha256": "262c304cb4b4c4aeaab7909e4b6a9da219ed5624cf8a2f8f31483784b9733c54"
+        },
+        {
+          "path": "py_tools/check_assembly.py",
+          "line": 63,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/check_assembly.py#L63",
+          "sha256": "d6d7ce29750dae0be34e0a106c731f13f9d4f1914fe0f10a66881faae8c87d4e"
+        }
+      ],
+      "exercise": "Q2,Q6: violate each declared constraint with clean routing; omit required rule/intent; stale board report.",
+      "required_output_checks": "Every mandatory rule ran freshly and passed final artifact, all memberships/sides/distances reported; no baseline exception hides required absolute defect.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V03",
+      "area": "Verification",
+      "feature": "Copper hygiene and actionable diagnostics",
+      "entrypoints": "check_orphan_stubs.py; check_weird.py; check_cycles.py; check_orthonormal.py; net_forensics.py; check_join.py",
+      "semantics": "Diagnoses dangling copper/vias, weird geometry, cycles, non-octilinear segments, net topology and staged hand-join collisions/transitions. Emits actionable net/coordinate records.",
+      "limitations": "Different tools have different exit contracts; check_join invokes KRT DRC rather than full native DRC. Non-octilinear copper may be intentionally valid. Findings need scoped interpretation without weakening mandatory rules.",
+      "sources": [
+        {
+          "path": "py_tools/check_orphan_stubs.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/check_orphan_stubs.py#L1",
+          "sha256": "8623679031da81bf71307640df51168fe0f717986356c975e4313887f02c8cfc"
+        },
+        {
+          "path": "py_router/check_weird.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/check_weird.py#L1",
+          "sha256": "3684719b1adb2a790ce3a3776af61ebfee9302ee590c51688fe1bacc610e936f"
+        },
+        {
+          "path": "py_tools/net_forensics.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/net_forensics.py#L1",
+          "sha256": "421b741210c93c07b4fc6421bf058092beef712968fe18f8ff10c04abc36ca84"
+        },
+        {
+          "path": "py_tools/check_join.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/check_join.py#L1",
+          "sha256": "1a77b3b32795f85dab9ea1129f058218528153a186ba3af15f497ac951fc2087"
+        }
+      ],
+      "exercise": "Q4: append dangling via/stub, duplicate loop and layer transition without via.",
+      "required_output_checks": "Specific introduced defect detected on final native board, no false completion from zero-return informational tool; preserve intentional geometry.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V04",
+      "area": "Verification",
+      "feature": "Composite score vs honest acceptance",
+      "entrypoints": "board_score.py BOARD --intent ... --length-groups ... --impedance-nets ... --net-min-widths ...; check_complete.py BOARD --authored-from INPUT --baseline INPUT",
+      "semantics": "Composite blocking/joins-needed/quality score plus completion tool adds slow hygiene/native checks and authored-floor comparison. Requested-but-unrunnable check yields incomplete; rewritten floors can yield unsound.",
+      "limitations": "check_complete explicitly permits DONE with named UNGRADED components. board_score separates some .kicad_dru pair-clearance and via-in-paste findings as advisory. Neither is the goal acceptance predicate; mandatory coverage and full native severity are external obligations.",
+      "sources": [
+        {
+          "path": "py_tools/board_score.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/board_score.py#L1",
+          "sha256": "39d24cdc26a3e64e57358282e10a8a16be381fb9b58dbfb003e8aa8d9578c782"
+        },
+        {
+          "path": "check_complete.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/check_complete.py#L1",
+          "sha256": "78a10feea4924c00391422dd293c46a662366556e7d34d936ccd7450b8d297e2"
+        }
+      ],
+      "exercise": "All Q cases; omit required length/impedance spec, lower project floor and reuse stale report negatives.",
+      "required_output_checks": "Mandatory check roster bound to hash, no skipped/ungraded/stale pass; authored rules preserved; reject clean-at-weakened-floor result.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V05",
+      "area": "Verification",
+      "feature": "Rule escalation and output policy",
+      "entrypoints": "Common --fab-tier auto|standard|advanced --escalation fab|board|off --strict-sizes --no-fix-drc-settings; optional --relax-drc-severities",
+      "semantics": "Default fab escalation can reduce geometry below authored minima; records delivered minima/escalations and updates output project floors. --strict-sizes exits 3 on delivered undersize/tier escalation. Severity relaxation is separate opt-in, not default.",
+      "limitations": "No-fix prevents that writer path but does not prove all geometry respected every original rule. Physical fab-tier floors are not owner approval. Cap-clearance tool has different flag/write semantics. Compare under identical immutable engineering rules and native grades.",
+      "sources": [
+        {
+          "path": "py_router/fab_tiers.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/fab_tiers.py#L1",
+          "sha256": "35179e3acc781fe251a836ac8a961c7466f0446517a36462149c6bc5d15dbacd"
+        },
+        {
+          "path": "py_router/fix_kicad_drc_settings.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/fix_kicad_drc_settings.py#L1",
+          "sha256": "568b76c1a39c476781452e80ab3084c0dd808ec0f8107e6f25be9248674b3504"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 163,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L163",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        },
+        {
+          "path": "docs/configuration.md",
+          "line": 339,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/configuration.md#L339",
+          "sha256": "24fe8552799dc396b17cc1bd431a23b927084bd2219b369206fc67c7cf741e26"
+        }
+      ],
+      "exercise": "Q3,Q4: pinch impossible at original clearance, attempted narrower fallback, original severity preserved.",
+      "required_output_checks": "Original/output project and rule semantic diff, explicit delivered geometry, rejection when required minimum violated; upstream default run labelled separately.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V06",
+      "area": "Verification",
+      "feature": "Saved zone fill for delivery",
+      "entrypoints": "py_tools/fill_for_delivery.py ROUTED -o DELIVERED; route.py --write-fill",
+      "semantics": "Runs pcbnew zone fill on staged copy, saves without KiCad project rewrite and audits netclass names. Delivery helper failure returns nonzero; route write-fill failure can remain warning.",
+      "limitations": "Filled board is not manufacturing package validation. Fill helper audit checks netclass preservation, not every requirement or export. Output may remain copied but unfilled after some failure paths.",
+      "sources": [
+        {
+          "path": "py_tools/fill_for_delivery.py",
+          "line": 95,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/fill_for_delivery.py#L95",
+          "sha256": "d25675748a96a60f8038df7ba646da936a16daa18004f56b6718842d59e16d7c"
+        },
+        {
+          "path": "py_router/route.py",
+          "line": 9030,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route.py#L9030",
+          "sha256": "6daf766ccca0d21042d4b25dcdcfbb9d5470b76b1f9bf4f301d93d4cda32b0b1"
+        },
+        {
+          "path": "py_router/kicad_exact_fill.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_exact_fill.py#L1",
+          "sha256": "d58a4a93dec825b65a69c6f06f68722c4b9ac0dda11462501a0e03a998febb90"
+        }
+      ],
+      "exercise": "Q1,Q2,Q5: empty stored fills, successful fill and missing pcbnew failure.",
+      "required_output_checks": "Stored-fill and refilled connectivity agree, full project/rule semantic preservation, output hash bound to final checks, failure cannot be shipped as accepted.",
+      "dependencies": "Core + pcbnew",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V07",
+      "area": "Verification",
+      "feature": "Renders, per-block reports and movies",
+      "entrypoints": "render_placement.py BOARD --groups GROUPS --intent INTENT; route_render.py; render_nets.py; render_power.py; place_movie.py; route_movie.py",
+      "semantics": "Placement views show faces, groups, labels, legality, movement and detailed defect panels; copper/net/power views and saved/live route-event movies expose geometry and iteration history.",
+      "limitations": "Renders are explanatory artifacts, not semantic proof. Pillow absence can disable raster output without preventing routing. Top/bottom mirroring and native final-file identity need explicit validation.",
+      "sources": [
+        {
+          "path": "py_tools/render_placement.py",
+          "line": 116,
+          "symbol": "group_colours",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/render_placement.py#L116",
+          "sha256": "3c3bbf24ed8c7e12716ac782df80f4831b70798b548fd05b7355b36871aaa0ff"
+        },
+        {
+          "path": "py_tools/render_placement.py",
+          "line": 1067,
+          "symbol": "draw_group_fills",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/render_placement.py#L1067",
+          "sha256": "3c3bbf24ed8c7e12716ac782df80f4831b70798b548fd05b7355b36871aaa0ff"
+        },
+        {
+          "path": "py_router/route_render.py",
+          "line": 736,
+          "symbol": "render_board_file",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_render.py#L736",
+          "sha256": "52002f1e3565bcdb07f648f74f45a68d56687cc6c771881cf400006f90bf5b4c"
+        },
+        {
+          "path": "py_router/route_movie.py",
+          "line": 325,
+          "symbol": "make_movie",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/route_movie.py#L325",
+          "sha256": "de9effd9cbd7b91a807c550e439ebfafcf5f6df93ccaaad7a5cea846f1a78b2b"
+        }
+      ],
+      "exercise": "All accepted Q designs: annotated top/bottom and block table generated from exact final saved board.",
+      "required_output_checks": "Views match board hash and correct side transform; membership, side, critical distances and violations visible; geometry checks remain separate.",
+      "dependencies": "Core + Pillow; movie encoder depends selected output",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "A01",
+      "area": "Automation and scope",
+      "feature": "Headless native plan execution",
+      "entrypoints": "py_router/run_plan.py BOARD PLAN.json -o OUT --snapshot-dir DIR --timeout 7200; make_plan.py MANIFEST -o PLAN.json",
+      "semantics": "Loads real plugin PlanExecutor and wx/pcbnew controls headlessly, copies board and project, applies selected steps. Plan parsing inserts cap optimization and final plane verification route where needed.",
+      "limitations": "Runs have normalized/inserted steps, so compare actual executed plan, not authored JSON alone. No AI required for replay. Native GUI dependencies and popup stubs remain involved.",
+      "sources": [
+        {
+          "path": "py_router/run_plan.py",
+          "line": 59,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/run_plan.py#L59",
+          "sha256": "136eda6866764ec7c718c30abe52e006985f27f4f9658544ff7a9cef7f7b567e"
+        },
+        {
+          "path": "py_router/headless_plan.py",
+          "line": 103,
+          "symbol": "run_plan",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/headless_plan.py#L103",
+          "sha256": "ac5af701db8dae93c6bed9f46a58ca647ad65c84baa30823b6b7e376f8842c0a"
+        },
+        {
+          "path": "kicad_routing_plugin/ai_plan.py",
+          "line": 87,
+          "symbol": "parse_plan_result",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/kicad_routing_plugin/ai_plan.py#L87",
+          "sha256": "8d3e6be1406029350b8ef5ac5754220cd7ffa2efebbf623d103aca924cb585ab"
+        },
+        {
+          "path": "kicad_routing_plugin/ai_plan.py",
+          "line": 160,
+          "symbol": "_append_final_plane_verify",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/kicad_routing_plugin/ai_plan.py#L160",
+          "sha256": "8d3e6be1406029350b8ef5ac5754220cd7ffa2efebbf623d103aca924cb585ab"
+        }
+      ],
+      "exercise": "Q1,Q3: recorded CLI chain vs loaded plan matched-input comparison with actual step list retained.",
+      "required_output_checks": "Same effective sizes/layers/net scope and emitted semantics, no hidden insertions omitted from budget; final native grades and per-step status.",
+      "dependencies": "Core + pcbnew + wx",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "A02",
+      "area": "Automation and scope",
+      "feature": "Interruption and resumption boundary",
+      "entrypoints": "run_plan.py --steps 1,3-5 --snapshot-dir DIR --timeout SECONDS; PlanExecutor.stop",
+      "semantics": "PlanExecutor.stop requests cancellation at engine safe boundaries; run_plan offers selected-step execution and per-step PCB snapshots.",
+      "limitations": "Snapshots save PCB only with aSkipSettings=True, not per-step project/rule records. --steps is manual replay, not validated self-contained resume. headless timeout handler exits wx loop without calling executor.stop; final-save failures are logged. Wrapper must retain full stage state and prove safe stop/resume.",
+      "sources": [
+        {
+          "path": "py_router/headless_plan.py",
+          "line": 103,
+          "symbol": "run_plan",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/headless_plan.py#L103",
+          "sha256": "ac5af701db8dae93c6bed9f46a58ca647ad65c84baa30823b6b7e376f8842c0a"
+        },
+        {
+          "path": "py_router/run_plan.py",
+          "line": 34,
+          "symbol": "parse_step_selection",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/run_plan.py#L34",
+          "sha256": "136eda6866764ec7c718c30abe52e006985f27f4f9658544ff7a9cef7f7b567e"
+        },
+        {
+          "path": "kicad_routing_plugin/ai_plan.py",
+          "line": 1317,
+          "symbol": "PlanExecutor",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/kicad_routing_plugin/ai_plan.py#L1317",
+          "sha256": "8d3e6be1406029350b8ef5ac5754220cd7ffa2efebbf623d103aca924cb585ab"
+        }
+      ],
+      "exercise": "Q1,Q3: interrupt at fanout and route stage, resume from captured native project/records under same config.",
+      "required_output_checks": "No surviving work, complete checkpoint siblings/hashes/config, no duplicated copper or stale records; resumed full native result equivalent within declared tolerance.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "A03",
+      "area": "Automation and scope",
+      "feature": "Replay, timing and environment capture",
+      "entrypoints": "REDO_MANIFEST / REDO_RUNDIR; make_plan.py; tests/gui_parity replay harness; tests/stress manifests",
+      "semantics": "Invocation recorder writes replay commands and timing JSONL including routing environment knobs; manifests, plan conversion and GUI/CLI parity harness provide reproducibility mechanisms.",
+      "limitations": "Recorded command is not accepted design evidence. Uncaptured dependency/library/runtime changes still affect results. Require exact source/build, input siblings, effective config and complete failure inventory.",
+      "sources": [
+        {
+          "path": "py_router/redo_record.py",
+          "line": 100,
+          "symbol": "record_invocation",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/redo_record.py#L100",
+          "sha256": "f4b73957de7a9bcd7ccd4720931059cacb5759f8a5fb1a2a47e5fcba867f7723"
+        },
+        {
+          "path": "py_router/redo_record.py",
+          "line": 83,
+          "symbol": "_replay_knobs",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/redo_record.py#L83",
+          "sha256": "f4b73957de7a9bcd7ccd4720931059cacb5759f8a5fb1a2a47e5fcba867f7723"
+        },
+        {
+          "path": "py_router/make_plan.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/make_plan.py#L1",
+          "sha256": "48c07717071b448f7e2da8a2b7985b7a9b65d6964bcce2e66de7366dc3cb46df"
+        },
+        {
+          "path": "tests/gui_parity/replay_plan_vs_run.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/gui_parity/replay_plan_vs_run.py#L1",
+          "sha256": "067c05b83de8da04df2564b0bf5fd2f22b1a04764e1d1ac4771e5159718e28e2"
+        }
+      ],
+      "exercise": "Every Q case: clean setup replay with recorded inputs and at least three identical fixed-seed repeats for claimed reliability.",
+      "required_output_checks": "Hashes/source/tool versions, commands/env/seed/budget, actual steps and outputs; compare mandatory pass coverage before quality or runtime.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "A04",
+      "area": "Automation and scope",
+      "feature": "Installation, registry and source/build identity",
+      "entrypoints": "python3 build_router.py --from-source; python3 install_plugin.py; requirements.txt",
+      "semantics": "Python tooling plus Rust pyo3 extension; prebuilt release downloader normally available, source build avoids ABI drift. AST KRT_TOOL registry declares scopes/kinds. Source inventory found 107 declarations.",
+      "limitations": "VERSION and crate both 0.23.7 do not identify latest source. Prebuilt version can match while ABI differs. Declared tools include utility/experimental scopes and are not proven runnable by AST count.",
+      "sources": [
+        {
+          "path": "build_router.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/build_router.py#L1",
+          "sha256": "a5053c05529c2313c72a280d6c8ae7841539544e236316b159edb427549b6cfd"
+        },
+        {
+          "path": "install_plugin.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/install_plugin.py#L1",
+          "sha256": "3ea178133d2012adee3aff36287af3cf7644674b128408f56368c91075cf78bc"
+        },
+        {
+          "path": "krt_registry.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/krt_registry.py#L1",
+          "sha256": "cd5d8770f0d4e2444c7bf0c15cb4793faded171975b1d54341c73c5cd427abf3"
+        },
+        {
+          "path": "rust_router/Cargo.toml",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/rust_router/Cargo.toml#L1",
+          "sha256": "68c7645098bd26b47fbdcf60a90522c6b9e7b9763b5f4c33f4e8e99c0836dcce"
+        },
+        {
+          "path": "requirements.txt",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/requirements.txt#L1",
+          "sha256": "25f5681decf5392c56852327747a6517a8b3e97255d76351277ee6c4835367f0"
+        }
+      ],
+      "exercise": "Clean isolated environment: build exact revision, query native/Rust/Python dependency versions, invoke documented entrypoint on Q1.",
+      "required_output_checks": "Installed source/build hashes, successful import/native execution, no fallback to mismatched release, full check roster executed.",
+      "dependencies": "Python >=3.9 ABI target; numpy>=1.22, scipy>=1.7, shapely>=2; Rust/C build; KiCad9/10 plugin advertised; KiCad10 required by owned wrapper",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "A05",
+      "area": "Automation and scope",
+      "feature": "AI skills and engineering-judgment boundary",
+      "entrypoints": "Upstream /plan-pcb-placement, /plan-pcb-routing, power/high-speed/stackup advisory skills; CLI replay works without model",
+      "semantics": "Skills direct datasheet reading, functional grouping, stackup/width decisions, iteration and review around native tools.",
+      "limitations": "Skill instructions are not implemented autonomous circuit synthesis or validated requirements capture. Their defaults/heuristics must stay distinct from owner requirements. Do not invoke third-party model routes or agents without authorization.",
+      "sources": [
+        {
+          "path": "docs/claude-skills.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/docs/claude-skills.md#L1",
+          "sha256": "13f2381fdf02cd204ea79d00d5e9003d934ab8e1cf5a046d2b7c75f7d2b09a41"
+        },
+        {
+          "path": ".claude/skills/plan-pcb-placement/SKILL.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/.claude/skills/plan-pcb-placement/SKILL.md#L1",
+          "sha256": "29780a6c580bf5d2e1e24deddfd35b32ef3ac5403314e77f1cf57dc13bb56a1a"
+        },
+        {
+          "path": "README.md",
+          "line": 158,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/README.md#L158",
+          "sha256": "5f63ecdd596e624574e89449ef48c4c79f4b9c4812068514f91369eb00090b18"
+        }
+      ],
+      "exercise": "Q2: root-owned intent-to-manufacturing entrypoint must supply real requirements/parts/circuit/schematic before KRT-equivalent placement/routing.",
+      "required_output_checks": "Requirement-part-pin-net-check traceability, explicit assumptions vs decisions, no fixture/manual intermediate substituted for missing automation.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "A06",
+      "area": "Automation and scope",
+      "feature": "Manufacturing and full-system scope boundary",
+      "entrypoints": "KRT emits native routed PCB/project and delivery fill; no complete fab/assembly export entrypoint found in inspected CLI surface",
+      "semantics": "KRT provides placement/routing and geometry diagnostics usable as subsystem components. Agent-ee must supply engineering architecture, part evidence, native schematic creation, electrical validation and manufacturing package lifecycle.",
+      "limitations": "No source-confirmed KRT Gerber/drill/BOM/CPL package-binding workflow, supplier preview, procurement, bench testing or complete electrical correctness acceptance. These remain goal requirements rather than parity exclusions.",
+      "sources": [
+        {
+          "path": "README.md",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/README.md#L1",
+          "sha256": "5f63ecdd596e624574e89449ef48c4c79f4b9c4812068514f91369eb00090b18"
+        },
+        {
+          "path": "py_tools/fill_for_delivery.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/fill_for_delivery.py#L1",
+          "sha256": "d25675748a96a60f8038df7ba646da936a16daa18004f56b6718842d59e16d7c"
+        },
+        {
+          "path": "krt_registry.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/krt_registry.py#L1",
+          "sha256": "cd5d8770f0d4e2444c7bf0c15cb4793faded171975b1d54341c73c5cd427abf3"
+        }
+      ],
+      "exercise": "Q2 and every accepted design: ordinary agent-ee invocation through current final package; stale export, wrong reference/population and netlist errors as negatives.",
+      "required_output_checks": "Native project and manufacturing hashes, copper/mask/silk/outline/drill layer/geometry checks, BOM/CPL refs/DNP/orientation consistency, all software obligations met; physical/supplier obligations explicitly unperformed.",
+      "dependencies": "Agent-ee native KiCad export/verification stack beyond KRT",
+      "evidence_status": "scope_boundary_source_searched_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "D11",
+      "area": "Differential and timing",
+      "feature": "Experimental topological bus routing",
+      "entrypoints": "awx/route_bus.py BOARD OUT --src U1 --dest U2 --rounds R --json-out SUMMARY; --bus SRC:DEST:MODE:LAYERS; --find",
+      "semantics": "Separate research pipeline discovers shared array buses, jointly escapes ends, transforms to flow frame, plans multilayer lanes/braids and branches, routes finite rounds, restores unsuccessful lanes and protects handed-on copper. Explicit buses can include QFN row ends and multiple destinations.",
+      "limitations": "KRT_TOOL scope is empty: catalogued research actor, not normal routing door. It can strip bus copper and stamp project floors; length/skew rule rows are named but not counted in its untuned hand-on gate. Arrays/waypoints/name clashes/half pairs have explicit admission restrictions. Do not equate this with route.py --bus.",
+      "sources": [
+        {
+          "path": "awx/route_bus.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/awx/route_bus.py#L1",
+          "sha256": "f15ec864e8b985a98f10518b73d6add0b9f345e008f540a064269689276beb0a"
+        },
+        {
+          "path": "awx/whole_route.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/awx/whole_route.py#L1",
+          "sha256": "b0ab71573b4223ff8163cff09b25220aecd4571d9c7fc599b47a7e322f6f6f05"
+        },
+        {
+          "path": "awx/braid.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/awx/braid.py#L1",
+          "sha256": "d2943840defcd3832e503c7c3878b0befc7778929382cc41651487d5d4d20f1d"
+        },
+        {
+          "path": "awx/joint_escape.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/awx/joint_escape.py#L1",
+          "sha256": "b03df3211d10903c3d62034e4d862437e9c128fd0fd2c47114b14301cb9ae9d0"
+        },
+        {
+          "path": "awx/baseline_bench.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/awx/baseline_bench.py#L1",
+          "sha256": "97d7838acb11b63ce90572267fee6e46fa75ab5630c5c9fa181202a854a8ad26"
+        }
+      ],
+      "exercise": "Q4 optional bounded feature branch: small array-to-array bus with controlled layer/round budget; compare stock default bus and research path separately.",
+      "required_output_checks": "Full original native DRC including length/skew, no rule drift, required lanes restored or completed, protected input, actual scope/round budget. Research result is not normal-entrypoint parity.",
+      "dependencies": "Core",
+      "evidence_status": "experimental_source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V08",
+      "area": "Verification",
+      "feature": "Text-parser / pcbnew semantic parity",
+      "entrypoints": "py_tools/validate_pcb_data.py BOARD [BOARD...]",
+      "semantics": "Loads native board via pcbnew and text parser, compares PCBData models including pads, zones, arcs and board bounds using the same GUI extraction path.",
+      "limitations": "Agreement only covers compared fields and does not prove whole KiCad semantic preservation. Required unsupported copper/rules need explicit refusal or authoritative downstream checks.",
+      "sources": [
+        {
+          "path": "py_tools/validate_pcb_data.py",
+          "line": 60,
+          "symbol": "main",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_tools/validate_pcb_data.py#L60",
+          "sha256": "aee62719ce881563add66b4190eabb901d4501a33f53ed9774757c7783f4b900"
+        },
+        {
+          "path": "py_router/kicad_parser.py",
+          "line": 8402,
+          "symbol": "build_pcb_data_from_board",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_parser.py#L8402",
+          "sha256": "2047cfabc5022e1d8e4e5acedff95b322e7b813d4bc275e07d83f602db5936ba"
+        },
+        {
+          "path": "py_router/kicad_parser.py",
+          "line": 7376,
+          "symbol": "parse_kicad_pcb",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/kicad_parser.py#L7376",
+          "sha256": "2047cfabc5022e1d8e4e5acedff95b322e7b813d4bc275e07d83f602db5936ba"
+        }
+      ],
+      "exercise": "Q3,Q6: rotated/backside/custom pads, slot and copper arcs; all accepted native projects.",
+      "required_output_checks": "No material model differences, explicit compared-field coverage, native connectivity/DRC still independently required.",
+      "dependencies": "Core + pcbnew",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V09",
+      "area": "Verification",
+      "feature": "Silkscreen reference placement",
+      "entrypoints": "py_placer/beautify_labels.py BOARD OUT",
+      "semantics": "Moves/resizes reference designators to nearby readable positions while checking board/pad and label geometry; independent post-placement presentation tool.",
+      "limitations": "Not a general assembly-document or complete silkscreen fabrication gate. Final supplier mask/silk minimums and per-side assembly visibility remain package requirements.",
+      "sources": [
+        {
+          "path": "py_placer/beautify_labels.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_placer/beautify_labels.py#L1",
+          "sha256": "67ab0ad7a45bb05050d093e0a21c915f9354eb14ca865af7171cb14a5682e0f6"
+        }
+      ],
+      "exercise": "Q1,Q2: dense labels, back-side component and connector label near edge.",
+      "required_output_checks": "References unchanged and unique, readable orientation/size, no pad/mask/edge intrusion under selected fabrication profile.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "V10",
+      "area": "Verification",
+      "feature": "Experimental 3D placement/routing movies",
+      "entrypoints": "movie3d/make_movie.py; movie3d/find_models.py; movie3d/record.py",
+      "semantics": "Prototype records placement and optional routing flow, uses three.js in headless Chromium to render, ffmpeg to encode; reports missing component model paths.",
+      "limitations": "Empty registry scope and prototype label distinguish it from supported 2D routing tools. This visualizer is not a height/collision/enclosure checker and can run placement/routing as part of movie creation.",
+      "sources": [
+        {
+          "path": "movie3d/make_movie.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/movie3d/make_movie.py#L1",
+          "sha256": "95877ce3e5062b45875f5febb8890509994dac5f26c241c790e79b2f7951d2b2"
+        },
+        {
+          "path": "movie3d/find_models.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/movie3d/find_models.py#L1",
+          "sha256": "135df1c80d21eb6c49e52dde892de97373d0d294f0d8309b7645df0bc136c4db"
+        },
+        {
+          "path": "movie3d/record.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/movie3d/record.py#L1",
+          "sha256": "a2c05f914195e4e6a7ad10c4a52c52b4a1a44f4fb1a77f623873b72a9caa586b"
+        }
+      ],
+      "exercise": "Optional Q2 visual artifact, after accepted final native board; no claim of mechanical qualification from the movie.",
+      "required_output_checks": "Model provenance and final-board identity, no hidden design mutation; physical height/clearance measured separately.",
+      "dependencies": "Core + Node/npm pinned movie3d dependencies + Chromium + ffmpeg",
+      "evidence_status": "experimental_source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    },
+    {
+      "id": "R12",
+      "area": "Routing",
+      "feature": "Native rule-area authoring",
+      "entrypoints": "py_router/add_rule_area.py BOARD ...",
+      "semantics": "Writes KiCad copper keepout rule areas that supported routing/plane paths can consume as native obstacles.",
+      "limitations": "Authorship of a rule area does not prove every custom expression/layer/net scope is honored. Use native reload and final DRC, and bind it to declared intent.",
+      "sources": [
+        {
+          "path": "py_router/add_rule_area.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/add_rule_area.py#L1",
+          "sha256": "b05bf598b4c5ebb36f5303b3fd6ea886095b84c4461b1e02ac3316f6035f179e"
+        },
+        {
+          "path": "py_router/obstacle_map.py",
+          "line": 1142,
+          "symbol": "add_rule_area_keepout_obstacles",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/py_router/obstacle_map.py#L1142",
+          "sha256": "4ec79ab239be2566663248690f779a46c26c281dfc8c17c2bead1103561e0ac3"
+        }
+      ],
+      "exercise": "Q4,Q6: route/plane exclusion around antenna/mechanical reserve on selected layers.",
+      "required_output_checks": "Correct native keepout type, layers and polygons, no forbidden track/via/pour, unrelated legal geometry still possible.",
+      "dependencies": "Core",
+      "evidence_status": "source_inspected_native_unexercised",
+      "agent_ee_parity": "not_established_by_this_research"
+    }
+  ]
+}

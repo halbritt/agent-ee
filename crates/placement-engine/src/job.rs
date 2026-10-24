@@ -15,6 +15,9 @@
 //! touched/commit/rollback, bucketed spatial queries, simple_anneal.py seeded
 //! starts). They were reimplemented here after source inspection, so the upstream
 //! notice applies:
+//! Edge-seat identity also follows floorplan.py at upstream commit
+//! 222bb144744c3ddd979674e528bf8647e9ced8d6 (integer rectangular geometry;
+//! no mating-face inference). Seat geometry is captured separately from occupancy.
 //!
 //! Copyright (c) 2026 drandyhaas
 //!
@@ -284,6 +287,7 @@ impl Copper {
 #[derive(Clone, Debug)]
 pub struct EdgeRule {
     pub edge: Edge,
+    pub seat: Option<Rect>,
     pub max_setback_nm: Option<i64>,
     pub overhang_nm: Option<(i64, Option<i64>)>,
 }
@@ -315,6 +319,28 @@ pub enum Edge {
 }
 
 impl Edge {
+    const ALL: [Self; 4] = [Self::West, Self::North, Self::East, Self::South];
+
+    fn name(self) -> &'static str {
+        match self { Self::West => "west", Self::North => "north", Self::East => "east", Self::South => "south" }
+    }
+
+    fn nearest(rect: &Rect, outline: &Rect, margin: i64) -> Self {
+        let reached: Vec<Self> = Self::ALL.into_iter().filter(|e| e.setback(rect, outline) <= margin).collect();
+        if reached.len() > 1 {
+            let outside: Vec<Self> = reached.iter().copied().filter(|e| e.setback(rect, outline) < -margin).collect();
+            if outside.len() == 1 { return outside[0]; }
+            let span = |e: &Self| match e {
+                Self::West | Self::East => rect.y1 - rect.y0,
+                Self::North | Self::South => rect.x1 - rect.x0,
+            };
+            let longest = reached.iter().map(span).max().unwrap();
+            return reached.into_iter().filter(|e| span(e) == longest)
+                .min_by_key(|e| e.setback(rect, outline)).unwrap();
+        }
+        Self::ALL.into_iter().min_by_key(|e| e.setback(rect, outline)).unwrap()
+    }
+
     fn parse(text: &str) -> Result<Self> {
         Ok(match text {
             "west" => Self::West,
@@ -528,6 +554,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 };
                 Some(EdgeRule {
                 edge: Edge::parse(text(e, "edge")?)?,
+                seat: e.get("seat_local_nm").map(|r| Rect::parse(r, "edge seat")).transpose()?,
                 max_setback_nm, overhang_nm,
             }) },
             None => None,
@@ -628,6 +655,7 @@ impl Terms {
 
 struct Placed {
     body: Option<Rect>,
+    edge_seat: Option<Rect>,
     copper: Vec<Copper>,
     holes: Vec<Copper>,
     mask: Vec<Rect>,
@@ -637,6 +665,7 @@ struct Placed {
 fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let fp = &p.footprints[f];
     let body = fp.occupancy.map(|r| place_rect(&r, pose));
+    let edge_seat = fp.edge.as_ref().and_then(|e| e.seat).map(|r| place_rect(&r, pose)).or(body);
     let copper: Vec<Copper> = fp.copper.iter().map(|c| c.at(pose)).collect();
     let holes: Vec<Copper> = fp.holes.iter().map(|c| c.at(pose)).collect();
     let mask: Vec<Rect> = fp.mask.iter().map(|r| place_rect(r, pose)).collect();
@@ -646,7 +675,7 @@ fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
         .chain(mask.iter().map(|m| m.grown(p.mask_web_nm))) {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
-    Placed { body, copper, holes, mask, reach }
+    Placed { body, edge_seat, copper, holes, mask, reach }
 }
 
 fn pad_at(p: &Prepared, f: usize, pad: usize, pose: &Pose) -> (i64, i64) {
@@ -718,6 +747,14 @@ fn ordered_pair(p: &Prepared, a: usize, at_a: &Placed, b: usize, at_b: &Placed) 
 /// Unary term for one movable footprint: containment and edge rules.
 fn unary_terms(p: &Prepared, f: usize, at: &Placed) -> Terms {
     let mut t = Terms::default();
+    if let (Some(rule), Some(seat)) = (&p.footprints[f].edge, &at.edge_seat) {
+        let nearest = Edge::nearest(seat, &p.outline, p.copper_edge_nm);
+        if nearest != rule.edge {
+            let distance = (rule.edge.setback(seat, &p.outline) - nearest.setback(seat, &p.outline)).max(1);
+            t.hard += distance as i128 * 1_000_000;
+            t.hard_count += 1;
+        }
+    }
     if p.footprints[f].role != Role::Movable {
         return t;
     }
@@ -807,6 +844,13 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
     let mut out = Vec::new();
     for a in 0..at.len() {
         let fp = &p.footprints[a];
+        if let (Some(rule), Some(seat)) = (&fp.edge, &at[a].edge_seat) {
+            let nearest = Edge::nearest(seat, &p.outline, p.copper_edge_nm);
+            if nearest != rule.edge {
+                out.push(json!({"ref": fp.native_ref, "uuid": fp.uuid, "kind": "edge_identity",
+                    "detail": {"expected": rule.edge.name(), "actual": nearest.name()}}));
+            }
+        }
         if fp.role == Role::Movable {
             let named = |kind: &str, detail: Value| json!({"ref": fp.native_ref, "uuid": fp.uuid, "kind": kind, "detail": detail});
             if let Some(body) = &at[a].body {
@@ -1667,6 +1711,40 @@ mod tests {
         assert_eq!(hole.overlap_at_clearance(&copper, hole.clearance), 0,
             "a copper override is not the drill rule");
         assert!(hole.overlap_at_clearance(&copper, p.hole_to_hole_nm) > 0);
+    }
+
+    #[test]
+    fn edge_identity_without_numeric_setback_is_hard_and_incremental() {
+        let mut i = input(vec![]);
+        i["footprints"] = json!([fp(&uuid(1), "J1", "movable", 6_000_000, 8_000_000, "A")]);
+        i["groups"] = json!([]);
+        i["footprints"][0]["edge"] = json!({"edge": "east",
+            "seat_local_nm": [-1_000_000, -500_000, 1_000_000, 500_000]});
+        let p = prepare(&i).unwrap();
+        let mut state = SearchState::new(&p, vec![p.footprints[0].initial]).unwrap();
+        assert!(violations(&p, &state.poses).iter().any(|v| v["kind"] == "edge_identity"));
+        let trial = state.evaluate(&p, &[(0, Pose { x: 10_000_000, y: 5_000_000, q: 0 })]).unwrap();
+        state.commit(&p, trial).unwrap();
+        assert_eq!(state.totals, full_evaluate(&p, &state.poses));
+        assert_eq!(state.totals.hard_count, 0);
+        assert!(violations(&p, &state.poses).is_empty());
+        for seat in [json!([0, 0, 0, 0]), json!([0, 0, 1.5, 2])] {
+            i["footprints"][0]["edge"]["seat_local_nm"] = seat;
+            assert!(prepare(&i).is_err());
+        }
+    }
+
+    #[test]
+    fn corner_edge_uses_overhang_then_long_side_with_stable_ties() {
+        let outline = Rect { x0: 0, y0: 0, x1: 30_000_000, y1: 20_000_000 };
+        for (rect, expected) in [
+            (Rect { x0: 200_000, y0: 100_000, x1: 2_000_000, y1: 19_900_000 }, Edge::West),
+            (Rect { x0: 100_000, y0: 200_000, x1: 29_900_000, y1: 2_000_000 }, Edge::North),
+            (Rect { x0: -500_000, y0: 100_000, x1: 10_000_000, y1: 2_000_000 }, Edge::West),
+            (Rect { x0: 100_000, y0: 100_000, x1: 2_000_000, y1: 2_000_000 }, Edge::West),
+        ] {
+            assert_eq!(Edge::nearest(&rect, &outline, 300_000), expected);
+        }
     }
 
     #[test]

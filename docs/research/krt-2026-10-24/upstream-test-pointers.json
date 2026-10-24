@@ -1,0 +1,448 @@
+{
+  "schema": "agent-ee.krt-test-pointers/1",
+  "revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+  "executed": 0,
+  "tests": [
+    {
+      "capability_id": "P03",
+      "path": "tests/test_schematic_context.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_schematic_context.py",
+      "sha256": "0dfb869cc387c86457367410464e31826c170f55bc7dcb1ffe945003bdd79130",
+      "candidate_command": "python3 -m pytest tests/test_schematic_context.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "P07",
+      "path": "tests/test_549_floorplan_schema.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_549_floorplan_schema.py",
+      "sha256": "bdfa1f277d8839a45dcfe208294e7ad6abe1d809de91f4ecff11f7f9ffa15ccf",
+      "candidate_command": "python3 -m pytest tests/test_549_floorplan_schema.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "P09",
+      "path": "tests/test_705_decap_pin_distance.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_705_decap_pin_distance.py",
+      "sha256": "2ab3ee1d2f5422a9821a934f1d56ecd5cf3594a12e2ca65bda0b4e7b5c686ef9",
+      "candidate_command": "python3 -m pytest tests/test_705_decap_pin_distance.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "P09",
+      "path": "tests/test_902_proximity.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_902_proximity.py",
+      "sha256": "f0f9bd15fb525d3d465397ebb669de2362c515532c157460f05afe65c8fb4b8c",
+      "candidate_command": "python3 -m pytest tests/test_902_proximity.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "P14",
+      "path": "tests/test_1067_fanout_clearance_decap.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1067_fanout_clearance_decap.py",
+      "sha256": "e0ab67a5377eedf65aa8138b82fd60afea3f79857dcc0a02d580a31e6fa31a78",
+      "candidate_command": "python3 -m pytest tests/test_1067_fanout_clearance_decap.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "P14",
+      "path": "tests/test_1122_fanout_declared_rotation.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1122_fanout_declared_rotation.py",
+      "sha256": "6432568793805c3d0308f6af33b4551fd69fbce286f70134b43070b91aa70aa8",
+      "candidate_command": "python3 -m pytest tests/test_1122_fanout_declared_rotation.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "P14",
+      "path": "tests/test_746_fanout_clearance_resolved_credit.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_746_fanout_clearance_resolved_credit.py",
+      "sha256": "0975458244c413c8ae9c50d707d7a44615843c28e80d621c9b380cbab2c75417",
+      "candidate_command": "python3 -m pytest tests/test_746_fanout_clearance_resolved_credit.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "R01",
+      "path": "tests/test_manifest_prune_producer_hijack.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_manifest_prune_producer_hijack.py",
+      "sha256": "e62a086064aa599b8fa639d18e68bbbf166b3fa2ebb40bf3333833af1e5a50e7",
+      "candidate_command": "python3 -m pytest tests/test_manifest_prune_producer_hijack.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "R08",
+      "path": "tests/test_diff_layer_costs_response.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_diff_layer_costs_response.py",
+      "sha256": "d18f3003638cd61452ceb5968c81122102d71478bff0a6c24f16a4d6ef35997a",
+      "candidate_command": "python3 -m pytest tests/test_diff_layer_costs_response.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "R10",
+      "path": "tests/test_958_smoother_equal_length.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_958_smoother_equal_length.py",
+      "sha256": "b56fd7aa057fa7fd2af3997501a7d62a2385a35f77859c44753fce900673e115",
+      "candidate_command": "python3 -m pytest tests/test_958_smoother_equal_length.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "R10",
+      "path": "tests/test_merge_vias_zero_length.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_merge_vias_zero_length.py",
+      "sha256": "7a8434e41e895e83853c7758014fe18a15dbbed765673e67348605bf2f9241c7",
+      "candidate_command": "python3 -m pytest tests/test_merge_vias_zero_length.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W03",
+      "path": "tests/test_1108_route_planes_exit.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1108_route_planes_exit.py",
+      "sha256": "b55f68c67d243a7d31d3ca9579d712abebe2b79ed2da8d9d829e4f1aa7da2a10",
+      "candidate_command": "python3 -m pytest tests/test_1108_route_planes_exit.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D02",
+      "path": "tests/test_1295_diff_pair_rule_forms.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1295_diff_pair_rule_forms.py",
+      "sha256": "06e1dac8acd76ea46c28fb5b86abaf6a1e89af1599587dc05cf83ce798c08ec6",
+      "candidate_command": "python3 -m pytest tests/test_1295_diff_pair_rule_forms.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W04",
+      "path": "tests/test_1131_multinet_plane_stamp.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1131_multinet_plane_stamp.py",
+      "sha256": "199af4576564c40f78461c9292e6199734edd8608baab1a09e6f6f86973176f7",
+      "candidate_command": "python3 -m pytest tests/test_1131_multinet_plane_stamp.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W05",
+      "path": "tests/test_repair_planes_incomplete.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_repair_planes_incomplete.py",
+      "sha256": "b264adaadfaf0a4f79d87445f29b5c5f975dc93caaaa927fecd40214a82d9e98",
+      "candidate_command": "python3 -m pytest tests/test_repair_planes_incomplete.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W05",
+      "path": "tests/test_plane_restore_on_failure.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_plane_restore_on_failure.py",
+      "sha256": "7ac0e6db95df685daf8a6079dfa65c7e573df9437d1f2c14deee6e7c97ec263f",
+      "candidate_command": "python3 -m pytest tests/test_plane_restore_on_failure.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W05",
+      "path": "tests/test_609_split_plane_report.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_609_split_plane_report.py",
+      "sha256": "e23c36276b6a8eda47ce79160c6efd741c7b27024b4a08872e58f900ef488ae2",
+      "candidate_command": "python3 -m pytest tests/test_609_split_plane_report.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W05",
+      "path": "tests/test_1261_repair_planes_protection_fail_safe.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1261_repair_planes_protection_fail_safe.py",
+      "sha256": "4d678eb553ccc14830984600dda5d7c9c86e647a1d8a1f0214b3703d1245f0c1",
+      "candidate_command": "python3 -m pytest tests/test_1261_repair_planes_protection_fail_safe.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W06",
+      "path": "tests/test_bga_fanout_plane_drop.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_bga_fanout_plane_drop.py",
+      "sha256": "78eb855f5178fdb95a01f14893e8530a4b04821c5949a87a184725f4a3d9e2c5",
+      "candidate_command": "python3 -m pytest tests/test_bga_fanout_plane_drop.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W06",
+      "path": "tests/gui_parity/test_581_fanout_via_in_pad_gui.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/gui_parity/test_581_fanout_via_in_pad_gui.py",
+      "sha256": "71fb4606971acfc3e98edc9cf49b72283fa83d51ddff15c1dccee23169a9fd04",
+      "candidate_command": "python3 -m pytest tests/gui_parity/test_581_fanout_via_in_pad_gui.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "W07",
+      "path": "tests/test_plane_lattice.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_plane_lattice.py",
+      "sha256": "d148dddad8bb3d2b6699e0868b7e862c2073e5dd6265a7b893bdded99af71a3b",
+      "candidate_command": "python3 -m pytest tests/test_plane_lattice.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D02",
+      "path": "tests/test_diff_pair_route.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_diff_pair_route.py",
+      "sha256": "d7afdb24c0c715c72b6635627650206684f997ebc18016ac337b50f1c82a0910",
+      "candidate_command": "python3 -m pytest tests/test_diff_pair_route.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D02",
+      "path": "tests/test_diff_keepout_member_clearance.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_diff_keepout_member_clearance.py",
+      "sha256": "424e1214df94050480ebba33bf80c8dec0d3020bed432dc7cd6e0b44028ef43c",
+      "candidate_command": "python3 -m pytest tests/test_diff_keepout_member_clearance.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D03",
+      "path": "tests/test_multipoint_diff_route.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_multipoint_diff_route.py",
+      "sha256": "50c7d24e13f583ef26448dcde2407cfe16d14c56ef4704b01dea58deeb6e7974",
+      "candidate_command": "python3 -m pytest tests/test_multipoint_diff_route.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D03",
+      "path": "tests/test_watchy_diff_hybrid_escape.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_watchy_diff_hybrid_escape.py",
+      "sha256": "e001655df5cb745646c0438d87fb4eda0b278fd81da635297644569e48dcf582",
+      "candidate_command": "python3 -m pytest tests/test_watchy_diff_hybrid_escape.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D03",
+      "path": "tests/test_diff_se_member_fallback.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_diff_se_member_fallback.py",
+      "sha256": "fd236d3c19c7a338468f78c50364c014d483abb9c8e2e65cbd6d9bfe1c469e48",
+      "candidate_command": "python3 -m pytest tests/test_diff_se_member_fallback.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D04",
+      "path": "tests/test_909_impedance_achievability.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_909_impedance_achievability.py",
+      "sha256": "72e3729811bcae430ad06161eeaba5cd46f31cd55535954f62a658796d5ede3e",
+      "candidate_command": "python3 -m pytest tests/test_909_impedance_achievability.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D04",
+      "path": "tests/test_906_hybrid_pair_and_impedance_record.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_906_hybrid_pair_and_impedance_record.py",
+      "sha256": "3baa77521f8079cbbd58f43b4f56251f4489a164346735130d83421d633abfa9",
+      "candidate_command": "python3 -m pytest tests/test_906_hybrid_pair_and_impedance_record.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D05",
+      "path": "tests/test_486_impedance_geometry.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_486_impedance_geometry.py",
+      "sha256": "8cb7ebcbe7d1d89a1363033f266e99667fb2b28ec4facdfa7906efadc879dd7e",
+      "candidate_command": "python3 -m pytest tests/test_486_impedance_geometry.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D06",
+      "path": "tests/test_1247_auto_length_groups.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1247_auto_length_groups.py",
+      "sha256": "67a5813d3469f2ed82dbdf5e2a8fdafbabfad273a94b61e3d7fa9cb2c5079b24",
+      "candidate_command": "python3 -m pytest tests/test_1247_auto_length_groups.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D06",
+      "path": "tests/test_1313_dru_length_window.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1313_dru_length_window.py",
+      "sha256": "548323b169c9f0db0133122cd9bb3cfaef9f7b49ea5527c1cc2590a322b3892f",
+      "candidate_command": "python3 -m pytest tests/test_1313_dru_length_window.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D06",
+      "path": "tests/test_489_net_lengths.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_489_net_lengths.py",
+      "sha256": "422b858fd0ff4878c597560ac0c170b38ee8e77f0c25b512fd36069913b68837",
+      "candidate_command": "python3 -m pytest tests/test_489_net_lengths.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "D08",
+      "path": "tests/test_diff_intra_pair_pinch.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_diff_intra_pair_pinch.py",
+      "sha256": "c48863e2201c783a7fbaebaf3f68ed646cc48f930427f40a198727d3057c6b8a",
+      "candidate_command": "python3 -m pytest tests/test_diff_intra_pair_pinch.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F01",
+      "path": "tests/test_bga_fanout_rotated.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_bga_fanout_rotated.py",
+      "sha256": "e144e9a8f8d2ee4d228f654038e77f54bf17c72d8a4f771cb0e595b65f2cf1b2",
+      "candidate_command": "python3 -m pytest tests/test_bga_fanout_rotated.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F01",
+      "path": "tests/test_fanout_flip_frame.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_fanout_flip_frame.py",
+      "sha256": "bdbe73a3c00783c511c41d06f030ac31fb07a72f2a5f07b52848f216987c8b21",
+      "candidate_command": "python3 -m pytest tests/test_fanout_flip_frame.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F02",
+      "path": "tests/test_bga_fanout_dogbone.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_bga_fanout_dogbone.py",
+      "sha256": "b7346f04c907ab2f8a9ab0aeb0d521c7d068a766c0241509e00157f449277bc5",
+      "candidate_command": "python3 -m pytest tests/test_bga_fanout_dogbone.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F02",
+      "path": "tests/test_bga_underpad_diff.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_bga_underpad_diff.py",
+      "sha256": "e85bebe6e198f47cacb69f8e8b3955701aa52927c4a37f356fbcdfaadd5ce0df",
+      "candidate_command": "python3 -m pytest tests/test_bga_underpad_diff.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F02",
+      "path": "tests/test_bga_fanout_drop_one_ball.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_bga_fanout_drop_one_ball.py",
+      "sha256": "9c94f2cd62d8f810de09779fc3eab487f8c04e64e9c85d2b90e290ba73f81a55",
+      "candidate_command": "python3 -m pytest tests/test_bga_fanout_drop_one_ball.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F04",
+      "path": "tests/test_qfn_csi_underpad_diff.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_qfn_csi_underpad_diff.py",
+      "sha256": "04e5ce651e20b77b6a20df0629291f1d89ecb53b7525f2a253d21b14d2baf51d",
+      "candidate_command": "python3 -m pytest tests/test_qfn_csi_underpad_diff.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F04",
+      "path": "tests/test_qfn_neighbour_escape_room.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_qfn_neighbour_escape_room.py",
+      "sha256": "afa64d6cf5824aa46721001578824c88c4674896983c8209e5e8be2f69c30e4d",
+      "candidate_command": "python3 -m pytest tests/test_qfn_neighbour_escape_room.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "F04",
+      "path": "tests/test_fanout_unescaped_means_bare.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_fanout_unescaped_means_bare.py",
+      "sha256": "1a68186f36b1337f24a2a71efc5236c4c093922b3b06d0e0450c43f840862082",
+      "candidate_command": "python3 -m pytest tests/test_fanout_unescaped_means_bare.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "V04",
+      "path": "tests/test_run9_check_complete.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_run9_check_complete.py",
+      "sha256": "968dc1aa66f5c33f0a5b00a64ddf1d6f5f45427439ec9d61803f0c8d9685e352",
+      "candidate_command": "python3 -m pytest tests/test_run9_check_complete.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "V04",
+      "path": "tests/test_1246_score_length_unmeasured.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1246_score_length_unmeasured.py",
+      "sha256": "580567ac4430495ce6225ce3334e541ffc1f5a68c3f375aabd8af6e480c7528c",
+      "candidate_command": "python3 -m pytest tests/test_1246_score_length_unmeasured.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "A01",
+      "path": "tests/test_plan_final_plane_verify.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_plan_final_plane_verify.py",
+      "sha256": "11bd31b50792880ae0cb836675dcfcd0294b3d24414f67e07a720ef3aa2930d7",
+      "candidate_command": "python3 -m pytest tests/test_plan_final_plane_verify.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "A01",
+      "path": "tests/gui_parity/test_manifest_plan_parity.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/gui_parity/test_manifest_plan_parity.py",
+      "sha256": "d3e9a759c59f1eac162952eef824e47ee0d761278265d7f6115d45f1fe5f40bb",
+      "candidate_command": "python3 -m pytest tests/gui_parity/test_manifest_plan_parity.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "A02",
+      "path": "tests/test_fanout_cancel.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_fanout_cancel.py",
+      "sha256": "c352fd3bef37fc30d0520db7d4046de747534fefff92345d38ebb3add328f85c",
+      "candidate_command": "python3 -m pytest tests/test_fanout_cancel.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "A03",
+      "path": "tests/test_redo_manifest_cwd.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_redo_manifest_cwd.py",
+      "sha256": "ab7b0e1c0a768ae28a5d4b5643fb98e15b2ab79af94c32328b7ee46a9dca32d5",
+      "candidate_command": "python3 -m pytest tests/test_redo_manifest_cwd.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "A04",
+      "path": "tests/test_1026_installer_pep668.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1026_installer_pep668.py",
+      "sha256": "37abbff59c51397cbdd4518f596552d489e485cb846f63857fd9b59dfb8ed30d",
+      "candidate_command": "python3 -m pytest tests/test_1026_installer_pep668.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    },
+    {
+      "capability_id": "A04",
+      "path": "tests/test_1061_install_skips_cargo_target.py",
+      "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/222bb144744c3ddd979674e528bf8647e9ced8d6/tests/test_1061_install_skips_cargo_target.py",
+      "sha256": "dabeaad31c7bcbe5fa698680d660bba8bff19d415855099f90f9b2808144843a",
+      "candidate_command": "python3 -m pytest tests/test_1061_install_skips_cargo_target.py",
+      "status": "source_test_present_not_executed",
+      "caution": "Test dependencies and test-level native/mock coverage must be inspected before execution; existence is not runtime feature qualification."
+    }
+  ]
+}

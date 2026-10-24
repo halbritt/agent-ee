@@ -54,6 +54,22 @@ class ProtectedPoseTests(Fixture):
 
 
 class FinalInventoryTests(Fixture):
+    def test_saved_incomplete_route_cannot_complete_despite_router_success(self):
+        import pcbnew
+        problem, _ = self.problem()
+        poses = fixtures.NativeTransformTests._evaluate(self, problem, {})['poses']
+        placed = materialize(self.board, poses, self.dir / 'placed')
+        placed['directory'] = str(self.dir / 'placed')
+        native, _ = job.drc(Path(placed['board']), self.dir / 'placed', label='native-drc')
+        self.assertTrue(native['unconnected_items'])
+        routed = {'status': 'routed', 'board': placed['board']}
+        final = job.final_checks(routed, placed, job._owners(pcbnew.LoadBoard(placed['board'])),
+                                 set(), self.dir / 'final-incomplete', groups(), intent())
+        self.assertGreater(final['opens'], 0)
+        self.assertEqual(final['integrity'], 'preserved')
+        self.assertEqual(job._completion_status(routed, placed, final), 'verification_failed')
+        self.assertNotEqual(job._completion_status(routed, placed, {}), 'completed')
+
     def test_native_mutations_are_ineligible_even_with_clean_drc(self):
         import pcbnew
         problem, _ = self.problem()

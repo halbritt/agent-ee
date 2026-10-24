@@ -322,6 +322,67 @@ def _edge_rules(intent, footprints):
     return edges
 
 
+def _edge_seat(fp, declaration, occupancy):
+    """Native seat geometry, distinct from the packing reservation around it."""
+    import pcbnew
+    if declaration.get('class') == 'edge_receptacle' or declaration.get('context', {}).get('mount_mode') == 'edge_mount':
+        side = 'B' if fp.IsFlipped() else 'F'
+        for layer, basis in ((FAB[side], 'body:fab'), (SILK_OF[side], 'body:silk')):
+            shapes = [g for g in fp.GraphicalItems()
+                      if g.GetClass() == 'PCB_SHAPE' and pcbnew.LayerName(g.GetLayer()) == layer]
+            if shapes:
+                return _union([_bbox(g) for g in shapes]), basis
+    if 'box' not in occupancy:
+        raise JobRefusal(f'{fp.GetReference()}: declared edge has no seat geometry')
+    return occupancy['box'], occupancy.get('rung', occupancy['status'])
+
+
+def check_edge_intent(path, intent, *, clock=None, cancel_dir=None):
+    """Grade the saved board in a bounded fresh process, including saved settings."""
+    checked = _native_read(path, '_check_edges', {'intent': intent},
+                           clock=clock, cancel_dir=cancel_dir)
+    if (checked.get('status') not in ('pass', 'failed')
+            or checked.get('coverage') != ['edge_identity']
+            or not isinstance(checked.get('connectors'), list)
+            or not isinstance(checked.get('violations'), list)):
+        raise JobRefusal('native edge check returned missing or invalid output')
+    return checked
+
+
+def _check_edge_intent_native(path, intent):
+    """Reload native geometry and grade declared edges independently of solver output."""
+    import pcbnew
+    from .placement_edges import nearest_edge, setbacks
+    from .placement_probe import extract
+    if not intent.get('edge_connectors'):
+        return {'status': 'pass', 'connectors': [], 'violations': [], 'coverage': ['edge_identity']}
+    before = Path(path).read_bytes()
+    facts = extract(path)
+    rules = _edge_rules(intent, facts['footprints'])
+    board = pcbnew.LoadBoard(str(path))
+    outline = _rectangle(facts['outline'])
+    by_uuid = {f['uuid']: f for f in facts['footprints']}
+    by_ref = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    rows, violations = [], []
+    for declaration in intent['edge_connectors']:
+        ref = declaration['ref']
+        fp = by_ref[ref]
+        occupancy = classify_footprint(fp, None, by_uuid[fp.m_Uuid.AsString()])['occupancy']
+        seat, basis = _edge_seat(fp, declaration, occupancy)
+        actual = nearest_edge(seat, outline, int(board.GetDesignSettings().m_CopperEdgeClearance))
+        row = {'ref': ref, 'uuid': fp.m_Uuid.AsString(), 'basis': basis,
+               'declared': rules[ref]['edge'], 'nearest': actual, 'seat_rect_nm': seat,
+               'setback_mm': {edge: distance / NM for edge, distance in setbacks(seat, outline).items()}}
+        rows.append(row)
+        if actual != rules[ref]['edge']:
+            violations.append({'kind': 'edge_identity', 'ref': ref, 'expected': rules[ref]['edge'],
+                               'actual': actual, 'basis': basis})
+    if Path(path).read_bytes() != before:
+        raise JobRefusal('board changed during final edge-intent checks')
+    return {'status': 'failed' if violations else 'pass', 'connectors': rows,
+            'violations': violations, 'coverage': ['edge_identity']}
+
+
 def _on_mask(pad):
     import pcbnew
     return pad.IsOnLayer(pcbnew.F_Mask) or pad.IsOnLayer(pcbnew.B_Mask)
@@ -473,8 +534,8 @@ def _validate_project_rules(project):
             _rule_mm(cls['clearance'], 'Default clearance')
 
 
-def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
-    """Capture in a fresh native process, bounded by the caller's job lifetime.
+def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
+    """Read native files in a fresh process, bounded by the caller's job lifetime.
 
     KiCad caches projects by path, including fields omitted from a later saved
     project. Only a fresh native load gives all defaults the same meaning as
@@ -483,22 +544,35 @@ def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
     board_path = Path(board_path).absolute()
     sources = (board_path, board_path.with_suffix('.kicad_pro'), board_path.with_suffix('.kicad_dru'))
     before = [p.read_bytes() if p.exists() else None for p in sources]
-    done = _run_child([sys.executable, '-m', 'agent_ee.placement_job', '_capture', str(board_path)],
+    label = 'capture' if command == '_capture' else 'edge check'
+    done = _run_child([sys.executable, '-m', 'agent_ee.placement_job', command, str(board_path)],
                       clock=clock or Clock(300), cancel_dir=cancel_dir,
-                      input_bytes=json.dumps({'intent': intent, 'groups': groups}).encode())
+                      input_bytes=json.dumps(request).encode())
     if done.returncode:
-        raise JobRefusal(f'native capture failed (exit {done.returncode}): '
+        raise JobRefusal(f'native {label} failed (exit {done.returncode}): '
                          + (done.stdout + done.stderr).decode(errors='replace')[-2000:])
     try:
         captured = json.loads(done.stdout)
+    except (ValueError, TypeError) as exc:
+        raise JobRefusal(f'native {label} returned missing or invalid output') from exc
+    if not isinstance(captured, dict):
+        raise JobRefusal(f'native {label} returned missing or invalid output')
+    if [p.read_bytes() if p.exists() else None for p in sources] != before:
+        raise JobRefusal(f'input board/project/rules changed during {label}')
+    return captured
+
+
+def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
+    """Capture native geometry and settings without inheriting cached defaults."""
+    captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups},
+                            clock=clock, cancel_dir=cancel_dir)
+    try:
         problem, record = captured['problem'], captured['record']
-    except (ValueError, KeyError, TypeError) as exc:
+    except KeyError as exc:
         raise JobRefusal('native capture returned missing or invalid output') from exc
     if (not isinstance(problem, dict) or problem.get('schema') != INPUT_SCHEMA
             or not isinstance(record, dict) or record.get('schema') != 'agent-ee.placement-job-capture/1'):
         raise JobRefusal('native capture returned missing or invalid output')
-    if [p.read_bytes() if p.exists() else None for p in sources] != before:
-        raise JobRefusal('input board/project/rules changed during capture')
     return problem, record
 
 
@@ -546,9 +620,10 @@ def _capture_native(board_path, intent, groups):
                          'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
                                                     int(p.GetPosition().y) - origin[1], q))}
                         for p in fp.Pads()]}
-        if ref in edges and info['role'] == 'movable':
-            e = edges[ref]
-            row['edge'] = e
+        if ref in edges:
+            declaration = next(e for e in intent['edge_connectors'] if e['ref'] == ref)
+            seat, basis = _edge_seat(fp, declaration, info['occupancy'])
+            row['edge'] = dict(edges[ref], seat_local_nm=_local_rect(seat, origin, q), seat_basis=basis)
             # Mating-face direction is not captured, so an edge connector keeps its native orientation.
             row['rotations'] = [q]
         elif info['role'] == 'movable':
@@ -831,6 +906,7 @@ def promote(job_dir, entry):
     pointer = job_dir / 'incumbent.json'
     eligible = (entry.get('integrity') == 'preserved' and entry.get('placement_introduced_errors') == 0
                 and entry.get('status') == 'checked' and entry.get('engine_feasible') is True
+                and entry.get('edge_intent', {}).get('status') == 'pass'
                 and not entry.get('engine_violations'))
     if not eligible:
         return False
@@ -1131,6 +1207,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                      clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
+                             edge_intent=check_edge_intent(directory / 'board.kicad_pcb', intent,
+                                                           clock=clock, cancel_dir=job_dir),
                              board=check['board'], board_sha256=check['board_sha256'], drc=exec_,
                              errors=_error_summary(split), warnings=_warnings(report_),
                              placement_introduced_errors=len(split['placement_introduced']),
@@ -1172,8 +1250,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     _check_stop(clock, job_dir)
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
-    report['status'] = ('completed' if report['final'].get('integrity') == 'preserved' else 'integrity_failed'
-                        ) if routed.get('status') == 'routed' else 'route_failed'
+    report['status'] = _completion_status(routed, incumbent, report['final'])
     report['validity'] = ('integrity-valid incumbent; physical checks ' + report['final'].get('physical_checks', 'unavailable')
                           if incumbent is not None else
                           'NO valid incumbent: exploratory route of the best diagnostic candidate (engine violations: '
@@ -1181,6 +1258,21 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     write_json(job_dir / f'job-report-a{attempt}.json', report)
     write_json(job_dir / 'job-report.json', report)
     return report
+
+
+def _completion_status(routed, incumbent, final):
+    """Native rejection or absent checks cannot be overridden by router success."""
+    if routed.get('status') != 'routed':
+        return 'route_failed'
+    if final.get('integrity') != 'preserved':
+        return 'integrity_failed'
+    if final.get('edge_intent', {}).get('status') != 'pass':
+        return 'intent_failed'
+    if final.get('eligibility') != 'eligible':
+        return 'verification_failed'
+    if incumbent is None:
+        return 'placement_failed'
+    return 'completed'
 
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
@@ -1219,14 +1311,17 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     _check_stop(clock, cancel_dir)
     report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
     split = classify_errors(report_, owners, base_keys, placed_keys)
-    edges = {r['ref']: r['edge'] for r in intent.get('edge_connectors', [])}
+    edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
+    metrics = board_metrics(board, groups['groups'])
+    metrics['edges'] = edge_intent['connectors']
+    failed = problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
             'integrity': 'violated' if problems else 'preserved',
-            'eligibility': 'INELIGIBLE' if problems or any(split.values()) or report_['unconnected_items'] else 'eligible',
+            'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
-            'physical_checks': 'FAILED' if problems or any(split.values()) or report_['unconnected_items'] else 'no native errors',
-            'metrics': board_metrics(board, groups['groups'], edges)}
+            'physical_checks': 'FAILED' if failed else 'no native errors',
+            'edge_intent': edge_intent, 'metrics': metrics}
 
 
 def preflight(config, executable=None, *, clock=None, cancel_dir=None, identities=None):
@@ -1250,11 +1345,12 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     return identities
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(prog='python3 -m agent_ee.placement_job')
-    sub = parser.add_subparsers(dest='command', required=True)
-    native = sub.add_parser('_capture', help=argparse.SUPPRESS)
-    native.add_argument('board')
+def configure_parser(parser, *, internal=False):
+    sub = parser.add_subparsers(dest='placement_command', required=True)
+    if internal:
+        for command in ('_capture', '_check_edges'):
+            native = sub.add_parser(command, help=argparse.SUPPRESS)
+            native.add_argument('board')
     run = sub.add_parser('run', help='run one whole placement-to-route job')
     run.add_argument('config')
     run.add_argument('--out', required=True)
@@ -1263,17 +1359,23 @@ def main(argv=None):
     metrics.add_argument('board')
     metrics.add_argument('--groups')
     metrics.add_argument('--intent')
-    args = parser.parse_args(argv)
-    if args.command == '_capture':
+
+
+def execute(args, parser):
+    if args.placement_command in ('_capture', '_check_edges'):
         request = json.load(sys.stdin)
         try:
-            problem, record = _capture_native(args.board, request['intent'], request['groups'])
+            if args.placement_command == '_capture':
+                problem, record = _capture_native(args.board, request['intent'], request['groups'])
+                result = {'problem': problem, 'record': record}
+            else:
+                result = _check_edge_intent_native(args.board, request['intent'])
         except JobRefusal as exc:
             print(json.dumps({'error': str(exc)}))
             return 2
-        print(json.dumps({'problem': problem, 'record': record}))
+        print(json.dumps(result))
         return 0
-    if args.command == 'run':
+    if args.placement_command == 'run':
         config = read_json(args.config)
         if config.get('schema') != CONFIG_SCHEMA:
             parser.error('unsupported job config schema')
@@ -1281,10 +1383,18 @@ def main(argv=None):
         print(json.dumps({k: report.get(k) for k in ('status', 'phases', 'elapsed_s', 'incumbent')}, indent=1))
         return 0 if report['status'] == 'completed' else 1
     groups = read_json(args.groups)['groups'] if args.groups else None
-    edges = ({r['ref']: r['edge'] for r in read_json(args.intent).get('edge_connectors', [])}
-             if args.intent else None)
-    print(json.dumps(board_metrics(args.board, groups, edges), indent=1))
-    return 0
+    metrics = board_metrics(args.board, groups)
+    if args.intent:
+        metrics['edge_intent'] = check_edge_intent(args.board, read_json(args.intent))
+        metrics['edges'] = metrics['edge_intent']['connectors']
+    print(json.dumps(metrics, indent=1))
+    return 1 if metrics.get('edge_intent', {}).get('status') == 'failed' else 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='python3 -m agent_ee.placement_job')
+    configure_parser(parser, internal=True)
+    return execute(parser.parse_args(argv), parser)
 
 
 if __name__ == '__main__':

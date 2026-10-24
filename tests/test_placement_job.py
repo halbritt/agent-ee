@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import time
 import unittest
@@ -270,6 +271,7 @@ class CustodyTests(unittest.TestCase):
 
     def entry(self, cost, **kw):
         return {'index': 0, 'seed': 0, 'engine_cost': str(cost), 'status': 'checked', 'integrity': 'preserved',
+                'edge_intent': {'status': 'pass'},
                 'placement_introduced_errors': 0, 'engine_feasible': True, 'engine_violations': [], **kw}
 
     def test_failed_trials_never_replace_the_incumbent(self):
@@ -277,6 +279,7 @@ class CustodyTests(unittest.TestCase):
         self.assertTrue(job.promote(self.dir, good))
         pointer = (self.dir / 'incumbent.json').read_bytes()
         for failed in (self.entry(1, integrity='violated'), self.entry(1, status='failed'),
+                       self.entry(1, edge_intent={}), self.entry(1, edge_intent={'status': 'failed'}),
                        self.entry(1, placement_introduced_errors=1), self.entry(1, engine_feasible=False),
                        self.entry(1, engine_violations=[{'kind': 'edge_setback'}]), self.entry(500)):
             self.assertFalse(job.promote(self.dir, failed))
@@ -351,7 +354,14 @@ class EntryPointTests(Fixture):
                   'search': self.search(2, 30000),
                   'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60}}
         before = {k: Path(v).read_bytes() for k, v in files.items()}
-        report = job.run_job(config, self.dir / 'job')
+        config_path = self.dir / 'job-config.json'
+        config_path.write_text(json.dumps(config))
+        import subprocess
+        done = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'place', 'run',
+                               str(config_path), '--out', str(self.dir / 'job')],
+                              capture_output=True, text=True, timeout=330)
+        self.assertEqual(done.returncode, 0, done.stderr + done.stdout)
+        report = json.loads((self.dir / 'job/job-report.json').read_text())
         self.assertEqual(report['status'], 'completed', report.get('route'))
         self.assertEqual(report['routed_candidate'], 'incumbent')
         self.assertEqual(set(report['phases']), set(job.PHASES))

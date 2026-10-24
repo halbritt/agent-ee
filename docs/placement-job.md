@@ -1,7 +1,8 @@
 # Whole-board placement job (AGENTEE-515)
 
-On 2026-10-24, the repaired workflow completed the esp_prog test board in 139
-seconds with zero native DRC errors and zero unconnected items. See the
+On 2026-10-24, a retained esp_prog run finished in 139 seconds with zero native
+DRC errors and zero unconnected items, but violated two declared connector edges.
+It was not an accepted design. See the
 [run report](benchmarks/placement-job-2026-10-24.md) for inputs, reproduction,
 regressions and remaining intent/assembly limitations.
 
@@ -23,9 +24,14 @@ remain outside its scope. AGENTEE-515 remains incomplete.
 ## One entry point
 
 ```sh
-python3 -m agent_ee.placement_job run job-config.json --out JOB_DIR [--resume]
-python3 -m agent_ee.placement_job metrics BOARD.kicad_pcb --groups groups.json --intent intent.json
+agent-ee place run job-config.json --out JOB_DIR [--resume]
+agent-ee place metrics BOARD.kicad_pcb --groups groups.json --intent intent.json
 ```
+
+`python3 -m agent_ee.cli place` invokes the same public command when running
+from source. The earlier `python3 -m agent_ee.placement_job` interface remains
+compatible. This is the placement-to-route entrypoint; the complete engineering
+workflow remains unfinished in the [system acceptance map](system-acceptance.md).
 
 The config (`agent-ee.placement-job-config/1`) names every external input by
 path **and SHA-256**; a mismatch refuses the job before any work. Fixture bytes
@@ -157,6 +163,20 @@ the process and must be recorded by the caller.
    and grants no outward containment exception. A positive minimum without a
    finite maximum is explicitly unsupported. The existing CON1/CON2 zero-only
    declarations therefore keep strict containment.
+
+   Declaring an edge also makes **edge identity a hard constraint**, whether or
+   not a numeric maximum setback is supplied. Fixed connectors are checked too;
+   a conflicting fixed pose cannot become a feasible placement. A connector
+   declared `class: edge_receptacle` or `context.mount_mode: edge_mount` uses its
+   side's Fab body shapes, then silk shapes, as its seat. Other declarations
+   use the occupancy envelope. The seat and packing reservation remain distinct:
+   a courtyard can reserve access space without changing which edge the body
+   faces. At corners, a unique overhanging edge takes priority; otherwise the
+   longer body span along the touched edges, then setback, determines the edge.
+   Ties use west, north, east, south order. The native copper-edge margin defines
+   which edges are touched. Mating-face inference is not implemented in this
+   path; declared connectors retain their input rotation. This is not complete
+   access-direction or KRT floorplan parity.
 5. **Shortlist native checks before promotion.** Each candidate is applied to a
    disposable native board by UUID (pcbnew), saved, the frozen project bytes are
    restored next to it, and it is reloaded. Integrity requires the same UUID set,
@@ -173,7 +193,7 @@ the process and must be recorded by the caller.
    candidate independently of its predicted pads.
 6. **Incumbent custody.** `incumbent.json` is replaced atomically (`os.replace`)
    only by a strictly better candidate with preserved integrity, engine-feasible
-   poses and zero placement-introduced errors. A failed trial, crash or worse
+   poses, passing saved-board edge checks and zero placement-introduced errors. A failed trial, crash or worse
    candidate never touches it, and candidate directories are never overwritten.
    Without a valid incumbent the best diagnostic candidate is kept separately in
    `best-diagnostic.json` and may be routed **only as an exploratory run**; the
@@ -200,6 +220,19 @@ the process and must be recorded by the caller.
    inside native pad copper), grouping and declared-edge setbacks. Pre-existing
    errors stay FAILED physical checks: the report claims `accepted: false,
    clean: false`.
+   Edge identity is checked again from saved native geometry in a fresh bounded
+   process, with board/project/rule bytes checked for changes. A violation makes
+   the final board ineligible and the job `intent_failed`, even with clean DRC.
+   The report lists every declared connector's UUID, body/occupancy basis,
+   observed edge and distances. `coverage: ["edge_identity"]` states this check's
+   actual scope; it does not establish all functional-block, pin, side, access,
+   height, overhang or setback requirements. The metrics command exits nonzero
+   when this check fails.
+   Job status `verification_failed` also rejects native errors or opens;
+   `placement_failed` rejects an otherwise eligible exploratory route with no
+   feasible incumbent. `completed` requires an eligible final board and a valid
+   incumbent. It remains a placement/routing milestone, not manufacturing
+   acceptance or complete required-check coverage.
 
 ## Cancellation, deadline and resume
 

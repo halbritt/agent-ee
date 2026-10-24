@@ -1,0 +1,58 @@
+{
+  "schema": "agent-ee.krt-map-delivery/1",
+  "status": "research_complete_parity_unestablished",
+  "frozen_at": "2026-10-24T15:27:18.569026+00:00",
+  "revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+  "version": "0.23.7",
+  "artifacts": [
+    {
+      "path": "krt-latest-capability-map.md",
+      "bytes": 109504,
+      "sha256": "19cd444a1fe277c4fe0287dc14d8c9a460257c082643330cdaf12d981726d826",
+      "source_sha256": "d4b5262d82b009a06cd332720ac254b0dd6ede6369be221ab4c627685e538586"
+    },
+    {
+      "path": "capabilities.json",
+      "bytes": 170834,
+      "sha256": "88159907621069571d4ceac0af6e9d60da2ff7312f2f347d9cf2cd4192e8d535"
+    },
+    {
+      "path": "qualification-cases.md",
+      "bytes": 13865,
+      "sha256": "6740b6ef4ec027687ea27eedbbb311d50b36f93118f0181333de3700ca5126d2"
+    },
+    {
+      "path": "agent-ee-integration-notes.md",
+      "bytes": 4456,
+      "sha256": "4a920f526851b8fcbd4215c824705264693d362fa639f9c65b6516f2965eba96"
+    },
+    {
+      "path": "declared-tools.json",
+      "bytes": 552508,
+      "sha256": "c04ce015b2047f938a7f84d7206b5a89997cf92f86cd190f1f74b625923a3658"
+    },
+    {
+      "path": "upstream-test-pointers.json",
+      "bytes": 30821,
+      "sha256": "352ce50f7a803b2d32959fd83c4fc787b2e980ce27bfc2244739d76a1e0d6e76"
+    },
+    {
+      "path": "source-inspection.json",
+      "bytes": 21541,
+      "sha256": "b50951bccfdd29d930eb3ae375dfc71c01339f13082eb4b3b1d0a67f7b05e2a0"
+    },
+    {
+      "path": "audit.json",
+      "bytes": 927,
+      "sha256": "9d99ef54f438592b6338852b84ad769c639ec4452c9f5f51a53f047fd99f9579"
+    }
+  ],
+  "native_runs": 0,
+  "scope": "Source research only; root owns implementation, integration and actual qualification.",
+  "integration_changes": [
+    {
+      "path": "krt-latest-capability-map.md",
+      "change": "Remove trailing blank line for repository whitespace check; research content unchanged."
+    }
+  ]
+}

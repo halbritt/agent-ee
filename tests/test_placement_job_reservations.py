@@ -241,6 +241,76 @@ class ReservationTests(unittest.TestCase):
         with self.assertRaisesRegex(job.JobRefusal, 'finite maximum'):
             job.capture(path, declared, {'groups': []})
 
+    def test_declared_edge_without_setback_rejects_wrong_edge_on_saved_board(self):
+        import pcbnew
+        path, fixed = self.board('copper', body=True)
+        poses = {'west': [4 * MM, 15 * MM, 0], 'north': [15 * MM, 4 * MM, 0],
+                 'east': [26 * MM, 15 * MM, 0], 'south': [15 * MM, 26 * MM, 0]}
+        for edge in poses:
+            declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': edge,
+                'class': 'edge_receptacle', 'overhang_mm': {'min': 0}}])
+            problem, _ = job.capture(path, declared, {'groups': []})
+            moving = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
+            for actual, pose in poses.items():
+                expected = actual == edge
+                label = f'{edge}-at-{actual}'
+                with self.subTest(declared=edge, actual=actual):
+                    result, native = self.native(path, problem, {moving['uuid']: pose}, label)
+                    self.assertFalse(any(v['severity'] == 'error' for v in native['violations']))
+                    self.assertEqual(result['feasible'], expected, result)
+                    directory = self.root / label
+                    saved = directory / 'board.kicad_pcb'
+                    checked = job.check_edge_intent(saved, declared)
+                    self.assertEqual(checked['status'], 'pass' if expected else 'failed', checked)
+                    self.assertEqual(checked['connectors'][0]['basis'], 'body:fab')
+                    self.assertEqual(checked['connectors'][0]['nearest'], actual)
+                    (directory / 'native-drc.json').write_text(json.dumps(native))
+                    final = job.final_checks({'status': 'routed', 'board': str(saved)},
+                        {'board': str(saved), 'directory': str(directory)},
+                        job._owners(pcbnew.LoadBoard(str(saved))), set(), self.root / f'final-{label}',
+                        {'groups': []}, declared)
+                    (directory / 'final-checks.json').write_text(json.dumps(final, indent=2) + '\n')
+                    self.assertEqual(final['integrity'], 'preserved')
+                    self.assertEqual(final['opens'], 0)
+                    self.assertFalse(any(e['count'] for e in final['errors'].values()))
+                    self.assertEqual(final['eligibility'], 'eligible' if expected else 'INELIGIBLE')
+
+    def test_connector_body_seat_is_distinct_from_courtyard_reservation(self):
+        import pcbnew as k
+        from agent_ee.placement_edges import nearest_edge
+        path, fixed = self.board('copper', body=True)
+        board = k.LoadBoard(str(path))
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'M')
+        fp.SetPosition(k.VECTOR2I(26 * MM, 15 * MM))
+        for shape in _box(k, fp, k.F_CrtYd, 24 * MM, 13 * MM, 29 * MM, 29_900_000):
+            fp.Add(shape)
+        k.SaveBoard(str(path), board)
+        declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'east', 'class': 'edge_receptacle'}])
+        problem, _ = job.capture(path, declared, {'groups': []})
+        row = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
+        self.assertEqual(row['occupancy']['status'], 'courtyard')
+        self.assertNotEqual(row['edge']['seat_local_nm'], row['occupancy']['local_rect_nm'])
+        court = row['occupancy']['local_rect_nm']
+        world_court = [court[0] + 26 * MM, court[1] + 15 * MM,
+                       court[2] + 26 * MM, court[3] + 15 * MM]
+        self.assertEqual(nearest_edge(world_court, [0, 0, 30 * MM, 30 * MM], 0), 'south')
+        result, _ = self.native(path, problem, {}, 'body-seat')
+        self.assertTrue(result['feasible'], result)
+        checked = job.check_edge_intent(self.root / 'body-seat' / 'board.kicad_pcb', declared)
+        self.assertEqual(checked['status'], 'pass', checked)
+        self.assertEqual(checked['connectors'][0]['basis'], 'body:fab')
+
+    def test_fixed_connector_edge_is_checked_without_moving_it(self):
+        path, fixed = self.board('copper', body=True)
+        declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'east', 'class': 'edge_receptacle'}])
+        declared['fixed_poses'] = fixed['fixed_poses'] + [
+            {'ref': 'M', 'x': 10, 'y': 10, 'rot': 0, 'side': 'F'}]
+        problem, _ = job.capture(path, declared, {'groups': []})
+        result = evaluate(problem, [{}])[0]
+        self.assertTrue(any(v['kind'] == 'edge_identity' and v['ref'] == 'M'
+                            for v in result['violations']), result)
+        self.assertEqual(job.check_edge_intent(path, declared)['status'], 'failed')
+
     def test_larger_nondefault_netclass_negative_is_explicitly_refused(self):
         import pcbnew as k
         path, fixed = self.board('copper')

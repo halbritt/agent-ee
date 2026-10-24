@@ -1,0 +1,22 @@
+# Existing agent-ee relationship and pending integration work
+
+This is a narrow read-only snapshot of integration seams, not a second whole-system audit. Parent owns implementation, native qualification and acceptance. Repository snapshots observed:
+
+- agent-ee HEAD `6122503daf82180ceae07b598593830a96614587`.
+- kicad-route HEAD `b5774496d8466b67ffa0362b6665fee2108155a3`.
+- Stock KRT main `222bb144744c3ddd979674e528bf8647e9ced8d6`, source version `0.23.7`.
+- Owned router `src/kicad_route/router/UPSTREAM.json`: extraction base `295f9ee197517e8323726853361eb137cc08ba9e` / v0.23.1, fork commit `0494a05e30063b849c9cf1b9ac02098073d82216`, selective fixes through recorded KICADROUTE-83–88. This is an owned fork, not stock latest. Availability in vendor source does not prove public workflow coverage.
+
+| Area | Source-visible existing seam | Acceptance still required |
+|---|---|---|
+| Routing invocation | `src/agent_ee/routing_adapter.py:preflight/step/verify` validates exact router pin, declares isolated stage and retains evidence; optional diff_pairs, layer_policy and experiment_policy. | Show normal intent-to-manufacturing path actually reaches it with correct current outputs and constraints; every required KRT capability exposed and exercised, not merely present below adapter. |
+| Owned route execution | `src/kicad_route/cli.py:krt_route` calls owned route.py, bounded process/stop file, effective configuration request and native output validation; native pair path when requested. | Same authored rules, complete feature configuration, current exact source and independent final required checks for every capability row. |
+| Existing copper | kicad-route `krt_route` locks existing/human copper before engine, restores lock flags afterward; comments explicitly note keep-input-copper alone does not cover rescue. | Native identity and protected geometry checks across each route/fanout/recovery; no hidden weakening to allow missing capability. |
+| Native rules | Owned wrapper records backend project writes and uses original project semantics for grading rather than adopting router floor reductions. | Confirm every new feature/adapter path keeps this behavior, while preserving protected-net/impedance/same-net-pad/pour metadata needed by subsequent steps. |
+| Planes | Owned public `kicad-route planes --board ... --plan ... --run-dir ...` and per-candidate pour integrity checks exist. | Matched actual exercises for split regions, thermal arrays, domain returns, stitch/fence and final native connectivity. Owned behavior may differ from stock pour/finalize design. |
+| Placement edge repair | Parent reported fresh native positive/negative checks: a DRC-clean wrong-edge connector rejected by Rust feasibility and final native acceptance; all four edge positive/negative controls now pass; the first esp run has passing edge checks but a pair conflict and two opens. Parent corrected controller status so native rejection cannot return completed; bounded rerun continues. | This report is inherited parent progress, not independently exercised by research agent. Await integrated revision and artifact paths. KRT edge seat chooses body vs courtyard by role, resolves reached corner edges with mating face/overhang/body span; no universal maximum setback. Parent identified mating-face capture and frozen connector rotation as remaining explicit boundaries. |
+| Full manufacturing workflow | agent-ee source contains requirements/capability, native binding, mechanical, electrical, fabrication/assembly stages. | Root's whole-system acceptance map must trace real calls and fresh end-to-end execution; source inventory cannot establish integration or package correctness. |
+
+Most consequential pending rows are P06–P14 (side choice and keeping all intent during repair), R06–R11/F05 (mutation and recovery preserving geometry/intent), W03–W09 (plane and return/sense correctness), D04–D10 (SI coverage and persisted commitments), V04–V06 (nonvacuous final acceptance and rule identity), and A01–A03 (complete replay/checkpoint state). This ordering is a research recommendation, not an owner decision or evidence of failure in paths not yet exercised.
+
+Do not drop a required goal capability merely because stock's implementation has an advisory or experimental boundary. Record stock's real behavior, then implement the equivalent required product behavior and qualify it through the supported agent-ee entrypoint.
