@@ -38,14 +38,16 @@ Baseline source: `6122503daf82180ceae07b598593830a96614587`.
 `agent-ee` resolves to `agent_ee.cli:main`. Its production commands currently
 center on review/campaign/scaffold. The seven-stage generators are separate
 module/script entrypoints. This repair exposes the placement job as
-`agent-ee place run`; the complete build entrypoint remains missing. The following source
+`agent-ee place run`. The new [build entrypoint](build-workflow.md),
+`agent-ee build run`, has fresh native execution through schematic-to-PCB
+generation and resumption; its complete manufacturing path remains unqualified. The following source
 observations must not be read as fresh execution evidence.
 
 | Stage | Real input → output; existing path | Required constraints and missing capability | Acceptance evidence / current state |
 | --- | --- | --- | --- |
-| Intent and requirements | Spec + authored requirement record → scope/baseline; `design_intent`, `design_dialog`, `requirement_scope`, `spec_record` | Distinguish requirements, assumptions, preferences, defaults and unresolved decisions; preserve each requirement's check mapping. RC regex parser in `generate.parse_spec` is not general design synthesis. | Fresh `scripts/rung1_stages.py run --requirement-record` compiles requirements, then stops at absent parts. General supported entrypoint missing. |
-| Architecture, circuits, parts | Captured catalog/selection/CAD closure → `parts/1` → bound connectivity; `agent-ee parts compile`, `parts_stage`, `binding_fill`, connectivity IR and electrical checks | Select and substantiate topology, values, ratings, package/pin map and sourcing; carry calculations and provenance into downstream checks. Generic declared parts producer now exists; full requirements-start driver still needs orchestration. | Targeted native child-sheet exercise consumes actual parts output through schematic and PCB. Synthetic sourcing evidence only; no fresh sourced multiblock intent-to-parts run. |
-| Native schematic | Connectivity intent + captured libraries/layout → native sheets; `schematic_emitter`, `schematic_stage`, `schematic_regenerate`, forward annotation | All pins accounted for; native connectivity agrees with selected parts; editable hierarchy and dependencies; stable regeneration. Explicit hierarchical stage output sets now supported; preserving manual edits during regeneration remains flat-only. | Fresh native stage exercise carries a child value edit and cross-sheet nets through receipts to the PCB; stale child and omitted output reject. Complete intent-to-package entrypoint still missing. |
+| Intent and requirements | Spec + authored requirement record → scope/baseline; `design_intent`, `design_dialog`, `requirement_scope`, `spec_record`, `build_workflow` | Distinguish requirements, assumptions, preferences, defaults and unresolved decisions; preserve each requirement's check mapping. RC regex parser in `generate.parse_spec` is not general design synthesis. | `agent-ee build run` now carries spec-record/map output into parts and actual native scaffolding; complete sourced engineering qualification remains open. The legacy requirements-start script still stops at absent parts. |
+| Architecture, circuits, parts | Captured catalog/selection/CAD closure → `parts/1` → bound connectivity; `agent-ee parts compile`, `parts_stage`, `binding_fill`, connectivity IR and electrical checks | Select and substantiate topology, values, ratings, package/pin map and sourcing; carry calculations and provenance into downstream checks. Generic declared parts producer is connected to the public build; sourced architecture and full workflow qualification remain open. | Targeted native child-sheet exercise consumes actual parts output through schematic and PCB. Synthetic sourcing evidence only; no fresh sourced multiblock intent-to-parts run. |
+| Native schematic | Connectivity intent + captured libraries/layout → native sheets; `schematic_emitter`, `schematic_stage`, `schematic_regenerate`, forward annotation | All pins accounted for; native connectivity agrees with selected parts; editable hierarchy and dependencies; stable regeneration. Explicit hierarchical stage output sets now supported; preserving manual edits during regeneration remains flat-only. | Fresh native stage exercise carries a child value edit and cross-sheet nets through receipts to the PCB; stale child and omitted output reject. Complete execution through the new build entrypoint remains unqualified. |
 | Board/mechanics | Envelope + parts + scope/plan → native empty project, fixed mechanics; `agent-ee scaffold`, `scaffold.content_step` | Preserve outline, stackup, locks, holes, keepouts, heights/access and rule provenance; every footprint assigned a block/shared/fixed role. | Public scaffold can now consume bound intent/layout and preserve emitter sheet identities without replacing authored project rules. No fresh whole workflow proving all mechanical constraints survive placement and routing. |
 | Placement/legalization | Native board + floorplan intent/groups → candidate poses/board; `placement_job`, `placer_runner`, `blocks`, Rust engine | Block and pin locality, permitted sides, anchors, body/courtyard/hole/access keepouts; final coordinates establish compliance. Distinct planners currently have different supported domains. | Saved-board edge enforcement and terminal-space preferences exercised. Latest esp_prog run passes all three declared edges and has zero open connections. Full intent qualification remains open. |
 | Routing/repair | Placed native project + routing policy → saved copper; `routing_adapter`, `kicad_route_attempt`, `placement_job.route` | Retain valid geometry and all native rules; route selection/feedback must revise permitted placement/circuits and reject stale feedback. | Short explicit coupled-pair case and complete esp_prog routing pass native checks. Portfolio rejection/retry is covered by controller fault injection; this full board needed one routing trial. Broad KRT coverage and placement/circuit repair remain unqualified. |
@@ -130,16 +132,16 @@ honest physical/supplier obligations. A missing case stays unmet.
 
 Most consequential integration finding: the existing requirements-start path
 does not produce the parts stage; other generation entrypoints use RC-specific
-preparation or require preassembled campaign inputs. This must be repaired by
-composing and exercising existing producers through the public workflow, not by
-renaming experimental records or installing adapters.
+preparation or require preassembled campaign inputs. The new public build now composes the existing producers and has executed
+requirements through a real native PCB with resumption. Its complete placement,
+verification and manufacturing path must still be exercised and repaired.
 
 The [generic parts producer](parts-stage.md) now composes existing manifest,
 binding and connectivity validators and exposes `agent-ee parts compile`. Its
 ordinary receipted output reaches hierarchical schematic emission and native
 forward annotation. It also repairs silent omission of child component bindings
-in `binding_fill`. This is one producer boundary; the complete public build and
-fresh sourced multiblock engineering run remain unmet.
+in `binding_fill`. This producer is now invoked by the public build. A complete build through
+manufacturing and a fresh sourced multiblock engineering run remain unmet.
 
 The scaffold-to-emitter boundary now derives native filenames, occurrence and
 document UUIDs from actual emitter output using paired `--intent`/`--layout`

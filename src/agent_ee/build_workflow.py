@@ -1,0 +1,317 @@
+"""Resumable composition of the existing engineering and native producers.
+
+Engineering decisions remain captured inputs. Every stage consumes the preceding
+stage's real files; final acceptance comes from independently sealed checks.
+"""
+import copy
+import fcntl
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import uuid
+
+from . import parts_stage, requirement_map, scaffold, schematic_stage, spec_record
+from .catalog import strict_json
+from .stage_receipts import _relative, adopt, file_tree, run_step, tree_identity
+from .storage import digest, identity, read_json, write_json
+
+SCHEMA = 'agent-ee.build-plan/1'
+REPORT_SCHEMA = 'agent-ee.build-report/1'
+STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'package')
+GENERATED = 'build-generated/connectivity-intent.json'
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY = SOURCE_ROOT.parent
+MANDATORY = {'erc', 'drc', 'netlist', 'geometry', 'parts_subset', 'placement',
+             'board_envelope', 'fab_profile', 'assembly_readiness', 'fab_package'}
+
+
+def _keys(value, required, optional=()):
+    if not isinstance(value, dict) or set(required) - value.keys() or value.keys() - set(required) - set(optional):
+        raise ValueError('build declaration fields differ from ' + ', '.join(required))
+
+
+def validate_plan(plan):
+    _keys(plan, ('schema', 'source', 'requirements', 'parts', 'envelope', 'placement'),
+          ('verification_timeout_s',))
+    if plan['schema'] != SCHEMA or not isinstance(plan['source'], str) or not plan['source']:
+        raise ValueError('expected agent-ee.build-plan/1 with a source directory')
+    _keys(plan['requirements'], ('map', 'record', 'spec'))
+    _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
+    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'))
+    for path in [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
+                 plan['placement']['intent'], plan['placement']['groups']]:
+        _relative(path, 'build input')
+    timeout = plan.get('verification_timeout_s', 3600)
+    if type(timeout) is not int or not 1 <= timeout <= 86400:
+        raise ValueError('verification_timeout_s must be an integer from 1 to 86400')
+    return plan
+
+
+def _inventory(root):
+    files, other = file_tree(root)
+    if other:
+        raise ValueError('build inputs contain links or special files: ' + str(other))
+    return files
+
+
+def _scope(scope, candidate):
+    result = copy.deepcopy(scope)
+    result['inputs'] = [dict(path=str(path), at=path.name) for path in sorted(candidate.iterdir())]
+    return result
+
+
+def _step(stage_dir, candidate, declaration, index):
+    path = stage_dir / 'receipts' / str(index)
+    receipt = run_step(path, candidate, declaration,
+        dict(implementation=1, source_candidate_id=tree_identity(candidate)['sha256'], receipt_index=index))
+    if receipt['status'] != 'completed':
+        raise ValueError(f"{declaration['step']}: {receipt['status']}; see {path / 'run/console.log'}")
+    adopt(path, receipt, candidate)
+
+
+def _requirements(plan, candidate, stage_dir):
+    names = plan['requirements']
+    raw = {key: (candidate / value).read_bytes() for key, value in names.items()}
+    declaration = requirement_map.map_declaration(raw['map'])
+    if declaration['spec_record_sha256'] != spec_record.sha256(raw['record']):
+        raise ValueError('requirement map names different spec-record bytes')
+    record = spec_record.verify(raw['record'], raw['spec'])
+    scope, accounting = requirement_map.account_requirements(declaration, record, raw['spec'])
+    provenance = candidate / requirement_map.PROVENANCE
+    provenance.mkdir()
+    for key, filename in [('map', 'requirement-map.json'), ('record', 'spec-record.json'), ('spec', 'spec.md')]:
+        (provenance / filename).write_bytes(raw[key])
+    write_json(stage_dir / 'scope.json', _scope(scope, candidate))
+    write_json(stage_dir / 'accounting.json', dict(requirements=accounting,
+        coverage='pending native scaffold', acceptance=False))
+
+
+def _compile_scaffold_requirements(plan, candidate, stage_dir):
+    names = plan['requirements']
+    files = {name: pin for name, pin in _inventory(candidate).items()
+             if not name.startswith(requirement_map.PROVENANCE + '/')}
+    scope, receipt = requirement_map.compile_map(
+        (candidate / names['map']).read_bytes(), (candidate / names['record']).read_bytes(),
+        (candidate / names['spec']).read_bytes(), files=files, inputs=candidate)
+    write_json(stage_dir / 'requirements.json', receipt)
+    scaffold_receipt = read_json(stage_dir / 'product/scaffold-receipt.json')
+    if receipt['baseline_id'] != scaffold_receipt['baseline_id']:
+        raise ValueError('requirements compiler and native scaffold disagree on the acceptance baseline')
+    write_json(stage_dir / 'scope.json', _scope(scope, candidate))
+    return scope
+
+
+def _manufacturing_coverage(plan, scope, accounting):
+    from .baseline import generation_marker
+    missing = MANDATORY - {check['kind'] for check in scope['checks']}
+    if missing:
+        raise ValueError('manufacturing coverage missing: ' + ', '.join(sorted(missing)))
+    unresolved = [r['id'] for r in accounting if r['mode'] == 'limitation']
+    if unresolved:
+        raise ValueError('required engineering coverage remains unresolved: ' + ', '.join(unresolved))
+    if generation_marker(scope) is None:
+        raise ValueError('manufacturing build requires the ordinary generation done gate')
+    if 'envelope' not in scope:
+        raise ValueError('manufacturing build requires captured envelope acceptance')
+    if scope['envelope']['path'] != plan['envelope'] or scope['envelope']['profile'] is None:
+        raise ValueError('manufacturing checks must bind the generated envelope and its selected profile')
+    memberships = [c for c in scope['checks'] if c['kind'] == 'parts_subset']
+    if not any(c['params']['manifest'] == plan['parts']['manifest'] for c in memberships):
+        raise ValueError('native membership checks must bind the produced parts manifest')
+
+
+def _package(plan, candidate, stage_dir, scope, accounting):
+    from .baseline import compile_baseline
+    from .cli import run_review, verify
+    _manufacturing_coverage(plan, scope, accounting)
+    path = stage_dir / 'scope.json'
+    write_json(path, _scope(scope, candidate))
+    run_review(path, stage_dir / 'review', plan.get('verification_timeout_s', 3600), checks_only=True)
+    result = verify(stage_dir / 'review')
+    baseline = compile_baseline(scope, _inventory(candidate), candidate)
+    required = {cid for row in baseline['coverage']['requirements'].values() for cid in row['acceptance_checks']}
+    checks = {check['id']: check for check in result['checks']}
+    failures = [cid for cid in required if cid not in checks or
+                (checks[cid]['execution'], checks[cid]['outcome']) != ('ok', 'pass')]
+    failures += [cid for cid, check in checks.items() if check['execution'] != 'ok' or
+                 check['outcome'] not in ('pass', 'info')]
+    if failures:
+        raise ValueError('required final checks did not pass: ' + ', '.join(sorted(set(failures))))
+    packages = [checks[c['id']] for c in scope['checks'] if c['kind'] == 'fab_package']
+    if len(packages) != 1 or packages[0]['outcome'] != 'pass':
+        raise ValueError('exactly one passing final manufacturing package is required')
+    artifacts = packages[0].get('details', {}).get('artifacts')
+    if not artifacts or artifacts['board_sha256'] != digest(candidate / scope['board']):
+        raise ValueError('manufacturing package is not bound to the final native board')
+    write_json(stage_dir / 'accepted-package.json', dict(artifacts=artifacts,
+        native_files={name: pin for name, pin in _inventory(candidate).items()
+                      if name.endswith(('.kicad_sch', '.kicad_pcb', '.kicad_pro', '.kicad_dru'))},
+        physical_obligations=[r for r in accounting if r['mode'] == 'bench'],
+        physical_validation_performed=False, supplier_preview_performed=False))
+
+
+def _execute(stage, plan, previous, directory, completed, out):
+    requirements_dir = out / completed[0]['directory'] if completed else None
+    scope = read_json(requirements_dir / 'scope.json') if requirements_dir is not None else None
+    scaffold_row = next((row for row in completed if row['stage'] == 'scaffold'), None)
+    if scaffold_row is not None:
+        scope = read_json(out / scaffold_row['directory'] / 'product/scope.json')
+    if stage == 'scaffold':
+        planning = directory / 'planning.scope.json'
+        write_json(planning, _scope(scope, previous))
+        scaffold.scaffold(previous / plan['envelope'], previous / plan['parts']['manifest'], directory / 'product',
+            scope_path=planning, intent_path=previous / GENERATED, layout_path=previous / plan['parts']['layout'])
+        candidate = directory / 'product/inputs'
+        _compile_scaffold_requirements(plan, candidate, directory)
+        return candidate
+    candidate = directory / 'candidate'
+    shutil.copytree(previous, candidate)
+    if stage == 'requirements':
+        _requirements(plan, candidate, directory)
+    elif stage == 'parts':
+        target = candidate / GENERATED
+        target.parent.mkdir()
+        target.write_bytes(b'{}\n')
+        _step(directory, candidate, parts_stage.configuration(SOURCE_ROOT, bundle='.',
+            **plan['parts'], output=GENERATED), 0)
+    elif stage == 'schematic':
+        scaffold_dir = out / next(row['directory'] for row in completed if row['stage'] == 'scaffold')
+        receipt = read_json(scaffold_dir / 'product/scaffold-receipt.json')
+        sheets = list(receipt['sheets'].values())
+        native = schematic_stage.configuration(SOURCE_ROOT, board=scope['board'], schematic=scope['schematic'],
+            child_schematics=[path for path in sheets if path != scope['schematic']], intent=GENERATED,
+            layout=plan['parts']['layout'], captures='.',
+            footprints=read_json(candidate / plan['parts']['manifest'])['cad']['manifest']['path'])
+        content = scaffold.content_step(REPOSITORY, plan['envelope'], plan['parts']['manifest'], scope['board'],
+            intent=GENERATED, layout=plan['parts']['layout'])
+        for index, step in enumerate([content, *native['implementation_steps']]):
+            _step(directory, candidate, step, index)
+    elif stage == 'placement-routing':
+        from . import placement_job
+        accounting = read_json(requirements_dir / 'accounting.json')['requirements']
+        _manufacturing_coverage(plan, scope, accounting)
+        placement = plan['placement']
+        config = dict(schema=placement_job.CONFIG_SCHEMA,
+            **{key: placement[key] for key in ('budget_s', 'search', 'router')}, inputs={})
+        for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
+                              intent=placement['intent'], groups=placement['groups']).items():
+            config['inputs'][key] = dict(path=str(candidate / name), sha256=digest(candidate / name))
+        write_json(directory / 'placement-config.json', config)
+        report = placement_job.run_job(config, directory / 'placement')
+        if report['status'] != 'completed' or report.get('final', {}).get('eligibility') != 'eligible':
+            raise ValueError('placement/routing did not pass: ' + report['status'])
+        native = Path(report['final']['board'])
+        if digest(native) != report['final']['board_sha256']:
+            raise ValueError('routed native board changed before adoption')
+        shutil.copyfile(native, candidate / scope['board'])
+    elif stage == 'package':
+        _package(plan, candidate, directory, scope, read_json(requirements_dir / 'accounting.json')['requirements'])
+    return candidate
+
+
+def _runtime():
+    from .cli import pcbnew_extension, policy_files
+    import pcbnew
+    cli = shutil.which('kicad-cli')
+    if cli is None:
+        raise ValueError('kicad-cli is unavailable')
+    version = subprocess.run([cli, 'version'], capture_output=True, text=True, timeout=30, check=True)
+    extension, diagnostic = pcbnew_extension()
+    if extension is None:
+        raise ValueError('pcbnew native extension unavailable: ' + str(diagnostic))
+    return dict(source=policy_files(), python=digest(sys.executable), kicad_cli=digest(cli),
+                kicad_version=version.stdout.strip(), pcbnew_version=pcbnew.Version(), pcbnew_sha256=digest(extension))
+
+
+def run(plan_path, out, *, resume=False, through='package'):
+    if through not in STAGES:
+        raise ValueError('unknown build stage')
+    plan_path, out = Path(plan_path).resolve(), Path(out).resolve()
+    plan = validate_plan(strict_json(plan_path.read_bytes()))
+    source = (plan_path.parent / plan['source']).resolve()
+    if out == source or source in out.parents:
+        raise ValueError('build output must be outside the source bundle')
+    source_files = _inventory(source)
+    for reserved in ('build-generated', requirement_map.PROVENANCE):
+        if any(path == reserved or path.startswith(reserved + '/') for path in source_files):
+            raise ValueError('build source occupies generated namespace: ' + reserved)
+    pin = dict(plan_sha256=digest(plan_path), source=source_files, runtime=_runtime())
+    binding = identity(pin)
+    if resume:
+        report = read_json(out / 'build-report.json')
+        if report.get('identity') != binding or report.get('schema') != REPORT_SCHEMA:
+            raise ValueError('build resume identity differs from captured inputs or runtime')
+    else:
+        out.mkdir(parents=True, exist_ok=False)
+        report = dict(schema=REPORT_SCHEMA, identity=binding, inputs=pin, status='running', accepted=False,
+                      completed=[], attempts=[], candidate=None)
+        write_json(out / 'build-report.json', report)
+    with (out / '.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if resume:
+            report = read_json(out / 'build-report.json')
+            if report['identity'] != binding:
+                raise ValueError('build resume identity changed while acquiring the lock')
+        if not (out / 'source').exists():
+            capturing = out / ('.capture-' + uuid.uuid4().hex)
+            shutil.copytree(source, capturing)
+            if _inventory(capturing) != source_files:
+                raise ValueError('build input changed during capture')
+            capturing.rename(out / 'source')
+        if _inventory(out / 'source') != source_files:
+            raise ValueError('retained build source identity changed')
+        for index, row in enumerate(report['completed']):
+            if row['stage'] != STAGES[index] or tree_identity(out / row['directory']) != row['tree']:
+                raise ValueError('completed build stage identity changed: ' + row['stage'])
+        if report['accepted']:
+            from .cli import verify
+            verify(out / report['completed'][-1]['directory'] / 'review')
+            return report
+        previous = out / report['candidate'] if report['candidate'] else out / 'source'
+        try:
+            for stage in STAGES[len(report['completed']):STAGES.index(through) + 1]:
+                if (out / 'CANCEL').exists():
+                    raise KeyboardInterrupt('build CANCEL requested')
+                index = len(report['completed'])
+                directory = out / 'stages' / f'{index + 1:02d}-{stage}-{uuid.uuid4().hex}'
+                directory.mkdir(parents=True)
+                report['attempts'].append(dict(stage=stage, directory=str(directory.relative_to(out)), status='running'))
+                write_json(out / 'build-report.json', report)
+                before = tree_identity(previous)
+                candidate = _execute(stage, plan, previous, directory, report['completed'], out)
+                if tree_identity(previous) != before or _inventory(source) != source_files or _runtime() != pin['runtime']:
+                    raise ValueError('build input or runtime changed during stage execution')
+                report['candidate'] = str(candidate.relative_to(out))
+                report['completed'].append(dict(stage=stage, directory=str(directory.relative_to(out)),
+                    candidate=report['candidate'], tree=tree_identity(directory)))
+                report['attempts'][-1]['status'] = 'completed'
+                previous = candidate
+                write_json(out / 'build-report.json', report)
+            report['accepted'] = len(report['completed']) == len(STAGES)
+            report['status'] = 'accepted' if report['accepted'] else 'checkpoint'
+            report.pop('reason', None)
+        except (ValueError, OSError, subprocess.SubprocessError, KeyboardInterrupt) as exc:
+            report['status'] = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
+            report['reason'] = f'{type(exc).__name__}: {exc}'
+            if report['attempts'] and report['attempts'][-1]['status'] == 'running':
+                report['attempts'][-1].update(status=report['status'], reason=report['reason'])
+        write_json(out / 'build-report.json', report)
+        return report
+
+
+def configure_parser(parser):
+    sub = parser.add_subparsers(dest='build_command', required=True)
+    command = sub.add_parser('run', help='run or resume the captured engineering build')
+    command.add_argument('plan', type=Path)
+    command.add_argument('--out', type=Path, required=True)
+    command.add_argument('--resume', action='store_true')
+    command.add_argument('--through', choices=STAGES, default='package', help='diagnostic checkpoint; never acceptance')
+
+
+def execute(args):
+    report = run(args.plan, args.out, resume=args.resume, through=args.through)
+    print(json.dumps({key: report[key] for key in ('status', 'accepted', 'candidate')} |
+                     {'reason': report.get('reason')}, indent=2))
+    return 0 if report['status'] in ('accepted', 'checkpoint') else 1

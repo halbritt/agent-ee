@@ -343,6 +343,101 @@ class PartsProducerTests(unittest.TestCase):
                 targets=['requirements.md'], reference_architectures=['requirements.md']))
         write_json(self.root / 'planning.scope.json', scope)
 
+    def test_public_build_resumes_real_parts_and_native_generation_and_rejects_changed_input(self):
+        require_toolchain(native=True)
+        from agent_ee.spec_record import capture as capture_spec
+        self.hierarchy()
+        self.planning_inputs()
+        spec = b'# Checks\n\n- Native ERC must pass.\n- Native DRC must pass.\n'
+        record = capture_spec(spec, 'QUAL', {'Checks': 'CHECKS'})
+        (self.bundle / 'spec.md').write_bytes(spec)
+        write_json(self.bundle / 'spec-record.json', record)
+        template = read_json(self.root / 'planning.scope.json')
+        del template['baseline'], template['checks']
+        template['schema'] = 'agent-ee.scope/3'
+        template['stages'] = dict(schema='agent-ee.stages/1', order=['verification'], finding_retry_limit=3,
+            subjects=dict(verification=dict(path=template['schematic'], kind='symbols', references=['R1', 'C1', 'J1'])))
+        write_json(self.bundle / 'requirement-map.json', dict(schema='agent-ee.requirement-map/1',
+            spec_record_sha256=digest(self.bundle / 'spec-record.json'), scope=template,
+            requirements=[dict(id=r['id'], checks=[dict(id=kind, kind=kind, params={}, stage='verification')])
+                          for r, kind in zip(record['requirements'], ['erc', 'drc'])], prose=[]))
+        write_json(self.bundle / 'placement.json', dict(edge_connectors=[], fixed_poses=[]))
+        write_json(self.bundle / 'groups.json', dict(groups=[dict(name='filter', anchor='J1', refs=['R1', 'C1', 'J1'])]))
+        plan = dict(schema='agent-ee.build-plan/1', source=str(self.bundle),
+            requirements=dict(map='requirement-map.json', record='spec-record.json', spec='spec.md'),
+            parts=dict(manifest='parts.json', circuit='circuit.json', layout='layout.json'),
+            envelope='envelope.json', placement=dict(intent='placement.json', groups='groups.json',
+                budget_s=30, search=dict(seeds=[dict(seed=0, start='clustered')], steps_per_seed=100, shortlist=1),
+                router=dict(checkout='/opt/kicad-route')))
+        write_json(self.root / 'build.json', plan)
+        out = self.root / 'build'
+
+        def run(*args):
+            return subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'build', 'run',
+                str(self.root / 'build.json'), '--out', str(out), *args], capture_output=True, text=True, timeout=120)
+
+        result = run('--through', 'parts')
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        first = read_json(out / 'build-report.json')
+        self.assertFalse(first['accepted'])
+        self.assertEqual([s['stage'] for s in first['completed']], ['requirements', 'parts'])
+        (out / 'CANCEL').touch()
+        result = run('--resume', '--through', 'schematic')
+        self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
+        interrupted = read_json(out / 'build-report.json')
+        self.assertEqual(interrupted['status'], 'interrupted')
+        self.assertEqual(interrupted['completed'], first['completed'])
+        (out / 'CANCEL').unlink()
+        result = run('--resume', '--through', 'schematic')
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        second = read_json(out / 'build-report.json')
+        self.assertEqual(second['completed'][:2], first['completed'])
+        self.assertFalse(second['accepted'])
+        self.assertEqual([s['stage'] for s in second['completed']], ['requirements', 'parts', 'scaffold', 'schematic'])
+        candidate = out / second['candidate']
+        import pcbnew
+        self.assertEqual({f.GetReference() for f in pcbnew.LoadBoard(str(candidate / 'project/acquisition.kicad_pcb')).GetFootprints()},
+                         {'R1', 'C1', 'J1'})
+        project = read_json(candidate / 'project/acquisition.kicad_pro')
+        self.assertEqual(project['board']['design_settings']['rules']['min_clearance'], 0.25)
+        # A schematic checkpoint cannot be mistaken for a manufacturing pass.
+        result = run('--resume')
+        self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
+        incomplete = read_json(out / 'build-report.json')
+        self.assertFalse(incomplete['accepted'])
+        self.assertIn('manufacturing coverage missing', incomplete['reason'])
+        self.assertEqual(incomplete['completed'], second['completed'])
+        pin = digest(out / 'build-report.json')
+        board_path = candidate / 'project/acquisition.kicad_pcb'
+        native_bytes = board_path.read_bytes()
+        board_path.write_bytes(native_bytes + b'\n')
+        result = run('--resume', '--through', 'schematic')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('stage identity changed', result.stderr + result.stdout)
+        self.assertEqual(digest(out / 'build-report.json'), pin)
+        board_path.write_bytes(native_bytes)
+        (self.bundle / 'spec.md').write_bytes(spec + b'\nChanged engineering input.\n')
+        result = run('--resume', '--through', 'schematic')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('identity', result.stderr + result.stdout)
+        self.assertEqual(digest(out / 'build-report.json'), pin)
+        (self.bundle / 'spec.md').write_bytes(spec)
+        self.intent['components'][0]['value'] = '1k'
+        self.save()
+        out = self.root / 'bad-electrical-build'
+        result = run('--through', 'schematic')
+        self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
+        bad = read_json(out / 'build-report.json')
+        self.assertFalse(bad['accepted'])
+        self.assertEqual([s['stage'] for s in bad['completed']], ['requirements'])
+        self.assertIn('compile-parts: failed', bad['reason'])
+        failed_stage = out / bad['attempts'][-1]['directory']
+        self.assertIn('nominal', read_json(failed_stage / 'receipts/0/run/out/report.json')['reason'])
+        self.assertFalse(list(failed_stage.rglob('*.kicad_pcb')))
+        evidence = os.environ.get('AGENT_EE_PARTS_EVIDENCE')
+        if evidence:
+            shutil.copytree(self.root, Path(evidence) / self._testMethodName)
+
     def test_root_capture_stage_cannot_adopt_over_an_immutable_library(self):
         require_toolchain(native=True)
         library = self.intent['libraries'][0]['path']

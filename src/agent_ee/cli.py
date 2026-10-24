@@ -877,6 +877,9 @@ def main(argv=None):
     placement_job.configure_parser(placement_parser)
     parts_parser = sub.add_parser('parts', help='compile selected parts into circuit intent')
     parts_stage.configure_parser(parts_parser)
+    from . import build_workflow
+    build_parser = sub.add_parser('build', help='run a captured engineering design through native manufacture checks')
+    build_workflow.configure_parser(build_parser)
     scaffold_parser = sub.add_parser('scaffold', help='create an empty native candidate from captured planning inputs')
     scaffold_parser.add_argument('envelope')
     scaffold_parser.add_argument('parts')
@@ -986,6 +989,8 @@ def main(argv=None):
             return placement_job.execute(args, placement_parser)
         if args.command == 'parts':
             return parts_stage.execute(args)
+        if args.command == 'build':
+            return build_workflow.execute(args)
         if args.command == 'scaffold':
             from .scaffold import scaffold
             receipt = scaffold(args.envelope, args.parts, args.out, scope_path=args.scope, plan_path=args.plan,
