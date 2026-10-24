@@ -49,13 +49,15 @@ This iteration replaces ngspice 42 with corrected maintained 47. The supported
 image passes 139 native regressions, 20 switch checks, both RC integration gates
 and the unchanged actual acquisition startup case. The observed image and binary are recorded in the simulator report.
 
-The next integrated feature adds `dc_path/2` through the existing public review
+Integrated `7dba3a7c42cd701cd0cf0d2033dc4d21e91bb756` adds `dc_path/2` through the existing public review
 workflow. The unchanged acquisition board's ideal copper bounds are 1.556 mV
 supply and 3.551 mV return at declared 20 mA/25 °C. Every native conductor is
 accounted for; full DRC/parity is a prerequisite. Independent two/four-layer
 controls, disconnected-route and exceeded-bound cases are retained at
 `build/agent545/dc-rail-public`. These nominal model conditions do not close
 physical manufacturing tolerance, contact/spreading or full electrical acceptance.
+Seventy relevant native tests pass with no skips; the committed-revision control
+also passes both checks, evidence verification and the checks-only gate.
 
 The actual fresh TPS acquisition build used agent-ee `9a12901a` and completed
 requirements, parts, scaffold, schematic, placement-routing and artwork in
@@ -71,14 +73,15 @@ Immutable evidence under `~/.cache/agent-ee-qualification/agent545/`:
 
 | Bundle | Files | SHA-256 of SHA256SUMS | Meaning |
 | --- | ---: | --- | --- |
+| `acquisition-dc-rail-20261024` |5003|`e0e6e339ed3c70115e8189fc2667996f9d4d7d2b9dc9ca699fa53dd5f97723d5`|Whole-net model, 70 native regressions, ordinary two/four-layer controls and negatives, exact acquisition copper review and committed-revision control.|
 | `acquisition-power-spice47-20261024` |2670|`6c9c1f0deb24b9f15af3b9d594833b5e691df9c33d6756c05b11b193abc90c77`|Current-limited source repair, vendor models, stock failures, generic correction, native regressions, RC gates and unchanged actual power review.|
 | `acquisition-flow-20261024` |3350|`344e5dd763a406f512da7d00de4d181b847413259cc27769aec9cc3bf82e8961`|Six-stage actual flow, independent checks, default manufacturing refusal, diagnostic and vendor-comment regressions.|
 | `acquisition-artwork-package-20261024` |1305|`d60242bbbd6d6be12a0e8f73d7315693c39d12cdd739b3bbc373f3444591facd`|Earlier circuit's artwork, targeted package, stale-CPL rejection and 17 model renders.|
 | `acquisition-electrical-20261024` |5034|`1e96ee1ea63cf709944850bb965e33ce9a53a224bffe39e1985aaada8d545183`|Sourcing, topology negative, interval unknowns and DFM regressions.|
 
 See [electrical disposition](qualification/acquisition-electrical-2026-10-24.md),
-[simulator correction](benchmarks/ngspice-inverse-switch-2026-10-24.md) and
-[native copper qualification](benchmarks/dc-rail-2026-10-24.md), and
+[simulator correction](benchmarks/ngspice-inverse-switch-2026-10-24.md),
+[native copper qualification](benchmarks/dc-rail-2026-10-24.md) and
 [retained iteration history](system-qualification-history.md).
 
 ## Bounded qualification suite and negatives
