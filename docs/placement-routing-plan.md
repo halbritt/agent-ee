@@ -16,7 +16,15 @@ Status 2026-10-24 01:05Z:
 - AGENTEE-514 is ACCEPTED with binding amendments (chief decision b4a5857a; see placement-architecture.md).
 - AGENTEE-515 is DISPATCHED per chief 4f939a5e: one Opus HIGH builder (claude-harm), 180 min total, from 01:04:28.9Z, branch wt/agentee-515 from 9af52661, then one Astra MEDIUM critical review. The 513 result is a historical reference, not a matched experiment.
 - 516-518 are backlog.
-Earlier status, 00:14Z: 513 and 514 dispatched. The architecture proposal is [placement-architecture.md](placement-architecture.md).
+Earlier status, 00:14Z: 513 and 514 dispatched.
+
+Status 2026-10-24 03:10Z (integration checkpoint):
+- The 515 workflow (17dba2de) and the 515r H1-H4 repair (126dd1a0) LANDED on main as reviewed INPUT ONLY (merge b3a1a29d).
+  - Reviews: Astra MEDIUM HOLD on 17dba2de; Argon HIGH LAND-WITH-FOLLOW-UP on 126dd1a0.
+  - Immutable gate: 114 tests OK with 0 skips, cargo 88 passed, check_docs and check_origins clean. Evidence `agentee-515r-gate`.
+- AGENTEE-515 is NOT complete. The esp_prog board is FAILED: no valid placement under the engine's boxed-copper model. The matched stock-KRT qualification is outstanding.
+- Owner (relayed by the chief): "stick to the plan and achieve success on each step before proceeding". 516-518 are held until 515 succeeds.
+- The next 515 slice (native-shape clearance agreement, then matched qualification) is drafted and awaits the chief. The architecture proposal is [placement-architecture.md](placement-architecture.md).
 
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
