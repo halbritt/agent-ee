@@ -61,17 +61,27 @@ the process and must be recorded by the caller.
      native pad clearance, never a body.
    - `silk_only`: padless, zone-free, every graphic on a silkscreen layer. Only
      these are excluded from packing.
-   Footprint rule areas are refused (not modelled).
+   **Zone-free supported domain:** every board-level zone is refused before a
+   prepared problem can reach the solver. This includes keepouts, rule areas
+   and ordinary copper pours, filled or unfilled. Footprint zones and rule areas
+   remain refused. Native checks after routing do not make an ignored placement
+   obstacle safe; this job has no placement zone engine.
    Custom `.kicad_dru` files and non-default netclasses/assignments are refused
    before a problem is returned. The supported clearance domain is the board
    minimum, the Default netclass and native per-pad overrides. A larger Default
    clearance contributes to the global copper bound. Named non-default classes
    require separate native rule-resolution qualification, even when a global
    maximum might conservatively cover a particular board.
-   Supported numeric rules are refreshed from the saved project through the
-   shared strict JSON reader into the captured board's in-memory settings.
-   This avoids pcbnew's stale project cache after a project is written in the
-   same process; no project file or global netclass is changed.
+   Capture runs once in a fresh native subprocess, using the controller's
+   existing bounded child runner. Every consumed board, Default netclass,
+   hole, hole-pair, edge and mask bound therefore comes from an independent
+   native load of the saved inputs, even after earlier loads at the same path.
+   Omitted fields and absent projects retain KiCad's native defaults; Python
+   supplies no replacement constants. Declared bounds are still validated with
+   the shared strict JSON reader. Board, project and custom-rule bytes are
+   compared before and after capture; a change refuses the result. No project
+   file or global native setting is rewritten. The frozen esp_prog project
+   remains supported with its omitted `solder_mask_min_width`.
 3. **Occupancy.** A proven courtyard is used as such. A present but unproven
    (malformed) courtyard is a hard refusal. A missing courtyard is a metadata gap:
    the footprint gets `derived_occupancy` with its provenance rung, in order
@@ -191,7 +201,7 @@ the process and must be recorded by the caller.
 A `CANCEL` file in the job directory stops the engine and controller. The same
 monotonic deadline is checked before judging, routing and final DRC. Nonblocking
 pipe I/O checks cancellation and remaining time at most every 50 ms during owned
-engine, router and DRC subprocesses, including stalled stdout or stdin. On
+capture, engine, router and DRC subprocesses, including stalled stdout or stdin. On
 interruption the owned process group is killed and its leader reaped; no next
 phase starts. The report says `cancelled` or `deadline` and the incumbent stays
 intact. An interrupted child is recorded without claiming solver completion or
@@ -236,6 +246,15 @@ terms) and full engine feasibility (all encoded terms, compared with the
 native pair's electrical/hole/mask violations at every severity). Neither matrix measures whole-board
 legality or establishes that unchecked scan seats are native-clear. A false
 feasible native-clearance result or failed as-built agreement stops the lane.
+
+`tests/test_placement_job_capture.py` compares capture with a separate native
+process that only calls `pcbnew.LoadBoard` and reads the consumed settings.
+Weak and strong explicit values followed by omission, absent projects and
+absent Default clearance exercise same-path cache history. The keepout control
+has native `items_not_allowed` findings and was feasible under the held parent;
+capture now refuses it before solving. Copper-zone, rule-area, footprint-zone
+and zero-zone controls define the supported domain. Capture cancellation,
+deadline, child failure, missing output and input mutation fail closed.
 
 ## Origins
 

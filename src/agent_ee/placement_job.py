@@ -404,15 +404,11 @@ def _rectangle(outline):
     return [xs[0], ys[0], xs[1], ys[1]]
 
 
-def _clearance(settings, project):
+def _clearance(settings):
     """Board minimum and saved Default clearance, with native defaults if absent."""
     net = settings.m_NetSettings
-    declared = project.get('net_settings', {}).get('classes', [])
-    if declared and 'clearance' in declared[0]:
-        values = [int(settings.m_MinClearance), _mm(declared[0]['clearance'])]
-    else:
-        classes = [net.GetDefaultNetclass()] + [c for _, c in net.GetNetclasses().items()]
-        values = [int(settings.m_MinClearance)] + [int(c.GetClearance()) for c in classes if c.HasClearance()]
+    classes = [net.GetDefaultNetclass()] + [c for _, c in net.GetNetclasses().items()]
+    values = [int(settings.m_MinClearance)] + [int(c.GetClearance()) for c in classes if c.HasClearance()]
     return max(values)
 
 
@@ -436,36 +432,61 @@ def _check_rule_domain(board_path):
     return project
 
 
-def _apply_project_rules(settings, project):
-    """Refresh supported native settings from disk, without saving or unloading.
-
-    pcbnew can cache a project's defaults after SaveBoard and ignore later
-    project-file edits in the same process. Native DRC reads those saved edits.
-    """
+def _validate_project_rules(project):
+    """Reject malformed declared bounds; omitted bounds belong to native KiCad."""
     design = project.get('board', {}).get('design_settings', {})
     rules = design.get('rules', {})
-    for key, native in (('min_clearance', 'm_MinClearance'),
-                        ('min_hole_clearance', 'm_HoleClearance'),
-                        ('min_hole_to_hole', 'm_HoleToHoleMin'),
-                        ('min_copper_edge_clearance', 'm_CopperEdgeClearance')):
+    for key in ('min_clearance', 'min_hole_clearance', 'min_hole_to_hole',
+                'min_copper_edge_clearance'):
         if key in rules:
-            setattr(settings, native, _rule_mm(rules[key], key))
+            _rule_mm(rules[key], key)
     if 'solder_mask_min_width' in design:
-        settings.m_SolderMaskMinWidth = _rule_mm(design['solder_mask_min_width'], 'solder_mask_min_width')
+        _rule_mm(design['solder_mask_min_width'], 'solder_mask_min_width')
     for cls in project.get('net_settings', {}).get('classes', []):
         if 'clearance' in cls:
             _rule_mm(cls['clearance'], 'Default clearance')
 
 
-def capture(board_path, intent, groups):
+def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
+    """Capture in a fresh native process, bounded by the caller's job lifetime.
+
+    KiCad caches projects by path, including fields omitted from a later saved
+    project. Only a fresh native load gives all defaults the same meaning as
+    independent native DRC. No native settings or project files are rewritten.
+    """
+    board_path = Path(board_path).absolute()
+    sources = (board_path, board_path.with_suffix('.kicad_pro'), board_path.with_suffix('.kicad_dru'))
+    before = [p.read_bytes() if p.exists() else None for p in sources]
+    done = _run_child([sys.executable, '-m', 'agent_ee.placement_job', '_capture', str(board_path)],
+                      clock=clock or Clock(300), cancel_dir=cancel_dir,
+                      input_bytes=json.dumps({'intent': intent, 'groups': groups}).encode())
+    if done.returncode:
+        raise JobRefusal(f'native capture failed (exit {done.returncode}): '
+                         + (done.stdout + done.stderr).decode(errors='replace')[-2000:])
+    try:
+        captured = json.loads(done.stdout)
+        problem, record = captured['problem'], captured['record']
+    except (ValueError, KeyError, TypeError) as exc:
+        raise JobRefusal('native capture returned missing or invalid output') from exc
+    if (not isinstance(problem, dict) or problem.get('schema') != INPUT_SCHEMA
+            or not isinstance(record, dict) or record.get('schema') != 'agent-ee.placement-job-capture/1'):
+        raise JobRefusal('native capture returned missing or invalid output')
+    if [p.read_bytes() if p.exists() else None for p in sources] != before:
+        raise JobRefusal('input board/project/rules changed during capture')
+    return problem, record
+
+
+def _capture_native(board_path, intent, groups):
     """Native capture once; returns (problem without search section, capture record)."""
     import pcbnew
     from .placement_probe import extract
     before = Path(board_path).read_bytes()
     project = _check_rule_domain(board_path)
+    _validate_project_rules(project)
     facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
-    _apply_project_rules(board.GetDesignSettings(), project)
+    if any(True for _ in board.Zones()):
+        raise JobRefusal('board-level zones, keepouts and rule areas are unsupported by the placement job')
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
@@ -515,7 +536,7 @@ def capture(board_path, intent, groups):
     if Path(board_path).read_bytes() != before:
         raise JobRefusal('input board changed during capture')
     settings = board.GetDesignSettings()
-    clearance = _clearance(settings, project)
+    clearance = _clearance(settings)
     by_ref = {r['native_ref']: r for r in rows if r['role'] == 'movable'}
     proximity = []
     for row in intent.get('proximity', []):
@@ -994,7 +1015,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report):
         report['preflight'] = preflight(config, executable, clock=clock)
     with clock.phase('import'):
         _check_stop(clock, None)
-        problem, record = capture(board_path, intent, groups)
+        # A pre-existing CANCEL still captures/checkpoints the initial identity,
+        # as before, so that removing it can resume the same job. New cancellation
+        # during capture is watched by the bounded child runner.
+        capture_cancel = None if _cancelled(job_dir) else job_dir
+        problem, record = capture(board_path, intent, groups, clock=clock, cancel_dir=capture_cancel)
         write_json(job_dir / 'capture.json', record)
         write_json(job_dir / 'problem.json', problem)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
@@ -1174,6 +1199,8 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python3 -m agent_ee.placement_job')
     sub = parser.add_subparsers(dest='command', required=True)
+    native = sub.add_parser('_capture', help=argparse.SUPPRESS)
+    native.add_argument('board')
     run = sub.add_parser('run', help='run one whole placement-to-route job')
     run.add_argument('config')
     run.add_argument('--out', required=True)
@@ -1183,6 +1210,15 @@ def main(argv=None):
     metrics.add_argument('--groups')
     metrics.add_argument('--intent')
     args = parser.parse_args(argv)
+    if args.command == '_capture':
+        request = json.load(sys.stdin)
+        try:
+            problem, record = _capture_native(args.board, request['intent'], request['groups'])
+        except JobRefusal as exc:
+            print(json.dumps({'error': str(exc)}))
+            return 2
+        print(json.dumps({'problem': problem, 'record': record}))
+        return 0
     if args.command == 'run':
         config = read_json(args.config)
         if config.get('schema') != CONFIG_SCHEMA:
