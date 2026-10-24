@@ -42,8 +42,10 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
     """
     sheets = _sheets(schematic, child_schematics)
     paths = [board, *sheets, intent, layout, captures, footprints, *seeds]
-    for path in paths:
+    for path in [board, *sheets, intent, layout, footprints, *seeds]:
         _relative(path, 'schematic stage path')
+    if captures != '.':
+        _relative(captures, 'schematic capture root')
     if len(set([board, *sheets, intent, layout, footprints, *seeds])) != len(paths) - 1:
         raise ValueError('schematic stage file paths must be distinct')
     if Path(board).suffix != '.kicad_pcb' or Path(schematic).suffix != '.kicad_sch':

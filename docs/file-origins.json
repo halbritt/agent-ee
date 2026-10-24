@@ -3340,7 +3340,8 @@
     },
     {
       "paths": [
-        "tests/test_approved_parts.py"
+        "tests/test_approved_parts.py",
+        "tests/test_parts_stage.py"
       ],
       "kind": "owned-source",
       "origins": [

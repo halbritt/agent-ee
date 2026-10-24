@@ -191,7 +191,7 @@ class PartsProducerTests(unittest.TestCase):
     def test_native_hierarchy_parts_to_schematic_to_board(self):
         require_toolchain(native=True)
         child = self.hierarchy()
-        candidate = self.root / 'candidate'
+        candidate = self.bundle
         project = candidate / 'project'
         project.mkdir()
         for name in ('acquisition.kicad_sch', 'filter.kicad_sch'):
@@ -199,11 +199,11 @@ class PartsProducerTests(unittest.TestCase):
         shutil.copyfile(ROOT / 'fixtures/stages/empty.kicad_pcb', project / 'acquisition.kicad_pcb')
         (candidate / 'generation').mkdir()
         (candidate / 'generation/intent.json').write_text('{}\n')
-        part_step = parts_stage.configuration(ROOT / 'src', bundle='parts', manifest='parts.json',
+        part_step = parts_stage.configuration(ROOT / 'src', bundle='.', manifest='parts.json',
             circuit='circuit.json', layout='layout.json', output='generation/intent.json')
         config = schematic_steps(ROOT / 'src', board='project/acquisition.kicad_pcb',
             schematic='project/acquisition.kicad_sch', child_schematics=['project/filter.kicad_sch'],
-            intent='generation/intent.json', layout='parts/layout.json', captures='parts', footprints='parts/cad.json')
+            intent='generation/intent.json', layout='layout.json', captures='.', footprints='cad.json')
         receipts = []
         for index, step in enumerate([part_step, *config['implementation_steps']]):
             out = self.root / 'steps' / str(index)
@@ -228,10 +228,7 @@ class PartsProducerTests(unittest.TestCase):
                           frozenset([('R1', '2'), ('C1', '1'), ('J1', '2')]),
                           frozenset([('J1', '3'), ('C1', '2')])})
         from agent_ee.parts_subset import evaluate
-        membership_root = self.root / 'membership'
-        shutil.copytree(self.bundle, membership_root)
-        shutil.copytree(project, membership_root / 'project')
-        membership = evaluate(membership_root, 'parts.json', xml,
+        membership = evaluate(candidate, 'parts.json', xml,
                               ['project/acquisition.kicad_sch', 'project/filter.kicad_sch'])
         write_json(self.root / 'native-membership.json', membership)
         self.assertEqual(membership['outcome'], 'pass', membership)
@@ -243,6 +240,21 @@ class PartsProducerTests(unittest.TestCase):
         evidence = os.environ.get('AGENT_EE_PARTS_EVIDENCE')
         if evidence:
             shutil.copytree(self.root, Path(evidence) / self._testMethodName)
+
+    def test_root_capture_stage_cannot_adopt_over_an_immutable_library(self):
+        require_toolchain(native=True)
+        library = self.intent['libraries'][0]['path']
+        before = digest(self.bundle / library)
+        step = parts_stage.configuration(ROOT / 'src', bundle='.', manifest='parts.json',
+            circuit='circuit.json', layout='layout.json', output=library)
+        out = self.root / 'refused-step'
+        receipt = run_step(out, self.bundle, step,
+            {'implementation': 1, 'source_candidate_id': 'original-parts-stage', 'receipt_index': 0})
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertIn('immutable dependency', read_json(out / 'run/out/report.json')['reason'])
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(out, receipt, self.bundle)
+        self.assertEqual(digest(self.bundle / library), before)
 
 
 if __name__ == '__main__':

@@ -47,6 +47,13 @@ output intent. The schematic stage consumes that exact output through ordinary
 receipts and adoption. The bundle remains immutable. Its source snapshot and
 receipt include the same implementation custody as other stage producers.
 
+For a workflow whose parts dependencies and native outputs share one captured
+root, use `bundle='.'` and the schematic stage's `captures='.'`. The parts step
+binds its adoption target and refuses a target that would overwrite any source
+dependency or its parent directory. The native integration case uses this same
+root directly for the independent membership check; it requires no rewritten
+manifest paths or manually assembled intermediate capture.
+
 The targeted native exercise uses original synthetic catalog/PDF/CAD captures,
 not real device qualification. It carries three selected parts on a child
 sheet through parts production, schematic emission, native netlist export and

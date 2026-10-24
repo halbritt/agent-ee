@@ -128,21 +128,26 @@ def compile_parts(root, manifest, circuit, layout, *, deviations=None, ratings=N
 
 
 def configuration(source_root, *, bundle, manifest, circuit, layout, output, deviations=None, ratings=None):
-    for path in (bundle, manifest, circuit, layout, output, deviations, ratings):
+    if bundle != '.':
+        _relative(bundle, 'parts bundle')
+    for path in (manifest, circuit, layout, output, deviations, ratings):
         if path is None:
             continue
         _relative(path, 'parts stage path')
-    if output == bundle or output.startswith(bundle + '/'):
+    if bundle != '.' and (output == bundle or output.startswith(bundle + '/')):
         raise ValueError('parts output must be outside immutable bundle')
     optional = [arg for name, path in (('deviations', deviations), ('ratings', ratings)) if path is not None
                 for arg in ('--' + name, path)]
+    if bundle == '.':
+        optional += ['--adopt-as', output]
     return validate_step(dict(schema='agent-ee.stage-step/1', stage='parts', step='compile-parts',
         argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
-              '-m', 'agent_ee.parts_stage', '--bundle', '/candidate/' + bundle,
+              '-m', 'agent_ee.parts_stage', '--bundle', '/candidate' if bundle == '.' else '/candidate/' + bundle,
               '--manifest', manifest, '--circuit', circuit, '--layout', layout, '--out', '/work/out', *optional],
         mounts=[dict(source=str(snapshot(source_root)), at='/tool/agent-ee')], source='/tool/agent-ee',
         version_argv=['/usr/bin/python3', '--version'],
-        inputs=[bundle + '/' + p for p in (manifest, circuit, layout, deviations, ratings) if p is not None],
+        inputs=[p if bundle == '.' else bundle + '/' + p
+                for p in (manifest, circuit, layout, deviations, ratings) if p is not None],
         writes={output: 'out/connectivity-intent.json'}, artifacts=['out/report.json'],
         adoptable_exits=[0], timeout_s=300))
 
@@ -153,6 +158,7 @@ def _arguments(parser):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--deviations', help='captured explicit assembly deviations; omitted means none')
     parser.add_argument('--ratings', help='captured passive rating sources for the existing derivation checks')
+    parser.add_argument('--adopt-as', help='receipted output path; must not overwrite an immutable dependency')
     parser.add_argument('--out', type=Path, required=True)
 
 
@@ -166,6 +172,11 @@ def execute(args):
     try:
         report, intent = compile_parts(args.bundle, args.manifest, args.circuit, args.layout,
                                       deviations=args.deviations, ratings=args.ratings)
+        if args.adopt_as is not None:
+            _relative(args.adopt_as, 'adopted parts output')
+            if any(path == args.adopt_as or path.startswith(args.adopt_as + '/') or
+                   args.adopt_as.startswith(path + '/') for path in report['dependencies']):
+                raise ValueError('parts output would overwrite immutable dependency: ' + args.adopt_as)
     except (ValueError, OSError) as exc:
         write_json(args.out / 'report.json', dict(schema=SCHEMA, status='refused', acceptance_ready=False,
                                                  reason=str(exc)))
