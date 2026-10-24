@@ -15,6 +15,8 @@ interim revision's observed results are kept in the integrator record below.
 
 ## Two required outcomes
 
+Placement/routing work now follows the chief's recorded plan [placement-routing-plan.md](placement-routing-plan.md) (AGENTEE-512..518, owner-requested 2026-10-24): an esp_prog baseline with stock KRT 0.23.7 and a KRT-mining architecture decision first, then one integrated workflow, routing-guided repair, representative pod cases, and the complete pod on a qualified release. The 485 stack and its evidence are preserved, not discarded or accepted.
+
 Deliver a manufacturing-ready telemetry pod PCB and useful, reusable agent-ee
 capability for agent-driven PCB creation. The telemetry pod is the real-board
 acceptance case. A one-off layout correction does not complete the tool outcome;
