@@ -175,6 +175,18 @@ sites) and passes all 390 comparisons on the pad-clearance repair at a declared
 mask/paste openings and complete assembly acceptance remain separate checks.
 Evidence: `build/agent545/smd-via-qualification/`.
 
+Electrical qualification selected TPS7A2033PDBVR for U1 to substantiate the
+unchanged rail-tolerance requirement across line, load and temperature. Captured
+manufacturer pin functions and actual symbol/footprint closure agree. The
+ordinary `acquisition-qualified-build.json` run reaches a fresh native schematic
+and PCB; independent review passes ERC, exact topology, parts membership and
+assembly data for all 17 components/11 selected LCSC parts. The initial unplaced
+board correctly fails routing/containment. Inputs and evidence are retained under
+`build/agent545/acquisition-qualified-*`. Numerical electrical coverage,
+startup/reverse-power evaluation, final mechanical checks and the complete
+manufacturing package remain open. The authored requirements are unchanged;
+this component selection is an agent engineering decision, not an owner ruling.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through
