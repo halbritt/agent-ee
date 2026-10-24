@@ -4206,6 +4206,17 @@
         "AE",
         "KRT-515"
       ]
+    },
+    {
+      "paths": [
+        "docs/research/krt-2026-10-24/d24a760/upstream.diff",
+        "docs/research/krt-2026-10-24/d24a760/upstream-LICENSE"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "KRT-515"
+      ],
+      "note": "Exact latest-main docs-only upstream delta d24a760, retained under the adjacent upstream MIT notice. Research source evidence only, not executable parity."
     }
   ]
 }

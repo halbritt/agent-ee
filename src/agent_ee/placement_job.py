@@ -580,6 +580,7 @@ def _capture_native(board_path, intent, groups):
     """Native capture once; returns (problem without search section, capture record)."""
     import pcbnew
     from .placement_probe import extract
+    from .placement_escape import hints as escape_hints
     before = Path(board_path).read_bytes()
     project = _check_rule_domain(board_path)
     _validate_project_rules(project)
@@ -593,6 +594,9 @@ def _capture_native(board_path, intent, groups):
     owners = _fixed_pose_owner(intent.get('fixed_poses', []), facts['footprints'])
     edges = _edge_rules(intent, facts['footprints'])
     settings = board.GetDesignSettings()
+    native_class = settings.m_NetSettings.GetDefaultNetclass()
+    pair_width = int(native_class.GetDiffPairWidth()) if native_class.HasDiffPairWidth() else None
+    pair_gap = int(native_class.GetDiffPairGap()) if native_class.HasDiffPairGap() else None
     rows, record = [], []
     contour_vertices = 0
     native = {}
@@ -630,12 +634,15 @@ def _capture_native(board_path, intent, groups):
             row['rotations'] = [0, 1, 2, 3]
         else:
             row['rotations'] = [q]
+        row['escape_local_nm'] = escape_hints(row, width=pair_width, gap=pair_gap,
+                                             clearance=_clearance(settings))
         contour_vertices = _geometry_complexity(row, contour_vertices)
         rows.append(row)
         native[uuid] = {'ref': ref, 'side': captured['side'], 'locked': captured['locked']}
         record.append({'uuid': uuid, 'native_ref': ref, 'role': info['role'],
                        'occupancy': info['occupancy'], 'classified_layers': info['classified_layers'],
-                       'diagnostics': info['diagnostics'], 'fixed_pose': owners.get(uuid)})
+                       'diagnostics': info['diagnostics'], 'fixed_pose': owners.get(uuid),
+                       'routing_preferences': row['escape_local_nm']})
     if Path(board_path).read_bytes() != before:
         raise JobRefusal('input board changed during capture')
     settings = board.GetDesignSettings()
@@ -658,7 +665,7 @@ def _capture_native(board_path, intent, groups):
                'footprints': sorted(rows, key=lambda r: r['uuid']),
                'groups': [{'name': g['name'], 'anchor': g['anchor'], 'refs': g['refs']} for g in groups['groups']],
                'proximity': proximity,
-               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'edge': 4, 'hard': 50}}
+               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'edge': 4, 'hard': 50, 'escape': 20}}
     problem['problem_sha256'] = sha256_bytes(canonical(problem))
     return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before),
                      'pcbnew_version': facts['pcbnew_version'], 'footprints': record, 'native': native,

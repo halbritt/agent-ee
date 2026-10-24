@@ -64,7 +64,7 @@ retiring build output. The retained predecessor evidence is
 
 ## KRT comparison inventory
 
-Observed upstream main on 2026-10-24:
+Initial observed upstream main on 2026-10-24:
 [`222bb144744c3ddd979674e528bf8647e9ced8d6`](https://github.com/drandyhaas/KiCadRoutingTools/tree/222bb144744c3ddd979674e528bf8647e9ced8d6).
 Reference clone: `~/.cache/agent-ee-qualification/upstream/KiCadRoutingTools`.
 This is distinct from agent-ee's installed kicad-route checkout
@@ -74,6 +74,14 @@ covers 69 capability rows, 107 declared tools and 127 hash-bound source files.
 Its [proposed exercises](research/krt-2026-10-24/qualification-cases.md) remain
 unexecuted; the source audit is not parity evidence. The following required
 families are all **unqualified for parity** until matched exercises run.
+
+The later observed main is `d24a7602012b96c5cfa610ea05a171646ad601bd`;
+the [sealed additive source audit](research/krt-2026-10-24/d24a760/delta.md)
+finds only a documentation change. A
+[matched native pair diagnosis](benchmarks/differential-escape-2026-10-24.md)
+now exercises stock and owned engines on identical esp_prog inputs. Both fail
+the required terminal-coupling condition. This establishes a matched failure,
+not capability parity or a passing qualification design.
 
 | Required family | Upstream executable/source surface | Agent-ee evidence needed |
 | --- | --- | --- |
@@ -152,3 +160,10 @@ obstructions to hierarchical schematic production. The
 an edited child sheet into the real PCB and exercises public scaffold/review
 gates. It is a targeted feature qualification, not the fresh multiblock system
 run. Parts/circuit production and the complete build entrypoint remain next.
+
+The [terminal-space preference](benchmarks/differential-escape-2026-10-24.md)
+now survives native capture and Rust placement search, with 99 strict Rust and
+82 native regression tests passing. A fresh public esp_prog run has a feasible
+placement with clear inferred terminal regions, but still rejects two open pair
+connections. Short-leg deferral and terminal polarity/clearance remain active
+routing blockers. The source audit and matched failures do not close KRT parity.

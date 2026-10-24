@@ -1,0 +1,35 @@
+{
+  "schema": "krt-source-delta-delivery/1",
+  "sealed_at_utc": "2026-10-24T16:09:47.770558+00:00",
+  "old_revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+  "new_revision": "d24a7602012b96c5cfa610ea05a171646ad601bd",
+  "stock_checkout": "/home/halbritt/.cache/agent-ee-qualification/upstream/KiCadRoutingTools-d24a760",
+  "status": "source-only; no runtime qualification",
+  "files": [
+    {
+      "path": "delta.md",
+      "bytes": 13973,
+      "sha256": "f2f8355a75355c4b274dd6ca03595144ee13cd3d06752cbe97390002c15e2472"
+    },
+    {
+      "path": "delta.json",
+      "bytes": 22155,
+      "sha256": "b10b323e67b8aa0e8d42545b3c14d6ed30ac8e3a304c2ae51fd81aeac9dc506b"
+    },
+    {
+      "path": "source-identity.json",
+      "bytes": 9515,
+      "sha256": "c7f1014d9935bb7a0fb540277eec01fccc9d1c29232d4116c4df16224570ed51"
+    },
+    {
+      "path": "upstream.diff",
+      "bytes": 81977,
+      "sha256": "5443f45cfe76f60115d9c71e4f1f55f003e23231f7580dc056bf6f14483c09f3"
+    },
+    {
+      "path": "audit.json",
+      "bytes": 329,
+      "sha256": "302c30722201db08133e0f97d62f8e201736c12dda7d4f82938536a3eb8b155d"
+    }
+  ]
+}

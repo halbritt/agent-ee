@@ -1,0 +1,442 @@
+{
+  "schema": "krt-source-delta/1",
+  "old_revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+  "new_revision": "d24a7602012b96c5cfa610ea05a171646ad601bd",
+  "observed_at_utc": "2026-10-24T16:09:39.591190+00:00",
+  "changed_runtime_capabilities": 0,
+  "affected_prior_rows": [
+    "D11",
+    "D02",
+    "D03",
+    "A04"
+  ],
+  "qualification_status": "source inspected only; no native run/build/test; no parity claim",
+  "rows": [
+    {
+      "id": "DELTA01",
+      "topic": "Workflow and admission",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 65,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L65"
+      },
+      "description": "The page now follows whole_route/route_bus on real boards rather than historical two-layer shell demonstrations. It links bus622-take5. Main includes AWX research actors, scope=[], separate from route.py --bus and ordinary differential routing. Auto discovery requires arrays at both ends; explicit buses admit row/QFN ends and multiple destinations.",
+      "sources": [
+        {
+          "path": "awx/route_bus.py",
+          "line": 1,
+          "symbol": "def route_bus(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_bus.py#L1"
+        },
+        {
+          "path": "awx/route_bus.py",
+          "line": 60,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_bus.py#L60"
+        }
+      ],
+      "required_qualification": "Exercise admitted native array buses, explicit QFN and branched cases, and refusal of half-pairs, name collisions and termination waypoints; do not substitute this research door for ordinary workflow integration.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA02",
+      "topic": "Fanout rounds and ends search",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 106,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L106"
+      },
+      "description": "Clarifies outer fanout rounds, inner loops, both-end escape choices, heuristic kicks, weighted via costs and CP-SAT joint-end feedback. These change escape endpoints, not component placement. Defaults differ: whole_route chain 3 rounds, route_bus 2; LOOP_ROUNDS defaults 6.",
+      "sources": [
+        {
+          "path": "awx/whole_route.py",
+          "line": 231,
+          "symbol": "def loop_rounds(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L231"
+        },
+        {
+          "path": "awx/whole_route.py",
+          "line": 1267,
+          "symbol": "def chain(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L1267"
+        },
+        {
+          "path": "awx/whole_ends.py",
+          "line": 1745,
+          "symbol": "def ban_kicks(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_ends.py#L1745"
+        }
+      ],
+      "required_qualification": "Record exact round limits and deterministic seeds/settings, forced crowded-end feedback and progress termination; inspect actual escape geometry.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA03",
+      "topic": "Uncorroborated Rust ends kernel",
+      "delta_type": "documentation_claim_absent_from_inspected_main",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 140,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L140"
+      },
+      "description": "The page says multilayer estimate/search uses Rust through ends_kernel.py. No tracked ends_kernel path exists and whole_ends.py contains no ends_kernel or grid_router reference. Source links target bus622-take5; do not attribute this claim to executable main.",
+      "sources": [
+        {
+          "path": "awx/whole_ends.py",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_ends.py#L1"
+        },
+        {
+          "path": "docs/solvers/index.html",
+          "line": 417,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L417"
+        }
+      ],
+      "required_qualification": "Locate and pin the claimed branch implementation separately before any qualification. No upstream branch fetched or silently merged into this stock baseline.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA04",
+      "topic": "Frame, rings and winding",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 152,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L152"
+      },
+      "description": "Adds flow quarter-turn/mirror frame, trunk, pad-hull rings, cuts, unrolled orders and branches. Route coordinate u is a planning coordinate, not copper length; winding may be selected for a predicted via gain. This is routing geometry, not footprint floorplanning.",
+      "sources": [
+        {
+          "path": "awx/whole_frame.py",
+          "line": 421,
+          "symbol": "def build(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_frame.py#L421"
+        },
+        {
+          "path": "awx/whole_frame.py",
+          "line": 888,
+          "symbol": "def _branches(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_frame.py#L888"
+        }
+      ],
+      "required_qualification": "Measure connectivity/polarity and geometry after inverse transforms, including mirrored/rotated array directions, winding and multiple destinations; use actual final copper for lengths.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA05",
+      "topic": "CP-SAT objective and bounded proof",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 175,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L175"
+      },
+      "description": "Clarifies deterministic batch budgets, feasible unproved plans, via-end windows and weighted objective. Objective includes via count, five-via penalty for vias over two per net, finite firm/soft penalties and region/plane/history costs. Stopping proof is an objective tier, not universal global minimum physical vias or best final routing.",
+      "sources": [
+        {
+          "path": "awx/whole_solve.py",
+          "line": 1857,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_solve.py#L1857"
+        },
+        {
+          "path": "awx/whole_solve.py",
+          "line": 1937,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_solve.py#L1937"
+        },
+        {
+          "path": "awx/whole_solve.py",
+          "line": 2088,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_solve.py#L2088"
+        }
+      ],
+      "required_qualification": "Retain solver status/objective/bound/budget and actual emitted vias separately; repeat matched seeds/environment; never turn unproved into optimal.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA06",
+      "topic": "Multilayer and geometric LP",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 244,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L244"
+      },
+      "description": "Explains routing-layer choice, through vias only, via-end relayer, passive regions, part gates and cuts. LP jointly fits lanes with pitch/static-via/board-edge constraints, but uses elastic penalties and fixed topology/side choices; a solved LP is not accepted native copper.",
+      "sources": [
+        {
+          "path": "awx/route_bus.py",
+          "line": 50,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_bus.py#L50"
+        },
+        {
+          "path": "awx/whole_geo.py",
+          "line": 27,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_geo.py#L27"
+        },
+        {
+          "path": "awx/whole_solve.py",
+          "line": 1857,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_solve.py#L1857"
+        }
+      ],
+      "required_qualification": "Qualify four-layer board with plane and layer obstacles, exact refill/DRC, unchanged authored stack/rules and LP-infeasible/crowded negatives.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA07",
+      "topic": "Feedback and polish",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 318,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L318"
+      },
+      "description": "Documents firm vs soft cuts (finite 100-via and 3-via costs), patience stops, per-place feedback and escalating repeated-end costs, followed by geometry polish and flips. Runtime/speedup and deterministic replay claims remain unmeasured here.",
+      "sources": [
+        {
+          "path": "awx/whole_solve.py",
+          "line": 75,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_solve.py#L75"
+        },
+        {
+          "path": "awx/whole_route.py",
+          "line": 65,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L65"
+        },
+        {
+          "path": "awx/whole_polish.py",
+          "line": 35,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_polish.py#L35"
+        }
+      ],
+      "required_qualification": "Retain no-progress exits and feedback transitions; inspect whether constraints and via budgets remain satisfied after polish.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA08",
+      "topic": "Coupled terminal snap and crossover",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 350,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L350"
+      },
+      "description": "AWX pairs go first. pair_end_cands builds exact two-leg pad-to-grid-pose connectors; the body uses pair search and geometry at a first-dive crossover when chirality differs. This preserves net identities by copper geometry; it is not authorization to exchange P/N pad nets. Rust lane_search/pair_search are optional imports with Python fallbacks.",
+      "sources": [
+        {
+          "path": "awx/whole_snap.py",
+          "line": 45,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_snap.py#L45"
+        },
+        {
+          "path": "awx/whole_snap.py",
+          "line": 471,
+          "symbol": "def pair_end_cands(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_snap.py#L471"
+        },
+        {
+          "path": "awx/whole_snap.py",
+          "line": 1187,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_snap.py#L1187"
+        },
+        {
+          "path": "awx/pairs.py",
+          "line": 337,
+          "symbol": "def end_legs(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/pairs.py#L337"
+        },
+        {
+          "path": "awx/pairs.py",
+          "line": 415,
+          "symbol": "def crossover(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/pairs.py#L415"
+        }
+      ],
+      "required_qualification": "Check both pad-to-pose connectors, actual coupling/gap/uncoupled lengths/skew, paired via and crossover clearances, and P/N connectivity. Force blocked terminals and compare native refusal, not simply search success.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA09",
+      "topic": "Audit tolerance and route fallback",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 365,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L365"
+      },
+      "description": "Audits include exact pair connector/crossover copper and band joins, but a quarter-grid shortfall is treated as near miss. Routing lays pairs before singles, allows wider-band retries and later free fallback. Pipeline audit is not native KiCad DRC and does not establish manufacturer clearance.",
+      "sources": [
+        {
+          "path": "awx/route_lanes.py",
+          "line": 274,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_lanes.py#L274"
+        },
+        {
+          "path": "awx/braid.py",
+          "line": 6116,
+          "symbol": "def _route_pairs_planned_in_order(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/braid.py#L6116"
+        }
+      ],
+      "required_qualification": "Check exact final saved board independently at authored tolerances, and ensure a rerouted fallback still meets coupling, timing, placement and keepout obligations.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA10",
+      "topic": "Failed-plan lays and best-round selection",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 389,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L389"
+      },
+      "description": "A failed plan gate may still be laid from held snapped/best smooth geometry. One alternate is tried by default; selection within attempts prioritizes DRC, opens, vias and copper. First connected custom-DRC-clean lay stops even when loop failed or CP proof absent. Last resort may plan a subset.",
+      "sources": [
+        {
+          "path": "awx/whole_route.py",
+          "line": 1002,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L1002"
+        },
+        {
+          "path": "awx/whole_route.py",
+          "line": 1104,
+          "symbol": "def lay_rounds(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L1104"
+        },
+        {
+          "path": "awx/whole_route.py",
+          "line": 1167,
+          "symbol": "def partial_drops(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L1167"
+        }
+      ],
+      "required_qualification": "Grade all required nets/checks in final native artifacts. Preserve plan failure/unproved status independently from route success; partial output cannot pass the full design.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA11",
+      "topic": "Bus hand-on and existing copper",
+      "delta_type": "clarified_existing_implementation",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 396,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L396"
+      },
+      "description": "Wrapper strips scoped bus copper, stamps project floors, checks connected bus nets and whole-board no-worse DRC at each board own floor, restores unsuccessful lanes and locks/protects accepted copper. Source excludes length/skew rows from untuned grading. put_back restores only blocks that remain clear; exact original copper preservation is not unconditional.",
+      "sources": [
+        {
+          "path": "awx/route_bus.py",
+          "line": 23,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_bus.py#L23"
+        },
+        {
+          "path": "awx/route_bus.py",
+          "line": 851,
+          "symbol": "def put_back(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_bus.py#L851"
+        },
+        {
+          "path": "awx/route_bus.py",
+          "line": 1320,
+          "symbol": "def lock_lanes(",
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/route_bus.py#L1320"
+        },
+        {
+          "path": "awx/whole_route.py",
+          "line": 901,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_route.py#L901"
+        }
+      ],
+      "required_qualification": "Compare authored rules and geometry before/after, require all original mandatory length/skew checks independently, prove existing-copper identity where required, and check repaired/restored net connectivity.",
+      "runtime_exercised": false,
+      "parity_established": false
+    },
+    {
+      "id": "DELTA12",
+      "topic": "Dependency and ABI boundary",
+      "delta_type": "documentation_and_identity_clarification",
+      "documentation": {
+        "path": "docs/solvers/index.html",
+        "line": 417,
+        "symbol": null,
+        "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/docs/solvers/index.html#L417"
+      },
+      "description": "Source and crate remain 0.23.7; entire Rust and Python trees and build/dependency files unchanged. OR-Tools CP-SAT is imported by AWX but absent from top-level requirements; experiment environments pin 9.15.6755. No installed environment or binary compatibility was exercised. New interactive Frame graphic is simplified JavaScript, not executable router evidence.",
+      "sources": [
+        {
+          "path": "VERSION",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/VERSION#L1"
+        },
+        {
+          "path": "rust_router/Cargo.toml",
+          "line": 16,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/rust_router/Cargo.toml#L16"
+        },
+        {
+          "path": "requirements.txt",
+          "line": 1,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/requirements.txt#L1"
+        },
+        {
+          "path": "awx/whole_solve.py",
+          "line": 36,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/whole_solve.py#L36"
+        },
+        {
+          "path": "awx/modal_whole.py",
+          "line": 34,
+          "symbol": null,
+          "url": "https://github.com/drandyhaas/KiCadRoutingTools/blob/d24a7602012b96c5cfa610ea05a171646ad601bd/awx/modal_whole.py#L34"
+        }
+      ],
+      "required_qualification": "Build exact stock source in matched supported environment and capture versions; explicitly provision/qualify AWX requirements if exercising it. Preserve old reference and inputs, not indefinite dependency freezing.",
+      "runtime_exercised": false,
+      "parity_established": false
+    }
+  ]
+}

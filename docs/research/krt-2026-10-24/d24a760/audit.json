@@ -1,0 +1,11 @@
+{
+  "static_checks_passed": true,
+  "delta_rows": 12,
+  "source_locators_checked": 49,
+  "tracked_blob_comparisons": 1792,
+  "changed_paths": [
+    "docs/solvers/index.html"
+  ],
+  "native_checks_run": 0,
+  "scope": "Static delta identity, source paths/symbol existence, recorded evidence level and clean checkout checks only"
+}

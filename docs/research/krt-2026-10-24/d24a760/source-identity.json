@@ -1,0 +1,244 @@
+{
+  "observed_at_utc": "2026-10-24T16:09:39.591190+00:00",
+  "remote_main_at_observation": "d24a7602012b96c5cfa610ea05a171646ad601bd",
+  "upstream_url": "https://github.com/drandyhaas/KiCadRoutingTools.git",
+  "old_revision": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+  "new_revision": "d24a7602012b96c5cfa610ea05a171646ad601bd",
+  "old_checkout": "/home/halbritt/.cache/agent-ee-qualification/upstream/KiCadRoutingTools",
+  "new_checkout": "/home/halbritt/.cache/agent-ee-qualification/upstream/KiCadRoutingTools-d24a760",
+  "old_clean": true,
+  "new_clean": true,
+  "commit": {
+    "parent": "222bb144744c3ddd979674e528bf8647e9ced8d6",
+    "date": "2026-10-24T12:00:54-04:00",
+    "subject": "Site: the solvers page follows today's whole route"
+  },
+  "commit_count": 1,
+  "changed_files": [
+    {
+      "path": "docs/solvers/index.html",
+      "old_blob": "55d0dfec641b6d452268320406fb1713893907c3",
+      "new_blob": "d7994ce9780194fc7de331a9ab9225dc2d99479f",
+      "identical": false
+    }
+  ],
+  "diff_numstat": "233\t58\tdocs/solvers/index.html",
+  "version": "0.23.7",
+  "crate_version": "0.23.7",
+  "pyo3": "0.23; extension-module, abi3-py39",
+  "abi_conclusion": "No source-level ABI delta: entire Rust subtree and Python consumers unchanged. No new build or binary compatibility test performed.",
+  "source_file_count": 1792,
+  "identical_tracked_file_count": 1791,
+  "top_level_trees": [
+    {
+      "path": ".claude",
+      "old_tree": "10113ac2330307643490878e9ed3f0f3172432c7",
+      "new_tree": "10113ac2330307643490878e9ed3f0f3172432c7",
+      "identical": true
+    },
+    {
+      "path": ".github",
+      "old_tree": "0665d643fe49085e90dc293f355b03c266fa986c",
+      "new_tree": "0665d643fe49085e90dc293f355b03c266fa986c",
+      "identical": true
+    },
+    {
+      "path": "awx",
+      "old_tree": "84d437eb96cdfaf509974b1d9e86ad47963f48b4",
+      "new_tree": "84d437eb96cdfaf509974b1d9e86ad47963f48b4",
+      "identical": true
+    },
+    {
+      "path": "docs",
+      "old_tree": "0feb0d5b9cb7900585941b384bcc0b231964fe5e",
+      "new_tree": "b9e8342ad87e67890a447ef54618a11e05bb5de3",
+      "identical": false
+    },
+    {
+      "path": "kicad_files",
+      "old_tree": "4434f5bd38b8211c7e486110255e9f8e0934553b",
+      "new_tree": "4434f5bd38b8211c7e486110255e9f8e0934553b",
+      "identical": true
+    },
+    {
+      "path": "kicad_routing_plugin",
+      "old_tree": "cbf2ac940b8565905e755aacc9c4bc7beedf254f",
+      "new_tree": "cbf2ac940b8565905e755aacc9c4bc7beedf254f",
+      "identical": true
+    },
+    {
+      "path": "movie3d",
+      "old_tree": "523d2a68e9ebaec7566b5e7d7816ffb0d15c0c56",
+      "new_tree": "523d2a68e9ebaec7566b5e7d7816ffb0d15c0c56",
+      "identical": true
+    },
+    {
+      "path": "py_placer",
+      "old_tree": "317c39592209da2097b38dedfafbb26af349a434",
+      "new_tree": "317c39592209da2097b38dedfafbb26af349a434",
+      "identical": true
+    },
+    {
+      "path": "py_router",
+      "old_tree": "a227b1e76afeefde6c706a806f18f905060ce4b4",
+      "new_tree": "a227b1e76afeefde6c706a806f18f905060ce4b4",
+      "identical": true
+    },
+    {
+      "path": "py_tools",
+      "old_tree": "843c9060b275cbeae8c5f187620b55aec6066096",
+      "new_tree": "843c9060b275cbeae8c5f187620b55aec6066096",
+      "identical": true
+    },
+    {
+      "path": "rust_router",
+      "old_tree": "12e6f6ba829c49ca331d9cb956d49611843ff5f4",
+      "new_tree": "12e6f6ba829c49ca331d9cb956d49611843ff5f4",
+      "identical": true
+    },
+    {
+      "path": "tests",
+      "old_tree": "8df7cbb7bf13c5274856e3312badaca6cb2db966",
+      "new_tree": "8df7cbb7bf13c5274856e3312badaca6cb2db966",
+      "identical": true
+    }
+  ],
+  "critical_source_hashes": [
+    {
+      "path": "VERSION",
+      "old_blob": "379191a43b01d4e7e023f969207e33794d408dfc",
+      "new_blob": "379191a43b01d4e7e023f969207e33794d408dfc",
+      "new_sha256": "0ecbef709396ff09ffd671b6e29dec4fce2582b6619d467854e6ca4f0cc0e2b2"
+    },
+    {
+      "path": "requirements.txt",
+      "old_blob": "7973e910432255daf5d8b5ec62be3a0785c98361",
+      "new_blob": "7973e910432255daf5d8b5ec62be3a0785c98361",
+      "new_sha256": "25f5681decf5392c56852327747a6517a8b3e97255d76351277ee6c4835367f0"
+    },
+    {
+      "path": "build_router.py",
+      "old_blob": "1653b7a1ad65672235989893dadb93cb29b0447f",
+      "new_blob": "1653b7a1ad65672235989893dadb93cb29b0447f",
+      "new_sha256": "a5053c05529c2313c72a280d6c8ae7841539544e236316b159edb427549b6cfd"
+    },
+    {
+      "path": "rust_router/Cargo.toml",
+      "old_blob": "60cdd5637a858b14469ca758f3b5e3b7dfec0d35",
+      "new_blob": "60cdd5637a858b14469ca758f3b5e3b7dfec0d35",
+      "new_sha256": "68c7645098bd26b47fbdcf60a90522c6b9e7b9763b5f4c33f4e8e99c0836dcce"
+    },
+    {
+      "path": "rust_router/Cargo.lock",
+      "old_blob": "f1f04337ac381b730e10cfc13b13a15afce5f30b",
+      "new_blob": "f1f04337ac381b730e10cfc13b13a15afce5f30b",
+      "new_sha256": "03cd52885eb5378a955d665a4b5e54fd42024a3aad4de6eb4aee5d97cd03061f"
+    },
+    {
+      "path": "py_router/diff_pair_routing.py",
+      "old_blob": "0135c83800acbabdf56c6157355ff9076634eccc",
+      "new_blob": "0135c83800acbabdf56c6157355ff9076634eccc",
+      "new_sha256": "7ddfa8207f9e67964d74cf86fbb42d51bc96f8c427556a1fd5f5fdbf0cddb468"
+    },
+    {
+      "path": "py_router/diff_pair_multipoint.py",
+      "old_blob": "0c035b84a2cbaa47cc4bd355a6bf4f6e0c85d6f3",
+      "new_blob": "0c035b84a2cbaa47cc4bd355a6bf4f6e0c85d6f3",
+      "new_sha256": "592c6d3991ef1b1c1f83b92d198efddce5ba69fd726c58e834509d5d473190f0"
+    },
+    {
+      "path": "rust_router/src/lib.rs",
+      "old_blob": "9ede4a425567c2989625157441423d961a7ddab6",
+      "new_blob": "9ede4a425567c2989625157441423d961a7ddab6",
+      "new_sha256": "3f98d4921e91baca7e7ce3ad64793b916c949b1712a3b60b9cd3a2eba7ecd9fd"
+    },
+    {
+      "path": "rust_router/src/pose_router.rs",
+      "old_blob": "99448cc7eadde9ed711449d59d70e2a853f31d15",
+      "new_blob": "99448cc7eadde9ed711449d59d70e2a853f31d15",
+      "new_sha256": "a4df246ef8a886d1cd3df989734bfd4a15ddc72e551905b046fbbe056c240a4c"
+    },
+    {
+      "path": "awx/route_bus.py",
+      "old_blob": "2cad307459acdb5dad6bdbe60d3caafab01bca7e",
+      "new_blob": "2cad307459acdb5dad6bdbe60d3caafab01bca7e",
+      "new_sha256": "f15ec864e8b985a98f10518b73d6add0b9f345e008f540a064269689276beb0a"
+    },
+    {
+      "path": "awx/whole_route.py",
+      "old_blob": "cd82adb8b550f496242c76eec3c25db247030b27",
+      "new_blob": "cd82adb8b550f496242c76eec3c25db247030b27",
+      "new_sha256": "b0ab71573b4223ff8163cff09b25220aecd4571d9c7fc599b47a7e322f6f6f05"
+    },
+    {
+      "path": "awx/whole_ends.py",
+      "old_blob": "374cdaa9587c332520447fa9a90f25b321492616",
+      "new_blob": "374cdaa9587c332520447fa9a90f25b321492616",
+      "new_sha256": "4395ad3112cf53fee71afe79437f01d1839014c202e9388f5926e7b8204d7fb1"
+    },
+    {
+      "path": "awx/whole_frame.py",
+      "old_blob": "6c757d2264156b2e6d1be20163bb40b632604a5a",
+      "new_blob": "6c757d2264156b2e6d1be20163bb40b632604a5a",
+      "new_sha256": "0d8f35abe37e9b4597d262c25851a4fa134a3217530350365b9623669776f0c4"
+    },
+    {
+      "path": "awx/whole_solve.py",
+      "old_blob": "90a116ac73537d692218c2783c4733c2f69a6d08",
+      "new_blob": "90a116ac73537d692218c2783c4733c2f69a6d08",
+      "new_sha256": "60ea8066601168cf2cc2d2346e75f9334b21a913c0eb461f7c21302dca8efafb"
+    },
+    {
+      "path": "awx/whole_geo.py",
+      "old_blob": "eedaac5895ad240cd29d3d5c836ce589efdf84c3",
+      "new_blob": "eedaac5895ad240cd29d3d5c836ce589efdf84c3",
+      "new_sha256": "aa17fb1d17e812bf4b8c89f17b81853ce4a0fd427ed89ebf300bf9b7aca9282e"
+    },
+    {
+      "path": "awx/whole_polish.py",
+      "old_blob": "5adb42ca9dad828a35f7dcce430c1c06b9822801",
+      "new_blob": "5adb42ca9dad828a35f7dcce430c1c06b9822801",
+      "new_sha256": "56ab489a71813a48d9535fb217a0b10ff8e2e51451b54728b9fc4eb881139847"
+    },
+    {
+      "path": "awx/whole_snap.py",
+      "old_blob": "c0f2a773168a7559b355bd3430c911672062e8cd",
+      "new_blob": "c0f2a773168a7559b355bd3430c911672062e8cd",
+      "new_sha256": "5ce62b812239a7e3ab0e96980812155b0176bb9e9f3c1fb6960a56e8872ad60e"
+    },
+    {
+      "path": "awx/pairs.py",
+      "old_blob": "396aedc267c80b2ab51ad44a57bf97163a1577a6",
+      "new_blob": "396aedc267c80b2ab51ad44a57bf97163a1577a6",
+      "new_sha256": "7094bb472e7e3edd4f4544798d70147dc631ad0a975f335541505759a2a71864"
+    },
+    {
+      "path": "awx/route_lanes.py",
+      "old_blob": "d17c3679fe3212a4aec6baf72e0b818f9ee32165",
+      "new_blob": "d17c3679fe3212a4aec6baf72e0b818f9ee32165",
+      "new_sha256": "d277f6b7cb1c88bd88400b0340233c566285111a0c30d42940305f7437fe6ad0"
+    },
+    {
+      "path": "awx/braid.py",
+      "old_blob": "2c86f8c6462ee47aa78930f2497e0a7e93f9aa3b",
+      "new_blob": "2c86f8c6462ee47aa78930f2497e0a7e93f9aa3b",
+      "new_sha256": "d2943840defcd3832e503c7c3878b0befc7778929382cc41651487d5d4d20f1d"
+    },
+    {
+      "path": "docs/solvers/index.html",
+      "old_blob": "55d0dfec641b6d452268320406fb1713893907c3",
+      "new_blob": "d7994ce9780194fc7de331a9ab9225dc2d99479f",
+      "new_sha256": "ac671a2e287c62b25ddd8d1bb3a479bd15bc0121bffc6e5c79e3615c56fd0096"
+    }
+  ],
+  "missing_documented_path": {
+    "name": "ends_kernel.py",
+    "tracked_matches": [],
+    "whole_ends_mentions": []
+  },
+  "commands_run": "git clone/checkout/status/show/diff/ls-tree/rev-parse/ls-remote; text reads and static artifact checks only",
+  "native_runs": 0,
+  "tests_run": 0,
+  "builds_run": 0,
+  "parity_established": false
+}

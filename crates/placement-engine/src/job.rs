@@ -180,6 +180,8 @@ pub struct Footprint {
     pub holes: Vec<Copper>,
     /// Solder-mask apertures (pad box grown by its mask expansion, mask graphics).
     pub mask: Vec<Rect>,
+    /// Inferred routing space; soft preference only, never a hard owner rule.
+    pub escape: Vec<Rect>,
     pub pads: Vec<Pad>,
     pub group: Option<usize>,
     pub edge: Option<EdgeRule>,
@@ -377,6 +379,8 @@ pub struct Weights {
     pub edge: i64,
     /// Penalty per square micrometre of hard overlap during exploration.
     pub hard: i64,
+    /// Penalty per square micrometre of copper in a terminal escape region.
+    pub escape: i64,
 }
 
 /// Immutable, validated problem. Built once per job input.
@@ -511,6 +515,13 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         ensure!(role != Role::SilkOnly || holes.is_empty(), "silk-only graphic carries holes");
         let mask = row.get("mask_local_nm").and_then(Value::as_array).cloned().unwrap_or_default()
             .iter().map(|r| Rect::parse(r, "mask")).collect::<Result<Vec<_>>>()?;
+        let escape = match row.get("escape_local_nm") {
+            Some(v) => v.as_array().context("escape_local_nm")?.iter().map(|r| {
+                ensure!(r["authority"] == "agent-heuristic/1", "escape space must be labelled agent-heuristic/1");
+                Rect::parse(&r["rect_nm"], "escape space")
+            }).collect::<Result<Vec<_>>>()?,
+            None => Vec::new(),
+        };
         ensure!(role != Role::SilkOnly || copper.is_empty(), "{}: silk-only graphic carries copper", uuids[i]);
         let mut pads = Vec::new();
         for pad in row["pads"].as_array().context("pads")? {
@@ -565,7 +576,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
-            occupancy, occupancy_rung: rung, copper, holes, mask, pads, group: None, edge,
+            occupancy, occupancy_rung: rung, copper, holes, mask, escape, pads, group: None, edge,
         });
     }
     let mut groups = Vec::new();
@@ -611,6 +622,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         proximity: w.get("proximity").and_then(Value::as_i64).unwrap_or(4),
         edge: w.get("edge").and_then(Value::as_i64).unwrap_or(4),
         hard: w.get("hard").and_then(Value::as_i64).unwrap_or(50),
+        escape: w.get("escape").and_then(Value::as_i64).unwrap_or(20),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
     Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, weights, movable })
@@ -627,6 +639,7 @@ pub struct Terms {
     pub group: i128,
     pub proximity: i128,
     pub edge: i128,
+    pub escape: i128,
 }
 
 impl Terms {
@@ -637,6 +650,7 @@ impl Terms {
         self.group += sign * o.group;
         self.proximity += sign * o.proximity;
         self.edge += sign * o.edge;
+        self.escape += sign * o.escape;
     }
     pub fn cost(&self, w: &Weights) -> i128 {
         // hard overlap in nm^2 is scaled to um^2 so the penalty stays commensurate with nm lengths.
@@ -645,11 +659,12 @@ impl Terms {
             + w.group as i128 * self.group
             + w.proximity as i128 * self.proximity
             + w.edge as i128 * self.edge
+            + w.escape as i128 * (self.escape / 1_000_000)
     }
     fn value(&self) -> Value {
         json!({"hard": self.hard.to_string(), "hard_count": self.hard_count, "wire_nm": self.wire.to_string(),
                "group_nm": self.group.to_string(), "proximity_excess_nm": self.proximity.to_string(),
-               "edge_setback_nm": self.edge.to_string()})
+               "edge_setback_nm": self.edge.to_string(), "escape_overlap_nm2": self.escape.to_string()})
     }
 }
 
@@ -659,6 +674,7 @@ struct Placed {
     copper: Vec<Copper>,
     holes: Vec<Copper>,
     mask: Vec<Rect>,
+    escape: Vec<Rect>,
     reach: Option<Rect>,
 }
 
@@ -669,13 +685,15 @@ fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let copper: Vec<Copper> = fp.copper.iter().map(|c| c.at(pose)).collect();
     let holes: Vec<Copper> = fp.holes.iter().map(|c| c.at(pose)).collect();
     let mask: Vec<Rect> = fp.mask.iter().map(|r| place_rect(r, pose)).collect();
+    let escape: Vec<Rect> = fp.escape.iter().map(|r| place_rect(r, pose)).collect();
     let mut reach = body;
     for g in copper.iter().map(|c| c.bounds.grown(c.clearance))
         .chain(holes.iter().map(|h| h.bounds.grown(h.clearance.max(p.hole_to_hole_nm))))
-        .chain(mask.iter().map(|m| m.grown(p.mask_web_nm))) {
+        .chain(mask.iter().map(|m| m.grown(p.mask_web_nm)))
+        .chain(escape.iter().copied()) {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
-    Placed { body, edge_seat, copper, holes, mask, reach }
+    Placed { body, edge_seat, copper, holes, mask, escape, reach }
 }
 
 fn pad_at(p: &Prepared, f: usize, pad: usize, pose: &Pose) -> (i64, i64) {
@@ -692,6 +710,14 @@ fn interacts(p: &Prepared, a: usize, b: usize) -> bool {
 /// Pair term between two different footprints.
 fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
     let mut t = Terms::default();
+    // Conservative boxes are a congestion preference, not a clearance verdict.
+    for (spaces, copper) in [(&a.escape, &b.copper), (&b.escape, &a.copper)] {
+        for space in spaces {
+            for item in copper {
+                t.escape += space.overlap(&item.bounds);
+            }
+        }
+    }
     if let (Some(x), Some(y)) = (&a.body, &b.body) {
         let o = x.overlap(y);
         if o > 0 {
@@ -1659,7 +1685,12 @@ mod tests {
 
     #[test]
     fn incremental_matches_full_and_rollback_is_exact() {
-        let p = prepare(&input(vec![])).unwrap();
+        let mut raw = input(vec![]);
+        for index in [0, 2, 4] {
+            raw["footprints"][index]["escape_local_nm"] = json!([{
+                "authority": "agent-heuristic/1", "rect_nm": [1_000_000, -500_000, 4_000_000, 500_000]}]);
+        }
+        let p = prepare(&raw).unwrap();
         let mut rng = Rng::new(7);
         let mut state = SearchState::new(&p, start_poses(&p, 7, false, &mut rng)).unwrap();
         for i in 0..2000 {
@@ -1680,6 +1711,30 @@ mod tests {
             }
             assert_eq!(state.totals, full_evaluate(&p, &state.poses), "step {i}");
         }
+    }
+
+    #[test]
+    fn escape_space_changes_preference_not_feasibility() {
+        let mut raw = input(vec![]);
+        raw["groups"] = json!([]);
+        raw["footprints"] = json!([
+            fp(&uuid(1), "J1", "fixed_body", 5_000_000, 5_000_000, "P"),
+            fp(&uuid(2), "R9", "movable", 8_000_000, 5_000_000, "N")]);
+        raw["footprints"][0]["escape_local_nm"] = json!([{
+            "authority": "agent-heuristic/1", "rect_nm": [1_000_000, -500_000, 4_000_000, 500_000]}]);
+        let p = prepare(&raw).unwrap();
+        let poses: Vec<_> = p.footprints.iter().map(|f| f.initial).collect();
+        let blocked = full_evaluate(&p, &poses);
+        assert_eq!(blocked.hard_count, 0);
+        assert!(blocked.escape > 0);
+        let mut state = SearchState::new(&p, poses).unwrap();
+        let trial = state.evaluate(&p, &[(1, Pose { x: 10_500_000, y: 5_000_000, q: 0 })]).unwrap();
+        state.commit(&p, trial).unwrap();
+        assert_eq!(state.totals, full_evaluate(&p, &state.poses));
+        assert_eq!(state.totals.escape, 0);
+        assert_eq!(state.totals.hard_count, 0);
+        raw["footprints"][0]["escape_local_nm"][0]["authority"] = json!("owner");
+        assert!(prepare(&raw).is_err(), "a hint cannot masquerade as owner authority");
     }
 
     #[test]
