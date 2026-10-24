@@ -149,7 +149,10 @@ pub struct Footprint {
     pub rotations: Vec<i64>,
     pub occupancy: Option<Rect>,
     pub occupancy_rung: Option<String>,
-    pub copper: Vec<Rect>,
+    /// Copper boxes with the native clearance each item requires.
+    pub copper: Vec<(Rect, i64)>,
+    /// Solder-mask apertures (pad box grown by its mask expansion, mask graphics).
+    pub mask: Vec<Rect>,
     pub pads: Vec<Pad>,
     pub group: Option<usize>,
     pub edge: Option<EdgeRule>,
@@ -216,6 +219,7 @@ pub struct Prepared {
     pub outline: Rect,
     pub copper_edge_nm: i64,
     pub clearance_nm: i64,
+    pub mask_web_nm: i64,
     pub nets: Vec<String>,
     pub net_pads: Vec<Vec<(usize, usize)>>,
     pub groups: Vec<(String, usize, Vec<usize>)>,
@@ -269,7 +273,8 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let rules = &input["rules"];
     let clearance_nm = int(rules, "copper_clearance_nm")?;
     let copper_edge_nm = int(rules, "copper_edge_clearance_nm")?;
-    ensure!(clearance_nm >= 0 && copper_edge_nm >= 0, "negative rule");
+    let mask_web_nm = rules.get("mask_min_web_nm").and_then(Value::as_i64).unwrap_or(0);
+    ensure!(clearance_nm >= 0 && copper_edge_nm >= 0 && mask_web_nm >= 0, "negative rule");
     let rows = input["footprints"].as_array().context("footprints must be an array")?;
     let uuids: Vec<String> = rows.iter().map(|f| text(f, "uuid").map(str::to_string)).collect::<Result<_>>()?;
     let supplied: Vec<Option<String>> =
@@ -306,7 +311,16 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         ensure!(!matches!(role, Role::FixedCopperMark | Role::SilkOnly) || occupancy.is_none(),
             "{}: a fixed copper mark or silk-only graphic has no body occupancy", uuids[i]);
         let copper = row["copper_local_nm"].as_array().context("copper_local_nm")?
-            .iter().map(|r| Rect::parse(r, "copper")).collect::<Result<Vec<_>>>()?;
+            .iter().map(|r| match r.get("rect_nm") {
+                Some(rect) => {
+                    let c = r.get("clearance_nm").and_then(Value::as_i64).context("copper clearance_nm")?;
+                    ensure!(c >= 0, "negative copper clearance");
+                    Ok((Rect::parse(rect, "copper")?, c.max(clearance_nm)))
+                }
+                None => Ok((Rect::parse(r, "copper")?, clearance_nm)),
+            }).collect::<Result<Vec<_>>>()?;
+        let mask = row.get("mask_local_nm").and_then(Value::as_array).cloned().unwrap_or_default()
+            .iter().map(|r| Rect::parse(r, "mask")).collect::<Result<Vec<_>>>()?;
         ensure!(role != Role::SilkOnly || copper.is_empty(), "{}: silk-only graphic carries copper", uuids[i]);
         let mut pads = Vec::new();
         for pad in row["pads"].as_array().context("pads")? {
@@ -343,7 +357,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
-            occupancy, occupancy_rung: rung, copper, pads, group: None, edge,
+            occupancy, occupancy_rung: rung, copper, mask, pads, group: None, edge,
         });
     }
     let mut groups = Vec::new();
@@ -391,7 +405,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         hard: w.get("hard").and_then(Value::as_i64).unwrap_or(50),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, nets, net_pads, groups, proximity, weights, movable })
+    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, nets, net_pads, groups, proximity, weights, movable })
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -418,7 +432,7 @@ impl Terms {
     }
     pub fn cost(&self, w: &Weights) -> i128 {
         // hard overlap in nm^2 is scaled to um^2 so the penalty stays commensurate with nm lengths.
-        w.hard as i128 * (self.hard / 1_000_000 + self.hard_count as i128 * 1_000)
+        w.hard as i128 * (self.hard / 1_000_000 + self.hard_count as i128 * 1_000_000)
             + w.wire as i128 * self.wire
             + w.group as i128 * self.group
             + w.proximity as i128 * self.proximity
@@ -433,20 +447,21 @@ impl Terms {
 
 struct Placed {
     body: Option<Rect>,
-    copper: Vec<Rect>,
+    copper: Vec<(Rect, i64)>,
+    mask: Vec<Rect>,
     reach: Option<Rect>,
 }
 
 fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let fp = &p.footprints[f];
     let body = fp.occupancy.map(|r| place_rect(&r, pose));
-    let copper: Vec<Rect> = fp.copper.iter().map(|r| place_rect(r, pose)).collect();
+    let copper: Vec<(Rect, i64)> = fp.copper.iter().map(|(r, c)| (place_rect(r, pose), *c)).collect();
+    let mask: Vec<Rect> = fp.mask.iter().map(|r| place_rect(r, pose)).collect();
     let mut reach = body;
-    for c in &copper {
-        let g = c.grown(p.clearance_nm);
+    for g in copper.iter().map(|(r, c)| r.grown(*c)).chain(mask.iter().map(|m| m.grown(p.mask_web_nm))) {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
-    Placed { body, copper, reach }
+    Placed { body, copper, mask, reach }
 }
 
 fn pad_at(p: &Prepared, f: usize, pad: usize, pose: &Pose) -> (i64, i64) {
@@ -470,11 +485,22 @@ fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
             t.hard_count += 1;
         }
     }
-    // Conservative copper boxes; a clearance-grown overlap is refused.
-    for ca in &a.copper {
-        let g = ca.grown(p.clearance_nm);
-        for cb in &b.copper {
-            let o = g.overlap(cb);
+    // Conservative copper boxes; an overlap after growing by the larger of the
+    // two items' native clearances is refused.
+    for (ca, la) in &a.copper {
+        for (cb, lb) in &b.copper {
+            let o = ca.grown(*la.max(lb)).overlap(cb);
+            if o > 0 {
+                t.hard += o;
+                t.hard_count += 1;
+            }
+        }
+    }
+    // Mask apertures of different footprints keep the native minimum web.
+    for ma in &a.mask {
+        let g = ma.grown(p.mask_web_nm);
+        for mb in &b.mask {
+            let o = g.overlap(mb);
             if o > 0 {
                 t.hard += o;
                 t.hard_count += 1;
@@ -482,6 +508,12 @@ fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
         }
     }
     t
+}
+
+/// Pair terms are evaluated in footprint-index order, as the full evaluator does,
+/// because a clearance-grown overlap is not symmetric in its arguments.
+fn ordered_pair(p: &Prepared, a: usize, at_a: &Placed, b: usize, at_b: &Placed) -> Terms {
+    if a < b { pair_terms(p, at_a, at_b) } else { pair_terms(p, at_b, at_a) }
 }
 
 /// Unary term for one movable footprint: containment and edge rules.
@@ -509,7 +541,7 @@ fn unary_terms(p: &Prepared, f: usize, at: &Placed) -> Terms {
         }
     }
     let inner = p.outline.grown(-p.copper_edge_nm);
-    for c in &at.copper {
+    for (c, _) in &at.copper {
         let o = c.outside(&inner);
         if o > 0 {
             t.hard += o;
@@ -565,6 +597,43 @@ fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
         }
     }
     (best - r.max_nm).max(0) as i128
+}
+
+/// Exact hard violations of one pose vector, named by native reference (diagnostic).
+pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
+    let at: Vec<Placed> = (0..p.footprints.len()).map(|f| placed(p, f, &poses[f])).collect();
+    let mut out = Vec::new();
+    for a in 0..at.len() {
+        let fp = &p.footprints[a];
+        if fp.role == Role::Movable {
+            let named = |kind: &str, detail: Value| json!({"ref": fp.native_ref, "uuid": fp.uuid, "kind": kind, "detail": detail});
+            if let Some(body) = &at[a].body {
+                if body.outside(&p.outline) > 0 {
+                    out.push(named("occupancy_outside_outline", json!(body.as_value())));
+                }
+                if let Some(rule) = &fp.edge {
+                    let setback = rule.edge.setback(body, &p.outline);
+                    if rule.max_setback_nm.is_some_and(|m| setback > m) {
+                        out.push(named("edge_setback", json!({"setback_nm": setback, "max_setback_nm": rule.max_setback_nm})));
+                    }
+                }
+            }
+            let inner = p.outline.grown(-p.copper_edge_nm);
+            if at[a].copper.iter().any(|(c, _)| c.outside(&inner) > 0) {
+                out.push(named("copper_edge_clearance", Value::Null));
+            }
+        }
+        for b in a + 1..at.len() {
+            if interacts(p, a, b) {
+                let t = pair_terms(p, &at[a], &at[b]);
+                if t.hard_count > 0 {
+                    out.push(json!({"ref": p.footprints[a].native_ref, "with": p.footprints[b].native_ref,
+                        "uuid": p.footprints[a].uuid, "with_uuid": p.footprints[b].uuid, "kind": "pair", "count": t.hard_count}));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Reference evaluator: every term from scratch, no cache or index.
@@ -717,12 +786,12 @@ impl SearchState {
             let new_n = new[&f].reach.map(|r| self.neighbours(&r)).unwrap_or_default();
             for &g in old_n.iter().filter(|g| !movers.contains(g)) {
                 if interacts(p, f, g) {
-                    delta.add(&pair_terms(p, &old[&f], &placed(p, g, &self.poses[g])), -1);
+                    delta.add(&ordered_pair(p, f, &old[&f], g, &placed(p, g, &self.poses[g])), -1);
                 }
             }
             for &g in new_n.iter().filter(|g| !movers.contains(g)) {
                 if interacts(p, f, g) {
-                    delta.add(&pair_terms(p, &new[&f], &placed(p, g, &self.poses[g])), 1);
+                    delta.add(&ordered_pair(p, f, &new[&f], g, &placed(p, g, &self.poses[g])), 1);
                 }
             }
         }
@@ -875,6 +944,11 @@ pub struct Limits {
     pub deadline: Option<Instant>,
     pub cancel_file: Option<std::path::PathBuf>,
     pub check_every: u64,
+    pub initial_temperature: f64,
+    /// Differential check: compare against the full evaluator every N commits (0 = off).
+    pub verify_every: u64,
+    /// Hard-penalty multiplier reached at the end of a seed (linear ramp).
+    pub penalty_ramp: u64,
 }
 
 pub enum Stop {
@@ -898,15 +972,16 @@ impl Limits {
 /// One seeded annealing run. Infeasible intermediate states are internal
 /// exploration; only a state whose hard measure is exactly zero is retained,
 /// and a better feasible state replaces the seed's best only on commit.
-pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Result<(Option<Candidate>, Counters, Stop, u64)> {
+pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Result<(Option<Candidate>, Counters, Stop, u64, ((i64, i128), Vec<Value>, Option<Candidate>))> {
     let mut rng = Rng::new(seed);
     let mut state = SearchState::new(p, start_poses(p, seed, clustered, &mut rng))?;
     let mut best: Option<Candidate> = None;
     let w = &p.weights;
     let span = (p.outline.x1 - p.outline.x0).max(p.outline.y1 - p.outline.y0);
     let total = limits.steps_per_seed.max(1);
-    let mut cost = state.totals.cost(w);
-    let t0 = 2_000_000.0_f64;
+    let t0 = limits.initial_temperature;
+    let mut least_hard: (i64, i128) = (i64::MAX, i128::MAX);
+    let mut least_poses = state.poses.clone();
     let mut stop = Stop::Completed;
     let mut step = 0;
     while step < total {
@@ -943,14 +1018,25 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
         let trial = state.evaluate(p, &moves)?;
         let mut next = state.totals.clone();
         next.add(&trial.delta, 1);
-        let next_cost = next.cost(w);
+        let ramp = 1 + (frac * limits.penalty_ramp as f64) as i128;
+        let next_cost = next.cost(w) + (ramp - 1) * w.hard as i128 * (next.hard / 1_000_000 + next.hard_count as i128 * 1_000_000);
+        let cost = state.totals.cost(w) + (ramp - 1) * w.hard as i128 * (state.totals.hard / 1_000_000 + state.totals.hard_count as i128 * 1_000_000);
         let d = (next_cost - cost) as f64;
         if d <= 0.0 || draw < (-d / temperature).exp() {
             state.commit(p, trial)?;
-            cost = next_cost;
+            if limits.verify_every > 0 && state.counters.commits % limits.verify_every == 0 {
+                state.counters.full_evaluations += 1;
+                let full = full_evaluate(p, &state.poses);
+                ensure!(full == state.totals, "incremental terms diverged from the full evaluator at step {step}: {:?} vs {:?}", state.totals, full);
+            }
+            let plain = state.totals.cost(w);
             if state.totals.hard == 0 && state.totals.hard_count == 0
-                && best.as_ref().is_none_or(|b| cost < b.cost) {
-                best = Some(Candidate { seed, poses: state.poses.clone(), terms: state.totals.clone(), cost, step });
+                && best.as_ref().is_none_or(|b| plain < b.cost) {
+                best = Some(Candidate { seed, poses: state.poses.clone(), terms: state.totals.clone(), cost: plain, step });
+            }
+            if (state.totals.hard_count, state.totals.hard) < least_hard {
+                least_hard = (state.totals.hard_count, state.totals.hard);
+                least_poses = state.poses.clone();
             }
         } else {
             state.reject(trial);
@@ -963,7 +1049,12 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
         state.counters.full_evaluations += 1;
         ensure!(check == b.terms, "incremental terms diverged from the full evaluator");
     }
-    Ok((best, state.counters, stop, step))
+    let least = if best.is_some() || least_hard.0 == i64::MAX { Vec::new() } else { violations(p, &least_poses) };
+    let diagnostic = (best.is_none() && least_hard.0 != i64::MAX).then(|| {
+        let terms = full_evaluate(p, &least_poses);
+        Candidate { seed, cost: terms.cost(w), terms, poses: least_poses, step }
+    });
+    Ok((best, state.counters, stop, step, (least_hard, least, diagnostic)))
 }
 
 fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
@@ -998,9 +1089,13 @@ pub fn run(input: &Value) -> Result<Value> {
         deadline: deadline_ms.map(|ms| started + std::time::Duration::from_millis(ms)),
         cancel_file: search.get("cancel_file").and_then(Value::as_str).map(Into::into),
         check_every: search.get("check_every").and_then(Value::as_u64).unwrap_or(256),
+        verify_every: search.get("verify_every").and_then(Value::as_u64).unwrap_or(0),
+        penalty_ramp: search.get("penalty_ramp").and_then(Value::as_u64).unwrap_or(20),
+        initial_temperature: search.get("initial_temperature_nm").and_then(Value::as_f64).unwrap_or(5_000_000.0),
     };
     let shortlist_size = search["shortlist"].as_u64().unwrap_or(3) as usize;
     let mut found: Vec<Candidate> = Vec::new();
+    let mut infeasible: Vec<(Candidate, Vec<Value>)> = Vec::new();
     let mut seed_rows = Vec::new();
     let mut status = "completed";
     let mut counters = Counters::default();
@@ -1015,7 +1110,7 @@ pub fn run(input: &Value) -> Result<Value> {
             continue;
         }
         let t = Instant::now();
-        let (best, c, stop, steps) = anneal(&p, seed, clustered, &limits)?;
+        let (best, c, stop, steps, least) = anneal(&p, seed, clustered, &limits)?;
         counters.evaluations += c.evaluations;
         counters.commits += c.commits;
         counters.rejects += c.rejects;
@@ -1028,10 +1123,15 @@ pub fn run(input: &Value) -> Result<Value> {
         seed_rows.push(json!({"seed": seed, "start": if clustered {"clustered"} else {"scattered"},
             "status": seed_status, "steps": steps, "elapsed_s": t.elapsed().as_secs_f64(),
             "feasible": best.is_some(), "best_cost": best.as_ref().map(|b| b.cost.to_string()),
+            "least_hard_count": if least.0.0 == i64::MAX { Value::Null } else { json!(least.0.0) },
+            "least_hard_violations": least.1.clone(),
             "best_terms": best.as_ref().map(|b| b.terms.value())}));
         let _ = crate::progress::emit(json!({"event": "seed", "seed": seed, "status": seed_status, "feasible": best.is_some(),
             "poses": best.as_ref().map(|b| pose_rows(&p, &b.poses)), "cost": best.as_ref().map(|b| b.cost.to_string())}));
         found.extend(best);
+        if let Some(d) = least.2 {
+            infeasible.push((d, least.1));
+        }
     }
     found.sort_by(|a, b| a.cost.cmp(&b.cost).then(a.seed.cmp(&b.seed)));
     let mut shortlist = Vec::new();
@@ -1046,8 +1146,15 @@ pub fn run(input: &Value) -> Result<Value> {
                 "full_evaluation_equal": full_evaluate(&p, &c.poses) == c.terms, "poses": pose_rows(&p, &c.poses)}));
         }
     }
+    // No feasible state: the least-infeasible states are DIAGNOSTIC candidates with
+    // their exact violations. They are never feasible and never promoted as valid.
+    infeasible.sort_by(|a, b| (a.0.terms.hard_count, a.0.terms.hard, a.0.cost).cmp(&(b.0.terms.hard_count, b.0.terms.hard, b.0.cost)).then(a.0.seed.cmp(&b.0.seed)));
+    let diagnostic: Vec<Value> = infeasible.iter().take(shortlist_size).map(|(c, v)| json!({
+        "seed": c.seed, "step": c.step, "cost": c.cost.to_string(), "terms": c.terms.value(), "feasible": false,
+        "violations": v, "poses": pose_rows(&p, &c.poses)})).collect();
     Ok(json!({
         "schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": status,
+        "diagnostic_shortlist": diagnostic,
         "aliases": p.footprints.iter().map(|f| json!({"uuid": f.uuid, "alias": f.alias, "native_ref": f.native_ref})).collect::<Vec<_>>(),
         "occupancy": p.footprints.iter().map(|f| json!({"uuid": f.uuid, "rung": f.occupancy_rung,
             "role": format!("{:?}", f.role)})).collect::<Vec<_>>(),
@@ -1086,14 +1193,19 @@ mod tests {
             fp(&uuid(4), "R4", "movable", 2_000_000, 8_000_000, "B"),
             fp(&uuid(5), "FID", "fixed_copper_mark", 1_500_000, 1_500_000, ""),
         ];
+        // Unequal copper so a non-canonical pair order would change the grown-overlap area.
+        fps[2]["copper_local_nm"] = json!([[-1_200_000, -700_000, -100_000, 700_000], [400_000, -200_000, 700_000, 200_000]]);
+        fps[2]["mask_local_nm"] = json!([[-1_250_000, -750_000, -50_000, 750_000]]);
+        fps[3]["mask_local_nm"] = json!([[-950_000, -350_000, -250_000, 350_000]]);
+        fps[4]["copper_local_nm"] = json!([{"rect_nm": [-500_000, -500_000, 500_000, 500_000], "clearance_nm": 1_016_000}]);
         fps.extend(extra);
         json!({"schema": INPUT_SCHEMA, "problem_sha256": "a".repeat(64),
                "outline": {"kind": "rectangle", "rect_nm": [0, 0, 12_000_000, 10_000_000]},
-               "rules": {"copper_clearance_nm": 200_000, "copper_edge_clearance_nm": 300_000},
+               "rules": {"copper_clearance_nm": 200_000, "copper_edge_clearance_nm": 300_000, "mask_min_web_nm": 100_000},
                "footprints": fps,
                "groups": [{"name": "g", "anchor": "R1", "refs": ["R1", "R2"]}],
                "search": {"seeds": [{"seed": 0, "start": "scattered"}, {"seed": 1, "start": "clustered"}],
-                          "steps_per_seed": 3000, "shortlist": 2}})
+                          "steps_per_seed": 3000, "shortlist": 2, "verify_every": 1}})
     }
 
     #[test]
@@ -1164,12 +1276,16 @@ mod tests {
 
     #[test]
     fn copper_mark_is_copper_obstacle_not_body() {
-        let p = prepare(&input(vec![])).unwrap();
+        let mut i = input(vec![]);
+        // R3's derived body reaches 3.5 mm above its origin; its copper stays near the origin.
+        i["footprints"][2]["occupancy"]["local_rect_nm"] = json!([-1_300_000, -3_500_000, 1_300_000, 800_000]);
+        let p = prepare(&i).unwrap();
         let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
         let base = full_evaluate(&p, &poses);
         // R3's body over the fiducial origin but its pads clear of the fiducial copper: no new body overlap.
-        poses[2] = Pose { x: 1_500_000, y: 3_200_000, q: 0 };
+        poses[2] = Pose { x: 1_500_000, y: 4_500_000, q: 0 };
         let t = full_evaluate(&p, &poses);
+        assert!(violations(&p, &poses).iter().all(|v| v["with"] != "FID"), "{:?}", violations(&p, &poses));
         assert!(t.hard_count <= base.hard_count + 1);
         poses[2] = Pose { x: 1_500_000, y: 1_500_000, q: 0 };
         let hit = full_evaluate(&p, &poses);
@@ -1208,6 +1324,23 @@ mod tests {
         let mut late = input(vec![]);
         late["search"]["deadline_ms"] = json!(0);
         assert_eq!(run(&late).unwrap()["status"], "deadline");
+    }
+
+    #[test]
+    fn infeasible_problem_yields_only_labelled_diagnostics() {
+        let mut i = input(vec![]);
+        // Four 2 x 1 mm bodies cannot fit a 2.5 x 1.5 mm board: no candidate may be called feasible.
+        i["outline"]["rect_nm"] = json!([0, 0, 2_500_000, 1_500_000]);
+        i["footprints"][4]["pose"] = json!({"x_nm": 1_000_000, "y_nm": 1_000_000, "quarter_turns": 0});
+        let out = run(&i).unwrap();
+        assert!(out["shortlist"].as_array().unwrap().is_empty());
+        let diagnostic = out["diagnostic_shortlist"].as_array().unwrap();
+        assert!(!diagnostic.is_empty());
+        for d in diagnostic {
+            assert_eq!(d["feasible"], false);
+            assert!(!d["violations"].as_array().unwrap().is_empty());
+            assert_ne!(d["terms"]["hard_count"], 0);
+        }
     }
 
     #[test]
