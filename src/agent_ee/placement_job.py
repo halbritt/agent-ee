@@ -49,10 +49,6 @@ class JobRefusal(ValueError):
     """The job input cannot be prepared honestly (fail closed)."""
 
 
-class CancelledJob(RuntimeError):
-    pass
-
-
 def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
