@@ -20,6 +20,8 @@ import copy
 import hashlib
 import json
 import math
+import os
+from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import PurePosixPath
 
@@ -296,6 +298,8 @@ def bind(document, capture, *, source_sha256=None):
 
 
 def _binding(binding):
+    if isinstance(binding, PreparedMechanical):
+        return binding._document, binding._owners
     _fields(binding, ('schema', 'document', 'document_sha256', 'canonical_document_sha256',
                       'source_board_sha256', 'owners'), ('selection',), label='mechanical binding')
     if binding['schema'] != BINDING_SCHEMA:
@@ -327,6 +331,67 @@ def _binding(binding):
                 or selection['reservation_ids'] != expected_ids):
             raise ValueError('mechanical block selection must include every attached member reservation')
     return document, owners
+
+
+class _FrozenDict(dict):
+    def _immutable(self, *args, **kwargs):
+        raise TypeError('prepared mechanical snapshot is immutable')
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = __ior__ = _immutable
+
+    def __deepcopy__(self, memo):
+        return {key: copy.deepcopy(value, memo) for key, value in self.items()}
+
+
+class _FrozenList(list):
+    def _immutable(self, *args, **kwargs):
+        raise TypeError('prepared mechanical snapshot is immutable')
+
+    __setitem__ = __delitem__ = append = clear = extend = insert = pop = remove = reverse = sort = __iadd__ = __imul__ = _immutable
+
+    def __deepcopy__(self, memo):
+        return [copy.deepcopy(value, memo) for value in self]
+
+
+def _freeze(value):
+    if isinstance(value, dict):
+        return _FrozenDict({key: _freeze(child) for key, child in value.items()})
+    if isinstance(value, list):
+        return _FrozenList(_freeze(child) for child in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze(child) for child in value)
+    return value
+
+
+@dataclass(frozen=True)
+class PreparedMechanical:
+    """Private, immutable qualification of one binding and source capture.
+
+    Trial poses and outlines are variables, not new constraint authorities. A new
+    source board, native inventory, or side state requires a new preparation.
+    """
+    identity: str
+    _binding: dict
+    _document: dict
+    _owners: dict
+    _capture: dict
+
+    def require_problem(self, binding, capture):
+        # Compaction changes only the search outline; every other source field,
+        # including all native owners and their sides, remains invariant.
+        if (binding != self._binding
+                or {k: v for k, v in capture.items() if k != 'outline'} !=
+                   {k: v for k, v in self._capture.items() if k != 'outline'}):
+            raise ValueError('prepared mechanical problem identity changed; prepare again')
+
+
+def prepare(binding, capture):
+    """Validate/hash/copy the complete immutable input once, before any trial."""
+    document, owners = _binding(binding)
+    validate_capture(capture)
+    snapshot = _freeze(binding)
+    return PreparedMechanical(_digest({'binding': binding, 'capture': capture}), snapshot,
+                              _freeze(document), _freeze(owners), _freeze(capture))
 
 
 def for_block(binding, references):
@@ -409,10 +474,11 @@ def materialize(binding, capture, phase=None, partial=False):
     Partial search captures may omit unplaced owners only after initial bind()
     checked their identities. Full final/saved checks require every bound owner.
     """
-    document, owners = _binding(binding)
+    document, owners = ((binding._document, binding._owners) if isinstance(binding, PreparedMechanical)
+                        else _binding(binding))
     if type(partial) is not bool:
         raise ValueError('mechanical partial must be boolean')
-    entries = _selected_rows(binding, document)
+    entries = _selected_rows(binding._binding if isinstance(binding, PreparedMechanical) else binding, document)
     phases = sorted({p for row in entries for p in row['phases']})
     result = {'schema': 'agent-ee.materialized-mechanical-reservations/1', 'phase': phase,
               'phases': phases if phase is None else [phase], 'reservations': [],
@@ -478,69 +544,141 @@ def materialize(binding, capture, phase=None, partial=False):
         result['reservations'].append({'id': row['id'], 'kind': row['kind'], 'required': row['required'],
             'owner_uuid': None if owner is None else owner['uuid'],
             'owner_ref': None if owner is None else owner['ref'], 'faces': faces,
-            'polygons_nm': polygons, 'height_nm': row['height_nm'], 'phases': row['phases'],
-            'self_exclusion': row['self_exclusion'], 'source': document['source'], 'coverage': row['coverage'],
-            'uncertainty': row['uncertainty']})
+            'polygons_nm': polygons, 'height_nm': copy.deepcopy(row['height_nm']), 'phases': copy.deepcopy(row['phases']),
+            'self_exclusion': row['self_exclusion'], 'source': copy.deepcopy(document['source']), 'coverage': copy.deepcopy(row['coverage']),
+            'uncertainty': copy.deepcopy(row['uncertainty'])})
     result['status'] = 'unknown' if result['unknown'] else 'pass'
     return result
 
 
 def grade(capture, binding, phase=None, partial=False):
     """Compare projections to native courtyard bounds, preserving every unknown."""
+    return _grade(capture, binding, phase, partial)
+
+
+def _courtyard_issues(row, fp):
+    issues = {'unknown': [], 'advisories': [], 'defects': []}
+    if row['self_exclusion'] and fp.get('uuid') == row['owner_uuid']:
+        return issues
+    polygons = [simple_polygon(p) for p in row['polygons_nm']]
+    for side in row['faces']:
+        record = fp.get('courtyards', {}).get(side)
+        if record is None and fp.get('side') != side:
+            continue
+        try:
+            outer, inner = courtyard_bounds(record)
+            inner_area = sum(intersection_area(a, b) for a in polygons for b in inner)
+            outer_area = sum(intersection_area(a, b) for a in polygons for b in outer)
+        except (ValueError, TypeError) as exc:
+            target = issues['unknown'] if row['required'] else issues['advisories']
+            target.append({'reservation': row['id'], 'kind': 'courtyard',
+                           'ref': fp['ref'], 'side': side, 'reason': str(exc)})
+            continue
+        if inner_area:
+            target = issues['defects'] if row['required'] else issues['advisories']
+            target.append({'kind': 'mechanical_reservation_overlap', 'reservation': row['id'],
+                           'ref': fp['ref'], 'uuid': fp['uuid'], 'side': side,
+                           'overlap_area_nm2': [inner_area.numerator, inner_area.denominator]})
+        elif outer_area:
+            target = issues['unknown'] if row['required'] else issues['advisories']
+            target.append({'reservation': row['id'], 'kind': 'courtyard_approximation',
+                           'ref': fp['ref'], 'side': side,
+                           'reason': 'mechanical overlap lies only between native curve bounds'})
+    return issues
+
+
+def _pair_issues(left, right, phase):
+    issues = {'unknown': [], 'advisories': [], 'defects': []}
+    if left['kind'] == right['kind'] == 'access':
+        return issues
+    if (left['owner_uuid'] is not None and left['owner_uuid'] == right['owner_uuid']
+            and left['self_exclusion'] and right['self_exclusion']):
+        return issues
+    phases = sorted(set(left['phases']) & set(right['phases']))
+    if phase is not None:
+        phases = [phase] if phase in phases else []
+    if not phases:
+        return issues
+    for side in sorted(set(left['faces']) & set(right['faces'])):
+        area = sum(intersection_area(simple_polygon(a), simple_polygon(b))
+                   for a in left['polygons_nm'] for b in right['polygons_nm'])
+        if area:
+            target = issues['defects'] if left['required'] or right['required'] else issues['advisories']
+            target.append({'kind': 'mechanical_reservation_pair_overlap',
+                           'reservation': left['id'], 'other_reservation': right['id'],
+                           'side': side, 'phases': phases,
+                           'overlap_area_nm2': [area.numerator, area.denominator]})
+    return issues
+
+
+def _grade(capture, binding, phase, partial, local=None):
     result = materialize(binding, capture, phase, partial)
     result['schema'] = 'agent-ee.mechanical-reservation-grade/1'
     result['defects'] = []
     for row in result['reservations']:
-        polygons = [simple_polygon(p) for p in row['polygons_nm']]
         for fp in sorted(capture.get('footprints', []), key=lambda f: f['ref']):
-            if row['self_exclusion'] and fp.get('uuid') == row['owner_uuid']:
-                continue
-            for side in row['faces']:
-                record = fp.get('courtyards', {}).get(side)
-                if record is None and fp.get('side') != side:
-                    continue
-                try:
-                    outer, inner = courtyard_bounds(record)
-                    inner_area = sum(intersection_area(a, b) for a in polygons for b in inner)
-                    outer_area = sum(intersection_area(a, b) for a in polygons for b in outer)
-                except (ValueError, TypeError) as exc:
-                    target = result['unknown'] if row['required'] else result['advisories']
-                    target.append({'reservation': row['id'], 'kind': 'courtyard',
-                                   'ref': fp['ref'], 'side': side, 'reason': str(exc)})
-                    continue
-                if inner_area:
-                    target = result['defects'] if row['required'] else result['advisories']
-                    target.append({'kind': 'mechanical_reservation_overlap', 'reservation': row['id'],
-                                   'ref': fp['ref'], 'uuid': fp['uuid'], 'side': side,
-                                   'overlap_area_nm2': [inner_area.numerator, inner_area.denominator]})
-                elif outer_area:
-                    target = result['unknown'] if row['required'] else result['advisories']
-                    target.append({'reservation': row['id'], 'kind': 'courtyard_approximation',
-                                   'ref': fp['ref'], 'side': side,
-                                   'reason': 'mechanical overlap lies only between native curve bounds'})
+            inputs = (row, fp)
+            issues = (_courtyard_issues(*inputs) if local is None else
+                      local.evaluate(('courtyard', row['id'], fp['uuid']), inputs, _courtyard_issues))
+            for kind, rows in issues.items():
+                result[kind].extend(copy.deepcopy(rows))
     # Bodies and access envelopes can meet beyond both native courtyards. Two
     # access envelopes alone occupy no solid volume, so their overlap is not an
     # obstruction without a separate simultaneous-service requirement.
     for index, left in enumerate(result['reservations']):
         for right in result['reservations'][index + 1:]:
-            if left['kind'] == right['kind'] == 'access':
-                continue
-            if (left['owner_uuid'] is not None and left['owner_uuid'] == right['owner_uuid']
-                    and left['self_exclusion'] and right['self_exclusion']):
-                continue
-            phases = sorted(set(left['phases']) & set(right['phases']))
-            if phase is not None:
-                phases = [phase] if phase in phases else []
-            if not phases:
-                continue
-            for side in sorted(set(left['faces']) & set(right['faces'])):
-                area = sum(intersection_area(simple_polygon(a), simple_polygon(b))
-                           for a in left['polygons_nm'] for b in right['polygons_nm'])
-                if area:
-                    target = result['defects'] if left['required'] or right['required'] else result['advisories']
-                    target.append({'kind': 'mechanical_reservation_pair_overlap',
-                                   'reservation': left['id'], 'other_reservation': right['id'],
-                                   'side': side, 'phases': phases,
-                                   'overlap_area_nm2': [area.numerator, area.denominator]})
+            inputs = (left, right, phase)
+            issues = (_pair_issues(*inputs) if local is None else
+                      local.evaluate(('pair', left['id'], right['id']), inputs, _pair_issues))
+            for kind, rows in issues.items():
+                result[kind].extend(copy.deepcopy(rows))
     result['status'] = 'defect' if result['defects'] else 'unknown' if result['unknown'] else 'pass'
     return result
+
+
+class LocalMechanical:
+    """Exact contribution reuse; enumerate all potential neighbours on every trial.
+
+    Materialization/owner validation is deliberately a full recompute. Only the
+    courtyard and reservation-pair kernels have complete, explicit dependencies.
+    Cache entries are content-bound, never keyed by old spatial contacts alone.
+    """
+    def __init__(self, prepared, *, assert_reference=None):
+        self.prepared = prepared
+        self.assert_reference = (os.environ.get('AGENT_EE_ASSERT_MECHANICAL') == '1'
+                                 if assert_reference is None else assert_reference)
+        self.generation = 0
+        self.cache = {}
+        self.evaluations = self.reused = 0
+
+    def evaluate(self, key, inputs, evaluator):
+        previous = self.cache.get(key)
+        if previous is not None and previous[0] == inputs:
+            self.reused += 1
+            return previous[1]
+        issues = evaluator(*inputs)
+        self.cache[key] = (_freeze(inputs), _freeze(issues))
+        self.evaluations += 1
+        return issues
+
+    def trial(self, capture, generation):
+        if generation != self.generation:
+            raise ValueError('stale mechanical placement generation')
+        report = _grade(capture, self.prepared, None, True, self)
+        if self.assert_reference:
+            reference = grade(capture, copy.deepcopy(self.prepared._binding), partial=True)
+            if report != reference:
+                raise AssertionError('incremental mechanical grade differs from full reference')
+        return report
+
+    def commit(self, capture, generation):
+        report = _grade(capture, self.prepared, None, True, self)
+        if report != grade(capture, self.prepared, partial=True):
+            raise AssertionError('mechanical commit/restore differs from full reference')
+        self.generation = generation
+        return report
+
+    def restore(self, capture, generation):
+        # Removed members may return at a different pose. Keep no stale edges.
+        self.cache.clear()
+        return self.commit(capture, generation)

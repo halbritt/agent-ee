@@ -140,7 +140,7 @@ pub struct Search {
     positions: BTreeMap<String, Point>,
     peers: BTreeMap<String, Vec<Point>>,
     locality: Option<PlacementIndex>,
-    mechanical: Option<Value>,
+    mechanical: Option<crate::mechanical::PreparedMechanical>,
     cluster_start: Option<(u64, u64)>,
     cluster_spent: BTreeMap<Vec<String>, u64>,
     progress: crate::progress::Clock,
@@ -173,7 +173,8 @@ impl Search {
             })
             .transpose()?;
         let mut search = Self {
-            mechanical: policy.get("mechanical_reservations").cloned(),
+            mechanical: policy.get("mechanical_reservations")
+                .map(|bound| crate::mechanical::PreparedMechanical::new(bound, &capture.raw)).transpose()?,
             capture,
             fixed,
             exact,
@@ -549,7 +550,7 @@ impl Search {
                 let mut members = self.placed.iter().map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?;
                 members.push(proposed.to_value()?);
                 current["footprints"] = Value::Array(members);
-                if crate::mechanical::grade(&current, binding, true)?["status"] != "pass" {
+                if binding.grade(&current, true)?["status"] != "pass" {
                     conflicts.extend(self.placed.iter().filter(|fp| !self.fixed.contains(&fp.reference)).map(|fp| fp.reference.clone()));
                     continue;
                 }

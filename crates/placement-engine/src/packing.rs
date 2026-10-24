@@ -21,6 +21,7 @@ pub struct Prepared {
     pub carried: Option<Vec<Value>>,
     pub conflict: Option<String>,
     pub bands: BTreeMap<String, Vec<Polygon>>,
+    pub mechanical: Option<crate::mechanical::PreparedMechanical>,
 }
 
 #[derive(Debug)]
@@ -104,6 +105,8 @@ pub fn prepare(raw: &Value, policy: &Value, seed: Option<&Value>) -> Result<Prep
         && gap > Int::zero()
         && policy["constraint_provenance"].get("gap_nm").is_none();
     let mut prepared = Prepared {
+        mechanical: policy.get("mechanical_reservations")
+            .map(|bound| crate::mechanical::PreparedMechanical::new(bound, raw)).transpose()?,
         capture,
         fixed,
         placed: Vec::new(),
@@ -210,10 +213,10 @@ pub fn prepare(raw: &Value, policy: &Value, seed: Option<&Value>) -> Result<Prep
             }
         }
     }
-    if let Some(binding) = policy.get("mechanical_reservations") {
+    if let Some(binding) = &prepared.mechanical {
         let mut fixed_capture = raw.clone();
         fixed_capture["footprints"] = json!(prepared.placed.iter().map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?);
-        if crate::mechanical::grade(&fixed_capture, binding, true)?["status"] != "pass" {
+        if binding.grade(&fixed_capture, true)?["status"] != "pass" {
             prepared.conflict = Some("fixed placement violates source-bound mechanical reservations".into());
         }
     }

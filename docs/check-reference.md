@@ -1254,6 +1254,13 @@ captured board and carries it to every initial reviewer
 ([review input](blocks.md#review-input-block-provenance-agentee-355)). It is
 review input, not a check result, and an advisory block confers no acceptance.
 
+AGENTEE-511's [prepared mechanical grading](prepared-mechanical.md) reuses an
+immutable, fully qualified binding during block compaction. Incremental pair
+contributions retain the full grade as the commit/rollback reference, with an
+optional differential assertion on accepted and rejected trials. It adds no
+check kind or acceptance authority; unknown geometry and stale inputs still
+refuse.
+
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,

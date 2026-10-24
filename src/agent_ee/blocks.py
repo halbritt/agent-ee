@@ -501,7 +501,12 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     members = sorted(block['references'], key=_natural)
     anchor, sub, deferred, areas = _isolate(capture, policy, block)
     plane = _plane(board, members, anchor, sub)
-    plan = placer.pack(_isolated(capture, board, members, areas, plane), sub, heartbeat=heartbeat)
+    isolated = _isolated(capture, board, members, areas, plane)
+    mechanical = None
+    if 'mechanical_reservations' in sub:
+        from .mechanical_reservations import prepare
+        mechanical = prepare(sub['mechanical_reservations'], isolated)
+    plan = placer.pack(isolated, sub, heartbeat=heartbeat, mechanical=mechanical)
     base = {'schema': CANDIDATE, 'block_id': block_id, 'block_policy': sub, 'deferred': deferred}
     def failure(result):
         if 'mechanical_reservations' in sub:
@@ -523,7 +528,8 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     touching = _touching(board, members, plan, plane)
     recovery = None
     if touching:
-        recovery, recovered = _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat)
+        recovery, recovered = _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat,
+                                        mechanical)
         if recovered is None:
             return failure({**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
                             'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan,
@@ -533,7 +539,7 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     result = candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan)
     if result['status'] == 'packed' and compact:
         result = _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, result,
-                          heartbeat)
+                          heartbeat, mechanical)
     if recovery is not None:
         # The search log of how the first plan was obtained, kept on whichever run compaction selects.
         result['search']['recovery'] = recovery
@@ -573,7 +579,7 @@ def _touching(board, members, plan, plane):
         key=_natural)
 
 
-def _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat):
+def _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat, mechanical=None):
     """Retry a plane-reaching first plan with a temporary anchor-proximity group (AGENTEE-359).
 
     The placer's wire cost ignores ground nets and parts outside the block, so a member
@@ -610,7 +616,8 @@ def _recover(capture, board, members, anchor, sub, areas, plane, touching, heart
                     'reason': 'in a declared group or on fewer than two nets: ' + ', '.join(ineligible)}, None
         group = {'id': RECOVERY_GROUP, 'references': stranded, 'anchor': {'reference': anchor},
                  'max_distance_nm': distance}
-        plan = placer.pack(isolated, {**sub, 'groups': declared + [group]}, heartbeat=heartbeat)
+        plan = placer.pack(isolated, {**sub, 'groups': declared + [group]}, heartbeat=heartbeat,
+                           mechanical=mechanical)
         record['steps_total'] += plan['steps_used']
         row = {'references': stranded, 'max_distance_nm': distance, 'status': plan['status'],
                'steps_used': plan['steps_used']}
@@ -632,7 +639,8 @@ def _recover(capture, board, members, anchor, sub, areas, plane, touching, heart
     return {**record, 'status': 'exhausted', 'reason': f'no trial within {RECOVERY_TRIALS} left the synthetic plane'}, None
 
 
-def _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, first, heartbeat):
+def _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, first, heartbeat,
+             mechanical=None):
     """Shrink the block outline by deterministic bisection; keep the packed candidate of least box area.
 
     Two families of rectangular outlines are bisected in turn, each over an integer
@@ -655,7 +663,8 @@ def _compact(capture, inventory, derivation, block, anchor, policy, sub, deferre
 
     def run(family, parameter, box):
         nonlocal best, total
-        plan = placer.pack(_isolated(capture, board, members, areas, box), trial_policy, heartbeat=heartbeat)
+        plan = placer.pack(_isolated(capture, board, members, areas, box), trial_policy, heartbeat=heartbeat,
+                           mechanical=mechanical)
         total += plan['steps_used']
         row = {'family': family, 'parameter': parameter, 'status': plan['status'], 'steps_used': plan['steps_used']}
         result = None

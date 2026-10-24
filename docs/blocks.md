@@ -9,6 +9,11 @@ writes a board; the native writer does. The complete board plan must still pass 
 retain usable [locality evidence](placer.md#pad-level-electrical-locality-agentee-322) and pass the
 [native publication gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318).
 
+[Prepared mechanical grading](prepared-mechanical.md) (AGENTEE-511) shares one
+immutable binding qualification across each block/face's packing, recovery, and
+compaction trials. It preserves candidate bytes and search policy and retains
+full grading at commit/rollback, with optional per-trial differential assertions.
+
 ```sh
 PYTHONPATH=src python3 -m agent_ee.blocks derive --probe build/placement-probe.json \
   --netlist build/design.xml --allocation design/blocks.json --out build/blocks.json

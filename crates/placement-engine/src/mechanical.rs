@@ -781,6 +781,20 @@ fn add_issue(result: &mut Value, required: bool, issue: Value) {
 /// Evaluate all declared phases. Initial source authentication is exclusively at
 /// the accepted-envelope boundary; partial captures contain placed members only.
 pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
+    PreparedMechanical::new(bound, capture)?.grade(capture, partial)
+}
+
+/// Owned, immutable qualification. No reference aliases the caller's JSON.
+pub struct PreparedMechanical {
+    bound: Value,
+    owners: BTreeMap<String, Value>,
+    entries: Vec<Value>,
+    phases: BTreeSet<String>,
+    identity: String,
+}
+
+impl PreparedMechanical {
+    pub fn new(bound: &Value, capture: &Value) -> Result<Self> {
     let owners = binding(bound)?;
     let doc = &bound["document"];
     let selected = bound
@@ -796,6 +810,7 @@ pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
                     .is_some_and(|id| ids.iter().any(|s| s == id))
             })
         })
+        .cloned()
         .collect();
     let phases = entries
         .iter()
@@ -804,6 +819,24 @@ pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
         .into_iter()
         .flatten()
         .collect::<BTreeSet<_>>();
+        Ok(Self {
+            bound: bound.clone(),
+            owners: owners.into_iter().map(|(id, fp)| (id, fp.clone())).collect(),
+            entries,
+            phases,
+            identity: digest(&json!({"binding":bound, "capture":capture})),
+        })
+    }
+
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    pub fn grade(&self, capture: &Value, partial: bool) -> Result<Value> {
+    let owners = &self.owners;
+    let doc = &self.bound["document"];
+    let entries = &self.entries;
+    let phases = &self.phases;
     let mut result = json!({"schema":"agent-ee.mechanical-reservation-grade/1", "phase":null,
         "phases":phases, "reservations":[], "unknown":[], "advisories":[], "status":"pass", "defects":[]});
     let capture_check = if partial && capture["footprints"] == json!([]) {
@@ -846,7 +879,7 @@ pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
         let mut native = None;
         if let Some(owner) = row.get("owner") {
             let uuid = text(&owner["uuid"])?;
-            let source = owners[uuid];
+            let source = &owners[uuid];
             if source["ref"] != owner["ref"] {
                 problems.push("bound owner reference differs".into());
             } else if let Some(fp) = current.get(uuid) {
@@ -1043,6 +1076,7 @@ pub fn grade(capture: &Value, bound: &Value, partial: bool) -> Result<Value> {
     });
     Ok(result)
 }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1078,6 +1112,22 @@ mod tests {
 
     fn reseal(bound: &mut Value) {
         bound["canonical_document_sha256"] = json!(digest(&bound["document"]));
+    }
+
+    #[test]
+    fn prepared_snapshot_has_no_mutable_alias_and_binds_complete_input_identity() {
+        let (mut capture, mut bound) = fixture();
+        let prepared = PreparedMechanical::new(&bound, &capture).unwrap();
+        let identity = prepared.identity().to_owned();
+        let original = prepared.grade(&capture, false).unwrap();
+        assert_eq!(original, grade(&capture, &bound, false).unwrap());
+        bound["document"]["reservations"][0]["height_nm"][1] = json!(21);
+        assert!(PreparedMechanical::new(&bound, &capture).is_err());
+        assert_eq!(prepared.grade(&capture, false).unwrap(), original);
+        reseal(&mut bound);
+        assert_ne!(PreparedMechanical::new(&bound, &capture).unwrap().identity(), identity);
+        capture["footprints"][0]["side"] = json!("B");
+        assert_ne!(PreparedMechanical::new(&bound, &capture).unwrap().identity(), identity);
     }
 
     #[test]

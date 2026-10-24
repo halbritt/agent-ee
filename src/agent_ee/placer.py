@@ -1639,15 +1639,16 @@ def _spacing(fp, entry):
                for p in entry['polygons'] for a, b in edges(c) for d, e in edges(p))
 
 
-def _mechanical(capture, policy, *, partial=False):
+def _mechanical(capture, policy, *, partial=False, prepared=None):
     binding = policy.get('mechanical_reservations')
     if binding is None:
         return None
     from .mechanical_reservations import grade
-    return grade(capture, binding, partial=partial)
+    return grade(capture, prepared if prepared is not None else binding, partial=partial)
 
 
-def _initial_reservations(capture, policy, outline, obstacles, bands, groups, carried=None, seed=None):
+def _initial_reservations(capture, policy, outline, obstacles, bands, groups, carried=None, seed=None,
+                          mechanical=None):
     """Fixed parts and declared obstacles become exact polygon obstacles, never boxes.
 
     With ``carry_seed_fixed_pairs`` and an unsourced gap, a fixed part unchanged from
@@ -1710,7 +1711,7 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups, ca
             raise ValueError(f"fixed placement {fp['ref']} in group {group['id']} needs a fixed anchor")
         if not placement_groups.admits(fp, group, positions):
             raise ValueError(f"fixed placement {fp['ref']} violates declared group {group['id']}")
-    mechanics = _mechanical({**capture, 'footprints': placed}, policy, partial=True)
+    mechanics = _mechanical({**capture, 'footprints': placed}, policy, partial=True, prepared=mechanical)
     if mechanics is not None and mechanics['status'] != 'pass':
         raise ValueError('fixed placement violates source-bound mechanical reservations')
     return fixed, placed, exact
@@ -1781,7 +1782,7 @@ class _Search:
     failed part names the parts a backjump may move.
     """
     def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat=None,
-                 pad_keepouts=()):
+                 pad_keepouts=(), mechanical=None):
         self.started = (time.monotonic() if heartbeat is not None or 'search_timeout_s' in policy else None)
         self.deadline = (self.started + policy['search_timeout_s']
                          if 'search_timeout_s' in policy else None)
@@ -1791,6 +1792,11 @@ class _Search:
         self.best = []
         self.policy = policy
         self.capture = capture
+        if mechanical is None and 'mechanical_reservations' in policy:
+            from .mechanical_reservations import prepare
+            mechanical = prepare(policy['mechanical_reservations'], capture)
+        from .mechanical_reservations import LocalMechanical
+        self.mechanical = LocalMechanical(mechanical) if mechanical is not None else None
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
         self.exact, self.obstacles, self.outline, self.margin_nm = exact, obstacles, outline, margin_nm
@@ -1864,6 +1870,8 @@ class _Search:
         self.placed.append(fp)
         self.generations_allocated += 1
         self.generations.append(self.generations_allocated)
+        if self.mechanical is not None:
+            self.mechanical.commit({**self.capture, 'footprints': self.placed}, self.generations[-1])
         if self.locality is not None:
             self.locality.push(fp)
         if len(self.placed) > len(self.best):
@@ -1878,6 +1886,8 @@ class _Search:
     def pop(self):
         fp = self.placed.pop()
         self.generations.pop()
+        if self.mechanical is not None:
+            self.mechanical.restore({**self.capture, 'footprints': self.placed}, self.generations[-1])
         if self.locality is not None:
             self.locality.pop(fp['ref'])
         del self.positions[fp['ref']]
@@ -1911,8 +1921,8 @@ class _Search:
         escaped = _copper_escapes(proposed, self.outline, self.obstacles, self.placed, self.pad_keepouts)
         if escaped is not None:
             return escaped[1] - self.fixed
-        mechanics = _mechanical({**self.capture, 'footprints': self.placed + [proposed]},
-                                 self.policy, partial=True)
+        mechanics = (self.mechanical.trial({**self.capture, 'footprints': self.placed + [proposed]},
+                                           self.generations[-1]) if self.mechanical is not None else None)
         if mechanics is not None and mechanics['status'] != 'pass':
             return {fp['ref'] for fp in self.placed} - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
@@ -2116,20 +2126,26 @@ class _Search:
             self.cluster_active = self.cluster_start_steps = None
 
 
-def pack(capture, policy, *, heartbeat=None, seed=None):
+def pack(capture, policy, *, heartbeat=None, seed=None, mechanical=None):
     """Preserve legacy plans; try joint clusters, then copper-aligned candidates, only with the remaining budget."""
-    return _pack_gated(capture, policy, heartbeat=heartbeat, seed=seed, arranged=None)
+    return _pack_gated(capture, policy, heartbeat=heartbeat, seed=seed, arranged=None, mechanical=mechanical)
 
 
-def _pack_gated(capture, policy, *, heartbeat, seed, arranged):
+def _pack_gated(capture, policy, *, heartbeat, seed, arranged, mechanical=None):
     """``pack`` with ``arranged``: block members whose exact pose the arrangement copper gate admitted.
 
     Only block arrangement passes ``arranged`` (reference -> the admitted member
     footprint); every other fixed part, and an arranged member at any other pose,
     has its copper validated as an input (AGENTEE-371, ruling 371d).
     """
+    if 'mechanical_reservations' in policy:
+        from .mechanical_reservations import prepare
+        if mechanical is None:
+            mechanical = prepare(policy['mechanical_reservations'], capture)
+        else:
+            mechanical.require_problem(policy['mechanical_reservations'], capture)
     runtime = {}
-    result = _pack_joint(capture, policy, heartbeat, runtime, seed, arranged)
+    result = _pack_joint(capture, policy, heartbeat, runtime, seed, arranged, mechanical)
     if result['status'] == 'planned' or not runtime.get('copper_escapes'):
         return _proved_after_search(result, runtime)
     # AGENTEE-366: every pass gates copper; only a failed search adds the copper
@@ -2140,7 +2156,8 @@ def _pack_gated(capture, policy, *, heartbeat, seed, arranged):
     if remaining == 0:
         return _proved_after_search(result, runtime)
     aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
-                    deadline=runtime['search'].deadline, copper_axes=True, seed=seed, arranged=arranged)
+                    deadline=runtime['search'].deadline, copper_axes=True, seed=seed, arranged=arranged,
+                    mechanical=mechanical)
     if aligned['status'] != 'planned':
         # AGENTEE-371 (366b gap 4): a diagnostic only; the earlier result and its steps are unchanged.
         if 'search' in result:
@@ -2172,8 +2189,9 @@ def _proved_after_search(result, runtime):
             'search_failure': {key: result[key] for key in ('status', 'outcome', 'reason')}}
 
 
-def _pack_joint(capture, policy, heartbeat, runtime, seed, arranged):
-    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime, seed=seed, arranged=arranged)
+def _pack_joint(capture, policy, heartbeat, runtime, seed, arranged, mechanical=None):
+    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime, seed=seed, arranged=arranged,
+                   mechanical=mechanical)
     runtime['steps'] = runtime['search'].steps if 'search' in runtime else 0
     runtime['legacy'] = {'status': legacy['status'], 'steps_used': runtime['steps']}
     if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
@@ -2185,7 +2203,8 @@ def _pack_joint(capture, policy, heartbeat, runtime, seed, arranged):
             'status': 'not_attempted', 'reason': 'no remaining deterministic candidate budget', 'steps_used': 0}
         return legacy
     joint = _pack(capture, policy, heartbeat=heartbeat, joint=True,
-                  remaining_steps=remaining, deadline=previous.deadline, seed=seed, arranged=arranged)
+                  remaining_steps=remaining, deadline=previous.deadline, seed=seed, arranged=arranged,
+                  mechanical=mechanical)
     runtime['steps'] += joint['steps_used']
     if joint['status'] != 'planned':
         legacy['search']['joint_cluster_attempt'] = {
@@ -2225,14 +2244,14 @@ def _pack(capture, policy, *, seed=None, **options):
 
 
 def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, runtime=None, remaining_steps=None,
-              deadline=None, copper_axes=False):
+              deadline=None, copper_axes=False, mechanical=None):
     if heartbeat is not None:
         heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
     margin_nm = _edge_margin_nm(policy)
-    mechanics = _mechanical(capture, policy)
+    mechanics = _mechanical(capture, policy, prepared=mechanical)
     if mechanics is not None and mechanics['unknown']:
         return {**_failure(capture, policy, 'mechanical_geometry_unavailable', 'unknown', 0,
                            'required mechanical geometry or identity is unresolved', margin_nm),
@@ -2270,7 +2289,7 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
     conflict = None
     try:
         fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members,
-                                                     carried, seed)
+                                                     carried, seed, mechanical)
     except ValueError as exc:
         conflict = exc
     # Every fixed part's copper is an input, whatever the seed (ruling 371d), and is reported before
@@ -2365,7 +2384,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
     trace = placement_trace.active()
     if trace is not None:
         state['trace_search'] = placement_trace.now()
-    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat, pad_keepouts)
+    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat, pad_keepouts,
+                     mechanical)
     search.copper_axes = copper_axes
     if trace is not None:
         search.trace_index = trace.search_started(search, joint=joint, copper_axes=copper_axes)

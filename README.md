@@ -174,7 +174,9 @@ remaining budget. Joint refusals retain named cluster diagnostics.
 [Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
 engineer allocation file. Each block is packed alone into a rigid, versioned block
 candidate, with relative poses, an obligation grade, a courtyard witness,
-per-side outlines and source hashes. A compaction pass re-packs each block on
+per-side outlines and source hashes. [Prepared mechanical grading](docs/prepared-mechanical.md)
+reuses immutable binding qualification across block trials and checks local
+contributions against the full grade. A compaction pass re-packs each block on
 shrinking outlines and keeps the smallest box with the same obligations.
 If the first plan strands a member tied in only through a plane net,
 [recovery](docs/blocks.md#recovery-agentee-359) retries with a bounded

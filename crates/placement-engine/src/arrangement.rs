@@ -1107,10 +1107,10 @@ impl<'a> Search<'a> {
         members: &[PreparedFootprint],
     ) -> Result<Option<(String, BTreeSet<String>)>> {
         let placed = self.placed_fps();
-        if let Some(binding) = self.policy.get("mechanical_reservations") {
+        if let Some(binding) = &self.prepared.mechanical {
             let mut current = self.prepared.capture.raw.clone();
             current["footprints"] = json!(placed.iter().chain(members.iter()).map(PreparedFootprint::to_value).collect::<Result<Vec<_>>>()?);
-            if crate::mechanical::grade(&current, binding, true)?["status"] != "pass" {
+            if binding.grade(&current, true)?["status"] != "pass" {
                 let blockers = placed.iter().filter_map(|fp| self.owner.get(&fp.reference).cloned()).filter(|owner| owner != bid).collect();
                 return Ok(Some(("mechanical_reservations".into(), blockers)));
             }
