@@ -38,7 +38,7 @@ individual checks never means the whole design is accepted.
 | Placement and routing feedback | Placement constraints + seed/route policy → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Acquisition and esp_prog both route with zero native errors/opens. Search/legalization/final reload enforce declared hard constraints; portfolio can reject and retry candidates. Zones, netclasses, broader multilayer/paired/bus/fanout/plane features and routed constraint coverage still require qualification. |
 | Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `electrical_topology`, interval checks, passive/active SPICE, `dc_path` | Native topology, selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. New whole-net copper model exercises two/four-layer native controls and actual supply/return copper; disconnected and exceeded-budget negatives reject. Physical material/contact bounds and component obligations remain open. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Complete mechanical/fabrication requirement coverage and remaining routing-feature cases are still unmet. |
-| Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | Earlier targeted package exercise validates 9 plots/2 drills/12 BOM rows/17 placements and rejects stale coordinates. It used the prior circuit, so does not qualify the current TPS design. Current default build correctly refuses missing manufacturing coverage; no complete package is accepted. |
+| Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | Current TPS design regenerated through the ordinary build and passes 20 declared checks, including 9 plots/2 drills/12 BOM rows/17 placements. Changed exported coordinates reject as stale. Missing manufacturing check kinds are now wired; eleven original electrical/mechanical/reproducibility requirements still block default acceptance. No complete design/package is accepted. |
 | Operation and reproducibility | Clean installation + captured plan → bounded run/journal/resume/diagnostics; installer, doctor, build workflow | Receipted resume, source/runtime drift refusal and targeted negative cases exercised. Corrected native-image 47 passes the targeted requalification and both ordinary RC integration gates. Full fresh intent-to-package run, complete-suite clean setup and interrupted/resumed qualification remain required. |
 
 ## Current integrated state and evidence
@@ -66,13 +66,23 @@ requirements, parts, scaffold, schematic, placement-routing and artwork in
 Seed 6 won the bounded six-seed search: 279.455 s, 199 segments, 10 vias, 216.6868 mm.
 Those are observations, not comparative optimization or manufacturing acceptance.
 Independent review passes ERC, DRC, topology, selected parts and assembly data.
-The default package resume remains rejected with five missing manufacturing
-coverage kinds. No native board or component values were substituted by hand.
+That run's default package resume rejected five missing manufacturing coverage
+kinds. No native board or component values were substituted by hand.
+
+The subsequent manufacturing-bound build at `ab1f7e93` connects those existing
+check kinds and regenerates all six stages. Its final PCB is
+`8b441809e8ca8073f0aeb2bc90563452ccee60bbe227562a3e10b433a9873992`;
+all 20 declared independent checks execute successfully. A stale-CPL copy
+rejects, and default package resumption still refuses the eleven unresolved
+authored requirements. See the [current manufacturing qualification](qualification/acquisition-manufacturing-2026-10-24.md).
+Nominal power-removal checks also pass both loaded and open external-load cases;
+vendor-model limitations and physical bounds remain explicit.
 
 Immutable evidence under `~/.cache/agent-ee-qualification/agent545/`:
 
 | Bundle | Files | SHA-256 of SHA256SUMS | Meaning |
 | --- | ---: | --- | --- |
+| `acquisition-manufacturing-20261024` |6857|`a05dec9a96b7932e6949c2021c26b6616385f30f6e81a48770830fa899238fbd`|Current TPS manufacturing inputs, regenerated six-stage build, 20 declared checks, stale-CPL rejection, default refusal, two nominal removal cases and native renders. One internal symbolic link has separately recorded and verified custody.|
 | `acquisition-dc-rail-20261024` |5003|`e0e6e339ed3c70115e8189fc2667996f9d4d7d2b9dc9ca699fa53dd5f97723d5`|Whole-net model, 70 native regressions, ordinary two/four-layer controls and negatives, exact acquisition copper review and committed-revision control.|
 | `acquisition-power-spice47-20261024` |2670|`6c9c1f0deb24b9f15af3b9d594833b5e691df9c33d6756c05b11b193abc90c77`|Current-limited source repair, vendor models, stock failures, generic correction, native regressions, RC gates and unchanged actual power review.|
 | `acquisition-flow-20261024` |3350|`344e5dd763a406f512da7d00de4d181b847413259cc27769aec9cc3bf82e8961`|Six-stage actual flow, independent checks, default manufacturing refusal, diagnostic and vendor-comment regressions.|
@@ -109,7 +119,7 @@ not demonstrate parity. The prior matched esp_prog seed 10 comparison leaves
 
 ## Exact next work
 
-Close the acquisition electrical and mechanical requirements, attach every
-required manufacturing check and complete its normal default package build.
+Close the acquisition electrical and mechanical requirements and complete its
+normal default package build with the now-connected manufacturing checks.
 Proceed to the remaining representative/KRT cases. A milestone ends an iteration,
 not this goal; no required missing, skipped, stale or unknown check can pass.
