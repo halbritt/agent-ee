@@ -113,3 +113,15 @@ functional transient check while ERC, DRC and geometry pass. Both retained runs
 pass `agent-ee verify`. Logs, gate reports and exit records are
 `build/agent545/ngspice47-rc-*`. The actual acquisition power run also passes
 fresh verification and its bounded checks-only gate. No check is skipped.
+
+
+Integrated revision: `54864697c224fa1e7464719a3bd9b67e47752adf`.
+Immutable bundle:
+`~/.cache/agent-ee-qualification/agent545/acquisition-power-spice47-20261024`,
+2670 files; SHA-256 of `SHA256SUMS`:
+`6c9c1f0deb24b9f15af3b9d594833b5e691df9c33d6756c05b11b193abc90c77`.
+The bundle includes original captured vendor models, retained unsuccessful probes,
+stock and corrected native results, source archive, build manifest/logs, ordinary
+review and verification records. It depends on the earlier six-stage flow bundle
+for reproducing the original complete build inputs. It contains no manufacturing
+acceptance certificate.
