@@ -7,7 +7,6 @@ Contradictory, rejected or unselected sources refuse; an absent rating stays
 missing so ``assembly:passive-ratings`` keeps reporting it.
 """
 import hashlib
-import json
 import re
 import tempfile
 from fractions import Fraction
@@ -119,32 +118,14 @@ def verify_citations(root, facts, extractor):
 
 def _catalog_sources(root, part, kind):
     """Rating attributes of the exact purchased row in the record's captured response."""
-    from .jlc_stock_capture import parse_search_response
-    from .parts_manifest import _read_blob, read_captured
+    from .part_record import captured_attributes
     selection = part.get('selection')
     if not isinstance(selection, dict) or selection.get('kind') != 'named':
         return [], 'no captured supplier row for a ' + (selection or {}).get('kind', 'generic') + ' part'
-    record = strict_json(_read_blob(root, {'path': selection['part_record'],
-                                          'sha256': selection['part_record_sha256']}))
-    catalog = strict_json(_read_blob(root, record['catalog']))
-    request = [r for r in catalog['requests'] if r['lcsc'] == part['lcsc']]
-    if len(request) != 1:
-        raise ValueError(f'{part["id"]}: catalog request for {part["lcsc"]} is not unique')
-    path = (Path(record['catalog']['path']).parent / request[0]['response']['path']).as_posix()
-    raw = read_captured(root, path)
-    sha = hashlib.sha256(raw).hexdigest()
-    if sha != request[0]['response']['sha256'] or sha != record['response_sha256']:
-        raise ValueError(f'{part["id"]}: captured response differs from part record: {path}')
-    status, _ = parse_search_response(raw, part['lcsc'])
-    row = next(r for r in json.loads(raw)['data']['componentPageInfo']['list']
-               if r.get('componentCode') == part['lcsc']) if status == 'found' else None
-    if row is None or row.get('componentModelEn') != part['mpn']:
-        raise ValueError(f'{part["id"]}: captured row is not the purchased {part["lcsc"]} {part["mpn"]}')
-    attributes = row.get('attributes')
+    attributes, origin = captured_attributes(root, part)
     if attributes is None:
         return [], f'captured {part["lcsc"]} row has null attributes'
-    if not isinstance(attributes, list) or any(not isinstance(a, dict) for a in attributes):
-        raise ValueError(f'{part["id"]}: captured {part["lcsc"]} attributes are not a list of objects')
+    path, sha = origin['path'], origin['sha256']
     sources = []
     for attribute in attributes:
         field = CATALOG_ATTRIBUTES[kind].get(attribute.get('attribute_name_en'))

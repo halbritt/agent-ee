@@ -74,6 +74,14 @@ multiblock design. The focused interval, requirement-map, parts-stage and CLI
 suite passes 70 tests in the native executor, with no skips; retained log:
 `build/agent545/interval-source-final.log`.
 
+Named resistor/capacitor selection now checks the circuit nominal against the
+exact captured supplier attribute, closing a bypass of generic selection's
+value check. The public build regression consumes a named resistor through
+native PCB generation and rejects its wrong-value variant in the parts stage.
+The related parts, ratings, selection and native-binding suite passes 89 tests
+with no skips (`build/agent545/named-nominal-final.log`). Supplier claims remain
+distinct from verified datasheet applicability and functional circuit proof.
+
 ## KRT comparison inventory
 
 Initial observed upstream main on 2026-10-24:

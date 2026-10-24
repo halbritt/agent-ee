@@ -16,9 +16,18 @@ catalog, selection, datasheet and CAD dependencies, a connectivity-intent/1 or
 /2 circuit, and its schematic-layout/1 record. Paths other than the output
 directory are relative to the captured bundle. An empty circuit footprint
 requests the selected footprint. A nonempty footprint, symbol, supplier property
-or generic passive nominal value that disagrees with the qualified selection
+or passive nominal value that disagrees with the qualified selection
 refuses production. The circuit's topology, values and pin selectors remain
 engineering inputs; no approval authority is inferred from them.
+
+For a named resistor or capacitor, the producer rechecks the exact purchased
+row in the captured supplier response and requires one parseable `Resistance`
+or `Capacitance` attribute matching the circuit value. Missing, duplicate,
+malformed and contradictory claims refuse; zero-ohm resistors are allowed.
+`report.json` retains each checked nominal, raw attribute, purchased identity,
+response path and hash. This is a supplier-claim consistency check; tolerance,
+rating applicability and circuit function still need their own checks. The
+same captured-row reader supplies the existing passive-rating derivation.
 
 The compiler uses the existing `parts_manifest`, `binding_fill`, connectivity
 resolver and emitter identity calculation. It derives part references from exact

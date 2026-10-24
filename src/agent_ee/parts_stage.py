@@ -10,7 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from . import parts_manifest
-from .catalog import quantity, strict_json
+from .catalog import decimal_text, quantity, strict_json
 from .connectivity_ir import _read_json, resolve_intent
 from .schematic_emitter import native_sheet_paths
 from .stage_receipts import _relative, validate_step
@@ -38,6 +38,28 @@ def _check_nominal(row, component):
         if interval is None or _nominal(component['value'], unit) != \
                 (Decimal(interval['min']) + Decimal(interval['max'])) / 2:
             raise ValueError(component['reference'] + ': selected nominal differs from circuit value')
+
+
+def _check_named_nominal(root, part, component):
+    from .assembly_readiness import _passive_kind
+    from .part_record import captured_attributes
+    kind = _passive_kind(component)
+    if kind is None or part.get('selection', {}).get('kind') != 'named':
+        return None
+    attribute, unit = {'R': ('Resistance', 'ohm'), 'C': ('Capacitance', 'F')}[kind]
+    attributes, origin = captured_attributes(root, part)
+    matches = [a for a in attributes or [] if a.get('attribute_name_en') == attribute]
+    try:
+        if len(matches) != 1:
+            raise ValueError('one unambiguous captured attribute required')
+        nominal = quantity(matches[0].get('attribute_value_name'), unit)
+        if nominal < 0 or (kind == 'C' and nominal == 0) or _nominal(component['value'], unit) != nominal:
+            raise ValueError('selected nominal differs from circuit value')
+    except (ValueError, TypeError) as exc:
+        raise ValueError(component['reference'] + ': named passive nominal: ' + str(exc)) from exc
+    return dict(reference=component['reference'], sheet=component.get('sheet', 'root'),
+                attribute=attribute, raw=matches[0]['attribute_value_name'], unit=unit,
+                nominal=decimal_text(nominal), source=origin)
 
 
 def compile_parts(root, manifest, circuit, layout, *, deviations=None, ratings=None):
@@ -73,7 +95,7 @@ def compile_parts(root, manifest, circuit, layout, *, deviations=None, ratings=N
                  for part in document['parts'] for instance in part['instances']}
     choices = {entry['id']: entry['chosen'] for entry in (qualified['selection'] or {}).get('parts', [])}
     from ._connectivity_hierarchy import INTENT_SCHEMA, scoped
-    refs, used = {}, set()
+    refs, used, named_nominals = {}, set(), []
     for component in intent['components']:
         key = sheets[component.get('sheet', 'root')], component['reference']
         part = allocated.get(key)
@@ -89,6 +111,9 @@ def compile_parts(root, manifest, circuit, layout, *, deviations=None, ratings=N
         if assigned_libraries.get(name) != supplied_libraries.get(name):
             raise ValueError(component['reference'] + ': circuit symbol library differs from qualified CAD')
         _check_nominal(choices.get(part.get('selection_id')), component)
+        checked = _check_named_nominal(root, part, component)
+        if checked is not None:
+            named_nominals.append(checked)
         component['footprint'] = part['footprint']
         cid = scoped(component['sheet'], component['id']) if intent['schema'] == INTENT_SCHEMA else component['id']
         refs[cid] = dict(part_ref=part['id'])
@@ -120,6 +145,7 @@ def compile_parts(root, manifest, circuit, layout, *, deviations=None, ratings=N
     return dict(schema=SCHEMA, status='produced', acceptance_ready=False,
                 dependencies=dict(sorted(dependencies.items())), bindings=binding_report['components'],
                 binding_report=binding_report,
+                named_nominals=named_nominals,
                 deviations_source=deviations, ratings_source=ratings,
                 optional_absent=[dict(sheet=s, reference=r) for s, r in sorted(allocated.keys() - used)],
                 intent_sha256=identity(intent), resolved_sha256=resolved['canonical_sha256'],

@@ -137,6 +137,43 @@ class PartsProducerTests(unittest.TestCase):
                          json.loads(header['part_binding']['PARAM_Datasheet'])['sha256'])
         self.assertEqual(len(report['bindings']), 3)
 
+    def test_named_passive_value_must_match_captured_supplier_nominal(self):
+        from tests.test_approved_parts import named_fixture
+        for attributes, expected in (
+                ([dict(attribute_name_en='Resistance', attribute_value_name='10kΩ')], None),
+                ([dict(attribute_name_en='Resistance', attribute_value_name='1kΩ')], 'nominal'),
+                ([], 'nominal'),
+                ([dict(attribute_name_en='Resistance', attribute_value_name='10kΩ')]*2, 'nominal'),
+                ([dict(attribute_name_en='Resistance', attribute_value_name='10 bananas')], 'nominal')):
+            with self.subTest(attributes=attributes):
+                # Named selections are used for exact sourced passives too. They
+                # must not bypass the generic selection's value check.
+                named_fixture(self.bundle, self.manifest, index=0, lcsc='C38',
+                              mpn='SYNTHETIC-10K', package='0402', attributes=attributes)
+                if expected:
+                    with self.assertRaisesRegex(ValueError, expected):
+                        self.compile()
+                else:
+                    report, compiled = self.compile()
+                    self.assertEqual(report['status'], 'produced')
+                    self.assertEqual(compiled['components'][0]['value'], '10k')
+                    nominal, = report['named_nominals']
+                    self.assertEqual(nominal['nominal'], '10000')
+                    self.assertEqual(nominal['source']['sha256'], digest(self.bundle / nominal['source']['path']))
+
+    def test_named_capacitor_and_zero_ohm_link(self):
+        from tests.test_approved_parts import named_fixture
+        self.intent['components'][0]['value'] = '0'
+        named_fixture(self.bundle, self.manifest, index=0, lcsc='C38', mpn='SYNTHETIC-LINK', package='0402',
+                      attributes=[dict(attribute_name_en='Resistance', attribute_value_name='0Ω')])
+        named_fixture(self.bundle, self.manifest, index=1, lcsc='C39', mpn='SYNTHETIC-CAP', package='0402',
+                      attributes=[dict(attribute_name_en='Capacitance', attribute_value_name='100nF')])
+        report, _ = self.compile()
+        self.assertEqual(len(report['named_nominals']), 2)
+        self.intent['components'][1]['value'] = '10n'
+        with self.assertRaisesRegex(ValueError, 'C1: named passive nominal'):
+            self.compile()
+
     def test_explicit_deviation_source_is_bound_and_missing_source_refuses(self):
         write_json(self.bundle / 'deviations.json', dict(schema='agent-ee.part-deviations/1', deviations=[]))
         report, _ = parts_stage.compile_parts(self.bundle, 'parts.json', 'circuit.json', 'layout.json',
@@ -347,6 +384,10 @@ class PartsProducerTests(unittest.TestCase):
         require_toolchain(native=True)
         from agent_ee.spec_record import capture as capture_spec
         self.hierarchy()
+        from tests.test_approved_parts import named_fixture
+        named_fixture(self.bundle, self.manifest, index=0, lcsc='C38', mpn='SYNTHETIC-10K', package='0402',
+                      attributes=[dict(attribute_name_en='Resistance', attribute_value_name='10kΩ')])
+        self.save()
         self.planning_inputs()
         spec = b'# Checks\n\n- Native ERC must pass.\n- Native DRC must pass.\n'
         record = capture_spec(spec, 'QUAL', {'Checks': 'CHECKS'})

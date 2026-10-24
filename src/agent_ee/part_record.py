@@ -105,6 +105,42 @@ def qualify_record(document, root, reads=None):
     return dict(sorted(dependencies.items()))
 
 
+def captured_attributes(root, part):
+    """Attributes of a qualified named part, rechecking its exact captured row.
+
+    This reader supplies source claims, not datasheet applicability or ratings.
+    Both callers qualify the complete parts manifest before using these claims.
+    """
+    from .jlc_stock_capture import parse_search_response
+    from .parts_manifest import _read_blob, read_captured
+    selection = part['selection']
+    if selection['kind'] != 'named':
+        raise ValueError('supplier attributes require a named selection')
+    record = strict_json(_read_blob(root, {'path': selection['part_record'],
+                                          'sha256': selection['part_record_sha256']}))
+    if record['lcsc'] != part['lcsc'] or record['mpn'] != part['mpn']:
+        raise ValueError(f'{part["id"]}: part record identity differs from selected part')
+    catalog = strict_json(_read_blob(root, record['catalog']))
+    requests = [r for r in catalog['requests'] if r['lcsc'] == part['lcsc']]
+    if len(requests) != 1:
+        raise ValueError(f'{part["id"]}: catalog request for {part["lcsc"]} is not unique')
+    path = (Path(record['catalog']['path']).parent / requests[0]['response']['path']).as_posix()
+    raw = read_captured(root, path)
+    sha = hashlib.sha256(raw).hexdigest()
+    if sha != requests[0]['response']['sha256'] or sha != record['response_sha256']:
+        raise ValueError(f'{part["id"]}: captured response differs from part record: {path}')
+    status, _ = parse_search_response(raw, part['lcsc'])
+    row = next(r for r in strict_json(raw)['data']['componentPageInfo']['list']
+               if r.get('componentCode') == part['lcsc']) if status == 'found' else None
+    if row is None or row.get('componentModelEn') != part['mpn']:
+        raise ValueError(f'{part["id"]}: captured row is not the purchased {part["lcsc"]} {part["mpn"]}')
+    attributes = row.get('attributes')
+    if attributes is not None and (not isinstance(attributes, list) or
+                                   any(not isinstance(a, dict) for a in attributes)):
+        raise ValueError(f'{part["id"]}: captured {part["lcsc"]} attributes are not a list of objects')
+    return attributes, dict(path=path, sha256=sha, lcsc=part['lcsc'], mpn=part['mpn'])
+
+
 def datasheet_url_crosscheck(document, root, identity_url=None):
     """Compare a replayed record's acquisition URL with catalog URL claims.
 
