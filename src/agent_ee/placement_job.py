@@ -188,6 +188,47 @@ def _pad_clearance(pad):
     return max([int(pad.GetOwnClearance(l)) for l in layers] or [0])
 
 
+def _pad_copper(pad, origin, q):
+    """Conservative native copper contours, in the footprint's local frame.
+
+    KiCad's ERROR_OUTSIDE contains the curved copper; dropped contour holes
+    also over-reserve copper. This is a labelled search bound, not a DRC pass.
+    """
+    import pcbnew
+    from .placement_probe import _outer_contours
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: per-layer padstack unsupported')
+    kinds = {pcbnew.PAD_SHAPE_CIRCLE: 'circle', pcbnew.PAD_SHAPE_RECT: 'rect',
+             pcbnew.PAD_SHAPE_OVAL: 'oval', pcbnew.PAD_SHAPE_ROUNDRECT: 'roundrect',
+             pcbnew.PAD_SHAPE_CUSTOM: 'custom'}
+    kind = kinds.get(pad.GetShape(pcbnew.PADSTACK.ALL_LAYERS))
+    if kind is None:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported native pad shape')
+    contours, layers, clearances = [], [], []
+    for layer in pad.GetBoard().GetEnabledLayers().CuStack():
+        if not pad.IsOnLayer(layer) or not pad.IsOnCopperLayer():
+            continue
+        poly = pcbnew.SHAPE_POLY_SET()
+        pad.TransformShapeToPolygon(poly, layer, 0, 1000, pcbnew.ERROR_OUTSIDE)
+        native = _outer_contours(poly)
+        if not native:
+            raise JobRefusal(f'{pad.m_Uuid.AsString()}: native copper contour missing')
+        contours.extend([[list(_unrotate(x - origin[0], y - origin[1], q)) for x, y in p]
+                         for p in native])
+        layers.append(pcbnew.LayerName(layer))
+        clearances.append(int(pad.GetOwnClearance(layer)))
+    if not contours:
+        return None
+    points = [p for contour in contours for p in contour]
+    return {'rect_nm': [min(p[0] for p in points), min(p[1] for p in points),
+                        max(p[0] for p in points), max(p[1] for p in points)],
+            'clearance_nm': max(clearances),
+            'geometry': {'status': 'conservative_native_polygon', 'kind': kind,
+                         'tolerance_nm': 1000, 'polygons': contours,
+                         'layers': layers, 'pad_uuid': pad.m_Uuid.AsString(),
+                         'note': 'native ERROR_OUTSIDE; holes filled; layers projected together'}}
+
+
 def _on_mask(pad):
     import pcbnew
     return pad.IsOnLayer(pcbnew.F_Mask) or pad.IsOnLayer(pcbnew.B_Mask)
@@ -333,7 +374,9 @@ def capture(board_path, intent, groups):
                'occupancy': ({k: v for k, v in info['occupancy'].items() if k in ('status', 'label', 'rung')}
                              | ({'local_rect_nm': _local_rect(info['occupancy']['box'], origin, q)}
                                 if 'box' in info['occupancy'] else {})),
-               'copper_local_nm': [{'rect_nm': _local_rect(b, origin, q), 'clearance_nm': c} for b, c in info['copper']],
+               'copper_local_nm': [c for p in fp.Pads() if (c := _pad_copper(p, origin, q)) is not None]
+                   + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
+                      for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
                'mask_local_nm': [_local_rect(b, origin, q) for b in info['mask']],
                'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
                          'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],

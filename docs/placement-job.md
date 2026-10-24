@@ -9,6 +9,12 @@ production default: the existing `placer_runner` planning boundary, the `/1` and
 `pod_driver`, `placement_adapter`) are unchanged. There is no automatic Python
 fallback and no superiority or manufacturing claim.
 
+The AGENTEE-515q native-clearance prototype is **held**. At the as-built USB1
+pose, pair clearance agrees with native DRC, but full engine feasibility remains
+false: the unchanged derived occupancy extends 0.075 mm beyond the west outline.
+The required as-built feasibility gate therefore stops qualification. This
+branch does not establish placement feasibility or complete AGENTEE-515.
+
 ## One entry point
 
 ```sh
@@ -45,8 +51,8 @@ the process and must be recorded by the caller.
 1. **Runtime preflight**: pcbnew import, `kicad-cli version`, the Rust engine
    (`placement_rust_runtime.resolve_executable`, same discovery as the planner)
    and `routing_adapter.preflight` on the router checkout (`problems == []`).
-2. **Native capture, once** (`placement_probe.extract` plus pcbnew bounding
-   boxes). Identity is the full native footprint UUID; `native_ref` is carried
+2. **Native capture, once** (`placement_probe.extract` plus pcbnew geometry).
+   Identity is the full native footprint UUID; `native_ref` is carried
    unchanged. Each footprint gets a role:
    - `movable`: packed and searched.
    - `fixed_body`: locked footprints and fixed poses that draw a body.
@@ -82,6 +88,19 @@ the process and must be recorded by the caller.
    states with their exact named violations, labelled `feasible: false`.
    An `evaluate` request re-evaluates explicit pose vectors (predicted native pad
    positions, terms, violations) without searching.
+   Pad copper uses KiCad's native `TransformShapeToPolygon`, `ERROR_OUTSIDE`,
+   with a 1 µm curve tolerance. Circle, rectangle, oval/obround, roundrect and
+   custom pads carry labelled `conservative_native_polygon` contours in the
+   existing `copper_local_nm` entries. Rust uses the shared exact polygon
+   distance implementation, comparing separation against the larger native
+   per-pad override and the captured board/netclass bound. Bounds still serve
+   the spatial index and copper-edge gate. Curves are outer approximations,
+   holes are filled, and copper layers are projected together; these labelled
+   reservations can reject legal seats. Copper graphics and legacy input
+   entries retain their conservative box behavior. Unsupported native shapes,
+   per-layer padstacks, missing/invalid contours or contours outside indexed
+   bounds refuse preparation. Body/courtyard and mask reservations are unchanged.
+   These search bounds do not replace native DRC or excuse U2 artwork errors.
 5. **Shortlist native checks before promotion.** Each candidate is applied to a
    disposable native board by UUID (pcbnew), saved, the frozen project bytes are
    restored next to it, and it is reloaded. Integrity requires the same UUID set,
@@ -154,6 +173,19 @@ esp_prog capture test reads the external AGENTEE-513 bundle by SHA-256 when
 `AGENT_EE_REQUIRE_TOOLCHAIN=1`; only optional mode may skip it. The guard tests
 exercise both modes, coherent protected moves, native geometry/rule mutations,
 phase-boundary cancellation and live stalled-child termination.
+
+`tests/test_placement_job_clearance.py` checks each supported native pad shape,
+clearance overrides and refusal boundaries. The separate external esp_prog
+gate, `python3 -m unittest -fv tests.placement_clearance_agreement`, requires
+`AGENT_EE_ESP_PROG_PREPARED`, `AGENT_EE_USB1_SCAN`,
+`AGENT_EE_USB1_SCAN_PROBLEM` and `AGENT_EE_CLEARANCE_EVIDENCE`. They retain the
+as-built pair check, 50 deterministic seats from the sealed scan enumeration,
+10 deliberate pad intrusions, complete native reports and a confusion matrix.
+The comparison is scoped to USB1 and the specified fiducial; it establishes
+neither whole-board placement legality nor AGENTEE-515 completion. The matrix
+separately scopes pair feasibility, retaining unary constraints in each
+diagnostic; the as-built test also requires full engine feasibility. A false
+feasible native-clearance result or failed as-built agreement stops the lane.
 
 ## Origins
 

@@ -6,6 +6,11 @@ checks compare complete protected saved board content, including pad geometry,
 footprint graphics, rules and outline; a mismatch is ineligible even with clean
 DRC. Engine, routing and final DRC share one cancellation/deadline boundary.
 This adds no registered check kind or production default.
+Its pad-clearance search uses labelled conservative native outer polygons and
+the native pad overrides, with exact polygon separation in Rust. Native DRC
+remains authoritative; body/mask reservations and legacy copper boxes retain
+their existing contracts. See the [clearance tests](placement-job.md#tests)
+for the bounded USB1/fiducial agreement and soundness evidence.
 
 The [strict-suite runner](maintainer-guide.md) accepts `--previous-log` to submit
 modules longest-first from retained timings (AGENTEE-468), with alphabetical
