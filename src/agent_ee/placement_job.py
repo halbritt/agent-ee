@@ -335,6 +335,8 @@ def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        proc.stdout.close()
+        proc.stderr.close()
     if code != 0 or final is None or final.get('schema') != OUTPUT_SCHEMA:
         raise JobRefusal(f'placement engine failed (exit {code}): {(final or {}).get("error") or stderr[-2000:]}')
     if final['problem_sha256'] != problem['problem_sha256']:
@@ -436,8 +438,9 @@ def _non_footprint_nodes(data):
         if not isinstance(node, list) or not node or node[0] == 'footprint':
             continue
         if node[0] == 'layers':
-            node = ['layers'] + [entry[:3] if len(entry) == 4 and entry[3] == pcbnew.LayerName(
-                pcbnew.BOARD.GetLayerID(pcbnew.BOARD(), entry[1])) else entry for entry in node[1:]]
+            # The file ordinal is the native layer id; its standard name is pcbnew.LayerName(id).
+            node = ['layers'] + [entry[:3] if len(entry) == 4 and entry[0].isdigit()
+                                 and entry[3] == pcbnew.LayerName(int(entry[0])) else entry for entry in node[1:]]
         nodes.append(node)
     return nodes
 
@@ -660,9 +663,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home):
     if not candidate:
         record['status'] = 'no_candidate'
         return record
-    board = results[0].parent / candidate['board']
-    if not board.is_file():
-        board = Path(candidate['board'])
+    # The router reports the candidate relative to its working directory.
+    board = route_dir / candidate['board']
     record.update(status='routed', board=str(board), board_sha256=digest(board))
     return record
 

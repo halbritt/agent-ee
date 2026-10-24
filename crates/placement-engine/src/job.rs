@@ -1072,11 +1072,37 @@ fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
     }).collect())
 }
 
+/// Independent re-evaluation of explicit pose vectors (`{uuid: [x_nm, y_nm, quarter_turns]}`):
+/// predicted native pad positions, exact terms and named violations. Fixed parts must be unchanged.
+fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
+    let index: BTreeMap<&str, usize> = p.footprints.iter().enumerate().map(|(i, f)| (f.uuid.as_str(), i)).collect();
+    let mut out = Vec::new();
+    for row in rows.as_array().context("evaluate must be an array of pose maps")? {
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        for (uuid, pose) in row.as_object().context("pose map")? {
+            let f = *index.get(uuid.as_str()).with_context(|| format!("unknown footprint UUID {uuid}"))?;
+            let v = pose.as_array().context("pose [x, y, q]")?;
+            ensure!(v.len() == 3, "pose [x, y, q]");
+            poses[f] = Pose { x: v[0].as_i64().context("x")?, y: v[1].as_i64().context("y")?, q: v[2].as_i64().context("q")?.rem_euclid(4) };
+        }
+        // The same structural checks a search state enforces.
+        SearchState::new(p, poses.clone())?;
+        let terms = full_evaluate(p, &poses);
+        out.push(json!({"terms": terms.value(), "feasible": terms.hard == 0 && terms.hard_count == 0,
+                        "violations": violations(p, &poses), "poses": pose_rows(p, &poses)}));
+    }
+    Ok(json!({"schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": "evaluated", "evaluations": out,
+              "timing": {"prepare_s": prepare_s}, "engine_version": env!("CARGO_PKG_VERSION")}))
+}
+
 /// Process entry: prepare once, run the declared seed portfolio, emit a shortlist.
 pub fn run(input: &Value) -> Result<Value> {
     let started = Instant::now();
     let p = prepare(input)?;
     let prepare_s = started.elapsed().as_secs_f64();
+    if let Some(rows) = input.get("evaluate") {
+        return evaluate_poses(&p, rows, prepare_s);
+    }
     let search = &input["search"];
     let seeds: Vec<(u64, bool)> = search["seeds"].as_array().context("search.seeds")?.iter()
         .map(|s| Ok((s["seed"].as_u64().context("seed")?, s["start"] == "clustered")))
@@ -1149,7 +1175,22 @@ pub fn run(input: &Value) -> Result<Value> {
     // No feasible state: the least-infeasible states are DIAGNOSTIC candidates with
     // their exact violations. They are never feasible and never promoted as valid.
     infeasible.sort_by(|a, b| (a.0.terms.hard_count, a.0.terms.hard, a.0.cost).cmp(&(b.0.terms.hard_count, b.0.terms.hard, b.0.cost)).then(a.0.seed.cmp(&b.0.seed)));
-    let diagnostic: Vec<Value> = infeasible.iter().take(shortlist_size).map(|(c, v)| json!({
+    // Diversity first: the best state of each distinct violation-kind set, then the rest by rank.
+    let signature = |v: &Vec<Value>| v.iter().map(|x| format!("{}:{}", x["kind"], x["ref"])).collect::<BTreeSet<_>>();
+    let mut chosen: Vec<usize> = Vec::new();
+    let mut kinds = BTreeSet::new();
+    for (i, (_, v)) in infeasible.iter().enumerate() {
+        if chosen.len() < shortlist_size && kinds.insert(signature(v)) {
+            chosen.push(i);
+        }
+    }
+    for i in 0..infeasible.len() {
+        if chosen.len() < shortlist_size && !chosen.contains(&i) {
+            chosen.push(i);
+        }
+    }
+    chosen.sort();
+    let diagnostic: Vec<Value> = chosen.iter().map(|&i| &infeasible[i]).map(|(c, v)| json!({
         "seed": c.seed, "step": c.step, "cost": c.cost.to_string(), "terms": c.terms.value(), "feasible": false,
         "violations": v, "poses": pose_rows(&p, &c.poses)})).collect();
     Ok(json!({
@@ -1341,6 +1382,19 @@ mod tests {
             assert!(!d["violations"].as_array().unwrap().is_empty());
             assert_ne!(d["terms"]["hard_count"], 0);
         }
+    }
+
+    #[test]
+    fn evaluate_mode_reports_terms_and_refuses_moving_fixed_parts() {
+        let mut i = input(vec![]);
+        i["evaluate"] = json!([{uuid(1): [3_000_000, 3_000_000, 1]}]);
+        let out = run(&i).unwrap();
+        let row = &out["evaluations"][0]["poses"][0];
+        assert_eq!((row["x_nm"].as_i64(), row["quarter_turns"].as_i64()), (Some(3_000_000), Some(1)));
+        // Pad at local (-0.6 mm, 0) turned a quarter: (0, +0.6 mm) relative to the origin.
+        assert_eq!((row["pads"][0]["x_nm"].as_i64(), row["pads"][0]["y_nm"].as_i64()), (Some(3_000_000), Some(3_600_000)));
+        i["evaluate"] = json!([{uuid(5): [0, 0, 0]}]);
+        assert!(run(&i).unwrap_err().to_string().contains("fixed"));
     }
 
     #[test]
