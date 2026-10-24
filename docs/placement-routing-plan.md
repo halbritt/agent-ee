@@ -59,6 +59,8 @@ Blocked by: None; ready for scoped dispatch
 
 Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
+Decision (2026-10-24): chief 531 accepted the 514 recommendation WITH binding amendments C1-C6 (Cairn `b4a5857a@1`); see docs/placement-architecture.md, "Chief decision, 2026-10-24". AGENTEE-515 dispatch waits for the AGENTEE-513 review and a concrete, finite implementation brief.
+
 ## AGENTEE-515 — Deliver one complete esp_prog workflow through the chosen architecture
 
 Implement the chosen narrow vertical path: native input+intent -> prepared problem -> placement -> routing -> saved/reloaded validated board. Reuse or port KRT mechanisms as decided. Prepared binding optimization from511 can be reused only if it fits. No independent file-script pipeline for each search move. Keep a usable incumbent and bounded cancellation/checkpoint handling.
