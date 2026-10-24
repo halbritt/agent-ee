@@ -21,6 +21,14 @@ independent drill reservations. The previous prototype ignored USB1's existing
 input for review; complete target execution and matched stock qualification
 remain outside its scope. AGENTEE-515 remains incomplete.
 
+Functional groups may include fixed connectors and other fixed physical
+members. A fixed group anchor supplies the initial cluster position; group
+translations move only movable members. Fixed members retain their original
+poses and still contribute to group distances. This repairs the sourced
+acquisition board's `unknown movable member J1` refusal without unlocking its
+connectors. Native materialization and final verification still check locks
+and exact saved coordinates.
+
 ## One entry point
 
 ```sh
@@ -106,7 +114,7 @@ the process and must be recorded by the caller.
    roles, occupancy labels, rules (largest net-class clearance, per-pad native
    clearance, copper-to-edge clearance, solder-mask minimum web), groups,
    proximity rules and edge rules. `SearchState::evaluate` computes the delta of a
-   move (single part, quarter turn, rigid group translation) from a bucketed
+   move (single part, quarter turn, group translation) from a bucketed
    spatial index queried at the **new** pose plus the old contributors, with
    movers paired among themselves; `commit` is generation-checked and atomic,
    `reject` leaves the committed state unchanged, and a stale trial is refused.

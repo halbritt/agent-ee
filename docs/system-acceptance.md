@@ -13,6 +13,12 @@ hierarchy. Live telemetry-pod attempts remain held. Purchases, orders, uploads,
 physical bench measurements and supplier previews are not performed by this
 software qualification. Requirements and their severities remain intact.
 
+Latest direct owner priority: "if you can get the whole thing working we can
+then iterate on optimization". First qualify a complete correct run through
+the normal build entrypoint. Placement quality, copper length, via count,
+runtime and comparative optimization follow; required correctness and
+manufacturing checks remain gates.
+
 ## Intended supported domain
 
 The qualification target is conventional low-voltage FR-4 electronics: two,
@@ -73,6 +79,25 @@ interface; it does not derive equations from circuits or qualify the fresh
 multiblock design. The focused interval, requirement-map, parts-stage and CLI
 suite passes 70 tests in the native executor, with no skips; retained log:
 `build/agent545/interval-source-final.log`.
+
+The fresh sourced acquisition design now runs through public requirements,
+parts, scaffold and schematic stages into a native 17-component PCB with three
+functional blocks. Independent native review passes ERC, exact topology,
+selected parts and assembly properties/rating provenance. It has 37 open
+connections before placement and is not accepted. The complete package path
+and functional electrical verification remain open.
+
+Its first placement exposed a reusable defect: functional groups rejected
+their fixed connector members. The corrected engine includes physical fixed
+members in group identity/cost, starts clustered groups at fixed anchors, and
+translates only movable members. The strict Rust build passes 100 tests; the
+native job/guard/capture suite passes 43 tests with no skips. The second actual
+attempt preserves all three fixed connectors and passes edge and native
+clearance checks, but rejects two open connections at U2. The 73.6-second run
+is at `build/agent545/acquisition-placement-02`; final board SHA-256
+`bbd530173f2d5278b61226dc8ab193a2e1f6f859ed8d1f2a900be104850f3844`.
+Proximity scoring is still a preference, not final pin-locality acceptance.
+No manufacturing package or broad KRT parity is established by this result.
 
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's

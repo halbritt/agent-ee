@@ -571,8 +571,8 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             None => None,
         };
         let native_ref = text(row, "native_ref")?.to_string();
-        if role == Role::Movable {
-            ensure!(ref_index.insert(native_ref.clone(), i).is_none(), "duplicate movable reference {native_ref}");
+        if role != Role::SilkOnly {
+            ensure!(ref_index.insert(native_ref.clone(), i).is_none(), "duplicate physical reference {native_ref}");
         }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
@@ -584,7 +584,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         let name = text(group, "name")?.to_string();
         let member = |r: &Value| -> Result<usize> {
             let r = r.as_str().context("group member")?;
-            ref_index.get(r).copied().with_context(|| format!("group {name}: unknown movable member {r}"))
+            ref_index.get(r).copied().with_context(|| format!("group {name}: unknown physical member {r}"))
         };
         let anchor = member(&group["anchor"])?;
         let members = group["refs"].as_array().context("group refs")?.iter().map(member).collect::<Result<Vec<_>>>()?;
@@ -1189,7 +1189,14 @@ fn start_poses(p: &Prepared, seed: u64, clustered: bool, rng: &mut Rng) -> Vec<P
     let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
     let o = &p.outline;
     let centres: Vec<(i64, i64)> = p.groups.iter()
-        .map(|_| (rng.range(o.x0, o.x1), rng.range(o.y0, o.y1))).collect();
+        .map(|(_, anchor, _)| {
+            let fp = &p.footprints[*anchor];
+            if fp.role != Role::Movable {
+                (fp.initial.x, fp.initial.y)
+            } else {
+                (rng.range(o.x0, o.x1), rng.range(o.y0, o.y1))
+            }
+        }).collect();
     for &f in &p.movable {
         let fp = &p.footprints[f];
         let q = fp.rotations[rng.below(fp.rotations.len() as u64) as usize];
@@ -1280,9 +1287,9 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
             let cur = state.poses[f];
             vec![(f, Pose { q: fp.rotations[rng.below(fp.rotations.len() as u64) as usize], ..cur })]
         } else if let Some(g) = fp.group {
-            // Rigid group translation: every member moves by the same vector.
+            // Translate the movable members; mechanical anchors stay fixed.
             let (dx, dy) = (snap(rng.range(-reach, reach)), snap(rng.range(-reach, reach)));
-            p.groups[g].2.iter().map(|&m| {
+            p.groups[g].2.iter().filter(|&&m| p.footprints[m].role == Role::Movable).map(|&m| {
                 let c = state.poses[m];
                 (m, Pose { x: c.x + dx, y: c.y + dy, q: c.q })
             }).collect()
@@ -1854,6 +1861,38 @@ mod tests {
         poses[2] = Pose { x: 1_500_000, y: 1_500_000, q: 0 };
         let hit = full_evaluate(&p, &poses);
         assert!(hit.hard > 0, "copper-on-copper with the mark must be a hard violation");
+    }
+
+    #[test]
+    fn functional_groups_keep_fixed_anchors_and_members_stationary() {
+        // A real generated acquisition board failed because each block includes
+        // its mechanically fixed connector. Search must keep those references
+        // in the block without translating them during a group move.
+        for anchor in ["R1", "R2"] {
+            let mut raw = input(vec![]);
+            raw["footprints"][0]["role"] = json!("fixed_body");
+            raw["groups"][0]["anchor"] = json!(anchor);
+            let p = prepare(&raw).unwrap();
+            let initial = p.footprints[0].initial;
+            let mut rng = Rng::new(9);
+            let poses = start_poses(&p, 9, true, &mut rng);
+            assert_eq!(poses[0], initial);
+            if anchor == "R1" {
+                assert!((poses[1].x - initial.x).abs() <= 2_050_000);
+                assert!((poses[1].y - initial.y).abs() <= 2_050_000);
+            }
+            let out = run(&raw).unwrap();
+            assert_eq!(out["status"], "completed");
+            assert!(!out["shortlist"].as_array().unwrap().is_empty());
+            for candidate in out["shortlist"].as_array().unwrap() {
+                assert_eq!(candidate["full_evaluation_equal"], true);
+                let fixed = candidate["poses"].as_array().unwrap().iter()
+                    .find(|v| v["native_ref"] == "R1").unwrap();
+                assert_eq!(fixed["x_nm"], initial.x);
+                assert_eq!(fixed["y_nm"], initial.y);
+                assert_eq!(fixed["moved"], false);
+            }
+        }
     }
 
     #[test]
