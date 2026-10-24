@@ -59,6 +59,17 @@ Status 2026-10-24 06:23Z: the U2 v2 fixture is QUALIFIED as INPUT ONLY (chief fa
 - Not claimed: no broad correctness claim, no manufacturing readiness, no 515 completion. The historical 513 final-placement U2/Y1 mask bridge stays FAILED.
 - Next 515 step: 530 prepares ONE bounded brief for an end-to-end esp_prog run plus a matched stock-KRT 0.23.7 qualification on this fixture, for the chief. Solver launch is not yet authorized. 516 is held on 515. 517/518 and the pod are owner-held.
 
+Status 2026-10-24 06:59Z: the matched end-to-end qualification RAN once on the qualified fixture. It used the hash-bound package agentee-515-e2e-brief/v2 (manifest b12f656d), authorized by chief 46502839. Builder: Opus HIGH, 06:41:55-06:50:25Z. Evidence: agentee-515-e2e, seal 5a19b9da.
+- agent-ee arm: REFUSED after 1.6 s, before any seed completed. The engine's `simple_polygon` accepts 3..512 vertices, and U2's captured custom-pad copper contour has 1118. This is an engine input limit; per the chief it is NOT fixture-defect evidence. The job wrote no job-report on this JobRefusal, which is a reporting gap. There is no incumbent and no route.
+- stock KRT v0.23.7 arm: completed in 264 s; the judge selected seed 8. The final board is NOT clean:
+  - 1 solder_mask_bridge, C2 pad 1 / Y1 pad 3. The signature is already on the piled input; the shared rule labels it placement-introduced because it spans two footprints.
+  - 1 unconnected net, /DCOM.
+  - 302 warnings.
+  - USB1 sits nearest south, though declared west, and the floorplan check failed.
+  - 250.48 mm of route, 30 vias, 3 via-in-pad.
+- Astra MEDIUM review: RESULT-SOUND-WITH-CORRECTIONS (one wrong seal-command path; the classification-label qualification; the missing-report and retention gaps). Hashes audited clean.
+- No matched outcome comparison is possible, because agent-ee produced no board. AGENTEE-515 remains INCOMPLETE pending the chief's disposition.
+
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
 ## AGENTEE-512 — Qualify a coherent placement-routing workflow before full-pod production
