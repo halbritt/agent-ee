@@ -48,6 +48,17 @@ explicitly inventoried as excluded. All other populated components need models.
 voltage must equal DC bias. This is a finite-rise, piecewise-linear step, not an
 instantaneous mathematical discontinuity. Supply names do not imply voltages.
 
+A voltage source can declare `current_limit` with all three fields:
+`source_a`, `sink_a`, and `resistance_ohm`. Currents must be finite and nonnegative,
+at least one must be positive, and resistance must be finite and positive.
+Delivered current is `(command_voltage - terminal_voltage) / resistance_ohm`,
+clamped between `-sink_a` and `source_a`. Zero sink current models a supply that
+cannot discharge the output; zero source current models a load that cannot
+back-power it. DC, step and AC values command the internal ideal source; the
+actual terminal voltage includes resistance drop and current limiting. All
+parameters are explicit engineering test conditions, not inferred power-supply
+specifications. Omitted `current_limit` preserves the original ideal source.
+
 Optional `current_sources` declare loads with unique `id` (distinct from voltage
 source IDs), native `positive_net`/`negative_net` and finite `dc_a`. SPICE
 current flows from the positive net through the source, so a positive `dc_a`

@@ -121,6 +121,18 @@ class DeclarationTests(unittest.TestCase):
     def setUp(self):
         self.params = read_json(FIXTURE / 'control.scope.json')['checks'][1]['params']
 
+    def test_source_limit_requires_explicit_finite_currents_and_positive_resistance(self):
+        for limit in (dict(source_a=.02, sink_a=0),
+                      dict(source_a=-.02, sink_a=0, resistance_ohm=1),
+                      dict(source_a=.02, sink_a=-.01, resistance_ohm=1),
+                      dict(source_a=0, sink_a=0, resistance_ohm=1),
+                      dict(source_a=.02, sink_a=0, resistance_ohm=0),
+                      dict(source_a=float('nan'), sink_a=0, resistance_ohm=1),
+                      dict(source_a=.02, sink_a=False, resistance_ohm=1)):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                self.params['sources'][0]['current_limit'] = limit
+                validate_params(self.params)
+
     def test_scope3_capability_requires_bounds_prior_netlist_and_models(self):
         scope = read_json(FIXTURE / 'control.scope.json')
         scope['schema'] = 'agent-ee.scope/3'
@@ -478,6 +490,34 @@ class NativeActiveTests(unittest.TestCase):
         staged = (run / 'work/active/models/design/owned.lib').read_bytes()
         self.assertEqual(staged.split(b'\n', 1)[1], active)
         self.assertIn(b'\\x96', staged.split(b'\n', 1)[0])
+        verify_evidence(run, results, required=True)
+
+    def test_limited_source_charges_native_capacitor_at_declared_current(self):
+        params = self.scope['checks'][1]['params']
+        params['sources'][0]['current_limit'] = dict(source_a=2e-6, sink_a=1e-6, resistance_ohm=1)
+        params['analyses'] = params['analyses'][:1]
+        measurement = params['analyses'][0]['measurements'][0]
+        measurement.update(min=.0199, max=.0201)
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        # I/C = 2 uA / 100 nF = 20 V/s, for the first 4 ms.
+        self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'], .02, delta=3e-6)
+        verify_evidence(run, results, required=True)
+
+    def test_limited_source_discharges_native_capacitor_at_separate_sink_limit(self):
+        params = self.scope['checks'][1]['params']
+        params['dialect'] = 'ngspice-ps'
+        source = params['sources'][0]
+        source.update(dc_v=.1, current_limit=dict(source_a=2e-6, sink_a=1e-6, resistance_ohm=1))
+        source['step'].update(initial_v=.1, final_v=0)
+        params['analyses'] = params['analyses'][:1]
+        params['analyses'][0]['measurements'][0].update(min=.0899, max=.0901)
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        # The independently declared 1 uA sink removes 10 mV in 1 ms.
+        self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'], .09, delta=3e-6)
         verify_evidence(run, results, required=True)
 
     def test_directive_after_bare_subcircuit_end_refused_before_solver(self):

@@ -279,10 +279,19 @@ def validate_params(params):
         return params
     named_list(params['sources'], 'sources', 64)
     for source in params['sources']:
-        fields(source, ('id', 'positive_net', 'negative_net', 'dc_v'), ('ac_magnitude_v', 'step'))
+        fields(source, ('id', 'positive_net', 'negative_net', 'dc_v'), ('ac_magnitude_v', 'step', 'current_limit'))
         if not all(isinstance(source[k], str) for k in ('positive_net', 'negative_net')):
             raise ValueError('source nets must be explicit native names')
         number(source['dc_v'], 'dc_v')
+        if 'current_limit' in source:
+            limit = source['current_limit']
+            fields(limit, ('source_a', 'sink_a', 'resistance_ohm'))
+            for key in ('source_a', 'sink_a'):
+                if number(limit[key], key) < 0:
+                    raise ValueError('source current limits must be nonnegative')
+            if not (limit['source_a'] or limit['sink_a']):
+                raise ValueError('at least one source current limit must be positive')
+            number(limit['resistance_ohm'], 'resistance_ohm', positive=True)
         if 'ac_magnitude_v' in source:
             number(source['ac_magnitude_v'], 'ac_magnitude_v', positive=True)
         if 'step' in source:
@@ -451,7 +460,8 @@ def source_lines(params, nodes):
         positive, negative = nodes[source['positive_net']], nodes[source['negative_net']]
         if positive == negative:
             raise ValueError('source terminals must be different native nets')
-        line = f'V{i} {positive} {negative} DC {source["dc_v"]:.17g}'
+        driver = f'source_driver{i}' if 'current_limit' in source else positive
+        line = f'V{i} {driver} {negative} DC {source["dc_v"]:.17g}'
         if 'ac_magnitude_v' in source:
             line += f' AC {source["ac_magnitude_v"]:.17g}'
         if 'step' in source:
@@ -462,6 +472,12 @@ def source_lines(params, nodes):
             points.append((step['delay_s'] + step['rise_s'], step['final_v']))
             line += ' PWL(' + ' '.join(f'{t:.17g} {v:.17g}' for t, v in points) + ')'
         lines.append(line)
+        if 'current_limit' in source:
+            limit = source['current_limit']
+            # Positive current is delivered into the declared positive terminal.
+            lines.append(f'Blimit{i} {negative} {positive} I={{min(max('
+                f'V({driver},{positive})/{limit["resistance_ohm"]:.17g},'
+                f'-{limit["sink_a"]:.17g}),{limit["source_a"]:.17g})}}')
     for i, source in enumerate(params.get('current_sources', [])):
         positive, negative = nodes[source['positive_net']], nodes[source['negative_net']]
         if positive == negative:
