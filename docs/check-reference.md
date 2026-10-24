@@ -1,5 +1,11 @@
 # Native and engineering checks
 
+The placement job also preserves independent drill reservations and declared
+connector overhang (AGENTEE-515q2). Supported clearance inputs are the board
+minimum, Default netclass and pad overrides; custom rule files and non-default
+netclasses refuse capture. Native sampled agreement does not establish
+whole-board legality. See the [supported rules and controls](placement-job.md).
+
 The experimental [whole-board placement job](placement-job.md) independently
 protects native locks and captured fixed intent before materialization. Final
 checks compare complete protected saved board content, including pad geometry,

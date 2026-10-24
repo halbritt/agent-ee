@@ -153,6 +153,7 @@ pub struct Footprint {
     pub occupancy_rung: Option<String>,
     /// Copper boxes with the native clearance each item requires.
     pub copper: Vec<Copper>,
+    pub holes: Vec<Copper>,
     /// Solder-mask apertures (pad box grown by its mask expansion, mask graphics).
     pub mask: Vec<Rect>,
     pub pads: Vec<Pad>,
@@ -182,7 +183,7 @@ impl Copper {
         ensure!(clearance >= 0, "negative copper clearance");
         let polygons = if let Some(g) = value.get("geometry") {
             ensure!(g["status"] == "conservative_native_polygon", "unsupported copper geometry status");
-            ensure!(matches!(text(g, "kind")?, "circle" | "rect" | "oval" | "roundrect" | "custom"),
+            ensure!(matches!(text(g, "kind")?, "circle" | "rect" | "oval" | "roundrect" | "custom" | "hole"),
                 "unsupported copper geometry kind");
             ensure!(int(g, "tolerance_nm")? == 1000, "unsupported copper polygon tolerance");
             let contours = g["polygons"].as_array().context("native copper polygons")?
@@ -205,6 +206,10 @@ impl Copper {
 
     fn overlap(&self, other: &Self) -> i128 {
         let clearance = self.clearance.max(other.clearance);
+        self.overlap_at_clearance(other, clearance)
+    }
+
+    fn overlap_at_clearance(&self, other: &Self, clearance: i64) -> i128 {
         let boxed = self.bounds.grown(clearance).overlap(&other.bounds);
         if boxed == 0 || (self.polygons.is_none() && other.polygons.is_none()) {
             return boxed;
@@ -223,6 +228,25 @@ impl Copper {
 pub struct EdgeRule {
     pub edge: Edge,
     pub max_setback_nm: Option<i64>,
+    pub overhang_nm: Option<(i64, Option<i64>)>,
+}
+
+impl EdgeRule {
+    fn occupancy_outline(&self, outline: &Rect) -> Rect {
+        let mut allowed = *outline;
+        if let Some((_, Some(max))) = self.overhang_nm {
+            match self.edge {
+                Edge::West => allowed.x0 -= max,
+                Edge::East => allowed.x1 += max,
+                Edge::North => allowed.y0 -= max,
+                Edge::South => allowed.y1 += max,
+            }
+        }
+        allowed
+    }
+    fn short_overhang(&self, body: &Rect, outline: &Rect) -> i64 {
+        self.overhang_nm.map(|(min, _)| (min - (-self.edge.setback(body, outline)).max(0)).max(0)).unwrap_or(0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -281,6 +305,7 @@ pub struct Prepared {
     pub copper_edge_nm: i64,
     pub clearance_nm: i64,
     pub mask_web_nm: i64,
+    pub hole_to_hole_nm: i64,
     pub nets: Vec<String>,
     pub net_pads: Vec<Vec<(usize, usize)>>,
     pub groups: Vec<(String, usize, Vec<usize>)>,
@@ -335,6 +360,11 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let clearance_nm = int(rules, "copper_clearance_nm")?;
     let copper_edge_nm = int(rules, "copper_edge_clearance_nm")?;
     let mask_web_nm = rules.get("mask_min_web_nm").and_then(Value::as_i64).unwrap_or(0);
+    let hole_to_hole_nm = match rules.get("hole_to_hole_clearance_nm") {
+        Some(_) => int(rules, "hole_to_hole_clearance_nm")?,
+        None => 0,
+    };
+    ensure!(hole_to_hole_nm >= 0, "negative hole-to-hole clearance");
     ensure!(clearance_nm >= 0 && copper_edge_nm >= 0 && mask_web_nm >= 0, "negative rule");
     let rows = input["footprints"].as_array().context("footprints must be an array")?;
     let uuids: Vec<String> = rows.iter().map(|f| text(f, "uuid").map(str::to_string)).collect::<Result<_>>()?;
@@ -373,6 +403,18 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             "{}: a fixed copper mark or silk-only graphic has no body occupancy", uuids[i]);
         let copper = row["copper_local_nm"].as_array().context("copper_local_nm")?
             .iter().map(|r| Copper::parse(r, clearance_nm)).collect::<Result<Vec<_>>>()?;
+        let holes = match row.get("holes_local_nm") {
+            Some(v) => v.as_array().context("holes_local_nm")?.iter()
+                .map(|r| {
+                    ensure!(r["geometry"]["kind"] == "hole", "unqualified hole reservation");
+                    let pad_uuid = text(&r["geometry"], "pad_uuid")?;
+                    ensure!(row["pads"].as_array().context("pads")?.iter().any(|p| p["uuid"] == pad_uuid),
+                        "hole identity is absent from native pads");
+                    Copper::parse(r, 0)
+                }).collect::<Result<Vec<_>>>()?,
+            None => Vec::new(),
+        };
+        ensure!(role != Role::SilkOnly || holes.is_empty(), "silk-only graphic carries holes");
         let mask = row.get("mask_local_nm").and_then(Value::as_array).cloned().unwrap_or_default()
             .iter().map(|r| Rect::parse(r, "mask")).collect::<Result<Vec<_>>>()?;
         ensure!(role != Role::SilkOnly || copper.is_empty(), "{}: silk-only graphic carries copper", uuids[i]);
@@ -399,10 +441,27 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         };
         ensure!(!rotations.is_empty(), "{}: no eligible rotation", uuids[i]);
         let edge = match row.get("edge").filter(|e| !e.is_null()) {
-            Some(e) => Some(EdgeRule {
+            Some(e) => {
+                let max_setback_nm = match e.get("max_setback_nm").filter(|v| !v.is_null()) {
+                    Some(_) => { let n = int(e, "max_setback_nm")?; ensure!(n >= 0, "negative edge setback"); Some(n) },
+                    None => None,
+                };
+                let overhang_nm = match e.get("overhang_nm") {
+                    Some(v) => { let lo = int(v, "min")?;
+                        let hi = match v.get("max") {
+                            Some(Value::Null) => None,
+                            Some(_) => Some(int(v, "max")?),
+                            None => bail!("overhang maximum must be explicit or null"),
+                        };
+                        ensure!(lo >= 0 && hi.is_none_or(|h| lo <= h), "malformed overhang interval");
+                        ensure!(hi.is_some() || lo == 0, "positive overhang minimum needs a finite maximum");
+                        Some((lo, hi)) },
+                    None => None,
+                };
+                Some(EdgeRule {
                 edge: Edge::parse(text(e, "edge")?)?,
-                max_setback_nm: e.get("max_setback_nm").and_then(Value::as_i64),
-            }),
+                max_setback_nm, overhang_nm,
+            }) },
             None => None,
         };
         let native_ref = text(row, "native_ref")?.to_string();
@@ -411,7 +470,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
-            occupancy, occupancy_rung: rung, copper, mask, pads, group: None, edge,
+            occupancy, occupancy_rung: rung, copper, holes, mask, pads, group: None, edge,
         });
     }
     let mut groups = Vec::new();
@@ -459,7 +518,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         hard: w.get("hard").and_then(Value::as_i64).unwrap_or(50),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, nets, net_pads, groups, proximity, weights, movable })
+    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, weights, movable })
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -502,6 +561,7 @@ impl Terms {
 struct Placed {
     body: Option<Rect>,
     copper: Vec<Copper>,
+    holes: Vec<Copper>,
     mask: Vec<Rect>,
     reach: Option<Rect>,
 }
@@ -510,12 +570,15 @@ fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let fp = &p.footprints[f];
     let body = fp.occupancy.map(|r| place_rect(&r, pose));
     let copper: Vec<Copper> = fp.copper.iter().map(|c| c.at(pose)).collect();
+    let holes: Vec<Copper> = fp.holes.iter().map(|c| c.at(pose)).collect();
     let mask: Vec<Rect> = fp.mask.iter().map(|r| place_rect(r, pose)).collect();
     let mut reach = body;
-    for g in copper.iter().map(|c| c.bounds.grown(c.clearance)).chain(mask.iter().map(|m| m.grown(p.mask_web_nm))) {
+    for g in copper.iter().map(|c| c.bounds.grown(c.clearance))
+        .chain(holes.iter().map(|h| h.bounds.grown(h.clearance.max(p.hole_to_hole_nm))))
+        .chain(mask.iter().map(|m| m.grown(p.mask_web_nm))) {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
-    Placed { body, copper, mask, reach }
+    Placed { body, copper, holes, mask, reach }
 }
 
 fn pad_at(p: &Prepared, f: usize, pad: usize, pose: &Pose) -> (i64, i64) {
@@ -549,6 +612,21 @@ fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
             }
         }
     }
+    // Drills use board hole rules, independently of pad copper overrides.
+    for (holes, copper) in [(&a.holes, &b.copper), (&b.holes, &a.copper)] {
+        for hole in holes {
+            for c in copper {
+                let o = hole.overlap_at_clearance(c, hole.clearance);
+                if o > 0 { t.hard += o; t.hard_count += 1; }
+            }
+        }
+    }
+    for ha in &a.holes {
+        for hb in &b.holes {
+            let o = ha.overlap_at_clearance(hb, p.hole_to_hole_nm);
+            if o > 0 { t.hard += o; t.hard_count += 1; }
+        }
+    }
     // Mask apertures of different footprints keep the native minimum web.
     for ma in &a.mask {
         let g = ma.grown(p.mask_web_nm);
@@ -576,12 +654,15 @@ fn unary_terms(p: &Prepared, f: usize, at: &Placed) -> Terms {
         return t;
     }
     if let Some(body) = &at.body {
-        let o = body.outside(&p.outline);
+        let allowed = p.footprints[f].edge.as_ref().map(|e| e.occupancy_outline(&p.outline)).unwrap_or(p.outline);
+        let o = body.outside(&allowed);
         if o > 0 {
             t.hard += o;
             t.hard_count += 1;
         }
         if let Some(rule) = &p.footprints[f].edge {
+            let short = rule.short_overhang(body, &p.outline);
+            if short > 0 { t.hard += short as i128 * 1_000_000; t.hard_count += 1; }
             let setback = rule.edge.setback(body, &p.outline);
             match rule.max_setback_nm {
                 Some(max) if setback > max => {
@@ -661,10 +742,14 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
         if fp.role == Role::Movable {
             let named = |kind: &str, detail: Value| json!({"ref": fp.native_ref, "uuid": fp.uuid, "kind": kind, "detail": detail});
             if let Some(body) = &at[a].body {
-                if body.outside(&p.outline) > 0 {
+                let allowed = fp.edge.as_ref().map(|e| e.occupancy_outline(&p.outline)).unwrap_or(p.outline);
+                if body.outside(&allowed) > 0 {
                     out.push(named("occupancy_outside_outline", json!(body.as_value())));
                 }
                 if let Some(rule) = &fp.edge {
+                    if rule.short_overhang(body, &p.outline) > 0 {
+                        out.push(named("edge_overhang_min", json!(rule.overhang_nm)));
+                    }
                     let setback = rule.edge.setback(body, &p.outline);
                     if rule.max_setback_nm.is_some_and(|m| setback > m) {
                         out.push(named("edge_setback", json!({"setback_nm": setback, "max_setback_nm": rule.max_setback_nm})));
@@ -1351,6 +1436,58 @@ mod tests {
             }
             assert_eq!(state.totals, full_evaluate(&p, &state.poses), "step {i}");
         }
+    }
+
+    #[test]
+    fn hole_rules_are_distinct_and_indexed_for_incremental_moves() {
+        let mut i = input(vec![]);
+        i["rules"]["hole_to_hole_clearance_nm"] = json!(400_000);
+        for f in [0, 2, 4] {
+            i["footprints"][f]["holes_local_nm"] = json!([{
+                "rect_nm": [-500_000, -250_000, 500_000, 250_000], "clearance_nm": 150_000,
+                "geometry": {"status": "conservative_native_polygon", "kind": "hole", "tolerance_nm": 1000,
+                    "pad_uuid": i["footprints"][f]["pads"][0]["uuid"],
+                    "polygons": [[[-500_000, -250_000], [500_000, -250_000], [500_000, 250_000], [-500_000, 250_000]]]}}]);
+        }
+        let p = prepare(&i).unwrap();
+        let mut state = SearchState::new(&p, p.footprints.iter().map(|f| f.initial).collect()).unwrap();
+        let mut rng = Rng::new(515);
+        for n in 0..300 {
+            let f = if n % 2 == 0 { 0 } else { 2 };
+            let pose = Pose { x: rng.range(0, 12_000_000), y: rng.range(0, 10_000_000), q: n % 4 };
+            let before = state.digest();
+            let trial = state.evaluate(&p, &[(f, pose)]).unwrap();
+            if n % 3 == 0 { state.reject(trial); assert_eq!(state.digest(), before); }
+            else { state.commit(&p, trial).unwrap(); }
+            assert_eq!(state.totals, full_evaluate(&p, &state.poses), "hole move {n}");
+        }
+        let hole = &p.footprints[0].holes[0];
+        let copper = Copper { bounds: Rect { x0: 800_000, y0: -250_000, x1: 1_800_000, y1: 250_000 },
+                              clearance: 1_016_000, polygons: None };
+        assert_eq!(hole.overlap_at_clearance(&copper, hole.clearance), 0,
+            "a copper override is not the drill rule");
+        assert!(hole.overlap_at_clearance(&copper, p.hole_to_hole_nm) > 0);
+    }
+
+    #[test]
+    fn declared_overhang_interval_is_validated_and_minimum_is_enforced() {
+        let mut i = input(vec![]);
+        i["footprints"][0]["edge"] = json!({"edge": "west", "max_setback_nm": 750_000,
+            "overhang_nm": {"min": 100_000, "max": 2_000_000}});
+        let p = prepare(&i).unwrap();
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        poses[0].x = 1_000_000;
+        assert!(violations(&p, &poses).iter().any(|v| v["kind"] == "edge_overhang_min"));
+        for interval in [json!({"min": -1, "max": 2}), json!({"min": 3, "max": 2}),
+                         json!({"min": 0, "max": 1.5}), Value::Null] {
+            i["footprints"][0]["edge"]["overhang_nm"] = interval;
+            assert!(prepare(&i).is_err());
+        }
+        i["footprints"][0]["edge"] = json!({"edge": "diagonal"});
+        assert!(prepare(&i).is_err());
+        i["footprints"][0]["holes_local_nm"] = json!([{"rect_nm": [0, 0, 1, 1], "clearance_nm": -1}]);
+        i["footprints"][0]["edge"] = Value::Null;
+        assert!(prepare(&i).is_err());
     }
 
     #[test]

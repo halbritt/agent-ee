@@ -9,11 +9,11 @@ production default: the existing `placer_runner` planning boundary, the `/1` and
 `pod_driver`, `placement_adapter`) are unchanged. There is no automatic Python
 fallback and no superiority or manufacturing claim.
 
-The AGENTEE-515q native-clearance prototype is **held**. At the as-built USB1
-pose, pair clearance agrees with native DRC, but full engine feasibility remains
-false: the unchanged derived occupancy extends 0.075 mm beyond the west outline.
-The required as-built feasibility gate therefore stops qualification. This
-branch does not establish placement feasibility or complete AGENTEE-515.
+The AGENTEE-515q2 correction slice carries declared connector overhang and
+independent drill reservations. The previous prototype ignored USB1's existing
+0–2 mm west overhang and dropped NPTH reservations. This slice is correctness
+input for review; complete target execution and matched stock qualification
+remain outside its scope. AGENTEE-515 remains incomplete.
 
 ## One entry point
 
@@ -62,6 +62,16 @@ the process and must be recorded by the caller.
    - `silk_only`: padless, zone-free, every graphic on a silkscreen layer. Only
      these are excluded from packing.
    Footprint rule areas are refused (not modelled).
+   Custom `.kicad_dru` files and non-default netclasses/assignments are refused
+   before a problem is returned. The supported clearance domain is the board
+   minimum, the Default netclass and native per-pad overrides. A larger Default
+   clearance contributes to the global copper bound. Named non-default classes
+   require separate native rule-resolution qualification, even when a global
+   maximum might conservatively cover a particular board.
+   Supported numeric rules are refreshed from the saved project through the
+   shared strict JSON reader into the captured board's in-memory settings.
+   This avoids pcbnew's stale project cache after a project is written in the
+   same process; no project file or global netclass is changed.
 3. **Occupancy.** A proven courtyard is used as such. A present but unproven
    (malformed) courtyard is a hard refusal. A missing courtyard is a metadata gap:
    the footprint gets `derived_occupancy` with its provenance rung, in order
@@ -101,6 +111,37 @@ the process and must be recorded by the caller.
    per-layer padstacks, missing/invalid contours or contours outside indexed
    bounds refuse preparation. Body/courtyard and mask reservations are unchanged.
    These search bounds do not replace native DRC or excuse U2 artwork errors.
+   `holes_local_nm` independently retains every supported round or slot drill,
+   including NPTH pads with no copper and fixed marks with no body. Native
+   `TransformHoleToPolygon(ERROR_OUTSIDE, 1000 nm)` provides outward contours;
+   the same exact polygon separation and quarter-turn transform are used for
+   drills. Hole-to-copper uses native board `m_HoleClearance`, without a copper
+   pad's local clearance override; hole-to-hole uses `m_HoleToHoleMin`. Drill
+   reservations participate in the spatial index and incremental evaluation.
+   Invalid drill dimensions and secondary/tertiary drills are refused.
+   KiCad 10.0.7's sampled native `hole_to_hole` reports cover round drilled
+   holes; the slot-pair controls emit no such item. Slot pairs retain the board
+   minimum as a conservative search reservation, with separated positive
+   controls. Their engine refusals are not reported as native violations or
+   exact native verdict agreement.
+   Missing hole entries on legacy prepared inputs keep their earlier contract;
+   new native capture always supplies the independent drill inventory.
+
+   An edge connector carries its declared `overhang_mm` interval in nanometres,
+   bound to its native identity and the named west/east/north/south edge. Only
+   that footprint's occupancy containment uses the permitted outward strip;
+   containment on the other three edges, copper-to-edge clearance and the
+   existing maximum setback remain in force. Overhang is the nonnegative
+   outward excursion of the existing occupancy, so a zero minimum permits an
+   inboard seat within the setback. A positive minimum requires that excursion.
+   Malformed intervals, ambiguous references and unknown edges refuse capture;
+   Rust also validates intervals. Source geometry and derived occupancy are
+   unchanged. Fab stroke bounds remain metadata-derived reservations, never
+   physical proof of the connector body.
+   A zero minimum without a declared maximum is carried as an open interval
+   and grants no outward containment exception. A positive minimum without a
+   finite maximum is explicitly unsupported. The existing CON1/CON2 zero-only
+   declarations therefore keep strict containment.
 5. **Shortlist native checks before promotion.** Each candidate is applied to a
    disposable native board by UUID (pcbnew), saved, the frozen project bytes are
    restored next to it, and it is reloaded. Integrity requires the same UUID set,
@@ -175,16 +216,25 @@ exercise both modes, coherent protected moves, native geometry/rule mutations,
 phase-boundary cancellation and live stalled-child termination.
 
 `tests/test_placement_job_clearance.py` checks each supported native pad shape,
-clearance overrides and refusal boundaries. The separate external esp_prog
+clearance overrides and refusal boundaries. `test_placement_job_reservations`
+adds all-edge overhang controls, the reviewer R1–H1 regression, movable/fixed
+round and slot holes under rotation, hole-to-copper versus hole-to-hole rules,
+bodyless marks, supported Default clearance and a larger non-default netclass
+negative that native DRC rejects and capture explicitly refuses. The separate external esp_prog
 gate, `python3 -m unittest -fv tests.placement_clearance_agreement`, requires
 `AGENT_EE_ESP_PROG_PREPARED`, `AGENT_EE_USB1_SCAN`,
 `AGENT_EE_USB1_SCAN_PROBLEM` and `AGENT_EE_CLEARANCE_EVIDENCE`. They retain the
-as-built pair check, 50 deterministic seats from the sealed scan enumeration,
-10 deliberate pad intrusions, complete native reports and a confusion matrix.
+as-built full-feasibility gate, the original 50 deterministic seats from the
+sealed scan enumeration, 10 deliberate pad intrusions, and 10 additional
+positive/boundary controls across x = 117.575–117.775 mm, each checked by native
+DRC. A separate control isolates USB1 drill-to-fiducial clearance. Complete
+native reports and separate copper-pair and full-engine matrices are retained.
 The comparison is scoped to USB1 and the specified fiducial; it establishes
 neither whole-board placement legality nor AGENTEE-515 completion. The matrix
-separately scopes pair feasibility, retaining unary constraints in each
-diagnostic; the as-built test also requires full engine feasibility. A false
+separately scopes copper-pair feasibility (excluding mask/drill and unary
+terms) and full engine feasibility (all encoded terms, compared with the
+native pair's electrical/hole/mask violations at every severity). Neither matrix measures whole-board
+legality or establishes that unchecked scan seats are native-clear. A false
 feasible native-clearance result or failed as-built agreement stops the lane.
 
 ## Origins

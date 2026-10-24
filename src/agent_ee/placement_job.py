@@ -141,6 +141,14 @@ def _mm(value):
     return int(round(float(value) * NM))
 
 
+def _rule_mm(value, what):
+    from .routing_rules import number
+    try:
+        return _mm(number(value, what))
+    except (ValueError, OverflowError) as exc:
+        raise JobRefusal(f'{what}: {exc}') from exc
+
+
 def verified_input(entry, label):
     """Read one external input by declared SHA-256; fixture bytes never enter the repository."""
     path = Path(entry['path'])
@@ -227,6 +235,65 @@ def _pad_copper(pad, origin, q):
                          'tolerance_nm': 1000, 'polygons': contours,
                          'layers': layers, 'pad_uuid': pad.m_Uuid.AsString(),
                          'note': 'native ERROR_OUTSIDE; holes filled; layers projected together'}}
+
+
+def _pad_hole(pad, origin, q, clearance):
+    """Keep drills independently of copper, including bodyless NPTH marks."""
+    import pcbnew
+    from .placement_probe import _outer_contours
+    size = pad.GetDrillSize()
+    if size.x == 0 and size.y == 0:
+        if pad.HasHole() or pad.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH):
+            raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported drill geometry')
+        return None
+    if size.x <= 0 or size.y <= 0 or pad.GetDrillShape() not in (
+            pcbnew.PAD_DRILL_SHAPE_CIRCLE, pcbnew.PAD_DRILL_SHAPE_OBLONG):
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported drill geometry')
+    for get_size in (pad.GetSecondaryDrillSize, pad.GetTertiaryDrillSize):
+        extra = get_size()
+        if extra.x or extra.y:
+            raise JobRefusal(f'{pad.m_Uuid.AsString()}: secondary/tertiary drill unsupported')
+    poly = pcbnew.SHAPE_POLY_SET()
+    if not pad.TransformHoleToPolygon(poly, 0, 1000, pcbnew.ERROR_OUTSIDE):
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: native hole contour missing')
+    contours = [[list(_unrotate(x - origin[0], y - origin[1], q)) for x, y in p]
+                for p in _outer_contours(poly)]
+    if not contours:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: native hole contour missing')
+    points = [p for contour in contours for p in contour]
+    return {'rect_nm': [min(p[0] for p in points), min(p[1] for p in points),
+                        max(p[0] for p in points), max(p[1] for p in points)],
+            'clearance_nm': clearance,
+            'geometry': {'status': 'conservative_native_polygon', 'kind': 'hole',
+                         'tolerance_nm': 1000, 'polygons': contours,
+                         'pad_uuid': pad.m_Uuid.AsString(),
+                         'note': 'native drill ERROR_OUTSIDE; independent hole-rule reservation'}}
+
+
+def _edge_rules(intent, footprints):
+    edges = {}
+    for row in intent.get('edge_connectors', []):
+        ref = row['ref']
+        if ref in edges or sum(f['ref'] == ref for f in footprints) != 1:
+            raise JobRefusal(f'{ref}: edge connector must identify one native footprint')
+        if row.get('edge') not in ('west', 'east', 'north', 'south'):
+            raise JobRefusal(f'{ref}: unsupported declared edge')
+        rule = {'edge': row['edge'], 'max_setback_nm': None}
+        if row.get('max_setback_mm') is not None:
+            rule['max_setback_nm'] = _rule_mm(row['max_setback_mm'], f'{ref}: malformed edge setback')
+        if 'overhang_mm' in row:
+            interval = row['overhang_mm']
+            if not isinstance(interval, dict) or not interval or set(interval) - {'min', 'max'}:
+                raise JobRefusal(f'{ref}: malformed overhang interval')
+            lo = _rule_mm(interval.get('min', 0), f'{ref}: malformed overhang interval')
+            hi = _rule_mm(interval['max'], f'{ref}: malformed overhang interval') if 'max' in interval else None
+            if hi is not None and (hi < lo or interval['max'] < interval.get('min', 0)):
+                raise JobRefusal(f'{ref}: malformed overhang interval')
+            if hi is None and lo > 0:
+                raise JobRefusal(f'{ref}: positive overhang minimum needs a finite maximum')
+            rule['overhang_nm'] = {'min': lo, 'max': hi}
+        edges[ref] = rule
+    return edges
 
 
 def _on_mask(pad):
@@ -337,13 +404,57 @@ def _rectangle(outline):
     return [xs[0], ys[0], xs[1], ys[1]]
 
 
-def _clearance(settings):
-    """Largest native copper clearance: board minimum and every net class (search-side bound;
-    the unchanged native rules still decide on the saved board)."""
+def _clearance(settings, project):
+    """Board minimum and saved Default clearance, with native defaults if absent."""
     net = settings.m_NetSettings
-    classes = [net.GetDefaultNetclass()] + [c for _, c in net.GetNetclasses().items()]
-    values = [int(settings.m_MinClearance)] + [int(c.GetClearance()) for c in classes if c.HasClearance()]
+    declared = project.get('net_settings', {}).get('classes', [])
+    if declared and 'clearance' in declared[0]:
+        values = [int(settings.m_MinClearance), _mm(declared[0]['clearance'])]
+    else:
+        classes = [net.GetDefaultNetclass()] + [c for _, c in net.GetNetclasses().items()]
+        values = [int(settings.m_MinClearance)] + [int(c.GetClearance()) for c in classes if c.HasClearance()]
     return max(values)
+
+
+def _check_rule_domain(board_path):
+    """Refuse rule configurations whose pair resolution is not qualified here."""
+    from .catalog import strict_json
+    if Path(board_path).with_suffix('.kicad_dru').exists():
+        raise JobRefusal('custom native rules are unsupported by the placement job')
+    project = Path(board_path).with_suffix('.kicad_pro')
+    if not project.exists():
+        return {}
+    project = strict_json(project.read_bytes())
+    settings = project.get('net_settings', {})
+    classes = settings.get('classes', [])
+    if not isinstance(classes, list) or len(classes) > 1 or any(not isinstance(c, dict) or c.get('name') != 'Default'
+                                           for c in classes):
+        raise JobRefusal('non-default netclasses are unsupported by the placement job')
+    if any(name != 'Default' for name in settings.get('netclass_assignments', {}).values()) or any(
+            p.get('netclass') != 'Default' for p in settings.get('netclass_patterns', [])):
+        raise JobRefusal('non-default netclass assignments are unsupported by the placement job')
+    return project
+
+
+def _apply_project_rules(settings, project):
+    """Refresh supported native settings from disk, without saving or unloading.
+
+    pcbnew can cache a project's defaults after SaveBoard and ignore later
+    project-file edits in the same process. Native DRC reads those saved edits.
+    """
+    design = project.get('board', {}).get('design_settings', {})
+    rules = design.get('rules', {})
+    for key, native in (('min_clearance', 'm_MinClearance'),
+                        ('min_hole_clearance', 'm_HoleClearance'),
+                        ('min_hole_to_hole', 'm_HoleToHoleMin'),
+                        ('min_copper_edge_clearance', 'm_CopperEdgeClearance')):
+        if key in rules:
+            setattr(settings, native, _rule_mm(rules[key], key))
+    if 'solder_mask_min_width' in design:
+        settings.m_SolderMaskMinWidth = _rule_mm(design['solder_mask_min_width'], 'solder_mask_min_width')
+    for cls in project.get('net_settings', {}).get('classes', []):
+        if 'clearance' in cls:
+            _rule_mm(cls['clearance'], 'Default clearance')
 
 
 def capture(board_path, intent, groups):
@@ -351,13 +462,16 @@ def capture(board_path, intent, groups):
     import pcbnew
     from .placement_probe import extract
     before = Path(board_path).read_bytes()
+    project = _check_rule_domain(board_path)
     facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
+    _apply_project_rules(board.GetDesignSettings(), project)
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
     owners = _fixed_pose_owner(intent.get('fixed_poses', []), facts['footprints'])
-    edges = {row['ref']: row for row in intent.get('edge_connectors', [])}
+    edges = _edge_rules(intent, facts['footprints'])
+    settings = board.GetDesignSettings()
     rows, record = [], []
     native = {}
     for fp in board.GetFootprints():
@@ -378,14 +492,15 @@ def capture(board_path, intent, groups):
                    + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
                       for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
                'mask_local_nm': [_local_rect(b, origin, q) for b in info['mask']],
+               'holes_local_nm': [h for p in fp.Pads()
+                                  if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
                'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
                          'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
                                                     int(p.GetPosition().y) - origin[1], q))}
                         for p in fp.Pads()]}
         if ref in edges and info['role'] == 'movable':
             e = edges[ref]
-            row['edge'] = {'edge': e['edge'], 'max_setback_nm': _mm(e['max_setback_mm'])
-                           if e.get('max_setback_mm') is not None else None}
+            row['edge'] = e
             # Mating-face direction is not captured, so an edge connector keeps its native orientation.
             row['rotations'] = [q]
         elif info['role'] == 'movable':
@@ -400,7 +515,7 @@ def capture(board_path, intent, groups):
     if Path(board_path).read_bytes() != before:
         raise JobRefusal('input board changed during capture')
     settings = board.GetDesignSettings()
-    clearance = _clearance(settings)
+    clearance = _clearance(settings, project)
     by_ref = {r['native_ref']: r for r in rows if r['role'] == 'movable'}
     proximity = []
     for row in intent.get('proximity', []):
@@ -413,6 +528,7 @@ def capture(board_path, intent, groups):
     problem = {'schema': INPUT_SCHEMA,
                'outline': {'kind': 'rectangle', 'rect_nm': _rectangle(facts['outline'])},
                'rules': {'copper_clearance_nm': clearance,
+                         'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
                          'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
