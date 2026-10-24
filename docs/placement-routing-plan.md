@@ -52,6 +52,13 @@ Status 2026-10-24 06:21Z: the U2 v2 fixture (derived board b4aa540d) is PARTLY q
 - Qualification stays OPEN only for criterion 6, the one bounded capture-compatibility check. The reviewer ran capture without authority, recorded as diagnostic evidence only: no refusal, 21 of 21 footprints. Its full output was not retained, so all-77-pad semantics are unproven. The chief decides between reuse and one minimal check.
 - No full workflow, stock comparison, 516 or pod release.
 
+Status 2026-10-24 06:23Z: the U2 v2 fixture is QUALIFIED as INPUT ONLY (chief fa885bf6, a delegated engineering disposition).
+- Fixture: esp_prog-run29_pile-u2tab-v2 = PCB b4aa540d, project 9a9ab694, and intent/groups unchanged and hash-bound in the sealed qualification.
+- Criterion 6 is accepted as originally scoped: one bounded, non-refusing capture-compatibility check on the sealed v2 with the accepted toolchain.
+- On record: the reviewer's unauthorised capture (diagnostic only), the failed first probe, the full capture output that was not retained, and the unproven all-77-pad semantics. The builder HOLD, the v1 fixture and the old failed reports are preserved.
+- Not claimed: no broad correctness claim, no manufacturing readiness, no 515 completion. The historical 513 final-placement U2/Y1 mask bridge stays FAILED.
+- Next 515 step: 530 prepares ONE bounded brief for an end-to-end esp_prog run plus a matched stock-KRT 0.23.7 qualification on this fixture, for the chief. Solver launch is not yet authorized. 516 is held on 515. 517/518 and the pod are owner-held.
+
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
 ## AGENTEE-512 — Qualify a coherent placement-routing workflow before full-pod production
