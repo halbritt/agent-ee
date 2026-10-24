@@ -10,6 +10,7 @@ pub mod footprint;
 pub mod geometry;
 pub mod grading;
 pub mod groups;
+pub mod job;
 pub mod locality;
 pub mod mechanical;
 pub mod netlist;
@@ -73,6 +74,12 @@ pub fn plan(input: &Value) -> Result<Value> {
 
 pub fn plan_with_events(input: &Value) -> Result<Value> {
     progress::with_events(|| plan(input))
+}
+
+/// Whole-board placement job (AGENTEE-515): its own input/output schemas,
+/// separate from the planning boundary above.
+pub fn job_with_events(input: &Value, events: bool) -> Result<Value> {
+    if events { progress::with_events(|| job::run(input)) } else { job::run(input) }
 }
 
 fn effective_policy(request: &Value) -> Result<Value> {
