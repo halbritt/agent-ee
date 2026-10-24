@@ -3064,3 +3064,93 @@ class StockStageGateReplayTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class IndependentHandFitApprovals(unittest.TestCase):
+    """Real pod J1 policy plus the separately captured J2 approval context."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        # Real quote and exact identity; the mapping is engineering, not owner prose.
+        self.quote = "it's a bigass connector, that's the least of my worries, it's easy to hand fit, goddammit, it's a through hole part. I asked your predecessor the same thing, ever soldered a through-hole part?"
+        (self.root / 'approval.md').write_text(self.quote + '\n')
+        write_json(self.root / 'part.json', {'mpn': '132134', 'lcsc': 'NO_LCSC'})
+        self.item = {'class': 'engineering', 'reference': 'J2', 'mpn': '132134', 'lcsc': None,
+                     'approval': {'source': 'approval.md', 'sha256': digest(self.root / 'approval.md'),
+                                  'record_id': 'ccbe2294@1'},
+                     'context': {'source': 'part.json', 'sha256': digest(self.root / 'part.json'), 'pointer': ''}}
+        self.policy = {'source': 'approval.md', 'sha256': digest(self.root / 'approval.md'), 'line': 1,
+                       'quote': self.quote, 'identities': [{'mpn': '132134', 'lcsc': None}],
+                       'mapping': {'source': 'mapping.json', 'sha256': '0' * 64, 'pointer': ''}}
+        self.pin()
+
+    def pin(self):
+        write_json(self.root / 'mapping.json', self.item)
+        self.policy['mapping']['sha256'] = digest(self.root / 'mapping.json')
+
+    def verify(self, policies=None):
+        from agent_ee.assembly_readiness import _validate_hand_fit_policy, _verify_hand_fit_policy
+        return _verify_hand_fit_policy(self.root, _validate_hand_fit_policy(
+            policies if policies is not None else [self.policy], 'deviations.json'))
+
+    def admit(self, policies, ref='J2', mpn='132134'):
+        from agent_ee.assembly_readiness import _owner_hand_fit
+        return _owner_hand_fit(policies, {}, {'parts': {}}, {'mpn': mpn, 'lcsc': None},
+                               [{'reference': ref, 'properties': {'LCSC': 'NO_LCSC'}}])
+
+    def test_separate_approval_accepts_non_catalog_j2(self):
+        self.assertIsNone(self.admit(self.verify()))
+
+    def test_wrong_reference_and_identity_refused(self):
+        for ref, mpn in [('J1', '132134'), ('J2', 'wrong')]:
+            with self.subTest(ref=ref, mpn=mpn), self.assertRaisesRegex(ValueError, 'exactly one'):
+                self.admit(self.verify(), ref, mpn)
+
+    def test_source_hash_mismatch_refused(self):
+        (self.root / 'approval.md').write_text('changed\n')
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'sha256 mismatch'):
+            self.verify()
+
+    def test_j1_approval_reuse_refused(self):
+        self.item['approval']['source'] = 'j1-owner.md'
+        self.pin()
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'approval source/hash'):
+            self.verify()
+
+    def test_wrong_context_identity_and_hash_refused(self):
+        for change in [{'mpn': '1-776163-1', 'lcsc': 'C596198'}, {'mpn': '132134', 'lcsc': 'NO_LCSC'}]:
+            write_json(self.root / 'part.json', change)
+            if change['mpn'] != '132134':
+                self.item['context']['sha256'] = digest(self.root / 'part.json')
+                self.pin()
+            with self.assertRaises(AssemblyReadinessExecutionError):
+                self.verify()
+
+    def test_duplicate_approval_is_ambiguous(self):
+        with self.assertRaisesRegex(ValueError, 'exactly one'):
+            self.admit(self.verify([self.policy, self.policy]))
+
+    def test_real_j1_and_j2_composed_scope_and_j1_compatibility(self):
+        case = AssemblyReadinessTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        netlist, params = case.j1_chain_case()
+        # Existing single-citation representation continues to evaluate unchanged.
+        self.assertEqual(case.evaluate(netlist, params)['outcome'], 'pass')
+        for name in ('approval.md', 'part.json', 'mapping.json'):
+            shutil.copyfile(self.root / name, case.root / name)
+        declarations = read_json(case.root / 'deviations.json')
+        j2 = case.handfit('132134', 'hand_soldered')
+        j2['policy'] = 'owner_hand_fit'
+        declarations['deviations'].append(j2)
+        write_json(case.root / 'deviations.json', declarations)
+        params['hand_fit_policy'] = [params['hand_fit_policy'], self.policy]
+        netlist = case.export('both.kicad_sch', schematic('both', [part('R1'),
+            part('J1', 'J', lcsc='C596198', footprint='PodConnector:AMPSEAL_35_1-776163-1',
+                 part_number=('Partnumber', '1-776163-1'), rating=None,
+                 extra={'JLCPCB_Assembly': 'not_assembled'}),
+            part('J2', 'J', lcsc='NO_LCSC', part_number=('Partnumber', '132134'), rating=None,
+                 extra={'JLCPCB_Assembly': 'not_assembled'})]))
+        report = case.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'pass', report)
+        self.assertEqual({row['reference'] for row in report['declared_deviation']}, {'J1', 'J2'})

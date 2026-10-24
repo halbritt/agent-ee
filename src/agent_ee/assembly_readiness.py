@@ -1447,7 +1447,22 @@ def _validate_hand_fit_policy(raw, deviations):
     """Scope-held citation of a captured owner decision naming the exact hand-fit identities."""
     from .hardware_interface import exact_keys, text
     from .part_decisions import names_identity, part
-    exact_keys(raw, "source sha256 line quote identities" + (" selection" if "selection" in raw else ""))
+    if isinstance(raw, list):
+        if not raw:
+            raise ValueError("hand_fit_policy must contain at least one approval")
+        if any(not isinstance(item, dict) for item in raw):
+            raise ValueError("each hand_fit_policy approval must be an object")
+        return [_validate_hand_fit_policy(item, deviations) for item in raw]
+    mapping = raw.get("mapping")
+    if mapping is not None and "selection" in raw:
+        raise ValueError("hand_fit_policy cannot combine mapping and selection")
+    exact_keys(raw, "source sha256 line quote identities" + (" selection" if "selection" in raw else "") +
+               (" mapping" if mapping is not None else ""))
+    if mapping is not None:
+        exact_keys(mapping, "source sha256 pointer")
+        _hand_fit_source(mapping, "hand_fit_policy.mapping", deviations)
+        if not isinstance(mapping["pointer"], str) or not (mapping["pointer"] == "" or mapping["pointer"].startswith("/")):
+            raise ValueError("hand_fit_policy.mapping.pointer must be a JSON pointer")
     source = raw["source"]
     if not isinstance(source, str) or str(safe_relative(source)) != source:
         raise ValueError("hand_fit_policy.source must be a normalized captured path")
@@ -1468,7 +1483,7 @@ def _validate_hand_fit_policy(raw, deviations):
         part(identity)
         if identity["mpn"] is None:
             raise ValueError("hand_fit_policy identity requires an exact MPN")
-        if selection is None and not names_identity(identity["mpn"], raw["quote"]):
+        if selection is None and mapping is None and not names_identity(identity["mpn"], raw["quote"]):
             raise ValueError(f"hand_fit_policy.quote does not name {identity['mpn']!r}")
         if selection is not None:
             # The owner quote names the category; the pinned selection decision names the exact identity.
@@ -1482,7 +1497,8 @@ def _validate_hand_fit_policy(raw, deviations):
             (selection["mpn"], selection["lcsc"])]:
         raise ValueError("hand_fit_policy.identities must be exactly the one identity the reviewed selection names")
     return {key: raw[key] for key in ("source", "sha256", "line", "quote")} | {
-        "identities": [dict(i) for i in identities]} | ({"selection": selection} if selection is not None else {})
+        "identities": [dict(i) for i in identities]} | ({"selection": selection} if selection is not None else {}) | (
+        {"mapping": dict(mapping)} if mapping is not None else {})
 
 
 def _hand_fit_source(raw, label, deviations):
@@ -1590,16 +1606,27 @@ def capability(params, files, inputs=None):
         raise ValueError("deviations must be a captured input")
 
     immutable_inputs = [catalog_rel]
-    if cfg["hand_fit_policy"] is not None:
-        if cfg["hand_fit_policy"]["source"] not in files:
-            raise ValueError("hand_fit_policy.source must be a captured input")
-        immutable_inputs.append(cfg["hand_fit_policy"]["source"])
-        selection = cfg["hand_fit_policy"].get("selection")
-        for rel in ([selection["source"], *(r["source"] for r in selection["records"])] if selection else []):
+    policies = cfg["hand_fit_policy"]
+    for policy in policies if isinstance(policies, list) else ([policies] if policies else []):
+        if policy['source'] not in files:
+            raise ValueError('hand_fit_policy.source must be a captured input')
+        sources = [policy["source"]]
+        selection = policy.get("selection")
+        if selection:
+            sources += [selection["source"], *(r["source"] for r in selection["records"])]
+        if policy.get("mapping"):
+            sources.append(policy["mapping"]["source"])
+        for rel in sources:
             if rel not in files:
                 raise ValueError("hand_fit_policy.selection sources must be captured inputs")
-            if rel not in immutable_inputs:
-                immutable_inputs.append(rel)
+            immutable_inputs.append(rel)
+        if policy.get('mapping') and inputs is not None:
+            path, _ = _resolve_captured_file(inputs, policy['mapping']['source'], 'hand-fit mapping')
+            mapping = _json_pointer(_load_strict_json(path), policy['mapping']['pointer'])
+            context = mapping['context']['source']
+            if context not in files:
+                raise ValueError('hand_fit_policy mapping context must be a captured input')
+            immutable_inputs.append(context)
     if cfg["rating_provenance"] is not None:
         for key in ("receipt", "report"):
             if cfg["rating_provenance"][key] not in files:
@@ -1688,6 +1715,8 @@ def _stale_reason(cfg, catalog, lcsc, last_seen):
 
 def _verify_hand_fit_policy(inputs, policy):
     """The cited owner decision must be the pinned captured bytes and hold the exact quote on its line."""
+    if isinstance(policy, list):
+        return [_verify_hand_fit_policy(inputs, item) for item in policy]
     path, rel = _resolve_captured_file(inputs, policy["source"], "hand_fit_policy source")
     actual = digest(path)
     if actual != policy["sha256"]:
@@ -1700,6 +1729,35 @@ def _verify_hand_fit_policy(inputs, policy):
     if policy["line"] > len(lines) or policy["quote"] not in lines[policy["line"] - 1]:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy quote is absent from {rel!r} line {policy['line']}")
+    if policy.get("mapping") is not None:
+        mapping = policy["mapping"]
+        path, rel = _resolve_captured_file(inputs, mapping["source"], "hand-fit engineering mapping")
+        if digest(path) != mapping["sha256"]:
+            raise AssemblyReadinessExecutionError("failed", "hand-fit mapping source sha256 mismatch")
+        try:
+            from .hardware_interface import exact_keys, text
+            item = _json_pointer(_load_strict_json(path), mapping["pointer"])
+            exact_keys(item, "reference mpn lcsc approval context class")
+            if item["class"] != "engineering":
+                raise ValueError("hand-fit identity mapping must be labelled engineering")
+            text(item["reference"])
+            exact_keys(item["approval"], "source sha256 record_id")
+            text(item["approval"]["record_id"])
+            if any(item["approval"][k] != policy[k] for k in ("source", "sha256")):
+                raise ValueError("hand-fit mapping approval source/hash differs from citation")
+            if policy["identities"] != [{k: item[k] for k in ("mpn", "lcsc")}]:
+                raise ValueError("hand-fit mapping identity differs from citation")
+            context = item["context"]
+            exact_keys(context, "source sha256 pointer")
+            context_path, _ = _resolve_captured_file(inputs, context["source"], "hand-fit selection context")
+            if digest(context_path) != context["sha256"]:
+                raise ValueError("hand-fit selection context sha256 mismatch")
+            selected = _json_pointer(_load_strict_json(context_path), context["pointer"])
+            if selected["mpn"] != item["mpn"] or selected["lcsc"] not in (item["lcsc"], "NO_LCSC" if item["lcsc"] is None else item["lcsc"]):
+                raise ValueError("hand-fit selection context identity differs from mapping")
+        except (ValueError, KeyError, TypeError) as exc:
+            raise AssemblyReadinessExecutionError("failed", str(exc)) from exc
+        return policy | {"class": "owner_hand_fit", "mapping": mapping | {"identity": item}}
     selection = policy.get("selection")
     try:
         unit = _policy_unit(lines, policy["line"] - 1)
@@ -1927,11 +1985,27 @@ def _require_unconditional(unit, mpn):
                          "stock-unavailable deviation class")
 
 
-def _owner_hand_fit(citation, cfg, catalog, identity, matches):
-    """Admit a declared owner hand-fit regardless of stock, only for an identity the cited decision names."""
+def _hand_fit_approval(citation, identity, matches):
+    """Select exactly one independently source-backed approval for this identity and reference."""
     if citation is None:
         raise ValueError('owner_hand_fit deviation requires the scope hand_fit_policy citation; '
                          'the deviations file cannot assert it')
+    if isinstance(citation, list):
+        refs = sorted({c['reference'] for c in matches})
+        approved = [c for c in citation if identity in c['identities'] and
+                    (not c.get('mapping') or refs == [c['mapping']['identity']['reference']]) and
+                    (not c.get('selection') or refs == [c['selection']['reference']])]
+        if len(approved) != 1:
+            raise ValueError('owner hand-fit identity/reference must map to exactly one approval')
+        citation = approved[0]
+    return citation
+
+
+def _owner_hand_fit(citation, cfg, catalog, identity, matches):
+    """Admit a declared owner hand-fit for its exact source-backed identity and reference."""
+    citation = _hand_fit_approval(citation, identity, matches)
+    if citation.get('mapping') and sorted({c['reference'] for c in matches}) != [citation['mapping']['identity']['reference']]:
+        raise ValueError('design reference differs from engineering hand-fit mapping')
     if identity not in citation['identities']:
         raise ValueError(f'identity {identity} is not named by the owner hand-fit policy')
     if 'selection' in citation and sorted({c['reference'] for c in matches}) != [citation['selection']['reference']]:
@@ -1993,7 +2067,8 @@ def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files, citati
             if not matches:
                 raise ValueError('assembly deviation has no populated BOM component with its exact identity')
             if 'policy' in deviation:
-                observation = _owner_hand_fit(citation, cfg, catalog, identity, matches)
+                approval = _hand_fit_approval(citation, identity, matches)
+                observation = _owner_hand_fit(approval, cfg, catalog, identity, matches)
             else:
                 matched_ids = {_lookup_single_property(c['properties'], 'LCSC') for c in matches}
                 stocked = [p['lcsc'] for p in catalog['parts'].values() if
@@ -2026,10 +2101,12 @@ def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files, citati
                     'assembly_rule': 'JLCPCB_Assembly=not_assembled', 'stock_state': 'declared_deviation'}
                 if 'policy' in deviation:
                     entry.update(stock_state='owner_hand_fit', policy=deviation['policy'],
-                                 policy_citation={k: citation[k] for k in ('source', 'sha256', 'line', 'quote')},
+                                 policy_citation={k: approval[k] for k in ('source', 'sha256', 'line', 'quote')},
                                  catalog_observation=observation)
-                    if 'selection' in citation:
-                        entry['policy_selection'] = citation['selection']
+                    if 'selection' in approval:
+                        entry['policy_selection'] = approval['selection']
+                    if 'mapping' in approval:
+                        entry['policy_mapping'] = approval['mapping']
                 declared.append(entry)
         except AssemblyReadinessExecutionError:
             raise
