@@ -9,8 +9,8 @@ from .storage import digest, identity, read_json, write_json
 
 POLICY = 'unloaded-first-order-rc/1'
 TOOL = Path('/usr/bin/ngspice')
-# Native qualification target: Debian ngspice 42, also used by the pinned image.
-TOOL_SHA256 = '820658317b0b54035208da41936fd6871ce924036e5ea4113a4168b821b7fc45'
+# Native qualification target: corrected ngspice 47 in the supported image.
+TOOL_SHA256 = 'a238c8f410e1f59656a62b3cb12d4955cfbaca2d70db92b661b2bf98a9fc586b'
 RAMP_S = 1e-9
 NUMERICAL_REL = 1e-4
 
@@ -19,7 +19,7 @@ def qualification():
     """Expected captured policy inputs; identities do not replace analytic checks."""
     from . import checks
     return {'schema': 'agent-ee.passive-corners/1', 'policy': POLICY,
-            'tool': str(TOOL), 'tool_sha256': TOOL_SHA256, 'tool_version': 'ngspice-42',
+            'tool': str(TOOL), 'tool_sha256': TOOL_SHA256, 'tool_version': 'ngspice-47',
             'parser_sha256': digest(checks.__file__), 'model_sha256': digest(__file__),
             'ramp_s': RAMP_S, 'numerical_relative_v': NUMERICAL_REL,
             'tau_s': [1e-4, 1e-2], 'at_ms': [0.1, 5.0], 'step_v': [0.1, 5.0],

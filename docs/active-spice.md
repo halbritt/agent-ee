@@ -180,6 +180,14 @@ and calibration functions. Complete bound violations are `ok/defect` and still
 need sealed, mapped witnesses for accepted defects. Owner review remains
 separate from implementation and peer review.
 
+The supported container uses ngspice 47 with a general correction for inverse
+voltage-controlled switches. Stock 42 and 47 can silently substitute the wrong
+resistance at a switch threshold; a vendor model can then appear to fail even
+though its internal regulator is operating. The container runs a 20-point
+independent switch qualification and the native active check has an analytic
+RC/switch regression. See [container installation](container.md). Arbitrary
+unqualified local simulator builds do not inherit this evidence.
+
 These checks establish only declared conditions using supplied models. Effects
 absent from model coverage, tolerances, thermal behavior, PCB parasitics, EMC,
 noise, faults, startup and hardware performance remain untested unless separately

@@ -144,7 +144,7 @@ echo "apt $*" >> "$LOG"
     def test_every_docker_apt_call_uses_shared_wrapper_and_strict_update(self):
         dockerfile = (ROOT / 'Dockerfile').read_text()
         calls = [s.strip() for s in dockerfile.splitlines() if 'Acquire::Retries=' in s]
-        self.assertEqual(len(calls), 8)
+        self.assertEqual(len(calls), 10)
         for call in calls:
             self.assertTrue(call.startswith('apt-retry apt-get '), call)
             self.assertIn('-o Acquire::Retries=5 -o Acquire::Retries::Delay=true '

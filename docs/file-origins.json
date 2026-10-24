@@ -610,6 +610,7 @@
         "docker/apt-retry.sh",
         "docker/image-context.json",
         "docker/kicad-route/",
+        "docker/ngspice/",
         "pyproject.toml",
         "profiles/",
         "skills/"

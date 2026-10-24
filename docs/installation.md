@@ -2,9 +2,11 @@
 
 ## Tested environment
 
-The recorded demonstrations used Linux, Python 3.12, KiCad 10.0.7, ngspice 42,
-Bubblewrap 0.9.0 and Claude Code 2.1.302. These are observed versions, not a
-compatibility matrix. Windows, macOS, other KiCad major versions and other
+The current native image uses Linux, Python 3.12, KiCad 10.0.7, corrected ngspice 47
+and Bubblewrap 0.9.0. The simulator correction and exact build are documented in
+[Container image](container.md). Earlier local review demonstrations used Claude
+Code 2.1.302; subscription harnesses are not installed in the native image. These
+are observed versions, not a compatibility matrix. Windows, macOS, other KiCad major versions and other
 Claude Code versions have not been demonstrated. In particular, the native
 checks configure KiCad's `10.0` settings directory and `KICAD10_*` paths.
 

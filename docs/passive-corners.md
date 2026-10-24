@@ -55,7 +55,7 @@ An unbounded extra observation remains diagnostic; at least one bounded
 observation is required. Zero tolerance deduplicates to one corner and agrees
 with nominal analysis within the same numerical allowance.
 
-Captured qualification inputs bind the exact ngspice 42 executable SHA-256,
+Captured qualification inputs bind the exact corrected ngspice 47 executable SHA-256,
 parser/model source hashes and fixed policy. Changing any identity invalidates
 old qualification inputs. Requalification requires reviewing the changed semantics,
 updating the captured contract, and rerunning the owned native acceptance corpus;

@@ -1,4 +1,4 @@
-# agent-ee native-check image: the demonstrated KiCad 10.0.7 / ngspice 42 /
+# agent-ee native-check image: the demonstrated KiCad 10.0.7 / corrected ngspice 47 /
 # Bubblewrap 0.9.0 / Python 3.12 toolchain, the pinned kicad-route/KRT router
 # and this checkout's source launcher.
 # Pin enforcement and required runtime privileges: docs/container.md.
@@ -9,7 +9,7 @@
 
 # Ubuntu 24.04 (noble) multi-architecture index digest, pulled 2026-10-17.
 ARG UBUNTU_DIGEST=sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
-FROM ubuntu:24.04@${UBUNTU_DIGEST} AS native
+FROM ubuntu:24.04@${UBUNTU_DIGEST} AS native-base
 
 # One snapshot timestamp freezes both the Ubuntu archive and the KiCad PPA, so
 # the exact package versions below stay installable after newer uploads.
@@ -17,7 +17,6 @@ ARG APT_SNAPSHOT=20261015T000000Z
 # Bootstrap TLS trust only from the immutable noble release pocket.
 ARG CA_CERTIFICATES_VERSION=20240203
 ARG KICAD_VERSION=10.0.7~ubuntu24.04.1
-ARG NGSPICE_VERSION=42+ds-3build1
 ARG BUBBLEWRAP_VERSION=0.9.0-1ubuntu0.3
 ARG PYTHON3_VERSION=3.12.3-0ubuntu2.1
 ARG POPPLER_VERSION=24.02.0-1ubuntu9.10
@@ -56,18 +55,17 @@ RUN set -eu; \
         "kicad-footprints=${KICAD_VERSION}" \
         "kicad-packages3d=${KICAD_VERSION}" \
         "kicad-templates=${KICAD_VERSION}" \
-        "ngspice=${NGSPICE_VERSION}" \
+        libfftw3-double3 libgomp1 \
         "bubblewrap=${BUBBLEWRAP_VERSION}" \
         "poppler-utils=${POPPLER_VERSION}" \
         git; \
-    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-templates ngspice bubblewrap poppler-utils; \
+    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-templates bubblewrap poppler-utils; \
     rm -rf /var/lib/apt/lists/*
 
 # Refuse an image whose tools do not report the demonstrated versions, or whose
 # stock libraries / pcbnew bindings are missing from the system interpreter.
 RUN set -eu; \
     test "$(kicad-cli version)" = "10.0.7"; \
-    ngspice --version | grep -q '^\*\* ngspice-42 '; \
     test "$(bwrap --version)" = "bubblewrap 0.9.0"; \
     /usr/bin/python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'; \
     /usr/bin/python3 -c 'import pcbnew; v = pcbnew.GetBuildVersion(); assert v.startswith("10.0.7"), v' 2>/dev/null; \
@@ -77,6 +75,24 @@ RUN set -eu; \
              footprints/Connector_PinHeader_2.54mm.pretty template/sym-lib-table template/fp-lib-table; do \
         test -e "/usr/share/kicad/$f"; \
     done
+
+# ngspice 47 plus the generic inverse-pswitch correction. Build tools and the
+# fetched source stay out of the runtime. Every image runs the numeric oracle.
+FROM native-base AS ngspice-build
+RUN set -eu; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends \
+        build-essential autoconf automake libtool bison flex pkg-config libfftw3-dev; \
+    rm -rf /var/lib/apt/lists/*
+COPY docker/ngspice /usr/local/share/agent-ee/ngspice
+RUN /usr/local/share/agent-ee/ngspice/build.sh
+
+FROM native-base AS native
+COPY --from=ngspice-build /out/usr/ /usr/
+COPY docker/ngspice /usr/local/share/agent-ee/ngspice
+RUN --network=none set -eu; \
+    ngspice --version | grep -q '^\*\* ngspice-47 '; \
+    python3 /usr/local/share/agent-ee/ngspice/verify.py
 
 # The exact Rust toolchain is acquired from a digest-pinned image, only in the
 # build stages. The final image receives native artifacts, never Cargo.
@@ -173,7 +189,7 @@ RUN set -eu; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee
 
 LABEL org.opencontainers.image.title="agent-ee" \
-      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0, Python 3.12 and kicad-route owned engine 0.23.1"
+      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, corrected ngspice 47, Bubblewrap 0.9.0, Python 3.12 and kicad-route owned engine 0.23.1"
 
 # Bubblewrap needs an unprivileged user namespace; run as a non-root user.
 USER agentee

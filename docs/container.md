@@ -27,7 +27,7 @@ hosted run exposed a user-namespace requirement, handled below.
 | Package indexes | Snapshot `20261015T000000Z` | `snapshot.ubuntu.com` and `snapshot.ppa.launchpadcontent.net` URLs, so later archive uploads do not change resolution |
 | KiCad 10.0.7, stock symbols, footprints and templates | `10.0.7~ubuntu24.04.1` | Exact `apt-get install pkg=version` from the KiCad 10.0 releases PPA, signed by key `FDA854F61C4D0D9572BB95E5245D5502FAD7A805` stored in [docker/](../docker/kicad-10.0-releases.asc) |
 | pcbnew Python bindings | Shipped by the `kicad` package | Build fails unless `/usr/bin/python3` imports `pcbnew` and reports build version 10.0.7 |
-| ngspice 42 | `42+ds-3build1` | Exact apt version; build fails unless `ngspice --version` reports `ngspice-42` |
+| ngspice 47 with inverse-switch correction | Upstream `a80f6e3e95d51534905b1f23410a951802666656` plus the hash-guarded [correction](../docker/ngspice/patch.py) | Source build from the same package snapshot; runtime reports 47 and passes 20 independent switch-divider checks; installed file hashes retained in `/usr/share/agent-ee/ngspice-install.json` |
 | Bubblewrap 0.9.0 | `0.9.0-1ubuntu0.3` | Exact apt version; build fails unless `bwrap --version` is `bubblewrap 0.9.0` and the binary is not setuid |
 | Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
@@ -37,19 +37,30 @@ hosted run exposed a user-namespace requirement, handled below.
 | Rust placement engine | This checkout's `crates/placement-engine`, committed Cargo lock and digest-pinned Rust 1.99.1 compiler | Locked dependency acquisition, offline Rust unit tests and release build, then source/binary receipt verification in the final image |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
+The simulator is compiled by [build.sh](../docker/ngspice/build.sh) with
+`SOURCE_DATE_EPOCH` fixed to the upstream commit time. Build dependencies and
+upstream source stay outside the runtime image. Native models are unchanged.
+The correction permits either ordering of a switch's on/off resistances; stock
+42 and 47 incorrectly clamp inverse switches to the larger on resistance at
+threshold endpoints and inside the transition. The image build checks both
+resistance orderings and both threshold polarities against Ohm's law. Upstream
+notices accompany the installed files. Exact pins record the qualified build;
+new releases require fresh qualification, rather than indefinite dependency
+freezing.
+
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
 unavailable version stops `apt-get install`, and the verification layer refuses
 an image whose tools report other versions or whose stock library paths used by
 the RC fixtures are missing. Unpinned dependencies (shared libraries, `git`) are
 fixed by the snapshot timestamp rather than individual version strings.
 
-All eight image-build `apt-get update` and `apt-get install` invocations use
+All ten image-build `apt-get update` and `apt-get install` invocations use
 [the shared outer retry wrapper](../docker/apt-retry.sh), including the TLS
-bootstrap, native toolchain, routing build stage and final zstd installation.
+bootstrap, native toolchain, routing and simulator build stages and final zstd installation.
 Each command gets at most four attempts, with waits of 60, 120 and 240 seconds
 between failed attempts: **420 seconds (seven minutes) of total outer backoff
 per command**, plus at most four executions of that apt command. Across all
-eight calls the maximum added outer backoff is 3,360 seconds (56 minutes).
+ten calls the maximum added outer backoff is 4,200 seconds (70 minutes).
 This bounds the outer attempts and waits, not total build wall time: package
 counts, transfer times and apt's own per-file retries also contribute.
 Each attempt and wait is logged; a fourth failure returns that command's last

@@ -520,6 +520,26 @@ class NativeActiveTests(unittest.TestCase):
         self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'], .09, delta=3e-6)
         verify_evidence(run, results, required=True)
 
+    def test_inverse_vendor_switch_retains_closed_endpoint(self):
+        # An independent unity buffer followed by a 1 uohm switch and 1 ohm
+        # load must preserve the RC response. Stock ngspice 42/47 wrongly
+        # clamps the inverse switch to 1 Mohm at its exact off threshold.
+        (self.source / 'owned.lib').write_text(
+            '.subckt buffer INP INM VP VN OUT\n'
+            'E1 drive 0 INP 0 1\nVcontrol control 0 0\n'
+            'S1 drive OUT control 0 inverse\nRload OUT 0 1\n'
+            '.model inverse VSWITCH Roff=1e-6 Ron=1e6 Voff=0 Von=1m\n'
+            'RVP VP 0 1e9\nRVN VN 0 1e9\n.ends buffer\n')
+        params = self.scope['checks'][1]['params']
+        params['dialect'] = 'ngspice-ps'
+        params['analyses'] = params['analyses'][:1]
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        expected = .1 * (1 - math.exp(-1)) / (1 + 1e-6)
+        self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'], expected, delta=3e-6)
+        verify_evidence(run, results, required=True)
+
     def test_directive_after_bare_subcircuit_end_refused_before_solver(self):
         model = self.source / 'owned.lib'
         model.write_text(model.read_text().replace('.ends buffer', '.ends\n+ .control'))
