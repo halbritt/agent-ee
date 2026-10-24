@@ -1,5 +1,6 @@
 """Raw writer intent through real emission, native XML and forward annotation."""
 import hashlib
+import os
 import shutil
 import tempfile
 import unittest
@@ -53,6 +54,9 @@ class SchematicStageTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        evidence = os.environ.get('AGENT_EE_SCHEMATIC_EVIDENCE')
+        if evidence and self._testMethodName.startswith('test_hierarchy_'):
+            self.addCleanup(shutil.copytree, self.root, Path(evidence) / self._testMethodName)
         self.source = self.root / 'candidate/design'
         self.source.mkdir(parents=True)
         self.config = prepare(self.source)
@@ -126,6 +130,113 @@ class SchematicStageTests(unittest.TestCase):
         self.assertNotEqual(receipt['status'], 'completed')
         self.assertIn('differs from current intent emission', (path / 'run/console.log').read_text())
         self.assertIsNone(receipt['outputs'][BOARD])
+
+    def hierarchy(self):
+        intent = read_json(FIXTURE / 'two_level.intent.json')
+        intent['hierarchy'][0]['file'] = Path(SCH).name
+        layout = read_json(FIXTURE / 'two_level.layout.json')
+        layout['project'] = Path(SCH).stem
+        write_json(self.design / INTENT, intent)
+        write_json(self.source / 'generation/schematic-layout.json', layout)
+        captures = {lib['path']: (self.source / 'project' / lib['path']).read_bytes()
+                    for lib in intent['libraries']}
+        report, files = emit_schematic(intent, captures, layout)
+        self.assertEqual(report['execution'], 'ok', report)
+        for name, data in files.items():
+            (self.source / 'project' / name).write_bytes(data)
+        shutil.copyfile(ROOT / 'fixtures/stages/empty.kicad_pcb', self.design / BOARD)
+        child = 'design/project/filter.kicad_sch'
+        self.config = configuration(ROOT / 'src', board=BOARD, schematic=SCH, intent=INTENT,
+            layout='design/generation/schematic-layout.json', captures='design/project',
+            footprints='design/generation/footprints.json', child_schematics=[child])
+        return child
+
+    def test_hierarchy_child_edit_is_adopted_and_connects_through_native_annotation(self):
+        import pcbnew
+        from agent_ee.native_netlist import read_native_inventory
+        child = self.hierarchy()
+        previous = digest(self.design / child)
+        intent = read_json(self.design / INTENT)
+        next(c for c in intent['components'] if c['id'] == 'c_in')['value'] = '220n'
+        write_json(self.design / INTENT, intent)
+        emitted, receipt = self.step(0)
+        self.assertEqual(receipt['status'], 'completed', (emitted / 'run/console.log').read_text())
+        self.assertNotEqual(receipt['outputs'][child], previous)
+        adopt(emitted, receipt, self.design)
+        self.assertEqual(digest(self.design / child), receipt['outputs'][child])
+        annotated, board = self.step(1)
+        self.assertEqual(board['status'], 'completed', (annotated / 'run/console.log').read_text())
+        self.assertEqual(board['inputs'][child], receipt['outputs'][child])
+        adopt(annotated, board, self.design)
+        graph = read_native_inventory(annotated / 'run/out/netlist/design.xml')
+        self.assertEqual(set(graph['components']), {'J1', 'C1', 'C2', 'C3', 'C4'})
+        self.assertEqual(graph['components']['C2']['value'], '220n')
+        from agent_ee.executor import execute
+        probe = self.root / 'presence'
+        observed = execute(self.design, probe, ['/usr/bin/python3', '-B', '-m', 'agent_ee.stages',
+            '/candidate/' + SCH, 'symbols', '/work/references.json'], timeout=60)
+        self.assertEqual(observed['execution'], 'ok', (probe / 'console.log').read_text())
+        self.assertEqual(read_json(probe / 'references.json'), ['C1', 'C2', 'C3', 'C4', 'J1'])
+        native = pcbnew.LoadBoard(str(self.design / BOARD))
+        groups = {}
+        for footprint in native.GetFootprints():
+            for pad in footprint.Pads():
+                if pad.GetNetCode():
+                    groups.setdefault(pad.GetNetCode(), []).append((footprint.GetReference(), pad.GetNumber()))
+        # Hand-specified physical nets predate the hierarchical emitter. The two
+        # LOCAL_SAME nets belong to different sheets and must remain separate.
+        expected = read_json(FIXTURE / 'two_level.expected.json')['physical_nets']
+        self.assertEqual(sorted(sorted(net) for net in groups.values() if len(net) > 1),
+                         sorted(sorted(tuple(pin) for pin in net) for net in expected))
+
+    def test_hierarchy_stale_child_cannot_supply_board_output(self):
+        child = self.hierarchy()
+        before = digest(self.design / BOARD)
+        raw = (self.design / child).read_text()
+        self.assertIn('100n', raw)
+        (self.design / child).write_text(raw.replace('100n', '330n'))
+        path, receipt = self.step(1)
+        self.assertNotEqual(receipt['status'], 'completed')
+        self.assertIn('differs from current intent emission: ' + child,
+                      (path / 'run/console.log').read_text())
+        self.assertIsNone(receipt['outputs'][BOARD])
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(path, receipt, self.design)
+        self.assertEqual(digest(self.design / BOARD), before)
+
+    def test_hierarchy_output_set_is_explicit_and_root_cannot_be_swapped(self):
+        child = self.hierarchy()
+        # Omitting the child from the declared output set must not silently
+        # publish only the root. A swapped root must not export a partial design.
+        for root, children in ((SCH, []), (child, [SCH])):
+            with self.subTest(root=root, children=children):
+                self.config = configuration(ROOT / 'src', board=BOARD, schematic=root, intent=INTENT,
+                    layout='design/generation/schematic-layout.json', captures='design/project',
+                    footprints='design/generation/footprints.json', child_schematics=children)
+                path, receipt = self.step(0)
+                self.assertNotEqual(receipt['status'], 'completed')
+                self.assertTrue(all(value is None for value in receipt['outputs'].values()))
+                self.assertFalse((path / 'run/out/project').exists())
+                self.assertIn('differs from', (path / 'run/console.log').read_text())
+
+    def test_hierarchy_presence_refuses_missing_cyclic_and_escaping_children(self):
+        from agent_ee.stages import native_references
+        child = self.hierarchy()
+        root_path, child_path = self.design / SCH, self.design / child
+        root_raw, child_raw = root_path.read_bytes(), child_path.read_bytes()
+        child_path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            native_references(root_path, 'symbols')
+        child_path.write_bytes(child_raw)
+        for target, diagnostic in (('regulator.kicad_sch', 'hierarchy cycle'),
+                                   ('../filter.kicad_sch', 'outside the captured inputs')):
+            root_path.write_bytes(root_raw.replace(b'"filter.kicad_sch"', ('"' + target + '"').encode()))
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, diagnostic):
+                native_references(root_path, 'symbols')
+        root_path.write_bytes(root_raw)
+        child_path.write_bytes(child_raw.replace(b'(version 20260306)', b'(version 20990101)'))
+        with self.assertRaisesRegex(ValueError, 'unsupported native stage presence version'):
+            native_references(root_path, 'symbols')
 
     def test_actual_esp32_unaccounted_pin_is_a_finding(self):
         from agent_ee.symbol_capture import capture_symbols

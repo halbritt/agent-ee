@@ -527,9 +527,11 @@ plans with expected R1/C1/J1 subjects produce native-observed
 An unstaged plan retains its existing convergence behavior; scaffolding does
 not silently add a stage policy.
 
-Hierarchical files can be pre-created and loaded by KiCad, but the existing
-staged presence checker refuses hierarchy. It remains unknown coverage; a
-hierarchical staged campaign is not qualified by this command. The production
+Hierarchical files are pre-created and loaded by KiCad. Producer plans now derive
+stage subjects from required references on all sheets; the presence checker reads
+the complete project-contained hierarchy and requires native export agreement.
+The separate parts check enforces the declared sheet/reference bindings.
+This establishes stage inventory, not a completed hierarchical design. The production
 envelope baseline continues to refuse uncovered obligations. AGENTEE-161 enables
 stackup coverage through the declared profile's source-verified authority;
 holes, keepouts and unresolved generator mechanics still need bindings.

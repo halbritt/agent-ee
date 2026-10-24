@@ -45,7 +45,7 @@ observations must not be read as fresh execution evidence.
 | --- | --- | --- | --- |
 | Intent and requirements | Spec + authored requirement record → scope/baseline; `design_intent`, `design_dialog`, `requirement_scope`, `spec_record` | Distinguish requirements, assumptions, preferences, defaults and unresolved decisions; preserve each requirement's check mapping. RC regex parser in `generate.parse_spec` is not general design synthesis. | Fresh `scripts/rung1_stages.py run --requirement-record` compiles requirements, then stops at absent parts. General supported entrypoint missing. |
 | Architecture, circuits, parts | Captured catalog/selection/CAD closure → `parts/1`; `catalog`, `parts_manifest`, `rung1_parts`, connectivity IR and electrical checks | Select and substantiate topology, values, ratings, package/pin map and sourcing; carry calculations and provenance into downstream checks. `rung1_parts` projects exactly three RC roles; stage driver lacks a declared parts producer. | Existing modules and historical AGENTEE-101; no fresh multiblock intent-to-parts run. |
-| Native schematic | Connectivity intent + captured libraries/layout → native sheets; `schematic_emitter`, `schematic_stage`, `schematic_regenerate`, forward annotation | All pins accounted for; native connectivity agrees with selected parts; editable hierarchy and dependencies; stable regeneration. Mutable-intent stage currently flat-only. | Source inspected; stage-level native tests exist. Must exercise hierarchy and changed circuit through the integrated entrypoint. |
+| Native schematic | Connectivity intent + captured libraries/layout → native sheets; `schematic_emitter`, `schematic_stage`, `schematic_regenerate`, forward annotation | All pins accounted for; native connectivity agrees with selected parts; editable hierarchy and dependencies; stable regeneration. Explicit hierarchical stage output sets now supported; preserving manual edits during regeneration remains flat-only. | Fresh native stage exercise carries a child value edit and cross-sheet nets through receipts to the PCB; stale child and omitted output reject. Complete intent-to-package entrypoint still missing. |
 | Board/mechanics | Envelope + parts + scope/plan → native empty project, fixed mechanics; `agent-ee scaffold`, `scaffold.content_step` | Preserve outline, stackup, locks, holes, keepouts, heights/access and rule provenance; every footprint assigned a block/shared/fixed role. | Existing scaffold/campaign path. No fresh whole workflow proving these survive placement and routing. |
 | Placement/legalization | Native board + floorplan intent/groups → candidate poses/board; `placement_job`, `placer_runner`, `blocks`, Rust engine | Block and pin locality, permitted sides, anchors, body/courtyard/hole/access keepouts; final coordinates establish compliance. Distinct planners currently have different supported domains. | Retained esp_prog run: zero native errors/opens, but CON1/CON2 declared east and measured nearest south; no complete intent qualification. |
 | Routing/repair | Placed native project + routing policy → saved copper; `routing_adapter`, `kicad_route_attempt`, `placement_job.route` | Retain valid geometry and all native rules; route selection/feedback must revise permitted placement/circuits and reject stale feedback. | esp_prog route exercised. Routing-guided placement repair and broad KRT coverage not demonstrated. |
@@ -95,6 +95,9 @@ not a current matched comparison. No superiority claim exists.
 
 1. **esp_prog regression:** retain original input and prior failures; verify
    connector intent, fixed fiducials, native geometry and current routing.
+   Direct owner request: after the board passes its required checks, provide
+   top and bottom 3D renders of the accepted saved native board. Renders do not
+   replace verification or prove physical assembly fit.
 2. **Fresh multiblock acquisition interface:** requirements for protected
    low-voltage input power, regulation, analog filtering/ADC, host digital
    interface and mechanical connectors. Generate real circuits, parts,
@@ -142,3 +145,10 @@ parts/circuit and native schematic producers into one public resumable build
 path, starting with an original multiblock design. Reuse current receipt,
 preservation and check implementations. Keep all rows above open until native
 exercises establish their full criteria.
+
+The next integration slice removes the flat-only stage-runner and presence-gate
+obstructions to hierarchical schematic production. The
+[native hierarchy exercise](benchmarks/hierarchical-stages-2026-10-24.md) carries
+an edited child sheet into the real PCB and exercises public scaffold/review
+gates. It is a targeted feature qualification, not the fresh multiblock system
+run. Parts/circuit production and the complete build entrypoint remain next.

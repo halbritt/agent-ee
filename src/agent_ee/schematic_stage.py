@@ -16,25 +16,45 @@ from .storage import write_json
 from .tool_source import snapshot
 
 
+def _sheets(schematic, child_schematics):
+    """Explicit native output set; the emitter currently uses sibling files."""
+    if not isinstance(child_schematics, (list, tuple)) or len(child_schematics) > 4095:
+        raise ValueError('child schematics must be a bounded sequence of native paths')
+    paths = [schematic, *child_schematics]
+    for path in paths:
+        _relative(path, 'schematic sheet path')
+        if Path(path).suffix != '.kicad_sch' or Path(path).parent != Path(schematic).parent:
+            raise ValueError('schematic sheets must be sibling native schematic files')
+    if len(set(paths)) != len(paths):
+        raise ValueError('schematic sheet paths must be distinct')
+    return paths
+
+
 def configuration(source_root, *, board, schematic, intent='generation/connectivity-intent.json',
                   seeds=(), layout='generation/schematic-layout.json', captures='libraries',
-                  footprints='generation/footprints.json', regeneration_intent=None):
-    """Scope mutable_inputs and campaign implementation_steps for a flat schematic stage.
+                  footprints='generation/footprints.json', regeneration_intent=None,
+                  child_schematics=()):
+    """Scope mutable_inputs and campaign steps for the declared native sheet set.
 
     Seeds are writer context, captured and bound like the intent; they are not
     interpreted as a second connectivity language. Libraries, layout, parts and
     requirements stay immutable. All files must exist in the initial capture.
     """
-    paths = [board, schematic, intent, layout, captures, footprints, *seeds]
+    sheets = _sheets(schematic, child_schematics)
+    paths = [board, *sheets, intent, layout, captures, footprints, *seeds]
     for path in paths:
         _relative(path, 'schematic stage path')
-    if len(set([board, schematic, intent, layout, footprints, *seeds])) != len(paths) - 1:
+    if len(set([board, *sheets, intent, layout, footprints, *seeds])) != len(paths) - 1:
         raise ValueError('schematic stage file paths must be distinct')
     if Path(board).suffix != '.kicad_pcb' or Path(schematic).suffix != '.kicad_sch':
         raise ValueError('schematic stage requires native board and schematic paths')
     args = ['--board', board, '--schematic', schematic, '--intent', intent, '--layout', layout,
             '--captures', captures, '--footprints', footprints]
+    for child in child_schematics:
+        args += ['--child-schematic', child]
     if regeneration_intent is not None:
+        if child_schematics:
+            raise ValueError('preserving native edits during regeneration currently requires a flat schematic')
         _relative(regeneration_intent, 'previous emitted intent path')
         if regeneration_intent in paths:
             raise ValueError('previous emitted intent path must be distinct')
@@ -47,6 +67,8 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
          ['out/emission.json', 'out/netlist', 'out/plan.json', 'out/annotation.json']),
     ):
         writes = {target: produced}
+        if command == 'emit':
+            writes.update({child: 'out/project/' + Path(child).name for child in child_schematics})
         inputs = [intent, *seeds, layout, footprints]
         if regeneration_intent is not None:
             if command == 'emit':
@@ -63,15 +85,16 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
             'inputs': inputs,
             'writes': writes, 'artifacts': artifacts,
             'adoptable_exits': [0], 'timeout_s': 300}))
-    return {'mutable_inputs': [intent, *seeds, schematic, board,
+    return {'mutable_inputs': [intent, *seeds, *sheets, board,
                               *([regeneration_intent] if regeneration_intent is not None else [])],
             'implementation_steps': steps}
 
 
 def run(command, candidate, out, *, board, schematic, intent, layout, captures, footprints,
-        regeneration_intent=None):
+        regeneration_intent=None, child_schematics=()):
     """Return failure with retained findings; never substitute previous native output."""
     candidate, out = Path(candidate), Path(out)
+    sheets = _sheets(schematic, child_schematics)
     out.mkdir(parents=True, exist_ok=False)
     raw = (candidate / intent).read_bytes()
     try:
@@ -87,8 +110,13 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
     write_json(out / 'emission.json', emission)
     if files is None:
         return 1
-    if set(p for p in files if p.endswith('.kicad_sch')) != {Path(schematic).name}:
-        raise ValueError('schematic stage currently requires one flat sheet with the configured filename')
+    if set(p for p in files if p.endswith('.kicad_sch')) != {Path(p).name for p in sheets}:
+        raise ValueError('emitted native sheet set differs from declared schematic outputs')
+    document = _read_json(raw)
+    if document['schema'] == 'agent-ee.connectivity-intent/2':
+        root = next(sheet['file'] for sheet in document['hierarchy'] if sheet['parent'] is None)
+        if root != Path(schematic).name:
+            raise ValueError('emitted root sheet differs from configured schematic')
     if command == 'emit':
         schematic_emitter.publish(files, out / 'project')
         if regeneration_intent is not None:
@@ -96,8 +124,9 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
         return 0
     if command != 'annotate':
         raise ValueError('unknown schematic stage command')
-    if (candidate / schematic).read_bytes() != files[Path(schematic).name]:
-        raise ValueError('forward annotation schematic differs from current intent emission')
+    for sheet in sheets:
+        if (candidate / sheet).read_bytes() != files[Path(sheet).name]:
+            raise ValueError('forward annotation schematic differs from current intent emission: ' + sheet)
     native = execute(candidate, out / 'netlist', ['kicad-cli', 'sch', 'export', 'netlist',
         '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/' + schematic], timeout=120)
     if native['execution'] != 'ok':
@@ -120,6 +149,7 @@ def main(argv=None):
     for name in ('board', 'schematic', 'intent', 'layout', 'captures', 'footprints'):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--regeneration-intent')
+    parser.add_argument('--child-schematic', action='append', default=[], dest='child_schematics')
     args = vars(parser.parse_args(argv))
     return run(args.pop('command'), '/candidate', '/work/out', **args)
 

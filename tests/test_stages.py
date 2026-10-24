@@ -229,7 +229,7 @@ class NativePresenceTests(unittest.TestCase):
                             '(symbol (property "Reference" "C1")))')
             self.assertEqual(native_references(path, 'symbols'), ['C1', 'R1'])
             path.write_text('(kicad_sch (version 20250114) (sheet (uuid "child")))')
-            with self.assertRaisesRegex(ValueError, 'hierarchical'):
+            with self.assertRaisesRegex(ValueError, 'needs exactly one Sheetfile'):
                 native_references(path, 'symbols')
 
     def test_virtual_exclusion_requires_library_power_and_both_instance_flags(self):

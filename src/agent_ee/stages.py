@@ -101,37 +101,65 @@ def excluded_power_symbol(root, node):
             children(node, 'on_board') == [['on_board', 'no']])
 
 
-def native_references(path, kind):
-    """Read only explicit native Reference properties; hierarchical sheets unsupported."""
+def _presence_sheets(path, raw, root):
+    """Read a project-contained hierarchy and reuse the binding occurrence parser."""
     from pathlib import Path
+    from .part_binding import MAX_SHEET_OCCURRENCES, _sheet_children, _sheet_occurrences
+    from .parts_manifest import read_captured
+    from .symbol_library import LibraryError, parse_sexpr
+    base, name = Path(path).parent, Path(path).name
+    files, pending = {name: raw}, [(name, root)]
+    while pending:
+        rel, tree = pending.pop()
+        for _, child in _sheet_children(tree, rel):
+            if child in files:
+                continue
+            if len(files) >= MAX_SHEET_OCCURRENCES:
+                raise LibraryError('schematic sheet occurrence limit exceeded')
+            files[child] = read_captured(base, child)
+            pending.append((child, parse_sexpr(files[child])))
+    occurrences, _, _ = _sheet_occurrences(raw, name, files)
+    return occurrences
+
+
+def native_references(path, kind):
+    """Read explicit references, using occurrence identities in a hierarchy."""
+    from pathlib import Path
+    from .part_binding import _occurrence_reference
     from .symbol_library import LibraryError, children, parse_sexpr
-    root = parse_sexpr(Path(path).read_bytes())
+    raw = Path(path).read_bytes()
+    root = parse_sexpr(raw)
     expected_root, tag = ('kicad_sch', 'symbol') if kind == 'symbols' else ('kicad_pcb', 'footprint')
-    if root[0] != expected_root or len(children(root, 'version')) != 1:
-        raise LibraryError('expected versioned native stage subject')
-    version = children(root, 'version')[0]
-    if len(version) != 2 or version[1] not in PRESENCE_VERSIONS[expected_root]:
-        raise LibraryError('unsupported native stage presence version')
-    if children(root, 'sheet'):
-        raise LibraryError('hierarchical stage presence is not supported')
+    occurrences = (_presence_sheets(path, raw, root) if kind == 'symbols' and children(root, 'sheet')
+                   else [(str(path), root, None)])
+    for _, tree, _ in occurrences:
+        if tree[0] != expected_root or len(children(tree, 'version')) != 1:
+            raise LibraryError('expected versioned native stage subject')
+        version = children(tree, 'version')[0]
+        if len(version) != 2 or version[1] not in PRESENCE_VERSIONS[expected_root]:
+            raise LibraryError('unsupported native stage presence version')
     if kind == 'tracks':
         return sorted(f'{tag}:{index}' for tag in ('segment', 'arc')
                       for index, _ in enumerate(children(root, tag)))
     references = []
-    for node in children(root, tag):
-        props = [p for p in children(node, 'property') if len(p) >= 2 and p[1] == 'Reference']
-        if len(props) != 1 or len(props[0]) < 3 or not isinstance(props[0][2], str) or not props[0][2].strip():
-            raise LibraryError('native stage subject has missing/ambiguous Reference')
-        if kind == 'symbols':
-            excluded = (children(node, 'in_bom') == [['in_bom', 'no']] and
-                        children(node, 'on_board') == [['on_board', 'no']])
-            if excluded or props[0][2].startswith('#'):
-                if excluded_power_symbol(root, node):
-                    continue
-                # XML hides ordinary # references but retains ordinary no/no parts.
-                raise LibraryError('bounded inventory disagrees with native reader: '
-                                   'virtual exclusion requires a power symbol with in_bom no and on_board no')
-        references.append(props[0][2])
+    for rel, tree, instance in occurrences:
+        for node in children(tree, tag):
+            props = [p for p in children(node, 'property') if len(p) >= 2 and p[1] == 'Reference']
+            if len(props) != 1 or len(props[0]) < 3 or not isinstance(props[0][2], str) or not props[0][2].strip():
+                raise LibraryError('native stage subject has missing/ambiguous Reference')
+            ref = props[0][2]
+            if instance is not None:
+                ref, _ = _occurrence_reference(node, {'Reference': ref}, instance, False, rel)
+            if kind == 'symbols':
+                excluded = (children(node, 'in_bom') == [['in_bom', 'no']] and
+                            children(node, 'on_board') == [['on_board', 'no']])
+                if excluded or ref.startswith('#'):
+                    if excluded_power_symbol(tree, node):
+                        continue
+                    # XML hides ordinary # references but retains ordinary no/no parts.
+                    raise LibraryError('bounded inventory disagrees with native reader: '
+                                       'virtual exclusion requires a power symbol with in_bom no and on_board no')
+            references.append(ref)
     if len(set(references)) != len(references):
         raise LibraryError('native stage subject has duplicate references')
     return sorted(references)

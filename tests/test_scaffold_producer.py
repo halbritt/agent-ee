@@ -275,8 +275,8 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         self.assertIn('/' + child + '/', receipt['sheets'])
         self.assertEqual(parse_sexpr((self.root / 'produced/inputs' / child_rel).read_bytes())[0], 'kicad_sch')
         scope = read_json(self.root / 'produced/scope.json')
-        self.assertNotIn('stages', scope)
-        self.assertTrue(all('stage' not in c for c in scope['checks']))
+        self.assertEqual(scope['stages']['subjects']['schematic']['references'], ['C1', 'J1', 'R1'])
+        self.assertTrue(all('stage' in c for c in scope['checks']))
         self.assertEqual(scope['checks'][3]['kind'], 'netclass_completeness')
 
     def test_degenerate_minimum_via_is_not_masked_by_preferred_values(self):
@@ -677,7 +677,7 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         write_json(self.plan_path, self.plan)
         self.refused('basename path without suffix')
 
-    def test_hierarchical_required_selectors_leave_stages_underived_by_name(self):
+    def test_hierarchical_required_selectors_derive_native_stage_gates(self):
         import uuid
         child = str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-producer-child'))
         self.parts['parts'][1]['instances'][0]['sheet'] = '/' + child + '/'
@@ -685,10 +685,9 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         self.write()
         receipt = self.build()
         scope = read_json(self.root / 'produced/scope.json')
-        self.assertNotIn('stages', scope)
-        self.assertTrue(all('stage' not in c for c in scope['checks']))
-        self.assertEqual(receipt['derivation']['stages']['status'], 'not_derived')
-        self.assertIn('child sheets: C1', receipt['derivation']['stages']['reason'])
+        self.assertEqual(scope['stages']['subjects']['schematic']['references'], ['C1', 'J1', 'R1'])
+        self.assertTrue(all('stage' in c for c in scope['checks']))
+        self.assertEqual(receipt['derivation']['stages']['status'], 'derived')
         self.assertIn('/' + child + '/', receipt['sheets'])
 
     def test_retry_limit_below_two_is_refused(self):
@@ -706,6 +705,25 @@ class NativeProducerTests(ProducerFixture, unittest.TestCase):
     def setUp(self):
         require_toolchain(native=True)
         super().setUp()
+
+    def test_cli_hierarchy_absence_has_replayable_native_stage_evidence(self):
+        import os
+        import uuid
+        child = str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-native-stage-child'))
+        self.parts['parts'][1]['instances'][0]['sheet'] = '/' + child + '/'
+        write_json(self.source / 'parts.json', self.parts)
+        self.write()
+        self.test_cli_produce_and_review_with_native_rules_loaded()
+        native = self.root / 'native'
+        result = read_json(native / 'checks/erc.json')
+        self.assertEqual(result['details']['reason'], 'stage_not_reached')
+        from agent_ee.native_netlist import read_native_instances
+        graph = read_native_instances(native / 'work/erc/stage-subject/native-netlist.xml')
+        self.assertEqual(set(graph['sheets']), {'/', '/' + child + '/'})
+        self.assertEqual(read_json(native / 'work/erc/stage-subject.json')['missing'], ['C1', 'J1', 'R1'])
+        evidence = os.environ.get('AGENT_EE_SCHEMATIC_EVIDENCE')
+        if evidence:
+            shutil.copytree(self.root, Path(evidence) / self._testMethodName)
 
     def test_native_per_net_classes_and_width_rules_are_loaded(self):
         from agent_ee.executor import execute

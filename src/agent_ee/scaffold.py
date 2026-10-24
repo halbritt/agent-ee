@@ -61,7 +61,7 @@ PRODUCER_LIMITATIONS = [
     'Producer-derived rules: six project rules and the DRC-enforced Default class clearance come from '
     'the captured fab profile minimum tier; the Default track width and via size take the preferred tier as '
     'routing defaults; other KiCad rule settings keep the captured template values.',
-    'Stage subjects are the parts manifest required root-sheet selectors; no fab_package done gate, '
+    'Stage subjects are the parts manifest required references across all sheets; no fab_package done gate, '
     'scope/3 envelope acceptance is derived. Per-net classes require captured net constraints.']
 # Stage of each derived check. The fab check's native loading witness needs a saved track.
 STAGES = (('erc', 'schematic'), ('netlist', 'schematic'), ('parts', 'schematic'),
@@ -765,25 +765,19 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
             project=sch.removesuffix('.kicad_sch') + '.kicad_pro', qualification=plan['netclass_qualification']))
         requirements[0]['checks'].append('netclasses')
     required = [s for part in document['parts'] if part['required'] for s in part['instances']]
-    hierarchical = sorted(s['reference'] for s in required if s['sheet'] != '/')
-    stages = None
-    if hierarchical:
-        checks = [specs[cid] for cid, _ in STAGES]
-        staging = dict(status='not_derived', reason='the staged presence checker refuses hierarchy; '
-                       'required selectors on child sheets: ' + ', '.join(hierarchical))
-    else:
-        # Expected inventory is the manifest's explicit required selectors, never inferred.
-        references = sorted(s['reference'] for s in required)
-        checks = [dict(specs[cid], stage=stage) for cid, stage in STAGES]
-        stages = dict(schema='agent-ee.stages/1', order=['schematic', 'placement', 'routing'],
-                      subjects=dict(schematic=dict(path=sch, kind='symbols', references=references),
-                                    placement=dict(path=pcb, kind='footprints', references=references),
-                                    routing=dict(path=pcb, kind='tracks', minimum=1)),
-                      finding_retry_limit=plan['finding_retry_limit'])
-        staging = dict(status='derived', source=parts_rel + ' required selectors',
-                       routing='fab_profile needs a saved track for its native rule-loading witness')
+    # Presence checks span the native hierarchy. The parts check separately
+    # enforces each declared sheet/reference binding; presence alone does not.
+    references = sorted(s['reference'] for s in required)
+    checks = [dict(specs[cid], stage=stage) for cid, stage in STAGES]
+    stages = dict(schema='agent-ee.stages/1', order=['schematic', 'placement', 'routing'],
+                  subjects=dict(schematic=dict(path=sch, kind='symbols', references=references),
+                                placement=dict(path=pcb, kind='footprints', references=references),
+                                routing=dict(path=pcb, kind='tracks', minimum=1)),
+                  finding_retry_limit=plan['finding_retry_limit'])
+    staging = dict(status='derived', source=parts_rel + ' required selectors',
+                   routing='fab_profile needs a saved track for its native rule-loading witness')
     if net_report is not None:
-        check = specs['netclasses'] if stages is None else dict(specs['netclasses'], stage='placement')
+        check = dict(specs['netclasses'], stage='placement')
         checks.insert(len(checks) - 2, check)
     scope = dict(schema='agent-ee.scope/2', name=plan['name'], scope=plan['scope'],
                  limitations=[*plan['limitations'], *PRODUCER_LIMITATIONS], inputs=plan['inputs'],
@@ -791,8 +785,7 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
                  requirements=sorted({r['source']['path'] for r in requirements}),
                  baseline=dict(requirements=requirements, targets=plan['targets'],
                                reference_architectures=plan['reference_architectures']))
-    if stages is not None:
-        scope['stages'] = stages
+    scope['stages'] = stages
     derivation = dict(
         envelope=dict(path=envelope_rel, sha256=record['envelope_sha256'], layer_count=record['layer_count'],
                       copper_layers=record['copper_layers'], profile_support=record['fab_profile']['support']),

@@ -79,8 +79,12 @@ exports these references. The disagreement leaves coverage unknown.
 Eeschema and the owned [schematic emitter](schematic-emitter.md) write power
 symbols and `PWR_FLAG` with `in_bom no` and `on_board no`, so a schematic with
 power symbols passes the probe on those flags together with the library power flag.
-Duplicate/missing References, malformed syntax and hierarchical schematic
-subjects are unsupported probe execution, never absence evidence. The parser is
+Hierarchical subjects use the existing sheet-occurrence binding parser. Child
+files must stay within the root schematic's project directory; occurrence
+references are used instead of a reused sheet's display Reference property.
+The complete inventory must agree with native export. Missing children, cycles,
+escaping paths, duplicate/missing references and malformed syntax refuse probe
+execution, never establish absence evidence. The parser is
 bounded to 32 MiB and 128 levels. The qualified source-version set is schematic
 20250114/20260306 and board 20250114/20260101/20260206; other versions remain
 unknown even if the native reader accepts an empty document. This is presence extraction, not native ERC,

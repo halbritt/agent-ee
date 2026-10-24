@@ -10,7 +10,7 @@ and independent review still grade their outputs.
 
 Prepare an initial captured tree with these files:
 
-- `generation/connectivity-intent.json`: raw `agent-ee.connectivity-intent/1`
+- `generation/connectivity-intent.json`: raw `agent-ee.connectivity-intent/1` or hierarchical `/2`
 - `generation/schematic-layout.json`: `agent-ee.schematic-layout/1`
 - `generation/footprints.json`: `agent-ee.footprint-libraries/1`
 - `libraries/`: explicitly captured symbol and footprint members
@@ -72,10 +72,24 @@ not adjudicated check defects, and no previous schematic is substituted. This
 path does not automatically retry a failed producer. Fresh checks and reviews
 are required after a corrected proposal.
 
-The adapter currently supports flat intent. Hierarchical emission remains in the
-standalone emitter; this adapter refuses multiple schematic outputs so the
-campaign inventory and declared write scope remain exact. Placement, routing,
-fabrication and the telemetry pod's full acceptance scope are separate work.
+For a hierarchical `/2` intent, pass every child file as `child_schematics`,
+for example `child_schematics=['project/power.kicad_sch',
+'project/analog.kicad_sch']`. The root and children must be sibling native files
+already in the capture. The emission step declares and adopts every sheet; a
+changed sheet set requires a new configuration and capture. An omitted child,
+an undeclared output or a configured root that differs from the intent refuses
+publication. Annotation compares every saved sheet with the current emission
+before exporting the complete root hierarchy. The emitted project file remains
+an artifact; authored project rules remain authoritative.
+
+Stage presence now reads the complete project-contained hierarchy using sheet
+occurrence references, then compares its inventory against a fresh native XML
+export. Missing files, cycles, paths outside the project and unknown native
+versions refuse coverage. Scaffold-derived gates therefore include required
+references on child sheets. Presence establishes inventory only: the separate
+parts check still enforces each sheet/reference identity, and native electrical
+checks still grade connectivity. Placement, routing and fabrication acceptance
+remain separate obligations.
 
 For [stable regeneration](schematic-regeneration.md), pass `regeneration_intent`
 to `configuration` and pre-create that captured file with the last emitted
@@ -83,6 +97,8 @@ intent. The emission step then adopts both the updated schematic and its final
 intent state. Annotation verifies a repeated update against the adopted state;
 it does not repack retained symbols. Conflicting native edits return findings
 and no outputs. The existing writer guard protects both step-owned files.
+Regeneration that preserves existing native edits remains flat-only; declaring
+children together with `regeneration_intent` refuses configuration explicitly.
 
 Tests use original regulator fixtures and scripted model responses with actual
 KiCad XML exports, sandbox receipts and forward annotation:
