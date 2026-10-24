@@ -15,7 +15,7 @@ holds no owner authority (owner, 2026-10-23: "you're not deciding on my behalf, 
 forwarding my decisions"). No current agent is owner delegate or holds owner-reserved
 authority; money, orders, uploads, new cloud, caps and owner constraints remain
 owner-reserved. Elsewhere in
-this file, read 529 as 531, 449 as 530 and 519 as 532 for current responsibilities;
+this file, read 529 as 531, 449 as 530 and 519 and 532 as 542 for current responsibilities;
 dated decisions keep their historical names. Detailed investigation and implementation stay
 delegated. The current [delivery plan](telemetry-pod-delivery-plan.md) and
 [owner placement request](functional-block-placement-request.md) govern the work.
