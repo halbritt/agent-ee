@@ -698,7 +698,7 @@ def _cancelled(job_dir):
 
 def run_job(config, job_dir, *, resume=False, executable=None):
     """The supported entry point: prepare -> search -> shortlist checks -> route -> final checks."""
-    job_dir = Path(job_dir)
+    job_dir = Path(job_dir).absolute()
     if job_dir.exists() and not resume:
         if any(p.name != 'CANCEL' for p in job_dir.iterdir()):
             raise JobRefusal(f'job directory {job_dir} is not empty; use resume')
