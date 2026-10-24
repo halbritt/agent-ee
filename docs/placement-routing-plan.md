@@ -70,6 +70,13 @@ Status 2026-10-24 06:59Z: the matched end-to-end qualification RAN once on the q
 - Astra MEDIUM review: RESULT-SOUND-WITH-CORRECTIONS (one wrong seal-command path; the classification-label qualification; the missing-report and retention gaps). Hashes audited clean.
 - No matched outcome comparison is possible, because agent-ee produced no board. AGENTEE-515 remains INCOMPLETE pending the chief's disposition.
 
+Status 2026-10-24 07:06Z (chief 3d8d94bd / f92aa95f):
+- The matched e2e run is recorded as a FAILED qualification with sound corrected evidence, not 515 completion. Corrections are in the separately sealed agentee-515-e2e-corrections; the experiment seal is unchanged.
+- AGENTEE-515c LAUNCHED: one focused repair of the two demonstrated tooling defects, built by Sol HIGH, 07:06:19Z to 09:36:19Z hard; issued brief dc74c67a.
+  1. A general, measured complexity contract for native captured copper contours: no geometry loss, no weakened checks. U2's 1118-vertex contour exceeds today's 512 limit.
+  2. An honest 'refused' job report after ownership, with custody. This includes the foreign-resume overwrite of capture/problem found in source.
+- Then one focused gate (30 min) and one Argon HIGH review, before the chief's disposition. 516 is held; 517/518 are owner-held; tooling only.
+
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
 ## AGENTEE-512 — Qualify a coherent placement-routing workflow before full-pod production
