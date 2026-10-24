@@ -113,6 +113,15 @@ are retained at `~/.cache/agent-ee-qualification/agent545/hard-locality-20261024
 the saved attempt-05 board SHA-256 is
 `43c20fbf156fd3fde60ea2e22ff8ff6c5026796b7a4db1923b0032b6f852fe5e`.
 
+Routing search resolution is now exposed as `router.grid_step_mm` through the
+ordinary job and pinned kicad-route `80e144437b48a3de77b226d0e9465c16b9ab8b7e`.
+The new option preserves automatic coupled-pair handling and native rules.
+All 35 upstream-wrapper pair tests and 26 strict native consumer/preservation/
+interruption tests pass without skips. Matched 25 and 10 micrometre attempts
+on the valid acquisition-05 placement each leave one ADC connection open;
+resolution alone does not close this board. The retained routing evidence is
+`~/.cache/agent-ee-qualification/agent545/routing-grid-20261024/`.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through

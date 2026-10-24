@@ -82,6 +82,13 @@ export (routing) and final validation all draw on it; there is no phase cap.
 The legacy `router.budget_s` field is accepted but ignored: routing receives
 the remaining overall time, with no minimum timeout extension. If less than one
 second remains, the integer-second router CLI is not started.
+
+Optional `router.grid_step_mm` selects the builtin router's search resolution
+in millimetres, including its coupled differential-pair and remaining-net
+passes. For example, `0.025` requests a 25 micrometre search grid. It does not
+change native widths or clearance requirements. Omission uses the router
+default; the pinned CLI rejects non-finite, sub-nanometre or incompatible
+controls. The chosen value is retained in the configuration and routing record.
 `job-report.json` records `setup`, `import`, `prepare`, `search`, `judge`,
 `export` and `final_validation` separately. Queue time (admission) is outside
 the process and must be recorded by the caller.

@@ -386,7 +386,8 @@ class EntryPointTests(Fixture):
                   'inputs': {k: {'path': str(v), 'sha256': hashlib.sha256(Path(v).read_bytes()).hexdigest()}
                              for k, v in files.items()},
                   'search': self.search(2, 30000),
-                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60}}
+                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60,
+                             'grid_step_mm': 0.025}}
         before = {k: Path(v).read_bytes() for k, v in files.items()}
         config_path = self.dir / 'job-config.json'
         config_path.write_text(json.dumps(config))
@@ -401,6 +402,8 @@ class EntryPointTests(Fixture):
         self.assertEqual(report['design_name'], self.board.stem)
         argv = report['route']['argv']
         self.assertEqual(argv[argv.index('--name') + 1], self.board.stem)
+        self.assertEqual(argv[argv.index('--grid-step') + 1], '0.025')
+        self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
         self.assertEqual(report['routing_trials'][-1]['status'], 'completed')
         self.assertEqual(report['route_selection']['board_sha256'], report['routing_trials'][-1]['board_sha256'])
         self.assertEqual(set(report['phases']), set(job.PHASES))

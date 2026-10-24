@@ -1038,7 +1038,7 @@ def board_metrics(path, groups=None, edges=None):
 # ---------------------------------------------------------------- router
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
-          design_name='board'):
+          design_name='board', grid_step_mm=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1066,6 +1066,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged),
             '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
             '--label', 'placement-job', '--protect', 'existing', '--budget', str(int(remaining)), '--diff-pairs', 'auto']
+    if grid_step_mm is not None:
+        argv += ['--grid-step', str(grid_step_mm)]
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -1313,7 +1315,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             _check_stop(clock, job_dir)
             routed = route(selected['directory'], job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
-                           clock=clock, cancel_dir=job_dir, design_name=report['design_name'])
+                           clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
+                           grid_step_mm=config['router'].get('grid_step_mm'))
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
