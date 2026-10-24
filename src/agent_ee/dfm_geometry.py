@@ -544,7 +544,7 @@ def smd_via_clearance(rule, facts):
                 continue
             rule.checked += 1
             squared = (Fraction(0) if any(contains(centre, c) for c in contours) else
-                       min(distance2(centre, a, b) for c in contours for a, b in edges(c)))
+                       min(distance2(centre, a, b) for c in contours for a, b in edges(c) if a != b))
             if squared < (radius + limit) ** 2:
                 gap = max(0.0, math.sqrt(squared) - float(radius))
                 rule.find(f'via-pad:{layer}:{via["uuid"]}:{pad["uuid"]}', centre,

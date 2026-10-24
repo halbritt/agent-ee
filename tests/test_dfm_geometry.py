@@ -242,6 +242,14 @@ class SmdViaClearanceTests(unittest.TestCase):
         result = run(self.rule, pads=[target], vias=[{**via('v', 2, 0, 0.6, 0.3), 'padstack_mode': 'CUSTOM'}])
         self.assertEqual(result['execution'], 'unsupported', result)
 
+    def test_closed_native_polygon_with_repeated_vertex_preserves_clearance(self):
+        target = pad('p', 'U1', '1', 'V', rect(-0.5, -0.5, 0.5, 0.5))
+        contour = target['polygons_nm']['F.Cu'][0]
+        contour.append(contour[0])
+        for x, status in [(0.949999, 'defect'), (0.95, 'pass')]:
+            result = run(self.rule, pads=[target], vias=[via('v', x, 0, 0.6, 0.3)])
+            self.assertEqual((result['execution'], result['status']), ('ok', status), result)
+
 
 class SpacingTests(unittest.TestCase):
     def courtyard(self, ref, contours, **extra):

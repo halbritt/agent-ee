@@ -93,8 +93,8 @@ on two actual routed candidates: the first fails with five copper overlaps over
 351 comparisons; the routing-policy repair passes all 390 comparisons at a
 0.1 mm declared gap. Native controls also reject a same-net via in a solder pad,
 and exact boundary tests distinguish a one-nanometre shortfall. Retained evidence:
-`build/agent545/smd-via-qualification/`, with 39 native DFM tests passing in
-`build/agent545/smd-via-clearance-native.log`. This does not by itself qualify
+`build/agent545/smd-via-qualification/`, with 40 native DFM tests passing in
+`build/agent545/smd-via-clearance-native-final.log`. This does not by itself qualify
 the full design or manufacturing package.
 
 Differential pairs are found by name: `X+`/`X-` and `X_P`/`X_N` (or

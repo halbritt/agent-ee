@@ -171,7 +171,7 @@ Final assembly geometry now has an executable `dfm_geometry`
 pad on shared outer layers, including same-net pads. Native review rejects five
 copper overlaps on acquisition-06 (two beyond the center-only metric's three
 sites) and passes all 390 comparisons on the pad-clearance repair at a declared
-0.1 mm margin. All 39 native DFM tests pass. These are targeted geometry results;
+0.1 mm margin. All 40 native DFM tests pass. These are targeted geometry results;
 mask/paste openings and complete assembly acceptance remain separate checks.
 Evidence: `build/agent545/smd-via-qualification/`.
 
