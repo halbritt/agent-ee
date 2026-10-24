@@ -94,6 +94,7 @@ Immutable evidence under `~/.cache/agent-ee-qualification/agent545/`:
 
 | Bundle | Files | SHA-256 of SHA256SUMS | Meaning |
 | --- | ---: | --- | --- |
+| `normal-plane-workflow-20261024` |11402|`04dcbcd26826dce35f973d7905892446aaf81b6e9a382bfc31d55c4030d67c08`|Normal outer/inner plane jobs, 111 strict tests, rejected two-sided acquisition route, successful bottom-plane six-stage build and 20 declared checks, matching diagnostic exports, stale-CPL rejection and renders. Nine internal links have separately verified custody.|
 | `acquisition-manufacturing-20261024` |6857|`a05dec9a96b7932e6949c2021c26b6616385f30f6e81a48770830fa899238fbd`|Current TPS manufacturing inputs, regenerated six-stage build, 20 declared checks, stale-CPL rejection, default refusal, two nominal removal cases and native renders. One internal symbolic link has separately recorded and verified custody.|
 | `acquisition-dc-rail-20261024` |5003|`e0e6e339ed3c70115e8189fc2667996f9d4d7d2b9dc9ca699fa53dd5f97723d5`|Whole-net model, 70 native regressions, ordinary two/four-layer controls and negatives, exact acquisition copper review and committed-revision control.|
 | `acquisition-power-spice47-20261024` |2670|`6c9c1f0deb24b9f15af3b9d594833b5e691df9c33d6756c05b11b193abc90c77`|Current-limited source repair, vendor models, stock failures, generic correction, native regressions, RC gates and unchanged actual power review.|

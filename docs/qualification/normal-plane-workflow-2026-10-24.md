@@ -171,3 +171,20 @@ Five typed evidence records, the decision receipt and eleven explicitly
 nonmaterial obligations are retained with the evidence. The packet supports
 reuse and preservation of the existing lifecycle; it does not grant authority
 or establish whole-system acceptance.
+
+## Retained evidence
+
+Implementation: `d95035e1555c2a8135bcf998c4fb2254f5a63bbe`.
+The read-only bundle is
+`~/.cache/agent-ee-qualification/agent545/normal-plane-workflow-20261024/`.
+Its 11,402 regular files are hashed and verified by `SHA256SUMS`, whose SHA-256 is
+`04dcbcd26826dce35f973d7905892446aaf81b6e9a382bfc31d55c4030d67c08`.
+Nine internal symbolic links have separately verified targets in `SYMLINKS.json`
+(SHA-256 `c2f1dc3829399d04dca2484f1f798ebc5a4f1164b68e2ca7c49ff048343af895`).
+
+`workspace/` contains the build inputs and commands above, both multiblock builds,
+the final positive review and stale-CPL copy, renders, strict gate and bounded
+failed diagnostic attempts. Restore that directory as `build/plane-workflow`
+to use the recorded input paths; use new output directories for fresh runs.
+`doctrine/` contains the bounded decision evidence. Third-party design/library
+and sourcing artifacts remain outside the public repository.
