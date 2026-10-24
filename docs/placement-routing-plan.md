@@ -32,7 +32,18 @@ Status 2026-10-24 03:50Z: TOOLING ONLY (owner, relayed via the chief 69d407ee@2)
   - Step 2(a) is red: USB1 occupancy is 75 µm past the west edge, from fab stroke inflation plus the unmodelled declared overhang.
   - An NPTH hole-clearance regression must be fixed.
   - Positive native-clean seats are still to be added.
-- The next correction slice awaits the chief. The architecture proposal is [placement-architecture.md](placement-architecture.md).
+- The next correction slice awaits the chief.
+
+Status 2026-10-24 05:42Z: the 515q / 515q2 / 515q3 correctness stack (head 39743415) LANDED on main b98f9bcb as reviewed INPUT ONLY (chief 47db10f7).
+- What it adds:
+  - native-shape copper clearance;
+  - the declared edge-connector overhang, honoured only for the declared component and edge;
+  - native drill and hole reservations;
+  - fresh-native rule capture in a bounded child process;
+  - explicit refusal of board-level zones, custom rules and non-default netclasses.
+- Gate: 148 tests across two runs (145 passed plus 3 harness errors from a reused evidence directory; those 3 then passed in a targeted rerun with a fresh directory); cargo 92; docs and origins clean; immutable.
+- Limits: the native agreement covers the {USB1, Fid1} subproblem only, not whole-board legality; derived occupancy is not body proof.
+- AGENTEE-515 remains INCOMPLETE: the end-to-end esp_prog run and the matched stock-KRT comparison are outstanding, and the U2 fixture qualification awaits the chief's next decision. The architecture proposal is [placement-architecture.md](placement-architecture.md).
 
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
