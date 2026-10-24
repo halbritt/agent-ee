@@ -189,7 +189,7 @@ class NativeTransformTests(Fixture):
         for q in range(4):
             evaluated = self._evaluate(problem, {u1['uuid']: [12 * MM, 5 * MM, q]})
             poses = evaluated['poses']
-            check = job.materialize(self.board, poses, self.dir / f'q{q}', b'{}\n')
+            check = job.materialize(self.board, poses, self.dir / f'q{q}', b'{}\n', intent=intent())
             self.assertEqual(check['problems'], [], q)
             self.assertEqual(check['integrity'], 'preserved')
             row = next(p for p in poses if p['uuid'] == u1['uuid'])
@@ -204,21 +204,22 @@ class NativeTransformTests(Fixture):
         wrong = json.loads(json.dumps(poses))
         row = next(p for p in wrong if p['uuid'] == u1['uuid'])
         row['pads'][0]['x_nm'] += 1
-        check = job.materialize(self.board, wrong, self.dir / 'wrong', b'{}\n')
+        check = job.materialize(self.board, wrong, self.dir / 'wrong', b'{}\n', intent=intent())
         self.assertEqual(check['integrity'], 'violated')
         self.assertTrue(any('differs from the engine transform' in p for p in check['problems']))
         fixed = json.loads(json.dumps(poses))
         fid = next(p for p in fixed if p['native_ref'] == 'FID')
         fid['moved'], fid['x_nm'] = True, fid['x_nm'] + MM
-        moved = job.materialize(self.board, fixed, self.dir / 'fixed', b'{}\n')
-        self.assertEqual(moved['integrity'], 'violated')
+        with self.assertRaisesRegex(job.JobRefusal, 'protected'):
+            job.materialize(self.board, fixed, self.dir / 'fixed', b'{}\n', intent=intent())
+        self.assertFalse((self.dir / 'fixed/board.kicad_pcb').exists())
 
     def test_uuid_round_trip_preserves_every_footprint(self):
         problem, _ = self.problem()
         output, _ = job.solve(problem, self.search(2, 30000), self.dir, deadline_s=60)
         self.assertTrue(output['shortlist'], output['seeds'])
         candidate = output['shortlist'][0]
-        check = job.materialize(self.board, candidate['poses'], self.dir / 'c', b'{}\n')
+        check = job.materialize(self.board, candidate['poses'], self.dir / 'c', b'{}\n', intent=intent())
         self.assertEqual(check['problems'], [])
         import pcbnew
         before = job.native_inventory(pcbnew.LoadBoard(str(self.board)))
@@ -314,10 +315,18 @@ class LimitTests(Fixture):
     def test_deadline_bounds_the_whole_portfolio(self):
         problem, _ = self.problem()
         started = time.monotonic()
-        output, _ = job.solve(problem, self.search(6, 50_000_000), self.dir, deadline_s=1.5)
+        output, execution = job.solve(problem, self.search(6, 50_000_000), self.dir, deadline_s=1.5)
         self.assertLess(time.monotonic() - started, 10)
         self.assertEqual(output['status'], 'deadline')
-        self.assertIn('not_started', {s['status'] for s in output['seeds']})
+        if execution.get('interruption'):
+            self.assertEqual(execution['interruption'], 'deadline')
+            self.assertIsNone(output['timing']['prepare_s'], 'an interrupted child has no measured prepare time')
+            self.assertIsNone(output['prng'], 'no final solver record was received')
+            self.assertEqual(output['shortlist'], [])
+            self.assertNotIn('not_started', {s['status'] for s in output['seeds']},
+                             'unobserved seed progress must not be invented')
+        else:
+            self.assertIn('not_started', {s['status'] for s in output['seeds']})
 
     def test_resume_skips_completed_seeds_and_replays_the_rest(self):
         problem, _ = self.problem()
@@ -387,9 +396,13 @@ class EntryPointTests(Fixture):
                 'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60}}
 
 
-@unittest.skipUnless(os.environ.get('AGENT_EE_ESP_PROG_PREPARED'), 'external esp_prog bundle not mounted')
 class EspProgCaptureTests(unittest.TestCase):
     def test_unchanged_esp_prog_capture_is_accepted_with_labelled_derived_occupancy(self):
+        if not os.environ.get('AGENT_EE_ESP_PROG_PREPARED'):
+            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+                self.fail('AGENT_EE_REQUIRE_TOOLCHAIN=1: external esp_prog bundle not mounted '
+                          '(AGENT_EE_ESP_PROG_PREPARED)')
+            self.skipTest('external esp_prog bundle not mounted')
         require_toolchain(native=True)
         root = Path(os.environ['AGENT_EE_ESP_PROG_PREPARED'])
         for name, sha in ESP_PROG.items():

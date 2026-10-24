@@ -223,6 +223,11 @@ The Python whole-plan implementation remains the independent parity reference
 and powers the explicit Python trace diagnostic. The CI image includes the
 pinned, locked Rust build; a missing planner is an error.
 
+The experimental [whole-board placement job](docs/placement-job.md) adds a
+separate capture, search, native shortlist check, routing and final-check entry
+point. It protects fixed native poses and complete routed-board geometry, with
+one shared deadline and cancellation boundary. It makes no qualification claim.
+
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 

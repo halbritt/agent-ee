@@ -28,11 +28,14 @@ stay outside the public repository.
             "groups": {"path": "prepared/groups.json", "sha256": "<64 hex>"}},
  "search": {"seeds": [{"seed": 0, "start": "scattered"}, {"seed": 6, "start": "clustered"}],
             "steps_per_seed": 1000000, "shortlist": 3},
- "router": {"checkout": "/opt/kicad-route", "budget_s": 240}}
+ "router": {"checkout": "/opt/kicad-route"}}
 ```
 
 `budget_s` is ONE overall budget from job start: preparation, search, judging,
 export (routing) and final validation all draw on it; there is no phase cap.
+The legacy `router.budget_s` field is accepted but ignored: routing receives
+the remaining overall time, with no minimum timeout extension. If less than one
+second remains, the integer-second router CLI is not started.
 `job-report.json` records `setup`, `import`, `prepare`, `search`, `judge`,
 `export` and `final_validation` separately. Queue time (admission) is outside
 the process and must be recorded by the caller.
@@ -89,6 +92,10 @@ the process and must be recorded by the caller.
    (`kicad-cli pcb drc --severity-all`) errors are split into **pre-existing**
    (all items in one footprint and the same finding on the unchanged input) and
    **placement-introduced**.
+   Before writing, `materialize(..., intent=...)` derives protected UUIDs from
+   source-board native locks and the captured fixed intent. Any protected x, y,
+   rotation or side difference, or a protected `moved: true` row, refuses the
+   candidate independently of its predicted pads.
 6. **Incumbent custody.** `incumbent.json` is replaced atomically (`os.replace`)
    only by a strictly better candidate with preserved integrity, engine-feasible
    poses and zero placement-introduced errors. A failed trial, crash or worse
@@ -102,7 +109,16 @@ the process and must be recorded by the caller.
    schematic, so a schematic-less board is routed by this direct process call;
    the router's preflight identity is recorded either way.
 8. **Final checks, independent of the search**: reload the routed board; footprint
-   UUIDs, refs, poses, sides, locks and pads must be unchanged by routing; native
+   UUIDs, refs, poses, sides, locks, FPIDs and pads must be unchanged by routing.
+   The shared S-expression reader compares complete saved native content,
+   including every pad's size, drill, shape, layers and local transform,
+   footprint graphics/fields, board setup/rules, outline and other drawings.
+   Tracks, arcs and vias are routing-owned; zones are protected unless their full
+   UUIDs are explicitly supplied by the controller as owned. This job currently
+   owns no zones. An integrity mismatch yields `eligibility: INELIGIBLE`,
+   `physical_checks: FAILED` and job status `integrity_failed`, even if DRC is
+   otherwise clean. Router-output existence alone cannot yield `completed`.
+   Native
    DRC with `--refill-zones`; opens; errors split into pre-existing,
    placement-introduced and routing-introduced; warnings by type; measured route
    length (segments and arcs, by layer), vias, geometric via-in-pad (via centre
@@ -112,9 +128,14 @@ the process and must be recorded by the caller.
 
 ## Cancellation, deadline and resume
 
-A `CANCEL` file in the job directory stops the engine at its next check (every
-256 steps by default) and the controller between candidates. The engine also
-stops at the overall deadline; unstarted seeds are reported `not_started`.
+A `CANCEL` file in the job directory stops the engine and controller. The same
+monotonic deadline is checked before judging, routing and final DRC. Nonblocking
+pipe I/O checks cancellation and remaining time at most every 50 ms during owned
+engine, router and DRC subprocesses, including stalled stdout or stdin. On
+interruption the owned process group is killed and its leader reaped; no next
+phase starts. The report says `cancelled` or `deadline` and the incumbent stays
+intact. An interrupted child is recorded without claiming solver completion or
+native DRC evidence. The engine also checks its deadline internally.
 Finished seeds are checkpointed atomically (`checkpoint.json`, bound to the job
 identity: problem, config and engine hashes). `--resume` refuses a checkpoint of
 another identity, skips completed seeds and restarts unfinished ones from their
@@ -126,9 +147,13 @@ and is still replaced only by a strictly better checked candidate.
 
 ## Tests
 
-`tests/test_placement_job.py` (original synthetic boards built through pcbnew)
-and the `job::tests` Rust module. The esp_prog capture test reads the external
-AGENTEE-513 bundle by SHA-256 when `AGENT_EE_ESP_PROG_PREPARED` names it.
+`tests/test_placement_job.py`, `tests/test_placement_job_guards.py` (original
+synthetic boards built through pcbnew) and the `job::tests` Rust module. The
+esp_prog capture test reads the external AGENTEE-513 bundle by SHA-256 when
+`AGENT_EE_ESP_PROG_PREPARED` names it. Its absence fails under
+`AGENT_EE_REQUIRE_TOOLCHAIN=1`; only optional mode may skip it. The guard tests
+exercise both modes, coherent protected moves, native geometry/rule mutations,
+phase-boundary cancellation and live stalled-child termination.
 
 ## Origins
 

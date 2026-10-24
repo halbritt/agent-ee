@@ -25,7 +25,9 @@ import json
 import math
 import os
 from pathlib import Path
+import selectors
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -47,6 +49,88 @@ NM = 1_000_000
 
 class JobRefusal(ValueError):
     """The job input cannot be prepared honestly (fail closed)."""
+
+
+class JobStopped(Exception):
+    def __init__(self, status):
+        self.status = status
+        super().__init__(status)
+
+
+def _check_stop(clock, cancel_dir):
+    if cancel_dir is not None and _cancelled(cancel_dir):
+        raise JobStopped('cancelled')
+    if clock.remaining() <= 0:
+        raise JobStopped('deadline')
+
+
+def _run_child(argv, *, clock, cancel_dir=None, input_bytes=b'', on_line=None,
+               stdout=None, stderr=None, **kwargs):
+    """Bound pipe reads, writes and child lifetime by the same job clock.
+
+    Each child owns a process group, including router/simulator descendants.
+    Nonblocking pipes also cover a child which never reads stdin or closes stdout.
+    """
+    _check_stop(clock, cancel_dir)
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, start_new_session=True, **kwargs)
+    output, errors, pending = bytearray(), bytearray(), bytearray()
+    sent = 0
+    try:
+        with selectors.DefaultSelector() as selector:
+            for pipe in (proc.stdout, proc.stderr, proc.stdin):
+                os.set_blocking(pipe.fileno(), False)
+            selector.register(proc.stdout, selectors.EVENT_READ)
+            selector.register(proc.stderr, selectors.EVENT_READ)
+            if input_bytes:
+                selector.register(proc.stdin, selectors.EVENT_WRITE)
+            else:
+                proc.stdin.close()
+            while selector.get_map() or proc.poll() is None:
+                _check_stop(clock, cancel_dir)
+                for key, _ in selector.select(timeout=max(0.0, min(0.05, clock.remaining()))):
+                    pipe = key.fileobj
+                    if pipe is proc.stdin:
+                        try:
+                            sent += os.write(pipe.fileno(), input_bytes[sent:sent + 65536])
+                        except BrokenPipeError:
+                            sent = len(input_bytes)
+                        if sent == len(input_bytes):
+                            selector.unregister(pipe)
+                            pipe.close()
+                        continue
+                    chunk = os.read(pipe.fileno(), 65536)
+                    if not chunk:
+                        selector.unregister(pipe)
+                        continue
+                    if pipe is proc.stderr:
+                        errors.extend(chunk)
+                        if stderr is not None:
+                            stderr.write(chunk)
+                    else:
+                        if stdout is not None:
+                            stdout.write(chunk)
+                        if on_line is None:
+                            if stdout is None:
+                                output.extend(chunk)
+                        else:
+                            pending.extend(chunk)
+                            while b'\n' in pending:
+                                line, _, rest = pending.partition(b'\n')
+                                pending[:] = rest
+                                on_line(line)
+            if pending and on_line is not None:
+                on_line(bytes(pending))
+            return subprocess.CompletedProcess(argv, proc.wait(), bytes(output), bytes(errors))
+    finally:
+        # Reap the owned group even if its leader exited but a descendant holds a pipe.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            pipe.close()
 
 
 def sha256_bytes(data):
@@ -305,34 +389,38 @@ def rust_executable():
     return resolve_executable()
 
 
-def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None):
+def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None, clock=None):
     """One Rust process for the whole seed portfolio; heartbeats carry finished seeds."""
     executable = Path(executable or rust_executable())
     payload = dict(problem, search=dict(search, deadline_ms=max(0, int(deadline_s * 1000)),
                                         cancel_file=str(Path(job_dir) / 'CANCEL')))
     encoded = json.dumps(payload).encode()
-    proc = subprocess.Popen([str(executable), '--events'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
-    try:
-        proc.stdin.write(encoded)
-        proc.stdin.close()
-        final = None
-        for line in proc.stdout:
-            record = json.loads(line)
-            if record.get('kind') == 'heartbeat':
-                if on_seed is not None and record['record'].get('event') == 'seed':
+    clock = clock or Clock(deadline_s)
+    final = None
+    events = []
+
+    def consume(line):
+        nonlocal final
+        record = json.loads(line)
+        if record.get('kind') == 'heartbeat':
+            if record['record'].get('event') == 'seed':
+                events.append(record['record'])
+                if on_seed is not None:
                     on_seed(record['record'])
-            else:
-                final = record
-        # Bounded: the engine checks its own deadline; the margin covers process exit only.
-        code = proc.wait(timeout=max(5.0, deadline_s + 30))
-        stderr = proc.stderr.read().decode(errors='replace')
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
-        proc.stdout.close()
-        proc.stderr.close()
+        else:
+            final = record
+
+    try:
+        done = _run_child([str(executable), '--events'], clock=clock, cancel_dir=job_dir,
+                          input_bytes=encoded, on_line=consume)
+        code, stderr = done.returncode, done.stderr.decode(errors='replace')
+    except JobStopped as exc:
+        # This is an interrupted execution record, never fabricated solver evidence.
+        return {'schema': OUTPUT_SCHEMA, 'problem_sha256': problem['problem_sha256'],
+                'status': exc.status, 'timing': {'prepare_s': None}, 'counters': {},
+                'seeds': events, 'shortlist': [], 'prng': None}, {
+                    'executable': str(executable), 'executable_sha256': digest(executable),
+                    'input_sha256': sha256_bytes(encoded), 'exit_code': None, 'interruption': exc.status}
     if code != 0 or final is None or final.get('schema') != OUTPUT_SCHEMA:
         raise JobRefusal(f'placement engine failed (exit {code}): {(final or {}).get("error") or stderr[-2000:]}')
     if final['problem_sha256'] != problem['problem_sha256']:
@@ -343,13 +431,13 @@ def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None
 
 # ---------------------------------------------------------------- native checks
 
-def drc(board, out_dir, *, refill=False, label='drc'):
+def drc(board, out_dir, *, refill=False, label='drc', clock=None, cancel_dir=None):
     out_dir = Path(out_dir)
     report = out_dir / f'{label}.json'
     argv = ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
             *(['--refill-zones'] if refill else []), '--output', str(report), str(board)]
-    done = subprocess.run(argv, capture_output=True, text=True, timeout=300)
-    (out_dir / f'{label}.log').write_text(done.stdout + done.stderr)
+    done = _run_child(argv, clock=clock or Clock(300), cancel_dir=cancel_dir)
+    (out_dir / f'{label}.log').write_bytes(done.stdout + done.stderr)
     # kicad-cli exits 0 when it writes a report; a missing or malformed report is never a pass.
     if done.returncode != 0 or not report.is_file():
         raise JobRefusal(f'native DRC did not complete (exit {done.returncode})')
@@ -420,7 +508,7 @@ def native_inventory(board):
     return rows
 
 
-def _non_footprint_nodes(data):
+def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False, owned_zones=()):
     """Top-level board nodes other than footprints, for rule/geometry identity.
 
     The only normalization: native SaveBoard writes each standard layer's user
@@ -431,7 +519,13 @@ def _non_footprint_nodes(data):
     tree = parse_sexpr(data)
     nodes = []
     for node in tree[1:]:
-        if not isinstance(node, list) or not node or node[0] == 'footprint':
+        if not isinstance(node, list) or not node or (node[0] == 'footprint' and not include_footprints):
+            continue
+        if routing_owned and node[0] in ('segment', 'arc', 'via'):
+            continue
+        if routing_owned and node[0] == 'zone' and any(
+                isinstance(child, list) and child[:1] == ['uuid'] and child[1] in owned_zones
+                for child in node[1:]):
             continue
         if node[0] == 'layers':
             # The file ordinal is the native layer id; its standard name is pcbnew.LayerName(id).
@@ -441,7 +535,7 @@ def _non_footprint_nodes(data):
     return nodes
 
 
-def materialize(source, poses, destination, project_bytes):
+def materialize(source, poses, destination, project_bytes, *, intent):
     """Apply one pose vector to a disposable native board, save, reload and check.
 
     Returns the integrity record. Every footprint is addressed by full UUID; pads,
@@ -449,12 +543,21 @@ def materialize(source, poses, destination, project_bytes):
     be unchanged, and every pad must sit where the engine's transform put it."""
     import pcbnew
     destination = Path(destination)
-    destination.mkdir(parents=True)
     board = pcbnew.LoadBoard(str(source))
     before = native_inventory(board)
+    captured = [dict(uuid=u, ref=r['ref'], position_nm=[r['x_nm'], r['y_nm']], side=r['side'])
+                for u, r in before.items()]
+    protected = {u for u, row in before.items() if row['locked']} | set(
+        _fixed_pose_owner(intent.get('fixed_poses', []), captured))
     target = {row['uuid']: row for row in poses}
-    if set(target) != set(before):
+    if set(target) != set(before) or len(target) != len(poses):
         raise JobRefusal('candidate pose vector does not cover the native footprint UUIDs exactly')
+    for uuid in protected:
+        row, old = target[uuid], before[uuid]
+        if row['moved'] or (row['x_nm'], row['y_nm'], row['quarter_turns'], row.get('side', old['side'])) != (
+                old['x_nm'], old['y_nm'], _quarter_turns(old['rotation_deg'], uuid), old['side']):
+            raise JobRefusal(f'{uuid}: protected footprint pose or moved flag differs from frozen input')
+    destination.mkdir(parents=True)
     for fp in board.GetFootprints():
         row = target[fp.m_Uuid.AsString()]
         if not row['moved']:
@@ -615,12 +718,14 @@ def board_metrics(path, groups=None, edges=None):
 
 # ---------------------------------------------------------------- router
 
-def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home):
+def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
     the pinned CLI is invoked with the adapter's own argv shape and identity checks."""
     from . import kicad_route_attempt as attempt, routing_adapter
+    clock = clock or Clock(timeout_s)
+    _check_stop(clock, cancel_dir)
     check = routing_adapter.preflight(checkout)
     if check['problems']:
         raise JobRefusal('router preflight: ' + '; '.join(check['problems']))
@@ -629,10 +734,16 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home):
     staged.mkdir(parents=True)
     for name in ('board.kicad_pcb', 'board.kicad_pro'):
         shutil.copyfile(Path(candidate_dir) / name, staged / name)
+    _check_stop(clock, cancel_dir)
+    # The CLI accepts integral seconds. Refuse sub-second remainder rather than
+    # inventing a minimum extension; the outer clock also bounds all descendants.
+    remaining = min(budget_s, clock.remaining())
+    if remaining < 1:
+        raise JobStopped('deadline')
     argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(route_dir / 'out'),
             '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged),
             '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', 'esp_prog',
-            '--label', 'ee515', '--protect', 'existing', '--budget', str(int(budget_s)), '--diff-pairs', 'auto']
+            '--label', 'ee515', '--protect', 'existing', '--budget', str(int(remaining)), '--diff-pairs', 'auto']
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -640,11 +751,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home):
            'GIT_OPTIONAL_LOCKS': '0'}
     started = time.monotonic()
     with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
-        try:
-            done = subprocess.run(argv, stdout=out, stderr=err, env=env, cwd=route_dir, timeout=timeout_s)
-            code = done.returncode
-        except subprocess.TimeoutExpired:
-            code = None
+        done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
+        code = done.returncode
     record = {'argv': argv, 'exit_code': code, 'elapsed_s': time.monotonic() - started, 'preflight': check}
     results = sorted((route_dir / 'out').rglob('result.json')) if (route_dir / 'out').exists() else []
     if len(results) != 1:
@@ -694,22 +802,39 @@ def _cancelled(job_dir):
 
 def run_job(config, job_dir, *, resume=False, executable=None):
     """The supported entry point: prepare -> search -> shortlist checks -> route -> final checks."""
+    clock = Clock(float(config['budget_s']))
+    report = {'schema': JOB_SCHEMA, 'status': 'running', 'config_sha256': sha256_bytes(canonical(config)),
+              'claims': {'accepted': False, 'clean': False, 'superiority': None}}
+    try:
+        return _execute_job(config, job_dir, resume=resume, executable=executable, clock=clock, report=report)
+    except JobStopped as exc:
+        report['status'] = exc.status
+        report.setdefault('engine', {'status': exc.status, 'not_started': True})
+        report['phases'] = clock.phases
+        report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
+        # An interrupted trial never overwrites the incumbent or its board.
+        pointer = Path(job_dir) / 'incumbent.json'
+        report['incumbent'] = read_json(pointer) if pointer.exists() else None
+        write_json(Path(job_dir) / f'job-report-a{report.get("attempt", 1)}.json', report)
+        write_json(Path(job_dir) / 'job-report.json', report)
+        return report
+
+
+def _execute_job(config, job_dir, *, resume, executable, clock, report):
     job_dir = Path(job_dir).absolute()
     if job_dir.exists() and not resume:
         if any(p.name != 'CANCEL' for p in job_dir.iterdir()):
             raise JobRefusal(f'job directory {job_dir} is not empty; use resume')
     job_dir.mkdir(parents=True, exist_ok=True)
-    clock = Clock(float(config['budget_s']))
-    report = {'schema': JOB_SCHEMA, 'status': 'running', 'config_sha256': sha256_bytes(canonical(config)),
-              'claims': {'accepted': False, 'clean': False, 'superiority': None}}
     with clock.phase('setup'):
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
         _, project_bytes = verified_input(config['inputs']['project'], 'project')
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
         intent, groups = json.loads(intent_bytes), json.loads(groups_bytes)
-        report['preflight'] = preflight(config, executable)
+        report['preflight'] = preflight(config, executable, clock=clock)
     with clock.phase('import'):
+        _check_stop(clock, None)
         problem, record = capture(board_path, intent, groups)
         write_json(job_dir / 'capture.json', record)
         write_json(job_dir / 'problem.json', problem)
@@ -731,12 +856,14 @@ def run_job(config, job_dir, *, resume=False, executable=None):
         checkpoint(job_dir, state)
 
     with clock.phase('search'):
-        output, engine = solve(problem, search, job_dir, deadline_s=max(0.0, clock.remaining()),
-                               executable=executable, on_seed=on_seed)
+        output, engine = solve(problem, search, job_dir, deadline_s=clock.remaining(),
+                               executable=executable, on_seed=on_seed, clock=clock)
         write_json(job_dir / 'engine-output.json', output)
-    clock.phases['prepare'] = round(output['timing']['prepare_s'], 6)
     report['engine'] = {**engine, 'status': output['status'], 'counters': output['counters'],
                         'seeds': output['seeds'], 'prng': output['prng']}
+    if output['status'] in ('cancelled', 'deadline'):
+        raise JobStopped(output['status'])
+    clock.phases['prepare'] = round(output['timing']['prepare_s'], 6)
     # Earlier seeds of a resumed job compete with the new ones on equal terms.
     shortlist = list(output['shortlist'])
     for seed, event in state['seed_results'].items():
@@ -752,19 +879,22 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     import pcbnew
     owners = _owners(pcbnew.LoadBoard(str(board_path)))
     with clock.phase('judge'):
+        _check_stop(clock, job_dir)
         (job_dir / f'input-drc-a{attempt}').mkdir()
-        base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', label='native-drc')
+        base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', label='native-drc',
+                                     clock=clock, cancel_dir=job_dir)
         base_keys = {_key(v) for v in base_report['violations'] if v.get('severity') == 'error'}
         trials = []
         for index, cand in enumerate(shortlist):
-            if _cancelled(job_dir) or clock.remaining() <= 0:
-                break
+            _check_stop(clock, job_dir)
             entry = {'index': index, 'seed': cand['seed'], 'engine_cost': cand['cost'], 'status': 'failed',
                      'engine_feasible': bool(cand.get('feasible')), 'engine_violations': cand.get('violations', [])}
             directory = job_dir / 'candidates' / f'a{attempt}-{index:02d}-seed{cand["seed"]}'
             try:
-                check = materialize(board_path, cand['poses'], directory, project_bytes)
-                report_, exec_ = drc(directory / 'board.kicad_pcb', directory, label='native-drc')
+                check = materialize(board_path, cand['poses'], directory, project_bytes, intent=intent)
+                _check_stop(clock, job_dir)
+                report_, exec_ = drc(directory / 'board.kicad_pcb', directory, label='native-drc',
+                                     clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
                              board=check['board'], board_sha256=check['board_sha256'], drc=exec_,
@@ -787,23 +917,29 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     selected, report['routed_candidate'] = ((incumbent, 'incumbent') if incumbent is not None
                                             else (diagnostic, 'best_diagnostic_exploratory'))
     if selected is None:
+        _check_stop(clock, job_dir)
         report['status'] = 'cancelled' if _cancelled(job_dir) else 'no_checked_candidate'
         report['phases'] = clock.phases
         write_json(job_dir / f'job-report-a{attempt}.json', report)
         write_json(job_dir / 'job-report.json', report)
         return report
     with clock.phase('export'):
+        _check_stop(clock, job_dir)
         routed = route(selected['directory'], job_dir / f'route-a{attempt}', config['router']['checkout'],
-                       budget_s=max(1, min(config['router']['budget_s'], clock.remaining() - 60)),
-                       timeout_s=max(30, clock.remaining() - 30), home=job_dir / f'route-home-a{attempt}')
+                       budget_s=clock.remaining(), timeout_s=clock.remaining(), home=job_dir / f'route-home-a{attempt}',
+                       clock=clock, cancel_dir=job_dir)
         report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
         report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                        'adapter_sha256', 'problems')}
     with clock.phase('final_validation'):
-        report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-a{attempt}', groups, intent)
+        _check_stop(clock, job_dir)
+        report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-a{attempt}', groups, intent,
+                                       clock=clock, cancel_dir=job_dir)
+    _check_stop(clock, job_dir)
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
-    report['status'] = 'completed' if routed.get('status') == 'routed' else 'route_failed'
+    report['status'] = ('completed' if report['final'].get('integrity') == 'preserved' else 'integrity_failed'
+                        ) if routed.get('status') == 'routed' else 'route_failed'
     report['validity'] = ('integrity-valid incumbent; physical checks ' + report['final'].get('physical_checks', 'unavailable')
                           if incumbent is not None else
                           'NO valid incumbent: exploratory route of the best diagnostic candidate (engine violations: '
@@ -813,8 +949,11 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     return report
 
 
-def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent):
+def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
+                 owned_zone_uuids=()):
     import pcbnew
+    clock = clock or Clock(300)
+    _check_stop(clock, cancel_dir)
     if routed.get('status') != 'routed':
         return {'status': 'unavailable', 'reason': routed.get('status')}
     final_dir = Path(job_dir)
@@ -829,37 +968,46 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent):
         problems.append('router changed the footprint UUID set')
     for uuid, row in placed.items():
         new = final.get(uuid, {})
-        for key in ('ref', 'side', 'locked', 'x_nm', 'y_nm', 'rotation_deg'):
+        for key in ('ref', 'side', 'locked', 'fpid', 'x_nm', 'y_nm', 'rotation_deg', 'pads', 'graphics'):
             if new.get(key) != row[key]:
                 problems.append(f'{uuid}: router changed {key}')
-        if {p: (v['number'], v['net']) for p, v in new.get('pads', {}).items()} != {
-                p: (v['number'], v['net']) for p, v in row['pads'].items()}:
-            problems.append(f'{uuid}: router changed pads')
+    # Compare complete saved native nodes, not a lossy API projection. This
+    # includes all padstack geometry/layers, fields, graphics, rules and drawings.
+    # Zone ownership is supplied by the controller, never by router output.
+    placed_nodes = _non_footprint_nodes(Path(incumbent['board']).read_bytes(), include_footprints=True,
+                                         routing_owned=True, owned_zones=owned_zone_uuids)
+    final_nodes = _non_footprint_nodes(board.read_bytes(), include_footprints=True, routing_owned=True,
+                                      owned_zones=owned_zone_uuids)
+    if sorted(placed_nodes, key=canonical) != sorted(final_nodes, key=canonical):
+        problems.append('router changed protected native content (footprints, pads, graphics, setup, outline or drawings)')
     placed_report = read_json(Path(incumbent['directory']) / 'native-drc.json')
     placed_keys = {_key(v) for v in placed_report['violations'] if v.get('severity') == 'error'}
-    report_, exec_ = drc(board, final_dir, refill=True, label='native-drc')
+    _check_stop(clock, cancel_dir)
+    report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edges = {r['ref']: r['edge'] for r in intent.get('edge_connectors', [])}
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
+            'integrity': 'violated' if problems else 'preserved',
+            'eligibility': 'INELIGIBLE' if problems or any(split.values()) or report_['unconnected_items'] else 'eligible',
             'identity_problems': problems, 'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
-            'physical_checks': 'FAILED' if any(split.values()) or report_['unconnected_items'] else 'no native errors',
+            'physical_checks': 'FAILED' if problems or any(split.values()) or report_['unconnected_items'] else 'no native errors',
             'metrics': board_metrics(board, groups['groups'], edges)}
 
 
-def preflight(config, executable=None):
+def preflight(config, executable=None, *, clock=None, cancel_dir=None):
     """Runtime readiness before the budgeted work: imports, toolchain, engine and router."""
     import pcbnew
     from . import routing_adapter
     engine = Path(executable or rust_executable())
-    cli = subprocess.run(['kicad-cli', 'version'], capture_output=True, text=True, timeout=60)
+    cli = _run_child(['kicad-cli', 'version'], clock=clock or Clock(60), cancel_dir=cancel_dir)
     router = routing_adapter.preflight(config['router']['checkout'])
     problems = list(router['problems'])
     if cli.returncode != 0:
         problems.append('kicad-cli unavailable')
     if problems:
         raise JobRefusal('runtime preflight failed: ' + '; '.join(problems))
-    return {'pcbnew_version': pcbnew.Version(), 'kicad_cli': cli.stdout.strip(), 'python': sys.version.split()[0],
+    return {'pcbnew_version': pcbnew.Version(), 'kicad_cli': cli.stdout.decode().strip(), 'python': sys.version.split()[0],
             'engine': str(engine), 'engine_sha256': digest(engine),
             'router': {k: router[k] for k in ('checkout', 'commit', 'pin', 'executable_sha256', 'adapter_sha256')}}
 
