@@ -24,7 +24,15 @@ Status 2026-10-24 03:10Z (integration checkpoint):
   - Immutable gate: 114 tests OK with 0 skips, cargo 88 passed, check_docs and check_origins clean. Evidence `agentee-515r-gate`.
 - AGENTEE-515 is NOT complete. The esp_prog board is FAILED: no valid placement under the engine's boxed-copper model. The matched stock-KRT qualification is outstanding.
 - Owner (relayed by the chief): "stick to the plan and achieve success on each step before proceeding". 516-518 are held until 515 succeeds.
-- The next 515 slice (native-shape clearance agreement, then matched qualification) is drafted and awaits the chief. The architecture proposal is [placement-architecture.md](placement-architecture.md).
+- The next 515 slice (native-shape clearance agreement, then matched qualification) is drafted and awaits the chief.
+
+Status 2026-10-24 03:50Z: TOOLING ONLY (owner, relayed via the chief 69d407ee@2). 517 and 518 are HELD by the owner, 516 is held on 515, and no pod attempts are made.
+- 515q (native-shape copper clearance, steps 0-2; head c17e01ef) is HOLD after its Argon critical review.
+  - Step 0 (native USB1/fiducial under frozen rules) passed.
+  - Step 2(a) is red: USB1 occupancy is 75 µm past the west edge, from fab stroke inflation plus the unmodelled declared overhang.
+  - An NPTH hole-clearance regression must be fixed.
+  - Positive native-clean seats are still to be added.
+- The next correction slice awaits the chief. The architecture proposal is [placement-architecture.md](placement-architecture.md).
 
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 

@@ -3,6 +3,15 @@
 Revision 12 — 2026-10-23. Chief coordinator: agent-531 (replaced agent-529 at 15:59Z). Dispatcher and sole
 agent-ee/FOME integrator: agent-530 (replaced agent-449 at ~15:56Z). All programme communications: agent-542 (replaced agent-532 at ~00:29Z on 2026-10-24; 532 replaced agent-519 at ~16:15Z).
 
+**CURRENT DIRECTION (2026-10-24 ~03:32Z): TOOLING ONLY, NO POD ATTEMPTS.** Owner, relayed verbatim via agent-538 and chief 531 (fd230a3d@1; chief plan revision 69d407ee@2): "At this point I'm expecting the focus to be on the tooling and no attempts on the pod." Earlier owner directions, relayed by the chief: "stay focused on each incremental step, and avoid churn on non-productive areas" and "stick to the plan and achieve success on each step before proceeding". This supersedes the pod-attempt scheduling below and in [placement-routing-plan.md](placement-routing-plan.md). Both programme outcomes remain INCOMPLETE.
+- Tooling milestone = AGENTEE-515 AND AGENTEE-516 accepted on simple reproducible boards. That needs correctness, native qualification, matched quality/time evidence against stock KRT v0.23.7, routing-feedback repair, bounded lifecycle, and independent review. It is not the same as pod readiness.
+- 515 is LIVE but INCOMPLETE:
+  - 515 and 515r (H1-H4 repair) LANDED on main b3a1a29d as reviewed input only.
+  - 515q (native-shape copper clearance) is HOLD after its Argon critical review: NPTH hole-clearance regression, the undeclared edge overhang, and no positive seats. Evidence `agentee-515q-review-argon`.
+  - The U2 SOT-89 tab representation correction is accepted in principle and not dispatched (evidence `agentee-515-u2-fixture-analysis`).
+- 516 is HELD on 515 success. 517 (pod capability cases) and 518 (full pod) are HELD by the owner and need a later owner release.
+- Pod/J2 work is SUSPENDED. J2d's one emission (28 accepted / 0 refused / C1 NOT_RUN; 44 access rows; verify_j2 PASS) and its packaging correction (fome-mc wt/ee485-J2d 08216257) are PRESERVED, NOT integrated. No further pod tests, emissions, repairs or integration gates. AGENTEE-485 stays incomplete: C1 NOT_RUN; 15 DRC + 499 unconnected open.
+
 This revision replaces the previous execution plan following the owner's direct
 functional-block placement request and replacement of agent-521. Revision 10 and
 its R1–R5 / ROUTE-1–4 history remain in git at
