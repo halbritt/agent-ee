@@ -1,5 +1,10 @@
 # Whole-board placement job (AGENTEE-515)
 
+On 2026-10-24, the repaired workflow completed the esp_prog test board in 139
+seconds with zero native DRC errors and zero unconnected items. See the
+[run report](benchmarks/placement-job-2026-10-24.md) for inputs, reproduction,
+regressions and remaining intent/assembly limitations.
+
 Status: first vertical slice of the architecture adopted by chief 531
 (decision `b4a5857a`, see [placement-architecture.md](placement-architecture.md),
 "Chief decision, 2026-10-24"). It is a working workflow, not an accepted
