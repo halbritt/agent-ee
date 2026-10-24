@@ -1,6 +1,6 @@
 # DFM geometry rules
 
-`dfm_geometry` runs seven deterministic manufacturing rules on the saved board.
+`dfm_geometry` runs eight deterministic manufacturing rules on the saved board.
 The thresholds come from a captured profile. Each rule reports coded findings
 with coordinates and references. There is no aggregate score.
 
@@ -8,9 +8,10 @@ The rule list and the example thresholds are ported from AI-PCB-Generator
 `src/pcb/dfm.py` (MIT). Its geometry is not ported: the source estimates
 features from pad centroids and body radii. agent-ee measures exact pcbnew facts:
 pad copper polygons, track and arc endpoints, via drill and size, courtyards,
-the saved board thickness, and united per-layer copper area.
+the saved board thickness, and united per-layer copper area. The additional
+`smd_via_clearance` rule is an owned implementation for assembly clearance.
 
-Copper width and clearance are not in this suite. Use
+General electrical copper width and clearance are not in this suite. Use
 [copper-width/1](check-reference.md#saved-board-geometry) and
 [DRC](check-reference.md#drc-and-schematic-parity) for them. Board-edge copper
 clearance comes from the [fab profile](fab-profile.md). The suite has no etch
@@ -50,10 +51,12 @@ candidate-bound `dfm-report.json`.
   {"id": "smd-bridge", "rule": "smd_bridge_gap", "min_gap_mm": 0.2},
   {"id": "component-spacing", "rule": "component_spacing", "min_gap_mm": 1.0},
   {"id": "diff-skew", "rule": "diff_pair_skew", "max_skew_mm": 2.0, "pairs": "name-suffix/1"},
-  {"id": "copper-balance", "rule": "copper_balance", "max_layer_share": 0.85}]}
+  {"id": "copper-balance", "rule": "copper_balance", "max_layer_share": 0.85},
+  {"id": "smd-vias", "rule": "smd_via_clearance", "min_gap_mm": 0.1}]}
 ```
 
-The values above are the source's thresholds. agent-ee has no built-in values,
+The first seven values above are the source's thresholds; the SMD/via value is
+an example engineering margin. agent-ee has no built-in values,
 so every rule must state its own threshold fields and nothing else. `basis` is
 optional free text, allowed on the profile and on each rule. Rule ids must be
 unique, and a rule kind may appear more than once with different thresholds.
@@ -72,10 +75,27 @@ Thresholds must be finite and positive. `min_angle_deg` must be below 180 and
 | `component_spacing` | DFM-006 | Exact distance between native courtyard polygons of footprints on the same side | gap < `min_gap_mm` |
 | `diff_pair_skew` | DFM-012 | Routed length per net: tracks plus true arc length (radius × sweep). Via barrels are excluded | difference > `max_skew_mm` |
 | `copper_balance` | DFM-009 | Area of the united copper (pcbnew polygon union of tracks, vias, pads, copper graphics and filled zones) on each mirrored layer pair | heavier layer's share > `max_layer_share` |
+| `smd_via_clearance` | DFM-013 | Gap from the complete via copper disk to native SMD pad copper on each shared outer layer, including same-net pairs | gap < `min_gap_mm` |
 
 Pad polygons use pcbnew's `ERROR_OUTSIDE` approximation, so curved pads are
 never drawn smaller than they are. The probe records the error as
 `max_error_nm`. Rectangles are exact.
+
+SMD/via comparisons use exact rational squared distances for the threshold;
+rounded millimetres appear only in reports. This detects annular-ring overlap
+even when the via center lies outside the pad. Custom SMD shapes, missing pad
+polygons/layer inventories and per-layer padstack sizes refuse coverage. The
+rule does not compare PTH pads, mask or paste openings. Apply additional checks
+when those manufacturing features impose separate constraints.
+
+The acquisition qualification exercises the rule through ordinary native review
+on two actual routed candidates: the first fails with five copper overlaps over
+351 comparisons; the routing-policy repair passes all 390 comparisons at a
+0.1 mm declared gap. Native controls also reject a same-net via in a solder pad,
+and exact boundary tests distinguish a one-nanometre shortfall. Retained evidence:
+`build/agent545/smd-via-qualification/`, with 39 native DFM tests passing in
+`build/agent545/smd-via-clearance-native.log`. This does not by itself qualify
+the full design or manufacturing package.
 
 Differential pairs are found by name: `X+`/`X-` and `X_P`/`X_N` (or
 `_p`/`_n`). Name-based detection applies only when the profile says

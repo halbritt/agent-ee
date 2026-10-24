@@ -9,12 +9,14 @@ endpoints, via drill and size, courtyards, the saved board thickness and united
 per-layer copper area. There are no built-in thresholds and no aggregate score;
 each rule yields coded findings with coordinates and references, and any item a
 rule cannot evaluate makes that rule `unsupported`, never `pass`.
+The additional owned DFM-013 rule measures SMD-pad to via copper clearance.
 
 Out of scope: copper width (copper-width/1) and clearance (DRC), etch
 compensation, thermal relief, paste, panel and board-edge rules.
 """
 import math
 import re
+from fractions import Fraction
 
 from .storage import digest, write_json
 
@@ -26,7 +28,7 @@ SUITE_LIMITATION = (
     'saved-board geometry; zone fill as saved; no etch, thermal relief, paste, panel or '
     'board-edge DFM; copper width and clearance belong to copper-width/1 and DRC'
 )
-# rule: (ported source code, required threshold fields, false-negative / unmodelled classes)
+# rule: (finding code, required threshold fields, false-negative / unmodelled classes)
 RULES = {
     'annular_ring': (
         'DFM-002',
@@ -83,6 +85,14 @@ RULES = {
         (
             'whole-net track and arc length only; per-segment pairing, via barrel lengths, zones, pad/package delays and KiCad net classes are not measured',
             'unrouted or absent pair nets and degenerate or non-track/arc segments are unsupported',
+        ),
+    ),
+    'smd_via_clearance': (
+        'DFM-013',
+        ('min_gap_mm',),
+        (
+            'outer-layer SMD pad copper to complete via copper disk, including same-net pairs; PTH pads, solder-mask and paste openings are not measured',
+            'curved pad polygons use pcbnew ERROR_OUTSIDE approximations; custom pads and per-layer padstacks are unsupported',
         ),
     ),
 }
@@ -496,6 +506,54 @@ def smd_bridge_gap(rule, facts):
         pairwise_gap(items, limit, eligible, find)
 
 
+def smd_via_clearance(rule, facts):
+    """Independent assembly clearance, including same-net copper ignored by DRC."""
+    from .board_envelope import distance2, inside as contains
+    limit = Fraction(str(rule.spec['min_gap_mm'])) * 1_000_000
+    pads = []
+    for pad in facts['pads']:
+        if pad['attribute'] != 'SMD':
+            continue
+        if pad['padstack_mode'] != 'NORMAL' or pad['shape'] not in (
+                'RECTANGLE', 'ROUNDRECT', 'CIRCLE', 'OVAL', 'TRAPEZOID', 'CHAMFERED_RECT'):
+            rule.refuse('pad:' + pad['uuid'], 'unsupported SMD shape or per-layer padstack')
+            continue
+        if not pad['copper_layers'] or not set(pad['copper_layers']) <= set(facts['copper_layers']):
+            rule.refuse('pad:' + pad['uuid'], 'missing or invalid pad copper layers')
+            continue
+        for layer in sorted(set(pad['copper_layers']) & {'F.Cu', 'B.Cu'}):
+            contours = pad['polygons_nm'].get(layer)
+            if not valid_contours(contours):
+                rule.refuse('pad:' + pad['uuid'], f'no native copper polygon on {layer}')
+            else:
+                pads.append((pad, layer, contours))
+    for via in facts['vias']:
+        if not via['copper_layers'] or not set(via['copper_layers']) <= set(facts['copper_layers']):
+            rule.refuse('via:' + via['uuid'], 'missing or invalid via copper layers')
+            continue
+        if via['padstack_mode'] != 'NORMAL':
+            rule.refuse('via:' + via['uuid'], 'via per-layer sizes are unsupported')
+            continue
+        centre = nm_point(via['position_nm'])
+        width = via['width_nm']
+        if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+            raise ValueError('via width must be positive integer nm')
+        radius = Fraction(width, 2)
+        for pad, layer, contours in pads:
+            if layer not in via['copper_layers']:
+                continue
+            rule.checked += 1
+            squared = (Fraction(0) if any(contains(centre, c) for c in contours) else
+                       min(distance2(centre, a, b) for c in contours for a, b in edges(c)))
+            if squared < (radius + limit) ** 2:
+                gap = max(0.0, math.sqrt(squared) - float(radius))
+                rule.find(f'via-pad:{layer}:{via["uuid"]}:{pad["uuid"]}', centre,
+                          f'via copper is {mm(gap)} mm from SMD pad {pad["ref"]}:{pad["pad"]} '
+                          f'on {layer}, below {rule.spec["min_gap_mm"]} mm',
+                          items=[via['uuid'], pad['uuid']], refs=[pad['ref']], pad=pad['pad'],
+                          layer=layer, nets=[via['net'], pad['net']], measured_mm=mm(gap))
+
+
 def component_spacing(rule, facts):
     limit = rule.spec['min_gap_mm'] * 1e6
     sides = {}
@@ -609,7 +667,7 @@ def copper_balance(rule, facts):
 EVALUATORS = {'annular_ring': annular_ring, 'acid_trap': acid_trap,
               'component_spacing': component_spacing, 'via_aspect_ratio': via_aspect_ratio,
               'copper_balance': copper_balance, 'smd_bridge_gap': smd_bridge_gap,
-              'diff_pair_skew': diff_pair_skew}
+              'diff_pair_skew': diff_pair_skew, 'smd_via_clearance': smd_via_clearance}
 FACT_KEYS = ('copper_layers', 'pads', 'courtyards', 'tracks', 'vias', 'copper_area')
 
 

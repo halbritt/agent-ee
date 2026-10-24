@@ -166,6 +166,15 @@ The exact policy delta and artifacts are under
 evidence; complete software electrical coverage and final package acceptance
 remain open.
 
+Final assembly geometry now has an executable `dfm_geometry`
+`smd_via_clearance` rule, measuring the full via copper disk against each SMD
+pad on shared outer layers, including same-net pads. Native review rejects five
+copper overlaps on acquisition-06 (two beyond the center-only metric's three
+sites) and passes all 390 comparisons on the pad-clearance repair at a declared
+0.1 mm margin. All 39 native DFM tests pass. These are targeted geometry results;
+mask/paste openings and complete assembly acceptance remain separate checks.
+Evidence: `build/agent545/smd-via-qualification/`.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through

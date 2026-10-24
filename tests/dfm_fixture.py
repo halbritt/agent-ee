@@ -25,7 +25,7 @@ def v(x, y):
 
 def make_board(path, *, via_size=0.4, bridge_gap=0.15, acid_angle=30.0, arc=True,
                thickness=True, courtyards=True, bottom_copper=False,
-               custom_pad=False, unfilled_zone=False):
+               custom_pad=False, unfilled_zone=False, same_net_smd_via=False):
     """Seeded defects by default; each keyword selects the compliant twin."""
     import pcbnew as k
     b = k.BOARD()
@@ -68,6 +68,11 @@ def make_board(path, *, via_size=0.4, bridge_gap=0.15, acid_angle=30.0, arc=True
         via = k.PCB_VIA(b); via.SetPosition(v(x, 5)); via.SetWidth(round(size * 1e6))
         via.SetDrill(300000); via.SetViaType(k.VIATYPE_THROUGH)
         via.SetLayerPair(k.F_Cu, k.B_Cu); via.SetNet(net('NET_V')); b.Add(via)
+
+    if same_net_smd_via:
+        via = k.PCB_VIA(b); via.SetPosition(v(10, 10)); via.SetWidth(600000)
+        via.SetDrill(300000); via.SetViaType(k.VIATYPE_THROUGH)
+        via.SetLayerPair(k.F_Cu, k.B_Cu); via.SetNet(net('NET_A')); b.Add(via)
 
     def track(start, end, name, layer=None):
         t = k.PCB_TRACK(b); t.SetStart(v(*start)); t.SetEnd(v(*end)); t.SetWidth(200000)

@@ -214,6 +214,35 @@ class BridgeGapTests(unittest.TestCase):
         self.assertEqual(run(BRIDGE, pads=broken)['execution'], 'unsupported')
 
 
+class SmdViaClearanceTests(unittest.TestCase):
+    rule = {'id': 'smd-vias', 'rule': 'smd_via_clearance', 'min_gap_mm': 0.15}
+
+    def test_same_net_via_disk_is_checked_at_exact_clearance_boundary(self):
+        target = pad('p', 'U1', '1', 'V', rect(-0.5, -0.5, 0.5, 0.5))
+        for x, expected in [(0, 'defect'), (0.7, 'defect'), (0.949999, 'defect'),
+                            (0.95, 'pass'), (0.950001, 'pass')]:
+            with self.subTest(x=x):
+                result = run(self.rule, pads=[target], vias=[via('v', x, 0, 0.6, 0.3)])
+                self.assertEqual((result['execution'], result['status']), ('ok', expected), result)
+                self.assertEqual(result['checked'], 1)
+                if expected == 'defect':
+                    self.assertEqual(result['findings'][0]['refs'], ['U1'])
+                    self.assertEqual(result['findings'][0]['items'], ['v', 'p'])
+
+    def test_only_shared_outer_layer_smd_copper_is_measured_and_missing_geometry_refuses(self):
+        target = pad('p', 'U1', '1', 'V', rect(-0.5, -0.5, 0.5, 0.5))
+        buried = via('v', 0, 0, 0.6, 0.3)
+        buried['copper_layers'] = ['In1.Cu', 'In2.Cu']
+        self.assertEqual(run(self.rule, pads=[target], vias=[buried],
+            copper_layers=['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu'])['status'], 'not_applicable')
+        for patch in [dict(polygons_nm={}), dict(shape='CUSTOM'), dict(padstack_mode='CUSTOM'), dict(copper_layers=[])]:
+            with self.subTest(patch=patch):
+                result = run(self.rule, pads=[{**target, **patch}], vias=[via('v', 2, 0, 0.6, 0.3)])
+                self.assertEqual(result['execution'], 'unsupported', result)
+        result = run(self.rule, pads=[target], vias=[{**via('v', 2, 0, 0.6, 0.3), 'padstack_mode': 'CUSTOM'}])
+        self.assertEqual(result['execution'], 'unsupported', result)
+
+
 class SpacingTests(unittest.TestCase):
     def courtyard(self, ref, contours, **extra):
         return {'ref': ref, 'footprint_uuid': 'fp-' + ref, 'side': 'F.Cu', 'pad_count': 2,
@@ -412,6 +441,22 @@ class NativeDfmTests(unittest.TestCase):
             self.assertEqual(report['limitations'], expected)
             for rule in report['rules']:
                 self.assertEqual(rule['false_negative_classes'], list(FALSE_NEGATIVE_CLASSES[rule['rule']]))
+
+    def test_same_net_via_in_smd_pad_is_rejected_from_native_geometry(self):
+        profile = dict(schema='agent-ee.dfm-profile/1', name='no-via-in-pad', rules=[SmdViaClearanceTests.rule])
+        run_dir, result = self.run_board(profile=profile, same_net_smd_via=True)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        finding = next(f for f in result['details']['findings'] if f['pad'] == '1')
+        self.assertEqual(finding['nets'], ['NET_A', 'NET_A'])
+        self.assertEqual((finding['refs'], finding['measured_mm']), (['R1'], 0))
+        freeze_evidence(run_dir, [result])
+        verify_evidence(run_dir, [result], required=True)
+
+    def test_native_vias_clear_of_smd_pads_pass(self):
+        profile = dict(schema='agent-ee.dfm-profile/1', name='no-via-in-pad', rules=[SmdViaClearanceTests.rule])
+        _, result = self.run_board(profile=profile)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertGreater(result['details']['rules'][0]['checked'], 0)
 
     def test_seeded_board_reports_every_geometric_defect_through_the_check(self):
         run, result = self.run_board()
