@@ -1,7 +1,8 @@
 # Captured plane production
 
 `agent_ee.add_planes` implements AGENTEE-183 as the declared `add-planes`
-routing-stage producer. It runs after placement and before the dedicated
+routing-stage producer. It runs after placement and before routing, through the
+[normal build](build-workflow.md), placement job or dedicated
 [routing adapter](routing-adapter.md). It does not invoke a model or select nets,
 layers, geometry, clearances, island policy, or thermal settings.
 
@@ -121,8 +122,26 @@ chain and refuses writer edits before the first routing producer. The router
 retains its own semantic verification and `--protect existing` contract.
 
 `generate(captured_root, board, plan, new_output)` supports an isolated local
-probe. The output must be new and outside the captured root. The CLI runs inside
-the existing step sandbox, reading `/candidate` and writing `/work/out`.
+probe. The output must be new and outside the captured root. The CLI defaults
+to the existing step sandbox, reading `/candidate` and writing `/work/out`;
+`--inputs DIRECTORY --out NEW_DIRECTORY` selects explicit locations. All native
+children still use the existing networkless executor.
+
+In `agent-ee place run`, optional `inputs.planes` has the same `{path, sha256}`
+shape as the other captured inputs. Unknown input names are refused. The job
+validates the plan before search, gives the router the produced native zones,
+and retains each trial's production report. After routing it runs the producer
+again in strict post-routing mode to save a fresh fill, followed by the
+independent `final_planes` consumer. Only UUIDs derived from the controller's
+captured plan are exempted from the existing protected-native-content comparison;
+the final consumer checks their exact definitions and connectivity. The source
+policy identity for these tools is included in checkpoint identity.
+
+A final DRC check can declare `plane_plans: [{path, sha256}]` for direct native
+verification against captured source intent. Missing, stale, duplicate or
+otherwise unbound plans refuse. This does not manufacture legacy campaign
+producer/composition evidence: those reports, when captured, still require
+their existing complete `plane_obligations` bindings.
 
 ## Native custody and failure behavior
 

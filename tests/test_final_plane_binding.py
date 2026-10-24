@@ -36,6 +36,33 @@ class PlaneBindingTests(unittest.TestCase):
     def test_nondefault_filename_bound_to_producer_and_composition(self):
         self.assertEqual(final_planes.bound_plans(self.root, self.files(), self.params), [self.path])
 
+    def test_direct_native_plan_checks_do_not_need_a_pod_composition(self):
+        (self.root/'producer.json').unlink()
+        (self.root/'composition.json').unlink()
+        link = {'path': self.path, 'sha256': digest(self.root/self.path)}
+        params = {'plane_plans': [link]}
+        self.assertEqual(final_planes.binding_inputs(params), [self.path])
+        self.assertEqual(final_planes.bound_plans(self.root, self.files(), params), [self.path])
+        with self.assertRaisesRegex(ValueError, 'duplicate plane obligation'):
+            final_planes.bound_plans(self.root, self.files(), {'plane_plans': [link, link]})
+        (self.root/self.path).write_bytes((self.root/self.path).read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'stale plane binding'):
+            final_planes.bound_plans(self.root, self.files(), params)
+
+    def test_direct_plan_cannot_hide_captured_producer_obligations(self):
+        params = {'plane_plans': [{'path': self.path, 'sha256': digest(self.root/self.path)}]}
+        with self.assertRaisesRegex(ValueError, 'unbound captured plane obligation'):
+            final_planes.bound_plans(self.root, self.files(), params)
+
+    def test_direct_plan_rejects_ambiguous_duplicate_keys(self):
+        (self.root/'producer.json').unlink()
+        (self.root/'composition.json').unlink()
+        path = self.root/self.path
+        path.write_text(path.read_text().replace('"net": "GND"', '"net": "WRONG", "net": "GND"'))
+        params = {'plane_plans': [{'path': self.path, 'sha256': digest(path)}]}
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            final_planes.bound_plans(self.root, self.files(), params)
+
     def test_missing_stale_renamed_and_absent_despite_declaration(self):
         original = (self.root/self.path).read_bytes()
         for mode in ('missing', 'stale', 'renamed', 'absent-all'):

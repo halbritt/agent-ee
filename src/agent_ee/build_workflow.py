@@ -40,10 +40,12 @@ def validate_plan(plan):
         raise ValueError('expected agent-ee.build-plan/1 with a source directory')
     _keys(plan['requirements'], ('map', 'record', 'spec'))
     _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
-    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'))
+    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes',))
     for path in [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
                  plan['placement']['intent'], plan['placement']['groups']]:
         _relative(path, 'build input')
+    if 'planes' in plan['placement']:
+        _relative(plan['placement']['planes'], 'plane plan')
     timeout = plan.get('verification_timeout_s', 3600)
     if type(timeout) is not int or not 1 <= timeout <= 86400:
         raise ValueError('verification_timeout_s must be an integer from 1 to 86400')
@@ -174,6 +176,13 @@ def _manufacturing_coverage(plan, scope, accounting):
     memberships = [c for c in scope['checks'] if c['kind'] == 'parts_subset']
     if not any(c['params']['manifest'] == plan['parts']['manifest'] for c in memberships):
         raise ValueError('native membership checks must bind the produced parts manifest')
+    if 'planes' in plan['placement']:
+        bound = [link['path'] for c in scope['checks'] if c['kind'] == 'drc'
+                 for link in c.get('params', {}).get('plane_plans', [])]
+        bound += [link['plan']['path'] for c in scope['checks'] if c['kind'] == 'drc'
+                  for link in c.get('params', {}).get('plane_obligations', [])]
+        if plan['placement']['planes'] not in bound:
+            raise ValueError('manufacturing plane checks must bind the generated plane plan')
 
 
 def _package(plan, candidate, stage_dir, scope, accounting):
@@ -298,6 +307,9 @@ def _execute(stage, plan, previous, directory, completed, out, *, diagnostic=Fal
         for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
                               intent=placement['intent'], groups=placement['groups']).items():
             config['inputs'][key] = dict(path=str(candidate / name), sha256=digest(candidate / name))
+        if 'planes' in placement:
+            path = candidate / placement['planes']
+            config['inputs']['planes'] = dict(path=str(path), sha256=digest(path))
         locality = {c['params']['locality'] for c in scope['checks'] if c['kind'] == 'placement'
                     and c['params'].get('criterion') == 'electrical-locality/1'}
         if len(locality) > 1:

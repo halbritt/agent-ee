@@ -1,10 +1,12 @@
 """Consume planned-plane obligations on the saved post-routing board."""
 import argparse
 import copy
+import sys
 import time
 from pathlib import Path
 
 from .add_planes import validate_plan, zone_ids, _planned_zone_errors
+from .catalog import strict_json
 from .executor import execute
 from .storage import digest, read_json, write_json
 
@@ -16,7 +18,7 @@ def validate(inputs, board, plan_path, work, *, drc=None, timeout=180):
     result = dict(schema='agent-ee.final-planes/1', status='FAIL', board_sha256=digest(inputs/board),
                   plan_sha256=digest(inputs/plan_path), errors=[])
     try:
-        plan = validate_plan(read_json(inputs/plan_path))
+        plan = validate_plan(strict_json((inputs/plan_path).read_bytes()))
         if any(z['island_removal'] != 'always' for z in plan['zones']):
             raise ValueError('final planned planes require island_removal=always')
         record = execute(inputs, work/'native', ['/usr/bin/python3', '-B', '-m',
@@ -61,6 +63,17 @@ def binding_inputs(params):
     if not isinstance(declarations, list):
         raise ValueError('plane_obligations must be a list')
     paths = set()
+    direct = params.get('plane_plans', [])
+    if not isinstance(direct, list):
+        raise ValueError('plane_plans must be a list of captured plan bindings')
+    for link in direct:
+        if not isinstance(link, dict) or set(link) != {'path', 'sha256'}:
+            raise ValueError('plane plan binding requires path and sha256')
+        path = _relative(link['path'], 'plane plan binding')
+        value = link['sha256']
+        if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+            raise ValueError('plane plan binding requires a SHA-256 digest')
+        paths.add(path)
     for declaration in declarations:
         if not isinstance(declaration, dict) or set(declaration) != {'plan', 'producer', 'composition'}:
             raise ValueError('plane obligation requires plan, producer and composition bindings')
@@ -171,7 +184,16 @@ def bound_plans(inputs, files, params, *, producer_receipts=None, board=None):
             raise ValueError('required plane binding is absent: ' + path)
         if files[path] != link['sha256'] or digest(inputs/path) != link['sha256']:
             raise ValueError('stale plane binding: ' + path)
-        return path, read_json(inputs/path)
+        return path, strict_json((inputs/path).read_bytes())
+
+    # A native check may bind a plan directly. Producer/composition custody is
+    # still mandatory for any such reports actually captured alongside it.
+    for link in params.get('plane_plans', []):
+        path, plan = bound(link)
+        validate_plan(plan)
+        if path in plans:
+            raise ValueError('duplicate plane obligation: ' + path)
+        plans.add(path)
 
     for declaration in declarations:
         if not isinstance(declaration, dict) or set(declaration) != {'plan', 'producer', 'composition'}:
@@ -253,20 +275,33 @@ def check_captured(ctx, drc):
             raise CheckError('malformed', 'final planned-plane obligation failed: ' + '; '.join(result['errors']))
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == 'validate':
+        parser = argparse.ArgumentParser(description='Verify saved planned planes and native connectivity')
+        parser.add_argument('--inputs', required=True)
+        parser.add_argument('--board', required=True)
+        parser.add_argument('--plan', required=True)
+        parser.add_argument('--out', required=True)
+        parser.add_argument('--drc', type=Path)
+        parser.add_argument('--timeout', type=float, default=180)
+        args = parser.parse_args(argv[1:])
+        result = validate(args.inputs, args.board, args.plan, args.out,
+                          drc=read_json(args.drc) if args.drc else None, timeout=args.timeout)
+        return 0 if result['status'] == 'PASS' else 1
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('board', type=Path)
     parser.add_argument('plan', type=Path)
     parser.add_argument('output', type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     import pcbnew as k
     from .add_planes_probe import inspect
     from .plane_reference import check_reference
     board = k.LoadBoard(str(args.board))
-    facts = inspect(board, validate_plan(read_json(args.plan)))
+    facts = inspect(board, validate_plan(strict_json(Path(args.plan).read_bytes())))
     facts['gnss_reference'] = check_reference(board, Path('/candidate'), args.board)
     write_json(args.output, facts)
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

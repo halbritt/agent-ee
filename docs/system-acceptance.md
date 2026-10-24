@@ -14,7 +14,7 @@ vias, SMD and through-hole parts, regulated power, analog/ADC interfaces, clocks
 differential signals and buses. Required coverage includes native hierarchical
 schematics, functional blocks, permitted board sides, pin locality, mechanical
 and antenna keepouts, QFN/BGA escape, planes and manufacturing profiles.
-Current limitations on zones, non-default netclasses and nonrectangular outlines
+Current limitations on existing placement-input zones, non-default netclasses and nonrectangular outlines
 are implementation gaps to close, not convenient exclusions.
 
 Mains isolation, flex/rigid-flex, blind/buried microvias, advanced packaging and
@@ -35,7 +35,7 @@ individual checks never means the whole design is accepted.
 | Architecture, parts and circuits | Circuit/connectivity intent, captured sourcing/CAD/rating records → bound parts and native pin inventory; build parts stage, `parts_stage`, `binding_fill` | Source parts, topology and electrical calculations. Actual selected TPS7A20/ADS1115 circuit is carried into the board. Consequential reversed-diode negative rejects despite clean ERC. Loaded-current, capacitance, startup/removal and other electrical bounds still need closure. |
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Selected height maxima, complete body/hardware/access and broader side/keepout cases remain open. |
-| Placement and routing feedback | Placement constraints + seed/route policy → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Acquisition and esp_prog both route with zero native errors/opens. Search/legalization/final reload enforce declared hard constraints; portfolio can reject and retry candidates. Zones, netclasses, broader multilayer/paired/bus/fanout/plane features and routed constraint coverage still require qualification. |
+| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Acquisition without pours and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. A fresh two-sided acquisition pour fails native checks on all three tried placements and is rejected. Fine-pitch plane repair, existing-zone placement, netclasses, broader multilayer/paired/bus/fanout features and routed constraint coverage remain open. |
 | Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `electrical_topology`, interval checks, passive/active SPICE, `dc_path` | Native topology, selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. New whole-net copper model exercises two/four-layer native controls and actual supply/return copper; disconnected and exceeded-budget negatives reject. Physical material/contact bounds and component obligations remain open. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Complete mechanical/fabrication requirement coverage and remaining routing-feature cases are still unmet. |
 | Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | Current TPS design regenerated through the ordinary build and passes 20 declared checks, including 9 plots/2 drills/12 BOM rows/17 placements. Changed exported coordinates reject as stale. Missing manufacturing check kinds are now wired; eleven original electrical/mechanical/reproducibility requirements still block default acceptance. No complete design/package is accepted. |
@@ -45,7 +45,7 @@ individual checks never means the whole design is accepted.
 
 Integrated simulator repair: `54864697c224fa1e7464719a3bd9b67e47752adf`;
 kicad-route `80e144437b48a3de77b226d0e9465c16b9ab8b7e`.
-This iteration replaces ngspice 42 with corrected maintained 47. The supported
+That iteration replaced ngspice 42 with corrected maintained 47. The supported
 image passes 139 native regressions, 20 switch checks, both RC integration gates
 and the unchanged actual acquisition startup case. The observed image and binary are recorded in the simulator report.
 
@@ -77,6 +77,18 @@ rejects, and default package resumption still refuses the eleven unresolved
 authored requirements. See the [current manufacturing qualification](qualification/acquisition-manufacturing-2026-10-24.md).
 Nominal power-removal checks also pass both loaded and open external-load cases;
 vendor-model limitations and physical bounds remain explicit.
+
+The [normal plane workflow correction](qualification/normal-plane-workflow-2026-10-24.md)
+repairs a reproduced silently ignored input. Two-layer outer and four-layer inner
+plane jobs pass through the public CLI; 111 relevant strict tests pass without
+skips. The fresh multiblock two-sided pour attempt remains rejected: its native
+route leaves opens and starved thermal relief. Bounded spoke reservation and
+owned-reroute diagnostics do not complete it. Those failures remain evidence,
+not accepted output. A fresh bottom-plane-only engineering selection completes
+all six normal stages in 291.585 s, then passes all 20 declared checks and
+matching package consistency. Its final board is `7eeedc50a26a…`; default package
+resumption still refuses the original eleven unresolved requirements. Existing
+`dc_path/2` bounds do not yet accept zones.
 
 Immutable evidence under `~/.cache/agent-ee-qualification/agent545/`:
 
@@ -119,6 +131,9 @@ not demonstrate parity. The prior matched esp_prog seed 10 comparison leaves
 
 ## Exact next work
 
+Retain and repair the fine-pitch two-sided plane failure through the reusable
+routing path. Carry electrical verification across the current bottom-plane
+geometry, without treating a plane as a verified return path.
 Close the acquisition electrical and mechanical requirements and complete its
 normal default package build with the now-connected manufacturing checks.
 Proceed to the remaining representative/KRT cases. A milestone ends an iteration,

@@ -45,6 +45,15 @@ The config (`agent-ee.placement-job-config/1`) names every external input by
 path **and SHA-256**; a mismatch refuses the job before any work. Fixture bytes
 stay outside the public repository.
 
+An optional `inputs.planes` supplies a path and SHA-256 for a captured
+[`agent-ee.plane-plan/1`](add-planes.md). Each routing attempt creates these zones
+on its own copy of the selected placement. The final board is refilled, saved
+and independently checked against the same plan before it can be eligible.
+Only these controller-owned zone UUIDs may differ from the zone-free placement
+candidate. The final result records native plane evidence and the producer's
+hash-bound receipt; existing footprints, placements and other protected native
+content still have to match. Unknown input names are refused.
+
 An optional `inputs.locality` supplies a path and SHA-256 for the existing
 `agent-ee.electrical-locality/1` document. The public build derives this input
 from its required `electrical-locality/1` check, so search and final acceptance
@@ -120,11 +129,13 @@ the process and must be recorded by the caller.
      native pad clearance, never a body.
    - `silk_only`: padless, zone-free, every graphic on a silkscreen layer. Only
      these are excluded from packing.
-   **Zone-free supported domain:** every board-level zone is refused before a
+   **Zone-free placement input:** every board-level zone is refused before a
    prepared problem can reach the solver. This includes keepouts, rule areas
    and ordinary copper pours, filled or unfilled. Footprint zones and rule areas
    remain refused. Native checks after routing do not make an ignored placement
-   obstacle safe; this job has no placement zone engine.
+   obstacle safe; this job has no placement zone engine. Declared `inputs.planes`
+   are produced after placement and may be outer or enabled inner copper layers.
+   Final verification requires their declared `island_removal` to be `always`.
    Custom `.kicad_dru` files and non-default netclasses/assignments are refused
    before a problem is returned. The supported clearance domain is the board
    minimum, the Default netclass and native per-pad overrides. A larger Default

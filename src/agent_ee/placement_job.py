@@ -1037,8 +1037,34 @@ def board_metrics(path, groups=None, edges=None):
 
 # ---------------------------------------------------------------- router
 
+def _produce_planes(candidate, raw, output, *, phase=None, clock, cancel_dir):
+    """Run the existing native producer inside the job's owned process budget."""
+    candidate, output = Path(candidate), Path(output)
+    plan = candidate / 'plane-plan.json'
+    plan.write_bytes(raw)
+    argv = [sys.executable, '-B', '-m', 'agent_ee.add_planes', '--inputs', str(candidate),
+            '--board', 'board.kicad_pcb', '--plan', plan.name, '--out', str(output)]
+    if phase:
+        argv += ['--phase', phase]
+    done = _run_child(argv, clock=clock, cancel_dir=cancel_dir)
+    report = read_json(output / 'planes.json') if (output / 'planes.json').is_file() else {
+        'execution': 'failed', 'findings': [{'message': done.stderr.decode(errors='replace')[-2000:]}]}
+    if (done.returncode != 0 or report.get('execution') != 'ok'
+            or report.get('plan_sha256') != sha256_bytes(raw)
+            or report.get('board_before') != digest(candidate / 'board.kicad_pcb')
+            or not (output / 'board.kicad_pcb').is_file()
+            or report.get('board_after') != digest(output / 'board.kicad_pcb')):
+        raise JobRefusal('native plane production failed: ' + str(report.get('findings', report)))
+    if plan.read_bytes() != raw:
+        raise JobRefusal('plane plan changed during production')
+    shutil.copyfile(output / 'board.kicad_pcb', candidate / 'board.kicad_pcb')
+    return {'report': str(output / 'planes.json'), 'sha256': digest(output / 'planes.json'),
+            'plan_sha256': sha256_bytes(raw), 'board_sha256': report['board_after'],
+            'deferred_connectivity': report['deferred_connectivity']}
+
+
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
-          design_name='board', grid_step_mm=None):
+          design_name='board', grid_step_mm=None, planes=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1056,12 +1082,29 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     staged.mkdir(parents=True)
     for name in ('board.kicad_pcb', 'board.kicad_pro'):
         shutil.copyfile(Path(candidate_dir) / name, staged / name)
+    started = time.monotonic()
+    plane_record = None
+    if planes is not None:
+        try:
+            plane_record = _produce_planes(staged, planes, route_dir / 'planes', phase='pre-routing',
+                clock=Clock(min(budget_s, clock.remaining())), cancel_dir=cancel_dir)
+        except JobStopped as exc:
+            if exc.status != 'deadline' or clock.remaining() <= 0:
+                raise
+            return {'status': 'plane_deadline', 'preflight': check,
+                    'elapsed_s': time.monotonic() - started}
+        except JobRefusal as exc:
+            return {'status': 'plane_failed', 'preflight': check, 'reason': str(exc),
+                    'elapsed_s': time.monotonic() - started}
     _check_stop(clock, cancel_dir)
     # The CLI accepts integral seconds. Refuse sub-second remainder rather than
     # inventing a minimum extension; the outer clock also bounds all descendants.
-    remaining = min(budget_s, clock.remaining())
+    remaining = min(budget_s - (time.monotonic() - started), clock.remaining())
     if remaining < 1:
-        raise JobStopped('deadline')
+        if planes is None:
+            raise JobStopped('deadline')
+        return {'status': 'plane_deadline', 'preflight': check,
+                'elapsed_s': time.monotonic() - started}
     argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(route_dir / 'out'),
             '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged),
             '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
@@ -1073,11 +1116,12 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
            'KICAD_ROUTE_STATE': str(checkout), 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
            'GIT_OPTIONAL_LOCKS': '0'}
-    started = time.monotonic()
     with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
         done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
         code = done.returncode
     record = {'argv': argv, 'exit_code': code, 'elapsed_s': time.monotonic() - started, 'preflight': check}
+    if plane_record is not None:
+        record['planes'] = plane_record
     results = sorted((route_dir / 'out').rglob('result.json')) if (route_dir / 'out').exists() else []
     if len(results) != 1:
         record['status'] = 'missing_output'
@@ -1168,12 +1212,28 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
+        unknown = set(config['inputs']) - {'board', 'project', 'intent', 'groups', 'locality', 'planes'}
+        if unknown:
+            raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
         report['design_name'] = board_path.stem
         _, project_bytes = verified_input(config['inputs']['project'], 'project')
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
         intent, groups = json.loads(intent_bytes), json.loads(groups_bytes)
+        plane_bytes = None
+        plane_ids = ()
+        if 'planes' in config['inputs']:
+            from .add_planes import validate_plan, zone_ids
+            from .catalog import strict_json
+            _, plane_bytes = verified_input(config['inputs']['planes'], 'planes')
+            try:
+                plane_plan = validate_plan(strict_json(plane_bytes))
+            except ValueError as exc:
+                raise JobRefusal('invalid plane plan: ' + str(exc)) from exc
+            if any(zone['island_removal'] != 'always' for zone in plane_plan['zones']):
+                raise JobRefusal('placement job final planes require island_removal=always')
+            plane_ids = zone_ids(plane_plan)
         if 'locality' in config['inputs']:
             _, raw = verified_input(config['inputs']['locality'], 'locality')
             document = json.loads(raw)
@@ -1193,6 +1253,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
                                        'router': report['preflight'].get('router'),
+                                       'plane_tools': report['preflight'].get('plane_tools'),
                                        'kicad_cli': report['preflight'].get('kicad_cli'),
                                        'pcbnew': record.get('pcbnew_version')}))
     report['identity'] = identity
@@ -1203,6 +1264,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     job_dir.mkdir(parents=True, exist_ok=True)
     write_json(job_dir / 'capture.json', record)
     write_json(job_dir / 'problem.json', problem)
+    if plane_bytes is not None:
+        (job_dir / 'plane-plan.json').write_bytes(plane_bytes)
     state = state or {'identity': identity, 'completed_seeds': [], 'seed_results': {}, 'attempts': 0}
     # Each attempt writes its own candidate/route/final directories; nothing earlier is overwritten.
     state['attempts'] = attempt = state.get('attempts', 0) + 1
@@ -1316,14 +1379,15 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             routed = route(selected['directory'], job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
-                           grid_step_mm=config['router'].get('grid_step_mm'))
+                           grid_step_mm=config['router'].get('grid_step_mm'), planes=plane_bytes)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
         with clock.phase('final_validation'):
             _check_stop(clock, job_dir)
             report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', groups, intent,
-                                           clock=clock, cancel_dir=job_dir)
+                                           clock=clock, cancel_dir=job_dir,
+                                           owned_zone_uuids=plane_ids, planes=plane_bytes)
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
@@ -1366,7 +1430,7 @@ def _completion_status(routed, incumbent, final):
 
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
-                 owned_zone_uuids=()):
+                 owned_zone_uuids=(), planes=None):
     import pcbnew
     clock = clock or Clock(300)
     _check_stop(clock, cancel_dir)
@@ -1377,9 +1441,18 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     shutil.copyfile(routed['board'], final_dir / 'board.kicad_pcb')
     shutil.copyfile(Path(incumbent['directory']) / 'board.kicad_pro', final_dir / 'board.kicad_pro')
     board = final_dir / 'board.kicad_pcb'
+    problems = []
+    plane_fill = None
+    if planes is not None:
+        # Refill and save through the existing zone-only producer. Its strict
+        # post-routing mode cannot defer disconnected planned copper.
+        try:
+            plane_fill = _produce_planes(final_dir, planes, final_dir.parent / (final_dir.name + '-planes'),
+                                         clock=clock, cancel_dir=cancel_dir)
+        except JobRefusal as exc:
+            problems.append(str(exc))
     placed = native_inventory(pcbnew.LoadBoard(incumbent['board']))
     final = native_inventory(pcbnew.LoadBoard(str(board)))
-    problems = []
     if set(final) != set(placed):
         problems.append('router changed the footprint UUID set')
     for uuid, row in placed.items():
@@ -1400,6 +1473,19 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     placed_keys = {_key(v) for v in placed_report['violations'] if v.get('severity') == 'error'}
     _check_stop(clock, cancel_dir)
     report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
+    plane_result = None
+    if planes is not None:
+        out = final_dir.parent / (final_dir.name + '-plane-verification')
+        done = _run_child([sys.executable, '-B', '-m', 'agent_ee.final_planes', 'validate',
+            '--inputs', str(final_dir), '--board', board.name, '--plan', 'plane-plan.json',
+            '--out', str(out), '--drc', str(final_dir / 'native-drc.json'),
+            '--timeout', str(max(0.001, min(180, clock.remaining())))], clock=clock, cancel_dir=cancel_dir)
+        plane_result = read_json(out / 'result.json') if (out / 'result.json').is_file() else {
+            'status': 'FAIL', 'errors': [done.stderr.decode(errors='replace')[-2000:]]}
+        if (done.returncode != 0 or plane_result.get('status') != 'PASS'
+                or plane_result.get('board_sha256') != digest(board)
+                or plane_result.get('plan_sha256') != sha256_bytes(planes)):
+            problems.append('final saved plane verification failed')
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
@@ -1408,6 +1494,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared'))
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
+            **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'drc': exec_, 'opens': len(report_['unconnected_items']),
@@ -1422,6 +1509,9 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     from . import routing_adapter
     identities = {} if identities is None else identities
     identities.update(pcbnew_version=pcbnew.Version(), python=sys.version.split()[0])
+    if 'planes' in config['inputs']:
+        from .cli import policy_files
+        identities['plane_tools'] = sha256_bytes(canonical(policy_files()))
     engine = Path(executable or rust_executable())
     identities.update(engine=str(engine), engine_sha256=digest(engine))
     cli = _run_child(['kicad-cli', 'version'], clock=clock or Clock(60), cancel_dir=cancel_dir)

@@ -330,12 +330,14 @@ def generate(candidate, board, plan_path, out, *, phase=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--inputs', default='/candidate', help='captured input directory')
+    parser.add_argument('--out', default='/work/out', help='new output outside captured inputs')
     parser.add_argument('--board', required=True)
     parser.add_argument('--plan', required=True)
     parser.add_argument('--phase', choices=(PRE_ROUTING,), default=None,
                         help='declared by the routing-turn step only; enables pre-routing deferral')
     args = parser.parse_args(argv)
-    report = generate('/candidate', args.board, args.plan, '/work/out', phase=args.phase)
+    report = generate(args.inputs, args.board, args.plan, args.out, phase=args.phase)
     return 0 if report['execution'] == 'ok' else 1
 
 
