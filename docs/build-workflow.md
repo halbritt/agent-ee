@@ -1,7 +1,7 @@
 # Captured engineering build
 
 `agent-ee build run` composes the existing requirements, parts, native scaffold,
-schematic, placement/routing and final package producers. The public path is
+schematic, placement/routing, artwork and final package producers. The public path is
 being qualified. Fresh execution currently establishes requirements through a
 hierarchical native PCB, cancellation/resumption and honest rejection. A complete
 manufacturing run through this command remains an open requirement in the
@@ -90,8 +90,8 @@ the current candidate. Resumption checks those identities and all completed
 stage files before doing more work. Changed source or saved native files require
 a new build; they cannot silently become the old run's accepted output.
 
-For diagnostics, `--through requirements`, `parts`, `scaffold`, `schematic` or
-`placement-routing` stops at a recorded checkpoint. These return
+For diagnostics, `--through requirements`, `parts`, `scaffold`, `schematic`,
+`placement-routing` or `artwork` stops at a recorded checkpoint. These return
 `accepted:false`. A `CANCEL` file in the run directory stops before the next
 stage; remove it and use `--resume` to continue. Mid-stage interruption retains
 the attempt, and resumption starts a fresh attempt from the last completed
@@ -105,6 +105,18 @@ assembly readiness and package checks. The profile and membership must name
 the same envelope and parts used by generation. Unresolved requirement
 limitations refuse this path. These are minimum coverage gates; the authored
 electrical and mechanical requirements still determine the necessary checks.
+
+After routing, the artwork stage runs the existing bounded native silk repair
+through an ordinary implementation receipt. It selects visible Reference/Value
+fields and explicitly declared movable custom fields on silk layers. Only their
+positions may change. Copper, component poses, footprints, marking content,
+style, angle, visibility and graphics remain unchanged; the stage independently
+replays that scope proof against the receipted board and tool identity. In
+particular, pin-1 and polarity graphics are not translated by this default step.
+Remaining native silk conflicts fail the stage with its report and source intact.
+If there are no movable fields, it records a no-op; the final release check still
+rejects remaining graphic conflicts. This does not waive final mechanical,
+placement or manufacturing verification.
 
 The final stage independently runs and verifies the ordinary checks-only review.
 Every acceptance-mapped check must return `ok/pass`; missing, unknown or failed

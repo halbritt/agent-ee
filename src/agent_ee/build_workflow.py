@@ -19,7 +19,7 @@ from .storage import digest, identity, read_json, write_json
 
 SCHEMA = 'agent-ee.build-plan/1'
 REPORT_SCHEMA = 'agent-ee.build-report/1'
-STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'package')
+STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'artwork', 'package')
 GENERATED = 'build-generated/connectivity-intent.json'
 RATINGS = 'build-generated/parts-ratings'
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
@@ -206,6 +206,40 @@ def _package(plan, candidate, stage_dir, scope, accounting):
         physical_validation_performed=False, supplier_preview_performed=False))
 
 
+def _artwork(candidate, directory, board):
+    """Finish visible field positions using the existing bounded native producer."""
+    import pcbnew as k
+    from . import routed_artwork
+    from .cli import policy_files
+    from .silk_artwork import DECLARATION, movable_names
+    native = k.LoadBoard(str(candidate / board))
+    targets = []
+    for footprint in native.GetFootprints():
+        fields = list(footprint.GetFields())
+        declaration = next((field.GetText() for field in fields if field.GetName() == DECLARATION), None)
+        movable = movable_names(declaration)
+        targets.extend((footprint.GetReference(), field.GetName()) for field in fields
+                       if field.GetName() in movable and field.IsVisible()
+                       and field.GetLayer() in (k.F_SilkS, k.B_SilkS))
+    report = dict(board=board, source_sha256=digest(candidate / board),
+                  targets=sorted(targets), acceptance_ready=False)
+    if not targets:
+        # An omitted target list would enable graphic translations. Leave them
+        # intact; the final native release gate still rejects their conflicts.
+        write_json(directory / 'artwork.json', dict(report, status='no_movable_fields'))
+        return
+    declaration = routed_artwork.step(directory / 'tool', board, targets=targets)
+    path, receipt = _step(directory, candidate, declaration, 0)
+    proof = routed_artwork.qualify_receipt(path, receipt, board, policy_files())
+    produced = read_json(path / 'run' / routed_artwork.REPORT)
+    conflicts = produced['open_defects']
+    write_json(directory / 'artwork.json', dict(report, board_sha256=digest(candidate / board),
+        status='unresolved' if conflicts else 'repaired', write_scope=proof, open_defects=conflicts,
+        receipt=str(path.relative_to(directory)), receipt_sha256=digest(path / 'receipt.json')))
+    if conflicts:
+        raise ValueError(f'artwork retains {len(conflicts)} native silkscreen conflict(s); see {directory / "artwork.json"}')
+
+
 def _execute(stage, plan, previous, directory, completed, out):
     requirements_dir = out / completed[0]['directory'] if completed else None
     scope = read_json(requirements_dir / 'scope.json') if requirements_dir is not None else None
@@ -269,6 +303,8 @@ def _execute(stage, plan, previous, directory, completed, out):
         if digest(native) != report['final']['board_sha256']:
             raise ValueError('routed native board changed before adoption')
         shutil.copyfile(native, candidate / scope['board'])
+    elif stage == 'artwork':
+        _artwork(candidate, directory, scope['board'])
     elif stage == 'package':
         _package(plan, candidate, directory, scope, read_json(requirements_dir / 'accounting.json')['requirements'])
     return candidate

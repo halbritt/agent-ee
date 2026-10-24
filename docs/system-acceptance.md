@@ -194,6 +194,21 @@ rejects the two reversed diode connections. The accompanying 24-assertion
 electrical screening remains **unknown** on seven explicitly unresolved bounds;
 it is not electrical acceptance.
 
+The normal build now invokes the existing receipted artwork producer after
+routing and before package verification. A native stage exercise on the retained
+17-part routed acquisition board moves six visible labels, clears all 18 silk
+conflicts, and independently proves that copper, component poses and all other
+board tokens are unchanged. The repaired board passes native DRC with zero
+unwaived findings. Its package gate passes nine layer plots, PTH/NPTH drills,
+12 BOM rows, 17 placement rows and all 17 model references, bound to board
+`d90551f6e2c8650df6663719a1736967d0ff012d47430abb989bb6a449cfc01c`.
+The 46-test native build/parts/artwork suite passes without skips. Evidence is
+under `build/agent545/acquisition-build-artwork-*` and
+`build/agent545/build-artwork-native-final.log`. This stage exercise uses the
+earlier TLV regulator revision; the updated TPS circuit's complete public build,
+electrical and mechanical acceptance still remain open. A passing package
+consistency gate does not make this an accepted manufacturing design.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through
