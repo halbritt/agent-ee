@@ -11,9 +11,12 @@ programme outcomes in [telemetry-pod-delivery-plan.md](telemetry-pod-delivery-pl
 remain required. Dependent items are backlog until their dependencies are
 accepted (the dispatcher enforces the dependencies).
 
-Status 2026-10-24 00:14Z: AGENTEE-513 (stock KRT 0.23.7 esp_prog baseline) and
-AGENTEE-514 (KRT mining and architecture recommendation) are dispatched; 515-518
-are backlog. The architecture proposal is [placement-architecture.md](placement-architecture.md).
+Status 2026-10-24 01:05Z:
+- AGENTEE-513 is CLOSED AS-BASELINE ONLY: the stock board FAILED. Evidence `agentee-513-esp-prog-baseline`; Argon HIGH review `agentee-513-review-argon`, where the integrator's correction addendum governs the review's false statements.
+- AGENTEE-514 is ACCEPTED with binding amendments (chief decision b4a5857a; see placement-architecture.md).
+- AGENTEE-515 is DISPATCHED per chief 4f939a5e: one Opus HIGH builder (claude-harm), 180 min total, from 01:04:28.9Z, branch wt/agentee-515 from 9af52661, then one Astra MEDIUM critical review. The 513 result is a historical reference, not a matched experiment.
+- 516-518 are backlog.
+Earlier status, 00:14Z: 513 and 514 dispatched. The architecture proposal is [placement-architecture.md](placement-architecture.md).
 
 Owner requested 2026-10-24 UTC. Both programme outcomes remain required.
 
