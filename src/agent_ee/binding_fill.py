@@ -147,40 +147,42 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, so
         dependencies.update(pdfs)
         rating_report = {'sources_sha256': identity(ratings), 'derived': {}, 'missing': {}}
         rated_mpns = set()
+    from ._connectivity_hierarchy import INTENT_SCHEMA, scoped
     for comp in output['components']:
-        if comp['id'] not in physical:
+        cid = scoped(comp['sheet'], comp['id']) if intent['schema'] == INTENT_SCHEMA else comp['id']
+        if cid not in physical:
             continue
         if migration_only and comp['reference'] not in probes and comp['reference'] not in copper:
             if PROPERTY in comp.get('part_binding', {}):
                 raise ValueError('probe has no immutable source declaration: ' + comp['reference'])
-            preserved.append({'component': comp['id'], 'reference': comp['reference'],
+            preserved.append({'component': cid, 'reference': comp['reference'],
                               'identity_sha256': identity(comp)})
             continue
-        if comp['id'] not in refs['components']:
-            raise ValueError('source migration requires feature part_ref: ' + comp['id'])
-        selected = refs['components'][comp['id']]
+        if cid not in refs['components']:
+            raise ValueError('source migration requires feature part_ref: ' + cid)
+        selected = refs['components'][cid]
         exact_fields(selected, ('part_ref', 'instances') if isinstance(selected, dict) and 'instances' in selected
                      else ('part_ref',))
         nonempty(selected['part_ref'])
         if selected['part_ref'] not in parts:
             raise ValueError('unknown part_ref: ' + selected['part_ref'])
         part = parts[selected['part_ref']]
-        instances = _child_instances(selected, part, comp['id'], claimed)
+        instances = _child_instances(selected, part, cid, claimed)
         library = comp['lib_id'].split(':')[0]
         actual_library = next(lib for lib in intent['libraries'] if lib['name'] == library)
         if actual_library['sha256'] != expected_libraries.get(library):
             raise ValueError('component symbol capture differs from part_ref CAD')
         if any(comp[k] != part[k] for k in ('lib_id', 'footprint')):
-            raise ValueError('component CAD differs from part_ref: ' + comp['id'])
+            raise ValueError('component CAD differs from part_ref: ' + cid)
         if instances is None and not any(s['sheet'] == '/' and s['reference'] == comp['reference']
                                          for s in part['instances']):
-            raise ValueError('component reference outside part instance allocation: ' + comp['id'])
+            raise ValueError('component reference outside part instance allocation: ' + cid)
         if is_probe(part):
             if instances is not None:
-                raise ValueError('probe features take root-sheet allocations only: ' + comp['id'])
+                raise ValueError('probe features take root-sheet allocations only: ' + cid)
             record = probes[comp['reference']]
             connected = [net['name'] for net in resolved['nets'] if
-                         any(t['component'] == comp['id'] and t['pin'] == record['pin']['number']
+                         any(t['component'] == cid and t['pin'] == record['pin']['number']
                              for t in net['terminals'])]
             if connected != [record['net']]:
                 raise ValueError('probe intent net differs: ' + comp['reference'])
@@ -189,40 +191,40 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, so
             if source_migration and previous is not None and previous != fields[PROPERTY]:
                 # The same decoder and exact legacy identity gate used by annotation.
                 if not isinstance(previous, str) or not matches_marker(previous, record) or parse_marker(previous) != record:
-                    raise ValueError('writer binding mismatch: ' + comp['id'])
+                    raise ValueError('writer binding mismatch: ' + cid)
                 if set(comp['part_binding']) != {PROPERTY}:
-                    raise ValueError('writer binding mismatch: ' + comp['id'])
+                    raise ValueError('writer binding mismatch: ' + cid)
                 migrations.append(dict(reference=comp['reference'],
                     old_encoding_sha256=hashlib.sha256(previous.encode('utf-8')).hexdigest(),
                     new_encoding_sha256=hashlib.sha256(fields[PROPERTY].encode('utf-8')).hexdigest(),
                     decoded_identity_sha256=identity(record)))
                 comp['part_binding'] = fields
             if any(fields.get(k) != v for k, v in comp.get('part_binding', {}).items()):
-                raise ValueError('writer binding mismatch: ' + comp['id'])
+                raise ValueError('writer binding mismatch: ' + cid)
             comp['part_binding'] = fields
-            records.append({'component': comp['id'], 'reference': comp['reference'],
+            records.append({'component': cid, 'reference': comp['reference'],
                             'part_ref': part['id'], 'fields': fields, 'assembly_deviation': None})
             continue
         if copper_features.is_copper(part):
             if instances is not None:
-                raise ValueError('copper features take root-sheet allocations only: ' + comp['id'])
+                raise ValueError('copper features take root-sheet allocations only: ' + cid)
             record = copper[comp['reference']]
             actual_pins = [{k: pin[k] for k in ('number', 'name', 'electrical_type')}
-                           for pin in physical[comp['id']]['pins']]
+                           for pin in physical[cid]['pins']]
             if sorted(actual_pins, key=lambda p: p['number']) != sorted(record['pins'], key=lambda p: p['number']):
                 raise ValueError('copper intent pins differ: ' + comp['reference'])
             for pin, net in record['nets'].items():
                 connected = [native_names[n['id']] for n in resolved['nets'] if any(
-                    t['component'] == comp['id'] and t['pin'] == pin for t in n['terminals'])]
+                    t['component'] == cid and t['pin'] == pin for t in n['terminals'])]
                 if connected != [net]:
                     raise ValueError('copper intent net differs: ' + comp['reference'] + '/' + pin)
             fields = comp.get('part_binding', {})
             if any(not copper_field_allowed(k, v) for k, v in fields.items()):
-                raise ValueError('writer binding mismatch: ' + comp['id'])
+                raise ValueError('writer binding mismatch: ' + cid)
             if comp.get('in_bom', False) is not False:
                 raise ValueError('copper intent BOM flag differs: ' + comp['reference'])
             comp['in_bom'] = False
-            records.append({'component': comp['id'], 'reference': comp['reference'],
+            records.append({'component': cid, 'reference': comp['reference'],
                             'part_ref': part['id'], 'fields': fields, 'assembly_deviation': None})
             continue
         sheet, paths = datasheet(root, part)
@@ -271,9 +273,9 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, so
                                                      for key in keys})
         for name, value in comp.get('part_binding', {}).items():
             if name not in fields or value != fields[name]:
-                raise ValueError('writer binding mismatch: ' + comp['id'] + '/' + name)
+                raise ValueError('writer binding mismatch: ' + cid + '/' + name)
         comp['part_binding'] = fields
-        records.append({'component': comp['id'], 'reference': comp['reference'], 'part_ref': part['id'],
+        records.append({'component': cid, 'reference': comp['reference'], 'part_ref': part['id'],
                         **({} if instances is None else {'instances': instances}),
                         'fields': fields, 'acquisition': sheet,
                         'assembly_deviation': matches[0][0] if matches else None})

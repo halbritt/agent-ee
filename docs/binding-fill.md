@@ -7,7 +7,7 @@ establish electrical suitability or actual telemetry-pod acceptance.
 
 ## Explicit component references
 
-The input remains strict `agent-ee.connectivity-intent/1`. An immutable
+The input is strict `agent-ee.connectivity-intent/1` or `/2`. An immutable
 `agent-ee.part-refs/1` sidecar names each non-power component's manifest entry:
 
 ```json
@@ -28,6 +28,14 @@ from resolved captured symbols.
 Unknown symbols, mismatched symbol-capture hashes, CAD identities or root-sheet
 instance allocations refuse. Pin-accounting errors remain the emitter's
 responsibility, so the existing writer repair loop can receive its diagnostics.
+
+For `/2`, keys use the connectivity resolver's canonical scoped ID: JSON text
+encoding `[sheet_id, local_component_id]`. Binding records retain this identity.
+The [parts stage](parts-stage.md) derives these sidecar entries and native sheet
+paths from the captured circuit and layout. It verifies allocation and complete
+pin accounting before calling this producer. The former local-ID lookup could
+silently omit all child bindings; the native parts-stage regression now covers
+that failure.
 
 A component of a child sheet, including one reused by several sheet symbols,
 declares its hierarchical instances explicitly (AGENTEE-252):

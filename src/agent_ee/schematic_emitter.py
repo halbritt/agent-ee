@@ -889,10 +889,10 @@ def _hierarchy(resolved, captured, intent_libraries, transforms, project, cache,
     return root, sheets, kids, plans, items
 
 
-def _emit_hierarchy(root, sheets, kids, plans, items, namespace, project):
-    """One native file per sheet; occurrence paths chain ancestor sheet-symbol UUIDs."""
+def _occurrence_paths(root, kids, namespace):
+    """Shared identity calculation for native emission and pre-emission parts binding."""
     root_uuid = _uuid(namespace, 'document', root['file'])
-    files, order, paths = {}, [], {root['id']: '/' + root_uuid}
+    order, paths = [], {root['id']: '/' + root_uuid}
     pending = [root]
     while pending:  # Pages in depth-first order, children by local ID.
         sheet = pending.pop()
@@ -900,6 +900,41 @@ def _emit_hierarchy(root, sheets, kids, plans, items, namespace, project):
         for child in kids[sheet['id']]:
             paths[child['id']] = paths[sheet['id']] + '/' + _uuid(namespace, 'sheet', sheet['file'], child['local_id'])
         pending.extend(reversed(kids[sheet['id']]))
+    return root_uuid, order, paths
+
+
+def native_sheet_paths(intent, layout):
+    """Native XML occurrence selectors for the declared intent and layout identity.
+
+    The XML exporter omits the root document UUID and retains child sheet UUIDs.
+    Use the same identity routine as emission; do not guess paths from sheet names.
+    This validates structure, not electrical connectivity or native execution.
+    """
+    from .connectivity_ir import _validate_intent
+    raw, layout = _read_json(intent), _read_json(layout)
+    _validate_intent(raw)
+    # Layout validation uses elaborated IDs for hierarchical component transforms.
+    from ._connectivity_hierarchy import INTENT_SCHEMA, scoped, _tree
+    components = {(scoped(c['sheet'], c['id']) if raw['schema'] == INTENT_SCHEMA else c['id']): c
+                  for c in raw['components']}
+    namespace, project, _, _, _ = _validate_layout(layout, components)
+    if raw['schema'] != INTENT_SCHEMA:
+        return {'root': '/'}
+    sheets = _tree(raw['hierarchy'])
+    root = sheets['root']
+    if root['file'] != project + '.kicad_sch':
+        raise ValueError('root sheet must match layout project')
+    kids = {sid: sorted((s for s in sheets.values() if s['parent'] == sid), key=lambda s: s['local_id'])
+            for sid in sheets}
+    _, _, paths = _occurrence_paths(root, kids, namespace)
+    return {sid: '/' + '/'.join(path.split('/')[2:]) + ('/' if sid != 'root' else '')
+            for sid, path in paths.items()}
+
+
+def _emit_hierarchy(root, sheets, kids, plans, items, namespace, project):
+    """One native file per sheet; occurrence paths chain ancestor sheet-symbol UUIDs."""
+    root_uuid, order, paths = _occurrence_paths(root, kids, namespace)
+    files = {}
     pages = {sheet['id']: index + 1 for index, sheet in enumerate(order)}
     papers = {}
     for sheet in order:

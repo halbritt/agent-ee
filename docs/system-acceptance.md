@@ -44,7 +44,7 @@ observations must not be read as fresh execution evidence.
 | Stage | Real input → output; existing path | Required constraints and missing capability | Acceptance evidence / current state |
 | --- | --- | --- | --- |
 | Intent and requirements | Spec + authored requirement record → scope/baseline; `design_intent`, `design_dialog`, `requirement_scope`, `spec_record` | Distinguish requirements, assumptions, preferences, defaults and unresolved decisions; preserve each requirement's check mapping. RC regex parser in `generate.parse_spec` is not general design synthesis. | Fresh `scripts/rung1_stages.py run --requirement-record` compiles requirements, then stops at absent parts. General supported entrypoint missing. |
-| Architecture, circuits, parts | Captured catalog/selection/CAD closure → `parts/1`; `catalog`, `parts_manifest`, `rung1_parts`, connectivity IR and electrical checks | Select and substantiate topology, values, ratings, package/pin map and sourcing; carry calculations and provenance into downstream checks. `rung1_parts` projects exactly three RC roles; stage driver lacks a declared parts producer. | Existing modules and historical AGENTEE-101; no fresh multiblock intent-to-parts run. |
+| Architecture, circuits, parts | Captured catalog/selection/CAD closure → `parts/1` → bound connectivity; `agent-ee parts compile`, `parts_stage`, `binding_fill`, connectivity IR and electrical checks | Select and substantiate topology, values, ratings, package/pin map and sourcing; carry calculations and provenance into downstream checks. Generic declared parts producer now exists; full requirements-start driver still needs orchestration. | Targeted native child-sheet exercise consumes actual parts output through schematic and PCB. Synthetic sourcing evidence only; no fresh sourced multiblock intent-to-parts run. |
 | Native schematic | Connectivity intent + captured libraries/layout → native sheets; `schematic_emitter`, `schematic_stage`, `schematic_regenerate`, forward annotation | All pins accounted for; native connectivity agrees with selected parts; editable hierarchy and dependencies; stable regeneration. Explicit hierarchical stage output sets now supported; preserving manual edits during regeneration remains flat-only. | Fresh native stage exercise carries a child value edit and cross-sheet nets through receipts to the PCB; stale child and omitted output reject. Complete intent-to-package entrypoint still missing. |
 | Board/mechanics | Envelope + parts + scope/plan → native empty project, fixed mechanics; `agent-ee scaffold`, `scaffold.content_step` | Preserve outline, stackup, locks, holes, keepouts, heights/access and rule provenance; every footprint assigned a block/shared/fixed role. | Existing scaffold/campaign path. No fresh whole workflow proving these survive placement and routing. |
 | Placement/legalization | Native board + floorplan intent/groups → candidate poses/board; `placement_job`, `placer_runner`, `blocks`, Rust engine | Block and pin locality, permitted sides, anchors, body/courtyard/hole/access keepouts; final coordinates establish compliance. Distinct planners currently have different supported domains. | Saved-board edge enforcement and terminal-space preferences exercised. Latest esp_prog run passes all three declared edges and has zero open connections. Full intent qualification remains open. |
@@ -133,6 +133,13 @@ does not produce the parts stage; other generation entrypoints use RC-specific
 preparation or require preassembled campaign inputs. This must be repaired by
 composing and exercising existing producers through the public workflow, not by
 renaming experimental records or installing adapters.
+
+The [generic parts producer](parts-stage.md) now composes existing manifest,
+binding and connectivity validators and exposes `agent-ee parts compile`. Its
+ordinary receipted output reaches hierarchical schematic emission and native
+forward annotation. It also repairs silent omission of child component bindings
+in `binding_fill`. This is one producer boundary; the complete public build and
+fresh sourced multiblock engineering run remain unmet.
 
 The first correction makes declared connector edges hard constraints, including
 fixed connectors and declarations without numeric setbacks, and checks them
