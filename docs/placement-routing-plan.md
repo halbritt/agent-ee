@@ -34,7 +34,7 @@ Status 2026-10-24 03:50Z: TOOLING ONLY (owner, relayed via the chief 69d407ee@2)
   - Positive native-clean seats are still to be added.
 - The next correction slice awaits the chief.
 
-Status 2026-10-24 05:42Z: the 515q / 515q2 / 515q3 correctness stack (head 39743415) LANDED on main b98f9bcb as reviewed INPUT ONLY (chief 47db10f7).
+Status 2026-10-24 05:26Z (b98f9bcb pushed to main at 05:26:02Z; this status written at 05:26:57Z): the 515q / 515q2 / 515q3 correctness stack (head 39743415) LANDED on main b98f9bcb as reviewed INPUT ONLY (chief 47db10f7).
 - What it adds:
   - native-shape copper clearance;
   - the declared edge-connector overhang, honoured only for the declared component and edge;
