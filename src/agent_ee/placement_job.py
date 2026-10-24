@@ -349,6 +349,26 @@ def check_edge_intent(path, intent, *, clock=None, cancel_dir=None):
     return checked
 
 
+def check_locality(path, intent, *, clock=None, cancel_dir=None):
+    """Independently grade the saved native copper centroids, never solver costs."""
+    if 'electrical_locality' not in intent:
+        return {'status': 'not_declared'}
+    checked = _native_read(path, '_check_locality', {'intent': intent}, clock=clock, cancel_dir=cancel_dir)
+    if (checked.get('criterion') != 'electrical-locality/1'
+            or checked.get('status') not in ('pass', 'info', 'defect')
+            or any(not isinstance(checked.get(key), list) for key in ('measured', 'defects', 'unknown', 'advisories'))):
+        raise JobRefusal('native locality check returned missing or invalid output')
+    return checked
+
+
+def _locality_grade(facts, document):
+    from .electrical_locality import grade
+    result = grade(facts, document)
+    if result['unknown']:
+        raise JobRefusal('electrical locality cannot be evaluated: ' + canonical(result['unknown']).decode())
+    return result
+
+
 def _check_edge_intent_native(path, intent):
     """Reload native geometry and grade declared edges independently of solver output."""
     import pcbnew
@@ -666,6 +686,10 @@ def _capture_native(board_path, intent, groups):
                'groups': [{'name': g['name'], 'anchor': g['anchor'], 'refs': g['refs']} for g in groups['groups']],
                'proximity': proximity,
                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'edge': 4, 'hard': 50, 'escape': 20}}
+    if 'electrical_locality' in intent:
+        document = intent['electrical_locality']
+        _locality_grade(facts, document)
+        problem['locality'] = {'document': document, 'footprints': facts['footprints']}
     problem['problem_sha256'] = sha256_bytes(canonical(problem))
     return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before),
                      'pcbnew_version': facts['pcbnew_version'], 'footprints': record, 'native': native,
@@ -908,6 +932,7 @@ def _placement_eligible(entry):
     return (entry.get('integrity') == 'preserved' and entry.get('placement_introduced_errors') == 0
             and entry.get('status') == 'checked' and entry.get('engine_feasible') is True
             and entry.get('edge_intent', {}).get('status') == 'pass'
+            and entry.get('locality', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
             and not entry.get('engine_violations'))
 
 
@@ -1147,6 +1172,12 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
         intent, groups = json.loads(intent_bytes), json.loads(groups_bytes)
+        if 'locality' in config['inputs']:
+            _, raw = verified_input(config['inputs']['locality'], 'locality')
+            document = json.loads(raw)
+            if 'electrical_locality' in intent and intent['electrical_locality'] != document:
+                raise JobRefusal('inline locality differs from the captured locality input')
+            intent['electrical_locality'] = document
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
     with clock.phase('import'):
@@ -1225,6 +1256,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                      clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
+                             locality=check_locality(directory / 'board.kicad_pcb', intent,
+                                                     clock=clock, cancel_dir=job_dir),
                              edge_intent=check_edge_intent(directory / 'board.kicad_pcb', intent,
                                                            clock=clock, cancel_dir=job_dir),
                              board=check['board'], board_sha256=check['board_sha256'], drc=exec_,
@@ -1366,16 +1399,18 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
+    locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
     metrics = board_metrics(board, groups['groups'])
     metrics['edges'] = edge_intent['connectors']
-    failed = problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
+    failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
+              or locality['status'] not in ('pass', 'info', 'not_declared'))
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
-            'edge_intent': edge_intent, 'metrics': metrics}
+            'edge_intent': edge_intent, 'locality': locality, 'metrics': metrics}
 
 
 def preflight(config, executable=None, *, clock=None, cancel_dir=None, identities=None):
@@ -1402,7 +1437,7 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
 def configure_parser(parser, *, internal=False):
     sub = parser.add_subparsers(dest='placement_command', required=True)
     if internal:
-        for command in ('_capture', '_check_edges'):
+        for command in ('_capture', '_check_edges', '_check_locality'):
             native = sub.add_parser(command, help=argparse.SUPPRESS)
             native.add_argument('board')
     run = sub.add_parser('run', help='run one whole placement-to-route job')
@@ -1416,12 +1451,15 @@ def configure_parser(parser, *, internal=False):
 
 
 def execute(args, parser):
-    if args.placement_command in ('_capture', '_check_edges'):
+    if args.placement_command in ('_capture', '_check_edges', '_check_locality'):
         request = json.load(sys.stdin)
         try:
             if args.placement_command == '_capture':
                 problem, record = _capture_native(args.board, request['intent'], request['groups'])
                 result = {'problem': problem, 'record': record}
+            elif args.placement_command == '_check_locality':
+                from .placement_probe import extract
+                result = _locality_grade(extract(args.board), request['intent']['electrical_locality'])
             else:
                 result = _check_edge_intent_native(args.board, request['intent'])
         except JobRefusal as exc:

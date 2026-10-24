@@ -253,6 +253,13 @@ def _execute(stage, plan, previous, directory, completed, out):
         for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
                               intent=placement['intent'], groups=placement['groups']).items():
             config['inputs'][key] = dict(path=str(candidate / name), sha256=digest(candidate / name))
+        locality = {c['params']['locality'] for c in scope['checks'] if c['kind'] == 'placement'
+                    and c['params'].get('criterion') == 'electrical-locality/1'}
+        if len(locality) > 1:
+            raise ValueError('placement build requires one shared electrical locality document')
+        if locality:
+            path = candidate / locality.pop()
+            config['inputs']['locality'] = dict(path=str(path), sha256=digest(path))
         write_json(directory / 'placement-config.json', config)
         report = placement_job.run_job(config, directory / 'placement')
         if report['status'] != 'completed' or report.get('final', {}).get('eligibility') != 'eligible':

@@ -44,6 +44,7 @@
 //! incremental and full evaluations agree exactly; floats only drive the
 //! Metropolis acceptance draw.
 use anyhow::{Context, Result, bail, ensure};
+use num_traits::{ToPrimitive, Zero};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Instant;
@@ -372,6 +373,18 @@ pub struct Proximity {
 }
 
 #[derive(Clone, Debug)]
+pub struct Locality {
+    pub a: usize,
+    pub b: usize,
+    pub a_offset: [Rat; 2],
+    pub b_offset: [Rat; 2],
+    pub limit_squared: Rat,
+    pub hard: bool,
+    pub obligation: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct Weights {
     pub wire: i64,
     pub group: i64,
@@ -397,6 +410,7 @@ pub struct Prepared {
     pub net_pads: Vec<Vec<(usize, usize)>>,
     pub groups: Vec<(String, usize, Vec<usize>)>,
     pub proximity: Vec<Proximity>,
+    pub locality: Vec<Locality>,
     pub weights: Weights,
     pub movable: Vec<usize>,
 }
@@ -615,6 +629,37 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         let b_pads = row["near_pads"].as_array().context("near_pads")?.iter().map(|u| pad_of(b, u)).collect::<Result<_>>()?;
         proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")? });
     }
+    let mut locality = Vec::new();
+    if let Some(raw) = input.get("locality") {
+        let document = &raw["document"];
+        crate::locality::validate(document)?;
+        let facts = raw["footprints"].as_array().context("locality footprints required")?;
+        for obligation in document["obligations"].as_array().unwrap() {
+            ensure!(obligation["metric"] == "pad-centre-to-centre", "unsupported locality metric");
+            for role in crate::locality::roles(obligation) {
+                let pair = &obligation[role];
+                ensure!(pair["from"]["net"] == pair["to"]["net"], "locality endpoint nets differ");
+                let authority = crate::locality::classify(pair, &document["source_records"]);
+                ensure!(authority["enforcement"] != "integrity", "locality source integrity failed");
+                let endpoint = |key: &str| -> Result<(usize, [Rat; 2])> {
+                    let e = &pair[key];
+                    let f = *ref_index.get(text(e, "reference")?).context("locality physical reference")?;
+                    let center = crate::locality::resolve(facts, e)?;
+                    let initial = footprints[f].initial;
+                    Ok((f, rotate_rational([center[0].clone() - Rat::from_integer(initial.x.into()),
+                        center[1].clone() - Rat::from_integer(initial.y.into())], -initial.q)))
+                };
+                let (a, a_offset) = endpoint("from")?;
+                let (b, b_offset) = endpoint("to")?;
+                let limit = int(pair, "max_distance_nm")?;
+                ensure!(limit >= 0, "negative locality limit");
+                locality.push(Locality { a, b, a_offset, b_offset,
+                    limit_squared: Rat::from_integer((limit as i128 * limit as i128).into()),
+                    hard: authority["enforcement"] == "hard",
+                    obligation: text(obligation, "id")?.to_string(), role: role.to_string() });
+            }
+        }
+    }
     let w = &input["weights"];
     let weights = Weights {
         wire: w.get("wire").and_then(Value::as_i64).unwrap_or(1),
@@ -625,7 +670,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         escape: w.get("escape").and_then(Value::as_i64).unwrap_or(20),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, weights, movable })
+    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, locality, weights, movable })
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -864,6 +909,28 @@ fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
     (best - r.max_nm).max(0) as i128
 }
 
+fn rotate_rational([x, y]: [Rat; 2], q: i64) -> [Rat; 2] {
+    match q.rem_euclid(4) { 0 => [x, y], 1 => [y, -x], 2 => [-x, -y], _ => [-y, x] }
+}
+
+fn locality_terms(p: &Prepared, k: usize, poses: &[Pose]) -> Terms {
+    let r = &p.locality[k];
+    let at = |offset: &[Rat; 2], f: usize| {
+        let [x, y] = rotate_rational(offset.clone(), poses[f].q);
+        [x + Rat::from_integer(poses[f].x.into()), y + Rat::from_integer(poses[f].y.into())]
+    };
+    let [ax, ay] = at(&r.a_offset, r.a);
+    let [bx, by] = at(&r.b_offset, r.b);
+    let (dx, dy) = (ax - bx, ay - by);
+    let excess = &dx * &dx + &dy * &dy - &r.limit_squared;
+    if excess <= Rat::zero() { return Terms::default(); }
+    // The exact rational comparison decides feasibility. Cap only the search
+    // penalty, keeping extreme diagnostic inputs from overflowing i128 totals.
+    let penalty = excess.ceil().to_integer().to_i128().unwrap_or(i128::MAX).min(1_000_000_000_000_000_000);
+    if r.hard { Terms { hard: penalty, hard_count: 1, ..Terms::default() } }
+    else { Terms { proximity: penalty, ..Terms::default() } }
+}
+
 /// Exact hard violations of one pose vector, named by native reference (diagnostic).
 pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
     let at: Vec<Placed> = (0..p.footprints.len()).map(|f| placed(p, f, &poses[f])).collect();
@@ -909,6 +976,12 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
             }
         }
     }
+    for (k, r) in p.locality.iter().enumerate() {
+        if locality_terms(p, k, poses).hard_count > 0 {
+            out.push(json!({"kind": "electrical_locality", "ref": p.footprints[r.a].native_ref,
+                "with": p.footprints[r.b].native_ref, "obligation": r.obligation, "role": r.role}));
+        }
+    }
     out
 }
 
@@ -933,6 +1006,7 @@ pub fn full_evaluate(p: &Prepared, poses: &[Pose]) -> Terms {
     for k in 0..p.proximity.len() {
         t.proximity += proximity_terms(p, k, poses);
     }
+    for k in 0..p.locality.len() { t.add(&locality_terms(p, k, poses), 1); }
     t
 }
 
@@ -945,6 +1019,7 @@ pub struct SearchState {
     net_cost: Vec<i128>,
     group_cost: Vec<i128>,
     prox_cost: Vec<i128>,
+    locality_cost: Vec<Terms>,
     cells: HashMap<(i64, i64), BTreeSet<usize>>,
     cell_of: Vec<Vec<(i64, i64)>>,
     pub counters: Counters,
@@ -968,6 +1043,7 @@ pub struct Trial {
     after_nets: Vec<(usize, i128)>,
     after_groups: Vec<(usize, i128)>,
     after_prox: Vec<(usize, i128)>,
+    after_locality: Vec<(usize, Terms)>,
 }
 
 fn cells_for(r: &Rect) -> Vec<(i64, i64)> {
@@ -994,6 +1070,7 @@ impl SearchState {
             net_cost: (0..p.nets.len()).map(|n| net_terms(p, n, &poses)).collect(),
             group_cost: (0..p.footprints.len()).map(|f| group_terms(p, f, &poses)).collect(),
             prox_cost: (0..p.proximity.len()).map(|k| proximity_terms(p, k, &poses)).collect(),
+            locality_cost: (0..p.locality.len()).map(|k| locality_terms(p, k, &poses)).collect(),
             totals: full_evaluate(p, &poses),
             poses,
             generation: 0,
@@ -1104,7 +1181,16 @@ impl SearchState {
                 after_prox.push((k, v));
             }
         }
-        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox })
+        let mut after_locality = Vec::new();
+        for (k, r) in p.locality.iter().enumerate() {
+            if movers.contains(&r.a) || movers.contains(&r.b) {
+                let value = locality_terms(p, k, &after);
+                delta.add(&value, 1);
+                delta.add(&self.locality_cost[k], -1);
+                after_locality.push((k, value));
+            }
+        }
+        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_locality })
     }
 
     /// Apply a trial atomically. A trial evaluated against another generation is refused.
@@ -1128,6 +1214,7 @@ impl SearchState {
         for (k, v) in trial.after_prox {
             self.prox_cost[k] = v;
         }
+        for (k, value) in trial.after_locality { self.locality_cost[k] = value; }
         self.totals.add(&trial.delta, 1);
         self.generation += 1;
         self.counters.commits += 1;
@@ -1149,6 +1236,7 @@ impl SearchState {
             "net": self.net_cost.iter().map(|v| v.to_string()).collect::<Vec<_>>(),
             "group": self.group_cost.iter().map(|v| v.to_string()).collect::<Vec<_>>(),
             "prox": self.prox_cost.iter().map(|v| v.to_string()).collect::<Vec<_>>(),
+            "locality": self.locality_cost.iter().map(|v| v.value()).collect::<Vec<_>>(),
             "cells": format!("{cells:?}"),
         }))
     }
@@ -1892,6 +1980,30 @@ mod tests {
                 assert_eq!(fixed["y_nm"], initial.y);
                 assert_eq!(fixed["moved"], false);
             }
+        }
+    }
+
+    #[test]
+    fn locality_is_exact_euclidean_and_incremental_for_both_endpoints() {
+        let mut p = prepare(&input(vec![])).unwrap();
+        p.locality.push(Locality { a: 0, b: 1,
+            a_offset: [Rat::new(1.into(), 2.into()), Rat::zero()],
+            b_offset: [Rat::zero(), Rat::zero()],
+            limit_squared: Rat::from_integer(9_000_000_000_000i64.into()), hard: true,
+            obligation: "three-mm".into(), role: "leg".into() });
+        let mut state = SearchState::new(&p, p.footprints.iter().map(|f| f.initial).collect()).unwrap();
+        for (f, x, y, q, violated) in [
+            (1, 8_000_000, 5_000_000, 0, false),
+            (1, 8_000_001, 5_000_000, 0, true),
+            (1, 7_400_000, 7_400_000, 0, true),
+            (0, 7_400_000, 4_400_000, 1, true),
+            (0, 7_400_000, 4_400_001, 1, false),
+        ] {
+            let trial = state.evaluate(&p, &[(f, Pose {x, y, q})]).unwrap();
+            state.commit(&p, trial).unwrap();
+            assert_eq!(state.totals, full_evaluate(&p, &state.poses));
+            assert_eq!(locality_terms(&p, 0, &state.poses).hard_count > 0, violated);
+            assert_eq!(violations(&p, &state.poses).iter().any(|v| v["kind"] == "electrical_locality"), violated);
         }
     }
 

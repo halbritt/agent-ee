@@ -184,6 +184,40 @@ class CaptureTests(Fixture):
 
 
 class NativeTransformTests(Fixture):
+    def test_sourced_locality_matches_saved_native_centroids_after_every_rotation(self):
+        quote = 'Engineering maximum distance: 3 mm'
+        import hashlib
+        declaration = intent()
+        declaration['electrical_locality'] = dict(schema='agent-ee.electrical-locality/1',
+            source_records={'limit.txt': quote}, obligations=[dict(id='R1-C1', kind='single-leg',
+                metric='pad-centre-to-centre', leg={
+                    'from': dict(reference='R1', pad='1', net='A'),
+                    'to': dict(reference='C1', pad='1', net='A'), 'max_distance_nm': 3 * MM,
+                    'citation': quote, 'provenance': {'class': 'engineering', 'basis': 'qualification constraint',
+                    'citation': dict(kind='captured_source', path='limit.txt', locator='line 1', quote=quote,
+                        sha256=hashlib.sha256(quote.encode()).hexdigest())}})])
+        problem, _ = job.capture(self.board, declaration, groups())
+        rows = {f['native_ref']: f for f in problem['footprints']}
+        for q in range(4):
+            for dx, dy, expected in [(3 * MM, 0, 'pass'), (2400000, 2400000, 'defect')]:
+                evaluated = self._evaluate(problem, {rows['R1']['uuid']: [7 * MM, 5 * MM, q],
+                    rows['C1']['uuid']: [7 * MM + dx, 5 * MM + dy, q]})
+                directory = self.dir / f'locality-{q}-{dy}'
+                check = job.materialize(self.board, evaluated['poses'], directory, b'{}\n', intent=declaration)
+                self.assertEqual(check['integrity'], 'preserved')
+                native = job.check_locality(check['board'], declaration)
+                self.assertEqual(native['status'], expected, native)
+                self.assertEqual(any(v['kind'] == 'electrical_locality' for v in evaluated['violations']),
+                                 expected == 'defect', evaluated)
+        broken = json.loads(json.dumps(declaration))
+        broken['electrical_locality']['obligations'][0]['leg']['to']['net'] = 'GND'
+        with self.assertRaisesRegex(job.JobRefusal, 'locality'):
+            job.capture(self.board, broken, groups())
+        from unittest.mock import patch
+        with patch.object(job, '_native_read', return_value={}):
+            with self.assertRaisesRegex(job.JobRefusal, 'missing or invalid output'):
+                job.check_locality(self.board, declaration)
+
     def test_engine_transform_equals_native_save_reload_for_every_quarter_turn(self):
         problem, _ = self.problem()
         u1 = next(r for r in problem['footprints'] if r['native_ref'] == 'U1')

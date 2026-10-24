@@ -22,6 +22,35 @@ def numeric(pair):
 
 
 class LocalityProvenanceTests(unittest.TestCase):
+    def test_captured_engineering_limit_is_enforced_without_owner_promotion(self):
+        facts, doc = board(), declaration(limit=MM)
+        text = 'Engineering maximum distance: 1 mm'
+        evidence = source(text)
+        doc['source_records'] = {evidence['path']: text}
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role]['provenance'] = dict(
+                **{'class': 'engineering'}, basis='Declared qualification constraint',
+                citation={**evidence, 'kind': 'captured_source'})
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'defect', result)
+        self.assertTrue(result['defects'])
+        self.assertTrue(all(m['constraint_provenance']['class'] == 'engineering'
+                            and m['constraint_provenance']['enforcement'] == 'hard'
+                            for m in result['measured']))
+        self.assertTrue(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])
+        # A supplied engineering label is insufficient; exact source and numeric
+        # payload still pass through the common citation contract.
+        for change, expected in [('absent', 'advisory'), ('value', 'advisory'), ('hash', 'integrity')]:
+            broken = copy.deepcopy(doc)
+            pair = broken['obligations'][0]['supply']
+            if change == 'absent':
+                pair['provenance'].pop('citation')
+            elif change == 'value':
+                pair['max_distance_nm'] = 2 * MM
+            else:
+                broken['source_records'][evidence['path']] += ' changed'
+            self.assertEqual(locality_provenance.classify(pair, broken['source_records'])['enforcement'], expected)
+
     def test_legacy_and_agent_owner_label_are_advisory_even_when_exceeded(self):
         for provenance in (None, {'class': 'owner', 'basis': 'agent selected design-owner D-PL-1'},
                            {'class': 'owner', 'basis': 'agent self-assertion',

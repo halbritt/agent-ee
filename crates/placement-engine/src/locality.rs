@@ -290,6 +290,12 @@ pub fn classify(pair: &Value, records: &Value) -> Value {
         return out;
     }
     let values = authority::bound_mm(pair);
+    if class == "engineering" {
+        let resolved = authority::cite(class, &p["citation"], records, &values, &[]);
+        out["enforcement"] = resolved["enforcement"].clone();
+        out["reason"] = resolved["reason"].clone();
+        return out;
+    }
     if class == "manufacturer" {
         let resolved = authority::cite(class, &p["citation"], records, &values, &[]);
         if resolved["enforcement"] == "integrity" {
@@ -962,6 +968,20 @@ pub fn constraint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn captured_engineering_limit_keeps_its_class_and_exact_payload() {
+        let quote = "Engineering maximum distance: 3 mm";
+        let sha = format!("{:x}", Sha256::digest(quote));
+        let mut p = json!({"max_distance_nm":3_000_000,"provenance":{"class":"engineering",
+            "basis":"qualification constraint","citation":{"kind":"captured_source","path":"limit.txt",
+            "sha256":sha,"locator":"line 1","quote":quote}}});
+        let records = json!({"limit.txt":quote});
+        assert_eq!(classify(&p, &records)["class"], "engineering");
+        assert_eq!(classify(&p, &records)["enforcement"], "hard");
+        p["max_distance_nm"] = json!(3_000_001);
+        assert_eq!(classify(&p, &records)["enforcement"], "advisory");
+        assert_eq!(classify(&p, &json!({"limit.txt":"changed"}))["enforcement"], "integrity");
+    }
     #[test]
     fn source_integrity_cannot_be_downgraded_to_an_unsourced_limit() {
         let p = json!({"max_distance_nm":1,"provenance":{"class":"owner","basis":"decision","decision_reference":{"path":"owner.txt","sha256":"0".repeat(64),"locator":"line 1","quote":"one nm","owner":"Human"}}});

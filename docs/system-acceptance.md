@@ -96,8 +96,22 @@ attempt preserves all three fixed connectors and passes edge and native
 clearance checks, but rejects two open connections at U2. The 73.6-second run
 is at `build/agent545/acquisition-placement-02`; final board SHA-256
 `bbd530173f2d5278b61226dc8ab193a2e1f6f859ed8d1f2a900be104850f3844`.
-Proximity scoring is still a preference, not final pin-locality acceptance.
-No manufacturing package or broad KRT parity is established by this result.
+Legacy proximity scoring remains a preference. The placement job now also
+consumes sourced electrical-locality declarations and enforces their exact
+native copper-centroid distances during search, after materialization, and
+after routing. Verified engineering requirements retain their engineering
+authority; unsourced defaults remain advisory. All eight declared distances
+pass in acquisition attempt 05, with fixed connectors preserved and zero native
+clearance errors. Two routes remain open, so the job correctly rejects it.
+Attempt 04 also rejects despite zero open routes because placement constraints
+fail. Neither result establishes a manufacturing package or broad KRT parity.
+
+The locality repair passes 102 Rust tests, 114 native placement/locality tests
+and 14 whole-planner parity tests, with no skips. A final 16-test native guard
+pass additionally rejects missing locality output. Evidence and replay inputs
+are retained at `~/.cache/agent-ee-qualification/agent545/hard-locality-20261024/`;
+the saved attempt-05 board SHA-256 is
+`43c20fbf156fd3fde60ea2e22ff8ff6c5026796b7a4db1923b0032b6f852fe5e`.
 
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's

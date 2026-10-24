@@ -45,6 +45,27 @@ The config (`agent-ee.placement-job-config/1`) names every external input by
 path **and SHA-256**; a mismatch refuses the job before any work. Fixture bytes
 stay outside the public repository.
 
+An optional `inputs.locality` supplies a path and SHA-256 for the existing
+`agent-ee.electrical-locality/1` document. The public build derives this input
+from its required `electrical-locality/1` check, so search and final acceptance
+consume the same declaration. An inline `intent.electrical_locality`, if also
+present, must equal it. Missing endpoints, wrong nets, unavailable native copper
+centroids and corrupt citations refuse preparation.
+
+Sourced hard limits participate in Rust feasibility using exact squared
+Euclidean distances between native copper-land centroids. Rational centroids
+and quarter-turn rotations retain exact boundary comparisons. The incremental
+cache updates when either endpoint moves. Only the search penalty is capped for
+extreme distances; the exact feasibility decision is unchanged. Independent
+native checks measure every declared leg after materialization and again after
+routing. An exceeded hard limit makes a candidate ineligible. Unsourced limits
+remain advisory and never acquire owner authority.
+
+A captured engineering citation can establish a declared engineering constraint
+under the shared source-quantity checks. It retains class `engineering`;
+an engineering label alone remains advisory. The older `intent.proximity`
+nearest-pad score remains a preference and supplies no hard-limit acceptance.
+
 ```json
 {"schema": "agent-ee.placement-job-config/1", "budget_s": 600,
  "inputs": {"board": {"path": "prepared/board.kicad_pcb", "sha256": "<64 hex>"},

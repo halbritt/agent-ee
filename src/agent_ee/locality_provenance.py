@@ -45,6 +45,10 @@ def classify(pair, records=None):
     # the declared maximum, in exact millimetres, must be the governed value.
     bound = pair.get('max_distance_nm')
     values = [Fraction(bound, 10 ** 6)] if type(bound) is int and bound >= 0 else []
+    if result['class'] == 'engineering':
+        # A captured engineering requirement is enforceable without presenting
+        # the engineer's chosen limit as an owner or datasheet requirement.
+        return {**result, **source_authority.cite('engineering', provenance.get('citation'), records, values)}
     if result['class'] == 'manufacturer':
         # A captured manufacturing floor never qualifies an unsourced maximum: only a
         # resolving manufacturer citation of this bound makes it a feasibility limit.
