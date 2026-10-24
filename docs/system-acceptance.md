@@ -187,6 +187,13 @@ startup/reverse-power evaluation, final mechanical checks and the complete
 manufacturing package remain open. The authored requirements are unchanged;
 this component selection is an agent engineering decision, not an owner ruling.
 
+The [fresh electrical control and reversed-diode negative](qualification/acquisition-electrical-2026-10-24.md)
+now exercise the ordinary build and independent native review. ERC and generated
+netlist parity pass both; the independent 41-rule contract passes the control and
+rejects the two reversed diode connections. The accompanying 24-assertion
+electrical screening remains **unknown** on seven explicitly unresolved bounds;
+it is not electrical acceptance.
+
 Named resistor/capacitor selection now checks the circuit nominal against the
 exact captured supplier attribute, closing a bypass of generic selection's
 value check. The public build regression consumes a named resistor through
