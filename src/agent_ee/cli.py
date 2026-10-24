@@ -883,6 +883,8 @@ def main(argv=None):
     planning = scaffold_parser.add_mutually_exclusive_group(required=True)
     planning.add_argument('--scope', help='stage-one scope/2 or scope/3 with captured project rules')
     planning.add_argument('--plan', help='agent-ee.scaffold-plan/1; derive checks and project rules')
+    scaffold_parser.add_argument('--intent', help='captured bound connectivity intent for native sheet identity')
+    scaffold_parser.add_argument('--layout', help='captured emitter layout; required with --intent')
     scaffold_parser.add_argument('--out', required=True)
     catalog = sub.add_parser('capture-catalog', help='prepare a pinned local catalog; no upstream authentication')
     catalog.add_argument('manifest')
@@ -986,7 +988,8 @@ def main(argv=None):
             return parts_stage.execute(args)
         if args.command == 'scaffold':
             from .scaffold import scaffold
-            receipt = scaffold(args.envelope, args.parts, args.out, scope_path=args.scope, plan_path=args.plan)
+            receipt = scaffold(args.envelope, args.parts, args.out, scope_path=args.scope, plan_path=args.plan,
+                               intent_path=args.intent, layout_path=args.layout)
             print(receipt['candidate_id'])
             return 0
         if args.command == 'capture-catalog':

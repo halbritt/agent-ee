@@ -96,8 +96,9 @@ def sheet_plan(document, root_path):
     return dict(sorted(plans.items()))
 
 
-def schematic(root_uuid, path, plans, title):
-    ident = root_uuid if path == '/' else path.strip('/').split('/')[-1]
+def schematic(root_uuid, path, plans, title, sheet_metadata=None):
+    ident = (sheet_metadata[path]['uuid'] if sheet_metadata is not None else
+             root_uuid if path == '/' else path.strip('/').split('/')[-1])
     node = ['kicad_sch', ['version', '20260306'], ['generator', Q('eeschema')],
             ['generator_version', Q('10.0')], ['uuid', Q(ident)], ['paper', Q('A4')],
             ['title_block', ['title', Q(title)], ['comment', '1', Q('Empty generation candidate')]],
@@ -112,7 +113,8 @@ def schematic(root_uuid, path, plans, title):
         node.append(['sheet', ['at', str(x), str(y)], ['size', '40', '15'],
                      ['stroke', ['width', '0'], ['type', 'default']],
                      ['fill', ['color', '0', '0', '0', '0']], ['uuid', Q(child)],
-                     ['property', Q('Sheetname'), Q('Block ' + child),
+                     ['property', Q('Sheetname'),
+                      Q(sheet_metadata[key]['name'] if sheet_metadata is not None else 'Block ' + child),
                       ['at', str(x), str(y - 1), '0'], copy.deepcopy(effects)],
                      ['property', Q('Sheetfile'), Q(PurePosixPath(filename).name),
                       ['at', str(x), str(y + 16), '0'], copy.deepcopy(effects)],
@@ -171,7 +173,7 @@ def board(record, seed):
     return sexpr(node)
 
 
-def native_files(record, sch, project, root, seed, plans=None):
+def native_files(record, sch, project, root, seed, plans=None, *, sheet_metadata=None):
     """The one empty-scaffold builder: schematics, board and .kicad_pro by candidate path.
 
     record is a board_envelope.validate record; project is the parsed .kicad_pro template,
@@ -180,12 +182,13 @@ def native_files(record, sch, project, root, seed, plans=None):
     plans = plans or {'/': (sch, None)}
     pcb, pro = (str(PurePosixPath(sch).with_suffix(suffix)) for suffix in ('.kicad_pcb', '.kicad_pro'))
     name = PurePosixPath(sch).stem
-    outputs = {path: schematic(root, key, plans, name) for key, (path, _) in plans.items()}
+    outputs = {path: schematic(root, key, plans, name, sheet_metadata) for key, (path, _) in plans.items()}
     outputs[pcb] = board(record, seed)
     project = copy.deepcopy(project)
     project.setdefault('meta', {})['filename'] = PurePosixPath(pro).name
     project['sheets'] = [[root, 'Root']] + [
-        [key.strip('/').split('/')[-1], PurePosixPath(path).stem]
+        [key.strip('/').split('/')[-1],
+         sheet_metadata[key]['name'] if sheet_metadata is not None else PurePosixPath(path).stem]
         for key, (path, _) in plans.items() if key != '/']
     project.setdefault('schematic', {})['top_level_sheets'] = [
         dict(filename=PurePosixPath(sch).name, name=name, uuid=root)]
@@ -193,15 +196,15 @@ def native_files(record, sch, project, root, seed, plans=None):
     return outputs
 
 
-def emission_paths(inputs, intent_rel, layout_rel, document):
-    """Ask the existing emitter for native paths; never reproduce its UUID recipe."""
+def _emission(inputs, intent_rel, layout_rel, document):
+    """Resolve once with the emitter and check the selected physical identities."""
     from .schematic_emitter import emit_schematic
     intent = strict_json(read_captured(inputs, intent_rel))
     layout = strict_json(read_captured(inputs, layout_rel))
     captures = {lib['path']: read_captured(inputs, lib['path']) for lib in intent['libraries']}
     result, files = emit_schematic(intent, captures, layout)
     if result['execution'] != 'ok':
-        raise ValueError('fixed footprint emission unavailable: ' + str(result['findings']))
+        raise ValueError('native emission unavailable: ' + str(result['findings']))
     paths, identities = {}, {}
     for filename, raw in files.items():
         if not filename.endswith('.kicad_sch'):
@@ -221,11 +224,50 @@ def emission_paths(inputs, intent_rel, layout_rel, document):
         for instance in part['instances']:
             ref = instance['reference']
             native = paths.get(ref)
+            if native is None and not part['required']:
+                continue
             if native is None or native.rsplit('/', 1)[0] + '/' != instance['sheet']:
                 raise ValueError('parts selector differs from emitted native path: ' + ref)
             if identities[ref] != (part['lib_id'], part['footprint']):
                 raise ValueError('parts CAD identity differs from emitter inputs: ' + ref)
-    return paths
+    return result, files, paths, {intent_rel, layout_rel, *captures}
+
+
+def emission_paths(inputs, intent_rel, layout_rel, document):
+    """Ask the existing emitter for native paths; never reproduce its UUID recipe."""
+    return _emission(inputs, intent_rel, layout_rel, document)[2]
+
+
+def emission_plan(inputs, intent_rel, layout_rel, document, schematic_path):
+    """Derive empty-scaffold identity from the actual emitted native hierarchy.
+
+    Sheet-symbol occurrence UUIDs and sheet-document UUIDs are distinct. Keep
+    both, along with every child filename, including sheets with no parts.
+    Generated project defaults are not used: the captured rule template owns them.
+    """
+    result, files, _, dependencies = _emission(inputs, intent_rel, layout_rel, document)
+    native = {name: parse_sexpr(data) for name, data in files.items() if name.endswith('.kicad_sch')}
+    root_name = PurePosixPath(schematic_path).name
+    if root_name not in native or children(native[root_name], 'uuid')[0][1] != result['root_uuid']:
+        raise ValueError('scaffold root differs from emitted project')
+    plans, metadata, seen = {}, {}, set()
+
+    def visit(filename, selector, parent, name):
+        if filename in seen:
+            raise ValueError('reused native sheet is unsupported by the scaffold')
+        seen.add(filename)
+        node = native[filename]
+        plans[selector] = (str(PurePosixPath(schematic_path).parent / filename), parent)
+        metadata[selector] = dict(uuid=children(node, 'uuid')[0][1], name=name)
+        for sheet in children(node, 'sheet'):
+            properties = {prop[1]: prop[2] for prop in children(sheet, 'property')}
+            child = selector + children(sheet, 'uuid')[0][1] + '/'
+            visit(properties['Sheetfile'], child, selector, properties['Sheetname'])
+
+    visit(root_name, '/', None, 'Root')
+    if len(plans) > 128 or seen != native.keys():
+        raise ValueError('scaffold requires a complete hierarchy of at most 128 sheets')
+    return result['root_uuid'], plans, metadata, dependencies
 
 
 def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent_rel=None,
@@ -285,6 +327,9 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
     if fixed and (intent_rel is None or layout_rel is None):
         raise ValueError('fixed footprints require captured intent and emitter layout')
     paths = emission_paths(inputs, intent_rel, layout_rel, document) if fixed else {}
+    if fixed.keys() - paths.keys():
+        raise ValueError('fixed footprints are absent from the emitted circuit: ' +
+                         ', '.join(sorted(fixed.keys() - paths.keys())))
     if imu_reference is not None and imu_reference not in fixed:
         raise ValueError('IMU reference must select a declared fixed footprint')
     members = _members(strict_json(read_captured(inputs, document['cad']['manifest']['path'])))
@@ -813,7 +858,8 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
     return record, scope, project, derivation, protected, net_artifacts
 
 
-def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None, constraint_source=None):
+def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None, constraint_source=None,
+             intent_path=None, layout_path=None):
     """Copy explicit inputs, replace native design with emptiness, validate, publish.
 
     Exactly one of scope_path (stage one) or plan_path (producer) is required.
@@ -828,6 +874,8 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
 
     if (scope_path is None) == (plan_path is None):
         raise ValueError('scaffold requires exactly one of a stage-one scope or a producer plan')
+    if (intent_path is None) != (layout_path is None):
+        raise ValueError('scaffold emitter identity requires both intent and layout')
     planning_path, out = Path(scope_path or plan_path).resolve(), Path(out).absolute()
     scope_raw = planning_path.read_bytes()
     scope = strict_json(scope_raw)
@@ -841,6 +889,8 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
     files, sources, _ = source_manifest(scope, planning_path.parent)
     envelope_rel = captured_name(envelope_path, sources)
     parts_rel = captured_name(parts_path, sources)
+    intent_rel = captured_name(intent_path, sources) if intent_path is not None else None
+    layout_rel = captured_name(layout_path, sources) if layout_path is not None else None
     constraint_rel = captured_name(constraint_source, sources) if constraint_source is not None else None
     if plan_path is not None and 'constraint_source' in scope:
         if constraint_rel is not None and constraint_rel != scope['constraint_source']:
@@ -993,15 +1043,23 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
             owner_names = {str(n[1]) for n in rule_forms(composed_rules, native=True)
                            if len(n) > 1 and n[0] == 'rule'}
             require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
-        plans = sheet_plan(document, sch)
+        seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
+        root = str(uuid.uuid5(NAMESPACE, seed + ':root'))
+        sheet_metadata, identity_source = None, None
+        if intent_rel is None:
+            plans = sheet_plan(document, sch)
+        else:
+            root, plans, sheet_metadata, dependencies = emission_plan(inputs, intent_rel, layout_rel, document, sch)
+            protected |= dependencies
+            identity_source = dict(intent=intent_rel, layout=layout_rel,
+                                   dependencies={name: files[name] for name in sorted(dependencies)},
+                                   sheets=sheet_metadata)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
             raise ValueError('scaffold mutable inputs may contain only planned native design files')
         if protected & (generated | {pro}):
             raise ValueError('native scaffold collides with immutable planning inputs')
-        seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
-        root = str(uuid.uuid5(NAMESPACE, seed + ':root'))
-        outputs = native_files(record, sch, project, root, seed, plans)
+        outputs = native_files(record, sch, project, root, seed, plans, sheet_metadata=sheet_metadata)
         # Bind after the shared builder adds final filename and sheet metadata:
         # the emission witness must describe emitted bytes, not the template.
         project = strict_json(outputs[pro])
@@ -1060,12 +1118,14 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                          if plan is None else
                          'Derived checks, mappings and project rules cite their captured sources in derivation; '
                          'envelope obligation coverage is not derived.',
-                         'Hierarchical staged presence remains unsupported by the existing stage checker.',
+                         'Sheet identity does not establish electrical connectivity or stage acceptance.',
                          'Native numeric limits without a captured source are advisory; structural gates remain mandatory.'],
             missing_parts_provenance=qualification['missing_provenance'],
             constraint_provenance=constraint_record)
         if derivation is not None:
             receipt['derivation'] = derivation
+        if identity_source is not None:
+            receipt['emitter_identity'] = identity_source
         (out / 'scaffold-receipt.json').write_bytes(json_bytes(receipt))
         return receipt
     except BaseException:

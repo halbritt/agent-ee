@@ -56,12 +56,17 @@ manifest paths or manually assembled intermediate capture.
 
 The targeted native exercise uses original synthetic catalog/PDF/CAD captures,
 not real device qualification. It carries three selected parts on a child
-sheet through parts production, schematic emission, native netlist export and
-forward annotation. It checks exact supplier identities on both schematic and
-PCB, sheet paths and consecutive receipt hashes. Negative cases include a
+sheet through parts production, public [scaffolding](scaffold.md), schematic
+emission, native netlist export and forward annotation. The scaffold consumes
+the actual bound intent, includes a nested empty sheet and supplies every native
+file; the test does not copy placeholder native files. Native ERC loads all
+three empty sheets before emission. It checks exact supplier identities on both
+schematic and PCB, unchanged document identities and project rules, sheet paths
+and consecutive receipt hashes. Negative cases include a
 consequential resistor-value mismatch, contradictory CAD/supplier fields,
 missing required datasheet, wrong sheet allocation, unaccounted pin and stale
-library. The old binding producer fails the new hierarchy test by reporting
+library, a conflicting scaffold project and a layout that would be overwritten
+by native output. The old binding producer fails the new hierarchy test by reporting
 zero bound components. Its local-ID lookup has been corrected to use the
 resolver's sheet-qualified component identity.
 
@@ -72,6 +77,13 @@ then independently checked all three expected net memberships and passed the
 existing `parts_subset` checker against the emitted hierarchy (3.358 seconds).
 These invocations overlap. Earlier failures in test harness API/path handling
 are retained alongside the corrected runs; they were not accepted evidence.
+
+The subsequent scaffold identity integration passed 142 tests with no skips in
+124.992 seconds, including parts production, public scaffold, native schematic
+stages, producer-rule checks and legacy generation consumers. An earlier run
+refused a concurrent source edit through `LivePackageSourceError`; the stable
+rerun supplies the accepted result. Its evidence is retained under
+`build/agent545/scaffold-emission-*`.
 
 ```sh
 ae-ci-exec . -- env PYTHONPATH=src:tests AGENT_EE_REQUIRE_TOOLCHAIN=1 \

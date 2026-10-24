@@ -191,27 +191,68 @@ class PartsProducerTests(unittest.TestCase):
     def test_native_hierarchy_parts_to_schematic_to_board(self):
         require_toolchain(native=True)
         child = self.hierarchy()
+        self.intent['hierarchy'].append(dict(id='notes', parent='filter', local_id='notes', file='notes.kicad_sch'))
+        from agent_ee.schematic_emitter import native_sheet_paths
+        leaf = native_sheet_paths(self.intent, self.layout)['notes']
+        self.save()
         candidate = self.bundle
-        project = candidate / 'project'
-        project.mkdir()
-        for name in ('acquisition.kicad_sch', 'filter.kicad_sch'):
-            shutil.copyfile(ROOT / 'fixtures/stages/empty.kicad_sch', project / name)
-        shutil.copyfile(ROOT / 'fixtures/stages/empty.kicad_pcb', project / 'acquisition.kicad_pcb')
         (candidate / 'generation').mkdir()
         (candidate / 'generation/intent.json').write_text('{}\n')
         part_step = parts_stage.configuration(ROOT / 'src', bundle='.', manifest='parts.json',
             circuit='circuit.json', layout='layout.json', output='generation/intent.json')
+        out = self.root / 'steps/0'
+        receipt = run_step(out, candidate, part_step,
+            {'implementation': 1, 'source_candidate_id': 'original-parts-stage', 'receipt_index': 0})
+        self.assertEqual(receipt['status'], 'completed', (out / 'run/console.log').read_text())
+        adopt(out, receipt, candidate)
+        receipts = [receipt]
+        # The public scaffold consumes the actual parts output. No native files
+        # are copied from a fixture or repaired between these production stages.
+        self.planning_inputs()
+        scaffold_out = self.root / 'scaffold'
+        result = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'scaffold',
+            str(candidate / 'envelope.json'), str(candidate / 'parts.json'),
+            '--scope', str(self.root / 'planning.scope.json'),
+            '--intent', str(candidate / 'generation/intent.json'),
+            '--layout', str(candidate / 'layout.json'), '--out', str(scaffold_out)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scaffold_receipt = read_json(scaffold_out / 'scaffold-receipt.json')
+        self.assertEqual(scaffold_receipt['inputs']['files']['generation/intent.json'],
+                         receipts[0]['outputs']['generation/intent.json'])
+        self.assertEqual(scaffold_receipt['sheets'],
+                         {'/': 'project/acquisition.kicad_sch', child: 'project/filter.kicad_sch',
+                          leaf: 'project/notes.kicad_sch'})
+        candidate = scaffold_out / 'inputs'
+        project = candidate / 'project'
+        project_before = (project / 'acquisition.kicad_pro').read_bytes()
+        from agent_ee.symbol_library import children, parse_sexpr
+        before = {p.name: children(parse_sexpr(p.read_bytes()), 'uuid')[0][1]
+                  for p in project.glob('*.kicad_sch')}
+        self.assertTrue(all(not children(parse_sexpr(p.read_bytes()), 'symbol')
+                            for p in project.glob('*.kicad_sch')))
+        erc_path = self.root / 'empty-erc.json'
+        erc = subprocess.run(['kicad-cli', 'sch', 'erc', '--format', 'json', '--output', str(erc_path),
+                              str(project / 'acquisition.kicad_sch')], capture_output=True, text=True, timeout=120)
+        self.assertEqual(erc.returncode, 0, erc.stderr)
+        self.assertEqual(len(read_json(erc_path)['sheets']), 3)
+        self.assertFalse(any(s['violations'] for s in read_json(erc_path)['sheets']))
         config = schematic_steps(ROOT / 'src', board='project/acquisition.kicad_pcb',
-            schematic='project/acquisition.kicad_sch', child_schematics=['project/filter.kicad_sch'],
+            schematic='project/acquisition.kicad_sch',
+            child_schematics=['project/filter.kicad_sch', 'project/notes.kicad_sch'],
             intent='generation/intent.json', layout='layout.json', captures='.', footprints='cad.json')
-        receipts = []
-        for index, step in enumerate([part_step, *config['implementation_steps']]):
+        for index, step in enumerate(config['implementation_steps'], 1):
             out = self.root / 'steps' / str(index)
             receipt = run_step(out, candidate, step,
                 {'implementation': 1, 'source_candidate_id': 'original-parts-stage', 'receipt_index': index})
             self.assertEqual(receipt['status'], 'completed', (out / 'run/console.log').read_text())
             adopt(out, receipt, candidate)
             receipts.append(receipt)
+        self.assertEqual(before, {p.name: children(parse_sexpr(p.read_bytes()), 'uuid')[0][1]
+                                  for p in project.glob('*.kicad_sch')})
+        self.assertEqual((project / 'acquisition.kicad_pro').read_bytes(), project_before)
+        self.assertEqual(read_json(project / 'acquisition.kicad_pro')['board']['design_settings']['rules'],
+                         {'min_clearance': 0.25, 'min_track_width': 0.2})
         self.assertEqual(receipts[1]['inputs']['generation/intent.json'],
                          receipts[0]['outputs']['generation/intent.json'])
         self.assertEqual(receipts[2]['inputs']['project/filter.kicad_sch'],
@@ -229,7 +270,7 @@ class PartsProducerTests(unittest.TestCase):
                           frozenset([('J1', '3'), ('C1', '2')])})
         from agent_ee.parts_subset import evaluate
         membership = evaluate(candidate, 'parts.json', xml,
-                              ['project/acquisition.kicad_sch', 'project/filter.kicad_sch'])
+                              ['project/acquisition.kicad_sch', 'project/filter.kicad_sch', 'project/notes.kicad_sch'])
         write_json(self.root / 'native-membership.json', membership)
         self.assertEqual(membership['outcome'], 'pass', membership)
         import pcbnew
@@ -240,6 +281,67 @@ class PartsProducerTests(unittest.TestCase):
         evidence = os.environ.get('AGENT_EE_PARTS_EVIDENCE')
         if evidence:
             shutil.copytree(self.root, Path(evidence) / self._testMethodName)
+
+    def test_scaffold_flat_identity_and_conflicting_sources(self):
+        from agent_ee.scaffold import scaffold
+        from agent_ee.schematic_emitter import emit_schematic
+        from agent_ee.symbol_library import children, parse_sexpr
+        _, compiled = self.compile()
+        write_json(self.bundle / 'bound.json', compiled)
+        self.planning_inputs()
+
+        def build(name, **kwargs):
+            return scaffold(self.bundle / 'envelope.json', self.bundle / 'parts.json', self.root / name,
+                scope_path=self.root / 'planning.scope.json', intent_path=self.bundle / 'bound.json',
+                layout_path=kwargs.get('layout', self.bundle / 'layout.json'))
+
+        receipt = build('flat')
+        emitted, files = emit_schematic(compiled,
+            {lib['path']: (self.bundle / lib['path']).read_bytes() for lib in compiled['libraries']}, self.layout)
+        self.assertEqual(receipt['root_sheet_uuid'], emitted['root_uuid'])
+        self.assertEqual(children(parse_sexpr((self.root / 'flat/inputs/project/acquisition.kicad_sch').read_bytes()),
+                                  'uuid'), children(parse_sexpr(files['acquisition.kicad_sch']), 'uuid'))
+        original = copy.deepcopy(self.manifest)
+        self.manifest['parts'][0]['instances'][0]['sheet'] = '/00000000-0000-0000-0000-000000000001/'
+        write_json(self.bundle / 'parts.json', self.manifest)
+        with self.assertRaisesRegex(ValueError, 'parts selector differs'):
+            build('wrong-selector')
+        self.assertFalse((self.root / 'wrong-selector').exists())
+        write_json(self.bundle / 'parts.json', original)
+        write_json(self.bundle / 'layout.json', {**self.layout, 'project': 'different'})
+        with self.assertRaisesRegex(ValueError, 'root differs'):
+            build('wrong-root')
+        self.assertFalse((self.root / 'wrong-root').exists())
+        collision = self.bundle / 'project/acquisition.kicad_sch'
+        write_json(collision, self.layout)
+        pin = digest(collision)
+        scope = read_json(self.root / 'planning.scope.json')
+        scope['inputs'].append(dict(path=str(collision), at='project/acquisition.kicad_sch'))
+        write_json(self.root / 'planning.scope.json', scope)
+        with self.assertRaisesRegex(ValueError, 'collides with immutable'):
+            build('collision', layout=collision)
+        self.assertFalse((self.root / 'collision').exists())
+        self.assertEqual(digest(collision), pin)
+
+    def planning_inputs(self):
+        write_json(self.bundle / 'envelope.json', read_json(ROOT / 'fixtures/board-envelope/rc.envelope.json'))
+        (self.bundle / 'project').mkdir()
+        write_json(self.bundle / 'project/acquisition.kicad_pro', dict(
+            meta=dict(version=1, filename='acquisition.kicad_pro'),
+            board=dict(design_settings=dict(rules=dict(min_clearance=0.25, min_track_width=0.2))),
+            net_settings=dict(meta=dict(version=3), classes=[dict(name='Default', clearance=0.25,
+                track_width=0.2, via_diameter=0.6, via_drill=0.3)])))
+        scope = dict(schema='agent-ee.scope/2', name='parts and scaffold integration',
+            scope='Synthetic native generation integration.', limitations=['Not electrical qualification.'],
+            inputs=[dict(path=str(p), at=p.relative_to(self.bundle).as_posix())
+                    for p in sorted(self.bundle.rglob('*')) if p.is_file()],
+            schematic='project/acquisition.kicad_sch', board='project/acquisition.kicad_pcb',
+            mutable_inputs=['project/acquisition.kicad_sch', 'project/acquisition.kicad_pcb'],
+            checks=[dict(id='erc', kind='erc'), dict(id='drc', kind='drc')], requirements=['requirements.md'],
+            baseline=dict(requirements=[dict(id='native', statement='Native ERC and DRC pass.',
+                source=dict(path='requirements.md', locator='line 1'), checks=['erc', 'drc'])],
+                targets=['requirements.md'], reference_architectures=['requirements.md']))
+        write_json(self.root / 'planning.scope.json', scope)
 
     def test_root_capture_stage_cannot_adopt_over_an_immutable_library(self):
         require_toolchain(native=True)

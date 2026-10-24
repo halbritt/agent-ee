@@ -53,12 +53,30 @@ zones until the stage-three pre-receipt below writes the declared mechanics.
 Scaffolding does not claim those envelope obligations pass. Copper weights
 remain declarations because native board files have no corresponding field.
 
-Every non-root native UUID path in the parts selectors produces a child sheet,
-including intermediate ancestors. Files are named `block-UUID.kicad_sch` beside
-the root. Each parent links its pre-created children, and every sheet has a title
-block. The scaffold owns the root UUID, independently of the experimental
-schematic emitter. Up to 128 sheets are supported, with at most 35 direct child
-sheets per A4 page. Reused sheet UUIDs and noncanonical UUID selectors are refused.
+For an emitter-driven circuit, pass both `--intent BOUND_INTENT` and
+`--layout EMITTER_LAYOUT`. Both files and their libraries must be captured by
+the supplied scope or producer plan. The scaffold asks the existing emitter for
+the native hierarchy and preserves its filenames, sheet names, occurrence UUIDs
+and document UUIDs. Empty child sheets are included. Parts selectors and CAD
+identities must match that emission. The empty scaffold and later populated
+schematics therefore share one design identity. The emitted project's default
+rules are not adopted; the captured template and declared constraints still
+own the project rules. Source hashes and sheet metadata appear in the receipt's
+`emitter_identity` record. A conflicting project name or immutable output
+collision refuses before publication.
+
+Without those paired options, every non-root native UUID path in the parts
+selectors produces a child sheet, including intermediate ancestors. Files are
+named `block-UUID.kicad_sch` beside the root, with a scaffold-derived root UUID.
+This legacy mode does not infer an emitter layout. Both modes support up to
+128 sheets, with at most 35 direct child sheets per A4 page. Reused sheet UUIDs
+and noncanonical UUID selectors are refused in the selector-derived mode.
+
+```sh
+agent-ee scaffold CAPTURED/envelope.json CAPTURED/parts.json \
+  --scope planning.scope.json --intent CAPTURED/generation/intent.json \
+  --layout CAPTURED/layout.json --out NEW_SCAFFOLD
+```
 
 Local symbol and footprint tables point through `${KIPRJMOD}` into the copied
 CAD closure. Libraries, tables, project rules, parts, blocks and requirement
@@ -89,6 +107,8 @@ supply the root UUID that their schematic emitter derives, together with stock
 library tables. They run the builder as an in-place `write-scaffold` stage step
 that is imported as a campaign pre-receipt. The physical layer order and
 byte-identity tests here are the single source of truth for the board it emits.
+The public scaffold's paired intent/layout options use this same builder with
+the emitter's document UUIDs and human-readable child names.
 
 
 ## Stage-three envelope content (AGENTEE-177)
