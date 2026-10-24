@@ -120,6 +120,9 @@ identity: problem, config and engine hashes). `--resume` refuses a checkpoint of
 another identity, skips completed seeds and restarts unfinished ones from their
 start: it is restart at a seed boundary, not continuation of an interrupted PRNG
 state. Diagnostic candidates of earlier seeds are not carried across a resume.
+Each attempt writes its own `candidates/aN-*`, `input-drc-aN`, `route-aN`,
+`final-aN` and `job-report-aN.json`; `incumbent.json` carries across attempts
+and is still replaced only by a strictly better checked candidate.
 
 ## Tests
 

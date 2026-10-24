@@ -721,7 +721,10 @@ def run_job(config, job_dir, *, resume=False, executable=None):
                                        'engine': report['preflight']['engine_sha256']}))
     report['identity'] = identity
     state = load_checkpoint(job_dir, identity) if resume else None
-    state = state or {'identity': identity, 'completed_seeds': [], 'seed_results': {}, 'phase': 'search'}
+    state = state or {'identity': identity, 'completed_seeds': [], 'seed_results': {}, 'attempts': 0}
+    # Each attempt writes its own candidate/route/final directories; nothing earlier is overwritten.
+    state['attempts'] = attempt = state.get('attempts', 0) + 1
+    report['attempt'] = attempt
     checkpoint(job_dir, state)
     search = dict(config['search'], completed_seeds=state['completed_seeds'])
 
@@ -753,8 +756,8 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     import pcbnew
     owners = _owners(pcbnew.LoadBoard(str(board_path)))
     with clock.phase('judge'):
-        (job_dir / 'input-drc').mkdir(exist_ok=True)
-        base_report, base_exec = drc(board_path, job_dir / 'input-drc', label='native-drc')
+        (job_dir / f'input-drc-a{attempt}').mkdir()
+        base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', label='native-drc')
         base_keys = {_key(v) for v in base_report['violations'] if v.get('severity') == 'error'}
         trials = []
         for index, cand in enumerate(shortlist):
@@ -762,7 +765,7 @@ def run_job(config, job_dir, *, resume=False, executable=None):
                 break
             entry = {'index': index, 'seed': cand['seed'], 'engine_cost': cand['cost'], 'status': 'failed',
                      'engine_feasible': bool(cand.get('feasible')), 'engine_violations': cand.get('violations', [])}
-            directory = job_dir / 'candidates' / f'{index:02d}-seed{cand["seed"]}'
+            directory = job_dir / 'candidates' / f'a{attempt}-{index:02d}-seed{cand["seed"]}'
             try:
                 check = materialize(board_path, cand['poses'], directory, project_bytes)
                 report_, exec_ = drc(directory / 'board.kicad_pcb', directory, label='native-drc')
@@ -790,17 +793,18 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     if selected is None:
         report['status'] = 'cancelled' if _cancelled(job_dir) else 'no_checked_candidate'
         report['phases'] = clock.phases
+        write_json(job_dir / f'job-report-a{attempt}.json', report)
         write_json(job_dir / 'job-report.json', report)
         return report
     with clock.phase('export'):
-        routed = route(selected['directory'], job_dir / 'route', config['router']['checkout'],
+        routed = route(selected['directory'], job_dir / f'route-a{attempt}', config['router']['checkout'],
                        budget_s=max(1, min(config['router']['budget_s'], clock.remaining() - 60)),
-                       timeout_s=max(30, clock.remaining() - 30), home=job_dir / 'route-home')
+                       timeout_s=max(30, clock.remaining() - 30), home=job_dir / f'route-home-a{attempt}')
         report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
         report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                        'adapter_sha256', 'problems')}
     with clock.phase('final_validation'):
-        report['final'] = final_checks(routed, selected, owners, base_keys, job_dir, groups, intent)
+        report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-a{attempt}', groups, intent)
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
     report['status'] = 'completed' if routed.get('status') == 'routed' else 'route_failed'
@@ -808,6 +812,7 @@ def run_job(config, job_dir, *, resume=False, executable=None):
                           if incumbent is not None else
                           'NO valid incumbent: exploratory route of the best diagnostic candidate (engine violations: '
                           + ', '.join(sorted({v['kind'] for v in selected.get('engine_violations', [])})) + ')')
+    write_json(job_dir / f'job-report-a{attempt}.json', report)
     write_json(job_dir / 'job-report.json', report)
     return report
 
@@ -816,7 +821,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent):
     import pcbnew
     if routed.get('status') != 'routed':
         return {'status': 'unavailable', 'reason': routed.get('status')}
-    final_dir = Path(job_dir) / 'final'
+    final_dir = Path(job_dir)
     final_dir.mkdir()
     shutil.copyfile(routed['board'], final_dir / 'board.kicad_pcb')
     shutil.copyfile(Path(incumbent['directory']) / 'board.kicad_pro', final_dir / 'board.kicad_pro')

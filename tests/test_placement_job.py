@@ -355,6 +355,37 @@ class EntryPointTests(Fixture):
         with self.assertRaisesRegex(job.JobRefusal, 'not empty'):
             job.run_job(config, self.dir / 'job')
 
+    def test_cancelled_job_keeps_no_candidate_and_resumes_under_the_same_identity(self):
+        require_kicad_route()
+        config = self._config()
+        out = self.dir / 'job'
+        out.mkdir()
+        (out / 'CANCEL').write_text('')
+        cancelled = job.run_job(config, out)
+        self.assertEqual(cancelled['status'], 'cancelled')
+        self.assertEqual(cancelled['engine']['status'], 'cancelled')
+        self.assertFalse((out / 'incumbent.json').exists())
+        (out / 'CANCEL').unlink()
+        resumed = job.run_job(config, out, resume=True)
+        self.assertEqual(resumed['attempt'], 2)
+        self.assertEqual(resumed['identity'], cancelled['identity'])
+        self.assertEqual(resumed['status'], 'completed', resumed.get('route'))
+        self.assertTrue((out / 'job-report-a1.json').exists() and (out / 'job-report-a2.json').exists())
+        changed = dict(config, search=dict(config['search'], steps_per_seed=config['search']['steps_per_seed'] + 1))
+        with self.assertRaisesRegex(job.JobRefusal, 'different job identity'):
+            job.run_job(changed, out, resume=True)
+
+    def _config(self):
+        files = {'board': self.board, 'project': self.project, 'intent': self.dir / 'intent.json',
+                 'groups': self.dir / 'groups.json'}
+        files['intent'].write_text(json.dumps(intent()))
+        files['groups'].write_text(json.dumps(groups()))
+        return {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
+                'inputs': {k: {'path': str(v), 'sha256': hashlib.sha256(Path(v).read_bytes()).hexdigest()}
+                           for k, v in files.items()},
+                'search': self.search(2, 30000),
+                'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60}}
+
 
 @unittest.skipUnless(os.environ.get('AGENT_EE_ESP_PROG_PREPARED'), 'external esp_prog bundle not mounted')
 class EspProgCaptureTests(unittest.TestCase):
