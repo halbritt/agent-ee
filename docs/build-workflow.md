@@ -61,10 +61,17 @@ native files are required. Parts may also name the existing `deviations` and
 The requirement map is the existing `agent-ee.requirement-map/1`, including its
 ordinary scope/3 template and per-requirement check declarations. Its input
 locations are rebound to each retained candidate without changing the mapped
-requirements or check parameters. The build first accounts for every source
+requirements. When `parts.ratings` is supplied, the build captures its adopted
+`compile-parts` receipt and exact report under `build-generated/parts-ratings/`
+and derives `rating_provenance` on every assembly check. An authored declaration
+of that parameter is refused; it must identify this build's actual producer.
+The build first accounts for every source
 requirement and paragraph, then copies the compiler provenance into
 `requirements-map/`. Once the scaffold exists, the ordinary coverage compiler
-and scaffold must reproduce the same acceptance baseline. Parts declarations
+and scaffold must reproduce the same authored acceptance baseline. For a rated
+build, that comparison removes only the derived rating parameter. The final
+baseline retains the parameter and immutable receipt/report hashes;
+`rating-binding.json` records both baseline identities. Parts declarations
 used by `parts_subset` must cite the matching requirement's exact source and
 locator, including the generated `requirements-map/spec.md` source where that
 requirement is declared. The existing checker enforces this identity.
@@ -108,7 +115,10 @@ The current native regression uses original synthetic catalog, datasheet and CAD
 captures. It exercises a real interrupted/resumed public invocation through a
 child-sheet PCB, preserved project rules, stale input/output rejection, a
 consequential resistor-value mismatch, and refusal of incomplete manufacturing
-coverage. It is tooling evidence, not qualification of a sourced device. The
+coverage. Its independently exported native assembly check resolves resistor and
+capacitor ratings through the generated child-sheet UUID and adopted producer
+receipt. Changed rating reports fail provenance verification and resumption.
+It is tooling evidence, not qualification of a sourced device. The
 placement-to-package path still needs a full native run with a complete authored
 scope; its connection in source is not claimed as execution evidence.
 

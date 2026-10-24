@@ -42,6 +42,10 @@ omitting it means no assembly deviations. `--ratings PATH` supplies the existing
 source-derived passive rating inputs. Both records and their dependencies are
 bound in the production report. The compiler reuses their existing validators;
 it does not infer hand assembly or manufacture rating evidence.
+The [build workflow](build-workflow.md) carries the adopted parts receipt and
+report into the final candidate and binds them to assembly checks automatically.
+Independent builds must capture that exact evidence and declare the existing
+`rating_provenance` parameter; a native rating field alone is insufficient.
 
 A successful output contains `connectivity-intent.json` and `report.json`.
 The report records all source hashes, selected instance bindings, datasheet

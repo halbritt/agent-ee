@@ -2183,7 +2183,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             elif rating_records is None:
                 rating_record = "unavailable" if RATING_PROVENANCE in props else None
             else:
-                problems = resolve_record(props, ref, rating_records, comp["sheet"])
+                problems = resolve_record(props, ref, rating_records, comp["sheet"], comp["sheet_path"])
                 rating_record = ("unresolved" if problems else
                                  "receipt_bound" if RATING_PROVENANCE in props else None)
             # Only a record resolved against the receipted report is source-backed.

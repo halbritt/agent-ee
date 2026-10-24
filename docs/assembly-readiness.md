@@ -721,6 +721,13 @@ Declaring the provenance binds each field to the full record:
 }
 ```
 
+The ordinary [build workflow](build-workflow.md) also supplies this binding
+automatically when `parts.ratings` is declared. The checker accepts its
+`compile-parts` receipt and `out/report.json`, whose nested `binding_report`
+contains the derived records. That report must record successful production
+and bind an actual adopted output hash. This uses the same captured receipt
+pin and exact artifact authentication as standalone binding fill.
+
 The receipt's own identity is recomputed, and its recorded
 `out/binding-fill.json` artifact hash must be the captured report's. For each
 populated R or C, the native field's `record_sha256` must equal
@@ -737,9 +744,10 @@ echoes `rating_provenance` with `report_sha256`, `records` and `error`. The
 check reads the captured receipt JSON. It does not replay the retained
 receipt directory, so the coordinator pin is the authority for that receipt.
 
-A component outside the root sheet resolves first by its hierarchical path,
-the native sheet names plus the reference (for example `/A/R101`), and then by
-its bare reference. Binding fill gives each declared child-sheet instance such
+A component outside the root sheet resolves first by its native UUID occurrence
+path plus reference, then its sheet-name path (for example `/A/R101`), and then
+by its bare reference. Conflicting UUID and name records are rejected. Binding
+fill gives each declared child-sheet instance such
 a key ([declared instances](binding-fill.md#explicit-component-references)),
 so every instance of a reused child sheet resolves to its own entry
 (AGENTEE-252). An instance the report does not represent still fails closed as

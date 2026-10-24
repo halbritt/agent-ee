@@ -161,6 +161,15 @@ forward annotation. It also repairs silent omission of child component bindings
 in `binding_fill`. This producer is now invoked by the public build. A complete build through
 manufacturing and a fresh sourced multiblock engineering run remain unmet.
 
+The build now carries passive-rating evidence from the adopted parts receipt
+into the assembly check's immutable inputs. Authored requirement/check mappings
+remain unchanged apart from the derived receipt binding, with both original and
+derived baseline identities retained. A real resumed child-sheet build exposed
+and repaired the checker's sheet-name/UUID lookup mismatch; independent native
+assembly verification now resolves both passive records. Modified report bytes
+refuse provenance verification and build resumption. This is synthetic integration
+evidence, not sourcing or electrical acceptance of the fresh design.
+
 The scaffold-to-emitter boundary now derives native filenames, occurrence and
 document UUIDs from actual emitter output using paired `--intent`/`--layout`
 inputs. The native integration case consumes the parts producer's real output,

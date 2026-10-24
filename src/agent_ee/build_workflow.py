@@ -21,6 +21,7 @@ SCHEMA = 'agent-ee.build-plan/1'
 REPORT_SCHEMA = 'agent-ee.build-report/1'
 STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'package')
 GENERATED = 'build-generated/connectivity-intent.json'
+RATINGS = 'build-generated/parts-ratings'
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = SOURCE_ROOT.parent
 MANDATORY = {'erc', 'drc', 'netlist', 'geometry', 'parts_subset', 'placement',
@@ -69,6 +70,41 @@ def _step(stage_dir, candidate, declaration, index):
     if receipt['status'] != 'completed':
         raise ValueError(f"{declaration['step']}: {receipt['status']}; see {path / 'run/console.log'}")
     adopt(path, receipt, candidate)
+    return path, receipt
+
+
+def _capture_ratings(path, receipt, candidate):
+    """Carry the adopted producer's exact evidence into the next native candidate."""
+    target = candidate / RATINGS
+    target.mkdir()
+    shutil.copyfile(path / 'receipt.json', target / 'receipt.json')
+    shutil.copyfile(path / 'run/out/report.json', target / 'report.json')
+    if (read_json(target / 'receipt.json') != receipt or
+            digest(target / 'report.json') != receipt['artifacts'].get('out/report.json')):
+        raise ValueError('parts rating evidence changed before capture')
+    from .passive_ratings import load_provenance
+    load_provenance(candidate, _rating_declaration(candidate))
+
+
+def _rating_declaration(candidate):
+    return dict(receipt=RATINGS + '/receipt.json', report=RATINGS + '/report.json',
+                receipt_sha256=digest(candidate / RATINGS / 'receipt.json'))
+
+
+def _rated_scope(plan, candidate, scope):
+    """Derive only rating provenance; authored checks and requirements stay intact."""
+    if 'ratings' not in plan['parts']:
+        return scope
+    scope = copy.deepcopy(scope)
+    checks = [c for c in scope['checks'] if c['kind'] == 'assembly_readiness']
+    if not checks:
+        raise ValueError('parts ratings require an assembly_readiness check')
+    for check in checks:
+        params = check.setdefault('params', {})
+        if 'rating_provenance' in params:
+            raise ValueError('build derives rating_provenance from its adopted parts receipt')
+        params['rating_provenance'] = _rating_declaration(candidate)
+    return scope
 
 
 def _requirements(plan, candidate, stage_dir):
@@ -97,10 +133,27 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
         (candidate / names['spec']).read_bytes(), files=files, inputs=candidate)
     write_json(stage_dir / 'requirements.json', receipt)
     scaffold_receipt = read_json(stage_dir / 'product/scaffold-receipt.json')
-    if receipt['baseline_id'] != scaffold_receipt['baseline_id']:
+    produced = read_json(stage_dir / 'product/scope.json')
+    from .baseline import compile_baseline
+    from .rating_lineage import strip
+    # The producer's receipt cannot exist in the original requirement map. As
+    # with campaign rating lineage, remove only this derived parameter when
+    # comparing against the authored baseline; retain it in the final baseline.
+    authored = strip(produced) if 'ratings' in plan['parts'] else produced
+    authored_baseline = compile_baseline(authored, _inventory(candidate), candidate)
+    derived_baseline = compile_baseline(produced, _inventory(candidate), candidate)
+    if (receipt['baseline_id'] != authored_baseline['baseline_id'] or
+            derived_baseline['baseline_id'] != scaffold_receipt['baseline_id']):
         raise ValueError('requirements compiler and native scaffold disagree on the acceptance baseline')
-    write_json(stage_dir / 'scope.json', _scope(scope, candidate))
-    return scope
+    if 'ratings' in plan['parts']:
+        expected = _rated_scope(plan, candidate, scope)
+        if expected['checks'] != produced['checks']:
+            raise ValueError('scaffold changed authored checks or adopted parts rating provenance')
+        write_json(stage_dir / 'rating-binding.json', dict(
+            provenance=_rating_declaration(candidate), authored_baseline_id=receipt['baseline_id'],
+            derived_baseline_id=derived_baseline['baseline_id']))
+    write_json(stage_dir / 'scope.json', _scope(produced, candidate))
+    return produced
 
 
 def _manufacturing_coverage(plan, scope, accounting):
@@ -160,7 +213,7 @@ def _execute(stage, plan, previous, directory, completed, out):
         scope = read_json(out / scaffold_row['directory'] / 'product/scope.json')
     if stage == 'scaffold':
         planning = directory / 'planning.scope.json'
-        write_json(planning, _scope(scope, previous))
+        write_json(planning, _scope(_rated_scope(plan, previous, scope), previous))
         scaffold.scaffold(previous / plan['envelope'], previous / plan['parts']['manifest'], directory / 'product',
             scope_path=planning, intent_path=previous / GENERATED, layout_path=previous / plan['parts']['layout'])
         candidate = directory / 'product/inputs'
@@ -174,8 +227,10 @@ def _execute(stage, plan, previous, directory, completed, out):
         target = candidate / GENERATED
         target.parent.mkdir()
         target.write_bytes(b'{}\n')
-        _step(directory, candidate, parts_stage.configuration(SOURCE_ROOT, bundle='.',
+        path, receipt = _step(directory, candidate, parts_stage.configuration(SOURCE_ROOT, bundle='.',
             **plan['parts'], output=GENERATED), 0)
+        if 'ratings' in plan['parts']:
+            _capture_ratings(path, receipt, candidate)
     elif stage == 'schematic':
         scaffold_dir = out / next(row['directory'] for row in completed if row['stage'] == 'scaffold')
         receipt = read_json(scaffold_dir / 'product/scaffold-receipt.json')

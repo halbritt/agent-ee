@@ -237,7 +237,7 @@ def validate_binding(props, kind):
 
 
 def load_provenance(root, declaration):
-    """Derived records of a receipted binding-fill report; ValueError when the provenance is unavailable.
+    """Derived records of a receipted rating producer; ValueError when unavailable.
 
     ``declaration`` names the captured stage receipt of the binding-fill step, its
     coordinator-pinned sha256, and the captured ``binding-fill.json``. The report is
@@ -258,13 +258,22 @@ def load_provenance(root, declaration):
         raise ValueError('malformed binding-fill stage receipt')
     legacy_source_refusal(receipt)
     spec = validate_step(receipt['spec'], host=False)
-    if spec != receipt['spec'] or spec['step'] != 'binding-fill' or '--ratings' not in spec['argv']:
-        raise ValueError('stage receipt is not a binding-fill step with declared ratings')
+    if spec != receipt['spec'] or spec['step'] not in ('binding-fill', 'compile-parts') or '--ratings' not in spec['argv']:
+        raise ValueError('stage receipt is not a rating producer with declared ratings')
     if receipt['status'] not in ADOPTABLE:
         raise ValueError(f'binding-fill receipt status {receipt["status"]} is not adoptable')
-    if not isinstance(receipt['artifacts'], dict) or receipt['artifacts'].get('out/binding-fill.json') != digest(report_path):
+    artifact = 'out/report.json' if spec['step'] == 'compile-parts' else 'out/binding-fill.json'
+    if not isinstance(receipt['artifacts'], dict) or receipt['artifacts'].get(artifact) != digest(report_path):
         raise ValueError('binding-fill report is not the receipted artifact')
     report = strict_json(report_path.read_bytes())
+    if spec['step'] == 'compile-parts':
+        from .parts_stage import SCHEMA as PARTS_SCHEMA
+        if (not isinstance(report, dict) or report.get('schema') != PARTS_SCHEMA or
+                report.get('status') != 'produced' or not report.get('ratings_source') or
+                not isinstance(report.get('output_sha256'), str) or
+                report['output_sha256'] not in receipt['outputs'].values()):
+            raise ValueError('expected produced parts report bound to an adopted output')
+        report = report.get('binding_report')
     if not isinstance(report, dict) or report.get('schema') not in ('agent-ee.binding-fill/1', 'agent-ee.binding-fill/2'):
         raise ValueError('expected agent-ee.binding-fill/1 or /2 report')
     if report['schema'] == 'agent-ee.binding-fill/2' and (
@@ -281,16 +290,20 @@ def load_provenance(root, declaration):
     return ratings['derived']
 
 
-def resolve_record(props, ref, derived, sheet='/'):
+def resolve_record(props, ref, derived, sheet='/', sheet_path=None):
     """Problems binding a native rating field to the receipted record of ``ref``.
 
     A component outside the root sheet resolves first by its hierarchical path
-    (native sheet names plus reference, e.g. ``/amp_a/R101``), the key binding fill
-    gives each declared child-sheet instance (AGENTEE-252).
+    UUID occurrence path, then the legacy sheet-name path. Conflicting records
+    for those two identities refuse; names never override a native occurrence.
     """
     raw = props.get(PROPERTY)
-    if sheet not in (None, '/') and sheet + ref in derived:
-        ref = sheet + ref
+    keys = list(dict.fromkeys(path + ref for path in (sheet_path, sheet)
+                              if path not in (None, '/') and path + ref in derived))
+    if keys:
+        if any(derived[key] != derived[keys[0]] for key in keys[1:]):
+            return [f'conflicting receipted rating records for {ref} sheet name and UUID occurrence']
+        ref = keys[0]
     entry = derived.get(ref)
     if raw is None:
         return [] if entry is None else [f'receipted rating record for {ref} is absent from the component']

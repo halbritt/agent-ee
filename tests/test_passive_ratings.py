@@ -719,6 +719,21 @@ class ReceiptBoundRatingProvenanceTests(unittest.TestCase):
 
 
 class ReusedChildSheetRatingProvenanceTests(unittest.TestCase):
+
+    def test_uuid_occurrence_cannot_be_overridden_by_conflicting_sheet_name(self):
+        from agent_ee.passive_ratings import resolve_record
+        first = {'record': {'ratings': {'Power': {'value': '100mW'}}, 'part': {'mpn': 'SYNTHETIC-R'}},
+                 'record_sha256': 'a' * 64}
+        other = {'record': {'ratings': {'Power': {'value': '250mW'}}, 'part': {'mpn': 'SYNTHETIC-R'}},
+                 'record_sha256': 'b' * 64}
+        props = {'Power': '100mW', 'MPN': 'SYNTHETIC-R', 'AGENT_EE_Ratings': json.dumps(
+            dict(record_sha256=first['record_sha256'], ratings={'Power': '100mW'}))}
+        path = '/cbd0b1f5-81df-439a-9ec0-f5a795232165/'
+        self.assertEqual(resolve_record(props, 'R101', {path + 'R101': first}, '/A/', path), [])
+        self.assertEqual(resolve_record(props, 'R101', {'/A/R101': first}, '/A/', path), [])
+        errors = resolve_record(props, 'R101', {path + 'R101': first, '/A/R101': other}, '/A/', path)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('conflicting', errors[0])
     """AGENTEE-252: a child sheet reused twice resolves each instance by its hierarchical path."""
 
     def test_reused_child_sheet_instances_resolve_end_to_end(self):

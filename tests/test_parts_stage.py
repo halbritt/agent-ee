@@ -386,10 +386,21 @@ class PartsProducerTests(unittest.TestCase):
         self.hierarchy()
         from tests.test_approved_parts import named_fixture
         named_fixture(self.bundle, self.manifest, index=0, lcsc='C38', mpn='SYNTHETIC-10K', package='0402',
-                      attributes=[dict(attribute_name_en='Resistance', attribute_value_name='10kΩ')])
+                      attributes=[dict(attribute_name_en='Resistance', attribute_value_name='10kΩ'),
+                                  dict(attribute_name_en='Power(Watts)', attribute_value_name='100mW')])
+        named_fixture(self.bundle, self.manifest, index=1, lcsc='C39', mpn='SYNTHETIC-100N', package='0402',
+                      attributes=[dict(attribute_name_en='Capacitance', attribute_value_name='100nF'),
+                                  dict(attribute_name_en='Voltage Rating', attribute_value_name='25V')])
+        write_json(self.bundle / 'ratings.json', dict(schema='agent-ee.passive-rating-sources/1',
+            catalog=True, facts=None, extractor=None))
+        from tests.test_assembly_readiness import _write_sqlite_catalog
+        (self.bundle / 'assembly-catalog').mkdir()
+        _write_sqlite_catalog(self.bundle / 'assembly-catalog',
+            [dict(lcsc=lcsc, mpn=mpn, stock=1000) for lcsc, mpn in
+             [('C38', 'SYNTHETIC-10K'), ('C39', 'SYNTHETIC-100N'), ('C3', 'J-C3')]])
         self.save()
         self.planning_inputs()
-        spec = b'# Checks\n\n- Native ERC must pass.\n- Native DRC must pass.\n'
+        spec = b'# Checks\n\n- Native ERC must pass.\n- Native DRC must pass.\n- Assembly properties must be verified.\n'
         record = capture_spec(spec, 'QUAL', {'Checks': 'CHECKS'})
         (self.bundle / 'spec.md').write_bytes(spec)
         write_json(self.bundle / 'spec-record.json', record)
@@ -400,13 +411,15 @@ class PartsProducerTests(unittest.TestCase):
             subjects=dict(verification=dict(path=template['schematic'], kind='symbols', references=['R1', 'C1', 'J1'])))
         write_json(self.bundle / 'requirement-map.json', dict(schema='agent-ee.requirement-map/1',
             spec_record_sha256=digest(self.bundle / 'spec-record.json'), scope=template,
-            requirements=[dict(id=r['id'], checks=[dict(id=kind, kind=kind, params={}, stage='verification')])
-                          for r, kind in zip(record['requirements'], ['erc', 'drc'])], prose=[]))
+            requirements=[dict(id=r['id'], checks=[dict(id=kind, kind=kind,
+                params=dict(catalog='assembly-catalog/catalog-manifest.json') if kind == 'assembly_readiness' else {},
+                stage='verification')])
+                for r, kind in zip(record['requirements'], ['erc', 'drc', 'assembly_readiness'])], prose=[]))
         write_json(self.bundle / 'placement.json', dict(edge_connectors=[], fixed_poses=[]))
         write_json(self.bundle / 'groups.json', dict(groups=[dict(name='filter', anchor='J1', refs=['R1', 'C1', 'J1'])]))
         plan = dict(schema='agent-ee.build-plan/1', source=str(self.bundle),
             requirements=dict(map='requirement-map.json', record='spec-record.json', spec='spec.md'),
-            parts=dict(manifest='parts.json', circuit='circuit.json', layout='layout.json'),
+            parts=dict(manifest='parts.json', circuit='circuit.json', layout='layout.json', ratings='ratings.json'),
             envelope='envelope.json', placement=dict(intent='placement.json', groups='groups.json',
                 budget_s=30, search=dict(seeds=[dict(seed=0, start='clustered')], steps_per_seed=100, shortlist=1),
                 router=dict(checkout='/opt/kicad-route')))
@@ -441,6 +454,32 @@ class PartsProducerTests(unittest.TestCase):
                          {'R1', 'C1', 'J1'})
         project = read_json(candidate / 'project/acquisition.kicad_pro')
         self.assertEqual(project['board']['design_settings']['rules']['min_clearance'], 0.25)
+        scaffold_dir = out / second['completed'][2]['directory']
+        scope = read_json(scaffold_dir / 'scope.json')
+        assembly_check = next(c for c in scope['checks'] if c['kind'] == 'assembly_readiness')
+        self.assertIn('rating_provenance', assembly_check['params'])
+        provenance = assembly_check['params']['rating_provenance']
+        from agent_ee.cli import run_review, verify
+        scope['inputs'] = [dict(path=str(p), at=p.name) for p in sorted(candidate.iterdir())]
+        write_json(self.root / 'final.scope.json', scope)
+        review = self.root / 'assembly-review'
+        run_review(self.root / 'final.scope.json', review, 120, checks_only=True)
+        assembly = next(c for c in verify(review)['checks'] if c['id'] == 'assembly_readiness')
+        self.assertEqual((assembly['execution'], assembly['outcome']), ('ok', 'pass'), assembly)
+        self.assertEqual(assembly['details']['rating_provenance']['records'], 2)
+        # The receipt must belong to this parts output, and altered producer evidence
+        # cannot become a passing independently evaluated rating record.
+        from agent_ee.passive_ratings import load_provenance
+        self.assertEqual(len(load_provenance(candidate, provenance)), 2)
+        report_path = candidate / provenance['report']
+        report_bytes = report_path.read_bytes()
+        report_path.write_bytes(report_bytes + b'\n')
+        with self.assertRaisesRegex(ValueError, 'receipted artifact'):
+            load_provenance(candidate, provenance)
+        result = run('--resume', '--through', 'schematic')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('stage identity changed', result.stderr + result.stdout)
+        report_path.write_bytes(report_bytes)
         # A schematic checkpoint cannot be mistaken for a manufacturing pass.
         result = run('--resume')
         self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
