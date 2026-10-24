@@ -1110,3 +1110,11 @@ block arrangement and saved-board judgment. Uncited lanes remain advisories
 Candidate renders record stock-model resolution provenance and per-file hashes.
 Placer proposals carry project-local 3D models with a hashed closure receipt;
 see [3D model closure](docs/pcb-renders.md#proposal-project-model-closure-agentee-394).
+
+The experimental [whole-board placement job](docs/placement-job.md) captures
+native pad and drill geometry, declared connector overhang and supported
+clearance rules before Rust search and independent saved-board checks.
+Rule capture uses a fresh native process so omitted settings retain KiCad's
+defaults after earlier loads at the same path. The supported placement domain
+is zone-free: board and footprint zones, including keepouts, refuse capture.
+AGENTEE-515 target workflow qualification remains incomplete.

@@ -141,6 +141,14 @@ def _mm(value):
     return int(round(float(value) * NM))
 
 
+def _rule_mm(value, what):
+    from .routing_rules import number
+    try:
+        return _mm(number(value, what))
+    except (ValueError, OverflowError) as exc:
+        raise JobRefusal(f'{what}: {exc}') from exc
+
+
 def verified_input(entry, label):
     """Read one external input by declared SHA-256; fixture bytes never enter the repository."""
     path = Path(entry['path'])
@@ -186,6 +194,106 @@ def _pad_clearance(pad):
     import pcbnew
     layers = [l for l in (pcbnew.F_Cu, pcbnew.B_Cu) if pad.IsOnLayer(l)]
     return max([int(pad.GetOwnClearance(l)) for l in layers] or [0])
+
+
+def _pad_copper(pad, origin, q):
+    """Conservative native copper contours, in the footprint's local frame.
+
+    KiCad's ERROR_OUTSIDE contains the curved copper; dropped contour holes
+    also over-reserve copper. This is a labelled search bound, not a DRC pass.
+    """
+    import pcbnew
+    from .placement_probe import _outer_contours
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: per-layer padstack unsupported')
+    kinds = {pcbnew.PAD_SHAPE_CIRCLE: 'circle', pcbnew.PAD_SHAPE_RECT: 'rect',
+             pcbnew.PAD_SHAPE_OVAL: 'oval', pcbnew.PAD_SHAPE_ROUNDRECT: 'roundrect',
+             pcbnew.PAD_SHAPE_CUSTOM: 'custom'}
+    kind = kinds.get(pad.GetShape(pcbnew.PADSTACK.ALL_LAYERS))
+    if kind is None:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported native pad shape')
+    contours, layers, clearances = [], [], []
+    for layer in pad.GetBoard().GetEnabledLayers().CuStack():
+        if not pad.IsOnLayer(layer) or not pad.IsOnCopperLayer():
+            continue
+        poly = pcbnew.SHAPE_POLY_SET()
+        pad.TransformShapeToPolygon(poly, layer, 0, 1000, pcbnew.ERROR_OUTSIDE)
+        native = _outer_contours(poly)
+        if not native:
+            raise JobRefusal(f'{pad.m_Uuid.AsString()}: native copper contour missing')
+        contours.extend([[list(_unrotate(x - origin[0], y - origin[1], q)) for x, y in p]
+                         for p in native])
+        layers.append(pcbnew.LayerName(layer))
+        clearances.append(int(pad.GetOwnClearance(layer)))
+    if not contours:
+        return None
+    points = [p for contour in contours for p in contour]
+    return {'rect_nm': [min(p[0] for p in points), min(p[1] for p in points),
+                        max(p[0] for p in points), max(p[1] for p in points)],
+            'clearance_nm': max(clearances),
+            'geometry': {'status': 'conservative_native_polygon', 'kind': kind,
+                         'tolerance_nm': 1000, 'polygons': contours,
+                         'layers': layers, 'pad_uuid': pad.m_Uuid.AsString(),
+                         'note': 'native ERROR_OUTSIDE; holes filled; layers projected together'}}
+
+
+def _pad_hole(pad, origin, q, clearance):
+    """Keep drills independently of copper, including bodyless NPTH marks."""
+    import pcbnew
+    from .placement_probe import _outer_contours
+    size = pad.GetDrillSize()
+    if size.x == 0 and size.y == 0:
+        if pad.HasHole() or pad.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH):
+            raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported drill geometry')
+        return None
+    if size.x <= 0 or size.y <= 0 or pad.GetDrillShape() not in (
+            pcbnew.PAD_DRILL_SHAPE_CIRCLE, pcbnew.PAD_DRILL_SHAPE_OBLONG):
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported drill geometry')
+    for get_size in (pad.GetSecondaryDrillSize, pad.GetTertiaryDrillSize):
+        extra = get_size()
+        if extra.x or extra.y:
+            raise JobRefusal(f'{pad.m_Uuid.AsString()}: secondary/tertiary drill unsupported')
+    poly = pcbnew.SHAPE_POLY_SET()
+    if not pad.TransformHoleToPolygon(poly, 0, 1000, pcbnew.ERROR_OUTSIDE):
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: native hole contour missing')
+    contours = [[list(_unrotate(x - origin[0], y - origin[1], q)) for x, y in p]
+                for p in _outer_contours(poly)]
+    if not contours:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: native hole contour missing')
+    points = [p for contour in contours for p in contour]
+    return {'rect_nm': [min(p[0] for p in points), min(p[1] for p in points),
+                        max(p[0] for p in points), max(p[1] for p in points)],
+            'clearance_nm': clearance,
+            'geometry': {'status': 'conservative_native_polygon', 'kind': 'hole',
+                         'tolerance_nm': 1000, 'polygons': contours,
+                         'pad_uuid': pad.m_Uuid.AsString(),
+                         'note': 'native drill ERROR_OUTSIDE; independent hole-rule reservation'}}
+
+
+def _edge_rules(intent, footprints):
+    edges = {}
+    for row in intent.get('edge_connectors', []):
+        ref = row['ref']
+        if ref in edges or sum(f['ref'] == ref for f in footprints) != 1:
+            raise JobRefusal(f'{ref}: edge connector must identify one native footprint')
+        if row.get('edge') not in ('west', 'east', 'north', 'south'):
+            raise JobRefusal(f'{ref}: unsupported declared edge')
+        rule = {'edge': row['edge'], 'max_setback_nm': None}
+        if row.get('max_setback_mm') is not None:
+            rule['max_setback_nm'] = _rule_mm(row['max_setback_mm'], f'{ref}: malformed edge setback')
+        if 'overhang_mm' in row:
+            interval = row['overhang_mm']
+            if not isinstance(interval, dict) or not interval or set(interval) - {'min', 'max'}:
+                raise JobRefusal(f'{ref}: malformed overhang interval')
+            lo = _rule_mm(interval.get('min', 0), f'{ref}: malformed overhang interval')
+            hi = _rule_mm(interval['max'], f'{ref}: malformed overhang interval') if 'max' in interval else None
+            if hi is not None and (hi < lo or interval['max'] < interval.get('min', 0)):
+                raise JobRefusal(f'{ref}: malformed overhang interval')
+            if hi is None and lo > 0:
+                raise JobRefusal(f'{ref}: positive overhang minimum needs a finite maximum')
+            rule['overhang_nm'] = {'min': lo, 'max': hi}
+        edges[ref] = rule
+    return edges
 
 
 def _on_mask(pad):
@@ -297,26 +405,94 @@ def _rectangle(outline):
 
 
 def _clearance(settings):
-    """Largest native copper clearance: board minimum and every net class (search-side bound;
-    the unchanged native rules still decide on the saved board)."""
+    """Board minimum and saved Default clearance, with native defaults if absent."""
     net = settings.m_NetSettings
     classes = [net.GetDefaultNetclass()] + [c for _, c in net.GetNetclasses().items()]
     values = [int(settings.m_MinClearance)] + [int(c.GetClearance()) for c in classes if c.HasClearance()]
     return max(values)
 
 
-def capture(board_path, intent, groups):
+def _check_rule_domain(board_path):
+    """Refuse rule configurations whose pair resolution is not qualified here."""
+    from .catalog import strict_json
+    if Path(board_path).with_suffix('.kicad_dru').exists():
+        raise JobRefusal('custom native rules are unsupported by the placement job')
+    project = Path(board_path).with_suffix('.kicad_pro')
+    if not project.exists():
+        return {}
+    project = strict_json(project.read_bytes())
+    settings = project.get('net_settings', {})
+    classes = settings.get('classes', [])
+    if not isinstance(classes, list) or len(classes) > 1 or any(not isinstance(c, dict) or c.get('name') != 'Default'
+                                           for c in classes):
+        raise JobRefusal('non-default netclasses are unsupported by the placement job')
+    if any(name != 'Default' for name in settings.get('netclass_assignments', {}).values()) or any(
+            p.get('netclass') != 'Default' for p in settings.get('netclass_patterns', [])):
+        raise JobRefusal('non-default netclass assignments are unsupported by the placement job')
+    return project
+
+
+def _validate_project_rules(project):
+    """Reject malformed declared bounds; omitted bounds belong to native KiCad."""
+    design = project.get('board', {}).get('design_settings', {})
+    rules = design.get('rules', {})
+    for key in ('min_clearance', 'min_hole_clearance', 'min_hole_to_hole',
+                'min_copper_edge_clearance'):
+        if key in rules:
+            _rule_mm(rules[key], key)
+    if 'solder_mask_min_width' in design:
+        _rule_mm(design['solder_mask_min_width'], 'solder_mask_min_width')
+    for cls in project.get('net_settings', {}).get('classes', []):
+        if 'clearance' in cls:
+            _rule_mm(cls['clearance'], 'Default clearance')
+
+
+def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
+    """Capture in a fresh native process, bounded by the caller's job lifetime.
+
+    KiCad caches projects by path, including fields omitted from a later saved
+    project. Only a fresh native load gives all defaults the same meaning as
+    independent native DRC. No native settings or project files are rewritten.
+    """
+    board_path = Path(board_path).absolute()
+    sources = (board_path, board_path.with_suffix('.kicad_pro'), board_path.with_suffix('.kicad_dru'))
+    before = [p.read_bytes() if p.exists() else None for p in sources]
+    done = _run_child([sys.executable, '-m', 'agent_ee.placement_job', '_capture', str(board_path)],
+                      clock=clock or Clock(300), cancel_dir=cancel_dir,
+                      input_bytes=json.dumps({'intent': intent, 'groups': groups}).encode())
+    if done.returncode:
+        raise JobRefusal(f'native capture failed (exit {done.returncode}): '
+                         + (done.stdout + done.stderr).decode(errors='replace')[-2000:])
+    try:
+        captured = json.loads(done.stdout)
+        problem, record = captured['problem'], captured['record']
+    except (ValueError, KeyError, TypeError) as exc:
+        raise JobRefusal('native capture returned missing or invalid output') from exc
+    if (not isinstance(problem, dict) or problem.get('schema') != INPUT_SCHEMA
+            or not isinstance(record, dict) or record.get('schema') != 'agent-ee.placement-job-capture/1'):
+        raise JobRefusal('native capture returned missing or invalid output')
+    if [p.read_bytes() if p.exists() else None for p in sources] != before:
+        raise JobRefusal('input board/project/rules changed during capture')
+    return problem, record
+
+
+def _capture_native(board_path, intent, groups):
     """Native capture once; returns (problem without search section, capture record)."""
     import pcbnew
     from .placement_probe import extract
     before = Path(board_path).read_bytes()
+    project = _check_rule_domain(board_path)
+    _validate_project_rules(project)
     facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
+    if any(True for _ in board.Zones()):
+        raise JobRefusal('board-level zones, keepouts and rule areas are unsupported by the placement job')
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
     owners = _fixed_pose_owner(intent.get('fixed_poses', []), facts['footprints'])
-    edges = {row['ref']: row for row in intent.get('edge_connectors', [])}
+    edges = _edge_rules(intent, facts['footprints'])
+    settings = board.GetDesignSettings()
     rows, record = [], []
     native = {}
     for fp in board.GetFootprints():
@@ -333,16 +509,19 @@ def capture(board_path, intent, groups):
                'occupancy': ({k: v for k, v in info['occupancy'].items() if k in ('status', 'label', 'rung')}
                              | ({'local_rect_nm': _local_rect(info['occupancy']['box'], origin, q)}
                                 if 'box' in info['occupancy'] else {})),
-               'copper_local_nm': [{'rect_nm': _local_rect(b, origin, q), 'clearance_nm': c} for b, c in info['copper']],
+               'copper_local_nm': [c for p in fp.Pads() if (c := _pad_copper(p, origin, q)) is not None]
+                   + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
+                      for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
                'mask_local_nm': [_local_rect(b, origin, q) for b in info['mask']],
+               'holes_local_nm': [h for p in fp.Pads()
+                                  if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
                'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
                          'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
                                                     int(p.GetPosition().y) - origin[1], q))}
                         for p in fp.Pads()]}
         if ref in edges and info['role'] == 'movable':
             e = edges[ref]
-            row['edge'] = {'edge': e['edge'], 'max_setback_nm': _mm(e['max_setback_mm'])
-                           if e.get('max_setback_mm') is not None else None}
+            row['edge'] = e
             # Mating-face direction is not captured, so an edge connector keeps its native orientation.
             row['rotations'] = [q]
         elif info['role'] == 'movable':
@@ -370,6 +549,7 @@ def capture(board_path, intent, groups):
     problem = {'schema': INPUT_SCHEMA,
                'outline': {'kind': 'rectangle', 'rect_nm': _rectangle(facts['outline'])},
                'rules': {'copper_clearance_nm': clearance,
+                         'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
                          'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
@@ -835,7 +1015,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report):
         report['preflight'] = preflight(config, executable, clock=clock)
     with clock.phase('import'):
         _check_stop(clock, None)
-        problem, record = capture(board_path, intent, groups)
+        # A pre-existing CANCEL still captures/checkpoints the initial identity,
+        # as before, so that removing it can resume the same job. New cancellation
+        # during capture is watched by the bounded child runner.
+        capture_cancel = None if _cancelled(job_dir) else job_dir
+        problem, record = capture(board_path, intent, groups, clock=clock, cancel_dir=capture_cancel)
         write_json(job_dir / 'capture.json', record)
         write_json(job_dir / 'problem.json', problem)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
@@ -1015,6 +1199,8 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python3 -m agent_ee.placement_job')
     sub = parser.add_subparsers(dest='command', required=True)
+    native = sub.add_parser('_capture', help=argparse.SUPPRESS)
+    native.add_argument('board')
     run = sub.add_parser('run', help='run one whole placement-to-route job')
     run.add_argument('config')
     run.add_argument('--out', required=True)
@@ -1024,6 +1210,15 @@ def main(argv=None):
     metrics.add_argument('--groups')
     metrics.add_argument('--intent')
     args = parser.parse_args(argv)
+    if args.command == '_capture':
+        request = json.load(sys.stdin)
+        try:
+            problem, record = _capture_native(args.board, request['intent'], request['groups'])
+        except JobRefusal as exc:
+            print(json.dumps({'error': str(exc)}))
+            return 2
+        print(json.dumps({'problem': problem, 'record': record}))
+        return 0
     if args.command == 'run':
         config = read_json(args.config)
         if config.get('schema') != CONFIG_SCHEMA:

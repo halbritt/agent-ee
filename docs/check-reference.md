@@ -1,11 +1,24 @@
 # Native and engineering checks
 
+The placement job also preserves independent drill reservations and declared
+connector overhang (AGENTEE-515q2). Supported clearance inputs are the board
+minimum, Default netclass and pad overrides; custom rule files and non-default
+netclasses refuse capture. Capture reads rules in a fresh native subprocess,
+including defaults for omitted fields, and refuses all board-level zones,
+keepouts and rule areas before solving. Native sampled agreement does not establish
+whole-board legality. See the [supported rules and controls](placement-job.md).
+
 The experimental [whole-board placement job](placement-job.md) independently
 protects native locks and captured fixed intent before materialization. Final
 checks compare complete protected saved board content, including pad geometry,
 footprint graphics, rules and outline; a mismatch is ineligible even with clean
 DRC. Engine, routing and final DRC share one cancellation/deadline boundary.
 This adds no registered check kind or production default.
+Its pad-clearance search uses labelled conservative native outer polygons and
+the native pad overrides, with exact polygon separation in Rust. Native DRC
+remains authoritative; body/mask reservations and legacy copper boxes retain
+their existing contracts. See the [clearance tests](placement-job.md#tests)
+for the bounded USB1/fiducial agreement and soundness evidence.
 
 The [strict-suite runner](maintainer-guide.md) accepts `--previous-log` to submit
 modules longest-first from retained timings (AGENTEE-468), with alphabetical

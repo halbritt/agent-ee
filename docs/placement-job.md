@@ -9,6 +9,12 @@ production default: the existing `placer_runner` planning boundary, the `/1` and
 `pod_driver`, `placement_adapter`) are unchanged. There is no automatic Python
 fallback and no superiority or manufacturing claim.
 
+The AGENTEE-515q2 correction slice carries declared connector overhang and
+independent drill reservations. The previous prototype ignored USB1's existing
+0–2 mm west overhang and dropped NPTH reservations. This slice is correctness
+input for review; complete target execution and matched stock qualification
+remain outside its scope. AGENTEE-515 remains incomplete.
+
 ## One entry point
 
 ```sh
@@ -45,8 +51,8 @@ the process and must be recorded by the caller.
 1. **Runtime preflight**: pcbnew import, `kicad-cli version`, the Rust engine
    (`placement_rust_runtime.resolve_executable`, same discovery as the planner)
    and `routing_adapter.preflight` on the router checkout (`problems == []`).
-2. **Native capture, once** (`placement_probe.extract` plus pcbnew bounding
-   boxes). Identity is the full native footprint UUID; `native_ref` is carried
+2. **Native capture, once** (`placement_probe.extract` plus pcbnew geometry).
+   Identity is the full native footprint UUID; `native_ref` is carried
    unchanged. Each footprint gets a role:
    - `movable`: packed and searched.
    - `fixed_body`: locked footprints and fixed poses that draw a body.
@@ -55,7 +61,27 @@ the process and must be recorded by the caller.
      native pad clearance, never a body.
    - `silk_only`: padless, zone-free, every graphic on a silkscreen layer. Only
      these are excluded from packing.
-   Footprint rule areas are refused (not modelled).
+   **Zone-free supported domain:** every board-level zone is refused before a
+   prepared problem can reach the solver. This includes keepouts, rule areas
+   and ordinary copper pours, filled or unfilled. Footprint zones and rule areas
+   remain refused. Native checks after routing do not make an ignored placement
+   obstacle safe; this job has no placement zone engine.
+   Custom `.kicad_dru` files and non-default netclasses/assignments are refused
+   before a problem is returned. The supported clearance domain is the board
+   minimum, the Default netclass and native per-pad overrides. A larger Default
+   clearance contributes to the global copper bound. Named non-default classes
+   require separate native rule-resolution qualification, even when a global
+   maximum might conservatively cover a particular board.
+   Capture runs once in a fresh native subprocess, using the controller's
+   existing bounded child runner. Every consumed board, Default netclass,
+   hole, hole-pair, edge and mask bound therefore comes from an independent
+   native load of the saved inputs, even after earlier loads at the same path.
+   Omitted fields and absent projects retain KiCad's native defaults; Python
+   supplies no replacement constants. Declared bounds are still validated with
+   the shared strict JSON reader. Board, project and custom-rule bytes are
+   compared before and after capture; a change refuses the result. No project
+   file or global native setting is rewritten. The frozen esp_prog project
+   remains supported with its omitted `solder_mask_min_width`.
 3. **Occupancy.** A proven courtyard is used as such. A present but unproven
    (malformed) courtyard is a hard refusal. A missing courtyard is a metadata gap:
    the footprint gets `derived_occupancy` with its provenance rung, in order
@@ -82,6 +108,50 @@ the process and must be recorded by the caller.
    states with their exact named violations, labelled `feasible: false`.
    An `evaluate` request re-evaluates explicit pose vectors (predicted native pad
    positions, terms, violations) without searching.
+   Pad copper uses KiCad's native `TransformShapeToPolygon`, `ERROR_OUTSIDE`,
+   with a 1 µm curve tolerance. Circle, rectangle, oval/obround, roundrect and
+   custom pads carry labelled `conservative_native_polygon` contours in the
+   existing `copper_local_nm` entries. Rust uses the shared exact polygon
+   distance implementation, comparing separation against the larger native
+   per-pad override and the captured board/netclass bound. Bounds still serve
+   the spatial index and copper-edge gate. Curves are outer approximations,
+   holes are filled, and copper layers are projected together; these labelled
+   reservations can reject legal seats. Copper graphics and legacy input
+   entries retain their conservative box behavior. Unsupported native shapes,
+   per-layer padstacks, missing/invalid contours or contours outside indexed
+   bounds refuse preparation. Body/courtyard and mask reservations are unchanged.
+   These search bounds do not replace native DRC or excuse U2 artwork errors.
+   `holes_local_nm` independently retains every supported round or slot drill,
+   including NPTH pads with no copper and fixed marks with no body. Native
+   `TransformHoleToPolygon(ERROR_OUTSIDE, 1000 nm)` provides outward contours;
+   the same exact polygon separation and quarter-turn transform are used for
+   drills. Hole-to-copper uses native board `m_HoleClearance`, without a copper
+   pad's local clearance override; hole-to-hole uses `m_HoleToHoleMin`. Drill
+   reservations participate in the spatial index and incremental evaluation.
+   Invalid drill dimensions and secondary/tertiary drills are refused.
+   KiCad 10.0.7's sampled native `hole_to_hole` reports cover round drilled
+   holes; the slot-pair controls emit no such item. Slot pairs retain the board
+   minimum as a conservative search reservation, with separated positive
+   controls. Their engine refusals are not reported as native violations or
+   exact native verdict agreement.
+   Missing hole entries on legacy prepared inputs keep their earlier contract;
+   new native capture always supplies the independent drill inventory.
+
+   An edge connector carries its declared `overhang_mm` interval in nanometres,
+   bound to its native identity and the named west/east/north/south edge. Only
+   that footprint's occupancy containment uses the permitted outward strip;
+   containment on the other three edges, copper-to-edge clearance and the
+   existing maximum setback remain in force. Overhang is the nonnegative
+   outward excursion of the existing occupancy, so a zero minimum permits an
+   inboard seat within the setback. A positive minimum requires that excursion.
+   Malformed intervals, ambiguous references and unknown edges refuse capture;
+   Rust also validates intervals. Source geometry and derived occupancy are
+   unchanged. Fab stroke bounds remain metadata-derived reservations, never
+   physical proof of the connector body.
+   A zero minimum without a declared maximum is carried as an open interval
+   and grants no outward containment exception. A positive minimum without a
+   finite maximum is explicitly unsupported. The existing CON1/CON2 zero-only
+   declarations therefore keep strict containment.
 5. **Shortlist native checks before promotion.** Each candidate is applied to a
    disposable native board by UUID (pcbnew), saved, the frozen project bytes are
    restored next to it, and it is reloaded. Integrity requires the same UUID set,
@@ -131,7 +201,7 @@ the process and must be recorded by the caller.
 A `CANCEL` file in the job directory stops the engine and controller. The same
 monotonic deadline is checked before judging, routing and final DRC. Nonblocking
 pipe I/O checks cancellation and remaining time at most every 50 ms during owned
-engine, router and DRC subprocesses, including stalled stdout or stdin. On
+capture, engine, router and DRC subprocesses, including stalled stdout or stdin. On
 interruption the owned process group is killed and its leader reaped; no next
 phase starts. The report says `cancelled` or `deadline` and the incumbent stays
 intact. An interrupted child is recorded without claiming solver completion or
@@ -154,6 +224,37 @@ esp_prog capture test reads the external AGENTEE-513 bundle by SHA-256 when
 `AGENT_EE_REQUIRE_TOOLCHAIN=1`; only optional mode may skip it. The guard tests
 exercise both modes, coherent protected moves, native geometry/rule mutations,
 phase-boundary cancellation and live stalled-child termination.
+
+`tests/test_placement_job_clearance.py` checks each supported native pad shape,
+clearance overrides and refusal boundaries. `test_placement_job_reservations`
+adds all-edge overhang controls, the reviewer R1–H1 regression, movable/fixed
+round and slot holes under rotation, hole-to-copper versus hole-to-hole rules,
+bodyless marks, supported Default clearance and a larger non-default netclass
+negative that native DRC rejects and capture explicitly refuses. The separate external esp_prog
+gate, `python3 -m unittest -fv tests.placement_clearance_agreement`, requires
+`AGENT_EE_ESP_PROG_PREPARED`, `AGENT_EE_USB1_SCAN`,
+`AGENT_EE_USB1_SCAN_PROBLEM` and `AGENT_EE_CLEARANCE_EVIDENCE`. They retain the
+as-built full-feasibility gate, the original 50 deterministic seats from the
+sealed scan enumeration, 10 deliberate pad intrusions, and 10 additional
+positive/boundary controls across x = 117.575–117.775 mm, each checked by native
+DRC. A separate control isolates USB1 drill-to-fiducial clearance. Complete
+native reports and separate copper-pair and full-engine matrices are retained.
+The comparison is scoped to USB1 and the specified fiducial; it establishes
+neither whole-board placement legality nor AGENTEE-515 completion. The matrix
+separately scopes copper-pair feasibility (excluding mask/drill and unary
+terms) and full engine feasibility (all encoded terms, compared with the
+native pair's electrical/hole/mask violations at every severity). Neither matrix measures whole-board
+legality or establishes that unchecked scan seats are native-clear. A false
+feasible native-clearance result or failed as-built agreement stops the lane.
+
+`tests/test_placement_job_capture.py` compares capture with a separate native
+process that only calls `pcbnew.LoadBoard` and reads the consumed settings.
+Weak and strong explicit values followed by omission, absent projects and
+absent Default clearance exercise same-path cache history. The keepout control
+has native `items_not_allowed` findings and was feasible under the held parent;
+capture now refuses it before solving. Copper-zone, rule-area, footprint-zone
+and zero-zone controls define the supported domain. Capture cancellation,
+deadline, child failure, missing output and input mutation fail closed.
 
 ## Origins
 
