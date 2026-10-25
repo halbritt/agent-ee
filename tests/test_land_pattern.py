@@ -1,7 +1,9 @@
 """Supplier (EasyEDA) versus KiCad land-pattern check over owned captured bytes."""
 import copy
+from decimal import Decimal
 from fractions import Fraction
 import hashlib
+from itertools import permutations
 import json
 import sys
 import tempfile
@@ -110,6 +112,44 @@ class SupplierParserTests(unittest.TestCase):
         self.assertEqual(supplier([oval])['pattern']['pads'][0]['primitive']['shape'], 'oval')
         with self.assertRaises(SupplierError):
             supplier([pad('OVAL', 4000, 3000, 4, 2, '1', points='4000 2999 4000 3001')])
+
+    def test_rect_roundoff_does_not_change_declared_geometry(self):
+        # AGENTEE-524: 25.4 nm of X roundoff must not pair opposite ends of an edge.
+        wide = ((3998, 2999), (3998, 3001), (4002, 2999), (4002, 3001))
+        tall = ((3999, 2998), (3999, 3002), (4001, 2998), (4001, 3002))
+        for rotation, corners in (('0', wide), ('90', tall), ('180', wide), ('270', tall)):
+            for roundoff in ('0', '0.0001'):
+                points = list(corners)
+                points[1] = (Decimal(points[1][0]) - Decimal(roundoff), points[1][1])
+                for order in permutations(points):
+                    with self.subTest(rotation=rotation, roundoff=roundoff, order=order):
+                        outline = ' '.join(str(value) for point in order for value in point)
+                        record = pad('RECT', 4000, 3000, 4, 2, '1', rotation=rotation, points=outline)
+                        result = supplier([record])
+                        self.assertEqual(result['pattern']['pads'][0]['primitive'],
+                                         dict(shape='rect', center=['0', '0'],
+                                              size=['1016000', '508000'], angle=rotation))
+                        self.assertEqual(result['inventory'], dict(records=1, pads=1, holes=0,
+                                                                   ignored_noncopper={}))
+                        self.assertEqual(result['pad_locators'][0]['raw'], record.split('~'))
+
+    def test_rect_corner_matching_preserves_bound_and_requires_a_bijection(self):
+        cases = (
+            ('inclusive boundary', '3997.9995 3001 3998 2999 4002 2999 4002 3001', 127, True),
+            ('outside boundary', '3997.9994999 3001 3998 2999 4002 2999 4002 3001', 127, False),
+            ('203.2 nm excess', '3997.9992 3001 3998 2999 4002 2999 4002 3001', 200, False),
+            ('duplicate corner', '3998 2999 3998 2999 4002 2999 4002 3001', 200, False),
+        )
+        for label, points, bound, accepted in cases:
+            with self.subTest(label=label):
+                captured = component('C900000001', [pad('RECT', 4000, 3000, 4, 2, '1', points=points)])
+                if accepted:
+                    self.assertEqual(parse_package(captured, 'C900000001', bound)['inventory']['pads'], 1)
+                else:
+                    with self.assertRaises(SupplierError) as caught:
+                        parse_package(captured, 'C900000001', bound)
+                    self.assertEqual((caught.exception.mode, caught.exception.execution),
+                                     ('source_inconsistent', 'malformed'))
 
     def test_plated_round_and_slotted_holes_and_npth(self):
         round_pad = pad('ELLIPSE', 4010, 3000, 6, 6, '1', layer='11', hole_r='1.5')

@@ -9,6 +9,7 @@ Coordinates are exact decimals; one canvas unit is 10 mil = 254000 nm, +Y down.
 """
 from decimal import Decimal
 from fractions import Fraction
+from itertools import permutations
 import json
 import re
 
@@ -178,7 +179,9 @@ def _pad(fields, tol):
     if shape == 'RECT':
         corners = _points(fields[10], label + ' outline', 4)
         expected = _rect_corners(cx, cy, w, h, turn)
-        if any(not _near(a, b, tol) for a, b in zip(sorted(corners), expected)):
+        # Roundoff can reverse lexicographic order along a nominally vertical edge.
+        if not any(all(_near(a, b, tol) for a, b in zip(order, expected))
+                   for order in permutations(corners)):
             raise SupplierError('source_inconsistent', label + ': outline differs from declared rectangle',
                                 'malformed')
         primitive = dict(shape='rect')
