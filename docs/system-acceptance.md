@@ -31,14 +31,14 @@ individual checks never means the whole design is accepted.
 
 | Stage | Real inputs → outputs / production implementation | Required constraints, exercised capability and remaining acceptance |
 | --- | --- | --- |
-| Intent and requirements | Authored specification and requirement/check map → captured requirements/scope; `design_intent`, `spec_record`, `requirement_scope`, build requirements stage | Preserve requirements, assumptions, defaults and unresolved decisions. Fresh acquisition specification reaches all six preparation stages. General free-text engineering synthesis and complete requirement closure remain open. |
+| Intent and requirements | Authored specification and requirement/check map → captured requirements/scope; `design_intent`, `spec_record`, `requirement_scope`, build requirements stage | Preserve requirements, assumptions, defaults and unresolved decisions. Exact clause partitions now connect partial coverage while retaining unresolved siblings and physical-only restrictions. Fresh acquisition specification reaches all six preparation stages. General free-text engineering synthesis and complete requirement closure remain open. |
 | Architecture, parts and circuits | Circuit/connectivity intent, captured sourcing/CAD/rating records → bound parts and native pin inventory; build parts stage, `parts_stage`, `binding_fill` | Source parts, topology and electrical calculations. Actual selected TPS7A20/ADS1115 circuit is carried into the board. Consequential reversed-diode negative rejects despite clean ERC. Loaded-current, capacitance, startup/removal and other electrical bounds still need closure. |
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Selected height maxima, complete body/hardware/access and broader side/keepout cases remain open. |
 | Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Acquisition without pours and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. A fresh two-sided acquisition pour fails native checks on all three tried placements and is rejected. Fine-pitch plane repair, existing-zone placement, netclasses, broader multilayer/paired/bus/fanout features and routed constraint coverage remain open. |
-| Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `electrical_topology`, interval checks, passive/active SPICE, `dc_path` | Native topology, selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. New whole-net copper model exercises two/four-layer native controls and actual supply/return copper; disconnected and exceeded-budget negatives reject. Physical material/contact bounds and component obligations remain open. Clean ERC is not functional acceptance. |
+| Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `topology_rules`, interval checks, passive/active SPICE, `dc_path` | Five independent ADC pin rules now enter the normal build's generated scope; wrong address-pin wiring rejects despite passing ERC and generator parity. Selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. Whole-net copper checks exercise two/four-layer controls, supply/return copper and disconnected/exceeded-budget negatives. Physical material/contact bounds and component obligations remain open. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Complete mechanical/fabrication requirement coverage and remaining routing-feature cases are still unmet. |
-| Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | Current TPS design regenerated through the ordinary build and passes 20 declared checks, including 9 plots/2 drills/12 BOM rows/17 placements. Changed exported coordinates reject as stale. Missing manufacturing check kinds are now wired; eleven original electrical/mechanical/reproducibility requirements still block default acceptance. No complete design/package is accepted. |
+| Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | Current TPS design regenerated through the ordinary build and passes 21 declared checks, including 9 plots/2 drills/12 BOM rows/17 placements. Changed exported coordinates reject as stale. Eleven original electrical/mechanical/reproducibility requirements still have unresolved clauses that block default acceptance. No complete design/package is accepted. |
 | Operation and reproducibility | Clean installation + captured plan → bounded run/journal/resume/diagnostics; installer, doctor, build workflow | Receipted resume, source/runtime drift refusal and targeted negative cases exercised. Corrected native-image 47 passes the targeted requalification and both ordinary RC integration gates. Full fresh intent-to-package run, complete-suite clean setup and interrupted/resumed qualification remain required. |
 
 ## Current integrated state and evidence
@@ -90,10 +90,22 @@ matching package consistency. Its final board is `7eeedc50a26a…`; default pack
 resumption still refuses the original eleven unresolved requirements. Existing
 `dc_path/2` bounds do not yet accept zones.
 
+The [compound requirement correction](qualification/requirement-clauses-2026-10-24.md)
+at `e68d2051` connects independent native ADC pin rules and exact distance-clause
+coverage without rewriting the original specification. All 145 relevant strict
+regressions pass. A fresh six-stage build routes completely and passes all 21
+declared checks; final PCB `b1cf2a2564dd…`. A wrong address-pin input still passes
+ERC and generator parity but fails the independent rule. Default package resume
+continues to refuse all eleven unfinished original items, now naming the two
+remaining sibling clauses explicitly. Diagnostic review still uses a small
+driver to select the build's actual candidate from its generated scope; that
+selection needs a supported build command.
+
 Immutable evidence under `~/.cache/agent-ee-qualification/agent545/`:
 
 | Bundle | Files | SHA-256 of SHA256SUMS | Meaning |
 | --- | ---: | --- | --- |
+| `requirement-clauses-20261024` |7304|`5ec730b1272a59c4e47532bee2e364b910a767b5484a2d2b91232538d9ec2b83`|145 strict tests, unchanged-spec six-stage acquisition build, 21 declared checks and diagnostic exports, wrong-address negative, partial-coverage package refusal. One internal link has separately verified custody.|
 | `normal-plane-workflow-20261024` |11402|`04dcbcd26826dce35f973d7905892446aaf81b6e9a382bfc31d55c4030d67c08`|Normal outer/inner plane jobs, 111 strict tests, rejected two-sided acquisition route, successful bottom-plane six-stage build and 20 declared checks, matching diagnostic exports, stale-CPL rejection and renders. Nine internal links have separately verified custody.|
 | `acquisition-manufacturing-20261024` |6857|`a05dec9a96b7932e6949c2021c26b6616385f30f6e81a48770830fa899238fbd`|Current TPS manufacturing inputs, regenerated six-stage build, 20 declared checks, stale-CPL rejection, default refusal, two nominal removal cases and native renders. One internal symbolic link has separately recorded and verified custody.|
 | `acquisition-dc-rail-20261024` |5003|`e0e6e339ed3c70115e8189fc2667996f9d4d7d2b9dc9ca699fa53dd5f97723d5`|Whole-net model, 70 native regressions, ordinary two/four-layer controls and negatives, exact acquisition copper review and committed-revision control.|
@@ -132,6 +144,9 @@ not demonstrate parity. The prior matched esp_prog seed 10 comparison leaves
 
 ## Exact next work
 
+Expose diagnostic verification of a completed build through the supported build
+CLI, using its own generated scope and actual candidate. Preserve incomplete
+requirement reporting and default manufacturing refusal.
 Retain and repair the fine-pitch two-sided plane failure through the reusable
 routing path. Carry electrical verification across the current bottom-plane
 geometry, without treating a plane as a verified return path.
