@@ -43,7 +43,12 @@ against the captured BOM/parts evidence instead of treating object count as part
 Run these inside the pinned supported runtime delivered by AGENTEE-519, using
 its documented mounts and captured-input manifest. `ACQ_PLAN` and `ESP_CONFIG`
 select isolated copies of the exact inputs above; record any path-only rebinding
-and both config hashes. `OUT` is a new writable evidence directory. `FINAL_BOARD`,
+and both config hashes. The raw esp_prog intent is initially a required refusal
+under 520. A later derived representation is eligible only under the source-bound
+479 compatibility obligations at main commit
+`46532a013c0e897b77af819ed7a7c8f0b1a19496`, recorded in
+`docs/planning/2026-10-25-recovery/intent-compatibility.md`.
+`OUT` is a new writable evidence directory. `FINAL_BOARD`,
 `FINAL_GROUPS`, `FINAL_INTENT`, `FINAL_SCHEMATIC` and `REVIEW_DIR` are selected from the completed
 candidate's receipts, never an earlier or unfinished attempt. These are command
 templates for later dispatch, not claims that the commands passed here.
@@ -77,8 +82,11 @@ The command surface is grounded in `src/agent_ee/{cli,build_workflow,placement_j
 and `scripts/strict_suite.py`; [build-workflow.md](../../../build-workflow.md) and
 [placement-job.md](../../../placement-job.md) describe the existing journals.
 `place` exposes only `run` and `metrics` at this input: there is no public
-preflight-only or imported-finalization subcommand. AGENTEE-519 must document its
-actual harness invocation; AGENTEE-523 must supply the public finalization route
+preflight-only or imported-finalization subcommand. AGENTEE-519 uses the existing
+public run/CANCEL boundary to retain a capture checkpoint before search, recording
+cancellation honestly; its harness must document that actual invocation, without
+a second validator. After 520, raw esp_prog may refuse before this checkpoint.
+AGENTEE-523 must supply the public finalization route
 before the corresponding rows can close. Do not invent flags to fill these gaps.
 
 R supplies top/bottom/isometric views when captured model dependencies exist.
@@ -103,7 +111,7 @@ need a matched unmodified control, exact offending path/check and retained outpu
 | D — acquisition electrical/native claims; M1.2/M1.4/M1.6 | B/Q plus N/E and C for negatives. Zero opens; no unresolved required ERC/DRC or engineering defects. Check methods match the actual requirement, conditions and candidate. Show every warning and ignored/advisory category. | Requirement-to-method register, native reports, actual analysis results and candidate/source-bound engineering judgments. Change ADC address away from required `0x48` or reverse D1 in separate copies while retaining the requirement oracle; even if ERC is clean, the electrical claim must refuse. Regenerating a matching connectivity intent cannot redefine the requirement. | Record baseline after 519; correct method/claim closure after 521. Use `adc-ties` and the existing power analyses as starting evidence, not an assumption that they catch both mutations. |
 | E — exact package/orientation; M1.4/M1.6 | B, Q/V, C for negatives and the ordinary `fab_package` result. The package names the final board, and supported roundtrip geometry is checked against the actual sealed bytes. Assess native/CPL orientations under the declared profile and retained exceptions. | Sealed manifest, exact Gerber/drill/BOM/CPL hashes, roundtrip comparison, rotation assessment and preview obligations. Mutate CPL angle/side or export geometry in a copy: ordinary V must reject broken custody; separately regenerate valid seals around semantically wrong bytes and require the existing package/roundtrip checker to reject the mismatch. | Existing package controls can run after 519; finite acquisition closure after 521/524. Preview-required supplier state remains pending. No upload/order. |
 | F — imported esp_prog finalization; M1.3/M1.5 | P then the public finalization route supplied by 523, followed by M/N/R and its profile assessment. Zero opens/errors under preserved rules; readable markings; every via/pad site and warning has a candidate/profile-bound disposition. | Before/after board hashes, artwork mutation proof, full final warning/ignored inventory and per-site assessment for the eight historical via/pad sites, including any sites added/removed by the new result. Unresolved disallowed site, illegible polarity marking or changed protected geometry blocks. Blanket severity reduction/owner waiver cannot pass. | Baseline P after 519/520; closure after 479/523 and applicable 521 states. If a native mask blocker appears, preserve it and use 522 only for that blocker. An imported placement result is not a generated or assembled product. |
-| G — ignored input/intent; M1.3/M1.6 | P for the exact Astra public ignored-intent bundle and its control; B at the equivalent input boundary. Independently test keepouts, `assembly.sides:"B"`, `blocks[].side:"B"`, combined case, unknown nested key, malformed value and supported-constraint violation. | Reuse `/home/halbritt/.cache/agent-audits/agent-ee-556-20261025/probes/public-ignored-intent/inputs/` and `probes/ignored-intent.json`. Rebind/hash copied paths explicitly. Refusal identifies the offending path and produces no eligible candidate/search result. Also retain supported acquisition/esp_prog problem constraints and native identities. | Reproduce baseline after 519; expected input refusal after 520; final supported-constraint violation coverage also needs 479. Input rejection alone does not prove final enforcement. |
+| G — ignored input/intent; M1.3/M1.6 | P for the exact Astra public ignored-intent bundle and its control; B at the equivalent input boundary. Independently test keepouts, `assembly.sides:"B"`, `blocks[].side:"B"`, combined case, unknown nested key, malformed value and supported-constraint violation. | Reuse `/home/halbritt/.cache/agent-audits/agent-ee-556-20261025/probes/public-ignored-intent/inputs/` and `probes/ignored-intent.json`. Rebind/hash copied paths explicitly. Refusal identifies the offending path and produces no eligible candidate/search result. The original esp_prog file itself must refuse after 520 until its richer declarations are handled; acquisition and supported-contract inputs are immediate positive controls. After 479, verify original-to-derived hashes, every field disposition, supported problem constraints and final native identities. A silently filtered intent, unmapped operative field or substituted representative must fail even if DRC passes. | Reproduce baseline after 519; expected raw/unsupported-input refusal after 520; original esp_prog compatibility and final supported-constraint enforcement need 479. Input rejection alone does not prove final enforcement. |
 | H — interruption/resume; M1.1/M1.2/M1.6 | Use an isolated acquisition run through parts, create its `CANCEL`, resume through schematic and expect interruption, remove only that marker, then resume toward package. Exercise P/PR similarly at a completed checkpoint. | Completed stage trees/receipts and candidate identities remain unchanged; attempts are retained; source/runtime changes refuse resume. Independently alter required spec/intent/rules, a completed native file and runtime identity in separate copies. Nonempty foreign outputs are preserved. Keep old v7 inspectable without promoting it to current qualification. | Stage-level CANCEL/resume after 519; complete final-input ACQ-DELIV-2 proof after B closes. A supported mid-stage interruption restarts from the last verified stage; finer in-stage resumption is M2, not an M1 prerequisite. |
 | I — change gate/release; M1.7 | S0, additional touched-path modules, one complete real native workflow regression covering the cases above, then S without a module roster. Record resource allocation, module and total wall bounds, native coverage, actual failures/prerequisites and release status. | Full roster/results, logs, input partitions, no hidden skips or fabricated outputs. `tests/toolchain.py` names `fome-mc-store`; demonstrate any missing partition's irrelevance before treating it as a residual. Failure affecting the workflow blocks M1. A targeted roster passing cannot stand in for S. | Focused checks after 519 and each change. Final release after all row dependencies. Schedule full qualification in addition to the relevant per-change gate. |
 
@@ -125,19 +133,34 @@ These are scoped clarifications to the two Sol builder items in
   the full transitive input closure, origins/licences, exact image and planner
   receipt, explicit path rebinding and launch interpreter evidence. A historical
   build config alone is insufficient. Its promised harness must record actual
-  failure stage/result and have an operator-visible command; there is currently
-  no `place --preflight` flag. Missing-Rust and stale-launcher negatives need an
+  failure stage/result and have an operator-visible command using the existing
+  public run/CANCEL capture-checkpoint boundary; there is currently no
+  `place --preflight` flag and no second validator is needed. After 520, raw
+  esp_prog refusal is the truthful recovered baseline, not a runtime regression.
+  Missing-Rust and stale-launcher negatives need an
   unmodified positive and protection for unrelated executable paths. Neither
   doctor success nor B0 closes RELEASE.
 * **520 / CONTRACT:** require each ignored field independently and in combination,
   both public place/build boundaries, version/type/nested-key errors, early
   rejection before search and no eligible candidate. The captured esp_prog intent
   already includes `assembly.sides:"F"` with observed-baseline provenance and
-  metadata. Document its supported legacy compatibility treatment; do not strip
-  fields merely to make the article pass or call all metadata an enforced rule.
-  Compare the supported captured problem constraints. Distinguish unsupported
+  metadata. The exact original is a required negative until 479 maps those declarations;
+  it is not an immediate 520 positive. Preserve all original board/project/intent/
+  group hashes. Require a versioned derived representation with source binding
+  and a disposition for every field; compare metric semantics and final native
+  faces, envelope, zero-outside predicate, edge/fixed/proximity constraints, empty
+  declarations, group relationships and provenance. Reject unmapped operative
+  semantics or silently filtered/substituted inputs. Metadata is not an executed
+  check. Compare the supported captured problem constraints. Distinguish unsupported
   declarations rejected at input from supported hard intent violated at final
   native grading; the latter remains a GROUPS/RELEASE obligation.
+
+For the 479 mapping, compare meanings as well as field coverage: a pad-edge
+distance cannot silently become a pad-centre distance, a zero-outside predicate
+needs matching geometry semantics, and observed faces/defaults retain their
+original authority. Validate declared empty collections explicitly; nonempty
+unsupported forms and foreign unknown schema versions refuse. Qualitative group
+`near` relations remain visible without inventing universal hard distances.
 
 Run A and early H first after 519; run G after 520 without waiting for package or
 artwork changes. Method/claim fixtures and existing package negatives can also
@@ -169,7 +192,8 @@ place metrics and strict-suite options executed successfully in the isolated
 worktree. No native acceptance tests, electrical mutations, board campaigns or
 full strict suite were executed. Remaining prerequisites are 519's runnable
 input/runtime/harness delivery, 521's methods/states contract, 479's final group
-predicate/report, 523's public imported finalization route and 524's exact-package
+predicate/report and original-intent compatibility mapping, 523's public imported
+finalization route and 524's exact-package
 assessment. These are dependencies to verify, not claimed defects in unreviewed
 future deliveries.
 
