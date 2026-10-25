@@ -185,14 +185,19 @@ def _manufacturing_coverage(plan, scope, accounting):
             raise ValueError('manufacturing plane checks must bind the generated plane plan')
 
 
+def _review_candidate(scope, directory, timeout):
+    """Use the generated acceptance scope against this actual native candidate."""
+    from .cli import run_review, verify
+    path = directory / 'scope.json'
+    write_json(path, scope)
+    run_review(path, directory / 'review', timeout, checks_only=True, output_stream=sys.stderr)
+    return verify(directory / 'review')
+
+
 def _package(plan, candidate, stage_dir, scope, accounting):
     from .baseline import compile_baseline
-    from .cli import run_review, verify
     _manufacturing_coverage(plan, scope, accounting)
-    path = stage_dir / 'scope.json'
-    write_json(path, _scope(scope, candidate))
-    run_review(path, stage_dir / 'review', plan.get('verification_timeout_s', 3600), checks_only=True)
-    result = verify(stage_dir / 'review')
+    result = _review_candidate(_scope(scope, candidate), stage_dir, plan.get('verification_timeout_s', 3600))
     baseline = compile_baseline(scope, _inventory(candidate), candidate)
     required = {cid for row in baseline['coverage']['requirements'].values() for cid in row['acceptance_checks']}
     checks = {check['id']: check for check in result['checks']}
@@ -346,6 +351,87 @@ def _runtime():
                 kicad_version=version.stdout.strip(), pcbnew_version=pcbnew.Version(), pcbnew_sha256=digest(extension))
 
 
+def _retained_path(root, relative):
+    path = root / _relative(relative, 'retained build path')
+    if path == root or not path.resolve().is_relative_to(root):
+        raise ValueError('retained build path escapes its run')
+    for component in [path, *path.parents]:
+        if component == root:
+            break
+        if component.is_symlink():
+            raise ValueError('retained build path contains a link')
+    return path
+
+
+def _review_source(run):
+    """Only receipted completed stages may supply a diagnostic candidate."""
+    path = _retained_path(run, 'build-report.json')
+    report = strict_json(path.read_bytes())
+    if not isinstance(report, dict) or report.get('schema') != REPORT_SCHEMA:
+        raise ValueError('expected a retained agent-ee build report')
+    inputs = report.get('inputs')
+    _keys(inputs, ('plan_sha256', 'source', 'runtime'))
+    if report.get('identity') != identity(inputs) or _inventory(_retained_path(run, 'source')) != inputs['source']:
+        raise ValueError('retained build source identity changed')
+    completed = report.get('completed')
+    if not isinstance(completed, list) or not 4 <= len(completed) <= len(STAGES):
+        raise ValueError('build review requires completed native schematic generation')
+    for index, row in enumerate(completed):
+        _keys(row, ('stage', 'directory', 'candidate', 'tree'))
+        directory = _retained_path(run, row['directory'])
+        candidate = _retained_path(run, row['candidate'])
+        if candidate == directory or not candidate.is_relative_to(directory):
+            raise ValueError('build candidate is outside its completed stage')
+        if row['stage'] != STAGES[index] or tree_identity(directory) != row['tree']:
+            raise ValueError('completed build stage identity changed: ' + str(row['stage']))
+    if report.get('candidate') != completed[-1]['candidate']:
+        raise ValueError('build candidate differs from its last completed stage')
+    candidate = _retained_path(run, completed[-1]['candidate'])
+    scope_path = _retained_path(run, completed[2]['directory']) / 'product/scope.json'
+    scope = strict_json(scope_path.read_bytes())
+    selection = dict(schema='agent-ee.build-review-source/1', build_run=str(run),
+        build_report_sha256=digest(path), build_identity=report['identity'],
+        build_runtime=inputs['runtime'], selected=completed[-1],
+        scope_sha256=digest(scope_path), scaffold=completed[2])
+    return candidate, scope, selection
+
+
+def review_build(run, out, *, max_seconds=900):
+    """Fresh checks without adopting a candidate or accepting a package."""
+    run, out = Path(run).resolve(), Path(out).resolve()
+    if out == run or run in out.parents:
+        raise ValueError('build review output must be outside the retained build')
+    if type(max_seconds) is not int or not 1 <= max_seconds <= 86400:
+        raise ValueError('max-seconds must be an integer from 1 to 86400')
+    # Reuse the build writer's exact lease; do not create a new lock for a
+    # missing or incomplete run. The review itself owns its ordinary lease.
+    with _retained_path(run, '.lock').open('rb') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError('another writer owns the build') from exc
+        candidate, scope, selection = _review_source(run)
+        if (candidate / 'build-review').exists():
+            raise ValueError('candidate occupies reserved build-review provenance namespace')
+        out.mkdir(parents=True, exist_ok=False)
+        # The source selection is an immutable captured input to the ordinary
+        # review. It adds provenance, never a passing acceptance predicate.
+        source = out / 'source.json'
+        write_json(source, selection)
+        bound_scope = _scope(scope, candidate)
+        bound_scope['inputs'].append(dict(path=str(source), at='build-review/source.json'))
+        result = _review_candidate(bound_scope, out, max_seconds)
+        if _review_source(run)[2] != selection:
+            raise ValueError('retained build changed during diagnostic verification')
+        summary = dict(schema='agent-ee.build-review/1', accepted=False,
+            outcome=result['outcome'], candidate_id=result['candidate_id'],
+            source=selection, review=str(out / 'review'),
+            checks=[{key: row[key] for key in ('id', 'execution', 'outcome')} for row in result['checks']],
+            limitations=result['limitations'])
+        write_json(out / 'report.json', summary)
+        return summary
+
+
 def run(plan_path, out, *, resume=False, through='package'):
     if through not in STAGES:
         raise ValueError('unknown build stage')
@@ -430,9 +516,17 @@ def configure_parser(parser):
     command.add_argument('--out', type=Path, required=True)
     command.add_argument('--resume', action='store_true')
     command.add_argument('--through', choices=STAGES, default='package', help='diagnostic checkpoint; never acceptance')
+    command = sub.add_parser('review', help='run fresh native checks on the last completed build candidate')
+    command.add_argument('run', type=Path)
+    command.add_argument('--out', type=Path, required=True)
+    command.add_argument('--max-seconds', type=int, default=900)
 
 
 def execute(args):
+    if args.build_command == 'review':
+        report = review_build(args.run, args.out, max_seconds=args.max_seconds)
+        print(json.dumps({key: report[key] for key in ('accepted', 'outcome', 'candidate_id', 'review')}, indent=2))
+        return 0 if report['outcome'] == 'criteria_satisfied' else 1
     report = run(args.plan, args.out, resume=args.resume, through=args.through)
     print(json.dumps({key: report[key] for key in ('status', 'accepted', 'candidate')} |
                      {'reason': report.get('reason')}, indent=2))

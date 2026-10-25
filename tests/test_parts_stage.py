@@ -471,11 +471,25 @@ class PartsProducerTests(unittest.TestCase):
         assembly_check = next(c for c in scope['checks'] if c['kind'] == 'assembly_readiness')
         self.assertIn('rating_provenance', assembly_check['params'])
         provenance = assembly_check['params']['rating_provenance']
-        from agent_ee.cli import run_review, verify
-        scope['inputs'] = [dict(path=str(p), at=p.name) for p in sorted(candidate.iterdir())]
-        write_json(self.root / 'final.scope.json', scope)
-        review = self.root / 'assembly-review'
-        run_review(self.root / 'final.scope.json', review, 120, checks_only=True)
+        from agent_ee.cli import verify
+        diagnostic = self.root / 'assembly-diagnostic'
+        before_review = digest(out / 'build-report.json')
+        result = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'build', 'review',
+            str(out), '--out', str(diagnostic), '--max-seconds', '120'],
+            capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 1, result.stderr + result.stdout)  # Incomplete, not accepted.
+        summary = json.loads(result.stdout)
+        self.assertFalse(summary['accepted'])
+        self.assertEqual(summary['outcome'], 'incomplete')
+        self.assertEqual(digest(out / 'build-report.json'), before_review)
+        review = diagnostic / 'review'
+        captured_scope = read_json(review / 'candidate.json')['scope']
+        self.assertEqual(captured_scope['checks'], scope['checks'])
+        self.assertEqual(captured_scope['baseline'], scope['baseline'])
+        self.assertEqual(captured_scope['limitations'], scope['limitations'])
+        selection = read_json(review / 'inputs/build-review/source.json')
+        self.assertEqual(selection['build_report_sha256'], before_review)
+        self.assertEqual(selection['selected']['candidate'], second['candidate'])
         verified_checks = {c['id']: c for c in verify(review)['checks']}
         for cid in ['envelope-outline', 'envelope-layer_count', 'envelope-fixed_footprints']:
             check = verified_checks[cid]

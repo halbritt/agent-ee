@@ -28,6 +28,9 @@ Each producer consumes the preceding receipt and actual native outputs. Explicit
 `--through artwork` permits diagnosis of an incomplete manufacturing baseline;
 default package execution still refuses missing required coverage. Passing
 individual checks never means the whole design is accepted.
+`agent-ee build review RUN --out DIAGNOSTIC` now selects the last completed
+native candidate and its generated scope directly. The actual acquisition
+positive and wrong-address negative have exercised this public command.
 
 | Stage | Real inputs → outputs / production implementation | Required constraints, exercised capability and remaining acceptance |
 | --- | --- | --- |
@@ -144,13 +147,17 @@ not demonstrate parity. The prior matched esp_prog seed 10 comparison leaves
 
 ## Exact next work
 
-Expose diagnostic verification of a completed build through the supported build
-CLI, using its own generated scope and actual candidate. Preserve incomplete
-requirement reporting and default manufacturing refusal.
-Retain and repair the fine-pitch two-sided plane failure through the reusable
-routing path. Carry electrical verification across the current bottom-plane
-geometry, without treating a plane as a verified return path.
-Close the acquisition electrical and mechanical requirements and complete its
-normal default package build with the now-connected manufacturing checks.
-Proceed to the remaining representative/KRT cases. A milestone ends an iteration,
-not this goal; no required missing, skipped, stale or unknown check can pass.
+The owner resumed work with one immediate delivery milestone: the existing
+17-part acquisition design through an accepted manufacturing package. Integrate
+the public review command, close its eleven unfinished requirement clauses with
+proportionate engineering evidence, regenerate only affected artifacts, then
+run final verification and the normal package stage. Record exact requirement
+sources and authority; explicitly justify corrections to agent-selected
+qualification assumptions while preserving their original record. Physical
+validation and supplier operations remain separate and unperformed.
+
+Broader KRT parity and the fine-pitch two-sided plane failure are deferred until
+this milestone passes; their evidence and unmet requirements are preserved.
+The current successful bottom-plane design does not depend on that repair.
+After delivery, proceed one named capability and representative native case at
+a time. No required missing, skipped, stale or unknown check can pass.
