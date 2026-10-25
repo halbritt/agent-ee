@@ -52,7 +52,7 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-524 U1 reader | Investigation `5b714a6d8109ba277664f37e78d0548d5a006f0d`; repair `b74cac20f0281fb34309b265526621f03f2b796d`; [repair evidence](contracts/AGENTEE-524-RECT-repair-evidence.md) | Landed and pushed; chief strict 55 tests/no skips plus exact private capture replay passed. One-to-one corner correspondence preserves the existing tolerance and declared geometry. This does not assess assembly orientation |
 | AGENTEE-519 runtime | Implementation `61c6cd49052487fa18fda7a55cec07618d10b3e6`; [full result](runtime-519-full-agent-567.md) landed `c6446c99b0d53617079328228a73508c73d3d03c` | Plane Done. Chief verified 13 receipt/native hashes. Acquisition completed seven stages with legacy acceptance; esp_prog failed before search on duplicate fixed-mark reference. All 204 originals preserved. REC-30 / AGENTEE-528 owns that separate repair; M1 remains open |
 | AGENTEE-520 intent | Landed `01227b586da29660d55b070f6677da539571deac`; 34 strict tests including all previously pending planner guards, docs/origins passed | Pushed and worktree removed; Plane Done. Chief exact-input replay confirms original esp_prog refuses before capture at `intent.assembly.sides` while acquisition still reaches schematic. Raw esp_prog compatibility remains 479 work |
-| AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7` | Compiler landed after chief strict 76 native tests/no skips and docs/origins. Agent-568 implements qualification/build consumer; agent-565 prepares actual acquisition typed inputs. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
+| AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7`; typed preparation `daa900861e388a8e4a9b4088e01817e35feb1f58` | Compiler and base acquisition typed preparation landed. Chief independently passed 88 strict native preparation tests/no skips and a real prepare/compile with 47 typed rows. Agent-568 implements qualification/build consumer; agent-565 prepares a separate D1 supplemental input revision. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
 | KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
 | AGENTEE-528 fixed-mark identity | [Repair and verification](identity-528-agent-567.md) landed `86cb840f42173453e6737a69239215727a1ef3ad` | Plane Done. Chief independently passed nine native tests/no skips and 17 exact retained controls; 36 tested source hashes matched after rebase. Both marks and all selector/pose protections preserved. Initial placement remains infeasible and original rich intent remains refused; 479 is separate |
 | AGENTEE-479 compatibility/grouping | Agent-570 initial proposal `b053137c` reviewed; correction requested | Not accepted: universal bounding-box exclusion and nearest-peer hard predicates lack design authority. Preserve actual upstream signed pad-edge semantics and label proposed functions separately from executed evidence. Original field mapping and final-native engineering judgment remain required; parent 472 held |
@@ -80,27 +80,31 @@ completed consolidation snapshot; it does not rewrite the three audit reports.
 The original full runtime attempt is a baseline, not a comparative performance
 claim or final manufacturing qualification.
 
-The acquisition typed-overlay delivery is pending chief review. Its 198-file
-base inventory is a separate scope from esp_prog; the runtime preservation
+The base acquisition typed preparation is accepted and pushed at `daa90086`.
+Its 198-file base inventory is a separate scope from esp_prog; the runtime preservation
 manifest's total of 204 includes those 198 files, acquisition `build.json`,
 esp_prog `board-config-portfolio.json`, and four esp_prog input files. It must
 not be described as acquisition-only or as six esp_prog input files.
 Typed clause coverage and compiling a receipt do not prove the engineering
 judgments, the operational reproduction requirement or physical/supplier results.
 
-Chief review of typed preparation `0fab78e5` reproduced a preservation defect:
-an existing `<out>.staging/valuable.txt` was deleted before a missing-added-input
-refusal. Agent-565 owns a focused repair that preserves pre-existing scratch
-and input/candidate paths. The qualitative return-path obligation in
-ACQ-MECH-3 must also receive a candidate-bound engineering judgment alongside
-its executable loop measurements. No preparation or build is accepted by this
-checkpoint.
+Chief review of the earlier `0fab78e5` preparation reproduced deletion of an
+existing `<out>.staging/valuable.txt` before a missing-input refusal. Agent-565
+corrected this at `268b3e8f`, subsequently rebased and landed with chief
+verification at `daa90086`. Preparation now uses owned scratch and protects
+input, candidate and pre-existing output paths. ACQ-MECH-3 retains a
+candidate-bound return-path judgment alongside executable loop measurements.
 
-Agent-565 delivered preservation and return-path corrections at `268b3e8f`.
-Chief verification uses a separate immutable managed checkout because the
-worker is preparing a later D1 supplemental input revision. Test results and
-acceptance must identify the exact revision; an in-flight overlay change does
-not inherit verification of the earlier capture set.
+The chief tested an isolated immutable checkout: 88 strict native test
+executions with no failures, errors or skips, plus real preparation and
+compilation against the retained v7 scaffold. Ten tested source/test/overlay
+hashes matched after rebase. The 47 rows comprise 29 executable checks,
+14 judgments, two physical obligations, one operational obligation and one
+context row. All required judgments remain pending. See the
+[typed-input mapping and verification](../../qualification/acquisition-typed-mapping-2026-10-25.md)
+for exact hashes and reproduction. Agent-565's later D1 supplement remains a
+separate revision; it does not inherit verification of this base capture set.
+No new full build or M1 qualification is claimed.
 
 [The 13:41 Plane checkpoint](execution-checkpoint-1341.json) records readback
 of these updates and the native 522 → 529 relation. Repair 529 relates to M1;
