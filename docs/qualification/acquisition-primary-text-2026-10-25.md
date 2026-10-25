@@ -1,9 +1,9 @@
 # Acquisition additive primary-text capture — 2026-10-25
 
-This proposed input revision adds reproducible manufacturer text to the accepted
+This verified input revision adds reproducible manufacturer text to the accepted
 typed acquisition overlay. It prepares citation material for the fourteen
 judgment briefs; it authors no judgment, witness, engineering evaluation or M1
-acceptance. Chief verification and integration remain pending.
+acceptance. The chief independently verified the capture and preparation as described below.
 
 The prior accepted overlay is `f2d9f97a`, SHA-256
 `0749a6ba90c83ed956394775abee0e67cdf5ae2618c62408c78f4c9a90a82592`.
@@ -160,3 +160,33 @@ Artifact index: `artifact-sha256.json`, 749 files, SHA-256
 `pkt-6b0152a23d613af9`, content SHA-256
 `6b0152a23d613af984ea332383904d3bde21e25c02cba3cc2712605f34ad0522`;
 only byte/text custody and authority limits were applied.
+
+
+## Chief independent verification
+
+The chief reviewed metadata delivery `32ae67df`, rebased it onto the integrated
+qualification consumer, and verified eight delivered source/test hashes and all
+749 indexed worker artifacts. Running the committed CPU capture procedure directly
+against the original 198-file capture reproduced all 14 output hashes exactly,
+including manifest `ee1c4d69…` and all 574 physical-page records.
+
+A separate supported native strict run passed **89 tests in five modules with no
+skips**. The chief then invoked the public preparer with the reproduced text, the
+unchanged 25 CPL inputs and a copy of the retained v7 scaffold. It produced the
+same scope, baseline and coverage identities listed above. All 47 requirement
+rows and 14 pending judgments remain. Four real source quotes resolved, while
+four wrong-hash controls returned integrity refusals.
+
+The original 198 files were compared with the mounted test copy. In the new
+prepared tree, 196 original files remain byte-identical; the map changes only by
+the added text mount relative to the preceding accepted typed preparation, and
+the already-derived intervals, spec, spec record and obligations are unchanged.
+All CPL files and final D1 polarity are unchanged. The earlier prepared identity
+is retained separately.
+
+Chief evidence is retained at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/manufacturer-text/`:
+reproduced text/manifest, source bindings, strict log, new prepared tree, compile
+root, receipt and `chief-verification.json`. This verification accepts source
+capture and input preparation only. The engineering, supplier, physical and M1
+limitations above remain in force.
