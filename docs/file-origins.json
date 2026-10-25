@@ -4245,6 +4245,16 @@
     },
     {
       "paths": [
+        "fixtures/acquisition-typed/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original typed-overlay declaration for the retained acquisition inputs: byte offsets, hashes, obligation kinds, check-id bindings and judgment briefs only; no spec text, datasheet, CAD or supplier data copied."
+    },
+    {
+      "paths": [
         "fixtures/recovery/inputs.json"
       ],
       "kind": "owned-metadata",

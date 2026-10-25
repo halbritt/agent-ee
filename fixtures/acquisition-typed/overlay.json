@@ -1,0 +1,775 @@
+{
+ "base": {
+  "requirement_map_sha256": "df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863",
+  "spec_record_sha256": "a03e16f40e34fb7af4ac229ea5916b27de47c576b6f7f181c914205e5a8f865b",
+  "spec_sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373"
+ },
+ "derived_files": {
+  "analysis/electrical-intervals.json": {
+   "rebind": {
+    "ACQ-ELEC-1": "ACQ-ELEC-1-SUPPLY",
+    "ACQ-ELEC-2": "ACQ-ELEC-2-RAIL",
+    "ACQ-ELEC-3": "ACQ-ELEC-3-REVERSE",
+    "ACQ-ELEC-4": "ACQ-ELEC-4-MEASUREMENT",
+    "ACQ-ELEC-5": "ACQ-ELEC-5-PULLUPS"
+   }
+  }
+ },
+ "judgments": {
+  "judgments/acq-elec-1-temperature-applicability.json": {
+   "questions": [
+    "Which captured absolute/recommended limits of U1 (TPS7A20), U2 (ADS1115), D1 (BAT46W) and the passives bound operation at 25 C, and are they met with the engineering-intervals operands?",
+    "Is 0 to 50 C operation claimed? If not, record the explicit non-claim and what would be required."
+   ],
+   "requirement": "ACQ-ELEC-1",
+   "sources": [
+    "datasheets-regulator-qualified (TPS7A20 SBVS338H)",
+    "datasheets-core (ADS1115 SBAS444E, BAT46W)",
+    "analysis/electrical-intervals.json parameters and conditions",
+    "engineering-calculations.json conditions",
+    "ENGINEERING-REVIEW.md ACQ-ELEC-1"
+   ],
+   "span": [
+    1188,
+    1289
+   ]
+  },
+  "judgments/acq-elec-1-unqualified-conditions.json": {
+   "questions": [
+    "Confirm hot plugging, surge immunity and unpowered external drive are recorded as not qualified, with the reason and the operating instruction that excludes them."
+   ],
+   "requirement": "ACQ-ELEC-1",
+   "sources": [
+    "OPERATING.md sequencing",
+    "ENGINEERING-REVIEW.md ACQ-ELEC-1",
+    "spec.md bytes 1289:1382"
+   ],
+   "span": [
+    1289,
+    1382
+   ]
+  },
+  "judgments/acq-elec-2-source-evaluation.json": {
+   "questions": [
+    "Are capacitor DC-bias (C1/C2 Samsung CL21A106KAYNNNE bias data), temperature, tolerance, dropout and dissipation operands in electrical-intervals.json and the power-startup deck traceable to captured source rows, and are the guaranteed-versus-typical classifications in engineering-calculations.json correct?",
+    "Is the 1 mA external J2 load and the internal load allocation stated, and is the resulting regulator dissipation within the DBV package limit at 25 C?"
+   ],
+   "requirement": "ACQ-ELEC-2",
+   "sources": [
+    "engineering-calculations.json values/classification",
+    "analysis/electrical-intervals.json",
+    "analysis/power-startup",
+    "datasheets-regulator-qualified (TPS7A20)",
+    "datasheets-passives-manufacturer (Samsung bias data)",
+    "ratings.json"
+   ],
+   "span": [
+    1546,
+    1661
+   ]
+  },
+  "judgments/acq-elec-3-back-power-contract.json": {
+   "questions": [
+    "Which operating instruction forbids signal or host back-power, and which native interface nets (J2 pin 4, SDA/SCL, AIN0/AIN1) would carry it? Is the effective-capacitance bound used by power-removal justified from the BOM?"
+   ],
+   "requirement": "ACQ-ELEC-3",
+   "sources": [
+    "OPERATING.md",
+    "analysis/power-removal deck parameters",
+    "circuit.json",
+    "ENGINEERING-REVIEW.md ACQ-ELEC-3"
+   ],
+   "span": [
+    1929,
+    1995
+   ]
+  },
+  "judgments/acq-elec-4-error-evaluation.json": {
+   "questions": [
+    "What input loading, settling and ADC error apply at 0 to 2 V, DC to 10 Hz, source impedance at most 100 ohm, PGA 2.048 V, 128 samples/s, from captured ADS1115 tables? State the achievable error estimate and its limits without inventing a precision claim."
+   ],
+   "requirement": "ACQ-ELEC-4",
+   "sources": [
+    "datasheets-core (ADS1115 SBAS444E electrical characteristics)",
+    "analysis/electrical-intervals.json input-range, filter-settling",
+    "engineering-calculations.json",
+    "ENGINEERING-REVIEW.md ACQ-ELEC-4"
+   ],
+   "span": [
+    2255,
+    2344
+   ]
+  },
+  "judgments/acq-elec-4-filter-scope.json": {
+   "questions": [
+    "Record that R1/C4 and R2/C5 are RF input filters with their corner frequency from captured values, and that no antialias claim is made at 128 samples/s."
+   ],
+   "requirement": "ACQ-ELEC-4",
+   "sources": [
+    "circuit.json R1/C4 R2/C5 values",
+    "analysis/electrical-intervals.json filter-settling",
+    "datasheets-core (ADS1115 input structure)"
+   ],
+   "span": [
+    2180,
+    2255
+   ]
+  },
+  "judgments/acq-elec-5-configuration.json": {
+   "questions": [
+    "Are the exact configuration register words for single-shot, 128 samples/s, PGA 2.048 V, AIN0/AIN1 versus ground, and the conversion-ready read sequence derived from the captured register map, and recorded as instructions rather than defaults?"
+   ],
+   "requirement": "ACQ-ELEC-5",
+   "sources": [
+    "OPERATING.md configuration words",
+    "datasheets-core (ADS1115 register map)",
+    "ENGINEERING-REVIEW.md ACQ-ELEC-5"
+   ],
+   "span": [
+    2527,
+    2726
+   ]
+  },
+  "judgments/acq-elec-5-host-bus-contract.json": {
+   "questions": [
+    "Is the 3.3 V open-drain, at most 400 kHz, at most 100 pF host contract stated as an operating instruction, and is address 0x48 the consequence of ADDR grounded (adc-ties) per the captured ADS1115 address table?"
+   ],
+   "requirement": "ACQ-ELEC-5",
+   "sources": [
+    "OPERATING.md",
+    "adc-ties.json",
+    "datasheets-core (ADS1115 address table)"
+   ],
+   "span": [
+    2347,
+    2468
+   ]
+  },
+  "judgments/acq-elec-6-high-impedance-contract.json": {
+   "questions": [
+    "Which operating instruction requires host and analog sources to stay high impedance until the board supply is valid, and what in the native design (no isolation, direct J2/J3 nets) makes this an external obligation rather than a board property?"
+   ],
+   "requirement": "ACQ-ELEC-6",
+   "sources": [
+    "OPERATING.md power-up/down sequencing",
+    "circuit.json",
+    "ENGINEERING-REVIEW.md ACQ-ELEC-6"
+   ],
+   "span": [
+    2808,
+    2894
+   ]
+  },
+  "judgments/acq-mech-1-bench-scope.json": {
+   "questions": [
+    "Record that the board is a bench article with no mounting holes and no enclosure claim, and cite the scope correction that removed the 1.6 mm nominal and why 1.2 mm nominal with the JLCPCB tolerance satisfies the JST PH 0.8 to 1.6 mm applicability."
+   ],
+   "requirement": "ACQ-MECH-1",
+   "sources": [
+    "scope-corrections.json ACQ-MECH-1",
+    "envelope.json",
+    "fab-profile.json",
+    "fab-sources/capabilities.html",
+    "datasheets-connectors-bulk (JST ePH)"
+   ],
+   "span": [
+    3077,
+    3140
+   ]
+  },
+  "judgments/acq-mech-3-limit-rationale.json": {
+   "questions": [
+    "State the engineering rationale and source for the agent-selected 3 mm pad-distance limits and the loop-length limits in engineering-geometry (adc_loop 10 mm, filter 12 mm, input 16 mm, output 10 mm), and that they are not datasheet-proven guarantees."
+   ],
+   "requirement": "ACQ-MECH-3",
+   "sources": [
+    "electrical-locality.json",
+    "analysis/geometry-model.json limits",
+    "datasheets-regulator-qualified (TPS7A20 layout guidance)",
+    "datasheets-core (ADS1115 layout guidance)",
+    "ENGINEERING-REVIEW.md ACQ-MECH-3"
+   ],
+   "span": [
+    3703,
+    3780
+   ]
+  },
+  "judgments/acq-mech-4-assembly-applicability.json": {
+   "questions": [
+    "Are the exact body/land geometries of every populated part captured-source backed (cad-qualification.json, datasheet bindings), and is the assembly process (SMT parts versus through-hole JST PH manual/selective solder) applicable under the declared dfm-profile and assembly-release ids? Supplier process confirmation remains pending."
+   ],
+   "requirement": "ACQ-MECH-4",
+   "sources": [
+    "cad-qualification.json",
+    "datasheet-bindings*.json",
+    "dfm-profile.json",
+    "assembly-release-ids.json",
+    "stock-assembly-release"
+   ],
+   "span": [
+    4209,
+    4300
+   ]
+  },
+  "judgments/acq-mech-4-mated-height-scope.json": {
+   "questions": [
+    "Record the JST PH top-entry nominal 8 mm mated reference from the captured ePH sheet and the scope correction that removed the absolute installed-height claim; no enclosure fit is claimed."
+   ],
+   "requirement": "ACQ-MECH-4",
+   "sources": [
+    "scope-corrections.json ACQ-MECH-4",
+    "datasheets-connectors-bulk (JST ePH)",
+    "lib3d models used by review-acq-mech-4-model-height"
+   ],
+   "span": [
+    4027,
+    4137
+   ]
+  }
+ },
+ "mappings": {
+  "ACQ-BENCH-1": {
+   "keep": true
+  },
+  "ACQ-DELIV-1": {
+   "keep": true
+  },
+  "ACQ-DELIV-2": {
+   "spans": [
+    {
+     "byte_end": 4850,
+     "byte_start": 4612,
+     "criterion": "public_build_and_resume",
+     "id": "ACQ-DELIV-2-REPRODUCTION",
+     "mode": "operational"
+    }
+   ]
+  },
+  "ACQ-ELEC-1": {
+   "spans": [
+    {
+     "byte_end": 1188,
+     "byte_start": 1074,
+     "checks": [
+      "engineering-intervals",
+      "review-acq-elec-1-topology"
+     ],
+     "id": "ACQ-ELEC-1-SUPPLY",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 1289,
+     "byte_start": 1188,
+     "id": "ACQ-ELEC-1-TEMPERATURE",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-1-temperature-applicability.json"
+    },
+    {
+     "byte_end": 1382,
+     "byte_start": 1289,
+     "id": "ACQ-ELEC-1-UNQUALIFIED",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-1-unqualified-conditions.json"
+    }
+   ]
+  },
+  "ACQ-ELEC-2": {
+   "spans": [
+    {
+     "byte_end": 1546,
+     "byte_start": 1385,
+     "checks": [
+      "engineering-intervals",
+      "engineering-geometry",
+      "power-startup"
+     ],
+     "id": "ACQ-ELEC-2-RAIL",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 1661,
+     "byte_start": 1546,
+     "id": "ACQ-ELEC-2-SOURCE-EVALUATION",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-2-source-evaluation.json"
+    }
+   ]
+  },
+  "ACQ-ELEC-3": {
+   "spans": [
+    {
+     "byte_end": 1822,
+     "byte_start": 1664,
+     "checks": [
+      "engineering-intervals",
+      "review-acq-elec-3-topology"
+     ],
+     "id": "ACQ-ELEC-3-REVERSE",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 1929,
+     "byte_start": 1822,
+     "checks": [
+      "power-removal"
+     ],
+     "id": "ACQ-ELEC-3-REMOVAL",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 1995,
+     "byte_start": 1929,
+     "id": "ACQ-ELEC-3-BACK-POWER",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-3-back-power-contract.json"
+    }
+   ]
+  },
+  "ACQ-ELEC-4": {
+   "spans": [
+    {
+     "byte_end": 2180,
+     "byte_start": 1998,
+     "checks": [
+      "engineering-intervals",
+      "review-acq-elec-4-topology"
+     ],
+     "id": "ACQ-ELEC-4-MEASUREMENT",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 2255,
+     "byte_start": 2180,
+     "id": "ACQ-ELEC-4-FILTER-SCOPE",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-4-filter-scope.json"
+    },
+    {
+     "byte_end": 2344,
+     "byte_start": 2255,
+     "id": "ACQ-ELEC-4-ERROR-EVALUATION",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-4-error-evaluation.json"
+    }
+   ]
+  },
+  "ACQ-ELEC-5": {
+   "spans": [
+    {
+     "byte_end": 2468,
+     "byte_start": 2347,
+     "id": "ACQ-ELEC-5-HOST-BUS",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-5-host-bus-contract.json"
+    },
+    {
+     "byte_end": 2527,
+     "byte_start": 2468,
+     "checks": [
+      "engineering-intervals",
+      "review-acq-elec-5-topology"
+     ],
+     "id": "ACQ-ELEC-5-PULLUPS",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 2726,
+     "byte_start": 2527,
+     "id": "ACQ-ELEC-5-CONFIGURATION",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-5-configuration.json"
+    }
+   ]
+  },
+  "ACQ-ELEC-6": {
+   "spans": [
+    {
+     "byte_end": 2808,
+     "byte_start": 2729,
+     "checks": [
+      "adc-ties"
+     ],
+     "id": "ACQ-ELEC-6-TIES",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 2894,
+     "byte_start": 2808,
+     "id": "ACQ-ELEC-6-HIGH-IMPEDANCE",
+     "mode": "judgment",
+     "record": "judgments/acq-elec-6-high-impedance-contract.json"
+    },
+    {
+     "byte_end": 2940,
+     "byte_start": 2894,
+     "checks": [
+      "review-acq-elec-6-remaining-topology"
+     ],
+     "id": "ACQ-ELEC-6-J2-PIN4",
+     "mode": "checks"
+    }
+   ]
+  },
+  "ACQ-INTENT-P1": {
+   "keep": true
+  },
+  "ACQ-MECH-1": {
+   "spans": [
+    {
+     "byte_end": 3077,
+     "byte_start": 2971,
+     "checks": [
+      "review-acq-mech-1-outline",
+      "review-acq-mech-1-layers",
+      "review-acq-mech-1-stackup"
+     ],
+     "id": "ACQ-MECH-1-BOARD",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 3140,
+     "byte_start": 3077,
+     "id": "ACQ-MECH-1-SCOPE",
+     "mode": "judgment",
+     "record": "judgments/acq-mech-1-bench-scope.json"
+    },
+    {
+     "byte_end": 3229,
+     "byte_start": 3140,
+     "criterion": "The selected manufacturing profile confirms the final stackup (nominal 1.2 mm, finished 1.08 to 1.32 mm) and minimum dimensions for this board.",
+     "id": "ACQ-MECH-1-SUPPLIER",
+     "mode": "bench",
+     "procedure": "Supplier preview or DFM confirmation of the sealed package against fab-profile.json; not performed."
+    }
+   ]
+  },
+  "ACQ-MECH-2": {
+   "keep": true
+  },
+  "ACQ-MECH-3": {
+   "spans": [
+    {
+     "byte_end": 3703,
+     "byte_start": 3536,
+     "checks": [
+      "locality"
+     ],
+     "id": "ACQ-MECH-3-DISTANCES",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 3780,
+     "byte_start": 3703,
+     "id": "ACQ-MECH-3-LIMIT-RATIONALE",
+     "mode": "judgment",
+     "record": "judgments/acq-mech-3-limit-rationale.json"
+    },
+    {
+     "byte_end": 3852,
+     "byte_start": 3780,
+     "checks": [
+      "engineering-geometry",
+      "locality",
+      "drc"
+     ],
+     "id": "ACQ-MECH-3-LOOPS",
+     "mode": "checks"
+    }
+   ]
+  },
+  "ACQ-MECH-4": {
+   "spans": [
+    {
+     "byte_end": 3947,
+     "byte_start": 3855,
+     "checks": [
+      "courtyard",
+      "containment",
+      "dfm"
+     ],
+     "id": "ACQ-MECH-4-BODIES",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 4027,
+     "byte_start": 3947,
+     "checks": [
+      "review-acq-mech-4-model-height"
+     ],
+     "id": "ACQ-MECH-4-MODEL-ENVELOPE",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 4137,
+     "byte_start": 4027,
+     "id": "ACQ-MECH-4-MATED-HEIGHT-SCOPE",
+     "mode": "judgment",
+     "record": "judgments/acq-mech-4-mated-height-scope.json"
+    },
+    {
+     "byte_end": 4209,
+     "byte_start": 4137,
+     "checks": [
+      "engineering-geometry"
+     ],
+     "id": "ACQ-MECH-4-ACCESS",
+     "mode": "checks"
+    },
+    {
+     "byte_end": 4300,
+     "byte_start": 4209,
+     "id": "ACQ-MECH-4-ASSEMBLY-APPLICABILITY",
+     "mode": "judgment",
+     "record": "judgments/acq-mech-4-assembly-applicability.json"
+    }
+   ]
+  },
+  "ACQ-NATIVE-1": {
+   "keep": true
+  },
+  "ACQ-NATIVE-2": {
+   "keep": true
+  },
+  "ACQ-NATIVE-3": {
+   "keep": true
+  },
+  "ACQ-NATIVE-4": {
+   "keep": true
+  },
+  "ACQ-NATIVE-5": {
+   "keep": true
+  }
+ },
+ "name": "acquisition-m1-typed",
+ "obligations": {
+  "ACQ-BENCH-1": [
+   {
+    "byte_end": 5168,
+    "byte_start": 4876,
+    "obligation": "physical"
+   }
+  ],
+  "ACQ-DELIV-1": [
+   {
+    "byte_end": 4609,
+    "byte_start": 4341,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-DELIV-2": [
+   {
+    "byte_end": 4850,
+    "byte_start": 4612,
+    "obligation": "operational"
+   }
+  ],
+  "ACQ-ELEC-1": [
+   {
+    "byte_end": 1188,
+    "byte_start": 1074,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 1289,
+    "byte_start": 1188,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 1382,
+    "byte_start": 1289,
+    "obligation": "judgment"
+   }
+  ],
+  "ACQ-ELEC-2": [
+   {
+    "byte_end": 1546,
+    "byte_start": 1385,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 1661,
+    "byte_start": 1546,
+    "obligation": "judgment"
+   }
+  ],
+  "ACQ-ELEC-3": [
+   {
+    "byte_end": 1822,
+    "byte_start": 1664,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 1929,
+    "byte_start": 1822,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 1995,
+    "byte_start": 1929,
+    "obligation": "judgment"
+   }
+  ],
+  "ACQ-ELEC-4": [
+   {
+    "byte_end": 2180,
+    "byte_start": 1998,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 2255,
+    "byte_start": 2180,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 2344,
+    "byte_start": 2255,
+    "obligation": "judgment"
+   }
+  ],
+  "ACQ-ELEC-5": [
+   {
+    "byte_end": 2468,
+    "byte_start": 2347,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 2527,
+    "byte_start": 2468,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 2726,
+    "byte_start": 2527,
+    "obligation": "judgment"
+   }
+  ],
+  "ACQ-ELEC-6": [
+   {
+    "byte_end": 2808,
+    "byte_start": 2729,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 2894,
+    "byte_start": 2808,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 2940,
+    "byte_start": 2894,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-INTENT-P1": [
+   {
+    "byte_end": 381,
+    "byte_start": 24,
+    "obligation": "context"
+   }
+  ],
+  "ACQ-MECH-1": [
+   {
+    "byte_end": 3077,
+    "byte_start": 2971,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 3140,
+    "byte_start": 3077,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 3229,
+    "byte_start": 3140,
+    "obligation": "physical"
+   }
+  ],
+  "ACQ-MECH-2": [
+   {
+    "byte_end": 3533,
+    "byte_start": 3232,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-MECH-3": [
+   {
+    "byte_end": 3703,
+    "byte_start": 3536,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 3780,
+    "byte_start": 3703,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 3852,
+    "byte_start": 3780,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-MECH-4": [
+   {
+    "byte_end": 3947,
+    "byte_start": 3855,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 4027,
+    "byte_start": 3947,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 4137,
+    "byte_start": 4027,
+    "obligation": "judgment"
+   },
+   {
+    "byte_end": 4209,
+    "byte_start": 4137,
+    "obligation": "executable"
+   },
+   {
+    "byte_end": 4300,
+    "byte_start": 4209,
+    "obligation": "judgment"
+   }
+  ],
+  "ACQ-NATIVE-1": [
+   {
+    "byte_end": 482,
+    "byte_start": 408,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-NATIVE-2": [
+   {
+    "byte_end": 635,
+    "byte_start": 485,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-NATIVE-3": [
+   {
+    "byte_end": 715,
+    "byte_start": 638,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-NATIVE-4": [
+   {
+    "byte_end": 870,
+    "byte_start": 718,
+    "obligation": "executable"
+   }
+  ],
+  "ACQ-NATIVE-5": [
+   {
+    "byte_end": 1047,
+    "byte_start": 873,
+    "obligation": "executable"
+   }
+  ]
+ },
+ "schema": "agent-ee.typed-overlay/1"
+}
