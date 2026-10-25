@@ -444,6 +444,9 @@ def run(plan_path, out, *, resume=False, through='package'):
     if out == source or source in out.parents:
         raise ValueError('build output must be outside the source bundle')
     source_files = _inventory(source)
+    from .placement_job import validate_intent
+    validate_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
+                    strict_json((source / plan['placement']['groups']).read_bytes()))
     for reserved in ('build-generated', requirement_map.PROVENANCE):
         if any(path == reserved or path.startswith(reserved + '/') for path in source_files):
             raise ValueError('build source occupies generated namespace: ' + reserved)

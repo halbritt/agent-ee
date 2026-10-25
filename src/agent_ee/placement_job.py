@@ -490,13 +490,22 @@ def classify_footprint(fp, fixed_pose, captured):
 def _fixed_pose_owner(fixed_poses, captured):
     """Resolve intent fixed poses to native UUIDs by reference base and exact pose."""
     owners = {}
-    for row in fixed_poses:
+    for index, row in enumerate(fixed_poses):
         base = row['ref'].split('~')[0]
         target = (_mm(row['x']), _mm(row['y']))
-        matches = [f for f in captured if f['ref'] == base and tuple(f['position_nm']) == target
-                   and f['side'] == row.get('side', f['side'])]
+        matches = [f for f in captured if f['ref'] == base and tuple(f['position_nm']) == target]
+        if 'side' in row and matches and not any(f['side'] == row['side'] for f in matches):
+            raise JobRefusal(f'intent.fixed_poses[{index}].side: differs from the fixed native side; '
+                             'side changes are unsupported')
+        matches = [f for f in matches if f['side'] == row.get('side', f['side'])]
         if len(matches) != 1:
-            raise JobRefusal(f'fixed pose {row["ref"]} matches {len(matches)} native footprints')
+            raise JobRefusal(f'intent.fixed_poses[{index}]: fixed pose {row["ref"]} '
+                             f'matches {len(matches)} native footprints')
+        if 'rot' in row and _quarter_turns(row['rot'], row['ref']) != _quarter_turns(
+                matches[0]['rotation_deg'], row['ref']):
+            raise JobRefusal(f'intent.fixed_poses[{index}].rot: differs from the fixed native rotation')
+        if matches[0]['uuid'] in owners:
+            raise JobRefusal(f'intent.fixed_poses[{index}].ref: duplicates a fixed native footprint')
         owners[matches[0]['uuid']] = row
     return owners
 
@@ -581,6 +590,7 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
 
 def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
     """Capture native geometry and settings without inheriting cached defaults."""
+    validate_intent(intent, groups)
     captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups},
                             clock=clock, cancel_dir=cancel_dir)
     try:
@@ -595,6 +605,7 @@ def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
 
 def _capture_native(board_path, intent, groups):
     """Native capture once; returns (problem without search section, capture record)."""
+    validate_intent(intent, groups)
     import pcbnew
     from .placement_probe import extract
     from .placement_escape import hints as escape_hints
@@ -669,8 +680,14 @@ def _capture_native(board_path, intent, groups):
     clearance = _clearance(settings)
     by_ref = {r['native_ref']: r for r in rows if r['role'] == 'movable'}
     proximity = []
-    for row in intent.get('proximity', []):
+    for index, row in enumerate(intent.get('proximity', [])):
         pads = row['pads']
+        for key in ('ref', 'near'):
+            ref = row[key]
+            if sum(r['native_ref'] == ref and r['role'] == 'movable' for r in rows) != 1:
+                raise JobRefusal(f'intent.proximity[{index}].{key}: must identify one movable footprint')
+            if set(pads[ref]) - {p['number'] for p in by_ref[ref]['pads']}:
+                raise JobRefusal(f'intent.proximity[{index}].pads.{ref}: selected pad is missing')
         a, b = by_ref[row['ref']], by_ref[row['near']]
         pick = lambda fp_row, numbers: [p['uuid'] for p in fp_row['pads'] if p['number'] in numbers]
         proximity.append({'ref': row['ref'], 'near': row['near'], 'max_nm': _mm(row['max_mm']),
@@ -694,6 +711,21 @@ def _capture_native(board_path, intent, groups):
     return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before),
                      'pcbnew_version': facts['pcbnew_version'], 'footprints': record, 'native': native,
                      'facts_sha256': sha256_bytes(canonical(facts))}
+
+
+def validate_intent(intent, groups):
+    from . import placement_intent
+    try:
+        placement_intent.validate(intent, groups)
+    except ValueError as exc:
+        raise JobRefusal(str(exc)) from exc
+    return {'schema': placement_intent.SCHEMA,
+            'input_form': 'versioned' if 'schema' in intent else 'legacy_unversioned',
+            'validator_sha256': digest(Path(placement_intent.__file__)),
+            'constraints': ['fixed_native_pose', 'edge_identity', 'edge_setback', 'edge_overhang',
+                            'sourced_electrical_locality'],
+            'preferences': ['group_anchor_distance', 'minimum_chebyshev_pad_centre_proximity'],
+            'unsupported': ['keepouts', 'assembly.sides', 'blocks', 'side_changes', 'group_regions']}
 
 
 # ---------------------------------------------------------------- Rust search
@@ -902,7 +934,8 @@ def materialize(source, poses, destination, project_bytes, *, intent, rules_byte
         raise JobRefusal('native custom rules differ from captured rules')
     board = pcbnew.LoadBoard(str(source))
     before = native_inventory(board)
-    captured = [dict(uuid=u, ref=r['ref'], position_nm=[r['x_nm'], r['y_nm']], side=r['side'])
+    captured = [dict(uuid=u, ref=r['ref'], position_nm=[r['x_nm'], r['y_nm']], side=r['side'],
+                     rotation_deg=r['rotation_deg'])
                 for u, r in before.items()]
     protected = {u for u, row in before.items() if row['locked']} | set(
         _fixed_pose_owner(intent.get('fixed_poses', []), captured))
@@ -1480,7 +1513,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             raise JobRefusal('native custom rules require a captured inputs.rules path and sha256')
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
-        intent, groups = json.loads(intent_bytes), json.loads(groups_bytes)
+        from .catalog import strict_json
+        try:
+            intent = strict_json(intent_bytes)
+            groups = strict_json(groups_bytes)
+        except ValueError as exc:
+            raise JobRefusal('placement intent/groups JSON: ' + str(exc)) from exc
+        report['intent_contract'] = validate_intent(intent, groups)
         plane_bytes = None
         plane_ids = ()
         if 'planes' in config['inputs']:
@@ -1496,10 +1535,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             plane_ids = zone_ids(plane_plan)
         if 'locality' in config['inputs']:
             _, raw = verified_input(config['inputs']['locality'], 'locality')
-            document = json.loads(raw)
+            try:
+                document = strict_json(raw)
+            except ValueError as exc:
+                raise JobRefusal('inputs.locality JSON: ' + str(exc)) from exc
             if 'electrical_locality' in intent and intent['electrical_locality'] != document:
                 raise JobRefusal('inline locality differs from the captured locality input')
             intent['electrical_locality'] = document
+            report['intent_contract'] = validate_intent(intent, groups)
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
         if impedance is not None:
@@ -1541,6 +1584,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
+                                       'intent_contract': report['intent_contract'],
                                        'router': report['preflight'].get('router'),
                                        'plane_tools': report['preflight'].get('plane_tools'),
                                        'kicad_cli': report['preflight'].get('kicad_cli'),

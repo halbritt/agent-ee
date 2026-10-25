@@ -45,6 +45,49 @@ The config (`agent-ee.placement-job-config/1`) names every external input by
 path **and SHA-256**; a mismatch refuses the job before any work. Fixture bytes
 stay outside the public repository.
 
+## Supported intent boundary (AGENTEE-520)
+
+New intent documents use `"schema": "agent-ee.placement-intent/1"`. Existing
+unversioned documents containing only the supported fields remain valid without
+rewriting their bytes. Validation runs at public `place run` intake, public
+`build run` intake, and both capture boundaries. Unknown fields and unsupported
+declarations refuse with a path such as `intent.assembly.sides` or
+`intent.edge_connectors[0].side` before native capture or search. Duplicate JSON
+keys, nonfinite values and malformed declarations refuse as well.
+
+| Intent field | Supported meaning |
+| --- | --- |
+| `fixed_poses[]` | `ref`, `x`, `y` identify an existing native pose in mm; optional `rot` (quarter-turn degrees) and `side` (`F`/`B`) must match that pose. The part stays fixed. `basis` and `why` are text evidence, not additional constraints. |
+| `edge_connectors[]` | Required `ref`, `edge` (`west`/`east`/`north`/`south`); optional `max_setback_mm` and `overhang_mm` (`min`/`max`) retain existing native and solver enforcement. `class` accepts `edge_receptacle` or `connector_affinity`; `context.mount_mode` accepts `edge_mount` or `top_mount` and selects the existing seat calculation. `note`/`source` are text evidence. |
+| `proximity[]` | Required `ref`, `near`, nonnegative finite `max_mm`, and `pads` mapping exactly those two refs to nonempty lists of distinct pad numbers. Missing native pads refuse. This scores minimum Chebyshev distance between pad centres; it is a preference. `basis: "pad_edge"` refuses because the engine does not measure pad edges. Optional `basis` prose and `context` text fields (`limit`, `basis`, `role`, `source`) retain descriptive evidence; they cannot change this metric or establish a hard limit. |
+| `electrical_locality` | The existing `agent-ee.electrical-locality/1` validator, provenance classification, Rust feasibility and final native checks remain authoritative. Unknown nested fields refuse; a label alone does not establish a hard limit. |
+
+The separate groups input requires `groups[]` with `name`, `anchor`, `refs`;
+names and membership must be unique, and the anchor belongs to its refs.
+Optional group `role`/`why` are descriptive text. Optional top-level `schema: 1`
+and `board` retain the legacy group envelope; `board` is a descriptive label,
+while the actual native input is bound by `inputs.board` and its SHA-256.
+Group anchor distance remains a preference. Group `near`, side, zone, region
+or hard-cohesion declarations are unsupported and refuse.
+
+Jobs record `intent_contract` with the supported version, input form, validator
+hash, constraint/preference distinction and unsupported capabilities. The
+validator hash participates in checkpoint identity. Adding the supported schema
+to an otherwise identical document leaves captured geometry and constraints
+unchanged, but changes input bytes and therefore requires a fresh job.
+
+Rich KRT `floorplan-intent` documents (`schema: 1`, `min_reader`, `assembly`,
+`blocks`, `keepouts`, `envelope`, `defaults`, `legality_budget`, `must_lock`,
+`decaps`, etc.) are not this contract, even if a collection is empty. The raw
+retained esp_prog input now refuses at `intent.assembly.sides`; its connector
+side and group-nearness declarations also need explicit treatment. Keep the
+original input and its hash. Migration requires a separate source-bound mapping
+of every declaration to an implemented constraint, a named unsupported
+requirement, or clearly descriptive evidence. Deleting unsupported fields does
+not establish equivalent intent or qualify that board. AGENTEE-479 owns this
+representative's compatibility mapping. Acquisition's minimal unversioned
+intent remains supported. No automatic filtering or KRT-reader fallback runs.
+
 Native non-default netclasses and custom rules are carried through the job.
 `inputs.project` must name the board's same-stem `.kicad_pro`. If a same-stem
 `.kicad_dru` exists, `inputs.rules` must name it with its SHA-256; omission or a
@@ -97,7 +140,8 @@ remain advisory and never acquire owner authority.
 A captured engineering citation can establish a declared engineering constraint
 under the shared source-quantity checks. It retains class `engineering`;
 an engineering label alone remains advisory. The older `intent.proximity`
-nearest-pad score remains a preference and supplies no hard-limit acceptance.
+minimum Chebyshev pad-centre score remains a preference and supplies no
+hard-limit acceptance.
 
 ```json
 {"schema": "agent-ee.placement-job-config/1", "budget_s": 600,
