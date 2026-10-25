@@ -211,3 +211,33 @@ Agent-568 continues the resume-history correction `9a0a5844@1`; its request is
 currently leased to the existing online session. Agent-566's metric review is
 complete. Agent-570 remains unavailable. All accepted trunk behavior is preserved,
 and M1 and the telemetry-pod hold are unchanged.
+
+
+## Delivery and inbox checkpoint — 2026-10-25 15:00 PDT
+
+Consumer correction `400360e9`, preserving parent `36da8f71`, is delivered in
+agent-568's clean worktree. Fable review `b0e653ca@1` confirms from source that
+external invocation refusals preserve previous records while retained-evidence
+corruption withdraws acceptance with an exact-byte archive. The reviewer did not
+rerun native tests. The worker reports 28 strict native tests and a genuine legacy
+accepted-file resume probe. Chief native reproduction, hash verification and
+serial integration remain required; 521 is open. Pending rule-evaluation labels
+remain non-passing and will be checked during acceptance.
+
+Agent-567 stopped as required when the origins inventory omitted its unstaged new
+test. No native producer ran. The chief verified the exact gate error, the
+`git ls-files` inventory boundary, authored synthetic test and origin declaration,
+and all five saved draft hashes. Continuation `2a1cd20a@1` authorizes restoring
+that owned draft and staging the reviewed file before rerunning the unchanged
+gate, then finishing the existing scope. It allows no gate waiver, broader origin
+classification, or repeated external effect. The draft is unverified. The bounded
+continuation retains strict native checks and at most one retained-board producer;
+523 and semantic artwork acceptance remain open.
+
+[Plane readback](execution-checkpoint-1500.json) preserves open states and parent
+relationships for 479, 521, 523 and 515. Agent-565 continues coherent grouping;
+agent-569 continues additive manufacturer-text capture. The chief drained only
+its own supplied session inbox, read exact sources and acknowledged notices and
+responses through position 7497; the inbox then returned empty. No assignment was
+replayed by acknowledgment. M1, independent judgments and the telemetry-pod hold
+remain unchanged.
