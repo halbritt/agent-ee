@@ -5,7 +5,10 @@
   "stage": "ROUTER_DECISION",
   "holder": "agent-570",
   "holder_agent_id": "edb45025-2b0c-4f30-9a52-ca2aff8147c1",
-  "findings_addressed": ["REC-17", "REC-22"],
+  "findings_addressed": [
+    "REC-17",
+    "REC-22"
+  ],
   "decisions_enforced": {
     "RD-01": "finite delivery (M1 is captured 17-part acquisition + imported esp_prog; plane recovery and QFN/BGA fanout remain M3)",
     "RD-02": "orchestration and placement (keep build_workflow, placement_job/prepared Rust search as placement boundary, and owned kicad-route as adapter; KRT algorithms are candidates for focused adaptation, not automatic defaults)",
@@ -15,10 +18,11 @@
   },
   "inputs": {
     "agent_ee_frozen_base": "dab756e56a6a5358c00983074565af0e8e09862c",
-    "agent_ee_observed_root_at_2026_10_25T19_47_11Z": "95af4de179a62cd0ca19f31c7df8665c2881ffbe",
     "kicad_route_observed_at_2026_10_25T19_47_11Z": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
     "upstream_krt_observed_at_2026_10_25T19_21_15Z": "8e56ba977521d245848ed294378b590b0f7539b9",
-    "recovery_plan_sha256": "0ac28eb5717241ed092446d5bce2e115088e693438295645e9c1984da72842b1"
+    "recovery_plan_sha256": "0ac28eb5717241ed092446d5bce2e115088e693438295645e9c1984da72842b1",
+    "agent_ee_worker_reported_earlier_root": "95af4de179a62cd0ca19f31c7df8665c2881ffbe",
+    "root_snapshot_limit": "Worker capture time unverified; chief directly observed21a39d0f at19:47UTC. Frozen dispatch input unchanged."
   },
   "doctrine_receipt": {
     "packet_id": "pkt-c137855f1bb9958d",
@@ -74,7 +78,7 @@
     },
     "KICADROUTE-106": {
       "uuid": "9fb1b0c2-e64d-442b-a9e4-14960d6feb0b",
-      "choice": "Record qfn_fanout in routing_closure.py and UPSTREAM.json (RD-02, RD-05); gate bga_fanout persist_pour_served_pads on not args.no_fix_drc_settings and return finish_design_rules(args, 0); expose fanout only as an opt-in --component stage resolving per-net widths and applicable net-pair clearances (treating w+c<=p/sqrt(2) as necessary only for equal-width adjacent parallel 45-deg QFN stubs, not sufficient for DRC), forbidding via-in-pad unless a selected profile provides explicit process support and sourced geometry (RD-03, RD-04), restoring .kicad_pro sidecars, and requiring both cli.preservation and native DRC (RD-05)."
+      "choice": "Record qfn_fanout in routing_closure.py and UPSTREAM.json (RD-02, RD-05); preserve generated pour-serving promises in a board-bound sidecar before restoring authored project files, propagate and verify at downstream consumers, and verify finish_design_rules status handling; suppressing persistence alone is rejected; expose fanout only as an opt-in --component stage resolving per-net widths and applicable net-pair clearances (treating w+c<=p/sqrt(2) as necessary only for equal-width adjacent parallel 45-deg QFN stubs, not sufficient for DRC), forbidding via-in-pad unless a selected profile provides explicit process support and sourced geometry (RD-03, RD-04), restoring .kicad_pro sidecars, and requiring both cli.preservation and native DRC (RD-05)."
     },
     "AGENTEE-516": {
       "uuid": "40da87f6-c7c2-43fc-abff-fa8d7a79b846",
@@ -84,5 +88,11 @@
       "uuid": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a",
       "choice": "Add native pcbnew/kicad-cli control and negative regression tests (RD-03, RD-05) for plane-plan/2 stitching vias, netclass-floored plane repair, bounded QFN/BGA fanout preflight + native DRC + preservation, and placement_job._route_feedback barrier/ownership/blocked retries."
     }
+  },
+  "chief_adjudication": {
+    "status": "selected conditional reuse directions; no feature enabled",
+    "preserve_pour_promises": true,
+    "native_qfn_drc": "not run",
+    "parameterized_expansion": "exceeded dispatch count; no further experiments authorized by that excess"
   }
 }
