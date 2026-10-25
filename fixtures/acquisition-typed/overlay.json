@@ -28,6 +28,24 @@
     "supplier/C85973.provenance.json": "50e22ade1fb29f11bd4e363544f8c7aac30da21f8899c335f10b8baf78e21631",
     "supplier/C85973.raweasy.json": "c89e33b980032a4c1ea86a6baea1b34ed5930c22ba67f8a15b45d45c1f6b00a8"
    }
+  },
+  "manufacturer-text": {
+   "files": {
+    "ads1115.txt": "7e50ff262cb5be665ccf33cfd082bf9d46baaa807648f2b118cf3fc077b0d034",
+    "bat46w.txt": "be3b47d2770da1c2544fcb8ed973818ec5e185a167a13a183471b12449d7c268",
+    "jst-ph.txt": "9553878588234be82b72e0a89774ac67bbc0022c4aef14cfdbac1383b32d8df1",
+    "manifest.json": "ee1c4d695cdd0ba20527a50bd73516dc2e955559a9bd59829edd5d35748fe43f",
+    "murata-catalogue.txt": "4affcd1d8cb576b2afb8a9ad3fe27418beb4868d8de048563d08fef70e52d58a",
+    "rc-mounting.txt": "221f22cb355bc54a4f682d90330c63bbc8cd24d82e250fdb917d70a8d5c38974",
+    "rc-series.txt": "e92249df44472848f9a18eb0606ec309a099112d773b150876c33d654b8a9439",
+    "rc1k.txt": "d7779811745eb6bc239477b62faf01ab6d6cccd93afd113f8751dcf28a1aa97c",
+    "rc22k.txt": "d46e06b04416976b5141efaba52f7fc2c9b653f62e9d862e9a5fc14d971cf6db",
+    "rc2k2.txt": "a17c48b0a585d99fbfbbca5c61c1da5f1b5da5abccb9c90009c4b8689efbd11f",
+    "samsung-selected.txt": "314d0d5a911a73be10255d61b9430aca4c8ef0f07cd69dc0d60cfba69eaa1093",
+    "samsung-viewer.txt": "c8175f3dc86c2fac77cb952be926085f6dc077a057ddee982e77a7b4ce013a0f",
+    "tps7a20.txt": "655f6b6f0bcdb005e2316f7d9217eb9defb56ac31e262d7de64645d7efdac523",
+    "yageo-cc.txt": "42ed2b3d7b8195a0b8b5e11e581c6bf80d174cf542543e741aa9c6fabbcc5876"
+   }
   }
  },
  "base": {

@@ -1,0 +1,166 @@
+{
+  "base_inventory_sha256": "718b4619c597efdfb730727804614546fac174feacc93ec0fec2a7a39084cd54",
+  "documents": [
+    {
+      "id": "tps7a20",
+      "physical_pages": 63,
+      "source": {
+        "manifest_path": "datasheets-regulator-qualified/manifest.json",
+        "manifest_sha256": "897ae4ce0d6234e6d8e70cc86cd16e861ab7294c5dcf6efebd32bcf8eb20afe1",
+        "part_id": "regulator",
+        "path": "datasheets-regulator-qualified/24a62c3bba44bad0f419bbf8b75ac28c0402b7c3f91125020e1d3595e602b2a5.pdf",
+        "sha256": "b6c487d79ebed6dd43bf220b07fc5b3ecb9ee55d87e6daa2312acda6546046c0"
+      }
+    },
+    {
+      "id": "ads1115",
+      "physical_pages": 57,
+      "source": {
+        "manifest_path": "datasheets-core/manifest.json",
+        "manifest_sha256": "f1aa86638b048e96f07bd0d54c2217c2eef972d6022a1c5c801531f709526d21",
+        "part_id": "adc",
+        "path": "datasheets-core/221813224c23a7b649ef22e3e1116744e53b8cbaa31fc43afd6872174f300295.pdf",
+        "sha256": "eefff4d412ce2dcd7e659f47238edc9b2fa02e5971f2625af730502033701834"
+      }
+    },
+    {
+      "id": "bat46w",
+      "physical_pages": 5,
+      "source": {
+        "manifest_path": "datasheets-power-refined/manifest.json",
+        "manifest_sha256": "bcbeb83436b4a877a5fd26f68b6ff05fd3734b51401bf314aa2cf409e0129484",
+        "part_id": "C83152",
+        "path": "datasheets-power-refined/ff2e780dd8716f9ddf9cdb60a5b9b804b65917a304adaaf7e4e3c8dfa85bd8de.pdf",
+        "sha256": "3bc31f4a5302521c7e298f95aef7e3425ea68ae287bd28a6cfa8d0689fcbe56b"
+      }
+    },
+    {
+      "id": "samsung-selected",
+      "physical_pages": 38,
+      "source": {
+        "manifest_path": "datasheets-connectors-bulk/manifest.json",
+        "manifest_sha256": "0851bd57b2b559e831d97b583c8218ac3f02ed190c5a362d63f76ad3afe9a685",
+        "part_id": "C15850",
+        "path": "datasheets-connectors-bulk/af098223ad259e1efd4ef186566d50d6e77cb1a6ea0623fbe5e3c5a9ec7e5c81.pdf",
+        "sha256": "f0fc85a253cc95f38950a4406c88834f52c4b7697226692cafbb98fbb7c5727a"
+      }
+    },
+    {
+      "id": "samsung-viewer",
+      "physical_pages": 84,
+      "source": {
+        "manifest_path": "datasheets-current-viewer/manifest.json",
+        "manifest_sha256": "ceeceb7b023a16345c269209142bb72b384921af5ef8fd11a53d0fdf0a9199a5",
+        "part_id": "C15850",
+        "path": "datasheets-current-viewer/6372524aeb01ce4095977a34bcb8a242c0647b0122d7a103bcdcee0f750a6553.pdf",
+        "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6"
+      }
+    },
+    {
+      "id": "jst-ph",
+      "physical_pages": 5,
+      "source": {
+        "manifest_path": "datasheets-connectors-bulk/manifest.json",
+        "manifest_sha256": "0851bd57b2b559e831d97b583c8218ac3f02ed190c5a362d63f76ad3afe9a685",
+        "part_id": "C131334",
+        "path": "datasheets-connectors-bulk/bb0b7c344f87ea4a2eb01dbf02c4541bd9482608f57c1dc3ca2f5e333a0dd2a4.pdf",
+        "sha256": "447624f4f2f7d37c58c1eaa7ee314ad757fe7aff48f6186491ef6f69fbc00b96"
+      }
+    },
+    {
+      "id": "yageo-cc",
+      "physical_pages": 4,
+      "source": {
+        "manifest_path": "datasheets-passives-manufacturer/manifest.json",
+        "manifest_sha256": "e60e9bfa295b1d43a21daa551e7bf86b902e02da5d3d897b949f3a2c7731d266",
+        "part_id": "C14663",
+        "path": "datasheets-passives-manufacturer/ed513f046f893a677f85ed5f6d155ab3da52c2860205776c9f2fd65b9b038003.pdf",
+        "sha256": "9ec4d286b65ee577d02ed04da205ae18020b4fe19ec054bb6b37874bf3419d47"
+      }
+    },
+    {
+      "id": "murata-catalogue",
+      "physical_pages": 296,
+      "source": {
+        "manifest_path": "datasheets-current-viewer/manifest.json",
+        "manifest_sha256": "ceeceb7b023a16345c269209142bb72b384921af5ef8fd11a53d0fdf0a9199a5",
+        "part_id": "C85973",
+        "path": "datasheets-current-viewer/84838d0ebd3e1734b1037b09b8d2702e912e9627525beba9a2ba0cd20d3c45d5.pdf",
+        "sha256": "9a8a89cd730ba1b1b678b51bad5ab28083f45ed6a8d1ee61fcf7180834feebb5"
+      }
+    },
+    {
+      "id": "rc22k",
+      "physical_pages": 1,
+      "source": {
+        "manifest_path": "datasheets-resistor-release/manifest.json",
+        "manifest_sha256": "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597",
+        "part_id": "C114065",
+        "path": "datasheets-resistor-release/7bed43a30641d3bdd5a9433316b1c045a560480319b8be6248693677d7d2a934.pdf",
+        "sha256": "fe66259a396b65ee3f6d9f6fb8aa2b259f0dee083159b0a121297d7f20500e88"
+      }
+    },
+    {
+      "id": "rc2k2",
+      "physical_pages": 1,
+      "source": {
+        "manifest_path": "datasheets-resistor-release/manifest.json",
+        "manifest_sha256": "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597",
+        "part_id": "C114662",
+        "path": "datasheets-resistor-release/1bdf4d6ccb1acb551b90240e86f15ffebae1e261a40e291812ea6ebe55652867.pdf",
+        "sha256": "99d6adb5c5531cd2e57dc39903076d9bf7981c5382697ea6e00959779a4d5d54"
+      }
+    },
+    {
+      "id": "rc1k",
+      "physical_pages": 1,
+      "source": {
+        "manifest_path": "datasheets-resistor-release/manifest.json",
+        "manifest_sha256": "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597",
+        "part_id": "C22548",
+        "path": "datasheets-resistor-release/940ef152c6ae41f6b9313dd00385e7228df3d5f8ff2f8f9cd8425972e390cf33.pdf",
+        "sha256": "0cfc4542280b66a99dfd82d0b3b7f6db9dd756de6e01c225949c567091d63d88"
+      }
+    },
+    {
+      "id": "rc-series",
+      "physical_pages": 11,
+      "source": {
+        "manifest_path": "datasheets-resistor-release/manifest.json",
+        "manifest_sha256": "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597",
+        "part_id": "RC-series",
+        "path": "datasheets-resistor-release/78e0066f2ca072520dc03976532bf751103a06bf4d2bc4b7ff0761b64ab28e30.pdf",
+        "sha256": "7b6f0ae72708ca4b38126f84b5407a3e970a94cb60bc1a0afdaeb25a23d839bb"
+      }
+    },
+    {
+      "id": "rc-mounting",
+      "physical_pages": 8,
+      "source": {
+        "manifest_path": "datasheets-resistor-mounting/manifest.json",
+        "manifest_sha256": "f8b4c231da2d888436ac0d4519fe53302b05ebbb51f61b9d5f3af6236eefef12",
+        "part_id": "RC-mounting",
+        "path": "datasheets-resistor-mounting/18f2e7baffabb9fa2fc2cf0579349bc32c3a05ea55d4c437bbcf434fb81ae291.pdf",
+        "sha256": "591634ace247f61e9c6a263ca1ac98d7672fc163f5e87334c3460956f5c68b7b"
+      }
+    }
+  ],
+  "limitations": [
+    "Machine text extraction only; no OCR or engineering evaluation.",
+    "Figures, image-only assertions and graph values are not transcribed.",
+    "Exact-part Samsung bias and Murata approval evidence remain unresolved."
+  ],
+  "schema": "agent-ee.manufacturer-text-sources/1",
+  "tools": {
+    "pdfinfo": {
+      "path": "/usr/bin/pdfinfo",
+      "sha256": "a77b2df7a2461aba1f33706daaf5ba4d78304e971686173b6db3b10a9fe44d65",
+      "version": "pdfinfo version 24.02.0"
+    },
+    "pdftotext": {
+      "path": "/usr/bin/pdftotext",
+      "sha256": "46e5639c4096edd4bb06963cc7219401f9b91e0390fe40b3ba1482d1b5386c63",
+      "version": "pdftotext version 24.02.0"
+    }
+  }
+}

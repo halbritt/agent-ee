@@ -6,6 +6,11 @@ acquisition design; it is not a build, a review, a manufacture approval, or
 a claim that any obligation is satisfied. No retained file under `build/`
 was modified; no judgment record, witness or candidate was created.
 
+The later [additive primary-text preparation](acquisition-primary-text-2026-10-25.md)
+extends the current overlay with a separately captured `manufacturer-text`
+input tree. Historical identities below remain unchanged records; the new
+revision requires its own review and acceptance.
+
 ## Accepted base identities (before the D1 supplement)
 
 | Item | Value |
@@ -62,6 +67,7 @@ PYTHONPATH=src python3 -m agent_ee.typed_overlay prepare \
   build/acquisition-release/inputs fixtures/acquisition-typed/overlay.json \
   --out /path/outside/build/acq-typed \
   --added-input cpl=/path/to/agent-566/cpl-inputs-rev3 \
+  --added-input manufacturer-text=/path/to/reproduced/manufacturer-text \
   --compile-against build/acquisition-release/release-build-v7/stages/03-scaffold-d1c92e58719b49298406561cdd1f0acb/product/inputs \
   --receipt /path/outside/build/acq-typed-receipt.json
 ```

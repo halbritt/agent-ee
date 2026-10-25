@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_ee import typed_overlay
 from agent_ee.requirement_map import Refused, SCHEMA_2, coverage_view, load_obligations
 from agent_ee.spec_record import sha256, verify
+from agent_ee.source_authority import verified_reference
 from agent_ee.storage import json_bytes, read_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,7 @@ POD = ROOT / 'fixtures/telemetry-pod'
 ACQUISITION_OVERLAY = ROOT / 'fixtures/acquisition-typed/overlay.json'
 RETAINED = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
 CPL_SOURCE = Path(os.environ.get('AGENT_EE_ACQUISITION_CPL_INPUTS', ROOT / 'build/acquisition-release/cpl-inputs'))
+TEXT_SOURCE = Path(os.environ.get('AGENT_EE_ACQUISITION_TEXT_INPUTS', ROOT / 'build/acquisition-release/manufacturer-text'))
 # The committed overlay pins agent-566's cpl-inputs-rev3 (24 rev2 files + polarity/C83152.polarity.json).
 
 
@@ -305,8 +307,9 @@ class PreservationTests(PodOverlayTests):
                          {k: v for k, v in second['derived'].items() if k != 'added_inputs'})
 
 
-@unittest.skipUnless((RETAINED / 'spec.md').exists() and (CPL_SOURCE / 'assembly-profile.json').exists(),
-                     'retained acquisition inputs or the CPL input revision are not present on this host')
+@unittest.skipUnless((RETAINED / 'spec.md').exists() and (CPL_SOURCE / 'assembly-profile.json').exists()
+                     and (TEXT_SOURCE / 'manifest.json').exists(),
+                     'retained acquisition inputs or additive CPL/text captures are not present on this host')
 class AcquisitionOverlayTests(unittest.TestCase):
     """The committed acquisition overlay against the retained, git-ignored captured inputs."""
 
@@ -317,7 +320,7 @@ class AcquisitionOverlayTests(unittest.TestCase):
             self.assertEqual(sha256((RETAINED / name).read_bytes()), overlay['base'][key], name)
         with tempfile.TemporaryDirectory() as tmp:
             result = typed_overlay.prepare(RETAINED, ACQUISITION_OVERLAY, Path(tmp) / 'derived',
-                                           added_sources={'cpl': CPL_SOURCE})
+                                           added_sources={'cpl': CPL_SOURCE, 'manufacturer-text': TEXT_SOURCE})
             accounting = result['manifest']['accounting']
             self.assertEqual(accounting['obligations']['operational'], 1)
             self.assertEqual(accounting['obligations']['physical'], 2)
@@ -331,7 +334,8 @@ class AcquisitionOverlayTests(unittest.TestCase):
             self.assertEqual(set(result['manifest']['derived']['changed_files']),
                              {'requirement-map.json', 'analysis/electrical-intervals.json'})
             self.assertEqual(result['manifest']['derived']['added_files'],
-                             ['obligations.json'] + sorted('cpl/' + n for n in overlay['added_inputs']['cpl']['files']))
+                             ['obligations.json'] + sorted(at + '/' + n for at, declaration in
+                                 overlay['added_inputs'].items() for n in declaration['files']))
             derived_map = read_json(derived / 'requirement-map.json')
             deliv = next(e for e in derived_map['requirements'] if e['id'] == 'ACQ-DELIV-1')
             ids = [c['id'] for c in deliv['spans'][0]['mapping']['checks']]
@@ -354,6 +358,33 @@ class AcquisitionOverlayTests(unittest.TestCase):
             for a, b in zip(intervals['assertions'], base['assertions']):
                 self.assertEqual({k: v for k, v in a.items() if k != 'requirement'},
                                  {k: v for k, v in b.items() if k != 'requirement'})
+            # Actual captured PDF text must survive the same read_text/quote path as judgments.
+            manifest = read_json(derived / 'manufacturer-text/manifest.json')
+            self.assertEqual(manifest['status'], 'complete')
+            self.assertEqual(len(manifest['documents']), 13)
+            self.assertEqual(sum(len(d['pages']) for d in manifest['documents']), 574)
+            for document in manifest['documents']:
+                name = 'manufacturer-text/' + document['text']['path']
+                raw = (derived / name).read_bytes()
+                text = (derived / name).read_text(encoding='utf-8')
+                self.assertEqual(sha256(raw), document['text']['sha256'])
+                self.assertEqual(text.encode('utf-8'), raw)
+                offset = 0
+                for number, page in enumerate(document['pages'], 1):
+                    self.assertEqual(page['physical_page'], number)
+                    self.assertEqual(page['byte_start'], offset)
+                    end = page['byte_end']
+                    self.assertEqual(raw[page['content_byte_end']:end], b'\f')
+                    self.assertEqual(sha256(raw[offset:end]), page['sha256'])
+                    offset = end
+                self.assertEqual(offset, len(raw))
+                page = next(p for p in document['pages'] if p['text_nonempty'])
+                paragraph = raw[page['byte_start']:page['content_byte_end']].decode('utf-8')
+                quote = next(line.strip() for line in paragraph.splitlines() if line.strip())
+                citation = {'path': name, 'sha256': document['text']['sha256'],
+                            'locator': f"PDF {document['source']['sha256']}, physical page {page['physical_page']}",
+                            'quote': quote}
+                self.assertEqual(verified_reference(citation, {name: text})['enforcement'], 'verified')
 
 
 if __name__ == '__main__':
