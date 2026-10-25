@@ -153,6 +153,42 @@ receipt and record; it is never upgraded to a pass. The passing gate adds a
 limitation naming each designator and side, and its summary ends
 `cpl rotation PREVIEW_REQUIRED; N preview obligations`.
 
+## Assembly profile (AGENTEE-524)
+
+An optional `assembly_profile` param names a captured, immutable
+`agent-ee.assembly-profile/1` document (candidate-relative path). It requires a
+declared `cpl_rotation` check and is stripped from the delegated export with
+`model_libraries`. After the sealed artifact record is computed, the done gate
+adds `details.assembly_orientation` (`agent-ee.assembly-orientation/1`) from
+facts the package already sealed: the native export CPL, the passing complete
+rotation report and the sealed pcbnew pad plating. The artifact record and
+`artifacts_id` do not change.
+
+The profile is exactly `schema`, `profile_id` (`jlcpcb-cpl-software/1` is the
+only supported id), `supplier`, `service`, `applicability` (`sides` ⊆ Top/Bottom,
+`mount` ⊆ smd/through_hole), `rotation_check`, `policy_sha256`,
+`position_convention` (fixed: board X, negated board Y, pad-box centroid, native
+angle plus the policy delta with the bottom side mirrored), `sources` and a
+labelled `rationale`. An unknown id, a `policy_sha256` that differs from the
+sealed rotation policy, a `rotation_check` the package did not seal, or a row
+without the facts it needs makes the done gate `unsupported`.
+
+Each CPL row records its mount type (from sealed pad plating: any PTH pad is
+through-hole), its applicability, and two separate verdicts. The **angle** basis
+is `native_supported` (no correction; the board and supplier pin-1 frames agree
+at 0°), `corrected` (a policy rule applied and the frames agree with it),
+`outside_profile` or `unassessed`. The **anchor** record carries the native and
+exported positions and `changed`: `cpl_rotation` replaces the footprint anchor
+with the pad-box centroid even at 0°, so `native_supported` never implies the
+anchor was unchanged. Rows outside the profile's sides or mount types are not
+supported and not a refusal: they are listed in `unassessed_rows` and
+`software_assessment` is `incomplete`. Without a profile every row is
+`unassessed`. `supplier_confirmation` is always `pending_preview`; a software
+assessment never confirms that the supplier will assemble a declared mount
+type, and the preview obligations are unchanged. The summary ends with
+`assembly orientation <state>`. Bare-board, diagnostic and campaign scopes that
+declare no profile behave exactly as before.
+
 ## Generation scopes
 
 A scope written by a generation scaffold carries a marker:

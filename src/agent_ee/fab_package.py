@@ -128,17 +128,25 @@ def rotation_blocker(status, obligations=None, policy_sha256=None):
     return f'fab: cpl rotation {status}: {problem}' if problem else None
 
 
+# Done-gate-only params the delegated export never sees.
+PACKAGE_PARAMS = ('model_libraries', 'assembly_profile')
+
+
 def validate_params(params):
     fab_export.validate_params(export_params(params))
     fab_consistency.model_libraries(params)
+    profile = params.get('assembly_profile') if isinstance(params, dict) else None
+    if profile is not None and (not isinstance(profile, str) or not profile or profile.startswith('/')
+                                or '..' in profile.split('/')):
+        raise ValueError('assembly_profile must be a captured candidate-relative path')
     return params
 
 
 def export_params(params):
-    """Keep the consistency gate's model receipts out of the export contract."""
+    """Keep the done gate's model receipts and assembly profile out of the export contract."""
     if not isinstance(params, dict):
         return params  # The export validator reports malformed parameter objects.
-    return {key: value for key, value in params.items() if key != 'model_libraries'}
+    return {key: value for key, value in params.items() if key not in PACKAGE_PARAMS}
 
 
 # Checks that may follow the done gate, each bound to it by this param (AGENTEE-524 adds the
@@ -171,6 +179,11 @@ def capability(params, scope, spec, prerequisite, captured):
     rotation = declared_rotation(scope)
     if rotation is not None:
         prerequisite(rotation.get('id'), ('cpl_rotation',))
+    if params.get('assembly_profile') is not None:
+        # An assembly profile assesses the declared correction; it cannot stand in for one (AGENTEE-524).
+        if rotation is None:
+            raise ValueError('assembly_profile requires a declared cpl_rotation check')
+        captured(params['assembly_profile'], immutable=True)
     for receipt in fab_consistency.model_libraries(params).values():
         captured(receipt, immutable=True)
     predicates = (fab_export.capability(export_params(params))['predicates'] + list(fab_consistency.PREDICATES)
@@ -348,6 +361,7 @@ def check_fab_package(ctx):
     details['rotation'] = artifacts['rotation']
     status = artifacts['rotation']['status']
     obligations = artifacts['rotation'].get('preview_obligations')
+    details['assembly_orientation'] = assess_orientation(ctx, artifacts['rotation'])
     if status != 'not_declared':
         ctx.result['limitations'].append(
             f"the sealed CPL is cpl_rotation {artifacts['rotation']['check_id']!r}'s corrected cpl.csv; "
@@ -356,8 +370,46 @@ def check_fab_package(ctx):
         ctx.result['limitations'].append(
             f"operator obligation before ordering: {PREVIEW_ACTION}: "
             + ', '.join(f"{e['designator']} ({e['side']})" for e in obligations['designators']))
+    assessment = details['assembly_orientation']
+    if assessment['profile_id'] is not None:
+        ctx.result['limitations'].append(
+            f"assembly orientation is a software assessment under {assessment['profile_id']} "
+            f"({assessment['software_assessment']}); supplier confirmation {assessment['supplier_confirmation']}"
+            + (': unassessed rows ' + ', '.join(r['designator'] for r in assessment['unassessed_rows'])
+               if assessment['unassessed_rows'] else ''))
     ctx.result.update(execution='ok', outcome='pass',
                       summary=f'fab package done gate passed: {export_summary}; {sub.result["summary"]}; '
                               f'{len(artifacts["files"])} sealed artifacts {artifacts["artifacts_id"][:12]}; '
                               f'cpl rotation {status}'
-                              + (f"; {len(obligations['designators'])} preview obligations" if obligations else ''))
+                              + (f"; {len(obligations['designators'])} preview obligations" if obligations else '')
+                              + f"; assembly orientation {assessment['software_assessment']}")
+
+
+def assess_orientation(ctx, rotation):
+    """`agent-ee.assembly-orientation/1` for this package from its sealed facts (AGENTEE-524 part B).
+
+    Without an `assembly_profile` param every row is `unassessed`. With one, the captured
+    profile must validate and bind to the sealed rotation evidence; otherwise the done gate
+    is `unsupported`. The artifact record and `artifacts_id` are untouched either way.
+    """
+    from .assembly_profile import orientation_assessment, unassessed_record, validate_profile
+    from .catalog import strict_json
+    from .checks import CheckError
+    native_cpl = (ctx.work / 'fab' / 'cpl.csv').read_text(encoding='utf-8')
+    rel = ctx.params.get('assembly_profile')
+    if rel is None:
+        return unassessed_record(rotation, native_cpl, 'no assembly profile declared')
+    path = ctx.inputs / rel
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f'captured assembly profile {rel} is absent')
+        raw = path.read_bytes()
+        profile = validate_profile(strict_json(raw.decode('utf-8')))
+        report = read_json(ctx.run_dir / rotation['report'])
+        ids, _ = fab_consistency.geometry_footprints(ctx)
+        pads = read_json(ctx.run_dir / 'work' / ids[0] / 'geometry.json').get('pads')
+        if not isinstance(pads, list):
+            raise ValueError('sealed geometry lacks pad records; rerun the geometry probe')
+        return orientation_assessment(profile, digest(path), rotation, report, native_cpl, pads)
+    except (ValueError, OSError, KeyError, TypeError, UnicodeError) as exc:
+        raise CheckError('unsupported', f'assembly profile {rel}: {exc}') from exc

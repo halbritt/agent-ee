@@ -27,7 +27,7 @@ There is no supplier upload or order.
 
 ## 2. Part A: a roundtrip bound to the exact released bytes (REC-16)
 
-**Contract.** `fab_roundtrip` params take exactly one of `export_check` (current behaviour, unchanged) or `package_check`. Both still allow the optional `model_libraries`.
+**Contract.** `fab_roundtrip` params take exactly one of `export_check` (current behaviour, unchanged) or `package_check`. Only `export_check` allows the optional `model_libraries`; the sealed `package_check` mode deliberately refuses it, because the roundtrip never used it (landed in part A, `877b4153`).
 
 1. **Ordering without a cycle.** `fab_package.require_last` also admits a `fab_roundtrip` whose `params.package_check` names this package, the same pattern as `jlc_dfm`. The package never reads the roundtrip.
 2. **Binding to the prior result.** The check resolves the same-candidate `ok/pass` `fab_package` result and calls `artifact_record(run_dir, prior)`. It refuses unless the recomputed `artifacts_id` equals `prior.details.artifacts.artifacts_id` and `manifest.board_sha256` equals the captured board digest.
@@ -97,7 +97,7 @@ The acquisition CPL has 17 rows, all Top, with no exclusions, covering 11 unique
 | C131334 | J2, J3 | CONN-TH B4B-PH-K-S | parses (through-hole) |
 | C22548, C114662, C114065 | R1–R6 | R0603 | parses |
 | C37593 | U2 | MSOP-10 (KiCad TSSOP-10_3x3mm_P0.5mm) | parses; a pad-set match is unproven until the run |
-| **C2862740** | **U1** | SOT-23-5 | **refused**: `PAD gge308 number '3': outline differs from declared rectangle`. Still refused at 25,400 nm, so this is a genuine record disagreement, not a tolerance problem. |
+| **C2862740** | **U1** | SOT-23-5 | **refused**: `PAD gge308 number '3': outline differs from declared rectangle`. **Corrected 2026-10-25 (agent-569, landed `b74cac20`):** the refusal was a reader bug, not a source disagreement. The reader paired sorted outline corners and mispaired nearly vertical edges; one-to-one corner matching at the unchanged 200 nm tolerance accepts all five pads (errors ≤ 152.4 nm). U1 now parses. |
 
 **Bounded capture and policy work. This is M1 work, not deferred.**
 1. Capture each `result` object byte-exact as `supplier/<LCSC>.raweasy.json`, with `agent-ee.supplier-footprint/1` provenance (real `source_url`, `retrieved_at`, `retrieval`). The captures go in a **new** captured input directory. The retained `release-build-v7` stays untouched. This is a fetch only, with no upload.
@@ -107,9 +107,9 @@ The acquisition CPL has 17 rows, all Top, with no exclusions, covering 11 unique
    - (b) A second public CAD source for the same LCSC footprint (for example the LCSC/EasyEDA Pro export of the same part) that the reader accepts, cited in the profile.
    - (c) An owner-saved JLC placement-preview record for U1. This would be supplier confirmation, not software assessment, and needs owner action because the preview uses a project upload.
 
-   Without one of these, M1 records "16 of 17 assessed, U1 unsupported" and the finding stays open. The design does not call it complete.
+   **Corrected 2026-10-25:** U1 parses after the reader repair, so none of (a)–(c) is needed for parsing. No row was assessed by the probe; all 17 rows stayed unassessed until the part B run under an explicit profile. The actual blocker found by the zero-rule survey and the part B run is D1 polarity, recorded in `AGENTEE-524-partB-verification.md`.
 4. **Real-design proof.** Run `cpl_rotation` plus the profile on the retained acquisition release inputs. Expected:
-   - 16 rows `native_supported` or `corrected`, and U1 unsupported until (a), (b) or (c);
+   - (superseded) see the part B verification record for the per-row outcome;
    - a full pass after (a) or (b);
    - the sealed CPL is the corrected file, and the native CPL is retained.
 
