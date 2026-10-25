@@ -54,11 +54,11 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-520 intent | Landed `01227b586da29660d55b070f6677da539571deac`; 34 strict tests including all previously pending planner guards, docs/origins passed | Pushed and worktree removed; Plane Done. Chief exact-input replay confirms original esp_prog refuses before capture at `intent.assembly.sides` while acquisition still reaches schematic. Raw esp_prog compatibility remains 479 work |
 | AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7` | Compiler landed after chief strict 76 native tests/no skips and docs/origins. Agent-568 implements qualification/build consumer; agent-565 prepares actual acquisition typed inputs. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
 | KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
-| AGENTEE-528 fixed-mark identity | REC-30, observed at runtime source `61c6cd49`, unchanged parser at `877b4153` | Agent-567 assigned narrow identity repair from `c6446c99`; native graph is 519 → 528 → 515. Grouping contract preparation remains independent |
+| AGENTEE-528 fixed-mark identity | [Repair and verification](identity-528-agent-567.md) landed `86cb840f42173453e6737a69239215727a1ef3ad` | Plane Done. Chief independently passed nine native tests/no skips and 17 exact retained controls; 36 tested source hashes matched after rebase. Both marks and all selector/pose protections preserved. Initial placement remains infeasible and original rich intent remains refused; 479 is separate |
 | AGENTEE-479 compatibility/grouping | Agent-570 initial proposal `b053137c` reviewed; correction requested | Not accepted: universal bounding-box exclusion and nearest-peer hard predicates lack design authority. Preserve actual upstream signed pad-edge semantics and label proposed functions separately from executed evidence. Original field mapping and final-native engineering judgment remain required; parent 472 held |
 | AGENTEE-522 mask mismatch / AGENTEE-529 repair | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) landed `82133d6d`; chief checked source and all 94 indexed evidence hashes | Investigation 522 Done. Capture omits resolved mask-graphic expansion. Agent-569 assigned repair 529 with exact seed6/seed11 controls, native API cases and unchanged DRC/rules. No full search or accepted production repair yet |
 | AGENTEE-524 assembly profile | Part B landed `903721fb`; [verification](contracts/AGENTEE-524-partB-verification.md) | Chief strict 95 native tests/no skips plus amended immutable-capture guard passed. Real acquisition remains 16/17 because D1 polarity is unknown. Agent-566 owns the source-bound polarity repair; agent-565 independently assesses its exact source inference. Supplier confirmation remains pending |
-| AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Existing producer refuses native sibling reordering; diagnostic identity alignment passes unchanged translation checks. Focused comparison repair is justified. Graphic classification, final renders/DRC and via/pad process assessment remain pending |
+| AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Agent-567 assigned focused comparison repair from `86cb840f`, after 528 completion. Graphic classification, final renders/DRC and via/pad process assessment remain pending; existing finalization dependencies remain binding |
 
 Qualification records must depend on frozen package evidence in one direction:
 package evidence → completed stage receipt → run-root qualification → build-report summary.
@@ -95,6 +95,12 @@ and input/candidate paths. The qualitative return-path obligation in
 ACQ-MECH-3 must also receive a candidate-bound engineering judgment alongside
 its executable loop measurements. No preparation or build is accepted by this
 checkpoint.
+
+Agent-565 delivered preservation and return-path corrections at `268b3e8f`.
+Chief verification uses a separate immutable managed checkout because the
+worker is preparing a later D1 supplemental input revision. Test results and
+acceptance must identify the exact revision; an in-flight overlay change does
+not inherit verification of the earlier capture set.
 
 [The 13:41 Plane checkpoint](execution-checkpoint-1341.json) records readback
 of these updates and the native 522 → 529 relation. Repair 529 relates to M1;

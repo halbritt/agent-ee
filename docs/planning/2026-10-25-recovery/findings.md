@@ -57,3 +57,9 @@ accepted at `82133d6d`; investigation AGENTEE-522 is complete. A narrow capture
 repair is assigned under [AGENTEE-529](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/ed06d966-ee54-4368-bdd9-ef97cb134ac0), dependent on 522.
 This updates the unresolved cause and disposition to confirmed/actionable without
 rewriting the audit's historical observations or claiming a final-package escape.
+
+REC-30 execution update: [AGENTEE-528 repair](identity-528-agent-567.md) is
+resolved at `86cb840f`. Chief independent verification passed nine native tests
+without skips and all 17 retained parser/native controls, preserving both fixed
+marks and original input bytes. This resolves the parser boundary only; original
+rich-intent support, placement quality and full M1 acceptance remain open.
