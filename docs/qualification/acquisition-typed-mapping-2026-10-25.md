@@ -169,6 +169,41 @@ no answer is recorded here. Summary:
    reference and the scope correction; captured-source body geometry and
    SMT versus through-hole process applicability under `dfm-profile.json`.
 
+## Supplemental revision: D1 polarity evidence (AGENTEE-524)
+
+Authorized by the chief once agent-566 supplied the evidence file. The
+overlay now pins agent-566's `cpl-inputs-rev3`, which is rev2 (24 files,
+all hashes unchanged) plus one file, `cpl/polarity/C83152.polarity.json`,
+sha256 `a3fff2b33cb0669108a52cd0847b49aeb4aa54ee1ef5172e3a2208d6c115648c`
+(`agent-ee.component-polarity/1`, LCSC C83152, MPN BAT46W-7-F, pin polarity
+1 = cathode / 2 = anode, supplier capture `9939a5a6…`, manufacturer source
+the captured BAT46W PDF `3bc31f4a…` page 1 "Polarity: Cathode Band",
+package features gge1050/gge1083/gge1003/gge1002, symbol features
+gge20/gge19/gge3/gge10, drawing-fidelity limitation). Every binding in that
+file was re-verified against the bytes here: the supplier capture hash, the
+datasheet path and hash inside the 198-file base, and the presence of every
+feature id in the capture. The declared `cpl` check gains
+`polarity_evidence: ["cpl/polarity/C83152.polarity.json"]`; nothing else
+changes. The record is supplemental interpreted component data, not a
+judgment record and not supplier confirmation; the independent inspection
+(agent-565, accepted by the chief as a software inference only) is retained
+by the chief outside this repository.
+
+Identities of the supplemental revision (`prepare --added-input
+cpl=<rev3>`, accounting only, exit 0): overlay sha256
+`d3c49916567d7aa35e6ff64f33eeee44449e770a27c119bdebcb154e0d2098bd`;
+derived map `5b6780041d9312acd3d38877c4731aea3e9262f3e612814d1acecaa61d8229d0`;
+obligations unchanged `851029c0…`; base 198 files, 196 unchanged, 2
+derived, 26 added; 47 rows, 14 judgment records declared, 0 present.
+
+**Compile pending.** On main at `82133d6d` the capability validator refuses
+the new parameter: `cpl_rotation params must be exactly {export_check,
+geometry_check, policy, supplier_footprints, source_tolerance_nm}` (exit 2;
+the derived inputs are complete, no receipt is produced). The typed receipt
+for this revision therefore waits for agent-566's `polarity_evidence`
+implementation to land; until then the last compiled receipt is the
+pre-supplement revision recorded above (`scope_sha256 82c27ec7…`).
+
 ## Limits and pending dependencies
 
 - **D1 polarity.** Agent-566's real run with these exact CPL inputs

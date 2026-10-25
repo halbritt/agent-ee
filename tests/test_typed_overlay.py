@@ -19,6 +19,7 @@ POD = ROOT / 'fixtures/telemetry-pod'
 ACQUISITION_OVERLAY = ROOT / 'fixtures/acquisition-typed/overlay.json'
 RETAINED = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
 CPL_SOURCE = Path(os.environ.get('AGENT_EE_ACQUISITION_CPL_INPUTS', ROOT / 'build/acquisition-release/cpl-inputs'))
+# The committed overlay pins agent-566's cpl-inputs-rev3 (24 rev2 files + polarity/C83152.polarity.json).
 
 
 class PodOverlayTests(unittest.TestCase):
@@ -316,6 +317,12 @@ class AcquisitionOverlayTests(unittest.TestCase):
             self.assertEqual(ids[-3:], ['fab-export', 'cpl', 'fab'])
             fab = next(c for c in deliv['spans'][0]['mapping']['checks'] if c['id'] == 'fab')
             self.assertEqual(fab['params']['assembly_profile'], 'cpl/assembly-profile.json')
+            cpl = next(c for c in deliv['spans'][0]['mapping']['checks'] if c['id'] == 'cpl')
+            self.assertEqual(cpl['params']['polarity_evidence'], ['cpl/polarity/C83152.polarity.json'])
+            self.assertEqual((derived / 'cpl/polarity/C83152.polarity.json').read_bytes(),
+                             (CPL_SOURCE / 'polarity/C83152.polarity.json').read_bytes())
+            # The polarity record is supplemental interpreted data, never a judgment record.
+            self.assertFalse((derived / 'judgments').exists())
             intervals = json.loads((derived / 'analysis/electrical-intervals.json').read_bytes())
             base = json.loads((RETAINED / 'analysis/electrical-intervals.json').read_bytes())
             self.assertEqual(intervals['parameters'].keys(), base['parameters'].keys())

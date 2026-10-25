@@ -396,20 +396,24 @@ def compile_typed(derived, candidate):
     _disjoint('derived inputs', derived, {'candidate': candidate})
     _inventory(candidate)  # refuses links before the recursive copy
     root = Path(tempfile.mkdtemp(prefix=derived.name + '.compile-', dir=derived.parent))
-    shutil.copytree(candidate, root, symlinks=False, dirs_exist_ok=True)
-    provenance = root / requirement_map.PROVENANCE
-    if provenance.exists():
-        shutil.rmtree(provenance)  # inside the directory this invocation created
-    overlaid = list(manifest['derived']['changed_files']) + manifest['derived']['added_files']
-    for name in overlaid:
-        target = root / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(derived / name, target)
-    files = _inventory(root)
-    scope, receipt = requirement_map.compile_map(
-        (derived / 'requirement-map.json').read_bytes(), (derived / 'spec-record.json').read_bytes(),
-        (derived / 'spec.md').read_bytes(), files=files, inputs=root,
-        obligations_raw=(derived / 'obligations.json').read_bytes())
+    try:
+        shutil.copytree(candidate, root, symlinks=False, dirs_exist_ok=True)
+        provenance = root / requirement_map.PROVENANCE
+        if provenance.exists():
+            shutil.rmtree(provenance)  # inside the directory this invocation created
+        overlaid = list(manifest['derived']['changed_files']) + manifest['derived']['added_files']
+        for name in overlaid:
+            target = root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(derived / name, target)
+        files = _inventory(root)
+        scope, receipt = requirement_map.compile_map(
+            (derived / 'requirement-map.json').read_bytes(), (derived / 'spec-record.json').read_bytes(),
+            (derived / 'spec.md').read_bytes(), files=files, inputs=root,
+            obligations_raw=(derived / 'obligations.json').read_bytes())
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)  # only the compile copy this invocation created
+        raise
     receipt['compile_root'] = {'candidate': str(candidate), 'path': str(root), 'overlaid': sorted(overlaid),
                                'inventory_sha256': sha256(json_bytes(files))}
     return receipt

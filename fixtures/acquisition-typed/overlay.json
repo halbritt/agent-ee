@@ -4,6 +4,7 @@
    "files": {
     "assembly-profile.json": "f8182f507c12a5e9b5113b545f675d5960efeb5c2f8ad977b649d5dbaa2ab755",
     "jlc-cpl-policy.json": "36b349c7a2ed1622e03a5193574c8b60c75a23ce6b2dde041edcfbb1c175db4b",
+    "polarity/C83152.polarity.json": "a3fff2b33cb0669108a52cd0847b49aeb4aa54ee1ef5172e3a2208d6c115648c",
     "supplier/C114065.provenance.json": "3e7e91c3a968a4670615c77830f1faac305d05f43598c21d64c0a8dee0746cd2",
     "supplier/C114065.raweasy.json": "f092a288bfd186bc41297fb83b43625747109bb35c8bd3dffd2308f1cbc132b7",
     "supplier/C114662.provenance.json": "80d79f1c6899c095733de3808cd94ad932c4c61292c560c9ae7d4833f08086d3",
@@ -50,6 +51,9 @@
     "params": {
      "export_check": "fab-export",
      "geometry_check": "geometry",
+     "polarity_evidence": [
+      "cpl/polarity/C83152.polarity.json"
+     ],
      "policy": "cpl/jlc-cpl-policy.json",
      "source_tolerance_nm": "200",
      "supplier_footprints": [
