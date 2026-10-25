@@ -289,6 +289,81 @@ class RequirementMapTests(unittest.TestCase):
              'mapping': {'id': 'POD-FN-P2-ANALOG', 'limitation': {'reason': 'Ratiometry unverified'}}}])
         return entry['spans']
 
+    def requirement_spans(self, rid='POD-AC-3'):
+        source = next(r for r in self.record['requirements'] if r['id'] == rid)
+        start, end = (source['locator'][k] for k in ('byte_start', 'byte_end'))
+        entry = mapped(self.value, rid)
+        if rid == 'POD-AC-3':
+            split = self.spec_raw.index(b'. ', start, end) + 1
+            spans = [dict(byte_start=start, byte_end=split,
+                          mapping=dict(id=rid + '-NATIVE', checks=copy.deepcopy(entry['checks']))),
+                     dict(byte_start=split + 1, byte_end=end,
+                          mapping=dict(id=rid + '-WAIVERS', limitation=dict(reason='Disposition not verified')))]
+        else:
+            spans = [dict(byte_start=start, byte_end=end,
+                          mapping=dict(id=rid + '-PHYSICAL', bench=copy.deepcopy(entry['bench'])))]
+        entry.clear()
+        entry.update(id=rid, spans=spans)
+        return spans
+
+    def test_requirement_clauses_keep_partial_coverage_and_exact_source(self):
+        spans = self.requirement_spans()
+        scope, receipt = self.compile()
+        parts = [r for r in receipt['requirements'] if r.get('parent_id') == 'POD-AC-3']
+        self.assertEqual([r['id'] for r in parts], ['POD-AC-3-NATIVE', 'POD-AC-3-WAIVERS'])
+        self.assertEqual([r['mode'] for r in parts], ['checks', 'limitation'])
+        self.assertEqual([r['id'] for r in scope['baseline']['requirements']], ['POD-AC-3-NATIVE'])
+        self.assertTrue(any(s.startswith('POD-AC-3-WAIVERS: NOT CHECKED:') for s in scope['limitations']))
+        for part, span in zip(parts, spans):
+            raw = self.spec_raw[span['byte_start']:span['byte_end']]
+            self.assertEqual(part['text_sha256'], sha256(raw))
+            self.assertEqual(part['locator']['byte_start'], span['byte_start'])
+            self.assertEqual(part['locator']['byte_end'], span['byte_end'])
+        requirement, = scope['baseline']['requirements']
+        self.assertEqual(requirement['statement'].encode(), self.spec_raw[spans[0]['byte_start']:spans[0]['byte_end']])
+        self.assertEqual(json.loads(requirement['source']['locator']), parts[0]['locator'])
+
+    def test_requirement_clause_gaps_overlap_empty_and_outside_refuse(self):
+        for mutation, code in (
+                (lambda s: s[0].update(byte_start=s[0]['byte_start'] + 1), 'uncovered_requirement'),
+                (lambda s: s[1].update(byte_start=s[0]['byte_end'] - 1), 'requirement_span'),
+                (lambda s: s[1].update(byte_end=s[1]['byte_end'] + 1), 'requirement_span'),
+                (lambda s: s[0].update(byte_end=s[0]['byte_start']), 'requirement_span'),
+                (lambda s: s[0].update(byte_start=True), 'requirement_span'),
+                (lambda s: s.pop(), 'uncovered_requirement')):
+            self.value = read_json(MAP)
+            spans = self.requirement_spans()
+            mutation(spans)
+            with self.subTest(code=code):
+                self.refused(code, 'POD-AC-3')
+
+    def test_requirement_clause_cannot_reclassify_as_context(self):
+        span = self.requirement_spans()[1]
+        span['mapping'] = dict(id='POD-AC-3-WAIVERS', context=dict(reason='Not checked'))
+        self.refused('mapping', 'POD-AC-3-WAIVERS')
+
+    def test_clause_ids_cannot_alias_parent_other_sources_or_each_other(self):
+        for rid in ['POD-AC-3', 'POD-IF-CAN1', 'POD-FN-P2', 'POD-AC-3-NATIVE']:
+            self.value = read_json(MAP)
+            self.requirement_spans()[1]['mapping']['id'] = rid
+            with self.subTest(id=rid):
+                self.refused('duplicate_mapping', rid)
+
+    def test_bench_only_parent_restriction_survives_partition(self):
+        for rid in ['POD-AC-8', 'POD-AC-9']:
+            self.value = read_json(MAP)
+            self.requirement_spans(rid)
+            _, receipt = self.compile()
+            child = next(r for r in receipt['requirements'] if r.get('parent_id') == rid)
+            self.assertEqual(child['mode'], 'bench')
+            for mode in ['checks', 'limitation']:
+                self.value = read_json(MAP)
+                span = self.requirement_spans(rid)[0]
+                span['mapping'] = dict(id=rid + '-PHYSICAL', **{mode:
+                    mapped(self.value, 'POD-AC-3')['checks'] if mode == 'checks' else dict(reason='Deferred')})
+                with self.subTest(id=rid, mode=mode):
+                    self.refused('bench_only', rid)
+
     def test_declared_prose_spans_retain_exact_locators_hashes_and_parent(self):
         self.spans()
         _, receipt = self.compile()

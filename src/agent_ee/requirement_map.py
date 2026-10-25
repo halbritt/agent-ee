@@ -16,7 +16,7 @@ from .storage import digest, json_bytes
 
 SCHEMA = 'agent-ee.requirement-map/1'
 RECEIPT_SCHEMA = 'agent-ee.requirement-map-receipt/1'
-COMPILER = 'agent-ee.requirement-scope/2'
+COMPILER = 'agent-ee.requirement-scope/3'
 PROVENANCE = 'requirements-map'
 
 
@@ -105,47 +105,63 @@ def disposition(entry, *, context=False):
     return mode
 
 
-def prose_mappings(record, declarations, spec_raw):
-    """Explicit paragraph dispositions or owner-declared byte sub-spans only."""
-    expected = {p['id']: p for p in record['prose']}
-    mapped = indexed(declarations, set(expected), 'prose')
+def source_mappings(original, declarations, spec_raw, *, context=False, reserved=()):
+    """Account for whole sources or an authored, byte-complete partition.
+
+    Only prose may be context. Derived envelope obligations retain their exact
+    field identity, and physical-only requirements stay physical in every clause.
+    """
+    kind = 'prose' if context else 'requirement'
+    expected = {p['id']: p for p in original}
+    mapped = indexed(declarations, set(expected), kind)
     sources, entries = [], []
     for rid, entry in mapped.items():
-        paragraph = expected[rid]
+        source = expected[rid]
         if 'spans' not in entry:
-            disposition(entry, context=True)
-            sources.append(paragraph)
+            disposition(entry, context=context)
+            sources.append(source)
             entries.append(entry)
             continue
+        if 'baseline' in source:
+            refuse('partition_source', rid, 'derived envelope requirements cannot be partitioned')
         exact_keys(entry, 'id spans')
         if not isinstance(entry['spans'], list) or not entry['spans']:
-            refuse('prose_span', rid, 'spans must be nonempty')
-        first, last = (paragraph['locator'][k] for k in ('byte_start', 'byte_end'))
+            refuse(kind + '_span', rid, 'spans must be nonempty')
+        first, last = (source['locator'][k] for k in ('byte_start', 'byte_end'))
         cursor = first
         for span in entry['spans']:
             exact_keys(span, 'byte_start byte_end mapping')
             start, end = span['byte_start'], span['byte_end']
             if (type(start) is not int or type(end) is not int or
                     not cursor <= start < end <= last):
-                refuse('prose_span', rid, 'overlapping, unordered or out-of-paragraph span')
+                refuse(kind + '_span', rid, 'overlapping, unordered or out-of-source span')
             if spec_raw[cursor:start].strip():
-                refuse('uncovered_prose', rid, f'uncovered prose bytes {cursor}:{start}')
+                refuse('uncovered_' + kind, rid, f'uncovered {kind} bytes {cursor}:{start}')
             try:
                 quote = spec_raw[start:end].decode('utf-8')
             except UnicodeDecodeError:
-                refuse('prose_span', rid, 'span splits a UTF-8 code point')
+                refuse(kind + '_span', rid, 'span splits a UTF-8 code point')
             text(quote)
             mapping = span['mapping']
             if not isinstance(mapping, dict) or 'id' not in mapping:
                 raise ValueError(f'{rid}: span mapping needs an id')
-            disposition(mapping, context=True)
+            mode = disposition(mapping, context=context)
+            if mapping['id'] in reserved:
+                refuse('duplicate_mapping', mapping['id'], 'clause id collides with a source id')
+            if rid in ('POD-AC-8', 'POD-AC-9') and mode != 'bench':
+                refuse('bench_only', rid, 'every clause of a bench-only requirement must be a bench obligation')
             sources.append({'id': mapping['id'], 'text': quote, 'text_sha256': sha256(spec_raw[start:end]),
-                            'locator': {**paragraph['locator'], 'byte_start': start, 'byte_end': end},
+                            'locator': {**source['locator'], 'byte_start': start, 'byte_end': end},
                             'parent_id': rid})
             entries.append(mapping)
             cursor = end
         if spec_raw[cursor:last].strip():
-            refuse('uncovered_prose', rid, f'uncovered prose bytes {cursor}:{last}')
+            refuse('uncovered_' + kind, rid, f'uncovered {kind} bytes {cursor}:{last}')
+    if not context:
+        # Baseline requirements retain specification order; check execution
+        # order remains the authored declaration order in entries.
+        order = {source['id']: index for index, source in enumerate(original)}
+        sources.sort(key=lambda source: order[source.get('parent_id', source['id'])])
     return sources, entries
 
 
@@ -222,13 +238,16 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
     if collisions:
         refuse('duplicate_source', sorted(collisions)[0], 'spec and envelope requirement IDs collide')
     sources += derived
-    mapping = indexed(declaration['requirements'], {r['id'] for r in sources}, 'requirements')
-    prose_sources, prose_entries = prose_mappings(record, declaration['prose'], spec_raw)
+    reserved = {r['id'] for r in sources + record['prose']}
+    sources, entries = source_mappings(sources, declaration['requirements'], spec_raw, reserved=reserved)
+    prose_sources, prose_entries = source_mappings(record['prose'], declaration['prose'], spec_raw,
+                                                  context=True, reserved=reserved)
     sources += prose_sources
-    for entry in prose_entries:
+    mapping = {}
+    for entry in entries + prose_entries:
         rid = entry['id']
         if rid in mapping:
-            refuse('duplicate_mapping', rid, 'prose id collides with another mapping')
+            refuse('duplicate_mapping', rid, 'id collides with another mapping')
         mapping[rid] = entry
     scope = copy.deepcopy(declaration['scope'])
     for spec in scope.get('inputs', []):

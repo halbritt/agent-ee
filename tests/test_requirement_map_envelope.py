@@ -113,6 +113,15 @@ class EnvelopeMapTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.compile()
 
+    def test_envelope_field_cannot_be_reclassified_using_spec_byte_spans(self):
+        row = next(r for r in self.declaration['requirements'] if r['id'].endswith('-outline'))
+        rid = row['id']
+        row.clear()
+        row.update(id=rid, spans=[dict(byte_start=0, byte_end=1,
+            mapping=dict(id=rid + '-deferred', bench=dict(criterion='Later', procedure='Inspect')))])
+        with self.assertRaisesRegex(requirement_map.Refused, 'derived envelope requirements cannot be partitioned'):
+            self.compile()
+
     def test_changed_envelope_cannot_reuse_old_ids(self):
         path = self.root / 'envelope.json'
         value = json.loads(path.read_bytes())

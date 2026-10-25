@@ -1,6 +1,6 @@
 # Compiling a spec-record requirement map
 
-`agent_ee.requirement_scope` accepts an owner-authored
+`agent_ee.requirement_scope` accepts an authored
 `agent-ee.requirement-map/1` alongside a verified [spec record](spec-record.md).
 It compiles the declared checks into scope/3 using `capabilities.KINDS`,
 `cli.validate_scope`, `capabilities.compile_coverage` and
@@ -94,6 +94,49 @@ lie between spans or at the paragraph's ends. Uncovered prose bytes are refused.
 Each span receipt retains its parent paragraph ID, exact locator and quote hash.
 No sentence splitter chooses the boundaries.
 
+## Compound requirement clauses
+
+A specification item can contain several independently checked clauses. Its
+`requirements` entry may use the same `{id, spans: [...]}` form as prose.
+Each child has its own unique ID and `checks`, `limitation` or `bench`
+disposition. Requirement clauses cannot use `context`. This is an additive
+input form in `agent-ee.requirement-map/1`; the compiler identifies its
+implementation as `agent-ee.requirement-scope/3`.
+
+For example, separate a native distance requirement from a following routed
+return-path requirement using their exact byte boundaries:
+
+```json
+{"id": "ACQ-MECH-3", "spans": [
+  {"byte_start": 3400, "byte_end": 3500,
+   "mapping": {"id": "ACQ-MECH-3-DISTANCES", "checks": [
+     {"id": "locality", "kind": "placement", "stage": "verification",
+      "params": {"criterion": "electrical-locality/1", "drc_check": "drc",
+                 "locality": "electrical-locality.json"}}]}},
+  {"byte_start": 3500, "byte_end": 3600,
+   "mapping": {"id": "ACQ-MECH-3-RETURNS", "limitation":
+     {"reason": "Routed loop and return-path verification remains unresolved."}}}
+]}
+```
+
+The offsets above are illustrative; derive them from the actual verified spec.
+All non-whitespace bytes of the original item must be covered exactly once,
+with ordered, nonempty spans on UTF-8 boundaries. A child ID must not collide
+with any original requirement, prose or envelope ID, including its parent, or
+with another child. Nested partitions are refused. Envelope-derived field
+obligations cannot be partitioned or relabeled; their original authority and
+coverage checks still apply. Every child of the physical-only `POD-AC-8` and
+`POD-AC-9` requirements must remain a bench obligation.
+
+The receipt contains each clause's `parent_id`, exact source locator and text
+hash. Executable baseline statements use those exact source bytes. Requirements
+retain specification order, while checks execute in authored mapping order.
+A passing clause supplies no acceptance credit to a sibling: an unresolved
+clause remains `NOT CHECKED` and blocks the normal manufacturing package stage.
+Physical obligations remain explicit and unperformed. Partitioning accounts
+for existing text; it neither revises a requirement nor establishes that a
+selected check covers the meaning of that text.
+
 ## Inputs, outputs and evidence
 
 Without `--inputs`, the compiler can validate checks that need only declared
@@ -116,7 +159,7 @@ The new output directory contains:
 | `receipt.json` | `agent-ee.requirement-map-receipt/1`: compiler identity, source/scope/baseline/coverage hashes and every disposition |
 | `requirements-map/spec.md` | Exact spec bytes |
 | `requirements-map/spec-record.json` | Exact verified capture |
-| `requirements-map/requirement-map.json` | Exact owner-authored map bytes |
+| `requirements-map/requirement-map.json` | Exact authored map bytes |
 
 Every receipt entry includes its ID, locator, text hash, mode and declared
 mapping. Executable mappings also include their capability descriptors and
