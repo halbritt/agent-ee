@@ -9,8 +9,9 @@ corrects those instructions while preserving the original capture.
 This is an agent-selected instruction correction under chief allocation
 `d04af9d3-eca1-4d7a-b0fa-51d62535b503@1`, based on main
 `e67d1cd9174c5075fd21576fa6aa574cca4fdc66`. It is not an owner requirement,
-engineering judgment, witness or physical-host qualification. Chief review and
-integration remain pending.
+engineering judgment, witness or physical-host qualification. The chief
+independently verified the source locators and fresh public preparation, and
+accepted this bounded instruction correction for integration.
 
 The supplement requires verified stable rail validity followed by the
 manufacturer's approximately 50 µs wait before initial communication. It keeps
@@ -67,12 +68,14 @@ Both existing additive input trees remain byte-identical, including final
 polarity `23a0b7986e20c676c1ada1b5c09647743eb854b987b320104be741137468e851`.
 The earlier prepared root is untouched. No judgment or witness was authored.
 
-**Test caller limit:** `AcquisitionOverlayTests` currently supplies only CPL and
-manufacturer-text sources. Its caller must also supply the committed
-`operating-supplement` directory before that real-capture test can use the new
-overlay. This allocation expressly restricts edits to fixtures/overlay/docs;
-no test code or skip guard was changed and no full-suite result is claimed.
-The successful public invocation above supplies all three sources explicitly.
+The chief updated the existing real-capture test caller to supply the third
+input and passed all 13 `test_typed_overlay` tests without skips. No assertion
+or skip guard changed. A separate chief public CLI preparation reproduced the
+same manifest hash above at
+`~/.cache/agent-evidence/agent-ee-564-integration/acquisition-operating-prepared/`.
+All five printed byte locators resolve to the stated primary-source text.
+This is a preparation/document correction, not a native build or full-suite
+acceptance result.
 
 Private verification and new prepared output:
 `/home/halbritt/.cache/agent-verification/agent-ee-569-operating-supplement-20261025/`.
