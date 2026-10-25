@@ -58,6 +58,14 @@ repair is assigned under [AGENTEE-529](https://proximal.tail0ecc2e.ts.net:10000/
 This updates the unresolved cause and disposition to confirmed/actionable without
 rewriting the audit's historical observations or claiming a final-package escape.
 
+REC-04 repair update: [the focused capture repair and independent verification](contracts/AGENTEE-522-capture-repair-evidence.md)
+landed at `586e85af`. The captured graphic receives its resolved positive native
+mask expansion once, with exact native type handling and conservative
+non-positive behavior. Chief current-source native tests and exact retained
+seed6/seed11 replay pass. This resolves the diagnosed mismatch; native rules
+and final DRC remain mandatory. The 46-open diagnostic boards are not qualified
+packages or M1 acceptance evidence.
+
 REC-30 execution update: [AGENTEE-528 repair](identity-528-agent-567.md) is
 resolved at `86cb840f`. Chief independent verification passed nine native tests
 without skips and all 17 retained parser/native controls, preserving both fixed
