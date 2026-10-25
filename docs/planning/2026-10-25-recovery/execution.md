@@ -310,3 +310,60 @@ during compaction; the expired acknowledgment/renewal refused. The chief
 reconciled its status, reclaimed only that expired response under the documented
 inbox protocol, reread its exact source, and acknowledged it without replaying
 any project action. There is no outstanding chief lease at this checkpoint.
+
+## Integration checkpoint — 2026-10-25 16:15 PDT
+
+Artwork policy is integrated through `e84bf538`: chief source review, 133 native
+tests without skips, complete saved-artifact replay/four changed-evidence
+refusals and independent agent-569 custody verification. Its
+[verification record](artwork-523-policy-agent-567.md) preserves the historical
+producer's pre-correction source limitation. All 217 silk defects remain,
+alongside 20 text-height and 21 library findings; original board/project bytes
+are unchanged. AGENTEE-523 and M1 remain open.
+
+Native group views landed as `e95b5e2f` with chief verification `68875bda`.
+The chief passed five native tests without skips and visually inspected fresh
+top/bottom renders of the exact retained esp_prog final-a1 board. All 16 declared
+members and five native extras are explicit. The [API and verification](../../group-views.md)
+limit the helper to rectangular outlines and supplemental inspection.
+Agent-568 withdrew an unsupported historical container-image claim; the chief
+recorded the actual running container/image/admission lease for the fresh run.
+Neither images nor raw native rotations establish group or orientation acceptance.
+
+Agent-565's original 88-test verification found a genuine compatibility failure:
+historical input/1 job `2ccd682b…` contains `pad_edge` labels without pad extents,
+but main historically scored those rows with centre Chebyshev distance. The
+chief rejected implicit geometry-based fallback. Delivery `dfc47810` now uses
+explicit input/2 for fresh signed-pad-rectangle captures and visibly labelled
+input/1 legacy scoring without new link costs. The worker reports 112 Rust tests,
+92 strict native Python tests without skips and main-era objective parity at
+original and perturbed poses. These claims await chief verification and Fable
+agent-566's bounded independent consumer/schema review. Protected retained jobs
+were not rewritten. Final-check view wiring follows review and integration.
+
+The [artwork fit decision](artwork-523-fit-decision.md) assigns agent-567 a
+35-minute native prototype, with one saved composite candidate and one final
+DRC. It tests coherent text, logo and contour repairs before extending the
+production edit contract. Existing native rules and protected geometry remain;
+the 0.2 mm search heuristic is not elevated to an owner or manufacturing rule.
+No subsystem replacement, production waiver or full board campaign is selected.
+
+Agent-566's acquisition source investigation found no captured exact-part
+Samsung effective-capacitance lower bound. Its eight-case sensitivity experiment
+reports passing measurements at CIN 1, 3 and 12.65 µF, with both 0.47 µF cases
+ending in incomplete SPICE traces. The chief rejects continuous-range and
+guaranteed-part conclusions from finite samples, and a definitive model-defect
+diagnosis from a convergence message alone. Larger CIN delayed startup, correcting
+the earlier adverse-direction inference. COUT stayed fixed; stability and
+physical applicability remain unproved. Agent-569 independently checks saved
+decks, measurements, original preservation and runtime/admission custody under
+`a575d0a9@1` before any additive capture or judgment acceptance.
+
+[Plane readback](execution-checkpoint-1615.json) confirms updated 523, 479 and 515
+descriptions with their open states, parent relationships and assignees preserved.
+Actual typed acquisition A/B cancellation/resume, the independent candidate-bound
+judgments, final artwork/grouping and original esp_prog qualification still
+remain. The active goal continues; telemetry-pod and owner-reserved actions stay
+held. Chief response/notice deliveries through position 7534 were read and
+acknowledged, then its own inbox returned empty. Later responses are not implied
+acknowledged by this checkpoint.
