@@ -1,9 +1,9 @@
-# AGENTEE-522 capture repair — 2026-10-25
+# AGENTEE-529 mask capture repair after AGENTEE-522 — 2026-10-25
 
 Agent-569 implemented the scoped repair from
 `82133d6d2032791cc85240257dc0573bdf49302e`, following the
 [accepted diagnosis](AGENTEE-522-mask-expansion-investigation.md).
-Chief independent verification and integration remain pending.
+Chief independent verification is recorded below; the scoped repair is accepted.
 
 ## Change and native API boundary
 
@@ -97,3 +97,37 @@ were changed; no purchase, upload, telemetry-pod action or issue closure occurre
 
 Artifact manifest SHA-256:
 `15ebccacade3a746d61d4dc4590cfd08d0145b65b321e5687c078645ca6f7e77`.
+
+## Chief independent verification and acceptance
+
+Agent-570 independently inspected the repair, native API/source boundary and
+all 49 indexed worker artifacts, accepting the change with the documented
+native-persistence and diagnostic-projection limits. Agent-564 also verified
+all 49 artifact hashes, inspected the diff, and passed the 17 strict native
+tests with no skips on the delivered source. After rebasing onto `02067921`,
+the chief repeated those same 17 tests against the current runtime and replayed
+the exact retained seed6/seed11 inputs. No search or new layout was constructed.
+
+The repaired classifier's real mask geometry again changes seed6 from zero
+to two hard conflicts while retaining seed11 with zero. Independent native DRC
+reports two mask errors for seed6, zero for seed11, and 46 opens on both. All
+input board/project and manifest hashes remain unchanged. The current installed
+planner receipt verifies binary `c073d457c89be2a608abf7bc10ab4a7972466381f022c005d77849ea73877d61`,
+which includes the already integrated AGENTEE-528 identity repair.
+
+The first chief replay controller incorrectly expected the full historical
+unrepaired model to be infeasible after identity admission. That assertion
+failed: it reports feasible for seed6 because it still contains the old mask
+capture. Both the failed controller and corrected observation are retained.
+The corrected controller changes only that historical expectation; all repaired
+mask projection and native DRC assertions are unchanged and pass. This is not a
+whole-job acceptance claim. Rich public intent remains truthfully refused until
+AGENTEE-479; the old duplicate-reference refusal is superseded by AGENTEE-528.
+
+Chief evidence, copied outside the disposable worktree, is at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/mask-529/`.
+It includes both native-test logs, exact replay inputs/results, both controller
+logs, current source/runtime binding and 33 tested source/test hashes checked
+again during integration. No native rule, input or manufacturing threshold was
+relaxed. Acceptance closes this capture repair; it does not qualify either
+46-open board, a complete placement run or M1.
