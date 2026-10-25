@@ -81,7 +81,7 @@ A native angle passes only as `native_supported`, and only with that pin-1 evide
 | P5 | Changed CPL coordinate or angle after sealing | `artifact_record` refusal |
 | P6 | Unsupported profile (policy schema 2 or unknown key) | Existing `cpl_rotation` refusal, so the package is `unsupported` |
 
-**`tests/test_build_workflow*`:**
+**New `tests/test_build_package.py` (no existing test exercises `build_workflow._package`; `test_build_review.py`/`test_build_artwork.py` cover the neighbouring stages):**
 
 | # | Case | Expected |
 | --- | --- | --- |
