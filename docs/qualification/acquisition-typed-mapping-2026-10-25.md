@@ -14,12 +14,14 @@ was modified; no judgment record, witness or candidate was created.
 | `spec.md` | sha256 `fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373` (equal to `spec-record.json` `spec.sha256`) |
 | `spec-record.json` | 18 requirement clauses + 1 prose clause, byte-identical capture verified by `spec_record.verify` |
 | `requirement-map.json` (map/1) | sha256 `df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863` |
-| Overlay | `fixtures/acquisition-typed/overlay.json`, sha256 `8ed58e9ada2f0c7d15d22d0935308067521c260b4269a7448e56aeabd21bfa2f` |
-| Derived `requirement-map.json` (map/2) | sha256 `a047e6e319b730669a3b75ee7f1179ad64959812e69566065b52c6da8a92dffb` |
+| Overlay | `fixtures/acquisition-typed/overlay.json`, sha256 `076eed026d341403e53a8fb509e706a1bb0e4d5160a5a041cb937d98b8455eb0` |
+| Derived `requirement-map.json` (map/2) | sha256 `53f632d4a86fa92024466755e395f2fa52ab0af29708c78d4bfac1460e1b0772` |
 | Derived `analysis/electrical-intervals.json` | base `8998b329e058d39d48bd3568240b58b4904ba079460d46032105ef5cc51654a7` → derived `93d049c4d7bf30b2e74df37817e8bc3dbfa2d4de4b29312e7203693e6fe2f203` (requirement ids and source locators re-bound to spans; parameters, assertions and bounds unchanged) |
 | Added `obligations.json` | sha256 `e8c76333b9135fd03993908a74ce416b54c4ff93dd2dba4ded73fc440f047b51` |
 | Unchanged files | 196 of 198 |
-| Typed receipt | `agent-ee.requirement-map-receipt/2`, `method_binding: typed`, compiled against the accepted `release-build-v7` scaffold candidate `stages/03-scaffold-d1c92e58…/product/inputs` overlaid with the three derived files; `scope_sha256 e7c57475378afa6964ee7d1f56ef7167c5f34d472880d2cda7e53bb99593f942`, `baseline_id ff02cc86bc60f167824b965193eabd1659aa2d671b411daa1c7ee4576b831b67`, `coverage_id 943269da4d14cd3cc79ef818200dc7b8aa01a624df2d23679e188e6289901bae` |
+| Added CPL inputs (`cpl/`, agent-566 revision) | `assembly-profile.json` `f8182f507c12a5e9b5113b545f675d5960efeb5c2f8ad977b649d5dbaa2ab755`, `jlc-cpl-policy.json` `36b349c7a2ed1622e03a5193574c8b60c75a23ce6b2dde041edcfbb1c175db4b` (= profile `policy_sha256`), 11 `supplier/<LCSC>.raweasy.json` + 11 `.provenance.json` captures; every hash is in the overlay and verified on copy; third-party CAD bytes stay outside Git |
+| Added checks | `fab-export` (`fab_export`) and `cpl` (`cpl_rotation`, policy + 11 supplier provenance files) declared verbatim from agent-566's acq-partb-2 scope; `fab` gains `assembly_profile: cpl/assembly-profile.json` and nothing else |
+| Typed receipt | `agent-ee.requirement-map-receipt/2`, `method_binding: typed`, compiled against the accepted `release-build-v7` scaffold candidate `stages/03-scaffold-d1c92e58…/product/inputs` overlaid with the three derived files; `scope_sha256 79a76e38ac5f06644c99b0728797c03b59d38df72e45579e0a0f151a3383c5dc`, `baseline_id 986f6fcbea50dbb89c129a6f52155663b78744999c3dfa05f63f18a3d74b2201`, `coverage_id 10e725a2ade3f5e2745be8e7104d3d4c5dc82207872003721422310d8d455bca`; compile root inventory `914810bf00f477bfd42cebcd0bf175903bdaa78f45a7b8262cce99eb6f1cbcac` (27 overlaid files); compiled on main at 903721fb, which strips the profile from the delegated export |
 
 Accounting of the derived declaration: 46 receipt rows; modes `checks` 29,
 `judgment` 13, `bench` 2, `operational` 1, `context` 1, `limitation` 0;
@@ -36,6 +38,7 @@ Reproduce (reads the retained inputs, writes outside `build/`):
 PYTHONPATH=src python3 -m agent_ee.typed_overlay prepare \
   build/acquisition-release/inputs fixtures/acquisition-typed/overlay.json \
   --out /path/outside/build/acq-typed \
+  --added-input cpl=/path/to/agent-566/cpl-inputs-rev2 \
   --compile-against build/acquisition-release/release-build-v7/stages/03-scaffold-d1c92e58719b49298406561cdd1f0acb/product/inputs \
   --receipt /path/outside/build/acq-typed-receipt.json
 ```
@@ -78,7 +81,7 @@ check ids listed; nothing else changed in those check definitions.
 | ACQ-MECH-4-MATED-HEIGHT-SCOPE | 4027:4137 | judgment | `judgments/acq-mech-4-mated-height-scope.json` | scope correction; no absolute height claim |
 | ACQ-MECH-4-ACCESS | 4137:4209 | executable → checks | `engineering-geometry` (access_obstruction) | measured |
 | ACQ-MECH-4-ASSEMBLY-APPLICABILITY | 4209:4300 | judgment | `judgments/acq-mech-4-assembly-applicability.json` | captured-source geometry and process applicability |
-| ACQ-DELIV-1 | whole | executable → checks | `geometry`, `courtyard`, `containment`, `locality`, `dfm`, `fab` | as map/1 |
+| ACQ-DELIV-1-FILES | 4341:4609 | executable → checks | `geometry`, `courtyard`, `containment`, `locality`, `dfm`, `fab-export`, `cpl`, `fab` (with `assembly_profile`) | map/1 checks plus the expected export, CPL-rotation and orientation record; agreed with agent-566 as the binding for "placement files with the same … orientations" |
 | ACQ-DELIV-2-REPRODUCTION | 4612:4850 | operational | criterion `public_build_and_resume` | proved only by the build journal (runs A/B of the contract) |
 | ACQ-BENCH-1 | whole | physical → bench | as map/1, not performed | bench obligations |
 | R-envelope-acquisition-* (8) | derived | executable → checks | as map/1 | envelope-derived obligations are executable by construction |
@@ -126,6 +129,14 @@ no answer is recorded here. Summary:
    SMT versus through-hole process applicability under `dfm-profile.json`.
 
 ## Limits and pending dependencies
+
+- **D1 polarity.** Agent-566's real run with these exact CPL inputs
+  (acq-partb-2) reports 16 of 17 CPL rows assessed and D1 `polarity_unknown`,
+  which makes the rotation report incomplete and `fab_package` unsupported.
+  That is their run's result, not this preparation's; here `cpl` and `fab`
+  are declared expected checks with status pending. No row is claimed
+  complete and no orientation judgment is recorded. The bounded source
+  investigation of D1 belongs to agent-566.
 
 - This preparation compiles the typed declaration; it does not execute
   checks. Executing the 29 bound checks on a candidate needs the AGENTEE-519

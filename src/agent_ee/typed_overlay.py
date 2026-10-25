@@ -29,7 +29,7 @@ SPAN_MODES = ('checks', 'limitation', 'bench', 'operational', 'judgment', 'conte
 
 def load_overlay(raw):
     overlay = requirement_map.decode(raw)
-    exact_keys(overlay, 'schema name base obligations mappings judgments derived_files')
+    exact_keys(overlay, 'schema name base obligations mappings judgments derived_files added_inputs check_additions')
     if overlay['schema'] != SCHEMA:
         raise ValueError(f'expected {SCHEMA}')
     text(overlay['name'])
@@ -42,6 +42,20 @@ def load_overlay(raw):
         exact_keys(rule, 'rebind')
         if not isinstance(rule['rebind'], dict) or not rule['rebind']:
             raise ValueError(f'{path}: rebind must map requirement ids to span ids')
+    if not isinstance(overlay['added_inputs'], dict):
+        raise ValueError('added_inputs must be an object')
+    for at, entry in overlay['added_inputs'].items():
+        safe_relative(text(at))
+        exact_keys(entry, 'files')
+        if not isinstance(entry['files'], dict) or not entry['files']:
+            raise ValueError(f'added input {at} needs files with sha256 values')
+        for name, digest in entry['files'].items():
+            safe_relative(text(name))
+            if not isinstance(digest, str) or len(digest) != 64:
+                raise ValueError(f'added input {at}/{name} needs a sha256')
+    exact_keys(overlay['check_additions'], 'declare params')
+    if not isinstance(overlay['check_additions']['declare'], list) or not isinstance(overlay['check_additions']['params'], dict):
+        raise ValueError('check_additions needs a declare list and a params object')
     return overlay
 
 
@@ -136,11 +150,46 @@ def _mapping(rid, span, pool):
     return mapping
 
 
+def _apply_check_additions(derived, pool, additions):
+    """New check declarations join the pool; param additions apply to every declaration of that id."""
+    for spec in additions['declare']:
+        exact_keys(spec, 'id kind params stage')
+        if spec['id'] in pool:
+            raise ValueError(f'check_additions redeclares existing check {spec["id"]}')
+        pool[spec['id']] = copy.deepcopy(spec)
+    for cid, extra in additions['params'].items():
+        if cid not in pool:
+            raise ValueError(f'check_additions names unknown check {cid}')
+        if not isinstance(extra, dict) or not extra:
+            raise ValueError(f'check_additions params for {cid} must be a nonempty object')
+        clash = set(extra) & set(pool[cid]['params'])
+        if clash:
+            raise ValueError(f'check_additions would overwrite params {sorted(clash)} of {cid}')
+        pool[cid]['params'] = {**pool[cid]['params'], **extra}
+
+        def update(entry):
+            for spec in entry.get('checks', []):
+                if spec['id'] == cid:
+                    spec['params'] = {**spec['params'], **extra}
+        for entry in derived['requirements'] + derived['prose']:
+            if 'spans' in entry:
+                for span in entry['spans']:
+                    update(span['mapping'])
+            else:
+                update(entry)
+
+
 def derive_map(declaration, overlay):
     """The map/2 declaration: base entries kept verbatim unless the overlay replaces them."""
     pool = _check_pool(declaration)
     derived = copy.deepcopy(declaration)
     derived['schema'] = requirement_map.SCHEMA_2
+    _apply_check_additions(derived, pool, overlay['check_additions'])
+    declared_inputs = {spec['at'] for spec in derived['scope'].get('inputs', [])}
+    for at in overlay['added_inputs']:
+        if at in declared_inputs:
+            raise ValueError(f'added input {at} collides with a declared scope input')
+        derived['scope'].setdefault('inputs', []).append({'path': at, 'at': at})
     known = {e['id'] for e in derived['requirements'] + derived['prose']}
     unknown = set(overlay['mappings']) - known
     if unknown:
@@ -189,11 +238,39 @@ def _inventory(root):
     return files
 
 
-def prepare(base, overlay_path, out, *, compile_against=None):
+def _copy_added_inputs(overlay, sources, staging):
+    """Copy declared added inputs from their named source directories, verifying every hash."""
+    added = []
+    missing = set(overlay['added_inputs']) - set(sources)
+    if missing:
+        raise ValueError('no source directory given for added inputs: ' + ', '.join(sorted(missing)))
+    extra = set(sources) - set(overlay['added_inputs'])
+    if extra:
+        raise ValueError('source directories for undeclared added inputs: ' + ', '.join(sorted(extra)))
+    for at, entry in overlay['added_inputs'].items():
+        root = Path(sources[at]).resolve()
+        for name, digest in entry['files'].items():
+            source = root / name
+            if source.is_symlink() or not source.is_file():
+                raise ValueError(f'added input {at}/{name} is not an ordinary file under {root}')
+            raw = source.read_bytes()
+            if sha256(raw) != digest:
+                raise ValueError(f'added input {at}/{name} differs from the declared sha256')
+            target = staging / at / name
+            if target.exists():
+                raise ValueError(f'added input {at}/{name} would overwrite a base file')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+            added.append(f'{at}/{name}')
+    return sorted(added)
+
+
+def prepare(base, overlay_path, out, *, compile_against=None, added_sources=None):
     """Write the derived typed input revision and validate its accounting."""
     base, out = Path(base).resolve(), Path(out).resolve()
     overlay_raw = Path(overlay_path).read_bytes()
     overlay = load_overlay(overlay_raw)
+    added_sources = dict(added_sources or {})
     raw = {name: (base / name).read_bytes() for name in BASE_FILES}
     expected = {'spec.md': overlay['base']['spec_sha256'], 'spec-record.json': overlay['base']['spec_record_sha256'],
                 'requirement-map.json': overlay['base']['requirement_map_sha256']}
@@ -226,6 +303,7 @@ def prepare(base, overlay_path, out, *, compile_against=None):
     map_bytes, obligation_bytes = json_bytes(derived), json_bytes(obligations)
     (staging / 'requirement-map.json').write_bytes(map_bytes)
     (staging / 'obligations.json').write_bytes(obligation_bytes)
+    added = ['obligations.json'] + _copy_added_inputs(overlay, added_sources, staging)
     locators = _span_locators(derived, record)
     changed = {'requirement-map.json': sha256(map_bytes)}
     for path, rule in overlay['derived_files'].items():
@@ -246,7 +324,10 @@ def prepare(base, overlay_path, out, *, compile_against=None):
                             'unchanged_files': sorted(n for n, d in files.items() if base_files.get(n) == d),
                             'changed_files': {path: {'base_sha256': base_files[path], 'derived_sha256': digest}
                                               for path, digest in sorted(changed.items())},
-                            'added_files': ['obligations.json']},
+                            'added_files': added,
+                            'added_inputs': {at: {'files': entry['files'], 'source': str(Path(added_sources[at]).resolve())}
+                                             for at, entry in overlay['added_inputs'].items()},
+                            'check_additions': overlay['check_additions']},
                 'accounting': {'rows': len(receipts),
                                'modes': {m: sum(r['mode'] == m for r in receipts) for m in SPAN_MODES},
                                'obligations': {k: sum(r.get('obligation') == k for r in receipts)
@@ -300,9 +381,18 @@ def main(argv=None):
     command.add_argument('--out', type=Path, required=True)
     command.add_argument('--compile-against', type=Path, help='native scaffold candidate for a typed receipt')
     command.add_argument('--receipt', type=Path, help='where to write the typed receipt')
+    command.add_argument('--added-input', action='append', default=[], metavar='AT=DIR',
+                         help='source directory for a declared added input (repeatable)')
     args = parser.parse_args(argv)
+    sources = {}
+    for item in args.added_input:
+        at, _, directory = item.partition('=')
+        if not at or not directory:
+            parser.error('--added-input needs AT=DIR')
+        sources[at] = directory
     try:
-        result = prepare(args.base, args.overlay, args.out, compile_against=args.compile_against)
+        result = prepare(args.base, args.overlay, args.out, compile_against=args.compile_against,
+                         added_sources=sources)
     except requirement_map.Refused as exc:
         json.dump({'outcome': 'refused', 'findings': exc.findings}, sys.stdout, indent=2, sort_keys=True)
         print()

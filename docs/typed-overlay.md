@@ -11,8 +11,16 @@ check, invents no judgment record or witness, and produces no candidate.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.typed_overlay prepare BASE_INPUTS OVERLAY.json \
-  --out DERIVED_INPUTS [--compile-against SCAFFOLD_CANDIDATE --receipt RECEIPT.json]
+  --out DERIVED_INPUTS [--added-input AT=DIR ...] \
+  [--compile-against SCAFFOLD_CANDIDATE --receipt RECEIPT.json]
 ```
+
+Declared `added_inputs` (candidate-relative directory → file hashes) are
+copied from a source directory given as `--added-input AT=DIR`; every byte is
+verified against its declared hash, no base file may be overwritten, and the
+directory is appended to the scope inputs. `check_additions` may `declare`
+new checks (ids must be new) and add `params` to existing checks (keys must
+be new); both apply to the derived map only.
 
 `prepare` refuses when the base hashes differ from the declaration, when an
 overlay span names a check the base map does not declare, when an obligation

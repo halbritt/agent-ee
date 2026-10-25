@@ -1,8 +1,79 @@
 {
+ "added_inputs": {
+  "cpl": {
+   "files": {
+    "assembly-profile.json": "f8182f507c12a5e9b5113b545f675d5960efeb5c2f8ad977b649d5dbaa2ab755",
+    "jlc-cpl-policy.json": "36b349c7a2ed1622e03a5193574c8b60c75a23ce6b2dde041edcfbb1c175db4b",
+    "supplier/C114065.provenance.json": "3e7e91c3a968a4670615c77830f1faac305d05f43598c21d64c0a8dee0746cd2",
+    "supplier/C114065.raweasy.json": "f092a288bfd186bc41297fb83b43625747109bb35c8bd3dffd2308f1cbc132b7",
+    "supplier/C114662.provenance.json": "80d79f1c6899c095733de3808cd94ad932c4c61292c560c9ae7d4833f08086d3",
+    "supplier/C114662.raweasy.json": "6aa85fba0b30063036822670942ce34a10f30d5b3b6aeb8167db7abc1b0c33b5",
+    "supplier/C131334.provenance.json": "557c2392f3fad09d3a1f98d89ac6f37ecbdebaeb66e84f6c74eae5a06bf3095a",
+    "supplier/C131334.raweasy.json": "0fea600d46baf0add877c6a71bd6349339a7e35a5fc1f58b3bb56dc1c34e2291",
+    "supplier/C131337.provenance.json": "a4ba6a70b4984fef7625acd80a67cffe3d0206d17ebdf40cc802f06bee54da81",
+    "supplier/C131337.raweasy.json": "7953b1e6e94cedd27434eaca32fa3aa6888035e0ccb116749a47bedaa68e4a34",
+    "supplier/C14663.provenance.json": "bf4b69b656fc377ccaed6ed4044213333fdbb01d2fa5f381a7a7d0fdcbd62cae",
+    "supplier/C14663.raweasy.json": "ea257a1d1cbdc2319d259b909fb0f692174d3d7acf6787f1592c00d27b86be08",
+    "supplier/C15850.provenance.json": "a3da856121587eda66c506009edf8dcc72a2fb30f631c91aa9e6dbd6af7a6be7",
+    "supplier/C15850.raweasy.json": "cb64a7b2472f13d659f772c2f41103e85e81a93e2018ec9630e3babfaaa9716f",
+    "supplier/C22548.provenance.json": "578a3acc7584670010858db36bda9c25f14bb3f6d4d47841d246d4faa3a59fcd",
+    "supplier/C22548.raweasy.json": "517d36cff444d2cc11dce179414dc4a218dd44f1aaf24a049ee3e35846785388",
+    "supplier/C2862740.provenance.json": "c84bfeb9a995c146b9579dae40389b7c63b5935da45a44ea6ac942ea253cf5d4",
+    "supplier/C2862740.raweasy.json": "fe9f93d390fb07e1df75380447c0a6788dbeecbaf6010591ed87a25619b1c03f",
+    "supplier/C37593.provenance.json": "e35c5ec82374872fe8e0496868f7fce98b86a092e6afd1d00988d463f82e5011",
+    "supplier/C37593.raweasy.json": "deb158d5f62cf3253a2f8378c05a8a716245e0af346d5ac56b12a88375a8c89f",
+    "supplier/C83152.provenance.json": "79ebf39ec76b5a70849947f5a916232255e27b55a0ebb15ec27a9974dbefbbf0",
+    "supplier/C83152.raweasy.json": "9939a5a6d233aa070ffdf22b44f77af2312ac5de25696c70cc81c36beb69f52c",
+    "supplier/C85973.provenance.json": "50e22ade1fb29f11bd4e363544f8c7aac30da21f8899c335f10b8baf78e21631",
+    "supplier/C85973.raweasy.json": "c89e33b980032a4c1ea86a6baea1b34ed5930c22ba67f8a15b45d45c1f6b00a8"
+   }
+  }
+ },
  "base": {
   "requirement_map_sha256": "df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863",
   "spec_record_sha256": "a03e16f40e34fb7af4ac229ea5916b27de47c576b6f7f181c914205e5a8f865b",
   "spec_sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373"
+ },
+ "check_additions": {
+  "declare": [
+   {
+    "id": "fab-export",
+    "kind": "fab_export",
+    "params": {
+     "netlist_check": "netlist"
+    },
+    "stage": "verification"
+   },
+   {
+    "id": "cpl",
+    "kind": "cpl_rotation",
+    "params": {
+     "export_check": "fab-export",
+     "geometry_check": "geometry",
+     "policy": "cpl/jlc-cpl-policy.json",
+     "source_tolerance_nm": "200",
+     "supplier_footprints": [
+      "cpl/supplier/C114065.provenance.json",
+      "cpl/supplier/C114662.provenance.json",
+      "cpl/supplier/C131334.provenance.json",
+      "cpl/supplier/C131337.provenance.json",
+      "cpl/supplier/C14663.provenance.json",
+      "cpl/supplier/C15850.provenance.json",
+      "cpl/supplier/C22548.provenance.json",
+      "cpl/supplier/C2862740.provenance.json",
+      "cpl/supplier/C37593.provenance.json",
+      "cpl/supplier/C83152.provenance.json",
+      "cpl/supplier/C85973.provenance.json"
+     ]
+    },
+    "stage": "verification"
+   }
+  ],
+  "params": {
+   "fab": {
+    "assembly_profile": "cpl/assembly-profile.json"
+   }
+  }
  },
  "derived_files": {
   "analysis/electrical-intervals.json": {
@@ -232,7 +303,24 @@
    "keep": true
   },
   "ACQ-DELIV-1": {
-   "keep": true
+   "spans": [
+    {
+     "byte_end": 4609,
+     "byte_start": 4341,
+     "checks": [
+      "geometry",
+      "courtyard",
+      "containment",
+      "locality",
+      "dfm",
+      "fab-export",
+      "cpl",
+      "fab"
+     ],
+     "id": "ACQ-DELIV-1-FILES",
+     "mode": "checks"
+    }
+   ]
   },
   "ACQ-DELIV-2": {
    "spans": [

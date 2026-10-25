@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 POD = ROOT / 'fixtures/telemetry-pod'
 ACQUISITION_OVERLAY = ROOT / 'fixtures/acquisition-typed/overlay.json'
 RETAINED = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
+CPL_SOURCE = Path(os.environ.get('AGENT_EE_ACQUISITION_CPL_INPUTS', ROOT / 'build/acquisition-release/cpl-inputs'))
 
 
 class PodOverlayTests(unittest.TestCase):
@@ -68,12 +69,59 @@ class PodOverlayTests(unittest.TestCase):
                         requirement='POD-AC-3', span=[split + 1, end],
                         questions=['Which waivers are dispositioned and by what source?'],
                         sources=['fixtures/telemetry-pod/spec.md'])},
-                    derived_files={})
+                    derived_files={}, added_inputs={}, check_additions={'declare': [], 'params': {}})
 
-    def prepare(self, overlay=None, name='out'):
+    def prepare(self, overlay=None, name='out', **kwargs):
         path = Path(self.tmp.name) / 'overlay.json'
         path.write_bytes(json_bytes(self.overlay if overlay is None else overlay))
-        return typed_overlay.prepare(self.base, path, Path(self.tmp.name) / name)
+        return typed_overlay.prepare(self.base, path, Path(self.tmp.name) / name, **kwargs)
+
+    def test_added_inputs_and_check_additions_extend_the_derived_map_only(self):
+        source = Path(self.tmp.name) / 'cpl-source'
+        (source / 'supplier').mkdir(parents=True)
+        (source / 'policy.json').write_bytes(b'{"policy": 1}\n')
+        (source / 'supplier/C1.json').write_bytes(b'{"lcsc": "C1"}\n')
+        overlay = copy.deepcopy(self.overlay)
+        overlay['added_inputs'] = {'cpl': {'files': {'policy.json': sha256(b'{"policy": 1}\n'),
+                                                     'supplier/C1.json': sha256(b'{"lcsc": "C1"}\n')}}}
+        existing = overlay['mappings']['POD-AC-3']['spans'][0]['checks'][0]
+        overlay['check_additions'] = {
+            'declare': [{'id': 'extra-erc', 'kind': 'erc', 'params': {}, 'stage': 'verification'}],
+            'params': {existing: {'added_param': 'cpl/policy.json'}}}
+        overlay['mappings']['POD-AC-3']['spans'][0]['checks'].append('extra-erc')
+        result = self.prepare(overlay, name='added', added_sources={'cpl': source})
+        out = Path(result['out'])
+        self.assertEqual((out / 'cpl/policy.json').read_bytes(), b'{"policy": 1}\n')
+        self.assertEqual(result['manifest']['derived']['added_files'],
+                         ['obligations.json', 'cpl/policy.json', 'cpl/supplier/C1.json'])
+        derived = read_json(out / 'requirement-map.json')
+        self.assertIn({'path': 'cpl', 'at': 'cpl'}, derived['scope']['inputs'])
+        ac3 = next(e for e in derived['requirements'] if e['id'] == 'POD-AC-3')
+        checks = {c['id']: c for c in ac3['spans'][0]['mapping']['checks']}
+        self.assertEqual(checks['extra-erc']['kind'], 'erc')
+        self.assertEqual(checks[existing]['params']['added_param'], 'cpl/policy.json')
+        self.assertNotIn('added_param', self.map['requirements'][0].get('checks', [{}])[0].get('params', {}))
+        self.assertEqual((self.base / 'requirement-map.json').read_bytes(), (POD / 'requirement-map.json').read_bytes())
+        # Hash drift, a missing source, an undeclared source and a redeclared id all refuse without output.
+        bad = copy.deepcopy(overlay)
+        bad['added_inputs']['cpl']['files']['policy.json'] = sha256(b'other')
+        with self.assertRaises(ValueError):
+            self.prepare(bad, name='drift', added_sources={'cpl': source})
+        with self.assertRaises(ValueError):
+            self.prepare(overlay, name='nosource')
+        with self.assertRaises(ValueError):
+            self.prepare(overlay, name='extrasource', added_sources={'cpl': source, 'other': source})
+        bad = copy.deepcopy(overlay)
+        bad['check_additions']['declare'][0]['id'] = existing
+        with self.assertRaises(ValueError):
+            self.prepare(bad, name='redeclare', added_sources={'cpl': source})
+        bad = copy.deepcopy(overlay)
+        bad['check_additions']['declare'][0]['params'] = {'declared_param': 1}
+        bad['check_additions']['params']['extra-erc'] = {'declared_param': 2}
+        with self.assertRaises(ValueError):
+            self.prepare(bad, name='overwrite', added_sources={'cpl': source})
+        for name in ('drift', 'nosource', 'extrasource', 'redeclare', 'overwrite'):
+            self.assertFalse((Path(self.tmp.name) / name).exists())
 
     def test_prepare_derives_map2_and_obligations_and_leaves_the_base_untouched(self):
         before = {n: sha256((self.base / n).read_bytes()) for n in typed_overlay.BASE_FILES}
@@ -141,7 +189,8 @@ class PodOverlayTests(unittest.TestCase):
                 self.assertFalse((Path(self.tmp.name) / ('out-' + mutate.__name__)).exists())
 
 
-@unittest.skipUnless((RETAINED / 'spec.md').exists(), 'retained acquisition inputs are not present on this host')
+@unittest.skipUnless((RETAINED / 'spec.md').exists() and (CPL_SOURCE / 'assembly-profile.json').exists(),
+                     'retained acquisition inputs or the CPL input revision are not present on this host')
 class AcquisitionOverlayTests(unittest.TestCase):
     """The committed acquisition overlay against the retained, git-ignored captured inputs."""
 
@@ -151,7 +200,8 @@ class AcquisitionOverlayTests(unittest.TestCase):
                           ('requirement-map.json', 'requirement_map_sha256')):
             self.assertEqual(sha256((RETAINED / name).read_bytes()), overlay['base'][key], name)
         with tempfile.TemporaryDirectory() as tmp:
-            result = typed_overlay.prepare(RETAINED, ACQUISITION_OVERLAY, Path(tmp) / 'derived')
+            result = typed_overlay.prepare(RETAINED, ACQUISITION_OVERLAY, Path(tmp) / 'derived',
+                                           added_sources={'cpl': CPL_SOURCE})
             accounting = result['manifest']['accounting']
             self.assertEqual(accounting['obligations']['operational'], 1)
             self.assertEqual(accounting['obligations']['physical'], 2)
@@ -163,6 +213,14 @@ class AcquisitionOverlayTests(unittest.TestCase):
             self.assertFalse((derived / 'judgments').exists())
             self.assertEqual(set(result['manifest']['derived']['changed_files']),
                              {'requirement-map.json', 'analysis/electrical-intervals.json'})
+            self.assertEqual(result['manifest']['derived']['added_files'],
+                             ['obligations.json'] + sorted('cpl/' + n for n in overlay['added_inputs']['cpl']['files']))
+            derived_map = read_json(derived / 'requirement-map.json')
+            deliv = next(e for e in derived_map['requirements'] if e['id'] == 'ACQ-DELIV-1')
+            ids = [c['id'] for c in deliv['spans'][0]['mapping']['checks']]
+            self.assertEqual(ids[-3:], ['fab-export', 'cpl', 'fab'])
+            fab = next(c for c in deliv['spans'][0]['mapping']['checks'] if c['id'] == 'fab')
+            self.assertEqual(fab['params']['assembly_profile'], 'cpl/assembly-profile.json')
             intervals = json.loads((derived / 'analysis/electrical-intervals.json').read_bytes())
             base = json.loads((RETAINED / 'analysis/electrical-intervals.json').read_bytes())
             self.assertEqual(intervals['parameters'].keys(), base['parameters'].keys())
