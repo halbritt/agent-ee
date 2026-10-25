@@ -156,3 +156,43 @@ assembled orientation.
   geometry or parts.
 - Electrical and assembly engineering judgment remains a separate,
   candidate-bound obligation; supplier confirmation stays pending.
+## Chief independent verification of the corrected repair
+
+Agent-564 inspected implementation `75fb1a3b` and reproduced a missing-identity
+hole: absent or empty netlist LCSC still allowed board-polarity fallback. Agent-566
+corrected that boundary at `b61d52ef` and the equivalent missing BOM Partnumber
+boundary for supplemental supplier evidence. The chief's original reproduction
+now accepts only the present equal netlist binding; absent, empty and mismatched
+bindings remain unknown. Explicit contradictions remain defects.
+
+The chief independently ran four strict native modules (`test_cpl_polarity`,
+`test_cpl_rotation`, `test_fab_package`, `test_assembly_profile`): 74 test
+executions passed with no skips. A fresh public checks-only replay copied and
+verified all 234 captured real acquisition files and changed only scope input
+source paths. All 40 checks executed successfully: 39 pass and the native
+netlist-export check is informational. The replay's outcome correctly remains
+incomplete because independent reviews and adjudication were not requested.
+
+The first chief result assertion expected every check to say `pass` and failed
+on the legitimate informational netlist result. No native checks were rerun or
+weakened: separate analysis verified the existing snapshot and sealed evidence,
+then required exactly that informational result and 39 passes, with no execution
+error or review record. Both controller output and the verified analysis remain
+in the evidence directory.
+
+D1 is assessed as cathode on both sides, with `sealed_netlist_libpart` and
+`supplemental_component_polarity_evidence` bases exposed. The final supplement
+hash is `23a0b7986e20c676c1ada1b5c09647743eb854b987b320104be741137468e851`.
+All 17 assembly rows have complete software assessment and no unassessed rows;
+supplier confirmation remains `pending_preview`. The exact input file hashes
+were preserved before and after replay. This accepts the source-bound software
+repair, not a typed-obligation judgment, public build/resume result, physical
+assembly confirmation or M1 qualification.
+
+Chief evidence is preserved outside the disposable worktree at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/d1-review/`.
+It includes the original and corrected missing-binding reproduction, strict
+native log, exact copied inputs, fresh native check evidence, source/runtime
+receipts and analysis. Twelve tested source/test hashes are checked during
+integration rebase. The earlier independent agent-565 source interpretation is
+preserved separately in `d1-independent-565/` beside it.
