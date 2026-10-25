@@ -52,13 +52,13 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-524 U1 reader | Investigation `5b714a6d8109ba277664f37e78d0548d5a006f0d`; repair `b74cac20f0281fb34309b265526621f03f2b796d`; [repair evidence](contracts/AGENTEE-524-RECT-repair-evidence.md) | Landed and pushed; chief strict 55 tests/no skips plus exact private capture replay passed. One-to-one corner correspondence preserves the existing tolerance and declared geometry. This does not assess assembly orientation |
 | AGENTEE-519 runtime | Implementation `61c6cd49052487fa18fda7a55cec07618d10b3e6`; [full result](runtime-519-full-agent-567.md) landed `c6446c99b0d53617079328228a73508c73d3d03c` | Plane Done. Chief verified 13 receipt/native hashes. Acquisition completed seven stages with legacy acceptance; esp_prog failed before search on duplicate fixed-mark reference. All 204 originals preserved. REC-30 / AGENTEE-528 owns that separate repair; M1 remains open |
 | AGENTEE-520 intent | Landed `01227b586da29660d55b070f6677da539571deac`; 34 strict tests including all previously pending planner guards, docs/origins passed | Pushed and worktree removed; Plane Done. Chief exact-input replay confirms original esp_prog refuses before capture at `intent.assembly.sides` while acquisition still reaches schematic. Raw esp_prog compatibility remains 479 work |
-| AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7`; typed preparation `daa900861e388a8e4a9b4088e01817e35feb1f58` | Compiler and base acquisition typed preparation landed. Chief independently passed 88 strict native preparation tests/no skips and a real prepare/compile with 47 typed rows. Agent-568 implements qualification/build consumer; agent-565 prepares a separate D1 supplemental input revision. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
+| AGENTEE-521 claims | Contract `e7a92977`; compiler `ae477fc7`; base preparation `daa90086`; [D1 supplement](../../qualification/acquisition-typed-mapping-2026-10-25.md) landed `f2d9f97a` | Chief passed 89 strict native tests/no skips and real supplemental compilation. All 14 engineering judgments remain pending. Consumer `36da8f71` is not accepted: agent-568 must preserve historical acceptance on invalid resume and distinguish pending from failed evidence; chief native verification follows |
 | KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
 | AGENTEE-528 fixed-mark identity | [Repair and verification](identity-528-agent-567.md) landed `86cb840f42173453e6737a69239215727a1ef3ad` | Plane Done. Chief independently passed nine native tests/no skips and 17 exact retained controls; 36 tested source hashes matched after rebase. Both marks and all selector/pose protections preserved. Initial placement remains infeasible and original rich intent remains refused; 479 is separate |
-| AGENTEE-479 compatibility/grouping | [Accepted contract](contracts/AGENTEE-479-group-intent-contract.md) landed `886282bc2fd9b71ce63341ab54f1c4536147857b` | Agent-565 assigned the coherent adapter/metric/group-objective implementation in a separate managed worktree. Preserve the existing placer, signed pad-edge semantics, advisory corpus-derived limits and sourced hard bounds. Final native reports/views and independent judgment remain required. First checkpoint 30 minutes, initial cap 120 minutes; no full board campaign. Parent 472 held |
+| AGENTEE-479 compatibility/grouping | [Accepted contract](contracts/AGENTEE-479-group-intent-contract.md) `886282bc`; partial implementation `2c31eb1c` | Agent-565 delivered adapter/metric/report only, pending chief review. Capture and solver/refinement remain assigned under new source `e4e46669@1` (120-minute cap/30-minute checkpoint). Existing placer, signed pad-edge semantics, advisory defaults and sourced hard bounds remain binding. No full campaign; parent 472 held |
 | AGENTEE-522 mask mismatch / AGENTEE-529 repair | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) `82133d6d`; [repair and chief verification](contracts/AGENTEE-522-capture-repair-evidence.md) landed `586e85af2078bae1aa85051192d8a6e9d44430d0` | Investigation 522 and repair 529 complete. Chief passed 17 strict native tests/no skips before and after rebase, verified 49 worker artifacts and 33 source/runtime hashes, and replayed exact seed6/seed11: corrected capture and native DRC agree on rejection/retention. Both boards retain 46 opens; no full search or M1 acceptance. Native rules stay unchanged |
-| AGENTEE-524 assembly profile | Part B `903721fb`; [corrected D1 repair and chief verification](contracts/AGENTEE-524-D1-polarity.md) landed `df28313b1e83e2882e15da8e5edaefa730bfa2f7` | Chief passed 74 strict native tests/no skips and a fresh 234-file acquisition replay: 39 checks pass, netlist export is informational, all 40 execute successfully. All 17 assembly rows have complete software assessment. Missing part identity remains unknown; contradictions remain defects. Supplier confirmation, independent engineering judgments, typed supplement compilation and public build/resume remain pending |
-| AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Agent-567 assigned focused comparison repair from `86cb840f`, after 528 completion. Graphic classification, final renders/DRC and via/pad process assessment remain pending; existing finalization dependencies remain binding |
+| AGENTEE-524 assembly profile | Part B `903721fb`; [corrected D1 repair and chief verification](contracts/AGENTEE-524-D1-polarity.md) landed `df28313b1e83e2882e15da8e5edaefa730bfa2f7` | Chief passed 74 strict native tests/no skips and a fresh 234-file acquisition replay: 39 checks pass, netlist export is informational, all 40 execute successfully. All 17 assembly rows have complete software assessment. Missing part identity remains unknown; contradictions remain defects. Supplier confirmation, independent engineering judgments and public build/resume remain pending; typed supplement compilation is now independently verified at `f2d9f97a` |
+| AGENTEE-523 finalization preparation | [Sibling proof and verification](artwork-523-sibling-proof.md), REC-31, landed `8a37f958`; origin declaration corrected `53392433` | Chief passed 40 strict native tests/no skips and reproduced exact 85-identity retained proof. Producer still refuses at the separate DRC gate; 14 silk-over-copper and three edge-clearance findings remain. Agent-567 owns bounded residual-artwork decision investigation `377e4b65@1`; final native/view acceptance remains pending |
 
 Qualification records must depend on frozen package evidence in one direction:
 package evidence → completed stage receipt → run-root qualification → build-report summary.
@@ -128,8 +128,10 @@ It corrects the rationale to distinguish the two supplier band features; the
 earlier `a3fff2b3...` capture is superseded. Agent-565's supplemental overlay
 must bind the final bytes in a new revision. It cannot inherit the accepted
 base preparation's receipt. Corrected polarity implementation `df28313b` now
-supplies the required interface; chief verification of supplemental revision
-`3c12c309`, including real compilation, is the next input-preparation step.
+supplies the required interface. The chief independently verified supplemental
+revision `3c12c309`, rebased and landed as `f2d9f97a`, including real compilation
+and unchanged original/candidate inventories. Its new receipt is recorded in
+the typed-input mapping document; it does not inherit the older receipt.
 Chief reproduction and correction of the missing-LCSC hole are retained at
 `/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/d1-review/`.
 
@@ -138,3 +140,37 @@ inbox through event position 7450, reading each exact source and explicitly
 acknowledging each notice/response. Later deliveries remain separate. Worker
 delivery, acknowledgment, independent acceptance and trunk integration are
 distinct states; none alone substitutes for M1 qualification.
+
+## Execution checkpoint — 2026-10-25 14:36 PDT
+
+The supplemental input and artwork proof integrations are complete. All 89
+preparation tests and 40 artwork tests passed in the supported native runtime
+without skips. The artwork fixture-origin gate initially failed, and the shell
+sequence continued through landing. The chief corrected the missing exact-path
+declaration at `53392433`; documentation, origins and diff checks then passed.
+The substantive tests were not rerun for this metadata-only correction.
+
+Consumer `36da8f71` remains unintegrated. Independent Fable review
+`cf4eeee9-3625-4659-b00d-a490b82d1026@1` and chief source inspection establish
+that `_refuse_resume` overwrites historical root records when a new invocation
+has different live inputs/runtime. Agent-568's correction must separate that
+refused invocation from the existing run. Actual retained-evidence corruption
+still fails closed, with previous records preserved or explicit supersession.
+Legacy accepted runs cannot silently migrate to a stricter assessment contract.
+Pending evidence must remain distinguishable from demonstrated failure.
+Authored witness names are attestations; the chief verifies their provenance
+outside those files. PDF-sourced judgments need traceable captured text extracts.
+
+Agent-565 continues the missing group solver/capture work. A proposed Argon
+review of its fixed first slice could not publish because the existing session
+returned `no-match`; no replacement session or provider fallback was launched.
+The chief owns that review. Agent-567 investigates the minimum residual-artwork
+repair using existing evidence, with no repeated production run or unconditional
+DRC waiver. Agent-566's consumer review is complete; agent-569's mask repair is
+complete. Neither idle agent has a new implementation assignment.
+
+[Plane readback](execution-checkpoint-1436.json) confirms 521, 523, 479 and 515
+remain In Progress. No dependent work is declared accepted. M1 still requires
+actual public acquisition builds and cancellation/resume, candidate-bound
+independent judgments, and the original esp_prog final-native workflow.
+Telemetry-pod and owner-reserved actions remain held.

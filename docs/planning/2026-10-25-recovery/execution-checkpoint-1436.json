@@ -1,0 +1,45 @@
+{
+  "recorded": "2026-10-25T14:36:00-07:00",
+  "kind": "execution-only readback; original consolidation preserved",
+  "items": {
+    "AGENTEE-521": {
+      "id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b",
+      "name": "Bind release claims to appropriate requirement evidence and explicit qualification states",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T21:34:07.529810Z"
+    },
+    "AGENTEE-523": {
+      "id": "8409122b-1c6f-4e20-9f74-343a2251942f",
+      "name": "Finalize imported esp_prog artwork and assembly-profile via assessment",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T21:34:39.078407Z"
+    },
+    "AGENTEE-479": {
+      "id": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+      "name": "Enforce functional-group intent through normal placement and final native checks",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": null,
+      "updated_at": "2026-10-25T21:34:39.276709Z"
+    },
+    "AGENTEE-515": {
+      "id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+      "name": "Qualify acquisition build and imported esp_prog as the finite recovery release",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T21:34:39.494889Z"
+    }
+  },
+  "accepted": {
+    "typed_supplement": "f2d9f97ad2eefee9d9adb113deceecb1d94593ca",
+    "artwork_proof": "8a37f958f755dc8efd11a809016639898c16b3f4",
+    "fixture_origin_correction": "53392433"
+  },
+  "pending": {
+    "521": "consumer resume-history correction, chief verification, real qualification",
+    "479": "capture/solver/refinement and independent acceptance",
+    "523": "residual-artwork decision, finalization and final native/view acceptance",
+    "515": "actual representative workflows and independent judgments"
+  }
+}
