@@ -1,0 +1,703 @@
+# Capability log
+
+This page is the detailed, ticket-by-ticket record of what has been implemented
+in agent-ee, moved here from the README on 2026-10-25 so the README can describe
+the product and its current state briefly. Entries are kept as written; each is
+a claim about a bounded capability with its own documentation page and tests.
+Read the [system acceptance map](system-acceptance.md) for what is accepted
+end to end and what remains open.
+
+## Implemented capabilities
+
+[Retained evidence relocation](reproducing-evidence.md#evidence-relocation-agentee-20)
+moves 4,753 run and archive files (about 321 MB) out of the tracked tree into the
+owner's private Garage bucket. A hash-verified fetch restores any manifest group
+with a credentials file kept outside the checkout. Without that file, the fetch
+refuses with a typed error. Upload refuses a store that does not enforce atomic
+create-if-absent; the owner's Garage does not. Files that tests and summaries read stay in the tree.
+History is not rewritten, so clone size does not fall; the tree is still above
+the 20 MB target (AGENTEE-20).
+
+[Historical datasheet imports](datasheet-capture.md#offline-historical-import-agentee-306)
+retain hash-bound source notes and PDF bytes offline, explicitly preserving unknown
+redirect history and unrecorded fetch times (AGENTEE-306). Consumer receipts
+retain the acquisition method; live cascade replay refuses historical acquisitions
+(AGENTEE-311).
+
+An original [pod-scale placement qualification](placer.md#pod-scale-qualification-agentee-181)
+exercises 90–112 mechanical stand-ins on both sides across 80 × 50 to
+90 × 65 mm outlines, with a 48 × 21 mm keepout and native placement evidence.
+It measures fixture capacity and determinism; actual pod geometry needs its own checks.
+
+[RC stage fixtures](rc-stage-fixtures.md) exercise unplaced,
+placed-unrouted and seeded placement defects with native checks and a KRT
+input receipt, both as pcbnew derivatives of the RC control
+(`fixtures/rc/derived/`) and as an original alternative (`fixtures/rc/stages/`). The [routing equivalence check](routing-equivalence.md)
+compares repeated routed outputs by normalized copper geometry and records
+byte differences without failing them.
+
+The [empty-candidate scaffold](scaffold.md) creates deterministic native
+projects from captured envelope and parts records plus an explicit stage-one
+scope. It preserves project rules, checks and baseline sources, pre-creates child
+sheets and leaves native execution to the ordinary review/campaign workflow. Its
+stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
+rules from the envelope, its fab profile and the parts manifest instead, and
+refuses incomplete inputs. An optional [constraint-source import](scaffold.md#declared-design-rule-sources-agentee-331)
+records design-rule classes and citations. Native DRC retains unsourced numeric
+findings as advisories while sourced limits and structural gates remain hard.
+Scaffold and board-build also bind an [inventory of retained unsourced geometry defaults](scaffold.md#unsourced-geometry-inventory-agentee-425)
+with their potential router and zone-filler consumers (AGENTEE-425).
+Grading verifies that inventory against the saved project and native rules;
+stale or edited bindings leave coverage unknown (AGENTEE-437). Native-save
+additions are equivalent only at cited, pinned KiCad 10.0.7 default values.
+Optional captured net constraints add per-net classes,
+assignments, width rules and a Default completeness check. Stage-three preparation
+writes declared holes, keepouts, locked fixed footprints and the IMU marking through
+a campaign pre-receipt. Its [packed-board silkscreen policy](scaffold.md#packed-board-silkscreen-policy-agentee-276)
+keeps hole and dense passive references on fabrication layers, handles declared
+overhang graphics, adds in-board reference/angle callouts for overhang parts,
+and reserves those callouts and the IMU marking during packing. Explicit copper
+layer roles support mixed signal/plane stackups.
+The [IMU axes criterion](placement.md#imu-axes) checks that marking and the IMU
+transform using captured axis facts. Hierarchical staged
+presence remains unavailable.
+
+The [footprint index](footprint-libraries.md#native-custom-pads-agentee-300)
+qualifies bounded solid-connected custom SMD pads through sandboxed pcbnew loads,
+retaining native copper extents and electrical numbers for forward annotation.
+Primitive coordinates and local copper extents are limited to +/-1000 mm;
+widths are limited to 1000 mm. Rotation-invariant copper reach, including pad
+translation and half the stroke width, must stay within 1000 mm of the footprint
+origin. The native merged pad must have exactly one
+copper outline, including its anchor (AGENTEE-304). Declared custom-pad primitives share these bounds and require one merged outline
+on each copper layer while retaining numbering-only records (AGENTEE-324).
+Unsupported custom-pad constructs remain unknown coverage (AGENTEE-300).
+The [placer](placer.md#native-custom-pads-agentee-307) also qualifies this
+subset for rigid placement, preserving its complete primitives and native copper
+extents through save/reload. The [placement write scope](placement-adapter.md#custom-pad-side-flips-agentee-307)
+also qualifies exact native side flips of these footprints and their arcs (AGENTEE-307).
+
+The [schematic emitter](schematic-emitter.md) preserves KiCad 10 private
+symbol metadata, supports explicit component BOM flags, and preserves canonical
+structured datasheet bindings up to 2048 bytes and matching plain datasheet URLs
+beyond 256 characters (AGENTEE-293, AGENTEE-296). JSON-looking legacy datasheet
+text receives a typed diagnostic. Declared
+[copper features](fab-export.md#copper-features) qualify for fab BOM/CPL
+exclusion through both fab gates, with manufacturer/distributor binding detection
+and typed refusal of malformed property values (AGENTEE-289, AGENTEE-290).
+The [parts manifest](approved-parts.md#declared-on-board-copper-features)
+also admits source-bound copper jumper declarations with exact native pins, nets
+and population flags (AGENTEE-305). [Binding fill](binding-fill.md#explicit-source-migration-agentee-309)
+projects those declarations and explicitly migrates validated legacy probe source
+markers with a receipt artifact recording old/new encoding and decoded identity hashes (AGENTEE-309). Fab checks compare those declarations with
+their explicit copper reference list; catalog interval checks exclude copper,
+and unsupported purchased-part consumers return typed refusals (AGENTEE-315).
+
+An optional [staged campaign](staged-campaign.md) keeps later checks behind
+earlier gates. Missing expected design content requires a native observation; it
+cannot pass merely because an empty design produces no rule violations. Progress
+is measured in the earliest failing stage, with regression and retry limits.
+Schematic presence excludes only library power symbols explicitly marked outside
+both BOM and board; contradictory `#` references leave coverage unknown.
+Configuration loading refuses a `finding_retry_limit` below 2 so that the first
+finding appearance leaves room for at least one repair attempt.
+Existing unstaged campaigns keep their convergence rules. Coordinator steps
+follow the earliest failing stage. The retained writer prompt lists declared steps
+and their outputs; staged campaigns refuse writer edits to outputs owned by a
+scheduled step. Arbitrary writer commands have no stage-specific OS allowlist.
+A [mutable-intent schematic stage](intent-schematic-stage.md) binds writer-authored
+connectivity intent to receipted emission and forward annotation on each schematic turn.
+[Stable regeneration](schematic-regeneration.md) optionally retains prior
+symbol placement, fields, UUIDs and reference bindings across those turns,
+with explicit change reports and refusal of conflicting native edits.
+[Stage receipts](stage-receipts.md) support artifact-only steps,
+such as fab export, with an empty write scope and retained artifact hashes.
+New receipts bind tool identity observations to held mount descriptors and refuse
+hard links into live package source (AGENTEE-349), including links planted and
+removed mid-run, and sources that escape their mount (AGENTEE-357); historical path-form replay
+retains its documented lower assurance.
+An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
+With a declared fab step in the stage order, the fab checks require its sealed
+package and compare it with fresh sandbox exports before passing.
+Optional campaign `pre_receipts` import coordinator receipts made before run 1;
+`verify-campaign` revalidates them against the exact initial capture in their folders.
+The [block-first gate](block-first.md) checks separately captured child sheets
+with native ERC and exact topology parity, refuses integration until every block
+has current sealed evidence, and runs fresh checks before publishing the proposed
+hierarchy. Interface or dependency edits require a new block run.
+A complete generation rung with live model review and fabrication
+acceptance remains pending.
+
+An [offline intent importer](design-intent.md) preserves source requirements
+and exact voltage values. [Decision capture](design-dialog.md) records
+answers and their dependencies; missing or invalid answers, including JSON that
+exceeds the decoder's recursion limit, remain recorded as unresolved. These tools
+prepare inputs, but do not choose executable acceptance checks or generate a
+verified circuit. The [requirement-record compiler](requirement-scope.md)
+turns an owner-authored record of spec quotes and check mappings into a scope/2;
+it refuses unmapped requirements and uncited spec sentences. Its
+[spec-record map path](requirement-map.md) compiles scope/3 with registered
+check predicates, explicit limitations and bench obligations; prose needs
+explicit paragraph or byte-span accounting. [Spec capture](spec-record.md)
+turns a markdown spec's table rows, bullets and numbered items into requirement
+IDs with byte-exact locators, verbatim cell text and per-item hashes; it refuses
+malformed tables and colliding IDs with the byte offset and infers no values.
+
+[Board envelope declarations](board-envelope.md) bind mechanical constraints
+and derived requirements into the captured baseline. A reference document becomes
+binding only when declared or consumed by the scope. The registered native check
+compares exact outline and copper layers, and grades stackup against the referenced
+source-verified profile without converting thickness to copper ounces. Several fixed
+connectors receive separate reference-selected witnesses. Capture succeeds for a
+fully bound scope, including id-selected holes and keepouts. Antenna polygons
+are derived from verified datasheet facts and compared to the module-owned rule
+area after its native transform. Unbound generator mechanics remain refusals.
+Each constraint may carry [provenance](board-envelope.md#constraint-provenance):
+owner-stated (quoted from a hashed source), derived, or assumed. Assumed or
+owner-weakened limits are soft. They are reported for owner confirmation and
+never fail placement as a defect. Constraints without provenance stay enforced
+and are reported as unknown provenance.
+Declared [keep-apart rules](placement.md#keep-tall-and-heavy-parts-apart)
+grade courtyard separation; [component height](board-envelope.md#component-height)
+grades sourced installed heights against an envelope limit. Missing height
+sources remain unknown, including hand-fitted connectors.
+
+The [telemetry-pod fabrication inputs](telemetry-pod-fab-profile.md) record
+eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.
+The envelope records nominal 1.6 mm and physical 1.5862 mm thickness separately,
+with a cited ±10% tolerance. Generator-selected mechanics remain explicit
+unbound obligations for AGENTEE-177/179, so acceptance stays unknown.
+
+The offline [io-map compiler](io-map.md) turns a declared pinout CSV into
+a hardware-interface contract, preserving no-connects and unresolved pins.
+Concrete MCU rows require a declared direct conductor or a declared indirect
+path through named intermediate parts. Each conductor segment and part identity
+is then checked on the native netlist; transfer behavior is not claimed.
+The CLI requires readable requirement source bytes and records their SHA-256;
+a missing source exits 2 with a typed error before writing a contract.
+Each local source path uses one digest on all invariants or none; a hashed
+requirement source becomes an immutable hardware-interface input.
+
+Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
+[captured owner-approved exact violation waivers](violation-waivers.md), native netlist export
+with captured symbol-instance coverage in both directions,
+saved-board geometry, [declared hardware interfaces](hardware-interface.md),
+[page-cited datasheet facts and native symbol pin maps](datasheet-facts.md),
+and an ideal passive R/C/L transient simulation through ngspice. An optional
+[qualified RC tolerance check](passive-corners.md) retains complete endpoint
+ensembles for one unloaded first-order topology. A separate
+[captured active-device check](active-spice.md) supports explicit subcircuit
+pin bindings and declared transient/AC/DC-sweep measurements, with
+[role-keyed templates](spice-templates.md) that derive regulator,
+amplifier and filter testbenches from captured targets without defaults. Its
+committed control models are synthetic. A [hash-bound qualification
+harness](active-spice.md#vendor-model-qualification) runs a captured vendor
+op-amp model through the same check without tracking its bytes; no vendor model
+is recorded as qualified yet, and publication rights remain a separate gate.
+Optional [PCB DC path resistance](dc-path.md) connects explicitly captured
+materials and saved native copper dimensions to declared DC drop/loss limits.
+Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
+series/parallel networks; unsupported conductors leave coverage incomplete.
+The [connectivity resolver](connectivity-ir.md) elaborates explicit captured
+symbol pins and scoped sheet ports into physical nets. Symbols from libraries above
+its node limit, such as `MCU_ST_STM32H7`, are first copied into a
+[captured subset library](symbol-capture.md) with source provenance. Hierarchical port names
+that would short distinct local nets are rejected. Repeated sheet files and
+multi-sheet global power remain unsupported. The [native emitter](schematic-emitter.md)
+produces flat and supported hierarchical schematics from that captured intent,
+including inherited pins and units of captured `extends` symbols. A flat
+layout can opt into the [functional presentation](schematic-emitter.md#functional-presentation):
+titled groups, decoupling and series parts wired next to their pins, and the
+same netlist and identities.
+Generator and rung-1 drivers capture only selected symbols and their ancestors
+by default; the emitter parses each library once per emission. The
+[130-component benchmark](schematic-emitter.md#library-subsets-and-emission-cost)
+records timings and native netlist parity against captured library hashes.
+A [schematic readability lint](schematic-lint.md) reports overlaps, wires
+through pins, rail and divider orientation, rail labels, grid and title-block
+findings that ERC does not produce. They are style findings unless a profile
+raises a rule to defect.
+[Forward annotation](forward-annotation.md) plans and applies native-netlist
+changes to a board with protected placement and routing. Full campaign generation
+and hierarchical annotation application remain unqualified.
+The board producers share KiCad native slash escaping for net names; see the
+[qualified encoding boundary](forward-annotation.md#native-net-name-encoding-agentee-220).
+
+[Sub-layout reuse](sublayout-reuse.md) copies a captured module layout's
+placement and routing into new staged instances by anchor offset, quarter-turn
+rotation and a unanimous pad vote for nets. Copper on unmapped nets is withheld
+and reported, and a missing sub-board leaves its group unknown.
+[Netlist parity](netlist-parity.md) compares native connectivity with captured
+intent and libraries or an explicit golden netlist. Resolved intent is rederived
+before comparison. Qualified virtual power symbols omitted by native XML are
+listed in the parity report; physical terminals remain exact. Exact instance
+connectivity catches exchanges that collapsed part labels can miss; ambiguous
+correspondence and search exhaustion remain unknown. Missing, malformed or
+contradictory native connectivity artifacts leave parity coverage unknown.
+Explicit fixed-reference anchors and captured required-name policies seed the
+exact search for repeated channels; the report records anchors and search steps.
+[Additional netlist checks](netlist-extra.md) test declared direct-net shorts
+and anchored rail pairs, and warn about same-name net islands. Island warnings
+are advisory. Neither check establishes electrical adequacy.
+[Requirement topology rules](topology-rules.md) check requirement-tagged
+structural rules over the native netlist, such as at least eight capacitors
+between two rails, no diode between two nets, or a series gate resistor. An
+expected-component set is matched to references by bounded backtracking.
+Absent names, unreadable values and an exhausted search are unknown.
+[Net-name provenance](net-names.md) checks that owner-declared net names
+survive generation: each names exactly one native net at its declared terminals.
+Suggested-name collisions are reported as information with deterministic
+proposals, and names without a level annotation are unknown.
+[Interval assertions](interval-assertions.md) evaluate owner-declared
+relations such as divider outputs and rating margins over pinned catalog
+tolerances in exact worst-case interval arithmetic, tracing every bound to its
+requirement or catalog claim; unbounded operands stay unknown.
+The [regeneration determinism check](design-diff.md) compares a regenerated
+board, schematic or netlist with a reference after removing UUIDs, timestamps
+and tool headers. It reports per-path differences and structural and placement
+hashes, and records byte differences without grading them.
+
+[Design-rule cards](design-rules.md) give the implementation writer
+versioned guidance, such as I2C pull-ups and addresses, crystal load caps and
+reset RC. Each card is graded only by its qualified connectivity adapter.
+Advisory cards have no adapter: the writer sees them, but they can never
+satisfy a requirement.
+The [package consistency check](package-consistency.md) compares each
+footprint with its LCSC part's package in a pinned catalog through a captured
+mapping table. Unmapped names are unknown; land-pattern geometry is not compared.
+The [part-binding check](part-binding.md) validates `LCSC`, `Manufacturer`,
+`Partnumber` and typed `PARAM_*` properties across schematic sheets and board
+footprints. Copper pads require binding even on footprints marked `virtual`,
+`board_only` or `REF**`. Schematic/board disagreement is a defect; missing
+properties are unknown.
+The [netclass completeness check](netclass-completeness.md) checks captured
+Default netclass field presence for the qualified KiCad settings schema. It does
+not establish that the declared clearance or track-width values are suitable.
+The [pod driver](pod-driver.md#net-constraint-application) can apply captured
+net constraints under receipt and register saved native class-assignment checks.
+Standalone class-assignment checks also refuse declared-class patterns that
+match undeclared board nets or use legacy escaped slashes.
+[Net constraints](net-constraints.md) turn the intent's per-net current,
+clearance, differential-pair and impedance declarations into native netclasses
+and DRC width rules. Widths for declared currents come from an IPC-2152 fit, and
+`copper-width/1` reads the per-net minimums. Impedance is recorded, not computed.
+The [GNSS RF controls](gnss-rf-path.md) exercise width and length separately;
+a captured W2 calculation supplies RF_50 width and clearance on the source-backed
+native `/POD_GNSS_RF` net. Unmatched exact constraint nets refuse check and
+router setup with the missing names. The 50 ohm target remains recorded as unenforced. The pinned router probe passes
+the emitted width minimum and detects a narrower segment. Actual impedance and
+the pod RF maximum length remain unverified; the controls' 15 mm is test-only.
+A [dedicated RF reviewer](rf-review.md) is required whenever captured sources
+carry RF parts, nets or constraint classes. Non-RF runs record an explicit
+not-applicable basis. Its findings join adjudication and correction closure;
+its review is never RF qualification.
+The [fab exporter](fab-export.md) produces Gerbers, drills, BOM, CPL and a
+board-bound manifest offline. It requires identical assembled designators
+across the board and CSVs before completing the package. A declared
+`JLCPCB_Assembly=not_assembled` rule leaves marked populated parts out of the
+BOM and CPL and lists them in the manifest, including netlisted UART test pads
+with footprint exclusions. Declared board-only mounting holes need no supplier
+binding, retain their drills and appear in the manifest's mechanical set;
+netted mechanical pads are refused. Explicitly declared
+[copper features](fab-export.md#copper-features), such as solder jumpers,
+need both native exclusions, no model and fields qualified by the copper
+allow-list, which admits only exact standard and KiCad internal field names
+with nonempty values; both fab gates verify their absence from the BOM and CPL.
+For recorded hand-fit parts, [assembly readiness](assembly-readiness.md#declared-hand-fit-deviations)
+requires a purchase source, captured evidence and the assembly marker, reports
+them as declared deviations, and grades stock for the remaining BOM. Stock
+exceptions and the [owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy)
+are distinct classes. The policy class admits only parts that the cited owner
+text names unconditionally.
+
+Declared copper features also admit courtyard graphics and bounded own-side mask
+openings over their pad/copper extent, with a 0.05 mm envelope margin.
+Graphics and properties with an extra `(layers ...)` token remain refused,
+even when `(layer ...)` names silk, fab, courtyard or mask.
+
+The [fab-package consistency gate](fab-consistency.md) checks a sealed
+`fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
+board, the sealed netlist and the sealed geometry. It checks native CPL anchor
+coordinates within 0.01 mm and sealed export logs for warnings. Stock
+`${KICAD10_3DMODEL_DIR}` models resolve only against a captured, pinned
+stock-model receipt that the scope declares. Gerber geometry,
+DFM and assembly rotation corrections stay outside its coverage.
+The [fab round-trip check](fab-roundtrip.md) re-parses native Gerber and
+Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill
+histograms, copper pad/via flash counts and extents, track/arc and zone-region
+counts, and outline bounds within 1 µm. Its owned parser covers KiCad 10's
+aperture macros, G75 arcs and regions and fails closed on anything else;
+artwork is not rendered.
+The [CPL rotation check](cpl-rotation.md) rewrites the exported CPL to
+native pad-box midpoints. It applies a captured, versioned rotation policy and
+requires every rotation to agree with the pin-1 frame of the captured supplier
+footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
+diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
+JLCPCB placement preview validates rotation physically. The generator fab stage
+and both rung-1 scopes apply this check from `--cpl-inputs` captures and retain
+the corrected package with its policy and correction manifest; in the rung-1
+campaign the done gate seals the corrected CPL. A missing capture fails closed
+in the generator. Done predicates admit only the rotation statuses in
+`fab_package.DONE_ROTATION_STATUSES`; a pending preview reaches done only as an
+operator obligation, with every corrected CPL designator and its side listed as
+`preview_obligations` to confirm in the JLCPCB placement preview before
+ordering ([preview obligations](fab-package.md#preview-obligations-agentee-151)).
+The [JLCPCB cost estimate](jlc-cost-estimate.md) is informational and
+never grades a design. It prices the sealed package from a captured, versioned
+pricing table and the catalog snapshot, and every number cites its table entry.
+It reports Basic/Preferred/Extended counts, with unknown-class parts counted as
+unknown.
+
+The [saved JLCPCB DFM check](jlc-dfm.md) binds an owner-uploaded Gerber zip
+and its retained report to a candidate offline. Error findings are defects;
+warnings remain advisory, and missing or mismatched reports remain unknown.
+
+The [fab package done gate](fab-package.md) (`fab_package`, followed only by
+bound DFM checks) runs that export and gate in one check and seals the package's file hashes.
+It accepts the export's variant, assembly exclusion and probe options, plus the
+consistency gate's captured model libraries. A scope with a `generation` marker is refused at capture without it, and a
+satisfied generation campaign's `state.json` lists the hashes, which
+`verify-campaign` recomputes.
+
+The [routing-rule check](routing-rules.md) tests captured length/skew and
+other supported bounds through native KiCad rules, with complete copper-contact
+coverage required. Arcs, zones and unsupported topology remain unknown.
+The [campaign routing adapter](routing-adapter.md) runs pinned kicad-route
+`13303bc` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+with read-only state, retains hashed attempt diagnostics, and verifies routing
+semantics before adopting a proposal. Fresh checks determine acceptance.
+Its optional [per-net layer policy](routing-adapter.md#per-net-signal-layers-agentee-258)
+rejects disallowed tracks and via spans and can require reference-plane fill
+under the declared nets' routed length. The RF review grades captured per-net
+RF layer requirements on the verified routed board's native facts.
+The [fab profile check](fab-profile.md) runs captured, source-cited
+fabrication limits through the same native rules. It also compares layer count
+and outline size with the saved board and lists legal surcharged features
+separately. Its `/2` conjunctive rules charge a via only when the drill and the
+diameter are both under their bounds. An explicit [dated JLCPCB via preset](fab-profile.md#dated-jlcpcb-standard-via-preset)
+records the published small-via surcharge options, grades drills below the
+0.15 mm minimum as defects and reports unlisted small drills as unknown; it
+covers a subset of DFM
+and supplies no pricing or supplier approval. A separate [dated JLCPCB silkscreen profile](fab-profile.md#dated-jlcpcb-silkscreen-profile)
+grades pad-to-silk, silk text height and line width. It grades them only under a
+single captured order (one subject on one capture, never spliced) inside the
+cited page's supplier process, material and layer scope, on a matching board
+whose saved stackup classifies completely, one material per sublayer. No
+order is shipped, so the preset alone is unknown. Its sourced silk-to-mask limit
+stays unknown because no qualified measurement exists.
+The [DFM geometry check](dfm-geometry.md) applies seven deterministic rules
+with captured thresholds to exact pcbnew geometry from the saved board: annular
+ring, via aspect ratio, acid traps, SMD bridge gap, courtyard spacing,
+differential-pair skew including arcs, and copper balance. It reports coded
+findings with coordinates and gives no score. A missing fact, such as the saved
+board thickness, leaves that rule unknown.
+The [RF geometry check](rf-geometry.md) grades one declared RF net on the
+routed board against a captured structure: grounded-CPW width, gap and coplanar
+and reference ground (calculation sources require a declared matching SHA-256),
+stitching via pitch along each branch, routed length per branch of an explicit trunk
+and stub tree, and the reference-plane return-corridor guard at a declared width
+with a recorded basis. An absent structure is a defect and never counts as
+microstrip. Missing bounds, widths or fills are unknown. It is not RF
+qualification.
+The [ESP32 antenna placement check](antenna-placement.md) is a bare-board
+fab gate for the ESP32-S3-WROOM-1 outside-board case (Espressif guidelines
+section 1.4.7). It grades U1's saved pose, the board edge the antenna crosses,
+the feed-point corner and the retained module keepout against hash-pinned
+sources. Missing sources are unknown. The corner slot is an agent-derived class
+default, labelled as such; manufacturer corner compliance stays unknown. Housing, nearby metal, support and RF
+performance stay open physical and bench obligations.
+
+[Offline catalog capture](catalog.md) retains pinned snapshots and verifies
+that derived quantities match retained raw attributes. A pinned jlcparts feed
+has a bounded host downloader and a native stocked-parts adapter; raw data stays
+in private scratch. [Part selection](part-selection.md)
+compares declared intervals, switching-regulator rectification and stock within
+that snapshot. The DC-DC importer retains raw claims and typed ratings; missing
+constrained attributes exclude a row with a reason in the receipt. Both have checks
+that use the captured baseline, sandbox and coordinator seal; selection binds one
+explicit requirement. Their [full-feed runtime qualification](catalog.md#full-feed-runtime-qualification)
+uses a declared 600-second helper ceiling and retains sealed evidence in private
+scratch. They do not authenticate upstream claims or establish
+circuit acceptance. Snapshot stock and prices describe their recorded dates.
+A separate pinned [catalog identity index](catalog-identity.md) retains
+non-passive LCSC/MPN/manufacturer/package/tier/stock/datasheet-URL facts and
+resolves declared MPNs offline to candidate LCSC ids and datasheet URLs;
+ambiguous matches need an explicit reasoned narrowing and misses stay unknown.
+[Named ICs and modules](approved-parts.md#named-ics-and-modules) can enter
+`parts/1` through per-LCSC records derived offline from captured JLCPCB responses
+and datasheet acquisitions. The subset check and scaffold producer replay exact
+identity and freeze those sources; suitability and live stock need separate evidence.
+Captured part bindings can pin
+[selected and rejected datasheet sources](binding-fill.md#captured-datasheet-source-selection)
+while preserving the purchased part identity.
+Opt-in [source-derived passive ratings](binding-fill.md#source-derived-passive-ratings)
+project R/C power and voltage ratings from the purchased catalog row or from verified
+facts on the selected datasheet. The ratings carry hashed provenance, and absent
+ratings stay missing.
+
+An [approved-parts manifest](approved-parts.md) freezes the declared parts
+and their catalog, CAD and datasheet provenance in the campaign baseline.
+The `parts_subset` check compares native symbol/footprint/supplier identities
+and required instances; absent native evidence leaves coverage unknown.
+The [Rung-1 captured-parts route](rung1-parts.md) consumes that bundle
+with an explicitly assembled J1 and runs the existing assembly and package checks.
+The [rung-1 stage-ordered driver](rung1-stages.md) runs one RC candidate
+through requirements, parts, schematic, placement, routing, verification and
+fab. It records stages that were not reached rather than passed, and writes a
+record that `verify` recomputes against the same agent-ee commit and each
+review's retained source inputs, independently of later design adoptions.
+A [supplier land-pattern check](land-pattern.md) compares captured supplier
+geometry with native KiCad footprints, including pad numbering. Its owned controls
+are qualified. The actual C11702/0402 pair is a `low_accuracy` defect at IoU about
+0.67 against the 0.98 threshold, as amended by a coordinator ruling.
+
+[Datasheet acquisition](datasheet-capture.md) captures explicitly supplied
+URLs before offline checks, with byte limits, deadlines and per-part missing
+records. Explicit part manifests can preserve these obligations through capture
+and offline facts checks, including missing or uncited PDFs. The rung-1 driver
+captures every selected part's Datasheet in stage 2 and the emitter carries the URL
+onto the symbol; capturing a PDF does not verify its applicability or its
+engineering claims.
+
+[JLCPCB stock capture](jlc-stock-capture.md) is an opt-in, owner-run
+producer. It sends one rate-limited request per LCSC id to the public JLCPCB
+search endpoint and keeps each raw response, hashed and time-stamped.
+`assembly_readiness` consumes the capture offline: it re-derives every part
+from those bytes and binds `as_of` to the generation receipt in campaigns
+(review time for standalone checks), with a 24-hour maximum age. The
+[JLC catalog schema](jlc-catalog.md) requires verifiable responses and
+reports per-part hash verdicts. It refuses a capture that is
+stale or lacks an observation for a populated id. Its response mapping is not
+yet qualified against a live JLCPCB response.
+
+[DigiKey capture](digikey-capture.md) is the owner-run Stage 2 producer
+for external parts without an LCSC code. It needs owner-provided DigiKey
+API v4 client credentials and an explicit `--allow-network`. It retains each raw
+response with its hash and UTC time. An offline validator re-derives every
+field. An adapter projects a found part into an
+`agent-ee.external-part-identity/1` declaration, a datasheet binding and
+hand-fit purchase-source evidence. Its response mapping is not yet qualified
+against a live DigiKey response.
+
+The [datasheet source cascade](datasheet-cascade.md) walks DigiKey, then
+JLCPCB/LCSC catalog URLs, then an optional Exa search (`--allow-network`, in a
+bounded child with retained raw JSON). It fetches candidates in order and skips
+non-PDF responses and previously rejected hashes. It writes a replayable
+`agent-ee.datasheet-source-selection/1` decision that records every selected,
+rejected and failed source.
+
+[Reference-block capture](reference-block-interface.md) retains files from a
+pinned local commit without Git transports or replacement refs, and checks
+declared ports against the native sheet. Missing captured blobs are refused;
+pinned external requirement citations with unavailable Git objects stay
+unverified without copying the cited documents. It credits
+sealed interface and parts membership evidence only for the block's exact
+manifest, native components and hierarchy; malformed parts manifests are refused.
+[Block adaptation](block-adaptation.md) copies a flat block into
+a pre-created child, freezes its provenance and maps its requirements to fresh board checks.
+Its native provenance check lists value/connectivity edits and grades boundary
+bindings. Optional layouts still need qualification;
+a passing run on a separate schematic cannot qualify the block.
+The [fome-mc PSU block](fome-psu-block.md) is the rung-2 power reference: a
+pinned capture with its contract, sourced requirements and a scope/2 review on an
+original standalone board.
+[Block inventory capture](block-inventory.md) writes one draft entry per
+planned block from a pinned design commit, all unverified, each with its
+reference set, a derived interface contract, library hashes and sourced pending
+requirements. It also replays block adaptation fixtures. The fome-mc inventory
+and its capture at a pinned commit are committed under `fixtures/fome-mc/`
+(owner decision of 2026-10-18, [licence notice](../fixtures/fome-mc/LICENSE-NOTICE.md));
+planning documents are cited by pinned identity, not copied.
+
+The owner decision of 2026-10-18 permits the [pinned wideband reference](fome-wbo1.md)
+under `fixtures/fome-mc/wbo1/`. Its native wbo1-to-wbo2 adaptation fixture uses
+fresh checks; upstream parity, functional behavior, heater geometry and independent
+review remain pending, and both source blocks remain unverified.
+The [FOME host review attempts](fome-block-review-runs.md) retain failed
+review identities for wbo1 and PSU. Invalid citations prevented adjudication;
+committed metadata receipts give no passing credit.
+
+The [pod CAN reference sets](pod-can.md) capture the wideband TJA1051T/3
+and PSU protection/termination parts together. An explicit captured composition
+plan emits only four parts with eight native ports and provenance covering both
+source instances. S remains grounded and VIO maps explicitly to +3V3. The source
+capture stays unverified; source reviews and actual pod qualification remain open.
+
+[Captured library checks](footprint-libraries.md) compare declared symbol pins
+with footprint pad inventories. [Symbol context](symbol-context.md) exposes
+captured library pin references and optional exact name/type expectations, as
+used by the [owned pod symbols](../fixtures/telemetry-pod/symbols/README.md).
+The [symbol shortlist](symbol-shortlist.md) picks candidate libraries,
+then symbols, through one subscription route. It keeps only names in the
+captured index, recording each dropped name with a reason. The list waits for
+an owner approval bound to its hash.
+The [native-bound mode](native-binding.md)
+requires the declaration to match every native board component, its exact
+selection and its captured library pins; declared-only reports remain distinct.
+[Pinned legacy footprints](footprint-libraries.md#converting-pinned-legacy-footprints)
+from another repository's object store are converted with `kicad-cli fp upgrade`
+and recorded with commit, path, blob id and SHA-256 (the telemetry pod's AMPSEAL-23).
+[Datasheet-derived footprints](datasheet-footprint.md) are published only
+when two isolated agent extractions of one captured PDF agree within 0.01 mm,
+every pad value equals a verified page-cited fact, kicad-cli loads the result and
+the footprint assignment check confirms symbol pin/pad parity.
+Coordinate citations require quoted pitch/span declarations and supported
+centered pad indices or half-spans; arbitrary rational multipliers leave
+coverage unknown.
+A [land-pattern geometry kernel](land-geometry.md) compares supported pad
+shapes using exact areas or certified bounds. Its supplier/native check adapter
+and supplier qualification remain pending; the kernel alone cannot accept a part.
+
+The [placement check](placement.md#placement-check-kind) grades one
+declared criterion per check: native DRC courtyard overlap and footprint
+keepouts from an earlier DRC, outline containment, courtyard edge clearance,
+declared connector edges and a pad-centre ratsnest proxy. The advisory
+[pre-route congestion report](placement-congestion.md) ranks pad overlaps,
+courtyard issues and congested regions with suggested moves; it never passes a board.
+[Local copper access](placement-access.md) reports diagnostic, native-qualified
+access witnesses or unknowns per terminal and never ranks or rejects a placement. An
+[initial placer](placer.md) proposes deterministic positions on an isolated
+copy and validates the saved result with native tools. Opt-in
+[targeted plans](placement-plans.md) place caller-named decoupling capacitors
+or apply net-cluster seeds only when the placement score strictly improves; BGA
+escape suggestions remain plans for inspection. Campaigns can select among
+captured targeted requests with one shared judge policy and retain every
+candidate’s judgment. Both targeted request forms reserve IMU axis markings
+before a writer lease and again under the lease. On placement
+turns of a staged campaign, the [placement campaign adapter](placement-adapter.md) gives the writer the
+sealed placement findings, can run the placer as a receipted coordinator step,
+and refuses edits other than footprint translations, quarter turns and qualified
+side flips, including rigid movement of footprint-owned zone polygons. The placer
+keeps peer courtyards outside owned footprint keepouts. Envelope fixed footprints
+and mounting holes written by the scaffold are fixed references, and their
+exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
+bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
+outline only across envelope-declared edges and distances. Declared group
+regions and anchor distances are enforced and graded by `placement-groups/1`.
+[Unsourced obstacle, region and saved-board limits](placer.md#obstacle-and-group-sources-agentee-361)
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
+fixtures and captured geometry retain their sourced verdicts.
+Parts without courtyards are refused by name
+([AGENTEE-212](placer.md#real-pod-residuals-agentee-212)). Every placer
+result past the fixed reservations records the board's capacity at the packing
+gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
+replaces a failed search with a proved infeasibility, after the unchanged
+search, unless the policy opts out
+([AGENTEE-249](placer.md#board-capacity-agentee-249)). Proofs depending on
+[unsourced margins or gaps](placer.md#unsourced-policy-limits-agentee-358)
+report unknown and name those advisory limits. A declared captured
+sub-layout also admits exactly the copper of whole reused groups. KiCad's
+unchanged custom-property font default is tolerated on resave. Fresh checks grade
+every proposal. These checks do not establish routing quality or a
+fabrication-ready board.
+
+Campaign writers must account for `pcbnew.SaveBoard` rewriting sibling project
+files. The immutable-input guard diagnoses this likely cause and still refuses
+the change. Follow the [board-saving writer rule](campaign-guide.md#saving-boards-without-changing-project-siblings)
+to preserve project siblings while adopting a saved board.
+
+An installed kicad-happy check retains schematic/PCB/thermal/EMC
+outputs, with [qualified narrow adapters](kicad-happy.md) for low-pass RC,
+ideal regulator feedback, complete typed power-pin inventory, USB protection
+presence, capacitor voltage utilization, generic LDO temperature estimates and
+ESD placement distance. Other analyzer rules remain informational for that kind.
+The separate [severity gate](happy-severity-gate.md) runs schematic, PCB,
+cross-analysis and EMC; any error or warning without an immutable recorded
+disposition fails it. Generic
+producer/parser interfaces support additional measurements and coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
+their subscription CLIs; authentication or quota failures stop the affected call
+without a provider fallback.
+
+Before each reviewer, adjudicator or implementation call, a
+[preflight guard](result-reference.md#pre-inference-environment-receipts)
+checks captured tool and policy identities and tests sandbox execution. Drift or
+an unavailable prerequisite stops the call with a retained diagnostic.
+Campaigns and standalone reviews allow one
+[bounded output resubmission](campaign-guide.md#bounded-output-resubmission)
+per role per review by default. `run_review(..., max_schema_resubmissions=0)`
+keeps a single model call. Both calls and the original validation error
+are retained; checks, execution failures and environment drift remain terminal.
+Adjudicators may cite the verified immutable `baseline.json`.
+
+[Packet navigation](result-reference.md#factual-packet-navigation) links
+native components, pins, nets and board primitives to declared checks and
+requirements. Bounded views retain access to the full baseline and raw evidence;
+ambiguous identities stay unresolved. The index supplies navigation, not defect
+authority. An initial matched-version pilot stopped when both control reviewers
+timed out. A capped [live A/B](packet-index-ab.md) on 2026-10-22 made 9
+subscription calls. It measured tokens, latency and missed defects, found no
+misses and no navigation citations, and makes no savings claim.
+
+Bench corrections bind to the complete captured design inventory. Changing a
+component, connection, layout or library makes calibrated acceptance unavailable
+until fresh observations cover the changed design. The nominal simulation stays
+available for diagnosis; an old correction cannot make a new design pass.
+[Recoverable bench transactions](bench-feedback.md#recoverable-feedback-transactions)
+retain publication and review-attempt history across interruptions. Recovery
+never repeats inference automatically; an uncertain review needs an explicit
+fresh attempt, and retained evidence remains protected from overlapping outputs.
+
+Thermal solvers, post-layout parasitic extraction, DFM analysis and BOM
+lifecycle services are **not bundled**. The [`dfa_dft` check](dfa-dft.md)
+covers only declared connector orientation, test-point probe access and
+test-point coverage, and derives a bring-up plan. They need separately qualified tools,
+
+Thermal solvers, post-layout parasitic extraction, DFA/DFT analysis, DFM beyond the
+seven geometry rules, and BOM lifecycle services are **not bundled**. They need separately qualified tools,
+models and adapters. The built-in passive simulation is not a general active
+circuit simulator. The [coverage guide](coverage.md) spells out these limits.
+
+A passing result applies to the declared criteria for one captured candidate.
+It is not manufacturing approval, EMC certification or proof of hardware safety.
+Review and repair do not modify the source checkout, order components or approve
+fabrication. The engineer retains those decisions.
+
+
+fome-mc. Those files are still outside the MIT grant. See their
+[licence notice](../fixtures/fome-mc/LICENSE-NOTICE.md).
+
+[Captured bare copper probe features](probe-features.md) carry required pad, net and CAD identity through binding, board construction and fab export without a supplier or BOM/CPL row. Probe identity properties use a KiBot-safe
+encoding; admission checks refuse legacy properties, and
+[forward annotation migrates validated legacy properties before KiBot export](probe-features.md#migrating-legacy-inline-json-properties).
+Each component's XML marker field and property must agree exactly. Annotated
+boards still require admission against the immutable parts declaration.
+
+The [functional schematic presentation](schematic-emitter.md#detached-text-and-native-measurement-agentee-301)
+places detached fields clear of net labels and gives vertical test points label
+leads beyond their pin-name text. A native SVG measurement helper reports
+label/text overlaps. Opt-in `--native-text-work` emission uses measured bounds
+and refuses unresolved overlaps before publication, without changing electrical
+check verdicts.
+
+Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
+
+[Design-rule provenance](scaffold.md#declared-design-rule-sources-agentee-331)
+keeps unsourced numeric defaults advisory across placement, captured DRC, plane
+production and the experimental row stand-in. Measurements below a sourced floor
+still refuse when KiCad prints a larger default. Co-located drills and copper
+outside the board outline remain structural defects.
+
+Native design-rule grading also checks saved effective copper containment against
+the board outline, including cutouts. Crossing and wholly outside copper remain
+structural engineering defects regardless of advisory edge-clearance defaults;
+see [design-rule provenance](check-reference.md#design-rule-provenance-agentee-331).
+
+Native [footprint access declarations](access-direction.md) constrain sourced
+socket, connector and antenna lanes to outward board edges during placement,
+block arrangement and saved-board judgment. Uncited lanes remain advisories
+(AGENTEE-379).
+
+Candidate renders record stock-model resolution provenance and per-file hashes.
+Placer proposals carry project-local 3D models with a hashed closure receipt;
+see [3D model closure](pcb-renders.md#proposal-project-model-closure-agentee-394).
+
+The experimental [whole-board placement job](placement-job.md) captures
+native pad and drill geometry, declared connector overhang and supported
+clearance rules before Rust search and independent saved-board checks.
+Rule capture uses a fresh native process so omitted settings retain KiCad's
+defaults after earlier loads at the same path. The supported placement domain
+is zone-free: board and footprint zones, including keepouts, refuse capture.
+AGENTEE-515 target workflow qualification remains incomplete.
+The continuing intent-to-manufacturing goal and its required qualification
+designs are tracked in the [system acceptance map](system-acceptance.md).

@@ -2,7 +2,7 @@
 
 **Status: implementation in progress.** The detailed designs below preserve the
 agreed planning contracts. They are not evidence that every planned capability
-has shipped. See the [README](../README.md#what-is-implemented-today) and
+has shipped. See the [capability log](capability-log.md) and
 [coverage guide](coverage.md) for the current implementation and its limits.
 
 Turn three independent ADHD explorations into a jointly ordered backlog of complete engineering improvements for agent-ee, preserving the existing single-writer, immutable-candidate adversarial review topology.
