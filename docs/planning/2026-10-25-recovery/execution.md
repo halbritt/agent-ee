@@ -311,7 +311,7 @@ reconciled its status, reclaimed only that expired response under the documented
 inbox protocol, reread its exact source, and acknowledged it without replaying
 any project action. There is no outstanding chief lease at this checkpoint.
 
-## Integration checkpoint — 2026-10-25 16:15 PDT
+## Integration checkpoint — 2026-10-25 16:11 PDT
 
 Artwork policy is integrated through `e84bf538`: chief source review, 133 native
 tests without skips, complete saved-artifact replay/four changed-evidence
@@ -359,7 +359,7 @@ physical applicability remain unproved. Agent-569 independently checks saved
 decks, measurements, original preservation and runtime/admission custody under
 `a575d0a9@1` before any additive capture or judgment acceptance.
 
-[Plane readback](execution-checkpoint-1615.json) confirms updated 523, 479 and 515
+[Plane readback](execution-checkpoint-1611.json) confirms updated 523, 479 and 515
 descriptions with their open states, parent relationships and assignees preserved.
 Actual typed acquisition A/B cancellation/resume, the independent candidate-bound
 judgments, final artwork/grouping and original esp_prog qualification still
