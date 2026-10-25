@@ -55,8 +55,10 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7` | Compiler landed after chief strict 76 native tests/no skips and docs/origins. Agent-568 implements qualification/build consumer; agent-565 prepares actual acquisition typed inputs. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
 | KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
 | AGENTEE-528 fixed-mark identity | REC-30, observed at runtime source `61c6cd49`, unchanged parser at `877b4153` | Agent-567 assigned narrow identity repair from `c6446c99`; native graph is 519 → 528 → 515. Grouping contract preparation remains independent |
-| AGENTEE-479 compatibility/grouping | Agent-570 assigned original esp_prog field mapping and final-native grouping contract | Bounded design preparation; no stripped input or unsourced universal gap. Historical parent 472 remains held |
-| AGENTEE-522 mask mismatch | Agent-569 assigned one retained failing article and one legal control | Bounded localization only; no full search or production repair. Final native rejection remains mandatory |
+| AGENTEE-479 compatibility/grouping | Agent-570 initial proposal `b053137c` reviewed; correction requested | Not accepted: universal bounding-box exclusion and nearest-peer hard predicates lack design authority. Preserve actual upstream signed pad-edge semantics and label proposed functions separately from executed evidence. Original field mapping and final-native engineering judgment remain required; parent 472 held |
+| AGENTEE-522 mask mismatch | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) landed `82133d6d`; chief checked source and all 94 indexed evidence hashes | Capture omits resolved mask-graphic expansion. Agent-569 assigned focused repair with exact seed6/seed11 controls, native API cases and unchanged DRC/rules. No full search or accepted production repair yet |
+| AGENTEE-524 assembly profile | Part B landed `903721fb`; [verification](contracts/AGENTEE-524-partB-verification.md) | Chief strict 95 native tests/no skips plus amended immutable-capture guard passed. Real acquisition remains 16/17 because D1 polarity is unknown. Agent-566 owns the source-bound polarity repair; agent-565 independently assesses its exact source inference. Supplier confirmation remains pending |
+| AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Existing producer refuses native sibling reordering; diagnostic identity alignment passes unchanged translation checks. Focused comparison repair is justified. Graphic classification, final renders/DRC and via/pad process assessment remain pending |
 
 Qualification records must depend on frozen package evidence in one direction:
 package evidence → completed stage receipt → run-root qualification → build-report summary.
@@ -77,3 +79,19 @@ Current Plane state and the new execution-only dependency are recorded in
 completed consolidation snapshot; it does not rewrite the three audit reports.
 The original full runtime attempt is a baseline, not a comparative performance
 claim or final manufacturing qualification.
+
+The acquisition typed-overlay delivery is pending chief review. Its 198-file
+base inventory is a separate scope from esp_prog; the runtime preservation
+manifest's combined total of 204 must not be described as acquisition-only.
+Typed clause coverage and compiling a receipt do not prove the engineering
+judgments, the operational reproduction requirement or physical/supplier results.
+
+For D1, the selected software approach exposes canonical polarity from the
+sealed native netlist when board pad metadata is absent, with part and pad/net
+cross-checks. A supplier semantic supplement must bind the exact part, captured
+CAD, source hashes and specific feature references and label its engineering
+inference and drawing-fidelity assumption. It cannot override contrary native
+or supplier metadata or count as independent review. Automatic interpretation
+of the nearest silk line by an unqualified margin is rejected. The exact source
+chain receives independent inspection before acceptance of the repair; real
+supplier preview/assembly remains a distinct pending claim.
