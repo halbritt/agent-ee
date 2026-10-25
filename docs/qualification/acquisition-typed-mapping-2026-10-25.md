@@ -6,7 +6,7 @@ acquisition design; it is not a build, a review, a manufacture approval, or
 a claim that any obligation is satisfied. No retained file under `build/`
 was modified; no judgment record, witness or candidate was created.
 
-## Base and derived identities
+## Accepted base identities (before the D1 supplement)
 
 | Item | Value |
 | --- | --- |
@@ -61,7 +61,7 @@ Reproduce (reads the retained inputs, writes outside `build/`):
 PYTHONPATH=src python3 -m agent_ee.typed_overlay prepare \
   build/acquisition-release/inputs fixtures/acquisition-typed/overlay.json \
   --out /path/outside/build/acq-typed \
-  --added-input cpl=/path/to/agent-566/cpl-inputs-rev2 \
+  --added-input cpl=/path/to/agent-566/cpl-inputs-rev3 \
   --compile-against build/acquisition-release/release-build-v7/stages/03-scaffold-d1c92e58719b49298406561cdd1f0acb/product/inputs \
   --receipt /path/outside/build/acq-typed-receipt.json
 ```
@@ -199,34 +199,22 @@ derived map `5b6780041d9312acd3d38877c4731aea3e9262f3e612814d1acecaa61d8229d0`;
 obligations unchanged `851029c0…`; base 198 files, 196 unchanged, 2
 derived, 26 added; 47 rows, 14 judgment records declared, 0 present.
 
-**Dependencies of this supplemental revision** (not inherited from the
-accepted base preparation at `daa90086`): input side, agent-566's
-`cpl-inputs-rev3` (24 rev2 files unchanged plus the final polarity record
-`23a0b798…`; a3fff2b3… was a pre-correction copy and is refused by hash);
-code side, agent-566's `cpl_rotation` `polarity_evidence` implementation on
-`wt/agentee-524-d1-polarity` (implementation `75fb1a3b`, note commits
-through `49bd892a`), which awaits the chief's independent review and is not
-on main. Agent-566's replay with the final record (`acq-partb-4-polarity`,
-candidate `eeb0917a…`) is their evidence on their branch and is not
-independently verified here.
-
-**Compile pending.** On main at `daa90086` the capability validator refuses
-the new parameter: `cpl_rotation params must be exactly {export_check,
-geometry_check, policy, supplier_footprints, source_tolerance_nm}` (exit 2;
-the derived inputs are complete, no receipt is produced). The typed receipt
-for this revision therefore waits for agent-566's `polarity_evidence`
-implementation to land; until then the last compiled receipt is the
-pre-supplement revision recorded above (`scope_sha256 82c27ec7…`).
+**Accepted supplemental dependencies.** The input revision is agent-566's
+`cpl-inputs-rev3`: the 24 rev2 files plus the final polarity record
+`23a0b798…`; the earlier `a3fff2b3…` copy is refused by hash. The supporting
+`cpl_rotation` implementation and present/equal part-identity correction
+landed on main at `df28313b`, with independent native and real-package
+verification in the [D1 evidence record](../planning/2026-10-25-recovery/contracts/AGENTEE-524-D1-polarity.md).
+The chief then independently compiled this supplemental input revision as
+recorded below. The pre-supplement receipt remains historical evidence.
 
 ## Limits and pending dependencies
 
-- **D1 polarity.** Agent-566's real run with these exact CPL inputs
-  (acq-partb-2) reports 16 of 17 CPL rows assessed and D1 `polarity_unknown`,
-  which makes the rotation report incomplete and `fab_package` unsupported.
-  That is their run's result, not this preparation's; here `cpl` and `fab`
-  are declared expected checks with status pending. No row is claimed
-  complete and no orientation judgment is recorded. The bounded source
-  investigation of D1 belongs to agent-566.
+- **D1 polarity.** The accepted software repair assessed all 17 rows on a
+  separate checks-only acquisition replay. That result does not execute
+  the checks declared by this preparation, supply the missing engineering
+  judgments, or confirm supplier assembly. A new full typed build is still
+  required.
 
 - This preparation compiles the typed declaration; it does not execute
   checks. Executing the 29 bound checks on a candidate needs the AGENTEE-519
@@ -266,3 +254,40 @@ Evidence is retained at
 `/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/typed-overlay-268b3e8f/`;
 `typed-overlay-native.log` and `typed-overlay-compile.log` are in its parent.
 Ten tested source/test/overlay hashes are checked again after integration rebase.
+
+## Chief independent verification of the D1 supplement
+
+Agent-564 rebased frozen delivery `3c12c309` onto main `66a3c5f8` as
+`221323f2405046267459d792aff029a5ce08067c`. The same five strict native
+modules listed above passed **89 tests with no failures, errors or skips**.
+This includes the real 198-file acquisition capture, 25-file CPL supplement,
+and the negative showing a failed compilation removes only its newly created
+compile copy while preserving the derived output, candidate and pre-existing
+sentinel. No compiler or CPL implementation change was needed.
+
+A fresh public `typed_overlay prepare --compile-against` invocation using
+copies of the retained v7 scaffold produced these identities:
+
+| Receipt field | SHA-256 |
+| --- | --- |
+| Scope | `0268579f2235edb129bcbeb56343417e6a140ad819b6b3bc26ca3d4b265cf08c` |
+| Baseline | `58153566eaeccc0c75ad80d46bfcabaf1501d09aaf00ebe599b8471384e5b873` |
+| Coverage | `e91f6b1ba0da0835fee7644a97b83f82c33e227103cbddf19aac1e5d07ecdd6b` |
+| Compile-root inventory | `5a82bc91a86c05214d07cecf18e98304c623923624278777724b4d5cac061d92` |
+
+The final overlay and map hashes match the supplemental identities above.
+The 198 originals and copied candidate stayed byte-identical; 196 base files
+are unchanged, two are derived and 26 are added. The 47 rows still declare
+14 judgments with no records. The 28 overlaid compile-root files include the
+two derived files and all additions. This accepts input preparation and
+compilation only; M1, formal reviews, supplier confirmation and physical
+validation remain pending.
+
+Private evidence:
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/typed-d1-supplement/`.
+It retains native and compile logs, original/copy inventories, full manifest
+and receipt, copied inputs/output, 12 tested source/test hashes and a summary.
+The evidence recorder first used a nonexistent filename, and its first
+post-run analyzer mistook the abbreviated CLI output for the complete
+manifest. Both recording mistakes were corrected against the existing run;
+neither changed source/inputs or caused a native or compile rerun.
