@@ -92,14 +92,26 @@ only be discharged by an appropriate kind of evidence. This implements the
 The obligations file names the spec bytes it binds:
 
 ```json
-{ "schema": "agent-ee.obligations/1", "spec_sha256": "…",
+{ "schema": "agent-ee.obligations/1",
+  "spec_sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373",
   "clauses": [
     { "id": "ACQ-DELIV-2", "spans": [
-        { "byte_start": 4462, "byte_end": 4700, "text_sha256": "…", "obligation": "operational" } ] },
+        { "byte_start": 4612, "byte_end": 4850,
+          "text_sha256": "d32419ea258dba5aa8533c575d552655a51d707defefc6aae12868cbf0b5c210",
+          "obligation": "operational" } ] },
     { "id": "ACQ-MECH-3", "spans": [
-        { "byte_start": 3536, "byte_end": 3703, "text_sha256": "…", "obligation": "executable" },
-        { "byte_start": 3703, "byte_end": 3852, "text_sha256": "…", "obligation": "judgment" } ] } ] }
+        { "byte_start": 3536, "byte_end": 3703,
+          "text_sha256": "3e80d9362048f09ad0db132c375ad001ed74073a08c8e5055a66c8761a559fb7",
+          "obligation": "executable" },
+        { "byte_start": 3703, "byte_end": 3852,
+          "text_sha256": "336f9fb3cb48ae592da9f4c6ff5a53436193a61b068c44a3109905f36467d53c",
+          "obligation": "judgment" } ] } ] }
 ```
+
+Values above are the retained acquisition capture
+(`build/acquisition-release/inputs/spec.md`, record `spec-record.json`):
+`ACQ-DELIV-2` is clause bytes 4612:4850 and `ACQ-MECH-3` is partitioned at
+3703 exactly as the retained map/1 partitions it.
 
 Every captured requirement and prose clause needs an entry
 (`obligation_missing`); unknown ids, duplicate entries and a `spec_sha256`
