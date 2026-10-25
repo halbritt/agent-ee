@@ -50,9 +50,9 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-515 verification preparation | `fdedf17e2736a37a58a2250f8a59abfcb9cd1e82`, [M1 verification matrix](contracts/m1-verification-matrix.md) | Landed and pushed; native M1 acceptance remains pending |
 | AGENTEE-524 package design | `21a39d0f374de56d0b6f5f7d58ffd21cdb7678a4`, [selected contract](contracts/AGENTEE-524-package.md) | Landed and pushed; agent-566 implements sealed-byte roundtrip checks, with no competing build-workflow writer |
 | AGENTEE-524 U1 reader investigation | `5b714a6d8109ba277664f37e78d0548d5a006f0d`, [decisive evidence](contracts/AGENTEE-524-U1-reader-investigation.md) | Landed and pushed; a corner correspondence bug explains the refusal within the existing tolerance. Agent-569 receives the narrow repair; full orientation remains unassessed |
-| AGENTEE-519 runtime | Worker delivery `131e6724`; chief rebase gate: 20 tests and docs passed, origin check refused the unclassified fixture hash manifest | Not landed. Agent-567 corrects metadata; chief native replay follows |
-| AGENTEE-520 intent | Worker delivery `b361e025`; chief inspected source and regression tests | Not landed. Strict planner controls and integration follow 519 |
-| AGENTEE-521 claims | Fable revision 3 reviewed; final consolidation requested | Design acceptance requires a single coherent contract with acyclic evidence hashes, explicit legacy compatibility and source-span method binding |
+| AGENTEE-519 runtime | Landed `61c6cd49052487fa18fda7a55cec07618d10b3e6`; 20 focused tests, docs/origins and chief native replay passed | Pushed and original worktree removed. Doctor/planner verified, esp_prog captured 21 native objects before cancellation, acquisition completed four stages through schematic. Agent-567 runs the remaining full-result criterion on a frozen 519 worktree; issue stays open |
+| AGENTEE-520 intent | Landed `01227b586da29660d55b070f6677da539571deac`; 34 strict tests including all previously pending planner guards, docs/origins passed | Pushed and worktree removed; Plane Done. Chief exact-input replay confirms original esp_prog refuses before capture at `intent.assembly.sides` while acquisition still reaches schematic. Raw esp_prog compatibility remains 479 work |
+| AGENTEE-521 claims | Landed `e7a92977fda105e322c2775527834882ca950bdc`, [coherent contract](contracts/claims-evidence-qualification.md) | Design accepted; implementation dispatched to agent-565 (method compiler) and agent-568 (qualification/build consumer), with separate file ownership |
 | KICADROUTE-104 restrictions | Argon delivery `2352b95b` reviewed | Correction requested: exact RD references, limited geometric claims and explicit preservation-versus-native-DRC evidence. No feature enabled |
 
 Qualification records must depend on frozen package evidence in one direction:
@@ -60,3 +60,11 @@ package evidence → completed stage receipt → run-root qualification → buil
 Do not embed a qualification hash into the package that qualification itself hashes.
 Required engineering judgments need independent source/candidate-bound concurrence for M1;
 formal engineering review remains a separate claim requiring actual review evidence.
+
+Chief native evidence is retained at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/runtime-519/`
+and `intent-520/` beside it. The latter harness honestly reports overall
+`failed`: original richer esp_prog intent is unsupported after 520. Its
+acquisition checkpoint succeeds with `accepted:false`; this is neither a
+missing-runtime regression nor M1 acceptance. Do not remove declarations or
+change the harness to call this input ready before 479 implements its mapping.

@@ -166,6 +166,13 @@ clause id is special-cased in code.
 `judgment {record}`. Binding rule, enforced in `requirement_map.compile_map`
 and exposed to its consumer:
 
+The first supported operational criterion is the explicit identifier
+`public_build_and_resume`, assessed by the journal-and-receipt predicate in
+§2. Unknown criterion identifiers refuse as unsupported. Free-form operational
+text is source context; a generic successful resume does not prove an arbitrary
+operational requirement. `coverage_view` leaves operational and judgment spans
+pending until the qualification consumer supplies their bound assessment.
+
 - Each map entry (whole clause or each `spans[].mapping`) is matched to the
   obligation span with the identical `byte_start`/`byte_end`. A map span that
   does not coincide with an obligation span refuses `span_alignment`; a map
