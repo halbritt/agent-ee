@@ -10,6 +10,8 @@ The later [additive primary-text preparation](acquisition-primary-text-2026-10-2
 extends the current overlay with a separately captured `manufacturer-text`
 input tree. Historical identities below remain unchanged records; the new
 revision requires its own review and acceptance.
+The later [operating supplement](acquisition-operating-supplement-2026-10-25.md)
+adds a third captured input for the source-pinned ADS1115 instruction correction.
 
 ## Accepted base identities (before the D1 supplement)
 
@@ -68,6 +70,7 @@ PYTHONPATH=src python3 -m agent_ee.typed_overlay prepare \
   --out /path/outside/build/acq-typed \
   --added-input cpl=/path/to/agent-566/cpl-inputs-rev3 \
   --added-input manufacturer-text=/path/to/reproduced/manufacturer-text \
+  --added-input operating-supplement=fixtures/acquisition-typed/operating-supplement \
   --compile-against build/acquisition-release/release-build-v7/stages/03-scaffold-d1c92e58719b49298406561cdd1f0acb/product/inputs \
   --receipt /path/outside/build/acq-typed-receipt.json
 ```

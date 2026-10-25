@@ -46,6 +46,11 @@
     "tps7a20.txt": "655f6b6f0bcdb005e2316f7d9217eb9defb56ac31e262d7de64645d7efdac523",
     "yageo-cc.txt": "42ed2b3d7b8195a0b8b5e11e581c6bf80d174cf542543e741aa9c6fabbcc5876"
    }
+  },
+  "operating-supplement": {
+   "files": {
+    "ADS1115-OPERATING.md": "b909381ca17f2dfc57ace88221bbe87d7a743587419e9e0b348432d71f831f70"
+   }
   }
  },
  "base": {

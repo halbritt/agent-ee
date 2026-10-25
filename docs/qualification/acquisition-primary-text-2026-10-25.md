@@ -7,12 +7,15 @@ acceptance. The chief independently verified the capture and preparation as desc
 
 The prior accepted overlay is `f2d9f97a`, SHA-256
 `0749a6ba90c83ed956394775abee0e67cdf5ae2618c62408c78f4c9a90a82592`.
-The new overlay changes only `added_inputs.manufacturer-text`. Its 14 pins name
+The primary-text revision added only `added_inputs.manufacturer-text`. Its 14 pins name
 thirteen extracted text files and their manifest. The original 198-file input
 tree, all 25 CPL files, specification, parts and electrical parameters stay
 unchanged. Final D1 polarity remains
 `23a0b7986e20c676c1ada1b5c09647743eb854b987b320104be741137468e851`.
 The older prepared tree and receipt are preserved as a separate input identity.
+The current preparation command also supplies the later
+[operating supplement](acquisition-operating-supplement-2026-10-25.md); its
+instruction correction is a separate additive input revision.
 
 ## Capture procedure and custody
 
@@ -82,6 +85,7 @@ AE_CI_WEIGHT=1 AE_CI_MAX_WAIT=120 ae-ci-exec . -- \
   fixtures/acquisition-typed/overlay.json --out build/source-preparation/prepared \
   --added-input cpl=build/acquisition-release/cpl-inputs \
   --added-input manufacturer-text=build/acquisition-release/manufacturer-text \
+  --added-input operating-supplement=fixtures/acquisition-typed/operating-supplement \
   --compile-against build/source-preparation/scaffold \
   --receipt build/source-preparation/receipt.json
 ```
