@@ -18,7 +18,7 @@ import uuid
 from . import parts_stage, requirement_map, scaffold, schematic_stage, spec_record
 from .catalog import strict_json
 from .stage_receipts import _relative, adopt, file_tree, run_step, tree_identity
-from .storage import digest, digest_fd, identity, read_json, write_json
+from .storage import digest, digest_fd, identity, publish, read_json, write_json
 
 SCHEMA = 'agent-ee.build-plan/1'
 TYPED_SCHEMA = 'agent-ee.build-plan/2'
@@ -552,14 +552,22 @@ def run(plan_path, out, *, resume=False, through='package'):
     with (out / '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if resume:
+            from .qualification import QualificationError, verify_retained
             report = read_json(out / 'build-report.json')
+            try:
+                retained_plan = verify_retained(out)
+            except QualificationError as exc:
+                _invalidate_retained(out, report, str(exc), plan)
+            if retained_plan is None:
+                _refuse_resume(out, report, 'historical build has no captured plan; resume migration is unsupported',
+                               pin, kind='historical_migration')
             if report['identity'] != binding:
-                _refuse_resume(out, report, 'build resume identity differs from captured inputs or runtime', plan)
+                _refuse_resume(out, report, 'build resume identity differs from captured inputs or runtime', pin)
         captured_plan = out / 'build-plan.json'
         if not captured_plan.exists():
             captured_plan.write_bytes(plan_raw)
         if digest(captured_plan) != pin['plan_sha256']:
-            _refuse_resume(out, report, 'captured build plan identity changed', plan)
+            _invalidate_retained(out, report, 'captured build plan identity changed', plan)
         if not (out / 'source').exists():
             capturing = out / ('.capture-' + uuid.uuid4().hex)
             _capture_source(source, capturing, plan)
@@ -567,33 +575,38 @@ def run(plan_path, out, *, resume=False, through='package'):
                 raise ValueError('build input changed during capture')
             capturing.rename(out / 'source')
         if _inventory(out / 'source') != source_files:
-            _refuse_resume(out, report, 'retained build source identity changed', plan)
+            _invalidate_retained(out, report, 'retained build source identity changed', plan)
         for index, row in enumerate(report['completed']):
             if row['stage'] != STAGES[index] or tree_identity(out / row['directory']) != row['tree']:
-                _refuse_resume(out, report, 'completed build stage identity changed: ' + row['stage'], plan)
+                _invalidate_retained(out, report, 'completed build stage identity changed: ' + row['stage'], plan)
         package = next((row for row in report['completed'] if row['stage'] == 'package'), None)
         if 'judgment_inventory' in report:
-            from .qualification import verify_judgment_source
+            from .qualification import judgment_inventory, verify_judgment_source
             frozen = report['judgment_inventory']
             path = _retained_path(out, frozen['path'])
             if not path.is_file() or digest(path) != frozen['sha256']:
-                _refuse_resume(out, report, 'judgment inventory changed after freeze', plan)
+                _invalidate_retained(out, report, 'judgment inventory changed after freeze', plan)
             try:
                 verify_judgment_source(source, plan, path.parent)
             except ValueError as exc:
-                _refuse_resume(out, report, str(exc), plan)
+                _refuse_resume(out, report, str(exc), pin, kind='judgment_inputs',
+                               judgments=identity(judgment_inventory(source, plan)))
         if package is not None and plan['schema'] == TYPED_SCHEMA:
-            from .qualification import verify_judgment_source
+            from .qualification import judgment_inventory, verify_judgment_source
             try:
                 verify_judgment_source(source, plan, out / package['directory'])
             except ValueError as exc:
-                _refuse_resume(out, report, str(exc), plan)
+                _refuse_resume(out, report, str(exc), pin, kind='judgment_inputs',
+                               judgments=identity(judgment_inventory(source, plan)))
         if report['accepted']:
             from .cli import verify
             try:
                 verify(out / report['completed'][-1]['directory'] / 'review')
-            except ValueError as exc:
-                report.update(status='failed', reason='QualificationError: ' + str(exc))
+            except (ValueError, OSError) as exc:
+                # Completed-tree custody was verified independently above. This
+                # verifier also gates current tools/rules; its refusal does not
+                # establish that historical evidence bytes were corrupted.
+                _refuse_resume(out, report, str(exc), pin, kind='verification_unavailable')
             return _assess_report(out, report, typed=plan['schema'] == TYPED_SCHEMA)
         previous = out / report['candidate'] if report['candidate'] else out / 'source'
         try:
@@ -640,6 +653,8 @@ def run(plan_path, out, *, resume=False, through='package'):
 
 def _assess_report(out, report, *, typed=False):
     from . import qualification
+    if report['accepted']:
+        report['supersession'] = _archive_records(out, 'Reassessment of a previously accepted run')
     report['accepted'] = False
     report.pop('qualification', None)
     write_json(out / 'build-report.json', report)
@@ -656,17 +671,68 @@ def _assess_report(out, report, *, typed=False):
             mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
         report['accepted'] = record['accepted']
         if len(report['completed']) == len(STAGES):
-            report['status'] = 'accepted' if report['accepted'] else 'failed'
+            pending = record['dimensions']['file_release']['status'] == 'pending'
+            report['status'] = 'accepted' if report['accepted'] else 'pending' if pending else 'failed'
             if not report['accepted']:
-                report['reason'] = 'QualificationError: required file-release evidence is incomplete or failed'
+                report['reason'] = ('Required file-release evidence is pending' if pending
+                                    else 'QualificationError: required file-release evidence failed')
     write_json(out / 'build-report.json', report)
     return report
 
 
-def _refuse_resume(out, report, reason, plan):
+def _refuse_resume(out, report, reason, pin, *, kind='invocation_identity', judgments=None):
+    """Record a refused invocation without changing the build it tried to resume."""
+    directory = _retained_path(out, 'resume-refusals')
+    directory.mkdir(exist_ok=True)
+    retained = {name: digest(_retained_path(out, name)) for name in ('build-report.json', 'qualification.json')
+                if (out / name).exists()}
+    receipt = dict(schema='agent-ee.resume-refusal/1', kind=kind, reason=reason,
+        attempted_identity=identity(pin) if judgments is None else identity(dict(build=pin, judgments=judgments)),
+        retained_identity=report['identity'], retained=retained,
+        attempted=dict(plan_sha256=pin['plan_sha256'], source_sha256=identity(pin['source']),
+                       runtime_sha256=identity(pin['runtime'])))
+    if judgments is not None:
+        receipt['attempted']['judgments_sha256'] = judgments
+    write_json(directory / (uuid.uuid4().hex + '.json'), receipt)
+    raise ValueError(reason)
+
+
+def _archive_records(out, reason):
+    """Retain the exact previous root records before superseding their claims."""
+    directory = _retained_path(out, 'superseded') / uuid.uuid4().hex
+    directory.mkdir(parents=True)
+    previous = {}
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for name in ('build-report.json', 'qualification.json'):
+            path = _retained_path(out, name)
+            if path.exists():
+                raw = path.read_bytes()
+                publish(descriptor, name, raw)
+                previous[name] = hashlib.sha256(raw).hexdigest()
+    finally:
+        os.close(descriptor)
+    supersession = dict(path=str(directory.relative_to(out)), previous=previous, reason=reason)
+    write_json(directory / 'supersession.json', dict(schema='agent-ee.build-supersession/1', **supersession))
+    descriptor = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return supersession
+
+
+def _invalidate_retained(out, report, reason, plan):
+    """Preserve superseded root bytes, then withdraw a claim on corrupted evidence."""
     from .qualification import failed_assessment
+    supersession = _archive_records(out, reason)
+    report.update(status='failed', accepted=False, reason='QualificationError: ' + reason,
+                  supersession=supersession)
+    report.pop('qualification', None)
+    write_json(out / 'build-report.json', report)
     record = failed_assessment(out, report, reason, typed=plan['schema'] == TYPED_SCHEMA, integrity=True)
-    report.update(status='failed', accepted=False, reason='QualificationError: ' + reason)
+    record['supersession'] = supersession
+    write_json(out / 'qualification.json', record)
     report['qualification'] = dict(path='qualification.json', sha256=digest(out / 'qualification.json'),
         mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
     write_json(out / 'build-report.json', report)

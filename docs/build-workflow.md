@@ -185,8 +185,11 @@ Operational assessment supports only the explicitly compiled
 and an interrupted/failed attempt followed by the completed attempt of that
 same stage under the same run identity. A clean first run reports operational
 pending; a package or an unrelated resume cannot satisfy arbitrary operational
-prose. Changed input or completed-stage identity on resume records operational
-failure while preserving completed stage bytes. Diagnostic checkpoints keep
+prose. Changed live inputs or invocation runtime refuse resume in a separate
+receipt; they do not rewrite the retained build's claims. Corrupted retained
+source or completed-stage evidence withdraws the current claim and records
+operational failure while preserving previous root records and completed stage
+bytes. Diagnostic checkpoints keep
 exit 0 and `accepted:false`.
 
 Qualification runs under the build's lock after stage receipts are sealed. It
@@ -196,10 +199,41 @@ with `accepted:false` before this assessment. A crash or assessment failure can
 resume with all seven stages already completed: only verification and assessment
 repeat. The record is regenerated from receipts, including for an accepted run;
 an edited old `qualification.json` is never adopted as evidence.
+Fully generated files with missing evidence, such as a judgment awaiting its
+witness, have `file_release: pending`, run `status: pending`, `accepted:false`
+and exit 1. Demonstrated defects or stale/mismatched retained evidence are
+`failed`; pending evidence does not assert a defect.
 The latest failed package attempt can also supply an ordinary review whose own
 evidence seal verifies. Its checks remain bound to that failed candidate; they
 cannot adopt it or grant file release. This preserves actual failed-check
 evidence when the package stage has no completed receipt.
+
+Resume checks retained custody under its lock before comparing the proposed
+invocation. A different live source, plan, runtime or frozen judgment input
+creates a bounded `resume-refusals/<id>.json` (`agent-ee.resume-refusal/1`) and
+returns nonzero. The receipt records the reason, attempted identity and input
+hashes, retained identity, and hashes of the unchanged report and qualification.
+These are refused invocations, not changes to the historical build outcome.
+An ordinary review verifier can also refuse the current tools or rules after
+retained stage custody passes; that refusal is recorded separately.
+
+An older run without `build-plan.json` and without a qualification reference
+is historical. Resume explicitly refuses unsupported migration, preserves its
+report bytes and does not add a plan or current qualification. Its earlier
+acceptance does not establish current typed method coverage. A qualified run
+whose captured plan disappears instead fails retained custody.
+
+On retained corruption, exact previous root report/qualification bytes and
+hashes are saved under `superseded/<id>/`, with a `supersession.json` receipt.
+The current report becomes `failed`, `accepted:false`; its qualification grants
+no file claim and links the supersession. Reassessment of a previously accepted
+run also saves the previous root records before replacing them. The archived
+acceptance is historical evidence, not a valid current claim on corrupted files.
+The maintainer [resume regression probe](../tests/qualification_resume_probe.py)
+accepts `--plan`, `--run` and a new `--out` directory. Run it in the supported
+runtime against an already qualified build. It verifies a real package gate,
+changes only copies, and checks refusal bytes, migration and corruption; a
+typed input also exercises its frozen judgment directory.
 
 ## Authored judgments and package records
 
@@ -221,13 +255,21 @@ Supported applicability facts are `board_thickness_mm`, `profile_sha256`,
 `envelope_sha256`, `layer_count` and `max_component_height_mm`; another condition
 refuses admission. Sources and input hashes must resolve against the frozen
 candidate; a label or a valid JSON shape cannot supply an engineering result.
+PDF sources require a captured UTF-8 text extract containing the cited quote.
+Capture the original PDF and a provenance record that traces the extract to
+its PDF hash, pages/locators and extraction tool/version. Bind those inputs in
+the judgment; cite the extract's path and hash. The consumer resolves text
+citations, not raw PDF contents; the author and independent verifier must check
+the extraction provenance.
 
 Witnesses under `judgments/verification/` use
 `agent-ee.judgment-verification/1`, bind the judgment's file hash, identify a
 verifier independent of its author, and record `concur` or `dissent` with defects.
 The `checked` list contains exactly `source_citations_resolved`,
 `applicability_recomputed` and `conclusion_consistent_with_bound_checks`.
-These are the verifier's attestations; the build never authors a witness or
+Author and verifier identities are authored metadata, not authenticated
+identities. Independence admission compares their names; the chief verifies
+witness provenance out of band. These are the verifier's attestations; the build never authors a witness or
 converts testimony into a full review. Admitted testimony is `recorded`, never
 `pass`. Missing concurrence stays pending; dissent, stale bindings and unresolved
 defects block the dependent file claim.

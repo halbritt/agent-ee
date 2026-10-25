@@ -583,10 +583,12 @@ class PartsProducerTests(unittest.TestCase):
         self.assertFalse(refused['accepted'])
         self.assertEqual(refused['qualification']['dimensions']['operational'], 'failed')
         board_path.write_bytes(native_bytes)
+        after_corruption = {name: (out / name).read_bytes() for name in ('build-report.json', 'qualification.json')}
         (self.bundle / 'spec.md').write_bytes(spec + b'\nChanged engineering input.\n')
         result = run('--resume', '--through', 'schematic')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('identity', result.stderr + result.stdout)
+        self.assertEqual(after_corruption, {name: (out / name).read_bytes() for name in after_corruption})
         refused = read_json(out / 'build-report.json')
         self.assertEqual(refused['completed'], before_refusal['completed'])
         self.assertEqual(refused['attempts'], before_refusal['attempts'])

@@ -5,6 +5,8 @@ import io
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -110,7 +112,7 @@ class QualificationTests(unittest.TestCase):
         self.complete_control()
         result = qualification.assess(self.root)
         self.assertFalse(result['accepted'])
-        self.assertEqual(result['dimensions']['file_release']['status'], 'failed')
+        self.assertEqual(result['dimensions']['file_release']['status'], 'pending')
         self.assertEqual(result['dimensions']['checks']['status'], 'not_assessed')
         self.assertEqual(result['dimensions']['engineering_review']['status'], 'not_assessed')
 
@@ -168,6 +170,8 @@ class QualificationTests(unittest.TestCase):
             self.save()
             result = qualification.assess(self.root)
             self.assertEqual(result['dimensions']['judgments']['status'], expected, result)
+            self.assertEqual(result['dimensions']['file_release']['status'],
+                             'pending' if expected == 'pass' else 'failed', result)
             self.assertEqual(result['dimensions']['engineering_review']['status'], 'not_assessed')
             self.assertEqual(result['dimensions']['operational']['status'], 'pending')
             self.assertFalse(result['accepted'])
@@ -264,18 +268,22 @@ class BuildQualificationTests(unittest.TestCase):
         self.assertEqual(result['status'], 'checkpoint', result)
         self.assertEqual(before, tree_identity(self.out / 'stages'))
 
-    def test_changed_source_on_resume_records_operational_failure_without_changing_stages(self):
+    def test_changed_live_source_refuses_without_rewriting_retained_records(self):
         build.run(self.plan_path, self.out, through='requirements')
         before = tree_identity(self.out / 'stages')
+        records = {name: (self.out / name).read_bytes() for name in ('build-report.json', 'qualification.json')}
         with (self.source / 'spec.md').open('a') as stream:
             stream.write('\nchanged input\n')
         with self.assertRaisesRegex(ValueError, 'resume identity differs'):
             build.run(self.plan_path, self.out, through='requirements', resume=True)
         self.assertEqual(before, tree_identity(self.out / 'stages'))
-        current = read_json(self.out / 'qualification.json')
-        self.assertEqual(current['dimensions']['operational']['status'], 'failed')
-        self.assertFalse(current['accepted'])
-        self.assertFalse(read_json(self.out / 'build-report.json')['accepted'])
+        self.assertEqual(records, {name: (self.out / name).read_bytes() for name in records})
+        refusals = list((self.out / 'resume-refusals').glob('*.json'))
+        self.assertEqual(len(refusals), 1)
+        refusal = read_json(refusals[0])
+        self.assertEqual(refusal['kind'], 'invocation_identity')
+        self.assertNotEqual(refusal['attempted_identity'], refusal['retained_identity'])
+        self.assertEqual(refusal['retained']['build-report.json'], hashlib.sha256(records['build-report.json']).hexdigest())
 
     def test_judgment_change_after_a_failed_package_freeze_requires_a_new_run(self):
         self.typed()
@@ -293,11 +301,73 @@ class BuildQualificationTests(unittest.TestCase):
                                        identity=report['identity']))
         write_json(self.out / 'build-report.json', report)
         frozen = tree_identity(self.out / 'stages')
+        records = {name: (self.out / name).read_bytes() for name in ('build-report.json', 'qualification.json')}
         write_json(self.source / 'judgments/record.json', {'draft': 'changed after freeze'})
         with self.assertRaisesRegex(ValueError, 'judgment inputs changed after package'):
             build.run(self.plan_path, self.out, through='requirements', resume=True)
         self.assertEqual(frozen, tree_identity(self.out / 'stages'))
-        self.assertFalse(read_json(self.out / 'build-report.json')['accepted'])
+        self.assertEqual(records, {name: (self.out / name).read_bytes() for name in records})
+        refusal, = (self.out / 'resume-refusals').glob('*.json')
+        self.assertEqual(read_json(refusal)['kind'], 'judgment_inputs')
+        self.assertIn('judgments_sha256', read_json(refusal)['attempted'])
+
+    def test_plan_and_real_runtime_changes_refuse_with_nonzero_cli_without_rewriting_records(self):
+        build.run(self.plan_path, self.out, through='requirements')
+        before = {name: (self.out / name).read_bytes() for name in ('build-report.json', 'qualification.json')}
+        original_plan = self.plan_path.read_bytes()
+        command = [sys.executable, '-m', 'agent_ee.cli', 'build', 'run', str(self.plan_path),
+                   '--out', str(self.out), '--resume', '--through', 'requirements']
+        self.plan['verification_timeout_s'] = 30
+        write_json(self.plan_path, self.plan)
+        changed_plan = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(changed_plan.returncode, 0, changed_plan.stdout)
+        self.assertIn('resume identity differs', changed_plan.stderr)
+        self.assertEqual(before, {name: (self.out / name).read_bytes() for name in before})
+        self.plan_path.write_bytes(original_plan)
+        # Execute a second real implementation with one inert source-byte change;
+        # runtime identity is observed by the CLI, not supplied by a patched helper.
+        runtime_source = self.root / 'other-runtime'
+        shutil.copytree(Path(build.__file__).parent, runtime_source / 'agent_ee')
+        with (runtime_source / 'agent_ee/build_workflow.py').open('a') as stream:
+            stream.write('\n# Runtime identity regression control.\n')
+        changed_runtime = subprocess.run(command, env=dict(os.environ, PYTHONPATH=str(runtime_source)),
+                                         capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(changed_runtime.returncode, 0, changed_runtime.stdout)
+        self.assertIn('resume identity differs', changed_runtime.stderr)
+        self.assertEqual(before, {name: (self.out / name).read_bytes() for name in before})
+        refusals = [read_json(p) for p in (self.out / 'resume-refusals').glob('*.json')]
+        self.assertEqual(len(refusals), 2)
+        self.assertTrue(all(r['kind'] == 'invocation_identity' for r in refusals))
+
+    def test_retained_corruption_withdraws_claim_and_preserves_exact_superseded_records(self):
+        report = build.run(self.plan_path, self.out, through='requirements')
+        before = {name: (self.out / name).read_bytes() for name in ('build-report.json', 'qualification.json')}
+        scope = self.out / report['completed'][0]['directory'] / 'scope.json'
+        scope.write_bytes(scope.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'stage identity changed'):
+            build.run(self.plan_path, self.out, through='requirements', resume=True)
+        refused = read_json(self.out / 'build-report.json')
+        self.assertFalse(refused['accepted'])
+        self.assertEqual(refused['qualification']['dimensions']['operational'], 'failed')
+        archived = self.out / refused['supersession']['path']
+        self.assertEqual(before, {name: (archived / name).read_bytes() for name in before})
+        self.assertEqual(refused['completed'], report['completed'])
+        self.assertEqual(refused['attempts'], report['attempts'])
+
+    def test_missing_historical_plan_refuses_migration_without_publishing_new_claims(self):
+        report = build.run(self.plan_path, self.out, through='requirements')
+        report.pop('qualification')
+        write_json(self.out / 'build-report.json', report)
+        (self.out / 'build-plan.json').unlink()
+        (self.out / 'qualification.json').unlink()
+        before = (self.out / 'build-report.json').read_bytes()
+        with self.assertRaisesRegex(ValueError, 'historical build.*migration is unsupported'):
+            build.run(self.plan_path, self.out, through='requirements', resume=True)
+        self.assertEqual(before, (self.out / 'build-report.json').read_bytes())
+        self.assertFalse((self.out / 'qualification.json').exists())
+        self.assertFalse((self.out / 'build-plan.json').exists())
+        refusal, = (self.out / 'resume-refusals').glob('*.json')
+        self.assertEqual(read_json(refusal)['kind'], 'historical_migration')
 
     def test_judgments_cannot_hide_an_earlier_input_or_generated_namespace(self):
         self.typed()
@@ -332,7 +402,7 @@ class BuildQualificationTests(unittest.TestCase):
         self.assertEqual(result['attempts'], report['attempts'])
         self.assertEqual(result['completed'], report['completed'])
         self.assertEqual(before, tree_identity(self.out / 'stages'))
-        self.assertEqual(result['status'], 'failed')  # No genuine final native checks or package gate.
+        self.assertEqual(result['status'], 'pending')  # No genuine final native checks or package gate.
         self.assertFalse(result['accepted'])
 
 

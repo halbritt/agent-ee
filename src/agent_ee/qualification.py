@@ -81,7 +81,28 @@ def _plan(root, report):
     return validate_plan(strict_json(path.read_bytes()))
 
 
-def _judgment_inventory(source, plan):
+def verify_retained(out):
+    """Verify retained custody independently of a proposed resume invocation."""
+    from .build_workflow import STAGES, _inventory, _retained_path
+    root = Path(out)
+    try:
+        report = _snapshot(root)
+        plan = _plan(root, report)
+        if plan is None and 'qualification' in report:
+            raise ValueError('captured build plan is missing from a qualified run')
+        if report.get('accepted') and len(report['completed']) != len(STAGES):
+            raise ValueError('accepted build has no complete stage inventory')
+        if 'judgment_inventory' in report:
+            frozen = report['judgment_inventory']
+            path = _retained_path(root, frozen['path'])
+            if digest(path) != frozen['sha256'] or _inventory(path.parent / 'judgments') != read_json(path):
+                raise ValueError('retained judgment inventory changed after freeze')
+        return plan
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise QualificationError(str(exc), integrity=True) from exc
+
+
+def judgment_inventory(source, plan):
     from .build_workflow import _inventory, _retained_path
     if 'judgments' not in plan:
         return {}
@@ -105,12 +126,12 @@ def applicability_facts(candidate, plan):
 def freeze_judgments(source, candidate, plan, stage):
     """Copy authored records once, before the package stage is sealed."""
     from .build_workflow import _inventory, _retained_path
-    inventory = _judgment_inventory(source, plan)
+    inventory = judgment_inventory(source, plan)
     target = stage / 'judgments'
     target.mkdir()
     if inventory:
         shutil.copytree(_retained_path(source, plan['judgments']), target, dirs_exist_ok=True)
-    if _inventory(target) != inventory or _judgment_inventory(source, plan) != inventory:
+    if _inventory(target) != inventory or judgment_inventory(source, plan) != inventory:
         raise QualificationError('judgment inputs changed while freezing package')
     write_json(stage / 'judgment-inventory.json', inventory)
     write_json(stage / 'applicability-inventory.json', dict(values=applicability_facts(candidate, plan),
@@ -118,7 +139,7 @@ def freeze_judgments(source, candidate, plan, stage):
 
 
 def verify_judgment_source(source, plan, stage):
-    if _judgment_inventory(source, plan) != read_json(stage / 'judgment-inventory.json'):
+    if judgment_inventory(source, plan) != read_json(stage / 'judgment-inventory.json'):
         raise QualificationError('judgment inputs changed after package')
 
 
@@ -229,7 +250,7 @@ def rules_register(root, review):
             constraints = [name for name in row['evidence'] if name.endswith('/drc-constraints.json')]
             native = [name for name in row['evidence'] if name.endswith('/drc.json')]
             if len(constraints) != 1 or len(native) != 1:
-                item.update(status='failed', reason='Sourced-rule evaluation evidence is unavailable')
+                item.update(status='pending', reason='Sourced-rule evaluation evidence is unavailable')
             else:
                 constraint_path = _retained_path(directory / 'review', constraints[0])
                 document = read_json(constraint_path)
@@ -239,7 +260,7 @@ def rules_register(root, review):
                 try:
                     require_evaluated_limits(read_json(_retained_path(directory / 'review', native[0])), document['sources'])
                 except ValueError as exc:
-                    item.update(status='failed', reason=str(exc))
+                    item.update(status='pending', reason=str(exc))
         records.append(item)
     return records
 
@@ -532,6 +553,7 @@ def _assess(out):
     methods = _methods(root, review)
     rules = rules_register(root, review)
     judgments, decision, blockers = [], {}, []
+    demonstrated_failure = False
     if typed:
         dimensions['operational'] = _operational(report)
         if 'judgments' in plan:
@@ -547,10 +569,12 @@ def _assess(out):
         candidate = _retained_path(root, package['candidate'])
         marker_path = directory / 'accepted-package.json'
         marker = read_json(marker_path)
-        if (review is None or review[0] != directory or 'qualification' in marker
-                or marker.get('physical_validation_performed') is not False
+        if ('qualification' in marker or marker.get('physical_validation_performed') is not False
                 or marker.get('supplier_preview_performed') is not False):
-            blockers.append('Package has no matching verified checks-only file gate or contains unsupported claims')
+            blockers.append('Package contains unsupported claims')
+            demonstrated_failure = True
+        elif review is None or review[0] != directory:
+            blockers.append('Package has no matching verified checks-only file gate')
         else:
             try:
                 gate_plan = plan
@@ -568,6 +592,8 @@ def _assess(out):
                     raise QualificationError('accepted package differs from the final gate evidence')
             except ValueError as exc:
                 blockers.append(str(exc))
+                demonstrated_failure = (isinstance(exc, QualificationError)
+                    or any(row['execution'] != 'ok' or row['outcome'] not in ('pass', 'info') for row in rows))
         if typed:
             if marker.get('judgment_inventory_sha256') != digest(directory / 'judgment-inventory.json'):
                 raise QualificationError('package judgment inventory binding differs')
@@ -578,11 +604,14 @@ def _assess(out):
             dimensions['judgments'] = _dimension(state, evidence=[_evidence(root, directory / 'judgment-inventory.json')])
             if state != 'pass':
                 blockers.append('Required engineering judgments or independent concurrence remain unresolved')
+                demonstrated_failure |= state == 'failed'
             decision = decision_record(root, plan, candidate, review, judgments)
             if decision['status'] != 'pass':
                 blockers.append('Current decision is not established by matching native stackup evidence')
+                demonstrated_failure |= decision['status'] == 'failed'
             if any(row['status'] != 'pass' for row in rules):
                 blockers.append('Applicable sourced-rule evaluation is incomplete')
+                demonstrated_failure |= any(row['status'] == 'failed' for row in rules)
     judgments_by_span = {row['span_id']: row for row in judgments}
     entries = {row['id']: row for row in receipt['requirements']}
     if typed:
@@ -604,16 +633,22 @@ def _assess(out):
                for clause in coverage.values() for span in clause['spans']
                if span['obligation'] in ('executable', 'judgment')):
             blockers.append('Required software-file or judgment source spans are not satisfied')
+            demonstrated_failure |= any(span['status'] == 'failed' for clause in coverage.values()
+                for span in clause['spans'] if span['obligation'] in ('executable', 'judgment'))
         if any(span['status'] == 'failed' for clause in coverage.values() for span in clause['spans']
                if span['obligation'] == 'operational'):
             blockers.append('Required operational assessment failed')
+            demonstrated_failure = True
     package_records = _package_records(rows)
     bound = {cid for clause in coverage.values() for span in clause['spans'] for cid in span['bound_ids']}
     if typed and any(package_records[name] != 'pass' and any(row['kind'] == kind and row['id'] in bound for row in rows)
                      for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation'))):
         blockers.append('Required exact-package evidence is incomplete')
+        demonstrated_failure |= any(package_records[name] == 'failed'
+            and any(row['kind'] == kind and row['id'] in bound for row in rows)
+            for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation')))
     if package is not None:
-        dimensions['file_release'] = _dimension('failed' if blockers else 'pass',
+        dimensions['file_release'] = _dimension('failed' if demonstrated_failure else 'pending' if blockers else 'pass',
             binding=review[3] if review else None, evidence=[_evidence(root, marker_path)],
             reason='; '.join(blockers) if blockers else None)
     elif report['status'] == 'failed' and report.get('attempts') and report['attempts'][-1]['stage'] == 'package':

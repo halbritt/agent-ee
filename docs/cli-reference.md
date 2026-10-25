@@ -44,7 +44,7 @@ operation, with configuration and limits described in the closed-loop reference.
 | --- | --- | --- | --- |
 | `doctor` | Every recorded probe exited 0 and its binary was hashed | A prerequisite probe failed or timed out, or a probed binary could not be hashed | Parser/handled invocation error |
 | `review`, `resume` | `criteria_satisfied` | Any other recorded review outcome, including execution/capture failure and interruption | Refusal before the run is handled, such as an existing output directory or invalid budget; parser error |
-| `build run` | Recorded `accepted` or diagnostic `checkpoint`; inspect `accepted` and `qualification.dimensions` | Recorded failed/interrupted build or failed qualification | Input, identity or invocation refusal |
+| `build run` | Recorded `accepted` or diagnostic `checkpoint`; inspect `accepted` and `qualification.dimensions` | Recorded pending/failed/interrupted build or failed qualification | Input, identity or invocation refusal; inspect a retained run's separate `resume-refusals` receipt |
 | `build review` | Full review criteria satisfied, if such evidence exists; the current checks-only path returns 1 | Checks-only diagnostic remains incomplete even if checks pass; `accepted:false` | Source custody or invocation refusal |
 | `view3d` | Export completed; normal viewer shutdown | Not a normal handled result | Invocation/native-export error |
 | `render3d` | Three validated PNGs and a completed manifest | Not a normal handled result | Invocation/native-render error; interruption returns 130 |
