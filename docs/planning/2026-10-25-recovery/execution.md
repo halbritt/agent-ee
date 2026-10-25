@@ -241,3 +241,72 @@ its own supplied session inbox, read exact sources and acknowledged notices and
 responses through position 7497; the inbox then returned empty. No assignment was
 replayed by acknowledgment. M1, independent judgments and the telemetry-pod hold
 remain unchanged.
+
+
+## Integration checkpoint — 2026-10-25 15:35 PDT
+
+Two prerequisite deliveries are independently verified and integrated through
+`2ced3fd2`. The qualification consumer and resume-history correction landed as
+`782a29c0` and `8fcf070a`, with [chief verification](contracts/AGENTEE-521-consumer-verification.md)
+at `1b877ef0`. All 43 strict native tests passed without skips. A fresh isolated
+copy of the actual legacy acquisition v7 package passed resume; external
+source/plan/runtime mismatches refused without overwriting its history, while
+retained source/board/review corruption withdrew acceptance with exact archives.
+The original seven stage trees and board bytes were rechecked unchanged. The
+probe is an adapted legacy-file regression, not an operational qualification or
+actual typed M1 run. AGENTEE-521 remains open for its target acceptance criteria.
+
+Manufacturer-text capture landed at `2f40583c`, with independent verification at
+`2ced3fd2`. The chief reproduced every output byte in the 14-file text/manifest
+capture of 13 PDFs and 574 physical pages, passed 89 strict native tests without
+skips, and separately ran the public preparer/compiler.
+[The source-capture record](../../qualification/acquisition-primary-text-2026-10-25.md)
+binds the new scope `661d817b…`, baseline `0490c492…`, unchanged coverage
+`e91f6b1b…`, original captures, 25 CPL inputs and final D1 polarity `23a0b798…`.
+All 47 rows and 14 pending judgments remain. Graph-only assertions and exact-part
+Samsung/Murata applicability are not established by text extraction.
+
+Current allocations use the existing sessions only:
+
+- Fable565 verifies grouping delivery `1ddfd639` under `69f6570c@1`, with a
+  25-minute cap and 15-minute checkpoint. The fixed native run must include
+  retained inputs copied into its owned ignored build directory and compare
+  acquisition behavior. No full candidate campaign or global runner change.
+- Fable566 investigates the exact-part source gaps under `02123de2@1`, with the
+  same cap/checkpoint. It identifies which pending judgments depend on those
+  assumptions, decisive evidence or the smallest remaining gap. No code,
+  downloads, model runs or acceptance records.
+- Sol568 owns native annotated group views under `d7a7f206@1`; fixed reviewed
+  delivery precedes final-check wiring. It binds final-board poses, side and
+  output transforms without issuing an engineering acceptance.
+- Sol567 continues artwork policy `2a1cd20a@1`, retaining its single-producer
+  limit and all scope constraints. Checkpoint `ea6d5648@1` reports 104 strict
+  tests plus 27 routed-artwork tests; a newly identified rotation control needs
+  final verification. Worker results remain unaccepted.
+- Sol569's source capture is complete. Argon570 remains unavailable; no
+  replacement or provider fallback was launched.
+
+The chief reproduced two further 479 defects at fixed `87bbbf05`: Python used
+unknown multi-group nets as signal candidates where Rust excluded them, and
+rail annotations accepted nonexistent members or an invalid collection shape.
+The delivered corrections remain under native verification. The new membership
+check also exposed a factual error in the accepted contract. Independent
+extraction from both retained esp_prog boards found GND on 17 copper pad
+objects, 11 reference/pad-number pairs and ten components in four groups, with
+no reset-group membership. The [explicit erratum](contracts/AGENTEE-479-group-intent-contract.md#correction-to-ground-membership--2026-10-25)
+preserves original boards/groups and historical measurement JSON/probe; it
+changes no engineering requirement.
+
+[Plane readback](execution-checkpoint-1535.json) confirms updated 521, 515, 479
+and 523 descriptions, with their open states, parent relationships and assignees
+preserved. Actual typed acquisition A/B cancellation/resume, independent
+candidate-bound judgments, coherent final grouping/artwork and original esp_prog
+qualification remain before M1. The active goal continues; telemetry-pod and
+owner-reserved actions remain held.
+
+The chief read and acknowledged its own response/notice deliveries through
+position 7513, then received an empty inbox. Delivery 7513's lease expired
+during compaction; the expired acknowledgment/renewal refused. The chief
+reconciled its status, reclaimed only that expired response under the documented
+inbox protocol, reread its exact source, and acknowledged it without replaying
+any project action. There is no outstanding chief lease at this checkpoint.

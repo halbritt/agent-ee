@@ -61,3 +61,45 @@ explicit nonmaterial omission rationales and citation classification are retaine
 in the private evidence directory. Their scope is the ingress finding, not full
 479 acceptance. Source/reproduction evidence, rather than reviewer agreement,
 is the basis for the correction.
+
+
+## Candidate-set and applicability follow-up — 2026-10-25 15:35 PDT
+
+Independent review `7e9c18a6@1` found a Python/Rust disagreement at `87bbbf05`.
+The chief reproduced it with the exact fixed Python modules: unknown net X
+spanning three groups remained visible in the unknown list but also supplied
+R1/R2 signal candidates. The inspected Rust compiler excludes it. The chief
+also reproduced acceptance of nonexistent shared-rail group/part annotations
+and `near_pairs: {}`. These are separate candidate-selection and provenance
+validation problems; neither justifies removing evidence binding.
+
+Selected corrections preserve unknown-net visibility while excluding those nets
+from signal candidates, retain the declared-near any-pad fallback, and validate
+metadata against actual board net membership. Group/part annotations need not
+be exhaustive. Sidecar collection shapes and named scoped groups must be valid.
+No universal net-name classifier or additional geometric release threshold is
+authorized. Counterexamples and fixed module hashes are retained under the
+chief evidence root's `87bbbf05/` directory.
+
+Delivery `1ddfd639` claims these corrections, same-pose Python/Rust candidate
+count/argmin/objective parity, and the earlier declaration-mode repair. Its 111
+Rust tests and host Python run remain worker evidence. The prior supported
+native run had retained-input skips and predates this closure. New bounded
+verification `69f6570c@1` copies hash-checked representative files into the owned
+worktree's ignored build directory, uses their `/opt/agent-ee/…` mounted paths
+and the image's `/opt/kicad-route`, and requires strict relevant native checks.
+No global runner change is needed to make those retained inputs available.
+Acquisition compatibility and the representative workflow remain unaccepted.
+
+Agent-568 separately owns the annotated-view helper under `d7a7f206@1`. Its
+selected interface is `group_views.produce(board_path, groups_document, out,
+*, input_board_path=None) -> manifest`. It reuses native layer plotting and
+binds final-board identity, component UUID/pose/side, declared groups, output
+hashes and view transforms. Bottom geometry and annotations share the same
+mirror transform; text remains readable. It emits evidence, not an engineering
+acceptance. Final-check wiring follows a fixed, reviewed helper delivery.
+
+The sidecar membership validation also exposed the contract's incorrect ground
+membership description. The chief independently verified and documented the
+[correction](AGENTEE-479-group-intent-contract.md#correction-to-ground-membership--2026-10-25).
+Historical measurements and original inputs are preserved.

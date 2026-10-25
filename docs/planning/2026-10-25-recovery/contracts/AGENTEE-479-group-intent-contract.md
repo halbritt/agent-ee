@@ -157,7 +157,7 @@ Per Chief review (`bb102db7-988e-4f4f-b274-40a266831aa4`) and `docs/functional-b
    - **`S2` — Evidence-Bound Shared-Rail Non-Merge Invariant**:
      - Do **not** treat a fixed string list of power-net spellings as a universal rail classifier. Instead, bind rail classification for the two M1 qualification designs (`esp_prog` and `acquisition`) directly to **captured net/part and spec evidence** (`EVIDENCE_BOUND_RAILS` in `AGENTEE-479-probe.py`):
        - **`acquisition`**: Bound to `ACQ-MECH-2` ("Shared ground and 3.3 V shall not merge the blocks") and schematic power-symbol/regulator evidence: `GND` (`12` pads across `power`, `analog`, `host`) and `/V3V3` (`7` pads across `power`, `analog`, `host`, regulated output of `U1.5`).
-       - **`esp_prog`**: Bound to `build/agent545/inputs/groups.json` (`power.why` declaration) and native netlist connectivity: `GND` (`13` pads across all `5` groups), `/+3.3V` (regulated output of `U2.3` across `power`, `core`, `target`), and `Net-(C1-Pad1)` (+5V VBUS across `USB1.1` in `usb_in`, `C1.1`/`U2.2` in `power`, and `CON2.7` in `target`; explicitly scoped by `power.why` to `C1.1<->U2.2` intra-`power` and `usb_in<->power` `near` tether, never merging `power` with `target`).
+       - **`esp_prog`**: Bound to `build/agent545/inputs/groups.json` (`power.why` declaration) and native netlist connectivity: `GND` across `usb_in`, `power`, `core`, and `target` (corrected membership below), `/+3.3V` (regulated output of `U2.3` across `power`, `core`, `target`), and `Net-(C1-Pad1)` (+5V VBUS across `USB1.1` in `usb_in`, `C1.1`/`U2.2` in `power`, and `CON2.7` in `target`; explicitly scoped by `power.why` to `C1.1<->U2.2` intra-`power` and `usb_in<->power` `near` tether, never merging `power` with `target`).
        - **Unknown multi-group net visibility**: Any net spanning `> 2` groups without captured rail/interface provenance is surfaced visibly in `unknown_multi_group_nets` (`[]` on both retained boards) rather than silently classified by string matching.
    - **`S3` — Sourced or Authored-Design Hard Locality & Proximity Limits Only**:
      - Only explicitly sourced or authored-design numeric limits act as hard release gates:
@@ -259,3 +259,23 @@ placer, measured relation objectives and independent qualitative acceptance
 described above. An authority label alone cannot create a hard bound. Target
 verdicts in Section 5 are proposed verification expectations, not completed
 judgments. No production grouping change or M1 result is accepted here.
+
+
+## Correction to ground membership — 2026-10-25
+
+The original descriptive claim of GND reaching all five esp_prog groups with
+13 pads was incorrect. The chief independently extracted each native
+footprint/pad/net/layer declaration from original board `b4aa540d…` and final-a1
+`dfffc042…`, using `symbol_library.parse_sexpr` at main `2ced3fd2`. Both contain
+17 copper-bearing GND pad objects, 11 distinct reference/pad-number pairs and
+ten components across `usb_in`, `power`, `core`, and `target`. No `reset`
+component has a GND pad. Repeated numbers include six USB1 pad-0 objects and
+two Y1 pad-3 objects; these are copper shapes, not paste-only apertures.
+
+[The extracted membership](AGENTEE-479-ground-membership.json) records every
+object and binds the two boards and original groups bytes. The original
+measurement JSON and probe remain unchanged as historical evidence; their
+five-group/13-pad descriptive strings are superseded by this correction.
+No board, grouping input, electrical requirement or acceptance threshold changes.
+The shared-rail non-merge rule remains in force. Agent-565's new applicability
+check first exposed the mistake; agreement alone was not used as verification.

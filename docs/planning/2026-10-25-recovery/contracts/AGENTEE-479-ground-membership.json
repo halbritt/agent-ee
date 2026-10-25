@@ -1,0 +1,561 @@
+{
+  "groups_path": "/home/halbritt/git/agent-ee/build/agent545/inputs/groups.json",
+  "groups_sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8",
+  "method": "read-only S-expression extraction of native footprint/pad/net attributes, preserving original bytes",
+  "boards": [
+    {
+      "path": "/home/halbritt/git/agent-ee/build/agent545/inputs/board.kicad_pcb",
+      "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7",
+      "pads": [
+        {
+          "reference": "C1",
+          "pad": "2",
+          "group": "power",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "C2",
+          "pad": "2",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "C3",
+          "pad": "2",
+          "group": "power",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "C4",
+          "pad": "2",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "CON1",
+          "pad": "4",
+          "group": "target",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "U1",
+          "pad": "8",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "5",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "CON2",
+          "pad": "4",
+          "group": "target",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "U2",
+          "pad": "1",
+          "group": "power",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "Y1",
+          "pad": "3",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "Y1",
+          "pad": "3",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        }
+      ],
+      "pad_count": 17,
+      "parts": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "CON1",
+        "CON2",
+        "U1",
+        "U2",
+        "USB1",
+        "Y1"
+      ],
+      "groups": [
+        "core",
+        "power",
+        "target",
+        "usb_in"
+      ],
+      "copper_pad_object_count": 17,
+      "unique_reference_pad_numbers": 11
+    },
+    {
+      "path": "/home/halbritt/git/agent-ee/build/agent545/board-run-portfolio/final-a1/board.kicad_pcb",
+      "sha256": "dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1",
+      "pads": [
+        {
+          "reference": "C1",
+          "pad": "2",
+          "group": "power",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "C2",
+          "pad": "2",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "C3",
+          "pad": "2",
+          "group": "power",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "C4",
+          "pad": "2",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "CON1",
+          "pad": "4",
+          "group": "target",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "U1",
+          "pad": "8",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "0",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "USB1",
+          "pad": "5",
+          "group": "usb_in",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "CON2",
+          "pad": "4",
+          "group": "target",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "thru_hole",
+          "layers": [
+            "*.Cu",
+            "*.Mask"
+          ]
+        },
+        {
+          "reference": "U2",
+          "pad": "1",
+          "group": "power",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "Y1",
+          "pad": "3",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        },
+        {
+          "reference": "Y1",
+          "pad": "3",
+          "group": "core",
+          "net": [
+            "net",
+            "GND"
+          ],
+          "type": "smd",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ]
+        }
+      ],
+      "pad_count": 17,
+      "parts": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "CON1",
+        "CON2",
+        "U1",
+        "U2",
+        "USB1",
+        "Y1"
+      ],
+      "groups": [
+        "core",
+        "power",
+        "target",
+        "usb_in"
+      ],
+      "copper_pad_object_count": 17,
+      "unique_reference_pad_numbers": 11
+    }
+  ],
+  "inspected_main": "2ced3fd2242e05a77084a69fc2721a1545cec1ff",
+  "correction": "Historical claim of GND across five groups with 13 pads is superseded. Exact native bytes have 17 copper pad objects, 11 distinct reference/pad-number pairs, and 10 references across four groups; reset has none. Original boards/groups and historical measurement JSON/probe preserved."
+}
