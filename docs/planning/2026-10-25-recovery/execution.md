@@ -174,3 +174,40 @@ remain In Progress. No dependent work is declared accepted. M1 still requires
 actual public acquisition builds and cancellation/resume, candidate-bound
 independent judgments, and the original esp_prog final-native workflow.
 Telemetry-pod and owner-reserved actions remain held.
+
+## Review and preparation checkpoint — 2026-10-25 14:53 PDT
+
+[The 479 implementation review](contracts/AGENTEE-479-implementation-review.md)
+records reproduced ingress and rail-only tether gaps, a verified narrow ingress
+correction, and unverified capture/engine/report work. Agent-565 owns coherent
+completion under `66f210dc@1`; partial slice `a1b43632` and correction `89941feb`
+remain unintegrated. No full placement/router campaign is dispatched.
+
+Agent-567's residual-artwork investigation `e44017e5@1` identifies two unchanged
+intrinsic text-height warnings, 17 residual silk findings, and connected CON1/U1
+outline members translated by different amounts. The chief verified 14 evidence
+artifact hashes and six current source hashes and inspected the saved member
+deltas; its bounded native measurement was not independently rerun. A primitive
+translation proof does not establish coherent or semantically attached artwork.
+The selected repair `4b44b0ec@1` adds explicit anchored/free-rigid classification,
+proof-bound text-height comparison and final-artwork edge-defect coverage while
+preserving the field-only path and visible unresolved defects. It does not waive
+native constraints or authorize shrinking/hiding/deleting markings. Final
+formatting/outline treatment, readability and via/pad dispositions remain needed.
+
+Agent-569's source-readiness inventory `4a6027fc@1` found that existing captures
+support authored contract/non-claim citations but lack quote-resolvable primary
+manufacturer text for several of the 14 judgment briefs. New task `b29e9b85@1`
+authorizes an additive derived text capture from existing P1–P13 PDFs, with
+source hashes, extraction-tool identity, physical-page mapping and output hashes.
+Original captures, spec/map/obligations, engineering parameters and the final D1
+polarity record stay unchanged. The new input identity needs separate chief
+verification. No new download, historical uncaptured-source substitution or
+engineering judgment is authorized by that task. Graph-only claims, exact-part
+Samsung bias coverage and the missing Murata approval sheet remain explicit
+questions; extraction does not answer them.
+
+Agent-568 continues the resume-history correction `9a0a5844@1`; its request is
+currently leased to the existing online session. Agent-566's metric review is
+complete. Agent-570 remains unavailable. All accepted trunk behavior is preserved,
+and M1 and the telemetry-pod hold are unchanged.
