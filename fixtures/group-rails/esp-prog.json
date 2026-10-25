@@ -32,17 +32,29 @@
     "U2",
     "C3",
     "U1",
+    "CON1",
     "CON2"
    ]
   },
   "GND": {
-   "evidence": "5-group ground return across usb_in, power, core, reset, target (13 pads) in the captured netlist",
+   "evidence": "ground return across usb_in, power, core and target on the captured board (10 pads: C1, C2, C3, C4, CON1, CON2, U1, U2, USB1, Y1); the contract text names reset as well, but no reset-group part carries a GND pad on board b4aa540d, so this sidecar states the board-verified membership",
    "groups": [
     "usb_in",
     "power",
     "core",
-    "reset",
     "target"
+   ],
+   "parts": [
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "CON1",
+    "CON2",
+    "U1",
+    "U2",
+    "USB1",
+    "Y1"
    ]
   },
   "Net-(C1-Pad1)": {
