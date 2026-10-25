@@ -57,7 +57,7 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-528 fixed-mark identity | [Repair and verification](identity-528-agent-567.md) landed `86cb840f42173453e6737a69239215727a1ef3ad` | Plane Done. Chief independently passed nine native tests/no skips and 17 exact retained controls; 36 tested source hashes matched after rebase. Both marks and all selector/pose protections preserved. Initial placement remains infeasible and original rich intent remains refused; 479 is separate |
 | AGENTEE-479 compatibility/grouping | [Accepted contract](contracts/AGENTEE-479-group-intent-contract.md) landed `886282bc2fd9b71ce63341ab54f1c4536147857b` | Agent-565 assigned the coherent adapter/metric/group-objective implementation in a separate managed worktree. Preserve the existing placer, signed pad-edge semantics, advisory corpus-derived limits and sourced hard bounds. Final native reports/views and independent judgment remain required. First checkpoint 30 minutes, initial cap 120 minutes; no full board campaign. Parent 472 held |
 | AGENTEE-522 mask mismatch / AGENTEE-529 repair | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) `82133d6d`; [repair and chief verification](contracts/AGENTEE-522-capture-repair-evidence.md) landed `586e85af2078bae1aa85051192d8a6e9d44430d0` | Investigation 522 and repair 529 complete. Chief passed 17 strict native tests/no skips before and after rebase, verified 49 worker artifacts and 33 source/runtime hashes, and replayed exact seed6/seed11: corrected capture and native DRC agree on rejection/retention. Both boards retain 46 opens; no full search or M1 acceptance. Native rules stay unchanged |
-| AGENTEE-524 assembly profile | Part B landed `903721fb`; [verification](contracts/AGENTEE-524-partB-verification.md); polarity repair `75fb1a3b` delivered | Main's real acquisition remains 16/17. Source inference independently supported, but chief reproduced an implementation hole: absent/empty sealed-netlist LCSC incorrectly permits fallback polarity. Agent-566 owns the focused correction; repair and final-record replay remain unaccepted. Supplier confirmation stays pending |
+| AGENTEE-524 assembly profile | Part B `903721fb`; [corrected D1 repair and chief verification](contracts/AGENTEE-524-D1-polarity.md) landed `df28313b1e83e2882e15da8e5edaefa730bfa2f7` | Chief passed 74 strict native tests/no skips and a fresh 234-file acquisition replay: 39 checks pass, netlist export is informational, all 40 execute successfully. All 17 assembly rows have complete software assessment. Missing part identity remains unknown; contradictions remain defects. Supplier confirmation, independent engineering judgments, typed supplement compilation and public build/resume remain pending |
 | AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Agent-567 assigned focused comparison repair from `86cb840f`, after 528 completion. Graphic classification, final renders/DRC and via/pad process assessment remain pending; existing finalization dependencies remain binding |
 
 Qualification records must depend on frozen package evidence in one direction:
@@ -127,8 +127,10 @@ The final D1 supplement has SHA-256
 It corrects the rationale to distinguish the two supplier band features; the
 earlier `a3fff2b3...` capture is superseded. Agent-565's supplemental overlay
 must bind the final bytes in a new revision. It cannot inherit the accepted
-base preparation's receipt, and compilation depends on the corrected polarity
-implementation. Chief reproduction of the missing-LCSC hole is retained at
+base preparation's receipt. Corrected polarity implementation `df28313b` now
+supplies the required interface; chief verification of supplemental revision
+`3c12c309`, including real compilation, is the next input-preparation step.
+Chief reproduction and correction of the missing-LCSC hole are retained at
 `/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/d1-review/`.
 
 At 14:00 PDT the chief completed an authorized drain of its own stalled Cairn
