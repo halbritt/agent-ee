@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = '95c3baf2dcbc3d38759cf08839f76d71901d28a5'
+PIN = '7a8a150ae646a283cee21386ee08fd8ed8fadcf2'
 # SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
 PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
  'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
@@ -47,7 +47,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
  'src/kicad_route/campaign.py': 'c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9',
  'src/kicad_route/canary.py': '0384d1722889e207fcc544e9df65164920aa3cc153df5228349b42cd690a7243',
- 'src/kicad_route/cli.py': 'c6b1ee521c3274f15d1151bf97fc1541ce93ee00f1ca9f7cbc49e9c658962c3b',
+ 'src/kicad_route/cli.py': '1622d4b85d14458d5e67c599245a7653fa115b3035a4d1137402bc5379af1b4a',
  'src/kicad_route/common.py': '4fd09eef7547c947700067975a54e08c8e6b3ed8d3c5ac94cf8ae77e4a593038',
  'src/kicad_route/configuration_evidence.py': '08f81a88c9d911d474c45515cad1303bbf7eb6f15438f6c7c278d69c6e075d59',
  'src/kicad_route/contract.py': '5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698',

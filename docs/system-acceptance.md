@@ -245,3 +245,10 @@ Existing successful workflows remain regressions. Asymmetric/multilayer/
 coplanar impedance, propagation-time and inter-pair matching, fanout, broader
 return-path recovery and circuit synthesis remain subsequent required work.
 No missing, stale or unknown required check can pass.
+
+Active bus candidate: router `7a8a150ae646a283cee21386ee08fd8ed8fadcf2`.
+[Qualification in progress](qualification/bus-routing-2026-10-25.md) records the
+normal public job/build producer, eight-lane corridor, unrelated net, deferred
+tap, protected mixed pair and native missing-lane rejection. Matched stock also
+passes with equal copper length and via count. Broader regression gates and
+integration remain pending; this is not yet an integrated capability claim.

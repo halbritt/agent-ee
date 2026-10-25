@@ -1185,7 +1185,8 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
-          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None):
+          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
+          bus=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1250,6 +1251,10 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     if intra_pair_match is not None:
         argv += ['--diff-pair-intra-match', '--length-match-tolerance', str(intra_pair_match['tolerance_mm']),
                  '--meander-amplitude', str(intra_pair_match['amplitude_mm'])]
+    if bus is not None:
+        argv += ['--bus']
+        for key, value in bus.items():
+            argv += ['--bus-' + key.removesuffix('_mm').replace('_', '-'), str(value)]
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -1374,6 +1379,17 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
+        bus = config['router'].get('bus')
+        if 'bus' in config['router']:
+            fields = {'detection_radius_mm', 'attraction_radius_mm', 'attraction_bonus', 'min_nets'}
+            if not isinstance(bus, dict) or set(bus) - fields:
+                raise JobRefusal('router.bus accepts detection_radius_mm, attraction_radius_mm, attraction_bonus and min_nets only')
+            for key, value in bus.items():
+                if key.endswith('_mm'):
+                    if type(value) not in (int, float) or not math.isfinite(value) or value < 0.000001:
+                        raise JobRefusal('bus radii must be finite and at least 0.000001 mm')
+                elif type(value) is not int or value < (2 if key == 'min_nets' else 0):
+                    raise JobRefusal('bus minimum nets must be an integer at least two and attraction bonus a nonnegative integer')
         pair_layers = config['router'].get('pair_layers')
         if 'pair_layers' in config['router']:
             if (not isinstance(pair_layers, list) or not pair_layers
@@ -1597,7 +1613,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=config['router'].get('grid_step_mm'),
-                           intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance)
+                           intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
+                           bus=bus)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}

@@ -142,6 +142,24 @@ and through-via spans remain subject to native rules. Layer selection is bound
 to resume identity. Matching measures summed planar copper; native electrical
 length/skew rules are separate requirements and must also pass.
 
+Optional `router.bus` enables geometric bus grouping, middle-out ordering and
+shared routing corridors in the existing single-ended pass. For example,
+`{"bus": {"detection_radius_mm": 20, "min_nets": 3}}` expands endpoint clustering
+for a wide header. Automatic differential pairs remain protected and outside
+the bus scope. Omission keeps bus grouping disabled; an empty object enables
+the backend defaults.
+
+The accepted fields are `detection_radius_mm` and `attraction_radius_mm`
+(finite and at least 0.000001 mm, default 5), `attraction_bonus` (nonnegative
+integer, default 5000), and `min_nets` (integer at least two, default two).
+The existing geometric filter may require more members than the raw clustering
+minimum. Unknown fields and invalid bounds refuse before routing, and these
+controls are bound to the job's resume identity. Actual groups and their
+diagnostics appear in the retained router result's `process.bus_routing`.
+These are search preferences, not electrical bus identities or requirements
+for length, delay, impedance or coupling. Native final verification still
+decides connectivity, clearances and preservation.
+
 Optional `router.pair_impedance` requests nominal differential impedance
 synthesis with an explicit target and verification limits:
 
