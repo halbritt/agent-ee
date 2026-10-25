@@ -39,7 +39,7 @@ positive and wrong-address negative have exercised this public command.
 | Architecture, parts and circuits | Circuit/connectivity intent, captured sourcing/CAD/rating records → bound parts and native pin inventory; build parts stage, `parts_stage`, `binding_fill` | Source parts, topology and electrical calculations. Actual selected TPS7A20/ADS1115 circuit is carried into the board. Consequential reversed-diode negative rejects despite clean ERC. The acquisition load, capacitance, startup/removal and other electrical obligations now have reviewed source/model evidence and final native checks; other circuit families remain unqualified. |
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Acquisition package bodies, height, connector access and board thickness are reviewed and checked. Broader side/hardware/keepout cases remain open. |
-| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition with a bottom ground plane and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. The retained two-sided acquisition variant now passes the normal job with automatic targeted thermal reservation and scoped dangling-net reroute; earlier failed attempts remain evidence. The four-layer/default-via regression and all 44 required pin modules pass. Native netclasses/custom rules now survive normal placement/routing and the build producer; a four-layer paired article and length/skew/rule-loading negatives pass. The asymmetric intra-pair matching article now passes the public job and build producer, with a connected-skew negative; all required pin gates have passing evidence. Coupled inner-layer transitions now pass the public job and build producer, with native routing keepouts preserved and forbidden-layer/incomplete-route negatives. Nominal outer-layer differential impedance now passes the public job/build producer with original-stackup and final filled-reference checks. Existing pours and placement-restricting rule areas, inner-layer/multilayer impedance, inter-pair/time matching, buses/fanout and broader constraint coverage remain open. |
+| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition with a bottom ground plane and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. The retained two-sided acquisition variant now passes the normal job with automatic targeted thermal reservation and scoped dangling-net reroute; earlier failed attempts remain evidence. The four-layer/default-via regression and all 44 required pin modules pass. Native netclasses/custom rules now survive normal placement/routing and the build producer; a four-layer paired article and length/skew/rule-loading negatives pass. The asymmetric intra-pair matching article now passes the public job and build producer, with a connected-skew negative; all required pin gates have passing evidence. Coupled inner-layer transitions now pass the public job and build producer, with native routing keepouts preserved and forbidden-layer/incomplete-route negatives. Nominal outer-layer differential impedance and symmetric inner-layer stripline now pass the public job/build producer with original-stackup and final filled-reference checks. Stripline requires both adjacent references, including the coupled corridor and bounded PTH openings. Existing pours and placement-restricting rule areas, asymmetric/multilayer/coplanar impedance, inter-pair/time matching, buses/fanout and broader constraint coverage remain open. |
 | Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `topology_rules`, interval checks, passive/active SPICE, `dc_path` | Five independent ADC pin rules now enter the normal build's generated scope; wrong address-pin wiring rejects despite passing ERC and generator parity. Selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. Whole-net copper checks exercise two/four-layer controls, supply/return copper and disconnected/exceeded-budget negatives. Acquisition material/contact assumptions and component applicability are explicitly reviewed; model limits and unperformed physical obligations remain visible. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Acquisition mechanical/fabrication obligations are closed with dimensioned/source review and final checks. Remaining routing-feature cases are unmet. |
 | Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | The 17-part acquisition design is accepted through the default seven-stage build: 37 passing checks plus informational netlist, 9 plots/2 drills/12 BOM rows/17 placements. The eleven engineering obligations are closed with explicit assumption corrections; changed exported coordinates reject as stale. Supplier preview and physical tests are unperformed. |
@@ -222,22 +222,26 @@ control; production runtime files are unchanged by that test correction.
 | --- | --- | --- |
 | D04 differential outer-layer portion | Native stackup solver plus saved-geometry/reference checker; `router.pair_impedance`; `test_placement_job_impedance` and router `test_pair_impedance` | Public job/build producer pass nominal 100 ohm ±10% and explicit 3 mm total terminal-escape limit. Matched stock `4cf6d29ddbe7d19b511352d0abbb26842f609be6`, newly observed on 2026-10-25, also passes. Parity on this article; no superiority. Uncoated coupled trunks only; single-ended, inner-layer, multilayer and coplanar impedance coverage remains open. |
 
-Next named capability: differential stripline on an explicit four-layer stackup.
-Use an inner-layer interconnect between actual through-hole terminals with two
-adjacent filled reference planes. Carry the target through the normal job and
-build producer, measure actual coupled geometry against both reference layers,
-and handle terminal antipads explicitly. Require a positive native result and
-rejection when either required reference is missing or split beneath a trunk.
-Retain the outer-layer article and existing successful workflows as regressions.
-Propagation-time matching, buses, fanout and broader return-path recovery remain
-subsequent required work.
-No required missing, stale or unknown check can pass.
+Completed capability milestone: nominal symmetric differential stripline. The
+[qualification](qualification/pair-stripline-2026-10-25.md) binds actual PTH
+launches, both adjacent filled references, the complete coupled corridor, saved
+geometry and an independent analytical cross-check. Native missing-plane, trunk
+split, oversized launch opening, between-traces split and original-stackup
+negatives reject. The general PCB-only snapshot operation now preserves native
+footprint-library dependencies. The build-producer candidate has zero opens and
+findings. All 987 required consumer cases and 1,064 router cases have passing
+evidence, with original setup/pin failures retained and exact corrections named.
 
-Active stripline candidate: router `95c3baf2dcbc3d38759cf08839f76d71901d28a5`.
-[Current qualification record](qualification/pair-stripline-2026-10-25.md) tracks
-native positive/negative coverage, matched stock results and remaining gates.
-The native targeted cases pass, including either reference missing or split,
-a split only between traces and an enlarged terminal opening. The actual
-PCB-only snapshot path now retains the footprint libraries. Broader router and
-public agent-ee integration gates remain in progress; this is not yet an
-integrated capability claim.
+| KRT feature | Implementation and executable exercise | Bounded result |
+| --- | --- | --- |
+| D04 symmetric differential stripline; D05 reference checks | Existing impedance operation and `router.pair_impedance` on one inner layer; `test_placement_job_stripline` and router `test_pair_stripline` | Nominal 100 ohm ±10% with explicit 4 mm terminal-escape limit, both native GND planes and bounded PTH antipads. Matched stock `4cf6d29ddbe7d19b511352d0abbb26842f609be6` also passes. Parity on this article; no superiority or physical impedance claim. |
+
+Next named capability: grouped single-ended bus routing through the normal job
+and build producer. Use an eight-bit bus, an unrelated parallel net and a
+multi-terminal lane with fixed native anchors. Require final native connectivity,
+clearances, original rule/placement preservation, failure rejection and a matched
+stock comparison. Grouping does not establish timing or coupling correctness.
+Existing successful workflows remain regressions. Asymmetric/multilayer/
+coplanar impedance, propagation-time and inter-pair matching, fanout, broader
+return-path recovery and circuit synthesis remain subsequent required work.
+No missing, stale or unknown required check can pass.

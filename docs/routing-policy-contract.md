@@ -22,13 +22,13 @@ The [routing adapter](routing-adapter.md) remains the authority for the protocol
 This page adds no check, threshold or schema that code reads. It adopts no pod
 value: adoption stays with the pod lane.
 
-Current pin: `5801a9f39618853ab941beac7069c68a5270e16e` (2026-10-24),
+Current pin: `95c3baf2dcbc3d38759cf08839f76d71901d28a5` (2026-10-25),
 with 312 files in the exact tracked `bin/` and `src/` hash map.
 Optional targeted thermal reservation, pair matching and permitted pair layers
 are used by the placement job; the stage adapter's default request and result
 shapes are unchanged. The source
 table below records the historical contract investigation. Current qualification
-and exclusions are recorded in [pair transitions](qualification/pair-transition-2026-10-24.md).
+and exclusions are recorded in [differential stripline](qualification/pair-stripline-2026-10-25.md).
 
 ## Sources read
 

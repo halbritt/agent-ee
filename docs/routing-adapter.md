@@ -1657,3 +1657,20 @@ the initial missing-`esp_prog`-input failure and its corrected rerun are retaine
 Only nominal outer-layer differential microstrip
 trunks are qualified here. Inner-layer/multilayer impedance, coplanar models,
 supplier tolerances and physical measurement are not discharged by this result.
+
+### Symmetric differential stripline integration — 2026-10-25
+
+Pin `95c3baf2dcbc3d38759cf08839f76d71901d28a5` extends the existing nominal
+impedance operation to one symmetric homogeneous inner layer. Both saved
+reference planes and the complete coupled corridor are checked. PCB-only
+snapshots now preserve captured footprint-library directories using the same
+snapshot implementation as schematic projects. Default adapter schemas, native
+facts/pour calculations and mirrored reader behavior remain unchanged.
+
+The [qualification](qualification/pair-stripline-2026-10-25.md) records normal
+public job/build-producer operation, native rejection cases and a matched stock
+comparison. All 987 required consumer cases across 50 modules and 1,064 router
+cases have passing evidence. Three stale pin/documentation assertions and one
+missing wheel-runtime environment variable were corrected and their exact
+cases rerun; the original failed/skipped results remain retained. This qualifies
+a nominal software article, not fabricated impedance or a circuit release.

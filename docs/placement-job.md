@@ -142,7 +142,7 @@ and through-via spans remain subject to native rules. Layer selection is bound
 to resume identity. Matching measures summed planar copper; native electrical
 length/skew rules are separate requirements and must also pass.
 
-Optional `router.pair_impedance` requests nominal differential microstrip
+Optional `router.pair_impedance` requests nominal differential impedance
 synthesis with an explicit target and verification limits:
 
 ```json
@@ -152,20 +152,28 @@ synthesis with an explicit target and verification limits:
 ```
 
 All four fields are required; the numbers must be finite and positive, with
-tolerance below 100 percent. The current capability requires one explicit outer
-signal layer and native stackup copper thickness, adjacent dielectric thickness
-and Er. The router uses its existing analytic model to select width above the
-native class floor. It preserves the authored project and rules. The declared
-plane plan must produce actual filled reference copper on the adjacent layer.
+tolerance below 100 percent. The capability requires one explicit signal layer
+and native stackup copper thickness, adjacent dielectric thickness and Er. An
+outer layer uses the uncoated microstrip model. An inner layer uses symmetric
+stripline: the two immediately adjacent dielectrics must have the same Er and
+heights equal within one native nanometre. The router uses its existing analytic
+model to select width above the native class floor. It preserves the authored project and rules. The declared
+plane plan must produce actual filled reference copper on the adjacent layer
+for microstrip, or both adjacent layers for stripline. Use `"pair_layers":
+["In1.Cu"]` for the inner-layer case, with matching native stackup and planes.
 Missing stackup data, an unreachable target or missing reference cannot pass.
 
 After final zone refill, the job independently measures saved widths, parallel
 pair gaps, coupled length and actual native reference fill, and binds its report
 to the final board hash. Terminal escapes are reported separately and limited
 by `max_uncoupled_mm`; they acquire no impedance claim. Targets and limits are
-part of resume identity. This initial model excludes via/arc routes, multilayer
-impedance and coplanar pours. It is a nominal uncoated microstrip calculation,
-not a supplier guarantee, field simulation or physical measurement.
+part of resume identity. Both stripline references must cover the traces and
+the complete coupled corridor between them. Inner through-hole terminal
+openings are limited to the same-net pad, the smallest explicit zone clearance,
+and the reported native polygon approximation allowance. Larger openings fail.
+This model excludes via/arc routes, asymmetric or multilayer impedance and
+coplanar pours. These are nominal analytical calculations; supplier tolerances,
+field simulation and physical measurement remain separate obligations.
 
 The captured native project can also declare the router's existing assembly
 policy under `kicad_routing_tools.same_net_pad_clearance`. A positive value in
