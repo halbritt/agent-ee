@@ -160,6 +160,20 @@ These are search preferences, not electrical bus identities or requirements
 for length, delay, impedance or coupling. Native final verification still
 decides connectivity, clearances and preservation.
 
+Optional `router.ac_match` matches complete P/N copper paths through explicitly
+declared populated series parts, for example
+`{"chains":[["C1","C2"]],"tolerance_mm":0.1,"amplitude_mm":3}`.
+The router verifies native bridge topology before routing. Final saved-board
+checks independently measure every two-terminal segment and add its contribution
+to P or N. Skew plus the printed measurement rounding bound must meet the requested
+tolerance. `final.ac_matching` contains paths, distances, requirement and native
+source hashes. DNP/missing/crossed/ambiguous bridges and incomplete or unmatched
+paths reject. Existing connected sections remain protected and contribute to the
+target. The normal build placement producer carries the same request unchanged;
+changed requests cannot resume an old job. Component internal delay and physical
+signal integrity are separate obligations. Combined AC, coupled-group and
+intra-pair controls must agree because their backend tuning settings are shared.
+
 Optional `router.length_match` requests geometric matching of explicit
 single-ended two-terminal net groups. Supply `groups`, `tolerance_mm` and
 `amplitude_mm`, for example

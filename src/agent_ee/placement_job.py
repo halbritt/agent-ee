@@ -1186,7 +1186,7 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
-          bus=None, length_match=None):
+          bus=None, length_match=None, ac_match=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1263,6 +1263,11 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         argv += [flag, str(length_match['tolerance_' + unit]),
                  '--group-meander-amplitude', str(length_match['amplitude_mm']),
                  '--group-meander-spacing', str(length_match['spacing_widths'])]
+    if ac_match is not None:
+        for refs in ac_match['chains']:
+            argv += ['--ac-couple-chain-json', json.dumps(refs)]
+        argv += ['--ac-match-tolerance', str(ac_match['tolerance_mm']),
+                 '--ac-meander-amplitude', str(ac_match['amplitude_mm'])]
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -1278,7 +1283,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             feedback = _route_feedback(record, checkout, env=env, clock=route_clock, cancel_dir=cancel_dir)
             if feedback is None or feedback['kind'] in used:
                 break
-            if (intra_pair_match is not None or length_match is not None) and feedback['kind'] != 'thermal_corridors':
+            if (intra_pair_match is not None or length_match is not None or ac_match is not None) and feedback['kind'] != 'thermal_corridors':
                 attempts[-1]['feedback'] = {**feedback, 'recovery': 'not_applied',
                     'reason': 'single-net repair cannot preserve required matching groups'}
                 break
@@ -1387,6 +1392,21 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
+        ac_match = config['router'].get('ac_match')
+        if 'ac_match' in config['router']:
+            if not isinstance(ac_match, dict) or set(ac_match) != {'chains', 'tolerance_mm', 'amplitude_mm'}:
+                raise JobRefusal('router.ac_match requires chains, tolerance_mm and amplitude_mm')
+            chains = ac_match['chains']
+            if (not isinstance(chains, list) or not chains
+                    or any(not isinstance(refs, list) or len(refs) < 2
+                           or not all(isinstance(ref, str) and ref for ref in refs) for refs in chains)):
+                raise JobRefusal('router.ac_match needs explicit series-part reference chains')
+            refs = [ref for chain in chains for ref in chain]
+            if len(set(refs)) != len(refs):
+                raise JobRefusal('router.ac_match series-part references must not repeat')
+            if any(type(value) not in (int, float) or not math.isfinite(value) or value < .000001
+                   for key, value in ac_match.items() if key != 'chains'):
+                raise JobRefusal('router.ac_match controls must be finite and positive')
         length_match = config['router'].get('length_match')
         if 'length_match' in config['router']:
             unit = 'ps' if isinstance(length_match, dict) and 'tolerance_ps' in length_match else 'mm'
@@ -1655,7 +1675,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=config['router'].get('grid_step_mm'),
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
-                           bus=bus, length_match=length_match)
+                           bus=bus, length_match=length_match, ac_match=ac_match)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
@@ -1665,7 +1685,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            clock=clock, cancel_dir=job_dir,
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
-                                           length_match=length_match)
+                                           length_match=length_match, ac_match=ac_match)
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
@@ -1710,7 +1730,7 @@ def _completion_status(routed, incumbent, final):
 
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
-                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None):
+                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None):
     import pcbnew
     clock = clock or Clock(300)
     _check_stop(clock, cancel_dir)
@@ -1808,6 +1828,21 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
                 or length_result.get('requirement') != length_match):
             length_result['status'] = 'FAIL'
             length_result.setdefault('defects', []).append('final length result does not bind the saved board and requirement')
+    ac_result = None
+    if ac_match is not None:
+        out = final_dir.parent / (final_dir.name + '-ac-verification')
+        out.mkdir()
+        request, result = out / 'request.json', out / 'result.json'
+        write_json(request, {'requirement': ac_match})
+        checker = Path(router_checkout) / 'src/kicad_route/ac_matching.py'
+        done = _run_child([sys.executable, '-B', str(checker), str(board), str(request), str(result)],
+                          clock=clock, cancel_dir=cancel_dir)
+        ac_result = read_json(result) if result.is_file() else {
+            'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
+        if (done.returncode != 0 or ac_result.get('board_sha256') != digest(board)
+                or ac_result.get('requirement') != ac_match):
+            ac_result['status'] = 'FAIL'
+            ac_result.setdefault('defects', []).append('final AC result does not bind the saved board and requirement')
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
@@ -1816,11 +1851,13 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or impedance_result is not None and impedance_result.get('status') != 'PASS'
-              or length_result is not None and length_result.get('status') != 'PASS')
+              or length_result is not None and length_result.get('status') != 'PASS'
+              or ac_result is not None and ac_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             **({'impedance': impedance_result} if impedance_result is not None else {}),
             **({'length_matching': length_result} if length_result is not None else {}),
+            **({'ac_matching': ac_result} if ac_result is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'rule_files': rule_files,

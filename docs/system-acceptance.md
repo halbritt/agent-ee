@@ -297,6 +297,11 @@ discard have native router evidence.
 | D08 pair-to-pair geometry | Existing `router.length_match` complete-pair groups; router `test_inter_pair_matching`, consumer `test_placement_job_inter_pair` | Four useful paths span 0.0611 mm against 0.1 mm. Mixed native pair classes retain widths/gaps with zero final build findings/opens; matched stock `e358107` has 33 geometry findings. Strict authored coupling, incomplete pairs, insufficient room, batch failure and changed-request resume reject. Coupled time-domain and AC composition remain open. |
 
 Next named capability: AC-composed differential-pair matching.
+Paused on direct owner request. Router `c4af095ed07593b63d7886c139fcb7e5c2e774f4`
+is integrated; 263 required router cases have passing evidence. The consumer
+integration is an unfinished checkpoint: its new five public/build cases and
+existing 54-module pin gate have not executed. See the
+[AC qualification record](qualification/ac-matching-2026-10-25.md).
 Use native series capacitors connecting two named pair segments, with unequal
 composed path lengths. The normal workflow must preserve actual connectivity and
 coupling on each segment and independently grade the composed path. A connected
