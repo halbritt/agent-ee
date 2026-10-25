@@ -41,8 +41,10 @@ at x=380 (left), pin `2` record `gge10` at x=420 (right), triangle `gge19`
 (canvas unit 10 mil = 0.254 mm): pad `1` `gge1003` centre x=3993.337, pad `2`
 `gge1002` centre x=4006.663, both 3.7402 × 4.5276 units; silk (layer 3) tracks
 `gge1050` x=3996.1811 and `gge1083` x=3996.7436 span the full body height
-(y 2996.59–3003.41). Computed in code: the band is 0.974 units (0.247 mm) from
-pad 1's inner edge and 8.049 units (2.045 mm) from pad 2's inner edge. Symbol
+(y 2996.59–3003.41). Computed in code, per track: `gge1050` is 0.974 units (0.247 mm) from
+pad 1's inner edge and 8.612 units (2.187 mm) from pad 2's; `gge1083` is
+1.537 units (0.390 mm) from pad 1's and 8.049 units (2.045 mm) from pad 2's
+(an earlier draft mixed the two tracks; agent-565 caught it). Symbol
 pin names are `1` and `2` only.
 
 **Manufacturer datasheet.** Page 1, Mechanical Data: "Polarity: Cathode Band"
@@ -57,8 +59,9 @@ by the band convention and never numbers the terminals.
    pin 1 `K`, and board pad 1 carries pin 1's net. The only gap is metadata:
    the generated board lacks pad `pinfunction`, so the check could not see it.
 2. **Supplier pad 1 is the cathode** is a sourced engineering inference: the
-   manufacturer's band convention plus the captured package band 0.247 mm from
-   pad 1 (2.045 mm from pad 2) and the captured symbol bar at the pin-1 end.
+   manufacturer's band convention plus the captured package band tracks
+   0.247–0.390 mm from pad 1 (2.045–2.187 mm from pad 2) and the captured
+   symbol bar at the pin-1 end.
    It does not rest on the numeric pin 1 or on the 0° frame.
 3. **Residual limitation.** No manufacturer drawing binds the band to a
    numbered terminal, so the supplier mapping relies on the LCSC-contributed
@@ -114,7 +117,7 @@ netlist stays `polarity_unknown`, and the resulting row exposes
 ## Real acquisition replay with the evidence record (`acq-partb-3-polarity`)
 
 Inputs: `cpl-inputs-rev3` = rev2 plus `polarity/C83152.polarity.json`
-(sha256 `a3fff2b33cb0669108a52cd0847b49aeb4aa54ee1ef5172e3a2208d6c115648c`); scope = the part B
+(sha256 `23a0b7986e20c676c1ada1b5c09647743eb854b987b320104be741137468e851`); scope = the part B
 scope plus `polarity_evidence: ["cpl/polarity/C83152.polarity.json"]`
 (sha256 `b4dcbbc9e0bce52ff13660f75da73f63615fdd65eab1c27ac5bb6acda175f5cf`).
 Image `sha256:6533216670ed0bbfabf5dc9d535ce25d59a35bb6c352dda2f99937484b958e7e`,
