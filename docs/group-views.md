@@ -84,3 +84,40 @@ The tests compare actual plotted pad geometry against asymmetric front/back
 poses, repeat after translating the saved board (including negative Y), check
 the mirror on native geometry and markers, and exercise membership, crop,
 unresolved visibility and independent input/final hash controls.
+
+## Chief verification — 2026-10-25
+
+Agent-564 independently reviewed delivered `c63b30ce`, rebased its three files
+unchanged onto `e84bf538` as `e95b5e2f`, and passed all five native tests with
+zero skips, failures or errors. One fresh render used the retained esp_prog
+final-a1 board `dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1`,
+its adjacent project, original input board `b4aa540d…93eef7` and unchanged raw
+groups `d48e2a5d…837e8`. Source, test, exporter and input hashes were checked
+before and after execution. The first chief harness invocation could not import
+the repository's tests from its scratch script directory; that failed log is
+retained. Correcting the harness import path required no production/test change.
+
+The running container was inspected by its exact command and ID, binding the
+run to `agent-ee:exec-af30a0917f4a62f5`, immutable image
+`sha256:939f4bfb6bb45eaff5fc47d27b94f905ec979e31ec66a190fe6fb57ff96753e1`
+and admission lease `01ff4c71ded1`. Its manifest binds KiCad 10.0.7, the actual
+CLI/pcbnew/Python bytes and both helper sources. This is a fresh binding:
+agent-568 withdrew its earlier `0a726f6b`/`a2530549` image claim because an
+unscoped host Docker-events query did not establish the historical container.
+The worker's saved native hashes, logs and admission records remain evidence
+with that explicit historical image gap; they are not silently relabelled.
+
+The chief viewed both fresh rasterized SVGs. Native copper and member origins
+share the correct top/bottom frame; bottom projections are mirrored and labelled
+as opposite-face items. All 16 declared members and five unresolved native
+extras are visible in readable legends. The three coincident backside logos
+remain visibly overlapped. Pictures do not clear that defect, establish group
+coherence or qualify M1. Original boards, groups and project bytes are unchanged.
+
+Durable chief evidence is at
+`~/.cache/agent-evidence/agent-ee-564-integration/group-views-479/`:
+`tested-source.json`, `container.json`, `native.log`, `test-summary.json`,
+`views/manifest.json`, native plots/commands/snapshots, and `top.png`/`bottom.png`.
+The helper is accepted within its documented rectangle-only supplemental scope.
+Agent-565 still owns final-check wiring and coordinate measurements; AGENTEE-479
+and M1 remain open.
