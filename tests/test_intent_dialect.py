@@ -146,6 +146,60 @@ class DialectAdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             placement_intent.adapt(minimal_dialect(), groups)
 
+    def test_proximity_dialect_identity_and_map_shapes_refuse_with_exact_paths(self):
+        """Chief review of 2c31eb1c: the proximity side-band and dynamic maps get one authoritative check."""
+        def with_prox(**changes):
+            document = minimal_dialect()
+            document['proximity'][0].update(changes)
+            return document
+
+        cases = [
+            ('negative_limit', with_prox(max_mm=-1), 'intent.proximity[0].max_mm'),
+            ('text_limit', with_prox(max_mm='not a distance'), 'intent.proximity[0].max_mm'),
+            ('boolean_limit', with_prox(max_mm=True), 'intent.proximity[0].max_mm'),
+            ('infinite_limit', with_prox(max_mm=float('inf')), 'intent.proximity[0].max_mm'),
+            ('empty_subject', with_prox(ref=''), 'intent.proximity[0].ref'),
+            ('same_ref_near', with_prox(near='Y1'), 'intent.proximity[0].near'),
+            ('unknown_pad_selector', with_prox(pads={'U1': ['9'], 'Y1': ['1'], 'UNDECLARED': ['1']}),
+             'intent.proximity[0].pads.UNDECLARED'),
+            ('empty_pads', with_prox(pads={}), 'intent.proximity[0].pads'),
+            ('empty_pad_list', with_prox(pads={'U1': [], 'Y1': ['1']}), 'intent.proximity[0].pads.U1'),
+            ('duplicate_pad_names', with_prox(pads={'U1': ['9', '9'], 'Y1': ['1']}), 'intent.proximity[0].pads.U1'),
+            ('pads_not_object', with_prox(pads=['1']), 'intent.proximity[0].pads'),
+        ]
+        for label, document, expected in cases:
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError) as caught:
+                    placement_intent.adapt(document, minimal_groups())
+                self.assertIn(expected, str(caught.exception))
+        # Exact dialect integer types: True is not 1 and 12.0 is not 12.
+        for label, key, value in (('boolean_schema', 'schema', True), ('float_min_reader', 'min_reader', 12.0),
+                                  ('boolean_min_reader', 'min_reader', True)):
+            with self.subTest(case=label):
+                document = minimal_dialect()
+                document[key] = value
+                self.assertFalse(placement_intent.is_dialect(document))
+                with self.assertRaises(ValueError) as caught:
+                    placement_intent.adapt(document, minimal_groups())
+                self.assertIn('intent.' + key, str(caught.exception))
+        # Dynamic maps are type-checked with their path, never an AttributeError.
+        for label, mutate, expected in (
+                ('nonobject_rules', lambda d: d['dispositions'].__setitem__('rules', []), 'intent.dispositions.rules'),
+                ('nonobject_withheld', lambda d: d['dispositions'].__setitem__('withheld', 'x'), 'intent.dispositions.withheld'),
+                ('nontext_rule', lambda d: d['dispositions']['rules'].__setitem__('decap_distance', 3), 'intent.dispositions.rules.decap_distance'),
+                ('nonobject_basis', lambda d: d['context'].__setitem__('basis', ['x']), 'intent.context.basis'),
+                ('nonobject_budget', lambda d: d['context'].__setitem__('budget_withheld', 1), 'intent.context.budget_withheld'),
+                ('nontext_note', lambda d: d['context'].__setitem__('note', 5), 'intent.context.note')):
+            with self.subTest(case=label):
+                document = minimal_dialect()
+                mutate(document)
+                with self.assertRaises(ValueError) as caught:
+                    placement_intent.adapt(document, minimal_groups())
+                self.assertIn(expected, str(caught.exception))
+        # The undeclared-subject fallback stays permitted: partner pads only.
+        record = placement_intent.adapt(with_prox(pads={'U1': ['9', '10']}), minimal_groups())
+        self.assertEqual(record['proximity_pad_edge'][0]['pads'], {'U1': ['9', '10']})
+
     def test_unknown_authority_label_is_visible_not_hard(self):
         document = minimal_dialect()
         document['proximity'][0]['context']['limit'] = 'datasheet'

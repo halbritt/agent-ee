@@ -48,6 +48,28 @@ def _notes(row, path):
             _text(row[key], f'{path}.{key}')
 
 
+def _proximity_shape(row, path, *, require_both):
+    """One authoritative shape check for a proximity row, shared by the validator and the adapter.
+
+    ``max_mm`` is a finite non-negative number (never a bool); ``ref`` and ``near``
+    are distinct non-empty text; ``pads`` is an object whose keys are only the
+    subject and partner references, each a non-empty list of distinct pad names.
+    The original dialect may omit the subject's pads (undeclared-subject fallback),
+    so ``require_both`` is False there; the native form declares both.
+    """
+    for key in ('ref', 'near'):
+        _text(row[key], path + '.' + key)
+    if row['ref'] == row['near']:
+        raise ValueError(path + '.near: proximity needs distinct footprints')
+    _number(row['max_mm'], path + '.max_mm', nonnegative=True)
+    required = (row['ref'], row['near']) if require_both else ()
+    _object(row['pads'], path + '.pads', required, (row['ref'], row['near']))
+    if not row['pads']:
+        raise ValueError(path + '.pads: expected pad names for the subject and/or partner')
+    for ref, pads in row['pads'].items():
+        _texts(pads, path + '.pads.' + ref)
+
+
 def _locality_fields(document, path):
     """Locate unknown fields; the existing locality validator owns their meaning."""
     _object(document, path, ('schema', 'obligations'), ('source_records',))
@@ -135,14 +157,7 @@ def validate(intent, groups):
                 row.get('basis') == 'pad_edge' and 'limit' not in row['context']):
             raise ValueError(path + '.basis: pad_edge needs context.limit naming its authority; '
                              'derived_default stays an advisory objective')
-        for key in ('ref', 'near'):
-            _text(row[key], path + '.' + key)
-        if row['ref'] == row['near']:
-            raise ValueError(path + '.near: proximity needs distinct footprints')
-        _number(row['max_mm'], path + '.max_mm', nonnegative=True)
-        _object(row['pads'], path + '.pads', (row['ref'], row['near']))
-        for ref, pads in row['pads'].items():
-            _texts(pads, path + '.pads.' + ref)
+        _proximity_shape(row, path, require_both=True)
         if 'context' in row:
             _object(row['context'], path + '.context', optional=('limit', 'basis', 'role', 'source'))
             for key, value in row['context'].items():
@@ -214,9 +229,14 @@ def _canonical_sha256(value):
                                      ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
+def _exact(value, expected):
+    """Equal and of the same exact type: True is never 1 and 1.0 is never 1 here."""
+    return type(value) is type(expected) and value == expected
+
+
 def is_dialect(document):
     """True for the one supported original dialect; native intents and anything else are not."""
-    return isinstance(document, dict) and all(document.get(k) == v for k, v in DIALECT.items())
+    return isinstance(document, dict) and all(_exact(document.get(k), v) for k, v in DIALECT.items())
 
 
 def _refuse_nonempty(document, path, key):
@@ -245,9 +265,9 @@ def adapt(document, groups, *, source=None, supported=frozenset()):
     if not isinstance(document, dict):
         raise ValueError('intent: expected object')
     for key, expected in DIALECT.items():
-        if document.get(key) != expected:
-            raise ValueError(f'intent.{key}: expected {expected!r} (the only supported original dialect); '
-                             f'got {document.get(key)!r}')
+        if not _exact(document.get(key), expected):
+            raise ValueError(f'intent.{key}: expected {expected!r} of type {type(expected).__name__} '
+                             f'(the only supported original dialect); got {document.get(key)!r}')
     unknown = sorted(set(document) - DIALECT_TOP_LEVEL)
     if unknown:
         raise ValueError('intent.' + unknown[0] + ': unsupported original-dialect field')
@@ -277,6 +297,20 @@ def adapt(document, groups, *, source=None, supported=frozenset()):
             note('intent.defaults.zone_tolerance_mm', 'noop_empty', because='blocks is empty')
     context = document.get('context', {})
     _object(context, 'intent.context', optional=tuple(CONTEXT_KEYS))
+    for key in ('basis', 'pose_claims_withheld', 'budget_withheld'):
+        if key in context:
+            _object(context[key], 'intent.context.' + key, optional=tuple(context[key]) if isinstance(context[key], dict) else ())
+            if key != 'pose_claims_withheld':  # withheld pose claims carry lists of references, not only text
+                for name, value in context[key].items():
+                    _text(value, f'intent.context.{key}.{name}')
+    for key in ('keepouts_note', 'note'):
+        if key in context:
+            _text(context[key], 'intent.context.' + key)
+    if 'decap_census' in context:
+        _object(context['decap_census'], 'intent.context.decap_census',
+                optional=tuple(context['decap_census']) if isinstance(context['decap_census'], dict) else ())
+    if 'reconciliation' in context and not isinstance(context['reconciliation'], list):
+        raise ValueError('intent.context.reconciliation: expected list')
     for key in ('cutouts', 'edge_contours', 'file_locked'):
         if key in context:
             _refuse_nonempty(context, 'intent.context.' + key, 'context.' + key)
@@ -308,7 +342,9 @@ def adapt(document, groups, *, source=None, supported=frozenset()):
     if 'dispositions' in document:
         _object(document['dispositions'], 'intent.dispositions', optional=('rules', 'withheld'))
         for key in ('rules', 'withheld'):
-            for name, text in document['dispositions'].get(key, {}).items():
+            table = document['dispositions'].get(key, {})
+            _object(table, f'intent.dispositions.{key}', optional=tuple(table) if isinstance(table, dict) else ())
+            for name, text in table.items():
                 _text(text, f'intent.dispositions.{key}.{name}')
                 withheld[f'{key}.{name}'] = text
                 note(f'intent.dispositions.{key}.{name}', 'withheld_disposition', text=text)
@@ -388,6 +424,7 @@ def adapt(document, groups, *, source=None, supported=frozenset()):
         _object(row, path, ('ref', 'near', 'max_mm', 'basis', 'pads', 'context'))
         if row['basis'] != 'pad_edge':
             raise ValueError(path + '.basis: the original dialect declares pad_edge only')
+        _proximity_shape(row, path, require_both=False)
         ctx = row['context']
         _object(ctx, path + '.context', ('limit',), tuple(PROXIMITY_CONTEXT_KEYS - {'limit'}))
         for key, value in ctx.items():
