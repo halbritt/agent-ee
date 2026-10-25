@@ -6,12 +6,19 @@
   "holder": "agent-570",
   "holder_agent_id": "edb45025-2b0c-4f30-9a52-ca2aff8147c1",
   "findings_addressed": ["REC-17", "REC-22"],
-  "decisions_enforced": ["RD-01", "RD-02", "RD-03", "RD-04", "RD-05"],
+  "decisions_enforced": {
+    "RD-01": "finite delivery (M1 is captured 17-part acquisition + imported esp_prog; plane recovery and QFN/BGA fanout remain M3)",
+    "RD-02": "orchestration and placement (keep build_workflow, placement_job/prepared Rust search as placement boundary, and owned kicad-route as adapter; KRT algorithms are candidates for focused adaptation, not automatic defaults)",
+    "RD-03": "evidence and release claims (separate deterministic software checks, engineering review, supplier assembly readiness, and physical qualification)",
+    "RD-04": "rules and manufacture (preserve sourced-rule authority; evaluate groups, mask, via/pad, orientation, and return requirements against selected design/process evidence; required unknowns refuse)",
+    "RD-05": "provenance and operations (preserve input/candidate/tool identity, artifact hashes, declared-stage receipts, rollback, native checks, and stale-evidence refusal; freeze current integrated router for M1)"
+  },
   "inputs": {
     "agent_ee_frozen_base": "dab756e56a6a5358c00983074565af0e8e09862c",
-    "agent_ee_observed_main": "95af4de179a62cd0ca19f31c7df8665c2881ffbe",
-    "kicad_route_base": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
-    "upstream_krt_commit": "8e56ba977521d245848ed294378b590b0f7539b9"
+    "agent_ee_observed_root_at_2026_10_25T19_47_11Z": "95af4de179a62cd0ca19f31c7df8665c2881ffbe",
+    "kicad_route_observed_at_2026_10_25T19_47_11Z": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
+    "upstream_krt_observed_at_2026_10_25T19_21_15Z": "8e56ba977521d245848ed294378b590b0f7539b9",
+    "recovery_plan_sha256": "0ac28eb5717241ed092446d5bce2e115088e693438295645e9c1984da72842b1"
   },
   "doctrine_receipt": {
     "packet_id": "pkt-c137855f1bb9958d",
@@ -19,6 +26,31 @@
     "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
     "corpus_version": "corpus-2026-07-12-a11702cc9217",
     "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "evidence_accounting": {
+    "family_A_planes": {
+      "controls_executed": 1,
+      "negatives_executed": 11,
+      "parameterized_expansion_note": "1 negative test function (test_strict_plan_boundaries) expanded to 11 pytest parameter cases (<lambda>0..10)",
+      "transcript_line": 257,
+      "transcript_line_sha256": "76de7a02b35e0cce517df7b56f2fe62c5ee65c9d89da4a94c184321cf208f999"
+    },
+    "family_B_recovery_ownership": {
+      "controls_executed": 1,
+      "negatives_executed": 13,
+      "parameterized_expansion_note": "2 parameterized negative test functions expanded to 8 (test_refused_preparation_never_changes_incumbent) + 5 (test_backend_fallback_is_discarded_and_missing_coverage_fails) = 13 pytest items, exceeding the single-negative-per-family cap",
+      "task_246_log_sha256": "78de58ab06eed5b6b8bd97f6f5c3f7a50a76eb7bcd5a7c757b4848e50101b89b",
+      "transcript_line_252_sha256": "05c2c9b3973ede35d8c538cb010d7c8291cdf0dbb6078b2dd708a2cea331794a",
+      "transcript_line_257_sha256": "76de7a02b35e0cce517df7b56f2fe62c5ee65c9d89da4a94c184321cf208f999"
+    },
+    "family_C_fanout": {
+      "controls_executed": 1,
+      "negatives_executed": 1,
+      "control_verification_scope": "cli.preservation() only (14/14 PASS); native kicad-cli pcb drc was NOT run",
+      "necessary_geometry_note": "w + c <= pitch/sqrt(2) is a necessary geometric check ONLY for the sampled equal-width adjacent parallel 45-degree stub arrangement; it is not a sufficient or universal DRC-clean criterion",
+      "step_269_output_sha256": "0f28ae38efd0e76f50cafc4a0bb39d48324202bc8065c4e55136888b004a55e0",
+      "transcript_line_334_sha256": "e8da83b59abcb60e2613675dc2c66625a5ab61da083da9375f2e8c8b65707b92"
+    }
   },
   "dispositions": {
     "KRT_FLAGS_rule_floors": "retain-refusal",
@@ -38,19 +70,19 @@
   "downstream_contracts": {
     "KICADROUTE-105": {
       "uuid": "b98c5f6b-54bb-481f-995e-bdeed66473dd",
-      "choice": "Keep plane-plan/1 strictly track/via-invariant; implement agent-ee.plane-plan/2 for explicit netclass-checked stitching/return vias with >=2-layer filled-pour overlap; require per-net net_track_widths and net_via_sizes flooring, same_net_pad_clearance > 0, --no-fix-drc-settings, and KICAD_STOP_FILE checks before any KRT repair_planes/route_planes/add_gnd_vias reuse."
+      "choice": "Keep plane-plan/1 strictly track/via-invariant (RD-05); implement agent-ee.plane-plan/2 for explicit netclass-checked stitching/return vias with >=2-layer filled-pour overlap (RD-04, RD-05); require per-net net_track_widths and net_via_sizes flooring, same_net_pad_clearance > 0 unless a selected profile provides explicit process support and sourced geometry (never asserting IPC-4761 VII alone proves assembly readiness, RD-03/RD-04), --no-fix-drc-settings, and KICAD_STOP_FILE checks before any KRT repair_planes/route_planes/add_gnd_vias reuse (RD-02)."
     },
     "KICADROUTE-106": {
       "uuid": "9fb1b0c2-e64d-442b-a9e4-14960d6feb0b",
-      "choice": "Record qfn_fanout in routing_closure.py and UPSTREAM.json; gate bga_fanout persist_pour_served_pads on not args.no_fix_drc_settings and return finish_design_rules(args, 0); expose fanout only as an opt-in --component stage with preflight netclass/pitch refusal (width + clearance <= pitch/sqrt(2) for 45-deg QFN stubs), no via-in-pad unless declared, restored .kicad_pro sidecars, and full cli.preservation + native DRC."
+      "choice": "Record qfn_fanout in routing_closure.py and UPSTREAM.json (RD-02, RD-05); gate bga_fanout persist_pour_served_pads on not args.no_fix_drc_settings and return finish_design_rules(args, 0); expose fanout only as an opt-in --component stage resolving per-net widths and applicable net-pair clearances (treating w+c<=p/sqrt(2) as necessary only for equal-width adjacent parallel 45-deg QFN stubs, not sufficient for DRC), forbidding via-in-pad unless a selected profile provides explicit process support and sourced geometry (RD-03, RD-04), restoring .kicad_pro sidecars, and requiring both cli.preservation and native DRC (RD-05)."
     },
     "AGENTEE-516": {
       "uuid": "40da87f6-c7c2-43fc-abff-fa8d7a79b846",
-      "choice": "Reject blanket KRT_FLAGS/KRT_ENV relaxation; extend placement_job._route_feedback within the candidate Clock budget to invoke (1) --barrier-from on barrier-eligible new-copper collisions, (2) copper_ownership.prepare_disposable whole-net removal instead of raw --force-reroute, and (3) hard-first unrouted net ordering from blocked-by.json."
+      "choice": "Reject blanket KRT_FLAGS/KRT_ENV relaxation (RD-02, RD-04, RD-05); extend placement_job._route_feedback within the candidate Clock budget to invoke (1) --barrier-from on barrier-eligible new-copper collisions, (2) copper_ownership.prepare_disposable whole-net removal instead of raw --force-reroute, and (3) hard-first unrouted net ordering from blocked-by.json."
     },
     "AGENTEE-517": {
       "uuid": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a",
-      "choice": "Add native pcbnew/kicad-cli control and negative regression tests for plane-plan/2 stitching vias, netclass-floored plane repair, bounded QFN/BGA fanout preflight and preservation, and placement_job._route_feedback barrier/ownership/blocked retries."
+      "choice": "Add native pcbnew/kicad-cli control and negative regression tests (RD-03, RD-05) for plane-plan/2 stitching vias, netclass-floored plane repair, bounded QFN/BGA fanout preflight + native DRC + preservation, and placement_job._route_feedback barrier/ownership/blocked retries."
     }
   }
 }
