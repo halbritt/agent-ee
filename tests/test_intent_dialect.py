@@ -801,4 +801,3 @@ class CaptureContractTests(EngineParityTests):
         code, out = self.run_engine(unknown)
         # The binary routes unknown schemas to the planner entry, which refuses them by name too.
         self.assertEqual((code, out['error']), (1, 'unsupported planning input schema'))
-
