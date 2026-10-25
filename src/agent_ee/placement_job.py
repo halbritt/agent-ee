@@ -723,6 +723,17 @@ def _capture_native(board_path, intent, groups):
 
 def validate_intent(intent, groups):
     from . import placement_intent
+    if placement_intent.is_dialect(intent):
+        # AGENTEE-479: the exact original dialect is classified field by field. It never runs
+        # while any operative or objective field is still pending; the refusal names them.
+        try:
+            record = placement_intent.adapt(intent, groups)
+        except ValueError as exc:
+            raise JobRefusal(str(exc)) from exc
+        if not record['runnable']:
+            pending = ', '.join(p['path'] for p in record['pending'])
+            raise JobRefusal('original-dialect intent is classified but not runnable; pending: ' + pending)
+        intent, groups = record['native_intent'], record['native_groups']
     try:
         placement_intent.validate(intent, groups)
     except ValueError as exc:

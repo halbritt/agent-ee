@@ -174,3 +174,241 @@ def validate(intent, groups):
         names.add(row['name'])
         members.update(row['refs'])
         _notes(row, path)
+
+
+# ---------------------------------------------------------------- AGENTEE-479: exact original-dialect adapter
+
+COMPATIBILITY_SCHEMA = 'agent-ee.intent-compatibility/1'
+DIALECT = {'kind': 'floorplan-intent', 'schema': 1, 'min_reader': 12, 'units': 'mm'}
+DIALECT_TOP_LEVEL = frozenset(('assembly', 'blocks', 'board', 'context', 'decaps', 'defaults', 'dispositions',
+                               'edge_connectors', 'envelope', 'fixed_poses', 'keepouts', 'kind',
+                               'legality_budget', 'min_reader', 'must_lock', 'proximity', 'schema', 'units'))
+EMPTY_NOOP = {'blocks': [], 'keepouts': [], 'must_lock': [], 'decaps': {},
+              'context.cutouts': [], 'context.edge_contours': 0, 'context.file_locked': []}
+CONTEXT_KEYS = frozenset(('basis', 'brief', 'budget_withheld', 'cutouts', 'decap_census', 'edge_contours',
+                          'file_locked', 'keepouts_note', 'note', 'pose_claims_withheld', 'reconciliation'))
+EDGE_CONTEXT_KEYS = frozenset(('basis', 'brief_row', 'cable_entry', 'compiled_from', 'mount_mode', 'role',
+                               'was_class', 'was_source'))
+PROXIMITY_CONTEXT_KEYS = frozenset(('basis', 'limit', 'role', 'source'))
+DERIVED_DEFAULT = 'derived_default'
+
+
+def _canonical_sha256(value):
+    import hashlib
+    import json
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'),
+                                     ensure_ascii=False).encode('utf-8')).hexdigest()
+
+
+def is_dialect(document):
+    """True for the one supported original dialect; native intents and anything else are not."""
+    return isinstance(document, dict) and all(document.get(k) == v for k, v in DIALECT.items())
+
+
+def _refuse_nonempty(document, path, key):
+    expected = EMPTY_NOOP[key]
+    value = document.get(key.split('.')[-1])
+    if value != expected:
+        raise ValueError(f'{path}: only the empty value {expected!r} is supported; '
+                         'its semantics are not silently ignored')
+
+
+def adapt(document, groups, *, source=None):
+    """Classify every field of an exact original-dialect intent without dropping or weakening any.
+
+    Returns an ``agent-ee.intent-compatibility/1`` record. ``native_intent`` and
+    ``native_groups`` are the projection the existing validator accepts today;
+    every field that the projection cannot carry is listed in ``dispositions``
+    with its exact path and in ``pending`` when a later step must act on it.
+    ``runnable`` is False until no operative or objective disposition is pending,
+    so an adapted intent can never run with part of its meaning quietly dropped.
+    """
+    if isinstance(document, dict) and document.get('schema') == SCHEMA:
+        validate(document, groups)
+        return {'schema': COMPATIBILITY_SCHEMA, 'dialect': 'native', 'source': source,
+                'native_intent': document, 'native_groups': groups, 'dispositions': [],
+                'unresolved_claims': [], 'pending': [], 'runnable': True}
+    if not isinstance(document, dict):
+        raise ValueError('intent: expected object')
+    for key, expected in DIALECT.items():
+        if document.get(key) != expected:
+            raise ValueError(f'intent.{key}: expected {expected!r} (the only supported original dialect); '
+                             f'got {document.get(key)!r}')
+    unknown = sorted(set(document) - DIALECT_TOP_LEVEL)
+    if unknown:
+        raise ValueError('intent.' + unknown[0] + ': unsupported original-dialect field')
+    dispositions, pending, unresolved = [], [], []
+
+    def note(path, disposition, **detail):
+        dispositions.append({'path': path, 'disposition': disposition, **detail})
+        if disposition in ('operative_pending_capture', 'objective_pending_solver'):
+            pending.append({'path': path, 'needs': detail.get('needs', disposition)})
+
+    # Empty no-op containers: accepted only when empty.
+    for key in ('blocks', 'keepouts', 'must_lock', 'decaps'):
+        if key in document:
+            _refuse_nonempty(document, 'intent.' + key, key)
+            note('intent.' + key, 'noop_empty')
+    if 'defaults' in document:
+        _object(document['defaults'], 'intent.defaults', optional=('zone_tolerance_mm',))
+        if 'zone_tolerance_mm' in document['defaults']:
+            _number(document['defaults']['zone_tolerance_mm'], 'intent.defaults.zone_tolerance_mm', nonnegative=True)
+            note('intent.defaults.zone_tolerance_mm', 'noop_empty', because='blocks is empty')
+    context = document.get('context', {})
+    _object(context, 'intent.context', optional=tuple(CONTEXT_KEYS))
+    for key in ('cutouts', 'edge_contours', 'file_locked'):
+        if key in context:
+            _refuse_nonempty(context, 'intent.context.' + key, 'context.' + key)
+            note('intent.context.' + key, 'noop_empty')
+    # Unresolved mechanical claims stay visible and are never satisfied here.
+    brief = context.get('brief', {})
+    _object(brief, 'intent.context.brief', optional=('absent', 'consequences', 'contradictions', 'counts',
+                                                    'declared', 'fixed', 'not_graded', 'path', 'product',
+                                                    'unknown', 'unmatched', 'unmatched_checked'))
+    for path, row in _rows(brief.get('consequences', []), 'intent.context.brief.consequences'):
+        _object(row, path, ('id', 'ref', 'status'), ('basis', 'compiled_to', 'grader', 'value', 'why'))
+        _text(row['id'], path + '.id')
+        _text(row['ref'], path + '.ref')
+        _text(row['status'], path + '.status')
+        if row['status'] == 'unmeasured':
+            unresolved.append({'id': row['id'], 'ref': row['ref'], 'status': 'unresolved_unmeasured',
+                               'why': row.get('why'), 'path': path})
+            note(path, 'unresolved_unmeasured', id=row['id'])
+        else:
+            note(path, 'descriptive', id=row['id'], status=row['status'], compiled_to=row.get('compiled_to'))
+    for key in ('absent', 'contradictions', 'counts', 'declared', 'fixed', 'not_graded', 'path', 'product',
+                'unknown', 'unmatched', 'unmatched_checked'):
+        if key in brief:
+            note('intent.context.brief.' + key, 'descriptive', sha256=_canonical_sha256(brief[key]))
+    for key in ('basis', 'decap_census', 'keepouts_note', 'note', 'pose_claims_withheld', 'reconciliation'):
+        if key in context:
+            note('intent.context.' + key, 'descriptive', sha256=_canonical_sha256(context[key]))
+    withheld = {}
+    if 'dispositions' in document:
+        _object(document['dispositions'], 'intent.dispositions', optional=('rules', 'withheld'))
+        for key in ('rules', 'withheld'):
+            for name, text in document['dispositions'].get(key, {}).items():
+                _text(text, f'intent.dispositions.{key}.{name}')
+                withheld[f'{key}.{name}'] = text
+                note(f'intent.dispositions.{key}.{name}', 'withheld_disposition', text=text)
+    if 'budget_withheld' in context:
+        for name, text in context['budget_withheld'].items():
+            _text(text, 'intent.context.budget_withheld.' + name)
+            withheld['budget.' + name] = text
+            note('intent.context.budget_withheld.' + name, 'withheld_disposition', text=text)
+    # Operative fields.
+    native = {'schema': SCHEMA}
+    if 'board' in document:
+        _text(document['board'], 'intent.board')
+        note('intent.board', 'descriptive')
+    if 'assembly' in document:
+        _object(document['assembly'], 'intent.assembly', ('sides',), ('why',))
+        if document['assembly']['sides'] not in ('F', 'B'):
+            raise ValueError('intent.assembly.sides: expected F or B')
+        note('intent.assembly.sides', 'operative_pending_capture', value=document['assembly']['sides'],
+             needs='verify every pad-bearing footprint is on the declared native side; no side-flip moves')
+        if 'why' in document['assembly']:
+            _text(document['assembly']['why'], 'intent.assembly.why')
+            note('intent.assembly.why', 'descriptive')
+    if 'envelope' in document:
+        _object(document['envelope'], 'intent.envelope', ('rect', 'tolerance_mm'))
+        rect = document['envelope']['rect']
+        if not isinstance(rect, list) or len(rect) != 4:
+            raise ValueError('intent.envelope.rect: expected [x0, y0, x1, y1]')
+        for index, value in enumerate(rect):
+            _number(value, f'intent.envelope.rect[{index}]')
+        if not (rect[0] < rect[2] and rect[1] < rect[3]):
+            raise ValueError('intent.envelope.rect: expected a positive-area rectangle')
+        _number(document['envelope']['tolerance_mm'], 'intent.envelope.tolerance_mm', nonnegative=True)
+        note('intent.envelope', 'operative_pending_capture', rect=rect,
+             tolerance_mm=document['envelope']['tolerance_mm'],
+             needs='verify the native Edge.Cuts bounding box matches rect within tolerance_mm')
+    if 'legality_budget' in document:
+        _object(document['legality_budget'], 'intent.legality_budget', ('oob_count',))
+        if document['legality_budget']['oob_count'] != 0:
+            raise ValueError('intent.legality_budget.oob_count: only 0 is supported')
+        note('intent.legality_budget.oob_count', 'operative_supported', value=0,
+             by='outline containment already requires zero violations')
+    native['fixed_poses'] = []
+    for path, row in _rows(document.get('fixed_poses', []), 'intent.fixed_poses'):
+        _object(row, path, ('ref', 'x', 'y'), ('rot', 'side', 'basis', 'why'))
+        native['fixed_poses'].append(dict(row))
+        note(path, 'operative_supported', ref=row.get('ref'))
+    native['edge_connectors'] = []
+    for path, row in _rows(document.get('edge_connectors', []), 'intent.edge_connectors'):
+        _object(row, path, ('ref', 'edge'), ('max_setback_mm', 'overhang_mm', 'side', 'class', 'context',
+                                             'note', 'source'))
+        projected = {k: row[k] for k in ('ref', 'edge', 'max_setback_mm', 'overhang_mm', 'class', 'note', 'source')
+                     if k in row}
+        ctx = row.get('context', {})
+        _object(ctx, path + '.context', optional=tuple(EDGE_CONTEXT_KEYS))
+        if 'mount_mode' in ctx:
+            projected['context'] = {'mount_mode': ctx['mount_mode']}
+        cable_entry = ctx.get('cable_entry')
+        if cable_entry is not None and cable_entry not in ('perpendicular_top', 'in_plane'):
+            raise ValueError(path + '.context.cable_entry: unsupported cable entry')
+        if cable_entry == 'perpendicular_top' and row.get('side') != 'F':
+            raise ValueError(path + ".context.cable_entry: perpendicular_top requires side 'F'")
+        if 'side' in row and row['side'] not in ('F', 'B'):
+            raise ValueError(path + '.side: expected F or B')
+        for key in ('basis', 'brief_row', 'compiled_from', 'role', 'was_class', 'was_source'):
+            if key in ctx:
+                note(f'{path}.context.{key}', 'descriptive', sha256=_canonical_sha256(ctx[key]))
+        if 'side' in row:
+            note(path + '.side', 'operative_pending_capture', value=row['side'],
+                 needs='verify the native face of the seated connector')
+        if cable_entry is not None:
+            note(path + '.context.cable_entry', 'operative_pending_capture', value=cable_entry,
+                 needs='perpendicular_top: vertical access on the declared face; in_plane: declared board edge')
+        native['edge_connectors'].append(projected)
+        note(path, 'operative_supported', ref=row['ref'], edge=row['edge'])
+    proximity = []
+    for path, row in _rows(document.get('proximity', []), 'intent.proximity'):
+        _object(row, path, ('ref', 'near', 'max_mm', 'basis', 'pads', 'context'))
+        if row['basis'] != 'pad_edge':
+            raise ValueError(path + '.basis: the original dialect declares pad_edge only')
+        ctx = row['context']
+        _object(ctx, path + '.context', ('limit',), tuple(PROXIMITY_CONTEXT_KEYS - {'limit'}))
+        for key, value in ctx.items():
+            _text(value, f'{path}.context.{key}')
+        authority = 'advisory_objective' if ctx['limit'] == DERIVED_DEFAULT else 'unassessed_authority'
+        proximity.append(dict(row))
+        note(path, 'objective_pending_solver', ref=row['ref'], near=row['near'], max_mm=row['max_mm'],
+             metric='kicad_route_c4af095_pad_rect_signed_gap', authority=authority, limit=ctx['limit'],
+             needs='pad_edge signed rect-gap legs in the solver objective and the measured report; '
+                   'derived_default stays advisory, a label other than derived_default is not sourced authority')
+    native_groups = {k: groups[k] for k in ('schema', 'board') if isinstance(groups, dict) and k in groups}
+    _object(groups, 'groups', required=('groups',), optional=('schema', 'board'))
+    native_groups['groups'] = []
+    names = [row.get('name') for row in groups['groups'] if isinstance(row, dict)]
+    for path, row in _rows(groups['groups'], 'groups.groups'):
+        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why', 'near'))
+        projected = {k: row[k] for k in ('name', 'anchor', 'refs', 'role', 'why') if k in row}
+        native_groups['groups'].append(projected)
+        if 'near' in row:
+            _texts(row['near'], path + '.near')
+            for target in row['near']:
+                if target == row['name'] or target not in names:
+                    raise ValueError(path + '.near: expected other declared group names')
+            note(path + '.near', 'objective_pending_solver', group=row['name'], near=list(row['near']),
+                 needs='R1 declared-near interface objective and measured gap report')
+        note(path, 'operative_supported', name=row['name'])
+    validate(native, native_groups)
+    record = {'schema': COMPATIBILITY_SCHEMA, 'dialect': dict(DIALECT), 'source': source,
+              'native_intent': native, 'native_groups': native_groups,
+              'proximity_pad_edge': proximity, 'dispositions': dispositions,
+              'unresolved_claims': unresolved, 'withheld': withheld, 'pending': pending,
+              'runnable': not pending}
+    return record
+
+
+def adapt_bytes(intent_raw, groups_raw):
+    """Adapt exact captured bytes; the record carries their sha256 and never re-serialises them."""
+    import hashlib
+    from .design_intent import exact_canonical, load_json
+    import json
+    intent = json.loads(exact_canonical(load_json(intent_raw)))
+    groups = json.loads(exact_canonical(load_json(groups_raw)))
+    source = {'intent_sha256': hashlib.sha256(intent_raw).hexdigest(), 'intent_bytes': len(intent_raw),
+              'groups_sha256': hashlib.sha256(groups_raw).hexdigest(), 'groups_bytes': len(groups_raw)}
+    return adapt(intent, groups, source=source)
