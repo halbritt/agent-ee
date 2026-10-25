@@ -159,3 +159,13 @@ Planning provenance: Pincite packet `pkt-91cd13023c07e6f9`, content hash
 `universal-evidence-before-intervention`. The private decision receipt records
 the material limits and deferred repair acceptance; unrelated monitoring,
 concurrency and bulk-ingest obligations do not establish this diagnosis.
+
+## Chief review
+
+Agent-564 inspected the current capture branch and KiCad 10.0.7 mask DRC source,
+recomputed the evidence-index digest and all 94 indexed file hashes, and read
+the native expansion measurement and successful fixed-case replay summary.
+They agree with the stated first divergence. This review accepts the bounded
+diagnosis and a narrow capture repair; it does not claim an independent native
+rerun, whole-board feasibility, production repair or M1 completion. The repair
+must receive its own native positive/negative verification before integration.
