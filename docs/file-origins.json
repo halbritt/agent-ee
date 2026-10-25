@@ -2503,13 +2503,14 @@
     },
     {
       "paths": [
-        "tests/test_routed_artwork.py"
+        "tests/test_routed_artwork.py",
+        "tests/test_routed_artwork_siblings.py"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original AGENTEE-350 regression code. Minimal board/graphic S-expressions and geometry are authored here to test identity, translation and damage boundaries. Existing native fixtures are imported or referenced, not embedded as copied design text in these files."
+      "reviewed": "Original AGENTEE-350 and REC-31 regression code. Minimal board/graphic S-expressions and geometry are authored here to test identity, translation and damage boundaries. The sibling-order cases extend the owned FieldPoseFixture with authored graphics and opaque format snippets. Existing native fixtures are imported or referenced, not embedded as copied design text in these files."
     },
     {
       "paths": [

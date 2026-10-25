@@ -138,3 +138,10 @@ open for finalization, residual silk defects and final native/view evidence.
 No comparison-policy relaxation or manufacturing-readiness claim is accepted.
 Chief evidence is retained at
 `/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/artwork-siblings/`.
+
+The first chief provenance gate flagged the new synthetic test file's missing
+exact-path reviewed declaration. The shell sequence continued and landed the
+proof change before that gate was corrected. The chief inspected the owned
+`FieldPoseFixture` and added authored format snippets, recorded their origin
+in `docs/file-origins.json`, and reran documentation/provenance checks
+successfully. The correction changes no production code or test behavior.
