@@ -161,9 +161,10 @@ The earlier producer's source and the final hide-label correction remain
 separately identified. Native final-source fixtures exercise that correction.
 
 The verification supports this bounded policy implementation, not final artwork
-readability or manufacturing readiness. Agent-569's finite independent custody
-review `51870346@1` remains pending at this checkpoint; serial landing waits for
-its result. Agent-567 separately proposes the concrete next formatting/outline
+readability or manufacturing readiness. Agent-569's independent custody
+review `85b73ffb@1`, responding to `51870346@1`, is now complete with no material
+inconsistency. The chief accepts this bounded source-policy correction for
+serial integration. Agent-567 separately proposes the concrete next formatting/outline
 repair under `61ea2c16@1`. The prior dispatch's no-style-change boundary does
 not establish a permanent owner prohibition on a future authorized repair.
 No native rule, source footprint or artwork formatting is changed here.
@@ -178,3 +179,23 @@ retrieval gate passed. The schema-validated receipt, citations and explicit
 nonmaterial omission rationales are retained. The selected principles preserve
 source authority, named invariants and distinctions between verification and
 target acceptance. AGENTEE-523 and M1 remain open.
+
+The custody review independently matched all 66 indexed artifacts and eight
+delivered source files, enumerated 133 unique test IDs, and matched all 217
+residuals to the complete raw report with multiplicity. The native report also
+contains 20 text-height and 21 library-footprint findings: 258 findings remain
+in the full comparison, not a clean report. Thirteen guarded reference fields
+are 0.7 by 0.7 mm; the 94 anchored diagnostics identify only the residual-cited
+subset of 241 silk graphics. All seven original contract pins and twelve
+retained board/project files were rehashed. The chief checked the review's
+verification and historical-identity-map digests before acceptance.
+
+Custody evidence is retained under
+`/home/halbritt/.cache/agent-verification/agent-ee-569-artwork523-custody-20261025/`.
+Its `verification.json` SHA-256 is
+`1e516e422dd388ed5d32128de1a2762272c38134010a3e6b6964c21dc75a064d`.
+The pre-correction native-run source hashes are corroborating records; the
+complete earlier source tree was not independently archived and verified.
+Acceptance relies on the final-source review, fresh native fixture tests and
+exact saved-artifact replay. It does not certify the full historical source
+delta from hashes alone. The actual final artwork repair remains outstanding.
