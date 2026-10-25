@@ -1,217 +1,216 @@
-# AGENTEE-521 contract — evidence methods and qualification states
+# AGENTEE-521 contract — evidence methods and qualification dimensions
 
-Design for chief (agent-564) and builder review. Author agent-565 (Fable),
-2026-10-25. Input: agent-ee `dab756e56a6a5358c00983074565af0e8e09862c`,
-Plane AGENTEE-521 (description sha256 `3d61678b…971a1`), RD-03/04/05 in
-[recovery-plan.md](../recovery-plan.md), findings REC-06/07/12/19/20/21/26.
-No production code changes in this dispatch. Implementation depends on
-AGENTEE-519 (runtime) and AGENTEE-520 (intent contract) and on chief approval
-of this contract; it is not an owner permission gate.
+Design for chief (agent-564) and builder review. Author agent-565 (Fable).
+Revision 2, 2026-10-25, after chief review of 26e975a8. Input: agent-ee
+`dab756e56a6a5358c00983074565af0e8e09862c`, Plane AGENTEE-521, RD-03/04/05 in
+[recovery-plan.md](../recovery-plan.md), REC-06/07/12/19/20/21/26,
+[intent-compatibility.md](../intent-compatibility.md). No production code in
+this dispatch. Implementation depends on AGENTEE-519/520 and chief approval.
 
-## 1. Current behaviour (source-inspected, not re-audited)
+Chief decisions applied: `build run` checkpoint keeps exit 0; obligation kinds
+are source-bound and authored now; checkpoints publish per-dimension status
+but never assert checks passed because a checkpoint exists; supplier and
+physical are record-only pending dimensions in M1; no external upload or
+bench workflow.
 
-| Surface | Field / code today | Where | Meaning today |
-| --- | --- | --- | --- |
-| `build run` report `agent-ee.build-report/1` | `status` ∈ running/accepted/checkpoint/failed/interrupted; `accepted` bool; `completed`, `attempts`, `candidate`, `identity`, `inputs.runtime` | `build_workflow.run` | `accepted` = all seven stages completed and `_package` did not raise |
-| `build run` exit | 0 for accepted **and** checkpoint; 1 otherwise | `build_workflow.execute` | checkpoint (`--through`) is "diagnostic, never acceptance" but shares exit 0 |
-| `_package` | requires every acceptance-mapped check `ok/pass`, every executed check ∈ pass/info, exactly one passing `fab_package` bound to the board hash; writes `accepted-package.json` with `physical_obligations`, `physical_validation_performed:false`, `supplier_preview_performed:false` | `build_workflow._package` | software file-release gate; already refuses missing/stale/failed required evidence |
-| `_review_candidate` | `run_review(..., checks_only=True)` then `verify` | `build_workflow._review_candidate` | deterministic checks only; no reviewer, no adjudication, by design |
-| `build review` report `agent-ee.build-review/1` | `accepted:false` always; `outcome` copied from review result; exit 0 only if `criteria_satisfied` | `build_workflow.review_build/execute` | checks-only can never reach `criteria_satisfied` (`cli.outcome` needs ≥2 reviews + adjudication), so exit is always 1; documented but not tested |
-| Review result `agent-ee.result/1` | `outcome` ∈ criteria_satisfied/incomplete/defects_or_unresolved; `state` ∈ running/complete/incomplete/interrupted; limitation "Checks-only run: independent agent reviews and adjudication not performed." | `cli._run_review`, `cli.outcome` | sound; reused unchanged |
-| Requirement map `agent-ee.requirement-map/1` | per requirement exactly one of `checks` / `limitation{reason}` / `bench{criterion,procedure}` | `requirement_map.disposition` | no operational or judgment mode; a `checks` entry can bind any check kind to any clause |
-| Coverage | `baseline.coverage.requirements[rid].acceptance_checks`; receipt `requirements[].checks` | `requirement_map.compile_map`, `baseline.compile_baseline` | counts check ids per requirement; nothing reports unique executed methods |
-| DRC/ERC | `details.constraint_classes`, `advisory_findings_count`, `graded_unwaived`, `ignored_checks`, `by_severity`; class ∈ owner/manufacturer/datasheet/engineering/default | `checks.check_drc/check_erc/grade_drc`, `design_rule_provenance` | advisories and ignored categories are already captured per check, not surfaced at release level |
-| Retained acquisition map | `build/acquisition-release/inputs/requirement-map.json` sha256 `df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863` (git-ignored retained input) | — | 26 requirements: 23 `checks`, 1 `bench`, 0 `limitation`; `ACQ-DELIV-2` → one `netlist_parity` check; `netlist_parity` bound to 6 requirements; `engineering-intervals` reused by 5, `engineering-geometry` by 3 |
-| Retained decision file | `build/acquisition-release/inputs/manufacturing-decision.json` sha256 `7db99d7476a74b4e6f546da44ddcf866412cdeb409dcc834edbd0bc01a3a9be6` | — | still states nominal 1.6 mm and "8 mm including mated connectors" while the closure record corrected to 1.2 mm and a scoped height (REC-19/20) |
-| Docs | `docs/cli-reference.md` exit table omits `build run` / `build review`; `docs/build-workflow.md` says "accepted native files" without naming which qualification is claimed | — | REC-26 drift |
+## 1. Current behaviour (source-inspected)
 
-Existing consumers of `accepted` outside `build_workflow.py`: none in `src/`,
-`tests/`, `integration/`, `scripts/` (grep 2026-10-25). The only `build-report`
-consumer is `build review` itself. `tests/test_build_review.py` covers refusals
-only; no test pins `build run` exit codes or `accepted` semantics.
-
-## 2. Qualification states
-
-Five ordered states, each bound to one candidate identity (final native board
-sha256 plus build `identity`). A record may hold any prefix of the order. No
-state is inferred from a higher one being absent; no higher state can be
-recorded without the lower states for the same candidate hash.
-
-| State | Produced by | Requires | Never claims |
-| --- | --- | --- | --- |
-| `checks` | `build review`; `review --checks-only`; `--through` checkpoints | deterministic native/measurement checks executed on the exact candidate | acceptance, review, assembly, hardware |
-| `file_release` | `build run` reaching `package` | `checks` + all acceptance-mapped checks `ok/pass` + package bound to board hash + every `operational` clause proved (§4) + every `judgment` clause bound and unresolved-defect-free (§5) + advisory/ignored register written (§6) + current release decision consistent with corrected inputs (§7) | independent review, supplier confirmation, tested hardware |
-| `engineering_review` | ordinary `review` on the released candidate's scope via the subscription route, `outcome == criteria_satisfied`, ≥2 reviews, adjudicated | `file_release` for the same board hash; review `candidate_id` equal to the released candidate | supplier, hardware |
-| `supplier` | an authored supplier evidence record (preview/DFM result, supplier identity, date, artifact hashes) | `file_release`; artifact hashes equal to `accepted-package.json.artifacts` | hardware |
-| `physical` | bench evidence per `bench` obligations (`criterion`, `procedure`, result, operator, date) | `file_release`; every `bench` receipt addressed or explicitly deferred with reason | nothing further; M1 does not reach it |
-
-Record: `release-record.json`, schema `agent-ee.release-record/1`, written by
-the package stage beside `accepted-package.json` and extendable later only by
-appending higher states with their evidence (append-only; earlier entries are
-never rewritten). Fields: `candidate` {board_sha256, build_identity,
-candidate_id}, `states` [{state, at_utc, evidence[] (paths + sha256), by
-(tool or author identity)}], `highest_state`, `methods` (§4), `judgments`
-(§5), `rules` (§6), `decision` (§7), `superseded` (§7).
-
-## 3. Compatibility contract (accepted fields and exit codes)
-
-Nothing existing changes meaning or type; everything new is additive.
-
-| Field / code | After this item | Test to add |
+| Surface | Today | Where |
 | --- | --- | --- |
-| build-report `accepted:true` | means exactly `highest_state == file_release`; the report gains `qualification: {schema, highest_state, record}` | report with `accepted:true` always has `qualification.highest_state == 'file_release'`; checkpoint/failed reports have `highest_state == 'checks'` or `null` |
-| build-report `status` | unchanged vocabulary | existing values round-trip |
-| `build run` exit | unchanged: 0 accepted or checkpoint, 1 otherwise. Rationale: `--through` is an operator-requested checkpoint; automation must gate on `accepted` + `qualification`, which the docs will state | exit/`status`/`accepted` matrix for accepted, checkpoint, failed |
-| `build review` report | `accepted:false` retained; gains `qualification_state: 'checks'`; exit stays 1 (checks-only cannot be `criteria_satisfied`) | passing checks-only review still returns `accepted:false`, exit 1, limitation string present |
-| review result `outcome`/`state` | unchanged | existing suites |
-| `accepted-package.json` | unchanged keys retained; gains `release_record` path + sha256 | key set is a superset; the two `*_performed:false` flags remain false after `build run` |
-| requirement-map/1 | accepted unchanged for retained history; compiles with a receipt `limitations` note "map/1: no method binding; operational and judgment clauses unverified" | retained acquisition map/1 still compiles byte-identically to its receipt |
-| CLI exit table | `build run` and `build review` rows added; automation sentence names `accepted` + `qualification.highest_state` | doc check: table lists both commands |
+| build-report/1 | `status` ∈ running/accepted/checkpoint/failed/interrupted; `accepted` bool = seven stages completed and `_package` raised nothing; `completed[]` (stage, directory, candidate, tree), `attempts[]` (stage, directory, status, reason), `identity`, `inputs` {plan_sha256, source inventory, runtime} | `build_workflow.run` |
+| `build run` exit | 0 for accepted and checkpoint, 1 otherwise | `build_workflow.execute` |
+| `_package` | every acceptance-mapped check `ok/pass`, every executed check ∈ pass/info, one passing `fab_package` bound to the board hash; writes `accepted-package.json` (`physical_obligations`, `physical_validation_performed:false`, `supplier_preview_performed:false`) | `build_workflow._package` |
+| `_review_candidate` | `run_review(checks_only=True)` + `verify` | `build_workflow._review_candidate` |
+| build-review/1 | `accepted:false` always; exit 0 only on `criteria_satisfied`, unreachable for checks-only (`cli.outcome` needs ≥2 reviews and adjudication) → always exit 1; documented, untested | `review_build`, `execute` |
+| result/1 check rows | carry `id`, `kind` (from the scope definition, set by the executor), `execution`, `outcome`, `details`, `limitations` | `checks.run_checks` (record at line 1174) |
+| requirement-map/1 | one of `checks` / `limitation` / `bench` per requirement, or `spans` (byte-complete partition with sub-mappings); prose `context` | `requirement_map.disposition`, `source_mappings` |
+| spec-record/1 | byte-identical capture of `spec.md`; clause entries {id, kind (bullet/table_row/acceptance), section, locator, text, text_sha256}; `verify` recomputes the capture, so no authored field can live inside it | `spec_record.capture/verify` |
+| DRC/ERC details | `ignored_checks`, `by_severity`, `constraint_classes`, `advisory_findings_count`, `graded_unwaived`, `drc-constraints.json`; classes owner/manufacturer/datasheet/engineering/default | `checks.check_erc/check_drc/grade_drc`, `design_rule_provenance` |
 
-A CLI consumer that today treats `accepted:true` as "manufacturing package
-verified by software checks" keeps working. One that treated it as "reviewed /
-assembled / tested" was reading a claim the tool never made; the record now
-says so explicitly.
+Retained acquisition inputs (git-ignored, hashed): `requirement-map.json`
+`df11c81d…7dc863`: 26 entries = 23 `checks` + 1 `bench` (ACQ-BENCH-1) + 2
+`spans` partitions (ACQ-ELEC-6, ACQ-MECH-3); the spec record captures 18
+clauses + 1 prose, the rest are derived envelope obligations. `ACQ-DELIV-2` →
+one `netlist_parity` check; `netlist_parity` serves 6 requirements.
+`manufacturing-decision.json` `7db99d74…9be6` still states 1.6 mm nominal and
+"8 mm including mated connectors". No consumer of `accepted` exists outside
+`build_workflow.py`; `docs/cli-reference.md` exit table omits `build`.
 
-## 4. Evidence-method binding
+Negatives already on disk, exact entry points: wrong ADC address —
+`build/requirement-clauses/bad-address-mutation.json` (U2 pin 1 GND→V3V3),
+rejected by check `adc-ties` kind `topology_rules`, violation `U2-1-6`
+(`bad-address-review/result.json`); reversed diode —
+`build/agent545/acquisition-polarity-reversed-review-02/result.json`, check
+`electrical-topology` kind `topology_rules`, violations `D1-2-1`, `D1-1-1`.
+Both run through `checks.check_topology_rules` (`docs/topology-rules.md`).
+ERC and parity pass in both; only the bound topology rule discriminates.
 
-`agent-ee.requirement-map/2` keeps the `/1` modes and adds two. Exactly one
-mode per requirement stays the rule (`disposition` extends `modes`).
+## 2. Qualification dimensions (replaces the state ladder)
 
-| Mode | Payload | Verified by |
-| --- | --- | --- |
-| `checks` (existing) | check list; **new optional `method_class`** per check: `native_check` \| `measurement` \| `model` (SPICE/interval) \| `topology` (parity/rules/interface) | unchanged compile; class is recorded in the receipt |
-| `limitation` / `bench` (existing) | unchanged | unchanged |
-| `operational` (new) | `{criterion, proof: {kind: 'execution_and_resume'}}` | package stage: the build journal of **this** run, or a referenced retained run with identical `identity`, contains an attempt whose `status` is `interrupted` followed by completion of the same stage and a later `accepted` report; receipts of the resumed stages verify (`tree_identity`); evidence paths recorded in `release-record.methods` |
-| `judgment` (new) | `{record: 'path/to/judgment.json'}` | §5 |
+One module `src/agent_ee/qualification.py` writes one record
+`qualification.json` (`agent-ee.qualification/1`) in every completed stage
+directory and the package stage; build-report gains
+`qualification: {path, sha256, dimensions: {name: status}}`. Dimensions are
+independent; each has `status` ∈ `not_assessed` / `pending` / `pass` /
+`failed`, `evidence[]` (paths + sha256 from existing receipts and results)
+and `binding` {board_sha256 or null, scope_sha256, stage}. No dimension
+derives from another's status.
 
-Rule for `ACQ-DELIV-2` and any clause of the same shape: `operational` is the
-only admissible mode. Netlist parity may remain bound to `ACQ-ELEC-*`
-topology clauses; it cannot be the sole evidence of a reproducibility clause.
-This is enforced by the authored map (the acquisition map is re-authored under
-`/2` as a new input revision), by a compiler refusal when an `operational`
-requirement lists checks, and by the negative test in §8 — not by parsing
-prose. No universal prose validator is added (exclusion honoured).
-
-Reporting: the release record's `methods` section lists **unique executed
-methods** (check id + kind + method_class + evidence sha256) separately from
-**requirement coverage** (requirement id → bound method ids + mode). The
-acquisition figure that this surfaces today: 23 checked requirements over 15
-kinds, with `netlist_parity` serving six of them. Reuse is allowed; it is
-visible.
-
-## 5. Captured engineering judgments
-
-`agent-ee.engineering-judgment/1`, one file per judgment, an authored input
-(hash-verified like every other input):
-
-```
-{ "schema": "agent-ee.engineering-judgment/1", "requirement": "ACQ-MECH-4",
-  "clause": "<exact spec span or spec-record locator>",
-  "conclusion": "...", "assumptions": ["..."],
-  "sources": [{"kind": "datasheet|manufacturer|owner|engineering", "citation": {...}}],
-  "limits": "<applicability and what is not covered>",
-  "candidate": {"board_sha256": "...", "inputs_identity": "..."} | null,
-  "author": {"agent": "agent-NNN", "model": "...", "date_utc": "..."},
-  "unresolved_defects": [] }
-```
-
-Package-stage rules: every `judgment`-mode requirement names a record; a
-record bound to a candidate whose `board_sha256` differs from the final board
-is **stale** and refuses release (same strictness as stale check evidence);
-`candidate: null` is allowed only when `limits` says the judgment is
-candidate-independent (e.g. source applicability); a non-empty
-`unresolved_defects` refuses release; the record is copied into
-`release-record.judgments` with its sha256. The existing closure prose for
-ACQ-MECH-1/ACQ-MECH-4 (`docs/qualification/acquisition-closure-2026-10-24.md`)
-is the first content to migrate into such records, with the 1.2 mm correction
-and the mated-height scope correction as explicit `assumptions` changes.
-Original spec text and the correction history stay untouched.
-
-## 6. Rules, advisories and ignored categories (RD-04)
-
-Release record `rules` section, assembled from existing check details without
-re-grading: for ERC and DRC, `ignored_checks` verbatim; `by_severity`;
-`constraint_classes`; every `default`-class (unsourced) advisory finding with
-locator and measured value (`drc-constraints.json` already classifies them);
-`waived` count; and the list of applicable sourced rules (`owner`,
-`manufacturer`, `datasheet`, cited `engineering`) that were evaluated. An
-applicable sourced rule missing from the evaluated set refuses release (this is
-the existing `require_evaluated_limits` path, now reported). Nothing promotes a
-`default` limit to a gate and nothing demotes a sourced one; the decisions.md
-AGENTEE-331/338/348 policy is restated by reference, not reimplemented.
-
-## 7. Current release decision versus history (REC-19/20)
-
-The package stage writes `release-decision.json` (`agent-ee.release-decision/1`)
-from current inputs: board nominal thickness and tolerance source, height
-scope, profile identity, envelope hash, the judgments of §5, and
-`supersedes: [{path, sha256, reason}]`. The retained
-`manufacturing-decision.json` (sha256 `7db99d74…9be6`) is listed under
-`supersedes` with reason "1.6 mm nominal and absolute 8 mm mated height
-superseded by the 2026-10-24 corrections"; its bytes are not edited. A
-decision whose thickness disagrees with the envelope's `stackup/1` evidence
-refuses release. Historical runs under `build/` keep their own files and are
-inspectable, not current.
-
-## 8. Negatives without a prose validator
-
-| Negative | Existing fixture | Required outcome | Mechanism |
+| Dimension | pass iff | failed iff | otherwise |
 | --- | --- | --- | --- |
-| Wrong ADC address | `build/requirement-clauses/bad-address-*` | the `hardware_interface` / `topology_rules` check bound to the addressing clause returns `defect`; `build run` refuses at the stage that executes it; `highest_state` never reaches `file_release` | existing discriminating checks; the contract only requires the clause to bind to that check, recorded with `method_class: topology` |
-| Reversed diode | `build/agent545/acquisition-reversed-diode-build.json` (`docs/qualification/acquisition-electrical-2026-10-24.md`) | ERC/parity clean; the `active_spice` / `dc_path` / interval check bound to the polarity clause returns `defect`; release refused | same |
-| Wrong evidence-method mapping | re-authored acquisition map with `ACQ-DELIV-2` left as `checks: [netlist_parity]` | compiler refusal `operational_required` naming `ACQ-DELIV-2`… **only** if the clause is declared `operational` in the spec record's obligation kind; otherwise the release record shows `ACQ-DELIV-2` covered by `topology` with no `operational` proof, and the M1 acceptance case (agent-569) rejects it | the spec-record obligation kind is the sourced declaration; no prose parsing |
-| Missing required judgment | map/2 `judgment` entry without a record, or record with `unresolved_defects` | package refusal naming the requirement | §5 |
-| Changed candidate inputs on resume | existing identity check | existing refusal | unchanged |
-| Checks-only presented as review | `build review` on an accepted run | `accepted:false`, `qualification_state:'checks'`, exit 1 | §3 test |
+| `checks` | this stage executed a review and every executed row is `ok` with outcome pass/info; rows listed with id, kind, outcome | any executed row is not ok, or outcome defect/unknown | `not_assessed` when the stage ran no review (e.g. parts, scaffold); a checkpoint never implies pass |
+| `file_release` | package gate passed (§1 `_package`) **and** §4 operational clauses are not `failed` **and** §5 judgment clauses are `recorded` **and** §6 register has no missing applicable sourced rule **and** §7 decision agrees with stackup evidence | package gate refused (reason recorded) | `not_assessed` at any checkpoint |
+| `operational` | journal of **this run** shows all seven stages in `completed[]` with verified tree identities and at least one attempt with status interrupted/failed followed by a completed attempt of the same stage under unchanged `identity` | completed stage identity or identity check failed during resume | `pending` when no interruption was observed; `not_assessed` before package |
+| `engineering_review` | an ordinary full `review` run (subscription route, ≥2 reviews, adjudicated, `criteria_satisfied`, `verify` ok) is referenced and its candidate board sha256 equals this candidate | referenced review is `defects_or_unresolved` for this board | `not_assessed` (default; a review may be run before or after package, it binds by board hash) |
+| `judgments` | every `judgment`-mode requirement has a record admitted per §5 with empty `unresolved_defects` (`recorded`) | any record stale, mismatched or with unresolved defects | `pending` when a required record is missing at a checkpoint |
+| `supplier` | not reachable in M1 | — | `pending` (record-only; `supplier_preview_performed:false` retained) |
+| `physical` | not reachable in M1; later only from bench result records per `bench` obligation | — | `pending` for every bench obligation; deferred obligations stay `pending` with reason, never pass |
 
-The `operational_required` refusal needs one sourced hook: the spec record
-(`spec_record.verify`) must carry an obligation kind per requirement
-(`executable`, `operational`, `physical`, `judgment`). That is an authored
-field in the captured spec record, not an inference. If chief prefers not to
-touch the spec record in M1, the fallback is the M1 acceptance case alone (row
-3, second clause) and the map author's responsibility; this is the one
-judgment the chief must make (§11).
+`accepted` is the explicit projection `file_release.status == 'pass'`,
+nothing else. A checkpoint report shows `file_release: not_assessed` and the
+real `checks` rows of that stage.
 
-## 9. Entry points and implementation slices
+## 3. Compatibility (fields and exit codes unchanged)
 
-Ordered; each slice is independently landable and has its own tests. Slices
-1–3 are the minimum for the five acceptance criteria.
+| Field / code | After | Test |
+| --- | --- | --- |
+| build-report `status`, `accepted` | unchanged; `qualification` added | `accepted:true ⇔ file_release pass`; checkpoint → `file_release not_assessed`, `accepted:false`; failed → `file_release failed` |
+| `build run` exit | 0 accepted/checkpoint, 1 otherwise (chief decision); docs state automation gates on `accepted` plus `qualification.dimensions` | exit × status matrix |
+| build-review/1 | `accepted:false` kept; `qualification` added with `checks` only, every other dimension `not_assessed`; exit stays 1 | passing checks-only review → `accepted:false`, exit 1, checks-only limitation present |
+| result/1, `verify`, `cli.outcome` | unchanged | existing suites |
+| `accepted-package.json` | keys retained; `qualification_sha256` added | superset check; both `*_performed` remain false |
+| CLI reference | `build run` / `build review` rows added | doc check |
 
-| # | Slice | Files | Tests | Depends on |
+## 4. Source-bound obligations and evidence methods
+
+**Obligations file** `obligations.json` (`agent-ee.obligations/1`), authored
+at the requirements stage next to `spec.md`, one entry per captured clause:
+`{id, text_sha256, obligation}` with `obligation` ∈ `executable` /
+`operational` / `judgment` / `physical` / `context`. The compiler refuses a
+missing entry, an unknown id, or a `text_sha256` that differs from the spec
+record clause (so an edited clause invalidates its obligation). Derived
+envelope obligations are `executable` by construction. No clause id is
+special-cased in code; `ACQ-DELIV-2` is `operational` because the acquisition
+obligations file says so, and the acceptance case checks that file.
+
+**requirement-map/2** keeps `/1` modes and adds `operational {criterion}` and
+`judgment {record}`. Compatibility rule enforced by `compile_map`:
+executable→`checks`; operational→`operational`; judgment→`judgment`;
+physical→`bench`; context→`context`; `spans` partitions must each satisfy the
+rule for their clause. Any other pairing refuses with
+`incompatible_evidence_method` naming id and clause locator. `limitation`
+remains allowed for any kind and keeps producing the NOT CHECKED limitation.
+
+**Method class** is derived in code from the executed check `kind` (result
+row, §1), never from a caller label: `native` (erc, drc, geometry, placement,
+board_envelope, fab_profile, fab_package, fab_export, fab_roundtrip,
+assembly_readiness, parts_subset, cpl_rotation), `topology` (netlist,
+netlist_parity, topology_rules, hardware_interface, net_names), `model`
+(interval_assertions, active_spice, rc_transient, dc_path), `measurement`
+(measurements, dfm_geometry). Unknown kinds are `unclassified` and count as
+not covering any executable clause. `qualification.json.methods` lists unique
+executed methods (id, kind, class, evidence sha256) separately from
+`coverage` (requirement → mode, bound ids, class set, status).
+
+**Legacy maps.** `/1` compiles byte-identically only for `verify`, `inspect`
+and `build review` of retained runs (archive). A new `build run` whose plan
+names a `/1` map or lacks `obligations.json` refuses with the upgrade path. No
+current claim can bypass method binding; history stays verifiable unchanged.
+
+## 5. Engineering judgments
+
+`agent-ee.engineering-judgment/1`, authored, hash-verified:
+`requirement`, `clause_text_sha256`, `conclusion`, `assumptions[]`,
+`sources[{kind: datasheet|manufacturer|owner|engineering, citation}]`,
+`applicability` (structured conditions, e.g. `{"board_thickness_mm": 1.2,
+"profile_sha256": "…"}`), `inputs[{path, sha256}]`, `candidate`
+(`null` or `{board_sha256, scope_sha256}`), `author {agent, model, date_utc}`,
+`unresolved_defects[]`.
+
+Admission at package time (`qualification.py`): every `inputs` entry must
+match the captured source inventory or the stage's captured datasheet
+records; every `applicability` key must be checkable against captured
+inputs (envelope, profile) and must hold; a candidate-independent record has
+`candidate: null`, non-empty `inputs` and `applicability`; a
+candidate-specific record binds `board_sha256` of the final board and the
+scope hash — mismatch is `stale`. Status is `recorded`, never `pass`: the
+record is evidence that a named author reached a conclusion under stated
+assumptions; its correctness is what `engineering_review` evaluates.
+
+Where candidate-specific judgments come from: run `build run --through
+artwork` (checkpoint) or `build review`; the board sha256 is in that
+candidate; author the record against it; place it in the plan's declared
+`judgments` directory. That directory is excluded from the build `identity`
+(no stage before package reads it, so it cannot influence generation) and is
+hashed into the package receipt and `qualification.json`. `--resume` to
+package then admits it. If artwork→package changes the board bytes the record
+is `stale` and `file_release` is `failed`, truthfully.
+
+## 6. Rules register (RD-04)
+
+`qualification.json.rules`: per ERC/DRC check, `ignored_checks` verbatim,
+`by_severity`, `constraint_classes`, every default-class advisory with locator
+and measured value (from `drc-constraints.json`), waived count, and the
+applicable sourced rules evaluated. A missing applicable sourced limit (the
+existing `require_evaluated_limits` refusal) marks `file_release failed`. No
+regrading; AGENTEE-331/338/348 policy by reference.
+
+## 7. Current decision and history (REC-19/20)
+
+`qualification.json.decision`: board nominal thickness and tolerance source,
+height scope, profile identity, envelope hash, judgments by sha256, and
+`supersedes[{path, sha256, reason}]` listing `manufacturing-decision.json`
+`7db99d74…9be6` as superseded by the 2026-10-24 corrections. Thickness must
+equal the `stackup/1` evidence or `file_release` is `failed`. No retained
+bytes are edited; no separate decision file is created.
+
+## 8. Bootstrap, run and resume sequence (non-circular)
+
+No step needs a prior accepted result; every gate reads only the run's own
+receipts, candidate files and checks-only review.
+
+1. `build run PLAN --out A`: seven public stages; package gate from A's
+   receipts; `accepted:true`; `operational: pending` (no interruption
+   observed) so `ACQ-DELIV-2` shows pending in coverage. A is complete but not
+   the release run.
+2. `build run PLAN --out B`, create `B/CANCEL` during placement-routing →
+   `status: interrupted`, exit 1; remove `CANCEL`; `build run --resume --out
+   B` → completes; B's journal has interrupted→completed under one identity →
+   `operational: pass`; `file_release: pass`. B is the M1 release run.
+3. Changed-input refusal: alter one source byte, `build run --resume --out
+   B2` on a copy of interrupted B → refusal "build resume identity differs";
+   the acceptance harness (agent-569) records it as a negative.
+4. `build review A --out R`: `accepted:false`, exit 1, `checks` only.
+5. Negatives of §1 under the `/2` map: `adc-ties` and `electrical-topology`
+   return `defect`, `checks: failed`, `file_release` not reached.
+
+All seven stages remain visible in `completed[]`; only native and
+checks-only evidence is used; no prose assertion stands in for a method.
+
+## 9. Implementation slices
+
+| # | Slice | Files | Tests | Depends |
 | --- | --- | --- | --- | --- |
-| 1 | Qualification record + compatibility pins: `release-record.json`, `qualification` on build-report, `qualification_state` on build-review, `accepted-package.json` link; exit matrix | `src/agent_ee/build_workflow.py`; new `src/agent_ee/release_record.py` | new `tests/test_build_qualification.py`: exit/status/accepted matrix; checks-only never `file_release`; record append-only | 519 (native harness to run a full build fixture) |
-| 2 | requirement-map/2: `operational`, `judgment`, `method_class`; `/1` compat; receipt `methods` vs coverage | `src/agent_ee/requirement_map.py`; `docs/requirement-map.md` (if present) | extend `tests/test_requirement_map.py`: `/1` byte-stable; `/2` refusals (`operational` with checks, missing record); methods/coverage counts | none |
-| 3 | Package-stage enforcement: operational proof from journal, judgment binding/staleness, rules register, release decision with `supersedes` | `src/agent_ee/build_workflow.py` (`_package`, `_review_source` reuse), `src/agent_ee/checks.py` (expose, not re-grade, advisory/ignored details) | `tests/test_build_qualification.py` negatives of §8 rows 4–5; stale judgment refusal; decision/stackup mismatch refusal | 1, 2, 519 |
-| 4 | Spec-record obligation kind + `operational_required` compiler refusal (§8 row 3) | `src/agent_ee/spec_record.py`, `requirement_map.py` | `/2` map with mis-bound ACQ-DELIV-2 refuses | chief decision §11 |
-| 5 | Re-author acquisition inputs as a new revision under `/2` with judgments and the current decision; rerun in the supported runtime | `build/…` retained inputs (new revision directory; originals untouched); `docs/qualification/` new dated record | native run evidence; agent-569 acceptance case | 519, 520, 3 |
-| 6 | Docs: `docs/build-workflow.md` qualification section; `docs/cli-reference.md` exit rows + automation gate sentence; link recovery plan | docs only | doc consistency test if the repo has one; otherwise review | 1 |
+| 1 | `qualification.py` + record + build-report/build-review fields + compat matrix | new `src/agent_ee/qualification.py`; `build_workflow.py` | new `tests/test_qualification.py` | 519 fixture |
+| 2 | `obligations/1`, map/2 modes, compatibility refusal, kind→class table, legacy/archive rule | `requirement_map.py`, `spec_record.py` (read-side only), `docs/requirement-map.md` | `tests/test_requirement_map.py` additions | none |
+| 3 | package integration: operational from journal, judgment admission, rules and decision sections, `judgments` dir outside identity | `build_workflow.py` (`run`, `_package`), `checks.py` expose-only | `tests/test_qualification.py` negatives §8 | 1, 2, 519 |
+| 4 | acquisition inputs revision under `/2` with obligations and judgments; runs A/B/B2/R in the supported runtime; dated record under `docs/qualification/` | retained inputs (new revision dir) | native evidence; 569 case | 519, 520, 3 |
+| 5 | docs: build-workflow qualification section, CLI exit rows, automation sentence | docs | doc check | 1 |
 
-Not touched: `cli.outcome`, review result schema, `verify`, native severities,
-`grade_drc`, policy files, reviewer routes, any `build/` historical bytes.
+Untouched: `cli.outcome`, result/1, `verify`, severities, `grade_drc`,
+policy files, reviewer routes, retained `build/` bytes.
 
-## 10. Acceptance coverage
+## 10. Acceptance mapping
 
-| AGENTEE-521 acceptance | Covered by |
-| --- | --- |
-| ACQ-DELIV-2 needs execution + resume proof, not parity | §4 `operational`, slices 2–5, §8 row 3 |
-| Checks-only never claims review/supplier/hardware; compat documented and tested | §2–3, slice 1 and 6 |
-| Judgments name assumptions/sources/candidate/limits; unresolved defect blocks | §5, slice 3 |
-| Advisories and ignored categories visible; sourced rules stay gates; no promotion | §6, slice 3 |
-| Current decision consistent with 1.2 mm and corrected height; history immutable | §7, slices 3 and 5 |
+ACQ-DELIV-2 by execution+resume → §4 obligations + §8 step 2. Checks-only
+never claims review/supplier/hardware, compat tested → §2–3. Judgments with
+assumptions/sources/candidate/limits, unresolved defect blocks → §5.
+Advisories and ignored categories visible, sourced gates kept → §6. Current
+decision at 1.2 mm with history immutable → §7.
 
-## 11. Judgments required from chief before implementation
+## 11. Unresolved question for the chief
 
-1. Spec-record obligation kind (slice 4) in M1, or defer to the acceptance case.
-2. `build run --through` keeps exit 0 (compat, this contract) or moves to a new
-   exit code; the contract recommends keeping it and gating automation on
-   `accepted` + `qualification.highest_state`.
-3. Whether `release-record.json` is written only at `package` (contract) or
-   also at checkpoints with `highest_state:'checks'` (useful for agent-569's
-   harness; small extra scope).
-
-## 12. Exclusions kept
-
-No model invocation inside every package stage; no signatures; no prose
-validator; no owner-waiver generation; no rewrite of historical acceptance; no
-auto-success from an unavailable reviewer (checks-only stays `incomplete`).
+Does M1 closure of acquisition require `engineering_review: pass`, or is
+`not_assessed` with recorded judgments sufficient for RD-03's "supported
+external review when the claim requires it"? The record supports either; the
+acceptance case must state which.
