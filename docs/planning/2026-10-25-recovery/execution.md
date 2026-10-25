@@ -55,9 +55,9 @@ This ledger records accepted integration separately from worker delivery. A desi
 | AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7`; typed preparation `daa900861e388a8e4a9b4088e01817e35feb1f58` | Compiler and base acquisition typed preparation landed. Chief independently passed 88 strict native preparation tests/no skips and a real prepare/compile with 47 typed rows. Agent-568 implements qualification/build consumer; agent-565 prepares a separate D1 supplemental input revision. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
 | KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
 | AGENTEE-528 fixed-mark identity | [Repair and verification](identity-528-agent-567.md) landed `86cb840f42173453e6737a69239215727a1ef3ad` | Plane Done. Chief independently passed nine native tests/no skips and 17 exact retained controls; 36 tested source hashes matched after rebase. Both marks and all selector/pose protections preserved. Initial placement remains infeasible and original rich intent remains refused; 479 is separate |
-| AGENTEE-479 compatibility/grouping | Agent-570 initial proposal `b053137c` reviewed; correction requested | Not accepted: universal bounding-box exclusion and nearest-peer hard predicates lack design authority. Preserve actual upstream signed pad-edge semantics and label proposed functions separately from executed evidence. Original field mapping and final-native engineering judgment remain required; parent 472 held |
-| AGENTEE-522 mask mismatch / AGENTEE-529 repair | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) landed `82133d6d`; chief checked source and all 94 indexed evidence hashes | Investigation 522 Done. Capture omits resolved mask-graphic expansion. Agent-569 assigned repair 529 with exact seed6/seed11 controls, native API cases and unchanged DRC/rules. No full search or accepted production repair yet |
-| AGENTEE-524 assembly profile | Part B landed `903721fb`; [verification](contracts/AGENTEE-524-partB-verification.md) | Chief strict 95 native tests/no skips plus amended immutable-capture guard passed. Real acquisition remains 16/17 because D1 polarity is unknown. Agent-566 owns the source-bound polarity repair; agent-565 independently assesses its exact source inference. Supplier confirmation remains pending |
+| AGENTEE-479 compatibility/grouping | [Accepted contract](contracts/AGENTEE-479-group-intent-contract.md) landed `886282bc2fd9b71ce63341ab54f1c4536147857b` | Chief reproduced retained measurements and verified 19 artifact/source identities and ten primary loaded modules. Preserve the existing placer, exact signed pad-edge semantics, advisory corpus-derived limits and source-bound hard limits. Flexible-group diagnostics cannot become universal hard gates; qualitative acceptance needs final native reports/views and independent judgment. Implementation remains pending; parent 472 held |
+| AGENTEE-522 mask mismatch / AGENTEE-529 repair | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) landed `82133d6d`; repair delivered `6a3e327d` | Investigation 522 Done. Agent-569 delivered focused capture repair with exact seed6/seed11 controls and native API cases. Agent-570 independently reviews source/evidence; chief native verification and integration remain pending. Native rules and rejection stay unchanged; no full search or accepted production repair yet |
+| AGENTEE-524 assembly profile | Part B landed `903721fb`; [verification](contracts/AGENTEE-524-partB-verification.md); polarity repair `75fb1a3b` delivered | Main's real acquisition remains 16/17. Source inference independently supported, but chief reproduced an implementation hole: absent/empty sealed-netlist LCSC incorrectly permits fallback polarity. Agent-566 owns the focused correction; repair and final-record replay remain unaccepted. Supplier confirmation stays pending |
 | AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Agent-567 assigned focused comparison repair from `86cb840f`, after 528 completion. Graphic classification, final renders/DRC and via/pad process assessment remain pending; existing finalization dependencies remain binding |
 
 Qualification records must depend on frozen package evidence in one direction:
@@ -121,3 +121,18 @@ or supplier metadata or count as independent review. Automatic interpretation
 of the nearest silk line by an unqualified margin is rejected. The exact source
 chain receives independent inspection before acceptance of the repair; real
 supplier preview/assembly remains a distinct pending claim.
+
+The final D1 supplement has SHA-256
+`23a0b7986e20c676c1ada1b5c09647743eb854b987b320104be741137468e851`.
+It corrects the rationale to distinguish the two supplier band features; the
+earlier `a3fff2b3...` capture is superseded. Agent-565's supplemental overlay
+must bind the final bytes in a new revision. It cannot inherit the accepted
+base preparation's receipt, and compilation depends on the corrected polarity
+implementation. Chief reproduction of the missing-LCSC hole is retained at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/d1-review/`.
+
+At 14:00 PDT the chief completed an authorized drain of its own stalled Cairn
+inbox through event position 7450, reading each exact source and explicitly
+acknowledging each notice/response. Later deliveries remain separate. Worker
+delivery, acknowledgment, independent acceptance and trunk integration are
+distinct states; none alone substitutes for M1 qualification.
