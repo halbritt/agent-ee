@@ -5,9 +5,12 @@ stage's real files; final acceptance comes from independently sealed checks.
 """
 import copy
 import fcntl
+import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import uuid
@@ -15,9 +18,10 @@ import uuid
 from . import parts_stage, requirement_map, scaffold, schematic_stage, spec_record
 from .catalog import strict_json
 from .stage_receipts import _relative, adopt, file_tree, run_step, tree_identity
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, digest_fd, identity, read_json, write_json
 
 SCHEMA = 'agent-ee.build-plan/1'
+TYPED_SCHEMA = 'agent-ee.build-plan/2'
 REPORT_SCHEMA = 'agent-ee.build-report/1'
 STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'artwork', 'package')
 GENERATED = 'build-generated/connectivity-intent.json'
@@ -35,17 +39,29 @@ def _keys(value, required, optional=()):
 
 def validate_plan(plan):
     _keys(plan, ('schema', 'source', 'requirements', 'parts', 'envelope', 'placement'),
-          ('verification_timeout_s',))
-    if plan['schema'] != SCHEMA or not isinstance(plan['source'], str) or not plan['source']:
-        raise ValueError('expected agent-ee.build-plan/1 with a source directory')
-    _keys(plan['requirements'], ('map', 'record', 'spec'))
+          ('verification_timeout_s', 'judgments'))
+    if plan['schema'] not in (SCHEMA, TYPED_SCHEMA) or not isinstance(plan['source'], str) or not plan['source']:
+        raise ValueError('expected agent-ee.build-plan/1 or /2 with a source directory')
+    typed = plan['schema'] == TYPED_SCHEMA
+    _keys(plan['requirements'], ('map', 'record', 'spec', *(['obligations'] if typed else [])))
+    if 'judgments' in plan:
+        if not typed:
+            raise ValueError('judgments require a typed build-plan/2')
+        _relative(plan['judgments'], 'judgments directory')
+        if plan['judgments'] == '.' or any(
+                plan['judgments'] == reserved or plan['judgments'].startswith(reserved + '/')
+                or reserved.startswith(plan['judgments'] + '/') for reserved in ('build-generated', requirement_map.PROVENANCE)):
+            raise ValueError('judgments directory overlaps the source root or generated namespace')
     _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
     _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes',))
-    for path in [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
-                 plan['placement']['intent'], plan['placement']['groups']]:
-        _relative(path, 'build input')
+    paths = [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
+             plan['placement']['intent'], plan['placement']['groups']]
     if 'planes' in plan['placement']:
-        _relative(plan['placement']['planes'], 'plane plan')
+        paths.append(plan['placement']['planes'])
+    for path in paths:
+        _relative(path, 'build input')
+        if 'judgments' in plan and (path == plan['judgments'] or path.startswith(plan['judgments'] + '/')):
+            raise ValueError('pre-package build input occupies the judgments directory')
     timeout = plan.get('verification_timeout_s', 3600)
     if type(timeout) is not int or not 1 <= timeout <= 86400:
         raise ValueError('verification_timeout_s must be an integer from 1 to 86400')
@@ -57,6 +73,50 @@ def _inventory(root):
     if other:
         raise ValueError('build inputs contain links or special files: ' + str(other))
     return files
+
+
+def _source_inventory(root, plan):
+    prefix = plan.get('judgments')
+    if prefix is None:
+        return _inventory(root)
+    root = Path(root)
+    files = {}
+    def walk_error(exc):
+        raise exc
+    # Prune before opening any late-bound file. Hashing and then filtering would
+    # still read editable testimony during pre-package stages.
+    for current, directories, names, descriptor in os.fwalk(root, follow_symlinks=False, onerror=walk_error):
+        relative = Path(current).relative_to(root)
+        if len(relative.parts) > 128:
+            raise ValueError('build input directory nesting exceeds 128 levels')
+        for name in list(directories):
+            mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
+            if not stat.S_ISDIR(mode):
+                raise ValueError('build inputs contain links or special files')
+            if str(relative / name) == prefix:
+                directories.remove(name)
+        for name in names:
+            path = str(relative / name)
+            if path == prefix:
+                raise ValueError('judgments directory must be a directory')
+            if not stat.S_ISREG(os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode):
+                raise ValueError('build inputs contain links or special files')
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise ValueError('build inputs contain links or special files')
+                files[path] = digest_fd(os.dup(fd))
+            finally:
+                os.close(fd)
+    return dict(sorted(files.items()))
+
+
+def _capture_source(source, capturing, plan):
+    prefix = plan.get('judgments')
+    omitted = source / prefix if prefix else None
+    def ignore(directory, names):
+        return {omitted.name} if omitted is not None and Path(directory) == omitted.parent else set()
+    shutil.copytree(source, capturing, ignore=ignore)
 
 
 def _scope(scope, candidate):
@@ -120,8 +180,13 @@ def _requirements(plan, candidate, stage_dir):
     provenance.mkdir()
     for key, filename in [('map', 'requirement-map.json'), ('record', 'spec-record.json'), ('spec', 'spec.md')]:
         (provenance / filename).write_bytes(raw[key])
+    options = {}
+    if 'obligations' in raw:
+        options['obligations'] = requirement_map.load_obligations(raw['obligations'], record, raw['spec'])
     scope, accounting = requirement_map.account_requirements(declaration, record, raw['spec'],
-        files=_inventory(candidate), inputs=candidate)
+        files=_inventory(candidate), inputs=candidate, **options)
+    if 'obligations' in raw:
+        (provenance / 'obligations.json').write_bytes(raw['obligations'])
     write_json(stage_dir / 'scope.json', _scope(scope, candidate))
     write_json(stage_dir / 'accounting.json', dict(requirements=accounting,
         coverage='pending native scaffold', acceptance=False))
@@ -133,7 +198,8 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
              if not name.startswith(requirement_map.PROVENANCE + '/')}
     scope, receipt = requirement_map.compile_map(
         (candidate / names['map']).read_bytes(), (candidate / names['record']).read_bytes(),
-        (candidate / names['spec']).read_bytes(), files=files, inputs=candidate)
+        (candidate / names['spec']).read_bytes(), files=files, inputs=candidate,
+        **({'obligations_raw': (candidate / names['obligations']).read_bytes()} if 'obligations' in names else {}))
     write_json(stage_dir / 'requirements.json', receipt)
     scaffold_receipt = read_json(stage_dir / 'product/scaffold-receipt.json')
     produced = read_json(stage_dir / 'product/scope.json')
@@ -195,9 +261,22 @@ def _review_candidate(scope, directory, timeout):
 
 
 def _package(plan, candidate, stage_dir, scope, accounting):
-    from .baseline import compile_baseline
     _manufacturing_coverage(plan, scope, accounting)
     result = _review_candidate(_scope(scope, candidate), stage_dir, plan.get('verification_timeout_s', 3600))
+    artifacts = package_artifacts(result, scope, candidate)
+    extra = {}
+    if plan['schema'] == TYPED_SCHEMA:
+        extra['judgment_inventory_sha256'] = digest(stage_dir / 'judgment-inventory.json')
+    write_json(stage_dir / 'accepted-package.json', dict(artifacts=artifacts,
+        native_files={name: pin for name, pin in _inventory(candidate).items()
+                      if name.endswith(('.kicad_sch', '.kicad_pcb', '.kicad_pro', '.kicad_dru'))},
+        physical_obligations=[r for r in accounting if r['mode'] == 'bench'],
+        physical_validation_performed=False, supplier_preview_performed=False, **extra))
+
+
+def package_artifacts(result, scope, candidate):
+    """Replay the existing file-package predicate from verified check results."""
+    from .baseline import compile_baseline
     baseline = compile_baseline(scope, _inventory(candidate), candidate)
     required = {cid for row in baseline['coverage']['requirements'].values() for cid in row['acceptance_checks']}
     checks = {check['id']: check for check in result['checks']}
@@ -213,11 +292,7 @@ def _package(plan, candidate, stage_dir, scope, accounting):
     artifacts = packages[0].get('details', {}).get('artifacts')
     if not artifacts or artifacts['board_sha256'] != digest(candidate / scope['board']):
         raise ValueError('manufacturing package is not bound to the final native board')
-    write_json(stage_dir / 'accepted-package.json', dict(artifacts=artifacts,
-        native_files={name: pin for name, pin in _inventory(candidate).items()
-                      if name.endswith(('.kicad_sch', '.kicad_pcb', '.kicad_pro', '.kicad_dru'))},
-        physical_obligations=[r for r in accounting if r['mode'] == 'bench'],
-        physical_validation_performed=False, supplier_preview_performed=False))
+    return artifacts
 
 
 def _artwork(candidate, directory, board):
@@ -396,6 +471,11 @@ def _review_source(run):
         build_report_sha256=digest(path), build_identity=report['identity'],
         build_runtime=inputs['runtime'], selected=completed[-1],
         scope_sha256=digest(scope_path), scaffold=completed[2])
+    plan_path = _retained_path(run, 'build-plan.json')
+    if plan_path.exists():
+        if digest(plan_path) != inputs['plan_sha256']:
+            raise ValueError('captured build plan identity changed')
+        selection['qualification_mode'] = 'typed' if strict_json(plan_path.read_bytes())['schema'] == TYPED_SCHEMA else 'legacy'
     return candidate, scope, selection
 
 
@@ -431,6 +511,10 @@ def review_build(run, out, *, max_seconds=900):
             source=selection, review=str(out / 'review'),
             checks=[{key: row[key] for key in ('id', 'execution', 'outcome')} for row in result['checks']],
             limitations=result['limitations'])
+        from .qualification import assess_review
+        qualified = assess_review(out, result, selection)
+        summary['qualification'] = dict(path='qualification.json', sha256=digest(out / 'qualification.json'),
+            mode=qualified['mode'], dimensions={name: row['status'] for name, row in qualified['dimensions'].items()})
         write_json(out / 'report.json', summary)
         return summary
 
@@ -439,23 +523,27 @@ def run(plan_path, out, *, resume=False, through='package'):
     if through not in STAGES:
         raise ValueError('unknown build stage')
     plan_path, out = Path(plan_path).resolve(), Path(out).resolve()
-    plan = validate_plan(strict_json(plan_path.read_bytes()))
+    plan_raw = plan_path.read_bytes()
+    plan = validate_plan(strict_json(plan_raw))
     source = (plan_path.parent / plan['source']).resolve()
     if out == source or source in out.parents:
         raise ValueError('build output must be outside the source bundle')
-    source_files = _inventory(source)
+    source_files = _source_inventory(source, plan)
+    map_schema = strict_json((source / plan['requirements']['map']).read_bytes()).get('schema')
+    if (map_schema == 'agent-ee.requirement-map/2') != (plan['schema'] == TYPED_SCHEMA):
+        raise ValueError('typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')
     from .placement_job import validate_intent
     validate_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
                     strict_json((source / plan['placement']['groups']).read_bytes()))
     for reserved in ('build-generated', requirement_map.PROVENANCE):
         if any(path == reserved or path.startswith(reserved + '/') for path in source_files):
             raise ValueError('build source occupies generated namespace: ' + reserved)
-    pin = dict(plan_sha256=digest(plan_path), source=source_files, runtime=_runtime())
+    pin = dict(plan_sha256=hashlib.sha256(plan_raw).hexdigest(), source=source_files, runtime=_runtime())
     binding = identity(pin)
     if resume:
         report = read_json(out / 'build-report.json')
-        if report.get('identity') != binding or report.get('schema') != REPORT_SCHEMA:
-            raise ValueError('build resume identity differs from captured inputs or runtime')
+        if report.get('schema') != REPORT_SCHEMA:
+            raise ValueError('expected retained build report')
     else:
         out.mkdir(parents=True, exist_ok=False)
         report = dict(schema=REPORT_SCHEMA, identity=binding, inputs=pin, status='running', accepted=False,
@@ -466,22 +554,47 @@ def run(plan_path, out, *, resume=False, through='package'):
         if resume:
             report = read_json(out / 'build-report.json')
             if report['identity'] != binding:
-                raise ValueError('build resume identity changed while acquiring the lock')
+                _refuse_resume(out, report, 'build resume identity differs from captured inputs or runtime', plan)
+        captured_plan = out / 'build-plan.json'
+        if not captured_plan.exists():
+            captured_plan.write_bytes(plan_raw)
+        if digest(captured_plan) != pin['plan_sha256']:
+            _refuse_resume(out, report, 'captured build plan identity changed', plan)
         if not (out / 'source').exists():
             capturing = out / ('.capture-' + uuid.uuid4().hex)
-            shutil.copytree(source, capturing)
+            _capture_source(source, capturing, plan)
             if _inventory(capturing) != source_files:
                 raise ValueError('build input changed during capture')
             capturing.rename(out / 'source')
         if _inventory(out / 'source') != source_files:
-            raise ValueError('retained build source identity changed')
+            _refuse_resume(out, report, 'retained build source identity changed', plan)
         for index, row in enumerate(report['completed']):
             if row['stage'] != STAGES[index] or tree_identity(out / row['directory']) != row['tree']:
-                raise ValueError('completed build stage identity changed: ' + row['stage'])
+                _refuse_resume(out, report, 'completed build stage identity changed: ' + row['stage'], plan)
+        package = next((row for row in report['completed'] if row['stage'] == 'package'), None)
+        if 'judgment_inventory' in report:
+            from .qualification import verify_judgment_source
+            frozen = report['judgment_inventory']
+            path = _retained_path(out, frozen['path'])
+            if not path.is_file() or digest(path) != frozen['sha256']:
+                _refuse_resume(out, report, 'judgment inventory changed after freeze', plan)
+            try:
+                verify_judgment_source(source, plan, path.parent)
+            except ValueError as exc:
+                _refuse_resume(out, report, str(exc), plan)
+        if package is not None and plan['schema'] == TYPED_SCHEMA:
+            from .qualification import verify_judgment_source
+            try:
+                verify_judgment_source(source, plan, out / package['directory'])
+            except ValueError as exc:
+                _refuse_resume(out, report, str(exc), plan)
         if report['accepted']:
             from .cli import verify
-            verify(out / report['completed'][-1]['directory'] / 'review')
-            return report
+            try:
+                verify(out / report['completed'][-1]['directory'] / 'review')
+            except ValueError as exc:
+                report.update(status='failed', reason='QualificationError: ' + str(exc))
+            return _assess_report(out, report, typed=plan['schema'] == TYPED_SCHEMA)
         previous = out / report['candidate'] if report['candidate'] else out / 'source'
         try:
             for stage in STAGES[len(report['completed']):STAGES.index(through) + 1]:
@@ -490,29 +603,74 @@ def run(plan_path, out, *, resume=False, through='package'):
                 index = len(report['completed'])
                 directory = out / 'stages' / f'{index + 1:02d}-{stage}-{uuid.uuid4().hex}'
                 directory.mkdir(parents=True)
-                report['attempts'].append(dict(stage=stage, directory=str(directory.relative_to(out)), status='running'))
+                report['attempts'].append(dict(stage=stage, directory=str(directory.relative_to(out)),
+                                              status='running', identity=binding))
                 write_json(out / 'build-report.json', report)
                 before = tree_identity(previous)
+                if stage == 'package' and plan['schema'] == TYPED_SCHEMA:
+                    from .qualification import freeze_judgments
+                    freeze_judgments(source, previous, plan, directory)
+                    path = directory / 'judgment-inventory.json'
+                    report['judgment_inventory'] = dict(path=str(path.relative_to(out)), sha256=digest(path))
+                    write_json(out / 'build-report.json', report)
                 candidate = _execute(stage, plan, previous, directory, report['completed'], out,
                                      diagnostic=through != 'package')
-                if tree_identity(previous) != before or _inventory(source) != source_files or _runtime() != pin['runtime']:
+                if (tree_identity(previous) != before or _source_inventory(source, plan) != source_files
+                        or digest(plan_path) != pin['plan_sha256'] or _runtime() != pin['runtime']):
                     raise ValueError('build input or runtime changed during stage execution')
+                if stage == 'package' and plan['schema'] == TYPED_SCHEMA:
+                    from .qualification import verify_judgment_source
+                    verify_judgment_source(source, plan, directory)
                 report['candidate'] = str(candidate.relative_to(out))
                 report['completed'].append(dict(stage=stage, directory=str(directory.relative_to(out)),
                     candidate=report['candidate'], tree=tree_identity(directory)))
                 report['attempts'][-1]['status'] = 'completed'
                 previous = candidate
                 write_json(out / 'build-report.json', report)
-            report['accepted'] = len(report['completed']) == len(STAGES)
-            report['status'] = 'accepted' if report['accepted'] else 'checkpoint'
+            report['accepted'] = False
+            report['status'] = 'assessing' if len(report['completed']) == len(STAGES) else 'checkpoint'
             report.pop('reason', None)
         except (ValueError, OSError, subprocess.SubprocessError, KeyboardInterrupt) as exc:
             report['status'] = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
             report['reason'] = f'{type(exc).__name__}: {exc}'
             if report['attempts'] and report['attempts'][-1]['status'] == 'running':
                 report['attempts'][-1].update(status=report['status'], reason=report['reason'])
-        write_json(out / 'build-report.json', report)
-        return report
+        return _assess_report(out, report, typed=plan['schema'] == TYPED_SCHEMA)
+
+
+def _assess_report(out, report, *, typed=False):
+    from . import qualification
+    report['accepted'] = False
+    report.pop('qualification', None)
+    write_json(out / 'build-report.json', report)
+    try:
+        record = qualification.assess(out)
+    except qualification.QualificationError as exc:
+        report.update(status='failed', accepted=False, reason='QualificationError: ' + str(exc))
+        record = qualification.failed_assessment(out, report, str(exc),
+            typed=typed, integrity=exc.integrity)
+        report['qualification'] = dict(path='qualification.json', sha256=digest(out / 'qualification.json'),
+            mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
+    else:
+        report['qualification'] = dict(path='qualification.json', sha256=digest(out / 'qualification.json'),
+            mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
+        report['accepted'] = record['accepted']
+        if len(report['completed']) == len(STAGES):
+            report['status'] = 'accepted' if report['accepted'] else 'failed'
+            if not report['accepted']:
+                report['reason'] = 'QualificationError: required file-release evidence is incomplete or failed'
+    write_json(out / 'build-report.json', report)
+    return report
+
+
+def _refuse_resume(out, report, reason, plan):
+    from .qualification import failed_assessment
+    record = failed_assessment(out, report, reason, typed=plan['schema'] == TYPED_SCHEMA, integrity=True)
+    report.update(status='failed', accepted=False, reason='QualificationError: ' + reason)
+    report['qualification'] = dict(path='qualification.json', sha256=digest(out / 'qualification.json'),
+        mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
+    write_json(out / 'build-report.json', report)
+    raise ValueError(reason)
 
 
 def configure_parser(parser):

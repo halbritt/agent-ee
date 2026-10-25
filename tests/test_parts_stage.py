@@ -381,6 +381,12 @@ class PartsProducerTests(unittest.TestCase):
         write_json(self.root / 'planning.scope.json', scope)
 
     def test_public_build_resumes_real_parts_and_native_generation_and_rejects_changed_input(self):
+        self.public_build_case(typed=False)
+
+    def test_public_typed_build_preserves_method_binding_native_generation_and_resume(self):
+        self.public_build_case(typed=True)
+
+    def public_build_case(self, *, typed):
         require_toolchain(native=True)
         from agent_ee.spec_record import capture as capture_spec
         self.hierarchy()
@@ -431,6 +437,21 @@ class PartsProducerTests(unittest.TestCase):
             envelope='envelope.json', placement=dict(intent='placement.json', groups='groups.json',
                 budget_s=30, search=dict(seeds=[dict(seed=0, start='clustered')], steps_per_seed=100, shortlist=1),
                 router=dict(checkout='/opt/kicad-route')))
+        if typed:
+            declaration['schema'] = 'agent-ee.requirement-map/2'
+            write_json(self.bundle / 'requirement-map.json', declaration)
+            clauses = []
+            for source in record['requirements'] + record['prose']:
+                start, end = (source['locator'][key] for key in ('byte_start', 'byte_end'))
+                clauses.append(dict(id=source['id'], spans=[dict(byte_start=start, byte_end=end,
+                    text_sha256=hashlib.sha256(spec[start:end]).hexdigest(),
+                    obligation='context' if source in record['prose'] else 'executable')]))
+            write_json(self.bundle / 'obligations.json', dict(schema='agent-ee.obligations/1',
+                spec_sha256=hashlib.sha256(spec).hexdigest(), clauses=clauses))
+            plan['schema'] = 'agent-ee.build-plan/2'
+            plan['requirements']['obligations'] = 'obligations.json'
+            plan['judgments'] = 'judgments'
+            write_json(self.bundle / 'judgments/draft.json', dict(note='Not read by these pre-package stages.'))
         write_json(self.root / 'build.json', plan)
         out = self.root / 'build'
 
@@ -442,6 +463,7 @@ class PartsProducerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         first = read_json(out / 'build-report.json')
         self.assertFalse(first['accepted'])
+        self.assertEqual(first['qualification']['mode'], 'typed' if typed else 'legacy')
         self.assertEqual([s['stage'] for s in first['completed']], ['requirements', 'parts'])
         (out / 'CANCEL').touch()
         result = run('--resume', '--through', 'schematic')
@@ -481,6 +503,11 @@ class PartsProducerTests(unittest.TestCase):
         summary = json.loads(result.stdout)
         self.assertFalse(summary['accepted'])
         self.assertEqual(summary['outcome'], 'incomplete')
+        qualification = read_json(diagnostic / 'qualification.json')
+        self.assertFalse(qualification['accepted'])
+        self.assertEqual(qualification['mode'], 'typed' if typed else 'legacy')
+        for dimension in ('file_release', 'engineering_review', 'supplier', 'physical'):
+            self.assertEqual(qualification['dimensions'][dimension]['status'], 'not_assessed')
         self.assertEqual(digest(out / 'build-report.json'), before_review)
         review = diagnostic / 'review'
         captured_scope = read_json(review / 'candidate.json')['scope']
@@ -543,20 +570,28 @@ class PartsProducerTests(unittest.TestCase):
         incomplete = read_json(out / 'build-report.json')
         self.assertFalse(incomplete['accepted'])
         self.assertIn('manufacturing coverage missing', incomplete['reason'])
-        pin = digest(out / 'build-report.json')
+        before_refusal = read_json(out / 'build-report.json')
         board_path = candidate / 'project/acquisition.kicad_pcb'
         native_bytes = board_path.read_bytes()
         board_path.write_bytes(native_bytes + b'\n')
         result = run('--resume', '--through', 'schematic')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('stage identity changed', result.stderr + result.stdout)
-        self.assertEqual(digest(out / 'build-report.json'), pin)
+        refused = read_json(out / 'build-report.json')
+        self.assertEqual(refused['completed'], before_refusal['completed'])
+        self.assertEqual(refused['attempts'], before_refusal['attempts'])
+        self.assertFalse(refused['accepted'])
+        self.assertEqual(refused['qualification']['dimensions']['operational'], 'failed')
         board_path.write_bytes(native_bytes)
         (self.bundle / 'spec.md').write_bytes(spec + b'\nChanged engineering input.\n')
         result = run('--resume', '--through', 'schematic')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('identity', result.stderr + result.stdout)
-        self.assertEqual(digest(out / 'build-report.json'), pin)
+        refused = read_json(out / 'build-report.json')
+        self.assertEqual(refused['completed'], before_refusal['completed'])
+        self.assertEqual(refused['attempts'], before_refusal['attempts'])
+        self.assertFalse(refused['accepted'])
+        self.assertEqual(refused['qualification']['dimensions']['operational'], 'failed')
         (self.bundle / 'spec.md').write_bytes(spec)
         self.intent['components'][0]['value'] = '1k'
         self.save()

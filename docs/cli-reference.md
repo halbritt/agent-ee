@@ -44,6 +44,8 @@ operation, with configuration and limits described in the closed-loop reference.
 | --- | --- | --- | --- |
 | `doctor` | Every recorded probe exited 0 and its binary was hashed | A prerequisite probe failed or timed out, or a probed binary could not be hashed | Parser/handled invocation error |
 | `review`, `resume` | `criteria_satisfied` | Any other recorded review outcome, including execution/capture failure and interruption | Refusal before the run is handled, such as an existing output directory or invalid budget; parser error |
+| `build run` | Recorded `accepted` or diagnostic `checkpoint`; inspect `accepted` and `qualification.dimensions` | Recorded failed/interrupted build or failed qualification | Input, identity or invocation refusal |
+| `build review` | Full review criteria satisfied, if such evidence exists; the current checks-only path returns 1 | Checks-only diagnostic remains incomplete even if checks pass; `accepted:false` | Source custody or invocation refusal |
 | `view3d` | Export completed; normal viewer shutdown | Not a normal handled result | Invocation/native-export error |
 | `render3d` | Three validated PNGs and a completed manifest | Not a normal handled result | Invocation/native-render error; interruption returns 130 |
 | `campaign`, `campaign-feedback`, `bench-review` | Criteria satisfied | Retained nonpassing/incomplete outcome | Invocation refusal |
@@ -59,6 +61,10 @@ this table. Do not infer acceptance from an arbitrary successful shell command.
 For automation, require a successful `verify` plus `result.json`'s
 `outcome == "criteria_satisfied"`. `inspect` and `verify` success alone are not
 design acceptance. The [operator guide](operator-guide.md) includes that gate.
+For build automation, gate the file claim on `accepted` and the recorded
+`qualification.dimensions.file_release.status`, then inspect the separately
+required operational, judgment, supplier and physical statuses. Checkpoint exit
+0 alone grants no release claim; legacy mode withholds current method claims.
 
 ## Work budgets and interruption
 

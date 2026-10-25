@@ -85,7 +85,7 @@ direct binding. The normal placement path currently requires
 and rule areas on the placement input still require further placement-model
 support; this path creates declared zones after component placement.
 
-The requirement map is the existing `agent-ee.requirement-map/1`, including its
+Legacy plans use `agent-ee.requirement-map/1`, including its
 ordinary scope/3 template and per-requirement check declarations. Its input
 locations are rebound to each retained candidate without changing the mapped
 requirements. When `parts.ratings` is supplied, the build captures its adopted
@@ -146,6 +146,103 @@ unchanged. This command always reports `accepted:false`; exit 1 denotes an
 incomplete review, even when every declared check passes. Inspect the individual
 checks and unresolved requirements in `report.json` and `review/report.json`.
 Successful evidence verification alone does not accept a manufacturing package.
+
+## Qualification and current claims
+
+Each new run writes `qualification.json` (`agent-ee.qualification/1`) at the
+run root and binds its hash in `build-report.json`. The record separates checks,
+software file release, operational execution/resume, engineering review,
+engineering judgments, supplier confirmation and physical validation. Read each
+dimension with its candidate/scope binding and evidence. A checkpoint does not
+make checks pass. A passing checks-only diagnostic remains `accepted:false` and
+exits 1; its qualification assesses checks only.
+
+The legacy `agent-ee.build-plan/1` continues to generate through every supported
+stage. Its unchanged final package gate can establish its legacy file release;
+the qualification record says `mode: legacy`, `claims_withheld: true` and reports
+source-method coverage as unknown. Earlier reports are historical evidence, not
+qualification of the current implementation.
+
+Typed `agent-ee.build-plan/2` uses a [requirement-map/2](requirement-map.md) and
+adds `requirements.obligations`, the relative path of an authored
+`agent-ee.obligations/1` file. An optional top-level `judgments` names a normalized
+relative directory, for example `"judgments": "judgments"`. A `/1` map cannot
+be mixed with typed obligations, and a `/2` map cannot omit them. The existing
+compiler still owns source spans, obligation kinds and method binding; the build
+consumer does not infer evidence methods from requirement prose or ids.
+
+Typed `accepted:true` means `qualification.dimensions.file_release.status` is
+`pass`: the final package gate and required executable spans passed, required
+judgments have independent concurrence, applicable sourced-rule evaluations are
+available, and the current decision matches native stackup evidence. Unknown,
+missing, skipped or stale required file evidence blocks that claim. This is a
+software file claim. Supplier and physical dimensions stay pending, and every
+outstanding delivery, judgment or physical obligation remains visible in
+`coverage` and `summary.pending_required`.
+
+Operational assessment supports only the explicitly compiled
+`public_build_and_resume` criterion. It requires all seven verified stage trees
+and an interrupted/failed attempt followed by the completed attempt of that
+same stage under the same run identity. A clean first run reports operational
+pending; a package or an unrelated resume cannot satisfy arbitrary operational
+prose. Changed input or completed-stage identity on resume records operational
+failure while preserving completed stage bytes. Diagnostic checkpoints keep
+exit 0 and `accepted:false`.
+
+Qualification runs under the build's lock after stage receipts are sealed. It
+hashes those files and publishes only a run-root record; `accepted-package.json`
+contains no qualification reference. A complete run enters `status: assessing`
+with `accepted:false` before this assessment. A crash or assessment failure can
+resume with all seven stages already completed: only verification and assessment
+repeat. The record is regenerated from receipts, including for an accepted run;
+an edited old `qualification.json` is never adopted as evidence.
+The latest failed package attempt can also supply an ordinary review whose own
+evidence seal verifies. Its checks remain bound to that failed candidate; they
+cannot adopt it or grant file release. This preserves actual failed-check
+evidence when the package stage has no completed receipt.
+
+## Authored judgments and package records
+
+Judgment paths in the typed map are relative to the declared judgments
+directory. No stage before package reads or copies that directory. At package
+entry the build freezes it beside the package candidate, writes
+`judgment-inventory.json` and `applicability-inventory.json`, and binds the
+inventory hash in the accepted-package record. Once frozen, a changed or added
+record requires a new run, including after a failed package attempt. Resumption
+refuses `judgment inputs changed after package` rather than re-evaluating new
+testimony inside an old run.
+
+Records use `agent-ee.engineering-judgment/1` and bind the requirement's exact
+source span/hash, captured inputs, sources, applicability and author metadata.
+Candidate-specific records also bind the final board hash and the authored
+scaffold scope hash, which is available from diagnostic source selection.
+Candidate-independent records require nonempty inputs and applicability.
+Supported applicability facts are `board_thickness_mm`, `profile_sha256`,
+`envelope_sha256`, `layer_count` and `max_component_height_mm`; another condition
+refuses admission. Sources and input hashes must resolve against the frozen
+candidate; a label or a valid JSON shape cannot supply an engineering result.
+
+Witnesses under `judgments/verification/` use
+`agent-ee.judgment-verification/1`, bind the judgment's file hash, identify a
+verifier independent of its author, and record `concur` or `dissent` with defects.
+The `checked` list contains exactly `source_citations_resolved`,
+`applicability_recomputed` and `conclusion_consistent_with_bound_checks`.
+These are the verifier's attestations; the build never authors a witness or
+converts testimony into a full review. Admitted testimony is `recorded`, never
+`pass`. Missing concurrence stays pending; dissent, stale bindings and unresolved
+defects block the dependent file claim.
+
+The rules register retains ERC/DRC ignored categories, native severities,
+waivers, constraint classes, default advisories and sourced-limit evidence. It
+does not regrade or promote defaults. The decision section identifies the
+captured envelope/profile, nominal thickness, height limit and stackup evidence;
+an older `manufacturing-decision.json` is preserved by hash in `supersedes`.
+
+Package roundtrip and orientation are assessed from verified check rows.
+Orientation also retains the package producer's assembly-profile assessment;
+unassessed rows remain pending. An executable obligation bound to either record
+blocks file release while its required evidence is pending. Software completion
+does not perform or confirm a supplier preview or a physical test.
 
 For a default manufacturing run, before placement/routing the build requires declared ERC, DRC, netlist,
 geometry, parts membership, placement, board envelope, manufacturing profile,
