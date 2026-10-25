@@ -635,7 +635,8 @@ class EngineParityTests(unittest.TestCase):
                     'copper_local_nm': [[-900_000, -300_000, -300_000, 300_000], [300_000, -300_000, 900_000, 300_000]],
                     'pads': [{'uuid': f'{uuid}-1', 'number': '1', 'net': net, 'local_nm': [-600_000, 0], 'half_nm': [300_000, 300_000]},
                              {'uuid': f'{uuid}-2', 'number': '2', 'net': 'GND', 'local_nm': [600_000, 0], 'half_nm': [300_000, 300_000]}]}
-        return {'schema': 'agent-ee.placement-job-input/1', 'problem_sha256': 'a' * 64,
+        from agent_ee import placement_job as job
+        return {'schema': job.INPUT_SCHEMA, 'problem_sha256': 'a' * 64,
                 'outline': {'kind': 'rectangle', 'rect_nm': [0, 0, 12_000_000, 10_000_000]},
                 'rules': {'copper_clearance_nm': 200_000, 'copper_edge_clearance_nm': 300_000, 'mask_min_web_nm': 100_000},
                 'footprints': [fp(1, 'R1', 3_000_000, 5_000_000, 'A'), fp(2, 'R2', 9_500_000, 5_000_000, 'A'),
@@ -682,3 +683,69 @@ class EngineParityTests(unittest.TestCase):
         self.assertEqual(int(evaluation['terms']['link_gap_nm']), unweighted_nm)
         self.assertEqual(evaluation['link_weight'], 1)
         self.assertAlmostEqual(unweighted_nm / 1e6, group_links.objective(report), places=3)
+
+
+class CaptureContractTests(EngineParityTests):
+    """Schema /2 is the modern contract; unmarked /1 records replay as labelled legacy pad-centre jobs."""
+
+    def run_engine(self, problem):
+        import subprocess
+        done = subprocess.run([str(self.engine())], input=json.dumps(problem).encode(), capture_output=True, timeout=120)
+        return done.returncode, json.loads(done.stdout)
+
+    def legacy(self):
+        from agent_ee import placement_job as job
+        problem = self.problem()
+        problem['schema'] = job.LEGACY_INPUT_SCHEMA
+        problem.pop('rails')
+        problem['weights'].pop('link')
+        for group in problem['groups']:
+            group.pop('near', None)
+        for row in problem['footprints']:
+            for pad in row['pads']:
+                pad.pop('half_nm')
+        problem['proximity'] = [{'ref': 'R2', 'near': 'R1', 'ref_pads': [problem['footprints'][1]['pads'][0]['uuid']],
+                                 'near_pads': [pad['uuid'] for pad in problem['footprints'][0]['pads']],
+                                 'max_nm': 0, 'basis': 'pad_edge'}]
+        return problem
+
+    def test_fresh_capture_declares_the_modern_contract(self):
+        from agent_ee import placement_job as job
+        self.assertEqual(job.INPUT_SCHEMA, 'agent-ee.placement-job-input/2')
+        self.assertNotEqual(job.INPUT_SCHEMA, job.LEGACY_INPUT_SCHEMA)
+        code, out = self.run_engine(self.problem())
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out['proximity_contract'], 'pad_edge_signed_rect/1')
+        self.assertEqual(out['evaluations'][0]['link_weight'], 1)
+
+    def test_legacy_record_is_labelled_pad_centre_without_links(self):
+        code, out = self.run_engine(self.legacy())
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out['proximity_contract'], 'legacy_pad_centre/1')
+        evaluation = out['evaluations'][0]
+        self.assertEqual(evaluation['proximity_contract'], 'legacy_pad_centre/1')
+        self.assertEqual([(r['basis'], r['metric_applied'], r['pad_edge_scored']) for r in evaluation['proximity']],
+                         [('pad_edge', 'legacy_pad_centre/1', False)])
+        self.assertEqual((evaluation['links'], evaluation['link_weight']), ([], 0))
+        self.assertEqual(evaluation['terms']['link_gap_nm'], '0')
+
+    def test_modern_record_refuses_missing_or_mixed_extents_and_legacy_refuses_modern_fields(self):
+        modern = self.legacy()
+        from agent_ee import placement_job as job
+        modern['schema'] = job.INPUT_SCHEMA
+        code, out = self.run_engine(modern)
+        self.assertEqual((code, out['error']), (1, 'pad_edge proximity needs captured pad half extents'))
+        modern['footprints'][1]['pads'][0]['half_nm'] = [300_000, 300_000]
+        code, out = self.run_engine(modern)
+        self.assertEqual((code, out['error']), (1, 'pad_edge proximity needs captured pad half extents'))
+        marked = self.legacy()
+        marked['footprints'][0]['pads'][0]['half_nm'] = [300_000, 300_000]
+        code, out = self.run_engine(marked)
+        self.assertEqual(code, 1)
+        self.assertIn('carries pad half extents', out['error'])
+        unknown = self.legacy()
+        unknown['schema'] = 'agent-ee.placement-job-input/3'
+        code, out = self.run_engine(unknown)
+        # The binary routes unknown schemas to the planner entry, which refuses them by name too.
+        self.assertEqual((code, out['error']), (1, 'unsupported planning input schema'))
+

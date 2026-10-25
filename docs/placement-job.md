@@ -381,7 +381,9 @@ rules, including stricter coupling limits, always remain in force.
    is classified as documentation, never as a package outline. Separation of
    derived envelopes is **not** proof of package body separation.
 4. **Prepared Rust model and incremental search** (`crates/placement-engine/src/job.rs`,
-   schema `agent-ee.placement-job-input/1`, one process for the whole seed
+   schema `agent-ee.placement-job-input/2`; a `/1` record replays only under the
+   labelled `legacy_pad_centre/1` contract, see [intent-dialect.md](intent-dialect.md#capture-contract);
+   one process for the whole seed
    portfolio). `prepare` validates once: full-UUID identity with deterministic,
    collision-checked aliases (`fp000`... in UUID order, never a UUID prefix),
    roles, occupancy labels, rules (largest net-class clearance, per-pad native

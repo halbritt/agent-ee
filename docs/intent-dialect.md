@@ -101,6 +101,30 @@ with a declared rail excluded, pad-edge terms equal the signed gap, and a
 legal dispersed member is moved next to its anchor with legality preserved,
 the anchor and fixed marks unmoved.
 
+## Capture contract
+
+The problem record's `schema` is the compatibility seam between historical
+prepared jobs and fresh AGENTEE-479 captures. It is a version, never a content
+allowlist, and no historical bytes are rewritten.
+
+| schema | emitted by | proximity scoring | group links |
+|---|---|---|---|
+| `agent-ee.placement-job-input/2` (`INPUT_SCHEMA`) | every fresh `placement_job.capture` | `basis: pad_edge` rows use the signed pad-rect gap (`pad_edge_signed_rect/1`), other rows the pad-centre Chebyshev metric (`pad_centre_chebyshev/1`); a pad_edge row whose pads lack `half_nm`, or mix pads with and without it, refuses (`pad_edge proximity needs captured pad half extents`) | compiled (S1/S2/R1/R2), `weights.link` |
+| `agent-ee.placement-job-input/1` (`LEGACY_INPUT_SCHEMA`) | AGENTEE-515 jobs retained before 479 | every row scored as the historical engine did: pad-centre Chebyshev, the `basis` label recorded but not honoured (`legacy_pad_centre/1`) | none; `link_weight` reported as 0, so the historical objective is unchanged |
+
+A `/1` record that carries any modern-only field (`rails`, `groups[].near`,
+`pads[].half_nm`, `proximity[].subject_declared`/`partner_declared`,
+`weights.link`) refuses: it is a mislabelled capture, not history. Any other
+schema refuses as unsupported.
+
+Every engine output names the contract: top-level `proximity_contract`
+(`legacy_pad_centre/1` or `pad_edge_signed_rect/1`) and a `proximity` table with
+one row per claim (`ref`, `near`, captured `basis`, `metric_applied`,
+`pad_edge_scored`); evaluate mode repeats both per evaluation. Legacy replay is
+therefore readable but can never be mistaken for pad-edge engineering
+acceptance. Resuming a retained `/1` job directory with current code still
+re-captures a `/2` problem and refuses on the changed job identity, as before.
+
 ## Remaining
 
 1. Emit the per-candidate `refinement` and `links` rows into the final

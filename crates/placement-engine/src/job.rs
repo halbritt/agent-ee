@@ -51,7 +51,14 @@ use std::time::Instant;
 use crate::exact::{Point, Rat};
 use crate::geometry::{self, Polygon};
 
-pub const INPUT_SCHEMA: &str = "agent-ee.placement-job-input/1";
+pub const INPUT_SCHEMA: &str = "agent-ee.placement-job-input/2";
+/// Historical prepared jobs (AGENTEE-515) whose proximity rows were never scored by pad edge: the
+/// legacy engine ignored the `basis` label and used the pad-centre Chebyshev metric. Readable, never
+/// pad-edge capable; every output names the contract so legacy replay cannot pass for modern scoring.
+pub const LEGACY_INPUT_SCHEMA: &str = "agent-ee.placement-job-input/1";
+pub const MODERN_PROXIMITY_CONTRACT: &str = "pad_edge_signed_rect/1";
+pub const LEGACY_PROXIMITY_CONTRACT: &str = "legacy_pad_centre/1";
+pub const CENTRE_METRIC: &str = "pad_centre_chebyshev/1";
 pub const OUTPUT_SCHEMA: &str = "agent-ee.placement-job-output/1";
 const CELL_NM: i64 = 2_000_000;
 const OCCUPANCY_RUNGS: [&str; 4] = ["courtyard", "fab+pads", "silk+pads", "pads"];
@@ -377,6 +384,10 @@ pub struct Proximity {
     /// Upstream declaration mode: a declared subject emits one net-narrowed leg per subject pad;
     /// an undeclared subject gives one minimum over all pairs with no net narrowing.
     pub subject_declared: bool,
+    /// The captured `basis` label as written, honoured only under the modern contract.
+    pub basis: Option<String>,
+    /// Metric actually applied: MODERN_PROXIMITY_CONTRACT, CENTRE_METRIC or LEGACY_PROXIMITY_CONTRACT.
+    pub metric: &'static str,
 }
 
 /// A source-bound group relation measured as the signed pad-edge gap (AGENTEE-479 R1/R2).
@@ -434,6 +445,8 @@ pub struct Prepared {
     pub locality: Vec<Locality>,
     pub weights: Weights,
     pub movable: Vec<usize>,
+    /// LEGACY_INPUT_SCHEMA replay: pad-centre proximity, no group links, no link weight.
+    pub legacy: bool,
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
@@ -473,7 +486,28 @@ pub fn aliases(uuids: &[String], supplied: &[Option<String>]) -> Result<Vec<Stri
 }
 
 pub fn prepare(input: &Value) -> Result<Prepared> {
-    ensure!(input["schema"] == INPUT_SCHEMA, "unsupported placement job schema");
+    let legacy = match input["schema"].as_str() {
+        Some(s) if s == INPUT_SCHEMA => false,
+        Some(s) if s == LEGACY_INPUT_SCHEMA => true,
+        _ => bail!("unsupported placement job schema"),
+    };
+    if legacy {
+        // A /1 record predates AGENTEE-479; modern-only fields prove a mislabelled capture, not history.
+        ensure!(input.get("rails").is_none(), "legacy placement job schema /1 cannot carry rails; capture with schema /2");
+        ensure!(input["weights"].get("link").is_none(), "legacy placement job schema /1 cannot carry a link weight; capture with schema /2");
+        for g in input["groups"].as_array().cloned().unwrap_or_default() {
+            ensure!(g.get("near").is_none(), "legacy placement job schema /1 cannot declare near groups; capture with schema /2");
+        }
+        for f in input["footprints"].as_array().cloned().unwrap_or_default() {
+            for pad in f["pads"].as_array().cloned().unwrap_or_default() {
+                ensure!(pad.get("half_nm").is_none(), "legacy placement job schema /1 carries pad half extents; capture with schema /2");
+            }
+        }
+        for row in input["proximity"].as_array().cloned().unwrap_or_default() {
+            ensure!(row.get("subject_declared").is_none() && row.get("partner_declared").is_none(),
+                    "legacy placement job schema /1 cannot carry declaration modes; capture with schema /2");
+        }
+    }
     let identity = text(input, "problem_sha256")?.to_string();
     ensure!(identity.len() == 64, "problem_sha256 must be a full SHA-256");
     let outline = Rect::parse(&input["outline"]["rect_nm"], "outline")?;
@@ -665,16 +699,18 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         let b = physical_reference(text(&row, "near")?, "proximity near")?;
         let a_pads: Vec<usize> = row["ref_pads"].as_array().context("ref_pads")?.iter().map(|u| pad_of(a, u)).collect::<Result<_>>()?;
         let b_pads: Vec<usize> = row["near_pads"].as_array().context("near_pads")?.iter().map(|u| pad_of(b, u)).collect::<Result<_>>()?;
-        let pad_edge = row.get("basis").and_then(Value::as_str) == Some("pad_edge");
+        let basis = row.get("basis").and_then(Value::as_str).map(str::to_string);
+        let pad_edge = !legacy && basis.as_deref() == Some("pad_edge");
+        let metric = if legacy { LEGACY_PROXIMITY_CONTRACT } else if pad_edge { MODERN_PROXIMITY_CONTRACT } else { CENTRE_METRIC };
         if pad_edge {
             ensure!(a_pads.iter().all(|&i| footprints[a].pads[i].half != (0, 0))
                     && b_pads.iter().all(|&i| footprints[b].pads[i].half != (0, 0)),
                 "pad_edge proximity needs captured pad half extents");
         }
         let subject_declared = row.get("subject_declared").and_then(Value::as_bool).unwrap_or(true);
-        proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")?, pad_edge, subject_declared });
+        proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")?, pad_edge, subject_declared, basis, metric });
     }
-    let links = compile_links(input, &footprints, &groups, &nets, &net_pads, &physical_reference)?;
+    let links = if legacy { Vec::new() } else { compile_links(input, &footprints, &groups, &nets, &net_pads, &physical_reference)? };
     let mut locality = Vec::new();
     if let Some(raw) = input.get("locality") {
         let document = &raw["document"];
@@ -711,13 +747,13 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         wire: w.get("wire").and_then(Value::as_i64).unwrap_or(1),
         group: w.get("group").and_then(Value::as_i64).unwrap_or(1),
         proximity: w.get("proximity").and_then(Value::as_i64).unwrap_or(4),
-        link: w.get("link").and_then(Value::as_i64).or_else(|| w.get("group").and_then(Value::as_i64)).unwrap_or(1),
+        link: if legacy { 0 } else { w.get("link").and_then(Value::as_i64).or_else(|| w.get("group").and_then(Value::as_i64)).unwrap_or(1) },
         edge: w.get("edge").and_then(Value::as_i64).unwrap_or(4),
         hard: w.get("hard").and_then(Value::as_i64).unwrap_or(50),
         escape: w.get("escape").and_then(Value::as_i64).unwrap_or(20),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, links, locality, weights, movable })
+    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, links, locality, weights, movable, legacy })
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -1758,6 +1794,18 @@ fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
 
 /// Independent re-evaluation of explicit pose vectors (`{uuid: [x_nm, y_nm, quarter_turns]}`):
 /// predicted native pad positions, exact terms and named violations. Fixed parts must be unchanged.
+/// The proximity contract this prepared job is scored under; named in every engine output.
+pub fn proximity_contract(p: &Prepared) -> &'static str {
+    if p.legacy { LEGACY_PROXIMITY_CONTRACT } else { MODERN_PROXIMITY_CONTRACT }
+}
+
+/// One row per proximity claim: the captured label and the metric actually applied.
+pub fn proximity_rows(p: &Prepared) -> Value {
+    p.proximity.iter().map(|r| json!({"ref": p.footprints[r.a].native_ref, "near": p.footprints[r.b].native_ref,
+                                      "basis": r.basis, "metric_applied": r.metric, "pad_edge_scored": r.pad_edge}))
+        .collect()
+}
+
 fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
     let started = Instant::now();
     let index: BTreeMap<&str, usize> = p.footprints.iter().enumerate().map(|(i, f)| (f.uuid.as_str(), i)).collect();
@@ -1775,9 +1823,11 @@ fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
         let terms = full_evaluate(p, &poses);
         out.push(json!({"terms": terms.value(), "feasible": terms.hard == 0 && terms.hard_count == 0,
                         "violations": violations(p, &poses), "poses": pose_rows(p, &poses),
-                        "links": link_rows(p, &poses), "link_weight": p.weights.link}));
+                        "links": link_rows(p, &poses), "link_weight": p.weights.link,
+                        "proximity_contract": proximity_contract(p), "proximity": proximity_rows(p)}));
     }
     Ok(json!({"schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": "evaluated", "evaluations": out,
+              "proximity_contract": proximity_contract(p), "proximity": proximity_rows(p),
               "timing": {"prepare_s": prepare_s, "evaluate_s": started.elapsed().as_secs_f64()},
               "engine_version": env!("CARGO_PKG_VERSION")}))
 }
@@ -1896,6 +1946,7 @@ pub fn run(input: &Value) -> Result<Value> {
         "violations": v, "poses": pose_rows(&p, &c.poses)})).collect();
     Ok(json!({
         "schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": status,
+        "proximity_contract": proximity_contract(&p), "proximity": proximity_rows(&p),
         "diagnostic_shortlist": diagnostic,
         "aliases": p.footprints.iter().map(|f| json!({"uuid": f.uuid, "alias": f.alias, "native_ref": f.native_ref})).collect::<Vec<_>>(),
         "occupancy": p.footprints.iter().map(|f| json!({"uuid": f.uuid, "rung": f.occupancy_rung,
@@ -2149,6 +2200,62 @@ mod tests {
         assert_eq!(proximity_terms(&p, 0, &poses), rect_gap(&a, &b) as i128);
         assert_eq!(rect_gap(&a, &b), 8_900_000 - 300_000 - (2_400_000 + 300_000));
         assert_eq!(rect_gap(&Rect { x0: 0, y0: 0, x1: 100, y1: 100 }, &Rect { x0: 75, y0: 0, x1: 175, y1: 100 }), -25);
+    }
+
+    fn legacy(mut raw: Value) -> Value {
+        raw["schema"] = json!(LEGACY_INPUT_SCHEMA);
+        for row in raw["footprints"].as_array_mut().unwrap() {
+            for pad in row["pads"].as_array_mut().unwrap() { pad.as_object_mut().unwrap().remove("half_nm"); }
+        }
+        raw.as_object_mut().unwrap().remove("rails");
+        raw
+    }
+
+    #[test]
+    fn legacy_schema_replays_pad_centre_semantics_without_links_and_is_labelled() {
+        let mut raw = legacy(input(vec![]));
+        raw["proximity"] = json!([{"ref": "R2", "near": "R1", "ref_pads": [format!("{}-1", uuid(2))],
+                                   "near_pads": [format!("{}-1", uuid(1)), format!("{}-2", uuid(1))],
+                                   "max_nm": 0, "basis": "pad_edge"}]);
+        let p = prepare(&raw).unwrap();
+        assert!(p.legacy && p.links.is_empty() && p.weights.link == 0);
+        assert!(!p.proximity[0].pad_edge);
+        assert_eq!(p.proximity[0].metric, LEGACY_PROXIMITY_CONTRACT);
+        let poses = legal_dispersed(&p);
+        // Main-era semantics: the nearest centre pair by Chebyshev distance, label ignored.
+        let (ax, ay) = pad_at(&p, p.proximity[0].a, p.proximity[0].a_pads[0], &poses[p.proximity[0].a]);
+        let best = p.proximity[0].b_pads.iter().map(|&pb| { let (bx, by) = pad_at(&p, p.proximity[0].b, pb, &poses[p.proximity[0].b]);
+                                                            (ax - bx).abs().max((ay - by).abs()) }).min().unwrap();
+        assert_eq!(proximity_terms(&p, 0, &poses), best as i128);
+        assert_eq!(full_evaluate(&p, &poses).link, 0);
+        let out = evaluate_poses(&p, &json!([{}]), 0.0).unwrap();
+        assert_eq!(out["proximity_contract"], LEGACY_PROXIMITY_CONTRACT);
+        assert_eq!(out["evaluations"][0]["proximity"][0]["metric_applied"], LEGACY_PROXIMITY_CONTRACT);
+        assert_eq!(out["evaluations"][0]["proximity"][0]["pad_edge_scored"], false);
+        assert_eq!(out["evaluations"][0]["link_weight"], 0);
+        // A /1 record carrying modern-only fields is a mislabelled capture, not history.
+        let mut marked = raw.clone();
+        marked["footprints"][0]["pads"][0]["half_nm"] = json!([300_000, 300_000]);
+        assert!(prepare(&marked).unwrap_err().to_string().contains("carries pad half extents"));
+        let mut railed = raw.clone();
+        railed["rails"] = json!({"shared": {}, "scoped": {}});
+        assert!(prepare(&railed).unwrap_err().to_string().contains("cannot carry rails"));
+        let mut weighted = raw.clone();
+        weighted["weights"] = json!({"link": 1});
+        assert!(prepare(&weighted).unwrap_err().to_string().contains("link weight"));
+        // Modern contract: missing or mixed extents refuse rather than fall back.
+        let mut modern = raw.clone();
+        modern["schema"] = json!(INPUT_SCHEMA);
+        assert!(prepare(&modern).unwrap_err().to_string().contains("needs captured pad half extents"));
+        modern["footprints"][1]["pads"][0]["half_nm"] = json!([300_000, 300_000]);
+        assert!(prepare(&modern).unwrap_err().to_string().contains("needs captured pad half extents"));
+        let full = with_half_extents(modern, json!({"shared": {}, "scoped": {}}));
+        let p = prepare(&full).unwrap();
+        assert_eq!((p.legacy, p.proximity[0].metric), (false, MODERN_PROXIMITY_CONTRACT));
+        assert_eq!(evaluate_poses(&p, &json!([{}]), 0.0).unwrap()["proximity_contract"], MODERN_PROXIMITY_CONTRACT);
+        let mut unknown = raw.clone();
+        unknown["schema"] = json!("agent-ee.placement-job-input/3");
+        assert!(prepare(&unknown).unwrap_err().to_string().contains("unsupported placement job schema"));
     }
 
     #[test]

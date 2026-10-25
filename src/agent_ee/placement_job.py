@@ -6,7 +6,8 @@ check -> pinned router process -> final save/reload/native checks.
 
 The controller is the only orchestration layer. Individual search moves stay
 inside one Rust process (``agent-ee-placement``, schema
-``agent-ee.placement-job-input/1``); KiCad and the router are process adapters.
+``agent-ee.placement-job-input/2``; the engine replays ``/1`` only under the
+labelled legacy pad-centre contract); KiCad and the router are process adapters.
 Identity is the full native footprint UUID; ``native_ref`` is carried unchanged.
 A missing courtyard yields an explicitly labelled ``derived_occupancy`` with its
 provenance rung; a present but unproven courtyard is a hard refusal. Separation
@@ -36,7 +37,12 @@ from .storage import canonical, digest, read_json, write_json
 
 JOB_SCHEMA = 'agent-ee.placement-job/1'
 CONFIG_SCHEMA = 'agent-ee.placement-job-config/1'
-INPUT_SCHEMA = 'agent-ee.placement-job-input/1'
+INPUT_SCHEMA = 'agent-ee.placement-job-input/2'
+# Historical AGENTEE-515 prepared jobs. The engine still reads them under the visible
+# `legacy_pad_centre/1` proximity contract (pad-centre Chebyshev, no group links); a fresh
+# capture always emits INPUT_SCHEMA with pad half extents and the engine refuses a /2 record
+# whose pad_edge rows lack them. See docs/intent-dialect.md "Capture contract".
+LEGACY_INPUT_SCHEMA = 'agent-ee.placement-job-input/1'
 OUTPUT_SCHEMA = 'agent-ee.placement-job-output/1'
 CHECKPOINT_SCHEMA = 'agent-ee.placement-job-checkpoint/1'
 PHASES = ('setup', 'import', 'prepare', 'search', 'judge', 'export', 'final_validation')

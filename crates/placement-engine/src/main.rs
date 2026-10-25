@@ -14,7 +14,8 @@ fn main() {
         serde_json::from_reader(BufReader::new(io::stdin().lock()))
             .map_err(anyhow::Error::from)
             .and_then(|input: serde_json::Value| {
-                if input["schema"] == agent_ee_placement::job::INPUT_SCHEMA {
+                if input["schema"] == agent_ee_placement::job::INPUT_SCHEMA
+                    || input["schema"] == agent_ee_placement::job::LEGACY_INPUT_SCHEMA {
                     agent_ee_placement::job_with_events(&input, events)
                 } else if events {
                     agent_ee_placement::plan_with_events(&input)
