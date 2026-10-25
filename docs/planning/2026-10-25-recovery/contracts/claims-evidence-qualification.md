@@ -1,7 +1,7 @@
 # AGENTEE-521 contract — evidence methods and qualification dimensions
 
 Design for chief (agent-564) and builder review. Author agent-565 (Fable).
-Revision 2, 2026-10-25, after chief review of 26e975a8. Input: agent-ee
+Revision 3 (frozen for integration), 2026-10-25, after chief reviews of 26e975a8 and 2a17119e; §12 settles the remaining boundaries and overrides earlier sections where they differ. Input: agent-ee
 `dab756e56a6a5358c00983074565af0e8e09862c`, Plane AGENTEE-521, RD-03/04/05 in
 [recovery-plan.md](../recovery-plan.md), REC-06/07/12/19/20/21/26,
 [intent-compatibility.md](../intent-compatibility.md). No production code in
@@ -112,10 +112,10 @@ not covering any executable clause. `qualification.json.methods` lists unique
 executed methods (id, kind, class, evidence sha256) separately from
 `coverage` (requirement → mode, bound ids, class set, status).
 
-**Legacy maps.** `/1` compiles byte-identically only for `verify`, `inspect`
-and `build review` of retained runs (archive). A new `build run` whose plan
-names a `/1` map or lacks `obligations.json` refuses with the upgrade path. No
-current claim can bypass method binding; history stays verifiable unchanged.
+**Legacy maps.** Superseded by §12.2: `/1` plans keep generating through
+every public stage; their method coverage is recorded as legacy/unknown and
+current qualification claims are withheld. A plan that supplies
+`obligations.json` must use `/2`.
 
 ## 5. Engineering judgments
 
@@ -214,3 +214,134 @@ Does M1 closure of acquisition require `engineering_review: pass`, or is
 `not_assessed` with recorded judgments sufficient for RD-03's "supported
 external review when the claim requires it"? The record supports either; the
 acceptance case must state which.
+
+## 12. Boundaries settled for integration (revision 3)
+
+### 12.1 Assessment hook, crash behaviour, and the ACQ-DELIV-2 proof
+
+The assessment needs the package receipt, so it does not run inside
+`_package`. Hook: in `build_workflow.run`, inside the existing exclusive
+lock, immediately after the stage loop's final `write_json(build-report.json)`
+(success, checkpoint, failed and interrupted paths alike), call
+`qualification.assess(out)`. It reads only committed files: `build-report.json`,
+every `completed[]` receipt (`tree_identity` re-verified), `attempts[]`, the
+package stage's `review/result.json`, `accepted-package.json`, and the frozen
+judgment inventory (§12.3). It writes `qualification.json` at the run root
+and then rewrites `build-report.json` with the `qualification` summary.
+
+`accepted` is set only after `qualification.json` is written: the stage loop
+sets `status='assessing'`; `assess` returns the file-release verdict; the
+report then becomes `accepted/checkpoint` and is written once more. If
+`assess` raises (I/O, malformed receipt, inventory mismatch), the report is
+written as `status: failed`, `accepted: false`,
+`reason: QualificationError: …` with all seven `completed[]` rows intact.
+`run --resume` on a report whose `completed[]` already holds all seven stages
+re-runs only `assess` (no stage re-executes); the existing `accepted` branch
+also re-runs `assess` after `verify`, so the record is always regenerated
+from receipts and never trusted from disk. A crash between the two report
+writes leaves `status: assessing`, which resume treats like `failed`.
+
+Per-obligation state: `qualification.json.coverage[rid]` = `{obligation,
+mode, status, evidence[]}` for every captured clause and derived obligation;
+nothing is summarised away. `summary.pending_required = [rid…]` lists every
+required obligation not at pass/recorded.
+
+| Run | What the record says | Evidence written |
+| --- | --- | --- |
+| A, first clean `build run` to package | `file_release: pass`, `claim: "software file obligations only; delivery, judgment and physical obligations are listed under coverage with their own status"`, `operational: pending`, `pending_required` includes `ACQ-DELIV-2`; `accepted: true` | seven `completed[]` receipts; package review result |
+| B, `build run`, `CANCEL` during placement-routing, `run --resume` | `operational: pass` with `evidence: {clean_execution: [sha256 of each completed receipt, stages 1–7], resume: {interrupted_attempt: index, resumed_attempt: index, stage, identity}}`; `coverage['ACQ-DELIV-2'].status = pass`; `related_runs: [{run: A, build_report_sha256, identity}]` optional link, never a prerequisite | B's own journal and receipts |
+| B2, one changed source byte, `run --resume` on a copy of interrupted B | refusal `build resume identity differs…`; recorded by the acceptance harness as `negatives.changed_input: pass` with the refusal text and the altered path | harness record (agent-569) |
+
+M1 acceptance requires B's `operational: pass` and the B2 negative. A alone
+is a file-only claim and its text says so.
+
+### 12.2 Legacy map/1 plans keep generating
+
+`build run` admits a `/1` map and executes every supported public stage as
+today. `compile_map` records `method_binding: 'legacy'` for each requirement
+(no obligations file exists to bind against). `assess` then writes
+`coverage[rid].status = 'unknown'` with
+`reason: 'legacy map/1: method binding unqualified'`, `operational` and
+`judgments` as `not_assessed (legacy)`, `qualification.mode = 'legacy'`, and
+`claims_withheld: true`. `file_release` is still assessed from the existing
+`_package` gate, because that gate is unchanged. Historical `verify`,
+`inspect` and `build review` are unaffected. Mixing is refused: a plan with
+`obligations.json` and a `/1` map, or a `/2` map without `obligations.json`,
+refuses before stage one. The M1 input revision is typed and cannot bypass
+binding.
+
+| Report fields | Legacy `/1` plan | Typed `/2` plan |
+| --- | --- | --- |
+| `status: accepted`, `accepted: true` | seven stages completed and the existing package gate passed; `qualification.mode: legacy`, method coverage unknown, current claims withheld | same gate passed **and** `qualification.json` written with `file_release: pass`; coverage per obligation |
+| `status: checkpoint`, `accepted: false` | unchanged | `file_release: not_assessed`, checks rows of the stage |
+| `status: failed/interrupted` | unchanged | `file_release: failed` or `not_assessed`, reason retained |
+| exit code | unchanged (0 accepted/checkpoint, 1 otherwise) | unchanged |
+
+Wording in `docs/build-workflow.md` changes from "accepted native files" to
+"software file release under the recorded qualification mode"; prior reports
+are reinterpreted by this table, not asserted unchanged.
+
+### 12.3 Judgment side inputs: freeze, mutation and resume
+
+The plan declares `judgments: "judgments/"`. Before `_package` runs, the
+package stage copies that directory into `stages/07-package-*/judgments/`
+and writes `judgment-inventory.json` {path → sha256} plus the applicability
+inventory {envelope sha256, profile sha256, datasheet record sha256s used by
+any record}. Both are part of the stage `tree` identity, so they are frozen
+by the package receipt. `accepted-package.json` and `qualification.json` bind
+`judgment_inventory_sha256`.
+
+Same-run mutation: after `_package`, the existing post-stage check
+(`_inventory(source) != source_files`) is extended with the live judgments
+directory versus `judgment-inventory.json`; a difference fails the stage like
+any other input change. Later change: `run --resume` (and the `accepted`
+re-verify branch) recomputes the live inventory and refuses with
+`judgment inputs changed after package` — no re-evaluation, no re-acceptance.
+A changed or added judgment requires a new run (B′), whose package receipt
+freezes the new inventory. The directory is excluded from the pre-package
+`identity` only because no stage before package reads it; `assess` asserts
+that by refusing if any pre-package receipt lists a `judgments/` path.
+
+### 12.4 Judgments versus engineering review; acceptance witness
+
+Two different things, both recorded:
+
+- `judgments` dimension: every required engineering clause (obligation
+  `judgment`) has a source- and candidate-bound record (§5) with empty
+  `unresolved_defects`, status `recorded`. Structural validity and
+  deterministic checks are never called review.
+- `engineering_review` dimension: `pass` only when a full ordinary `review`
+  run (≥2 reviews, adjudicated, `criteria_satisfied`, `verify` ok) exists for
+  this board hash; otherwise `not_assessed`. M1 does not require it for every
+  build.
+
+Acceptance witness for M1 (no prose checker): the verification dispatch
+(agent-569) writes one `judgment-verification.json` per record, schema
+`agent-ee.judgment-verification/1`: `{judgment_sha256, verifier {agent, model,
+date_utc}, checked: [source citations resolved against captured records,
+applicability conditions recomputed from captured inputs, conclusion
+consistent with the bound checks' measured values], result: concur | dissent,
+defects[]}`. `assess` admits witnesses from the package stage's
+`judgments/verification/` snapshot (frozen with §12.3) and reports
+`coverage[rid].witness = concur | dissent | missing`. M1 acceptance requires
+`concur` for every required engineering clause; `dissent` or a non-empty
+`defects` is an unresolved required engineering defect and
+`file_release` is `failed`. Which clauses are required engineering clauses is
+read from `obligations.json`, not inferred.
+
+### 12.5 AGENTEE-524 handoff, single writer
+
+524 owns the check implementations that produce the exact roundtrip and
+orientation records (`fab_roundtrip`, `cpl_rotation` kinds in the checks-only
+review). 521 owns `_package` wiring and `qualification.py`, which consume
+those result rows only. `assess` reports `package_records: {roundtrip,
+orientation}` from the rows: `pass`/`failed` when present, `pending (524)`
+when absent; an executable obligation bound to either kind blocks
+`file_release` while pending. No second writer touches `_package`; 524 lands
+its checks and record formats, then 521 flips nothing but the obligations of
+the M1 input revision.
+
+### 12.6 Frozen
+
+Revision 3 is frozen for chief integration. Open item from §11 stands;
+everything else is settled by the chief's stated decisions.
