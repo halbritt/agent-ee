@@ -14,6 +14,10 @@ The owner calls the reports Argon, Fable and Astra. Their committed identities a
 
 Current integrated reconciliation baseline is agent-ee **`c0598c891ccaa99c3d7fb5928940c2a1857b34f3`** and kicad-route **`c4af095`** (full identity in [baseline.json](baseline.json)). Both worktrees were clean and on `main` at inspection. Since the audits, executable changes are AC-chain integration (`d99871d1`, `c0598c89`) and router AC matching (`c4af095`). The Rust job model, build acceptance implementation and DRC grading inspected below are unchanged from `404eba0e`. Do not revert the router to the reports' older pin.
 
+During consolidation, `2a2d0fdb73e08539425b8fbe2ffecd04aa264c5e` preserved the three planning drafts on main. It changed no executable source and is preserved. The source baseline above remains the inspected implementation identity.
+
+The acquisition run records KiCad/pcbnew 10.0.7 and exact Python, native extension and source digests. Astra's simulator check used corrected ngspice 47. The reports do not provide a common CPU/allocation/measurement envelope for their placement timing claims; compiler and hardware identity cannot be inferred from a shared host name. The retained esp_prog config uses a 1,200-second job budget, six seeds (0, 3, 6, 9, 10, 11), 100,000 steps each and a six-candidate shortlist. Its four input hashes were freshly recomputed and match the config; exact values are retained in `baseline.json`. These are historical qualification settings, not engineering requirements.
+
 ## Retained designs and preservation
 
 | Artifact | Identity and treatment |

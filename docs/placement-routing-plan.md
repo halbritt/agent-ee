@@ -1,5 +1,11 @@
 # Placement and routing delivery plan (AGENTEE-512)
 
+**Superseded execution sequence, 2026-10-25:** use the
+[audit recovery plan](planning/2026-10-25-recovery/recovery-plan.md) and
+[updated Plane backlog](planning/2026-10-25-recovery/backlog.md).
+Implementation and board campaigns remain paused. The dispatch assignments and
+statuses below are historical; preserve their evidence, but do not restart them.
+
 This file is the repository copy of the chief's recorded plan. Source:
 `~/.local/share/agent-ee/plans/2026-10-24-placement-routing/PLAN.md` (sha256
 `879d9e1512b14c60…`, chief agent-531, Cairn 8c45262a@1), written at the owner's

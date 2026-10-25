@@ -1,0 +1,310 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "agent-ee-audit-recovery-20261025",
+  "question": "Should agent-ee retain its existing build and prepared Rust placement boundaries while repairing constraint and acceptance gaps, or replace placement with upstream KRT?",
+  "scope": [
+    "Reconcile audits and select a finite recovery plan",
+    "Publish planned Plane work with verified dependencies; no implementation"
+  ],
+  "status": "decided",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Direct /goal in the agent-564 conversation on 2026-10-25; selected authority chronology in baseline.md",
+    "authorized_scope": [
+      "Report reconciliation",
+      "Targeted source/artifact inspection",
+      "Planning documentation and Plane updates"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "The current owner goal authorizes reconciliation, targeted inspection and Plane planning only; implementation and board campaigns remain paused. Sole-agent work and final grouping evidence are retained owner requirements.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/planning/2026-10-25-recovery/baseline.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "2d55f2e3949d1ae68af519f77e18f0c426d90881d252e966d8a239332e5de140"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/AGENTS.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "cd497566d1c572ce8c2d23bfcf28ce3cc2527c0c1357b5fdad6ba164145bac48"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/functional-block-placement-request.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "0be09c964111a3c8cb1dfb9731050553d0cd4292b30401df4c4cdea71daf6788"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "authority owner",
+        "decision authority and affected stakeholders",
+        "decision scope",
+        "target repository and task scope",
+        "affected behavior and state",
+        "target scope"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "contracts",
+      "evidence_class": "evidence-accepted-design-decisions",
+      "summary": "Retained owner decisions require stage receipts and sourced numeric limits; placement architecture adopts prepared Rust model and independent final native grading. Current plan preserves those and records alternatives, dependencies and reopening conditions.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/decisions.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "ff16f3099be7f1aacde4018e513adfb09b793bc9282ea645e46c3c3ae3bcaea9"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/placement-architecture.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "ca48976504963293b7b700e10020106960acfad7c8164d3b04256716c0f22bb8"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/planning/2026-10-25-recovery/recovery-plan.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "4e90e9ce21e4d9751d48b1de5d45b96114743ca08177838b1e832ac4f22b9171"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "accepted desired behavior and semantic authority",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "preservation matrix and consumers",
+        "preservation boundary and semantic authority",
+        "decision context",
+        "decision owner and current status",
+        "ranked drivers and alternatives",
+        "verification and reversal plan",
+        "architecture significance and scope",
+        "accepted quality concern and stakeholder priority",
+        "accepted requirement or domain concern",
+        "smallest affected flow, component, or quantum"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Current capture omits unsupported submitted intent from solver while native side remains separate; State::evaluate is incremental; build diagnostic review is checks-only; snapshot verification compares full policy source. These source facts support targeted contract repair, not measured speedups.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/placement_job.py",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "d05d851a3f743514cc97ef68ad092a1a264c6b4269cff4e52c5cad881608ba84"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/crates/placement-engine/src/job.rs",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "49dc52a934a4141bfc69c30bad7c3065cb4af847ed4031f0a92600358bd2f1fa"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/build_workflow.py",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "4269fa6180c1b806e01d0b5df5db77be541b94bf8a2e14673449ac6cc7f5955f"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/cli.py",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "b65bdae0bb86a8933a024d231819c6008a35aea2276f7405e794df793aa851bf"
+        }
+      ],
+      "satisfies": [
+        "current source, configuration, and relevant runtime state",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "recurring ambiguity, contradiction, or rule defect"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "artifacts",
+      "evidence_class": "evidence-runtime-observation",
+      "summary": "Retained esp_prog record shows 600000 incremental evaluations and nine full evaluations, 673.582 search seconds, 258 warnings and eight via/pad sites; retained acquisition completed seven stages. Astra native/public probes demonstrate ignored inputs and false opposite-side conflicts at audited revision. No fresh board execution in this consolidation.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/build/agent545/board-run-portfolio/job-report.json",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "f0b23ec1200af3a0c113d6156d7eeb283925074c29eae76c7c972e7b4154f7a2"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/build/acquisition-release/release-build-v7/build-report.json",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "6451b3f3a27c8fe494e27e707a1f43eb837c67688e2dd0009c684183e8d5a109"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/audit/2026-10-25-independent-audit-agent-556.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "212df8a0bc00de37df125d0695087a0190695593cc23b5b905b2d6b3a119f562"
+        }
+      ],
+      "satisfies": [
+        "representative feedback",
+        "representative implementation or runtime feedback",
+        "tests, characterization, probes, or explicit residual risk",
+        "baseline or explicit baseline plan",
+        "a named outcome and preserved baseline",
+        "pre-change baseline and target",
+        "semantic preservation and confound analysis",
+        "assumption or threshold affected by the evidence"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "history",
+      "evidence_class": "evidence-version-history",
+      "summary": "All audits inspect 404eba0e; current c0598c89 includes AC-chain work on router c4af095. Branch refs and artifact hashes are inventoried, untouched WIP is not accepted.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/planning/2026-10-25-recovery/baseline.json",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "d38865f0152414934d56468b129443be5296f804475480887da67a8d13ec612c"
+        }
+      ],
+      "satisfies": [
+        "repository instructions from root through target path"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "operations",
+      "evidence_class": "evidence-operational-constraints",
+      "summary": "One agent, no implementation or pod campaign, current router freeze, supported container first, explicit future investigations with caps and narrow dependency effects.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/planning/2026-10-25-recovery/recovery-plan.md",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "4e90e9ce21e4d9751d48b1de5d45b96114743ca08177838b1e832ac4f22b9171"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/planning/2026-10-25-recovery/backlog.json",
+          "method": "source or retained artifact inspection; not a fresh native execution",
+          "content_sha256": "3785e782c08c63907e5b1fc47bb6b723d44ce8c3b2398bdbd4a22decbcb6736e"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "a bounded decision question",
+        "alternatives including no change where viable",
+        "explicit unknowns and consequence",
+        "a stated unknown and observation method",
+        "checkpoint and stop condition",
+        "discriminating check and baseline",
+        "change-type classification",
+        "per-edit change classification",
+        "checkpoint verification",
+        "specific deferred commitment",
+        "explicit trigger",
+        "credible change trigger and consequence"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "baseline",
+      "type": "observation",
+      "text": "Retained complete acquisition build and esp_prog tooling result coexist with current constraint/acceptance integration gaps. Rust search is already incremental; AC-chain matching has landed since the audits.",
+      "evidence": [
+        "source",
+        "artifacts",
+        "history"
+      ]
+    },
+    {
+      "id": "preserve-and-repair",
+      "type": "recommendation",
+      "text": "Keep build/placement/router boundaries and repair supported intent, evidence methods, final constraints and package semantics before adding coverage. No replacement or comparative speed claim is justified.",
+      "depends_on": [
+        "baseline"
+      ],
+      "alternatives": [
+        "No change: leaves observed silent input loss and evidence-method gaps",
+        "Replace placement with KRT: unmatched quality/time/constraint evidence does not justify migration",
+        "Remove provenance/native gates: conflicts with preserved requirements"
+      ],
+      "tradeoffs": [
+        "Finite captured-design release precedes general authoring and broader capability",
+        "Typed release states and source-bound checks add explicit work but prevent overclaiming"
+      ]
+    },
+    {
+      "id": "sequence",
+      "type": "decision",
+      "text": "Select RD-01 through RD-05 and the dependency-ordered Backlog items. Begin with AGENTEE-519, 520, 521 only after owner lifts implementation pause; pod remains separately held.",
+      "depends_on": [
+        "preserve-and-repair"
+      ],
+      "owner": "agent-564 under owner planning authorization",
+      "authority": "Current owner request authorizes choosing supported approaches and publishing a plan; it explicitly pauses implementation."
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Retain working prepared Rust/build/router boundaries and make focused contract repairs",
+      "disposition": "selected",
+      "evidence": [
+        "source",
+        "artifacts",
+        "contracts"
+      ]
+    },
+    {
+      "option": "Replace placement based on unmatched audit timing",
+      "disposition": "rejected",
+      "evidence": [
+        "source",
+        "artifacts"
+      ]
+    },
+    {
+      "option": "Delete all hash/custody/adjudication checks",
+      "disposition": "rejected",
+      "evidence": [
+        "contracts",
+        "authority"
+      ]
+    },
+    {
+      "option": "Selective KRT adaptation after bounded preservation investigation",
+      "disposition": "deferred",
+      "evidence": [
+        "source",
+        "operations"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/planning/2026-10-25-recovery/baseline.md",
+    "docs/planning/2026-10-25-recovery/findings.md",
+    "docs/planning/2026-10-25-recovery/recovery-plan.md",
+    "docs/planning/2026-10-25-recovery/backlog.json",
+    "docs/planning/2026-10-25-recovery/doctrine-provenance.json"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "All reports read and materially consequential prescriptions checked against source/artifacts/authority",
+    "Every accepted finding mapped to an item or explicit disposition",
+    "Plane bodies, states, parents and native dependency edges read back",
+    "Planning docs checked, committed and pushed; implementation remains paused"
+  ],
+  "reopening_conditions": [
+    "New current source/native evidence contradicts a premise",
+    "A matched constraint-complete comparison supports a different implementation choice",
+    "An item cannot preserve its stated contract",
+    "A later direct owner instruction changes priority or releases a hold"
+  ],
+  "residual_risk": [
+    "No fresh complete build or native board campaign ran in this pass",
+    "Assembly/physical qualification and exact numeric design decisions remain bounded by their source evidence",
+    "Sixteen remaining doctrine obligations are classified in doctrine-provenance.json; no measured improvement or implemented preservation is claimed"
+  ]
+}

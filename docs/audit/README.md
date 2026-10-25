@@ -1,5 +1,10 @@
 # Audits
 
+The [2026-10-25 reconciliation](../planning/2026-10-25-recovery/recovery-plan.md)
+provides the current recovery plan, [finding dispositions](../planning/2026-10-25-recovery/findings.md)
+and [planned Plane backlog](../planning/2026-10-25-recovery/backlog.md).
+Implementation and board campaigns remain paused by the owner.
+
 Independent reviews of agent-ee, recorded with the revision they inspected.
 They are assessments, not acceptance records; the
 [system acceptance map](../system-acceptance.md) remains the record of what is

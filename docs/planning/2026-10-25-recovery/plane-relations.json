@@ -1,0 +1,706 @@
+[
+  {
+    "identifier": "AGENTEE-519",
+    "blocked_by": [],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-520",
+    "blocked_by": [
+      "AGENTEE-519"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-521",
+    "blocked_by": [
+      "AGENTEE-519",
+      "AGENTEE-520"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-479",
+    "blocked_by": [
+      "AGENTEE-520",
+      "AGENTEE-521"
+    ],
+    "related_to": [
+      "AGENTEE-514",
+      "AGENTEE-512"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-522",
+    "blocked_by": [
+      "AGENTEE-519"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-523",
+    "blocked_by": [
+      "AGENTEE-520",
+      "AGENTEE-521",
+      "AGENTEE-479"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-524",
+    "blocked_by": [
+      "AGENTEE-521"
+    ],
+    "related_to": [
+      "AGENTEE-514",
+      "AGENTEE-449"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "7f7382f2-d732-4417-9f75-f286d0dd7474"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-515",
+    "blocked_by": [
+      "AGENTEE-519",
+      "AGENTEE-520",
+      "AGENTEE-521",
+      "AGENTEE-479",
+      "AGENTEE-523",
+      "AGENTEE-524"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "8409122b-1c6f-4e20-9f74-343a2251942f"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-525",
+    "blocked_by": [
+      "AGENTEE-519",
+      "AGENTEE-520",
+      "AGENTEE-521"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-526",
+    "blocked_by": [
+      "AGENTEE-521",
+      "KICADROUTE-102"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+          "issue_id": "4ae49930-c8fe-45cf-9b00-6f785767fe42"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-527",
+    "blocked_by": [
+      "AGENTEE-519",
+      "AGENTEE-520"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-489",
+    "blocked_by": [
+      "AGENTEE-520",
+      "AGENTEE-479"
+    ],
+    "related_to": [
+      "AGENTEE-514",
+      "AGENTEE-512"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-513",
+    "blocked_by": [
+      "AGENTEE-519",
+      "AGENTEE-479"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "KICADROUTE-104",
+    "blocked_by": [],
+    "related_to": [
+      "AGENTEE-514",
+      "AGENTEE-512"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "KICADROUTE-105",
+    "blocked_by": [
+      "KICADROUTE-104"
+    ],
+    "related_to": [
+      "AGENTEE-514",
+      "AGENTEE-512"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+          "issue_id": "99a5700a-38ee-468c-9bf0-a359598bb0d6"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "KICADROUTE-106",
+    "blocked_by": [
+      "KICADROUTE-104"
+    ],
+    "related_to": [
+      "AGENTEE-514",
+      "AGENTEE-512"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+          "issue_id": "99a5700a-38ee-468c-9bf0-a359598bb0d6"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-516",
+    "blocked_by": [
+      "AGENTEE-479",
+      "KICADROUTE-104"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+          "issue_id": "99a5700a-38ee-468c-9bf0-a359598bb0d6"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-517",
+    "blocked_by": [
+      "AGENTEE-515",
+      "AGENTEE-525",
+      "AGENTEE-489",
+      "AGENTEE-516",
+      "KICADROUTE-105",
+      "KICADROUTE-106"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+          "issue_id": "9fb1b0c2-e64d-442b-a9e4-14960d6feb0b"
+        },
+        {
+          "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+          "issue_id": "b98c5f6b-54bb-481f-995e-bdeed66473dd"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "40da87f6-c7c2-43fc-abff-fa8d7a79b846"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "b6d05a39-83ef-410a-b976-c512ba0e2fb8"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "AGENTEE-518",
+    "blocked_by": [
+      "AGENTEE-517"
+    ],
+    "related_to": [
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  {
+    "identifier": "KICADROUTE-102",
+    "blocked_by": [],
+    "related_to": [
+      "AGENTEE-512",
+      "AGENTEE-514"
+    ],
+    "native_readback": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "51df6f94-41be-466d-9369-cf05d6b56972"
+        }
+      ],
+      "blocked_by": [],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  }
+]

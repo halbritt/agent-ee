@@ -1,0 +1,1383 @@
+{
+  "audited_revision": "404eba0e322c2d711202ad30f8bee1c18269c2f8",
+  "current_revision": "c0598c891ccaa99c3d7fb5928940c2a1857b34f3",
+  "kicad_route_revision": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
+  "status": "",
+  "worktrees": "/home/halbritt/git/agent-ee  c0598c89 [main]\n",
+  "refs": [
+    {
+      "ref": "refs/heads/archive/rust-planner-agent524-benchmark-6f48b9f2",
+      "commit": "6f48b9f2653ff2d3b5a10c1a9c2a5a0b3f9b061c",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/main",
+      "commit": "c0598c891ccaa99c3d7fb5928940c2a1857b34f3",
+      "merged_by_ancestry": true
+    },
+    {
+      "ref": "refs/heads/wt/agentee-186-g12",
+      "commit": "62ff7b158bf75acc5eacf552a0073ccd5b417275",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/agentee-485-J2b",
+      "commit": "00d3243a2fd0c963adc7f010bb778359d4cb7f2a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/agentee-485-c1cost",
+      "commit": "01db89008ca8e9058404fad33a60683c21a7ffc2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/agentee-489",
+      "commit": "11383b090f1e27def9382ebcb7423628723b34c6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/c1-prepared",
+      "commit": "8f63974f6549e8aa4b5c9f0271c8fcea29d1c6c2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee149b-requalify",
+      "commit": "8b96898fb3fdb53b6bb86eed8e833ae10b23fe61",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee149c-review-rerun",
+      "commit": "78aa56488fea84b1db2bab8ab7162f86cabfb563",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee193-audit",
+      "commit": "91a4778fbb05a03bf4a418228a2c1e74399a5eaa",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee193b-audit",
+      "commit": "d73168e79745ab11d846929e75522171e7059132",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee21-adjudicate",
+      "commit": "4f6f5b8a27a025a3de3b8dbb96815dfbe4e3a98a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee249f-verify",
+      "commit": "2c661b6031ffc4a0e59c4277b2ba27d03d525a11",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee250e-scope-parse-binding",
+      "commit": "35a8738228e8b4e0c81205c8e349db885ac72b4d",
+      "merged_by_ancestry": true
+    },
+    {
+      "ref": "refs/heads/wt/ee261b-rf-geometry-checks",
+      "commit": "d3d9b918d1c1beb2864e5820c2d53292c492fd09",
+      "merged_by_ancestry": true
+    },
+    {
+      "ref": "refs/heads/wt/ee351d-witness-always",
+      "commit": "76058da0b4313d39a7d99aba29612f02f502d115",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee351e-compose",
+      "commit": "cd6bf699f4ce3c96f712c4fe4177674cc008dccc",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee373-block-identity-regressions",
+      "commit": "b776f65a9c7ca7ea40622ac3a5fb2aa139c38471",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee373b-block-identity-regressions",
+      "commit": "8af80c271bdf9b613d1a288e611a2506067ba34f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee385-compose-stack",
+      "commit": "cc9ba14ff3e59b126000eb3723a80b061fe4a932",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee387-m3b",
+      "commit": "01fcf9ccf45f8fddbf6c08bfd19f452c85845019",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee391-m6",
+      "commit": "bffed0b1be82c9fcd8b26fdb5d811d444c9c60ec",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee398-manifest-key",
+      "commit": "424181bf97c77a62fdf262286323216df439de59",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee398b-manifest-key",
+      "commit": "f74fe44e7bd548fd3f9526bb1882ab71b6682e31",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee405-masked-track",
+      "commit": "7674706af2b77d5298ec493046108c3bba1fc1df",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee406-projection-scope",
+      "commit": "549f4ffaee131cd0ae2a70590e11139dd2e42072",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee417-unsourced-info",
+      "commit": "1f9f9d6c560d2c458311ed4176a1d61e5f235ef1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee431-stage-a",
+      "commit": "50e586818acf6265039a3509acc910eb0158f357",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee438-apparmor-enforce",
+      "commit": "15128b6cd726027ece31aba0969881bf6ff19eb6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee438b-profile-mount",
+      "commit": "ddfefaf9305589092b473664776e367799897623",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee440-citation-context",
+      "commit": "f47b22b39316c6e189881fa20d4b03e8b993ab00",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee440b-hold",
+      "commit": "300117ec488b30a11d26554af4defa39c85978f1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee440c-attached-unit",
+      "commit": "ba078dc107c58ac231e045cb54fdad2d755c8cbe",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee440d-structural-tabularity",
+      "commit": "b107e2b2b4f80818a951ff8214c525daa7840f0a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee440e-repair",
+      "commit": "0106a443c94282094585e8a8d19f727045ff2dbe",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee449-boardfab-ready",
+      "commit": "b1e4583c0eaffca9d30bf9de0448d9d3780516d2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee449b-order",
+      "commit": "0027fa5ba37e037fa9e3db4dbe50fd1cbfb7391d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee449c-gaps",
+      "commit": "d18d99a9c398ecadfc583e68cbbcac01c0809275",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee449d-integrity",
+      "commit": "b2c7563b80b72d8c046f1c3799304b48a538dad1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee449e-root",
+      "commit": "1356da4b03a02b1cbfa3a6be787cc46eb97c8480",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee458b-verify",
+      "commit": "cb59b7958a80b3a0ed9f119330deef5eb804da70",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee462-ci-efficiency",
+      "commit": "1240ca97c24031f8d9ad354c77ecb4f56d59571f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee462b-holds",
+      "commit": "a914c0dc094b045a2b2cb098dec2648424926ffc",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee463-lifecycle",
+      "commit": "157ac40a5fe49ce94f738773a5c134cf8e62781a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee465-bare-adopt",
+      "commit": "5453c0c4501d9a6d66bb3fcbb9d634e792ba1118",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/ee92-audit",
+      "commit": "209e62d49322aa3d591c63acd22222d921548017",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/gallery-integration",
+      "commit": "6681ee0e11858f8b21e27824b86ad1c89abd14eb",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/krt0237-mining",
+      "commit": "330880fa75577dd58e5dfd6d31d5656bcc62df38",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-185-186-sources",
+      "commit": "c53b3c983ef9c54236f0cfca73241447e6e9d56d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-iter8n-freespace",
+      "commit": "509413d1a73e60b9f5d95efa52f146f107993e16",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-iter8s-c128-r73",
+      "commit": "5706de77f9b42f2f563be358f06468e13a4e2d21",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-provenance-route",
+      "commit": "bfcb72ed23188712d08ee320a2ecd1f9aa53536d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-replay-iter8n",
+      "commit": "7b412fe6833aadb90850ed92566b5d0939a4dfd6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-silk-feasibility",
+      "commit": "fa75d5015bf4fad521c7023cda9fd8c3662bc84d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-u3-glb",
+      "commit": "97cfed39869bb27cd28a9a4149f871828c95a907",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod-visual-iter8n",
+      "commit": "d560c31a6765a90e159bdbf024da13fa4534f82b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod206-consumer",
+      "commit": "8a6072417a2c9e46cc70b702b6e8b94f1b0b9f09",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pod206b-before-after",
+      "commit": "d8bde4343d843ff1f6c15b0b42b127f4455ed835",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/pypy-placement-scorer-agent524",
+      "commit": "857ee61ee53997870ae7d471551ccb6c077cb964",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-compose-366-on-379",
+      "commit": "367f4309b9ec3513a844c85ad7e267a42593c9e6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee-krt91-contract",
+      "commit": "f0957d369f28e89683b95627de642f58bb403a22",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee181-pod-scale-placement",
+      "commit": "7151c360a794ea6ae3c3814a8f74a3711f3651af",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee186c",
+      "commit": "3b13b07139294fe1a5c23612298f635fa652b229",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee186ee",
+      "commit": "2c4c969491c4f87eb43758b515af65e43051f907",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee186rf",
+      "commit": "5f2218de78aa70ba15a4210778196eb82a1e244f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee188b-requirement-qualification",
+      "commit": "f727fd05818af95b2b1a6a17d1b66b864dfb1798",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee20-evidence-garage",
+      "commit": "890060465d7d0f3c7eabbf59890ce02d95f7de27",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee20b-hold",
+      "commit": "2529694de802ea822b89bc34a7ed9781d99d8373",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee250f-scope-parse-binding",
+      "commit": "f3b3fcbe9fd8167436cbffb1c73083ab7a3ba030",
+      "merged_by_ancestry": true
+    },
+    {
+      "ref": "refs/heads/wt/review-ee254c-port-onto-262",
+      "commit": "393fc484be16edd1cfe1c29b24a0eed9a85d0fa1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee262-digikey-shapes",
+      "commit": "8b86779e061cbb0e724951bfdb00f8f02b66fd8e",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee265-via-budget-pilot",
+      "commit": "be0de02d86b9c15e32f6001c4064404daed42f8f",
+      "merged_by_ancestry": true
+    },
+    {
+      "ref": "refs/heads/wt/review-ee265b-retire-v1-basis",
+      "commit": "a02df20e1cf891a885654a1621e26af94d14a944",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee266-constraint-provenance",
+      "commit": "fa060dfd4519b59da60e14ad3265ae82987ca57c",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee269b-readonly-git-identity",
+      "commit": "1b036fc62f05452c4283c881de2cac2b609c715a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee270-rf-geometry-consistency",
+      "commit": "a1ea63994004c2a81dcd0913711e863723622c28",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee271-provenance-hardening",
+      "commit": "1ed884146bf225d9a834f2cf4867b43cb59318c3",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee272-default-via-tier",
+      "commit": "b9b4851b8f5f37cc5a5e20e2c1ea4e81dabe799d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee273-bind-candidate-symlinks",
+      "commit": "c78c20416defc3e6c8c325e83a2eba6f7d47dca8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee273b-sibling-dirs-only",
+      "commit": "39d7b8c0c92938b632d7b39debea36f0d698276a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee274-temperature-completeness",
+      "commit": "f10ee67f9181d3357cfdf37b5816d7482f195319",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee275b-fab-package-params",
+      "commit": "4959540df95c4ae054be9cc18c4590149a645623",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee276-scaffold-silk",
+      "commit": "718fcf136aa12ef2d57cbea94be86574e2e28cb2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee277c-preflight-ruling",
+      "commit": "f780e2cc9fbf3a66dacc8370fb5e3204690b495e",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee278-benchmark-hardening",
+      "commit": "64444df13f02d1c8e09a48f159cb979567311bb9",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee278b-truthful-docs",
+      "commit": "67ed3773b309b73817acebf3713fcc91cc61c636",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee279-kibot-probe-property",
+      "commit": "5c416eaeb9fdc4e11fdbf439a167ada6c3b24550",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee280-placement-plans-followup",
+      "commit": "10e0ffbed5c3660dcd939cf91cae720d93ac6d7e",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee281-exemption-meaning",
+      "commit": "eed8f96b20a4dbc807800d354a4f9ee0d9035704",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee281c-canonical-ruling",
+      "commit": "ef8fd99b6683083ee7c47d4a83fadcf3442dacbe",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee281d-dedicated-exemption-file",
+      "commit": "350f70da9e4633e01115e0b882c355633dfb081e",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee282-scaffold-followup",
+      "commit": "92689ec3724ef7eb9a599a8afa78891e7b9a1745",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee283b-kibot-regression-ruling",
+      "commit": "36d162d9a346a09b1be36907b64cf5eec3fe812a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee284-contract-source-digest",
+      "commit": "35bbddd24a620ecb623b7e392d4c9fe194b94c31",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee285-benchmark-anchor",
+      "commit": "9d40af76c506fa3fccb33ae18f5ff745214d22a8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee286-contract-digest",
+      "commit": "99921261bcffec0882ffa76fc9eec6ccca5deb18",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee287-targeted-imu-regression",
+      "commit": "2febb749c3de209815d6b0eeb7b9c34b320c2499",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee288-private-props-in-bom",
+      "commit": "2f2911be2f50aa21a7c44d47fedd5d4aa10316ae",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee288b-private-token-kind",
+      "commit": "f8f40e3f058c339b43c1519fd7a59afa2cffe6ff",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee289-copper-feature-fab-policy",
+      "commit": "502627f56d80603d80f749bdf69c15433c71ec3f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee290-copper-feature-hardening",
+      "commit": "42e67acf7a99353e68798762b445c87bccea8df6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee291b-allowlist-ruling",
+      "commit": "28c7f4e5b852ea9321c887068face5eaf7ad9680",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee292-apt-retries",
+      "commit": "6ecf3b2d032a46a8fcb7803a3948233b0b7a1de0",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee293c-legacy-datasheet-ruling",
+      "commit": "be52aac2da6dbfe73cf0be81932e1c63a0030109",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee294-digest-memo-flake",
+      "commit": "8d2931c2fc7deec00cdd12bc0010bcc170c69e4a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee296-long-datasheet-url",
+      "commit": "c985ae1fbc4c8a2ce5269d4897794c6c65471a23",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee297-jumper-mask-courtyard",
+      "commit": "12bea0696fc5c1f8b8f5d5c2c3e1d3ad642adc6c",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee297b-layers-token-bypass",
+      "commit": "05864f04d487cec7e82d15be58c5233a39389dfe",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee298b-capacity-ruling",
+      "commit": "f409f7318aad95fc8a235ef42575d1a71708924d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee299-fab-stage-flake",
+      "commit": "2a8806aa89638f35ed99bd5319c809d7f34e0364",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee300-custom-pad-index",
+      "commit": "8b8ba943b9e75ed36e75016c17b5b88075e2f9df",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee301-label-field-overlap",
+      "commit": "5f68d5ad53731cf5071e670a9e32ef6e4e75e321",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee302-legacy-probe-migration",
+      "commit": "4d217f057d2808f298dbfcae103503326206da0c",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee303-apt-retry-empty",
+      "commit": "5ec40dffe93cd666ae9b1ce74bc62e403b5e06c2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee304-custom-pad-bounds",
+      "commit": "e3bbe7fb0dec8f29978889b0979dcc2548f50610",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee304d-reach-delta",
+      "commit": "ce923cfef9c6567f83f97c97995a119b4f8bbcf2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee305-copper-feature-parts",
+      "commit": "85b9f460ff143e28152ba560dcfc2c8dfbfafad9",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee306-offline-pdf-import",
+      "commit": "0427fc20a838b7af291cf331dcc55877fe4fc3fc",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee307-placer-custom-pads",
+      "commit": "65a57b834fa2c431b9029378edd445d0929f9327",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee307b-flip-custom-pads",
+      "commit": "0699ce5b1e8bb7621400c14123a5f9a72b8e59ca",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee308-probe-ambiguity",
+      "commit": "7df0590dbc62271786011d73ee2ebb104ef1a452",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee309-source-migration",
+      "commit": "23ba39b69913dae979047961f6c31c97c1ad2232",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee310-reduced-temp-acceptance",
+      "commit": "50cabe24410e606475c64601bd4b33cbdbaf16b9",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee311-import-hardening",
+      "commit": "19905f684b321dd61d2ab62f9f67ae0523866929",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee312-tool-source-snapshot",
+      "commit": "f01e11eb1e817e0d6d0563f805dd96bc5f151ea6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee313-flip-font-defaults",
+      "commit": "3c69125f3e2688fbbf258dd3d18561b76f076eff",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee314-ordinary-pad-reach",
+      "commit": "64ed6756cc9c602b660f2e72d377844aeb5fa52b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee315-copper-consumers",
+      "commit": "2a88be24e55de426e995160d3b94c319f2bb8d78",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee316-snapshot-hardening",
+      "commit": "909dbcc806bdfa80d1efd9587629c03571377e1d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee317-placer-robustness",
+      "commit": "7243ff0a61a13ebba6920503470c1d7f9f6545b4",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee317b-uuid-delta",
+      "commit": "d7aaab37726ecfbf677a497d32cecba7b26d6a15",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee318-pth-cross-side",
+      "commit": "53a1ce52e2ed9b3e652fa00b8de275caa120afae",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee319-ci-apt-cache",
+      "commit": "b9d3a0bc4f8021cdd0f95b9c961647b5c2fb4ec9",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee320-silk-artwork",
+      "commit": "4c215e8eebaeadb021d6b532d2eb918a1394b080",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee320b-silk-delta",
+      "commit": "938db3cca4e764570abeeabe2b8549cdfab18416",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee320c-compose",
+      "commit": "b141a24015ebbf7bd63042e2c0d4562bd31fea68",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee321-ci-cache-followups",
+      "commit": "5408d05aef162e9c0b4b6f6acd68cfe918849994",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee322-pad-locality",
+      "commit": "c946f25b0a27e01645b7aa833ef5f8f4e76eb031",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee323-snapshot-remaining",
+      "commit": "6dabe139728274d05715987b8a388238b40c2207",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee324-declared-custom-bounds",
+      "commit": "8dc6043814a1c63649410374da40ba85c0c70e97",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee325-drc-gate-hardening",
+      "commit": "9a1d3d8b895ee8f0158c497cfb52256255720e50",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee325b-gate-delta",
+      "commit": "2bd92626f8d80c9f83cfd24bed3dccad06e20f5b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee326-retention-readonly",
+      "commit": "885f3c1612cc50532262b2378539e3f745c17ee9",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee327-runtime-live-src",
+      "commit": "e622195c95b3708523df932c032e7010b5a9cdf2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee328-locality-native-copper",
+      "commit": "922c82cc7f3a1d3494b6a2eb28572e208373a892",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee329-live-src-identity",
+      "commit": "7eaa6adf72b02be07e2e591012def7bb942fac95",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee330-locality-loops",
+      "commit": "f318d41105cdfc06fae03098cedee2c61d4d8ba3",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee331i-rulings",
+      "commit": "72f9bcb3115bdbc66635e17fbca6924ffa012b50",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee331j-waiver-fixture",
+      "commit": "85bae3dfb246d4b1150c576028580bb7e192d106",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee334-loop-role-binding",
+      "commit": "c9f2acb546c5182c03f74ada5d4fdb2bda7b62f6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee337d-compose-353",
+      "commit": "180cf1adcb65aa7dc5cf596c20e8177b186398ae",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee346-silk-grading",
+      "commit": "d4de5b3c77868e1aca2be5b8e00847f7765eaf2f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee346b-seal-verdict",
+      "commit": "34cb1e74a599fc094aa4a21872c38fb6a15de4b1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee346c-compose-331",
+      "commit": "b3ed98791db9a871294e70631bb8ad8a73ebd72d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee346d-projection-native",
+      "commit": "d5ee1dfb1a2a1a84e2e28673c0f1d4979507b699",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee351c-release-boundary",
+      "commit": "939b53e6a2b2471a35e2b09050e34bab6e7cf198",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee351g-generator-origin",
+      "commit": "d68d25fc13b2f0950ac598f7c861c97035887df6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee355c-roster-binding",
+      "commit": "5637284bd1bbbcfe2273c38b5faf6842ad110e96",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee357-mount-residual",
+      "commit": "d7f7ebecb47f023b1f3c83443bb3595fc568fd69",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee357b-run-strict",
+      "commit": "f26fd7698888d5211b81c86b5739b0b9b64e2d5f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee357c-cleanup",
+      "commit": "a0b1718263839104962e2b2d69707caa08fdc0b4",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee357d-held-chmod",
+      "commit": "013350b7e9b07ed8fa08cf87aff84b16791fca3a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee359-plane-members",
+      "commit": "7659ec2ccb4ab4aab7791d692453ac06682169c8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee359b-trial-validation",
+      "commit": "a02a002d4fc1f58a8c11cccb41ac116735b2b343",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee360-silk-lookahead",
+      "commit": "05114f38bc37580244db9e385004313342660291",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee361-unsourced-obstacles",
+      "commit": "f51627b2bdabf50c1f8525ff335276df0ee21bae",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee361b-advisory-info",
+      "commit": "ef9f128a9b6b6b29fbf10c8c1515d73e4cbf0426",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee361c-block-grade",
+      "commit": "5b23df9b09ab8121cc99df086d304cb7964c14c8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee362-outline-holes",
+      "commit": "7ae03d4479467e1a46f66fa6eb951d80d2545f53",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee363-grade-snapshot",
+      "commit": "abb15b1a83e9b28c00762e78261de81e89c36ad1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee363b-deepcopy-recursion",
+      "commit": "b589166164ab70031584ec45dd8b6220b7d04a46",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee364-nested-values",
+      "commit": "2782c192d50004056c8e5fd3a249d04aaeaa8707",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee364b-empty-child",
+      "commit": "ac306181b2b4bf5f629fc5cc5c208d50bfb021d9",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee365b-on-361c",
+      "commit": "63be4c107d47744a5f7344a8e89668377ca88b1d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee366b-repin",
+      "commit": "28fffc0bd30b067666062859b1149c53215cdb5f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee366f-fixture-facts",
+      "commit": "71adc48b2508865ffeed10bf4c5061ba57feaca4",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee366g-unknown-setback",
+      "commit": "afb4233a3f5ee97e68cccdf18e2c9566dfefa049",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee367b-repin-boards",
+      "commit": "4e49eda688f78dc1c86ddd1a6bfb0ba1c9530dfc",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee367c-order-version",
+      "commit": "f04cffbee0dbb7bdffc5b6d07b29bc7fca01d7a5",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee368-curved-holes",
+      "commit": "dfd8feb08e2ca4ee6c29b56a9b8dabb3b7cad136",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee369-stateless-identity",
+      "commit": "d80aa218ec2f3d89d3271ebb44756a9f6755efbf",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee369b-measurement-refusal",
+      "commit": "ac5b647f8ec183f94e387ec6d1e89bee860f0208",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee369c-typed-measure",
+      "commit": "2011ee80680ed6f22293dcd8751194a7d695a7d8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee370b-repin",
+      "commit": "aa06764f9db26f6160c34c7d8e548f44e037508a",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee372-numeric-scope",
+      "commit": "350a25b3e3648d436a14c3934a00f91ccb0c564e",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee372b-setup-exact",
+      "commit": "6bbd43ce93e79513140d68db6445dbfd0b1712aa",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee372c-grammar-slots",
+      "commit": "6f1ac21af3ba5e8d6f7d06ba538bb24bc9988f13",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee372d-exact-negation",
+      "commit": "dca74abb4c90fa0498f844df04a3285e5b15fec3",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee374b-count-guard",
+      "commit": "806e143856da985a6870d22cdfac8d0c1e497d1c",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee375-materialize-allocation",
+      "commit": "04cdf2a450001577be1b08b15b84b5fd13da48b1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee376-fixed-pairs-gap",
+      "commit": "ca6c330575ae8b1ac4736f84a64e032a1ae29b15",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee377-hygiene-leftovers",
+      "commit": "db8d3f4d79000a3e2d7035c7107a0d5e98ddeec0",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee379-purpose",
+      "commit": "f0e44fca1a426a462131f3debdb23b3228221eb1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee380b-native-alternative",
+      "commit": "ea69b0da04557ed9b6fe7c977bb825814b85e0dd",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee380c-hold-fixes",
+      "commit": "49ef7e6bfba61dc96f6f71e8907063e95f7fc547",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee381-purpose",
+      "commit": "e4beb35d63a23c53dbd30237100f72f0c2d95a9f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee382-purpose",
+      "commit": "d3a3d4d2f1df58d01ea1ac7a233ddeaa5ff61015",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee383-stamp-roundtrip",
+      "commit": "5fec3c47cc25dc79f7d4867b1b7e55a87cc218e5",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee383b-compose-369",
+      "commit": "413185622e50dff890d92d80674f41612cf1ffa1",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee384-fixed-rigid-alternatives",
+      "commit": "05d4460d9eff2938c56f7acc06f03ab507054a8a",
+      "merged_by_ancestry": true
+    },
+    {
+      "ref": "refs/heads/wt/review-ee384b-packet-ingress",
+      "commit": "267da674b9d972a5602f2c9e725317ee06c97a48",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee384d-closed-allowlist",
+      "commit": "ddddb4e3bf4954dc5e43a61b46ff430d05b67d2e",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee384e-hold-fixes",
+      "commit": "01c95ffec8dfac07e8dd15b312883e5c8c205f6d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee385-purpose-followups",
+      "commit": "ba7e56ad12d7c02642f2e97133c3e633fe2b4cc7",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee385b-advisory-integrity",
+      "commit": "5fdc3bf8e20325eca6347493af992f41f4b400a2",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee398c-schema-v2",
+      "commit": "90e8b09dc8655340efc8875d0004d68393378e9d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee403-zone-copper",
+      "commit": "62cc29431e62ed4ef5b2f6f884dd2ac58719936f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee408-write-scope-cache",
+      "commit": "f0967103c66abfeacc65ccbf610d55090cc45535",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee412-release-lineage",
+      "commit": "746e436f16742943388572aa29fc62c12ea47c0c",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee415-exact-types",
+      "commit": "01c6fcde1742ee64c1620424d862d21f9ee180ed",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee421-review-profile",
+      "commit": "5c9826b218ffef6a5f88c2d050f6fc57c44a9f94",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee433n-status-binding",
+      "commit": "fac62df98956437ed723981aceec226450d8d1bd",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee434b-real-pod",
+      "commit": "32e83184e37f35d75f5eac8d156ed6327171ccf0",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee442-compose-stack",
+      "commit": "51f569113040033303b11782f089e98c71de18c6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee442-native-positive-c",
+      "commit": "86ae9fdb3c7ea68ed78885b5b8aaf6cf5228be5b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee442f-hold",
+      "commit": "5cb9d46d2b1214f0ce32cf7a70174de0f36b1dc4",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee442g-identity",
+      "commit": "0bbda5cbe6552d97c3a067062c197da8c24ca38d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee442h-replay",
+      "commit": "dcaa73ac3ac22e0e87d089ac45e98a64bb8920e3",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee442j",
+      "commit": "50920ea8edf87f47af75a1b3cc0c0361d57f89f8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee464-process-addendum",
+      "commit": "ef72dce78e7d16701326248a35adf42498e0a075",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee466-repin-runtime",
+      "commit": "11e7252b990fc1ba68664bafb738fde0f1e28123",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee479",
+      "commit": "57dbb88bda27ef24831db8e26c2bb8247847a259",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee479fu",
+      "commit": "392650993b1d4933f5b850f8770cf8332f84fffa",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee487",
+      "commit": "8c7cd86fa9bcb9f7a4227d949c720a695319609b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee487c",
+      "commit": "b7c69692e6fc852c7acb24384cf0c91791ae2411",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee487s",
+      "commit": "20870c81001339333cb30e9cfa4b4cd1173a21c6",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee488r",
+      "commit": "08ed129479fbb697466fa57396c8dcc1a1336e75",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee488u5",
+      "commit": "66df5da3e862f545621c6f10d1da983d6b2d481b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee489",
+      "commit": "1a381864188fbbcb6a2c60df1cac9218059b47c0",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee492",
+      "commit": "512654adfc2e5cd5fc48770efcc6932716d85e69",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee55-sol",
+      "commit": "aa34c2e22a0b1a3eec88ce9eeb87c87b3a18ce6b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee69-sol",
+      "commit": "e9c2addd1454959abc8b379e8024f915bcdefd6d",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-ee69b-prompt-guard",
+      "commit": "2c4be806fbfc1ec6016ca1ead54d3aafeb3b0d05",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-krt0237-mining",
+      "commit": "5d3149e5de5838706214e289f0365c07f0c72ecb",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-review-ee295-outer-apt-retry",
+      "commit": "7f112f7a9f5d6a2c307251b27129d87106ef2ffa",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/review-review-ee487h2c",
+      "commit": "c4a0105a9bdc4c7bc123d615a778c567f759302f",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/rust-placement-scorer-agent524",
+      "commit": "b85df65f606e87b670ded1efaa8e29d5dadebcc8",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/scorer-four-way-agent524",
+      "commit": "ab4eb86689a2080497493d14a92daf50593c5c5b",
+      "merged_by_ancestry": false
+    },
+    {
+      "ref": "refs/heads/wt/stack-next",
+      "commit": "11282bda52a08f71988b6da3cfb686b68bece3cc",
+      "merged_by_ancestry": false
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/audit/2026-10-25-independent-audit.md",
+      "exists": true,
+      "sha256": "fe428111bb08f6a4c7267d9bb70fb02523b3a34fc8845a8731262a0d8df88633"
+    },
+    {
+      "path": "docs/audit/2026-10-25-independent-audit-agent-556.md",
+      "exists": true,
+      "sha256": "212df8a0bc00de37df125d0695087a0190695593cc23b5b905b2d6b3a119f562"
+    },
+    {
+      "path": "docs/audit/2026-10-25-independent-audit-agent-557.md",
+      "exists": true,
+      "sha256": "976860811e5a5941784e046df0de5095ec05459537cf14955364d5285a8427d0"
+    },
+    {
+      "path": "build/acquisition-release/release-build-v7/build-report.json",
+      "exists": true,
+      "sha256": "6451b3f3a27c8fe494e27e707a1f43eb837c67688e2dd0009c684183e8d5a109"
+    },
+    {
+      "path": "build/acquisition-release/inputs/spec.md",
+      "exists": true,
+      "sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373"
+    },
+    {
+      "path": "build/acquisition-release/inputs/scope-corrections.json",
+      "exists": true,
+      "sha256": "4d36e5bc6ad577bb0753190174c7154dfe0862b0c3eab58bec214a06226fda08"
+    },
+    {
+      "path": "build/acquisition-release/inputs/manufacturing-decision.json",
+      "exists": true,
+      "sha256": "7db99d7476a74b4e6f546da44ddcf866412cdeb409dcc834edbd0bc01a3a9be6"
+    },
+    {
+      "path": "build/acquisition-release/inputs/history/initial-qualification/spec.md",
+      "exists": true,
+      "sha256": "d10c9e0be819e80c42497f3637688d331c9a1942c7a806e38e33248a388175dc"
+    },
+    {
+      "path": "build/agent545/board-run-portfolio/job-report.json",
+      "exists": true,
+      "sha256": "f0b23ec1200af3a0c113d6156d7eeb283925074c29eae76c7c972e7b4154f7a2"
+    },
+    {
+      "path": "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb",
+      "exists": true,
+      "sha256": "dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1"
+    },
+    {
+      "path": "build/agent545/board-config-portfolio.json",
+      "exists": true,
+      "sha256": "2c34cbb527fde4e5ea528bdf87b3ee28c800ec70525a5d90efb02e6b58301c8b"
+    },
+    {
+      "path": "build/agent545/board-run-portfolio/problem.json",
+      "exists": true,
+      "sha256": "5f60dc24606fdd9eb097ee08e5ab6614087f501321ea960f664fe35bfef58e26"
+    },
+    {
+      "path": "build/agent545/board-run-portfolio/candidates/a1-00-seed6/native-drc.json",
+      "exists": true,
+      "sha256": "1006da28569de95a212f8abcaee592e06d038a3e6c4646636513a56974073ab3"
+    },
+    {
+      "path": "build/acquisition-release/inputs/ENGINEERING-REVIEW.md",
+      "exists": true,
+      "sha256": "c94d7db6e36564c4047b84c302da6e61ca6b45dda1f56de5d60faaf3db850267"
+    },
+    {
+      "path": "build/acquisition-release/inputs/requirement-map.json",
+      "exists": true,
+      "sha256": "df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863"
+    },
+    {
+      "path": "/home/halbritt/git/agent-ee/build/agent545/inputs/board.kicad_pcb",
+      "exists": true,
+      "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7",
+      "config_sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7",
+      "matches_config": true
+    },
+    {
+      "path": "/home/halbritt/git/agent-ee/build/agent545/inputs/board.kicad_pro",
+      "exists": true,
+      "sha256": "9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395",
+      "config_sha256": "9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395",
+      "matches_config": true
+    },
+    {
+      "path": "/home/halbritt/git/agent-ee/build/agent545/inputs/intent.json",
+      "exists": true,
+      "sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c",
+      "config_sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c",
+      "matches_config": true
+    },
+    {
+      "path": "/home/halbritt/git/agent-ee/build/agent545/inputs/groups.json",
+      "exists": true,
+      "sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8",
+      "config_sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8",
+      "matches_config": true
+    }
+  ],
+  "selected_source_hashes": {
+    "crates/placement-engine/src/job.rs": "49dc52a934a4141bfc69c30bad7c3065cb4af847ed4031f0a92600358bd2f1fa",
+    "src/agent_ee/placement_job.py": "d05d851a3f743514cc97ef68ad092a1a264c6b4269cff4e52c5cad881608ba84",
+    "src/agent_ee/build_workflow.py": "4269fa6180c1b806e01d0b5df5db77be541b94bf8a2e14673449ac6cc7f5955f",
+    "src/agent_ee/checks.py": "b6366e96e1f0a13c9cd0d343ccf65f22236ab966f5bc4adf3ce2ed481946cd8d",
+    "src/agent_ee/fab_package.py": "d54900230312e8d2537d24042416e11a3f198e3eefd9785529d9fe0729aaf53d"
+  },
+  "targeted_artifact_observations": {
+    "esp_prog_search_s": 673.582,
+    "incremental_evaluations": 600000,
+    "full_evaluations": 9,
+    "final_warning_count": 258,
+    "native_via_center_in_pad_count": 8,
+    "mask_graphics_present_in_capture": true,
+    "seed6_native_mask_bridges": 2,
+    "acquisition_check_count": 38,
+    "acquisition_unique_check_kinds": 16,
+    "no_fresh_board_run": true
+  },
+  "esp_prog_frozen_config": {
+    "schema": "agent-ee.placement-job-config/1",
+    "budget_s": 1200,
+    "inputs": {
+      "board": {
+        "path": "/opt/agent-ee/build/agent545/inputs/board.kicad_pcb",
+        "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7"
+      },
+      "project": {
+        "path": "/opt/agent-ee/build/agent545/inputs/board.kicad_pro",
+        "sha256": "9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395"
+      },
+      "intent": {
+        "path": "/opt/agent-ee/build/agent545/inputs/intent.json",
+        "sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c"
+      },
+      "groups": {
+        "path": "/opt/agent-ee/build/agent545/inputs/groups.json",
+        "sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8"
+      }
+    },
+    "search": {
+      "seeds": [
+        {
+          "seed": 0,
+          "start": "scattered"
+        },
+        {
+          "seed": 3,
+          "start": "scattered"
+        },
+        {
+          "seed": 6,
+          "start": "clustered"
+        },
+        {
+          "seed": 9,
+          "start": "clustered"
+        },
+        {
+          "seed": 10,
+          "start": "clustered"
+        },
+        {
+          "seed": 11,
+          "start": "clustered"
+        }
+      ],
+      "steps_per_seed": 100000,
+      "shortlist": 6
+    },
+    "router": {
+      "checkout": "/opt/kicad-route"
+    }
+  }
+}

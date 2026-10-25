@@ -1,5 +1,11 @@
 # Intent-to-manufacturing acceptance map
 
+**Planning update, 2026-10-25:** implementation and board campaigns are paused by
+the owner. The [reconciled recovery plan](planning/2026-10-25-recovery/recovery-plan.md)
+and its Plane backlog govern the proposed execution order. The evidence below
+remains historical capability/acceptance evidence; its next-capability wording
+does not dispatch work or release the telemetry-pod hold.
+
 **UNFINISHED — 2026-10-25, agent-545.** Correct operation through the ordinary
 entrypoint comes before optimization. One executing agent owns implementation,
 verification and integration. The requested KRT research and retired-campaign

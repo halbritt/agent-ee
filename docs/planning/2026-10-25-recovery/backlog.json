@@ -1,0 +1,1009 @@
+{
+  "schema": "agent-ee.recovery-backlog/1",
+  "date": "2026-10-25",
+  "implementation_paused": true,
+  "source_revision": "c0598c891ccaa99c3d7fb5928940c2a1857b34f3",
+  "router_revision": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
+  "parent": "AGENTEE-512",
+  "decision_item": "AGENTEE-514",
+  "items": [
+    {
+      "key": "RUNTIME",
+      "name": "Make the captured acquisition and esp_prog workflows reproducible in the supported runtime",
+      "findings": [
+        "REC-08",
+        "REC-09",
+        "REC-20",
+        "REC-26"
+      ],
+      "milestone": "M1",
+      "kind": "implementation",
+      "priority": "high",
+      "dependencies": [],
+      "evidence": "F F4/F3; current launcher resolves to uv; scripts/install.sh refuses any existing path and only prints Rust setup guidance. Historical acquisition release at 466e6feb completed seven stages; exact input/output locators in baseline.md and baseline.json.",
+      "entry_points": [
+        "scripts/install.sh",
+        "src/agent_ee/cli.py",
+        "docs/installation.md",
+        "docs/container.md",
+        "src/agent_ee/build_workflow.py"
+      ],
+      "scope": "Provide one documented pinned-container execution path with captured-input retrieval/manifests for acquisition and imported esp_prog. Make doctor identify the actual launch/runtime interpreter and required planner/router. Offer an explicit migration path for a recognized stale launcher without replacing unrelated executables. Add a native workflow harness that records real results and initially exposes known recovery gaps; final green acceptance belongs to RELEASE.",
+      "preserve": "Keep current source/router pin, immutable captured originals, input origins/licences, native library compatibility, offline captured reproduction and no automatic machine-wide tool switch.",
+      "acceptance": [
+        "A clean checkout can locate and hash all representative inputs; populated-part counts and native object counts are distinct.",
+        "Documented runtime can execute public build through schematic and public placement preflight with zero missing dependencies; unavailable tools refuse honestly.",
+        "Launcher/doctor interpreter disagreement is detected; rerunning supported setup is safe; unrelated executable is not overwritten.",
+        "Harness records the current full-run result without replacing the retained success or calling an incomplete result accepted."
+      ],
+      "verification": "Run the documented setup in an isolated environment. Use the retained acquisition plan through schematic, inspect generated native files, and preflight the exact esp_prog config. Exercise stale-launcher and missing-Rust controls. Do not require all later acceptance repairs to land this slice.",
+      "exclusions": "No native-host/container parity campaign, routing feature changes, component reselection, new design synthesis, fixture publication without origin clearance or pod run.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-519",
+      "id": "4e0a70bd-9918-4992-9a90-34b0998dd28c",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/4e0a70bd-9918-4992-9a90-34b0998dd28c",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "763030f8d5de2631f12aaa6de86866c43fb0ea7bd72033ddd5e94429a5b6706a"
+    },
+    {
+      "key": "CONTRACT",
+      "name": "Reject unsupported placement intent before capture or search",
+      "findings": [
+        "REC-01",
+        "REC-23"
+      ],
+      "milestone": "M1",
+      "kind": "implementation",
+      "priority": "high",
+      "dependencies": [
+        "RUNTIME"
+      ],
+      "evidence": "S1 public ignored-intent probe completed/eligible while keepouts, assembly.sides and blocks[].side disappeared. Current _capture_native still consumes selected fields; baseline.md records source and probe identities.",
+      "entry_points": [
+        "src/agent_ee/placement_job.py",
+        "docs/placement-job.md",
+        "tests/test_placement_job_rules.py"
+      ],
+      "scope": "Define and validate the supported placement-intent version at both public place and build boundaries. Reject unknown keys, unsupported semantic declarations and unsupported side requests with exact input paths before native search. Preserve supported fixed/edge/group/locality declarations and make capability reporting explicit.",
+      "preserve": "No previously enforced rule becomes advisory; explicit unsupported native geometry refusals remain; captured source identity and supported legacy inputs get a documented compatibility path.",
+      "acceptance": [
+        "Each of the three Astra ignored-field cases refuses with the offending path and produces no eligible candidate.",
+        "Supported acquisition and esp_prog intent captures unchanged constraints and reaches the existing planner.",
+        "Unknown nested keys, changed intent and malformed declarations cannot silently drop through.",
+        "Unsupported fields are not automatically translated to weaker heuristics."
+      ],
+      "verification": "Replay the exact captured public ignored-intent inputs and the unmodified control through place run; run the build input boundary on acquisition; compare resulting supported problem constraints and native identities.",
+      "exclusions": "No keepout/side implementation, new placer, broad schema framework or changes to electrical/fabrication limits.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-520",
+      "id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/ba96850b-f4dd-471f-acff-6a1b3bbf706d",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "19fdf85252cfe67086d8261663d3924561fa80fc1f4f128deb884f17a935da98"
+    },
+    {
+      "key": "CLAIMS",
+      "name": "Bind release claims to appropriate requirement evidence and explicit qualification states",
+      "findings": [
+        "REC-06",
+        "REC-07",
+        "REC-12",
+        "REC-19",
+        "REC-20",
+        "REC-21",
+        "REC-26"
+      ],
+      "milestone": "M1",
+      "kind": "implementation",
+      "priority": "high",
+      "dependencies": [
+        "RUNTIME",
+        "CONTRACT"
+      ],
+      "evidence": "build_workflow._review_candidate runs checks-only; review_build is diagnostic. Acquisition ACQ-DELIV-2 maps to netlist_parity despite requiring setup/resume. Review outcome is incomplete while build-report accepted=true. Diagnostic manufacturing-decision.json retains superseded assumptions. Owner sourced-rule policy is in decisions.md and AGENTEE-348.",
+      "entry_points": [
+        "src/agent_ee/build_workflow.py",
+        "src/agent_ee/requirement_map.py",
+        "src/agent_ee/cli.py",
+        "src/agent_ee/checks.py",
+        "docs/build-workflow.md",
+        "docs/cli-reference.md"
+      ],
+      "scope": "Implement RD-03/04 with separate checks, file-release, engineering-review, supplier and physical states. Add appropriate evidence-method binding for operational and engineering clauses; preserve captured engineering review with applicability/author and candidate/source identity. Report unique executed methods separately from requirement coverage. Repair current release documentation while retaining superseded files as history. Keep diagnostic build review non-adopting.",
+      "preserve": "Preserve strict missing/stale/failed required evidence refusal, native severities, owner/manufacturer requirements, stage receipts, subscription-only review routes and original spec/correction history. No auto-success from an unavailable reviewer.",
+      "acceptance": [
+        "ACQ-DELIV-2 cannot close through netlist parity alone; it requires retained clean execution and resume proof.",
+        "Checks-only output never claims independent review, supplier confirmation or tested hardware; compatibility of accepted fields/exit codes is documented and tested.",
+        "Required engineering judgments identify assumptions, sources, candidate and limits; a substantive unresolved file-release defect blocks release.",
+        "All unsourced DRC advisories and ignored categories are visible; applicable sourced rules remain gates; no arbitrary default promotion.",
+        "Current release decision is consistent with 1.2 mm and the corrected height scope; history remains immutable."
+      ],
+      "verification": "Run checks-only diagnostic review and final release reporting on acquisition. Use wrong-address/reversed-diode negatives, wrong evidence-method mapping, missing required judgment, and changed candidate inputs. Verify the former diagnostic command retains its documented non-acceptance behavior.",
+      "exclusions": "No automatic invocation of circuit/physical/RF models inside every package stage, signatures, universal prose validator, owner-waiver generation or historical acceptance rewrite.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-521",
+      "id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/386dad3e-21a7-47a8-b73e-56ab70bf5a9b",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "3d61678b5280f8ef2a837178b2d988c24c331f2715826ba90d9cf74cf8e971a1"
+    },
+    {
+      "key": "GROUPS",
+      "name": "Enforce functional-group intent through normal placement and final native checks",
+      "findings": [
+        "REC-03",
+        "REC-23"
+      ],
+      "milestone": "M1",
+      "kind": "implementation",
+      "priority": "high",
+      "dependencies": [
+        "CONTRACT",
+        "CLAIMS"
+      ],
+      "evidence": "A F1, F F6, S5; esp_prog final group spreads core 10.183 mm/reset 14.521 mm. Current group_terms is a soft anchor cost and board_metrics reports rather than enforces cohesion; hard electrical-locality does exist. Reuse existing AGENTEE-479 work and current Rust planner, not its old dispatch.",
+      "entry_points": [
+        "crates/placement-engine/src/job.rs",
+        "src/agent_ee/placement_job.py",
+        "src/agent_ee/electrical_locality.py",
+        "src/agent_ee/placement_predicates.py"
+      ],
+      "scope": "Carry declared membership, residual roles and sourced/justified hard relationships into normal place/build capture, search, materialization and independent final-coordinate grading. Add a per-block report. Repair group moves/objective only as needed against that predicate, considering KRT tether/group mechanisms and existing code. M1 uses the representatives current allowed faces; full side decisions are MECHANICAL.",
+      "preserve": "Keep prepared/incremental search, full reference evaluation, UUIDs, fixed connectors, pin-level locality, native DRC and incumbent rollback. Ground/power must not collapse unrelated blocks. Keep prior 479 branch evidence and historical requirement for later side support.",
+      "acceptance": [
+        "Every footprint has a block or explicit fixed/shared role; stale/missing membership refuses.",
+        "Hard group/pin violations fail independently on final saved coordinates after routing and artwork.",
+        "Acquisition and esp_prog produce per-block side/spread/pin-distance/violation reports and annotated top/bottom views.",
+        "Thresholds and exceptions are source-bound or explicitly justified engineering choices fixed before candidate acceptance; generic 1.5 mm/3 mm rules are not imported.",
+        "A deliberate member move breaks the final predicate; legal repair preserves anchors and hard locality."
+      ],
+      "verification": "Use the exact two representatives plus one moved-member negative and existing hard-locality controls. Compare native reload facts and incremental/full terms. If grouping prevents routing, retain failure for bounded feedback work rather than relax the contract.",
+      "exclusions": "No wholesale KRT replacement, automatic side flipping in M1, optimization speed claim, pod regeneration or fabricated universal non-interleaving metric.",
+      "existing": "AGENTEE-479",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-479",
+      "id": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/531a39a9-ff5c-471e-a9d9-0804a48d6904",
+      "native_parent": null,
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "d54a6876a460cc0450c48b585e912aad87f20e6aa0591c17fb4df2b00b2a1531"
+    },
+    {
+      "key": "MASK",
+      "name": "Localize the esp_prog solver-feasible mask-bridge discrepancy",
+      "findings": [
+        "REC-04"
+      ],
+      "milestone": "M1-support",
+      "kind": "investigation",
+      "priority": "medium",
+      "dependencies": [
+        "RUNTIME"
+      ],
+      "evidence": "A F5 cites seed6. Actual path build/agent545/board-run-portfolio/candidates/a1-00-seed6/native-drc.json has two mask-bridge errors; problem.json contains U2 mask rectangles; current and audited classify_footprint already include mask graphics.",
+      "entry_points": [
+        "src/agent_ee/placement_job.py",
+        "crates/placement-engine/src/job.rs"
+      ],
+      "scope": "Determine whether capture geometry, transformed coordinates, evaluator semantics or native materialization creates the discrepancy. Enable only a proven mask-specific repair, not an assumed missing extraction feature.",
+      "preserve": "Final native rejection stays mandatory. Work on an isolated copy with exact source/binary receipt and unchanged project/rules; retain both failed and legal control.",
+      "acceptance": [
+        "Report exact violating items, native and solver geometry, revisions and the failing boundary.",
+        "Provide one deterministic minimal reproducer and separated legal control, or state precisely why localization failed.",
+        "Name the smallest repair and its preserved cases only if evidence establishes it; do not claim a shipped defect from a rejected candidate."
+      ],
+      "verification": "Trace the captured seed6 through geometry extraction/evaluation/save-reload and native DRC; no full placement search is required.",
+      "exclusions": "No comprehensive geometry audit, threshold change, rule relaxation, package qualification or implementation during the investigation.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": "90 minutes maximum, one failing article and one legal control. Stop with decisive boundary evidence or unresolved localization. Blocks only a mask-specific repair.",
+      "state": "Backlog",
+      "identifier": "AGENTEE-522",
+      "id": "674c62cc-da92-45bf-8d05-7c74afdaa002",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/674c62cc-da92-45bf-8d05-7c74afdaa002",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "08f30f3a6ea07072aec86a779bd953af8c4499589a57caa1505f0a7f3d98eaa2"
+    },
+    {
+      "key": "FINALIZE",
+      "name": "Finalize imported esp_prog artwork and assembly-profile via assessment",
+      "findings": [
+        "REC-13",
+        "REC-14"
+      ],
+      "milestone": "M1",
+      "kind": "implementation",
+      "priority": "high",
+      "dependencies": [
+        "CONTRACT",
+        "CLAIMS",
+        "GROUPS"
+      ],
+      "evidence": "A F5/F6 and F F12 concern standalone place output, not a sealed release. Actual retained warnings total 258, including 165 silk overlaps and 49 silk-over-copper; eight via centers hit pads. Existing routed_artwork/silk_artwork executes later in generated builds.",
+      "entry_points": [
+        "src/agent_ee/routed_artwork.py",
+        "src/agent_ee/silk_artwork.py",
+        "src/agent_ee/placement_job.py",
+        "src/agent_ee/final_planes.py"
+      ],
+      "scope": "Expose a supported finalization path for imported-native output using existing artwork/refill machinery and final constraint checks. Classify board graphics deliberately; move/remove only eligible silk artwork. Add a selected process-profile via/pad assessment to finalization, with explicit unassessed/refused status and corrective routing only where required.",
+      "preserve": "Preserve copper, native connectivity, pads, fixed mechanical geometry, sourced rules, group constraints and original graphic history. No blanket DRC severity downgrade or unapproved owner waiver.",
+      "acceptance": [
+        "Final top/bottom views are readable and all required silk findings are fixed or validly dispositioned.",
+        "Every via/pad site has a profile-bound outcome; absent filled/capped-process evidence cannot silently qualify unsupported assembly.",
+        "Zero opens/errors under unchanged rules, and final grouping/locality still passes.",
+        "The result states imported tooling qualification separately from synthesis/PCBA/physical acceptance."
+      ],
+      "verification": "Run the normal imported esp_prog path after grouping repair, finalize a copy, reload and DRC/refill it, inspect both rendered sides and enumerate via/pad outcomes. Add a forbidden-site negative and ensure artwork cannot alter copper.",
+      "exclusions": "No new schematic synthesis for esp_prog, product redesign, supplier upload/order, generic zero-via-in-pad law or advanced router features without the router investigation.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-523",
+      "id": "8409122b-1c6f-4e20-9f74-343a2251942f",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/8409122b-1c6f-4e20-9f74-343a2251942f",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "eedf440200908f6ee7235241ccfae7b084923090992582f4b431786b308ad3ca"
+    },
+    {
+      "key": "PACKAGE",
+      "name": "Validate exact sealed exports and profile-specific assembly orientation",
+      "findings": [
+        "REC-15",
+        "REC-16",
+        "REC-07"
+      ],
+      "milestone": "M1",
+      "kind": "implementation",
+      "priority": "high",
+      "dependencies": [
+        "CLAIMS"
+      ],
+      "evidence": "S7: fab_consistency excludes Gerber geometry, fab_roundtrip expects fab_export, fab_package terminal ordering allows only bound jlc_dfm. Acquisition rotation status is not_declared; this proves unassessed supplier orientation, not an incorrect transform. Existing AGENTEE-449 branches are unaccepted reuse evidence.",
+      "entry_points": [
+        "src/agent_ee/fab_roundtrip.py",
+        "src/agent_ee/fab_package.py",
+        "src/agent_ee/fab_consistency.py",
+        "src/agent_ee/cpl_rotation.py",
+        "src/agent_ee/build_workflow.py"
+      ],
+      "scope": "Adapt existing roundtrip verification to consume sealed final package bytes and bind its result without creating an export/DFM cycle. Require orientation assessment according to the selected assembly profile; reuse cpl_rotation where correction is needed and represent correct-native, corrected, preview-required and unassessed cases honestly. Assess AGENTEE-449 work for reuse before parallel implementation.",
+      "preserve": "Keep immutable board/package identity, BOM/CPL population/layers/coordinates, nonempty exports, existing geometric checker limits, preview obligations and no supplier/physical completion claim. Preserve diagnostic and bare-board release scopes.",
+      "acceptance": [
+        "Supported Gerber/drill geometry checks run against the exact sealed package and altered geometry/hash negatives refuse.",
+        "The selected profile explains each CPL orientation; unchanged native angles can pass only with supporting assessment.",
+        "PREVIEW_REQUIRED remains a visible unresolved supplier obligation; unassessed rotations cannot be called assembly-ready.",
+        "No cyclic prerequisite between creating a sealed package and checking that package; final manifest remains verifiable."
+      ],
+      "verification": "Use acquisition release inputs to export/recheck the final package. Exercise changed CPL coordinate/orientation, stale board identity, changed Gerber/drill geometry, unsupported profile, and preview-required controls. No remote supplier interaction.",
+      "exclusions": "No replacement exporter, arbitrary rotation corrections, supplier upload, full geometric equivalence claim beyond checker support, or adoption of unmerged 449 code without review.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-524",
+      "id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/2c449a98-3726-4587-95c3-7d5a3c0ecbb0",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "97901322ac001eb1c4e3fbc8517576fe6f733f89222fa75eda4f4484bfbac2dd"
+    },
+    {
+      "key": "RELEASE",
+      "name": "Qualify acquisition build and imported esp_prog as the finite recovery release",
+      "findings": [
+        "REC-09",
+        "REC-27",
+        "REC-26",
+        "REC-06"
+      ],
+      "milestone": "M1",
+      "kind": "qualification",
+      "priority": "high",
+      "dependencies": [
+        "RUNTIME",
+        "CONTRACT",
+        "CLAIMS",
+        "GROUPS",
+        "FINALIZE",
+        "PACKAGE"
+      ],
+      "evidence": "All three reports find no current public seven-stage regression despite retained release-build-v7 success. RD-01 and recovery-plan.md define finite representatives and output claims. Existing AGENTEE-515 delivered a useful placement path but not this complete recovery acceptance.",
+      "entry_points": [
+        "src/agent_ee/build_workflow.py",
+        "src/agent_ee/placement_job.py",
+        "docs/build-workflow.md",
+        "scripts/strict_suite.py"
+      ],
+      "scope": "Make the complete acquisition public build and imported esp_prog finalization durable native regressions using captured inputs and the supported runtime. Close only the M1 criteria in recovery-plan.md, retain exact results and classify unresolved later capabilities. Establish focused change checks and one bounded clean strict-suite/release record; document any unavailable prerequisite honestly.",
+      "preserve": "Preserve exact source/native/runtime identity, source licences, original historical success, all required checks and independent final-native verification. Missing tools cannot become silent skips or passing fake outputs.",
+      "acceptance": [
+        "All seven acquisition stages produce the exact candidate-bound checked file package with explicit review/supplier/physical states.",
+        "Imported esp_prog meets final group, native, artwork and profile assessment criteria without being relabeled a generated/assembled product.",
+        "Meaningful electrical, ignored/violated intent and tampered export negatives refuse; deliberate CANCEL and resume preserve verified work.",
+        "A clean operator can repeat documented commands and locate evidence; focused checks plus release suite status are recorded accurately.",
+        "Publish one finite release record; stop before M2/M3 expansion if M1 is not met."
+      ],
+      "verification": "Execute recovery-plan.md M1 checks on both real designs in an isolated clean runtime. Cap each native attempt at its declared job budget; keep failed outputs. A strict-suite failure is classified and linked, never suppressed to manufacture green.",
+      "exclusions": "No matched-speed prerequisite, full KRT parity, arbitrary manual-edit preservation, live pod, procurement or physical validation.",
+      "existing": "AGENTEE-515",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-515",
+      "id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "e4947641a0f9fe37a1264af17e557a1014375d704c7ac4c147d530509eaf5148"
+    },
+    {
+      "key": "PREP",
+      "name": "Prepare a reviewed acquisition variant from an engineering brief through supported inputs",
+      "findings": [
+        "REC-05",
+        "REC-21",
+        "REC-23",
+        "REC-26"
+      ],
+      "milestone": "M2",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "RUNTIME",
+        "CONTRACT",
+        "CLAIMS"
+      ],
+      "evidence": "S2, A F2/PC2, F F1/F10: acquisition required external preparation scripts and authored electrical operands; no general preparation workflow exists. Current requirement/parts/circuit formats already work for the retained design.",
+      "entry_points": [
+        "skills/agent-ee/SKILL.md",
+        "src/agent_ee/parts_stage.py",
+        "src/agent_ee/spec_record.py",
+        "src/agent_ee/requirement_map.py",
+        "src/agent_ee/design_intent.py",
+        "src/agent_ee/assembly_readiness.py"
+      ],
+      "scope": "Provide an agent-facing preparation procedure plus narrowly useful producers/validators reusing captured sources and acquisition templates. Produce requirements/methods, parts/topology/layout, groups/locality and applicable calculations from a bounded acquisition variant brief. Preserve immutable original intent and explicitly version engineering corrections; derive rating-versus-rail checks only where netlist/source evidence supports them.",
+      "preserve": "Component limits, source conditions, model applicability, unsupported/unanswered questions, native symbol/pad identity, source licences and existing build inputs. Preserve review/repair use of the skill.",
+      "acceptance": [
+        "A fresh operator/agent produces a complete acquisition variant input bundle without undocumented helper scripts.",
+        "Every assumption/change names its author, basis and affected evidence; no owner/manufacturer requirement is silently rewritten.",
+        "Changed load/interface requirement changes the relevant topology/model/check and a contradictory electrical control fails.",
+        "Outputs run through the same build/finalization contracts; limitations remain explicit, including missing model coverage."
+      ],
+      "verification": "Use a brief differing in one load or interface requirement from captured acquisition. Retain the operator transcript summary of interventions, sources and generated inputs; run relevant native/functional checks and compare requirement coverage.",
+      "exclusions": "No unconstrained autonomous circuit synthesizer, fixed four-file quota, new component purchases, pod generation, deleting old drivers before caller migration, or unsupported SPICE model creation.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-525",
+      "id": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "f91f0dbb1d05eeb3d133ff4a9cbe74110e194f184c5ff6537e18b02be71d6583"
+    },
+    {
+      "key": "INTEGRITY",
+      "name": "Separate historical evidence integrity from current release qualification",
+      "findings": [
+        "REC-10",
+        "REC-25"
+      ],
+      "milestone": "M2",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "CLAIMS"
+      ],
+      "evidence": "S6/F F13/A F4: verify_records compares policy_files even for snapshot mode; broad pins also gate production eligibility. KICADROUTE-102 already distinguishes installed integrity and expected-source qualification; reuse its contract. Owner explicitly retains stage receipts and guards against accidental source mislabeling.",
+      "entry_points": [
+        "src/agent_ee/cli.py",
+        "src/agent_ee/build_workflow.py",
+        "src/agent_ee/kicad_route_attempt.py",
+        "src/agent_ee/routing_adapter.py",
+        "src/agent_ee/dc_path.py"
+      ],
+      "scope": "Add a clearly non-accepting historical-integrity verification mode and scoped current-policy/stage invalidation. Consolidate duplicated production expectations in a generated release manifest while preserving binary/source/schema attestation. Align with existing KICADROUTE-102; assess live consumers before narrowing source sets.",
+      "preserve": "Candidate/artifact hashes, exact required inputs, declared-stage lineage, mutation refusal, source/binary match, qualified native versions, schema compatibility, old installed-generation readability and rollback.",
+      "acceptance": [
+        "Historical unchanged acquisition evidence verifies as integrity-only after an unrelated source edit without acquiring current acceptance.",
+        "Changed required policy, runtime, board, requirement or artifact invalidates current acceptance and the affected stages.",
+        "Stale internally healthy router generation is ineligible for a newer explicit release expectation.",
+        "One source-of-truth manifest replaces repeated admission declarations; tests prove required files are not omitted."
+      ],
+      "verification": "Use copies of retained acquisition and router generation metadata: unchanged control, unrelated module change, relevant policy change, binary/source mismatch, and tampered artifact. Compare invalidated stages explicitly.",
+      "exclusions": "No removal of all hashes, signatures/forgery defenses, output-only trust, live installation switch, evidence deletion or implicit acceptance of old results.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-526",
+      "id": "51df6f94-41be-466d-9369-cf05d6b56972",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/51df6f94-41be-466d-9369-cf05d6b56972",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "aecc61647040a3b4397eb503bddee219ba4e21fe3144832346135c72c5746350",
+      "external_dependencies": [
+        "KICADROUTE-102"
+      ]
+    },
+    {
+      "key": "RESUME",
+      "name": "Resume verified placement work and reserve final native grading time",
+      "findings": [
+        "REC-11"
+      ],
+      "milestone": "M2",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "RUNTIME",
+        "CONTRACT"
+      ],
+      "evidence": "S6: build journal resumes preceding completed stage, not placement subcheckpoint. Plane-feedback qualification records routing completed before grading budget expired. Current placement job already has checkpoint/cancellation machinery.",
+      "entry_points": [
+        "src/agent_ee/build_workflow.py",
+        "src/agent_ee/placement_job.py",
+        "docs/qualification/plane-feedback-2026-10-24.md"
+      ],
+      "scope": "Connect build-stage resume to source-bound placement subcheckpoints and reserve final materialization/native grading time within the overall budget. Report search/routing/grade phase and incomplete outcome separately. Classify ephemeral cache outputs before excluding any from identity; preserve actual execution evidence.",
+      "preserve": "One writer/lease, deterministic supported replay, exact input/rule/tool binding, best validated incumbent, process-group cleanup and total budget. No timeout may become infeasibility or acceptance.",
+      "acceptance": [
+        "Interrupt acquisition during placement; resume reuses verified subwork and completes only if identity matches.",
+        "Changed required input or executable refuses reuse; original best validated candidate remains available.",
+        "A short budget yields explicit insufficient-grading outcome without eligible/final acceptance.",
+        "Measured phase accounting distinguishes nested times and total elapsed; process descendants are reaped."
+      ],
+      "verification": "One real acquisition placement interruption/resume and changed-intent negative, plus bounded child-deadline/final-grading controls; no repeated full campaign.",
+      "exclusions": "No concurrency redesign, new scheduler, budget relaxation, whole evidence-store pruning or unverifiable speedup claim.",
+      "existing": null,
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-527",
+      "id": "bd909395-4a22-455f-9152-9292a185dde8",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/bd909395-4a22-455f-9152-9292a185dde8",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "5ed40c728d9854708585a6c1c4b095fcc10215647e9e456d4ef124a0948c9f3a"
+    },
+    {
+      "key": "MECHANICAL",
+      "name": "Carry side-aware geometry and mechanical reservations through the normal job",
+      "findings": [
+        "REC-02",
+        "REC-23"
+      ],
+      "milestone": "M3",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "CONTRACT",
+        "GROUPS"
+      ],
+      "evidence": "S3 opposite-side native control vs five solver conflicts; current model omits occupied layers. Existing AGENTEE-489 branch 11383b09 and AGENTEE-479 side/transform contracts are candidate reuse, not integrated proof on placement_job.",
+      "entry_points": [
+        "src/agent_ee/placement_job.py",
+        "crates/placement-engine/src/job.rs",
+        "src/agent_ee/mechanical_reservations.py",
+        "src/agent_ee/placement_adapter.py"
+      ],
+      "scope": "Adapt existing source-bound side eligibility and mechanical reservations to normal prepared jobs. Represent side/layer occupancy, native flip transforms, plated-through/drill spans, fixed vs attached keepouts and supported height/access projections. Keep constraints active in refinement/legalization/routing and final native replay; explicitly reject unqualified geometry.",
+      "preserve": "Exact UUID/pad/net identity, native source geometry, physical restrictions, locked/anchored components, block relations, uncertain required geometry as unknown/refusal, and original 489 evidence.",
+      "acceptance": [
+        "Opposite-side SMT control is legal while same-side and through-hole collision controls fail.",
+        "An authorized underside alternative on a congested article is actually considered/selected when useful, with no equal-count requirement.",
+        "Attached reservations follow translation/rotation/flip, fixed reservations stay fixed; illegal flips fail search and saved-board validation.",
+        "Missing or stale required geometry/eligibility refuses; both real representatives retain their existing valid behavior."
+      ],
+      "verification": "Use the exact Astra opposite-side fixture plus one congested non-pod native article, source-bound keepout/flip negatives, and acquisition/esp_prog regressions. Reuse prior 489 tests where they exercise the same semantics.",
+      "exclusions": "No live pod, universal 3D engine, weakening unknowns to zero, arbitrary side balancing, or automatic adoption of WIP branches.",
+      "existing": "AGENTEE-489",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-489",
+      "id": "b6d05a39-83ef-410a-b976-c512ba0e2fb8",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/b6d05a39-83ef-410a-b976-c512ba0e2fb8",
+      "native_parent": "af376c6e-d5bc-40df-9fed-35d69ea1661b",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "60ec1a9167463c615424136755a9aafa0a8aba1983f52d275eb07eea9bcda651"
+    },
+    {
+      "key": "PERF",
+      "name": "Compare placement approaches on one matched esp_prog workload before optimization",
+      "findings": [
+        "REC-18"
+      ],
+      "milestone": "M2-support",
+      "kind": "investigation",
+      "priority": "medium",
+      "dependencies": [
+        "RUNTIME",
+        "GROUPS"
+      ],
+      "evidence": "A F1 compares 673.582 s with unmatched upstream ~2.5 s. Current/audited Rust uses incremental State::evaluate; retained counters show 600000 incremental evaluations and nine full evaluations. F/S explicitly lack a matched current placement comparison.",
+      "entry_points": [
+        "crates/placement-engine/src/job.rs",
+        "src/agent_ee/placement_job.py",
+        "docs/placement-architecture.md"
+      ],
+      "scope": "Reuse AGENTEE-513 frozen-input work and compare existing Rust, narrow KRT adaptation and no change before proposing a replacement. Record workload translation and unsupported constraints, hardware/admission, source/binary identities, overall budget, seeds policy, phase times and final native/group quality.",
+      "preserve": "Same native input/project/rules, hard intent, final quality requirements and CPU/memory allocation. Retain all failures; separate search time from full runtime; upstream tag/commit must be fixed.",
+      "acceptance": [
+        "Comparison table explicitly covers workload/constraints/hardware/budget/output quality; unmapped requirements make it not comparable.",
+        "No global-recompute or 10-50x speed claim survives without evidence.",
+        "Recommendation selects no change, focused mechanism adaptation, or a separately bounded replacement proposal with migration cost and preservation evidence."
+      ],
+      "verification": "At most two complete runs per implementation on the same frozen esp_prog article; use fixed overall wall budget including setup/export/native validation and capture all results. No pod.",
+      "exclusions": "No production algorithm change or broad benchmark corpus; does not block schema/group correctness fixes.",
+      "existing": "AGENTEE-513",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": "Half a working day total. Stop on missing constraint mapping or exhausted run/budget cap; inconclusive result preserves current engine.",
+      "state": "Backlog",
+      "identifier": "AGENTEE-513",
+      "id": "da958295-c5d8-4fb8-81ef-ca4e3acd5314",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/da958295-c5d8-4fb8-81ef-ca4e3acd5314",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "cc3c5e8adfc916237dbcbe6e354b1e7837f41ee75820a10fe6f5f55003a0535c"
+    },
+    {
+      "key": "ROUTER_DECISION",
+      "name": "Qualify the preservation contract for selected KRT recovery and fanout reuse",
+      "findings": [
+        "REC-17",
+        "REC-22"
+      ],
+      "milestone": "M3",
+      "kind": "investigation",
+      "priority": "medium",
+      "dependencies": [],
+      "evidence": "At kicad-route c4af095, KRT_FLAGS prevents escalation/relaxation/writeback; protected flags preserve existing copper; passive movement and dynamic iterations are disabled; pair acceptance excludes hybrid fallback; plane-plan/1 forbids tracks/vias. Audit reports do not establish those controls are gratuitous.",
+      "entry_points": [
+        "src/kicad_route/cli.py",
+        "src/kicad_route/diff_pairs.py",
+        "src/kicad_route/planes.py"
+      ],
+      "scope": "Trace why each candidate plane/fanout/recovery restriction exists, compare reuse of existing campaign/blocked/barrier tools with selective upstream adaptation, and define allowed mutation/qualification per family. Select the smallest needed feature; preserve unknowns as retained refusals.",
+      "preserve": "Authored .kicad_pro/.kicad_dru, fab/netclass dimensions, protected copper, fixed and source-bound placement, coupling/skew, bounded cancellation and input immutability. Do not rely on DRC alone for all invariants.",
+      "acceptance": [
+        "A source-linked allow/adapt/retain-refusal table states each restriction, protected property, candidate reuse path and decisive check.",
+        "For each proposed family, isolated native control/negative demonstrates preservation or records why it cannot yet be enabled.",
+        "PLANE/FANOUT items receive a concrete conditional implementation choice; disputed blanket enable recommendations remain rejected."
+      ],
+      "verification": "Read exact pinned upstream/owned paths and relevant history; at most one native control and negative per selected family within the cap. Inspect output identity, rules, copper, poses and budget alongside native DRC.",
+      "exclusions": "No wholesale upstream merge, enabling flags globally, production runtime switch, via/width relaxation, passive moves without bound authorization or live pod.",
+      "existing": null,
+      "project": "KICADROUTE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": "Half a working day total; stop on first unresolved preservation regression for a family. Block only that family and publish decisive evidence/next question.",
+      "state": "Backlog",
+      "identifier": "KICADROUTE-104",
+      "id": "99a5700a-38ee-468c-9bf0-a359598bb0d6",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/79dc75bd-db64-41d2-a919-fe92ec510642/issues/99a5700a-38ee-468c-9bf0-a359598bb0d6",
+      "native_parent": null,
+      "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+      "description_sha256": "e95cc1765c478d635c853a777c061eb2d66e6ecf4a182756572d15706e8638f6"
+    },
+    {
+      "key": "PLANES",
+      "name": "Add a bounded plane-repair and return-via stage with explicit mutation policy",
+      "findings": [
+        "REC-17",
+        "REC-22"
+      ],
+      "milestone": "M3",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "ROUTER_DECISION"
+      ],
+      "evidence": "S/F/A identify zone-only plane-plan/1 and missing broader repair/return-via integration; restrictions protect source copper/placement. Acquisition zero GND vias does not prove a defect; its retained return judgment and removed-plane negative remain valid bounded evidence.",
+      "entry_points": [
+        "src/kicad_route/planes.py",
+        "src/kicad_route/kicad/planes.py",
+        "src/kicad_route/cli.py"
+      ],
+      "scope": "After ROUTER_DECISION selects a compatible approach, expose one bounded plan-driven plane connectivity/return-via repair using existing mechanisms or adapted KRT code. Use a versioned contract for added copper; do not silently expand plane-plan/1. Record all changes and engineering basis for needed vias/returns.",
+      "preserve": "Native refill, fixed footprint/copper policy, rules, net ownership, thermal/connectivity properties, prior zone-only operation, no unsourced via-spacing law and no automatic impedance/EMC claim.",
+      "acceptance": [
+        "A two/four-layer non-pod native article demonstrates repair and full final connectivity/rule preservation.",
+        "Forbidden copper/pose mutation, disconnected plane, wrong net and missing required source negatives refuse.",
+        "Existing zone-only clients retain behavior; return evidence names its electrical/geometric limits.",
+        "Consumer can bind final repaired board and its receipt in the normal workflow."
+      ],
+      "verification": "Use the retained plane-feedback case and a relevant return-path article; compare before/after native board, rules, fills and open counts. The implementation cannot start if ROUTER_DECISION has not supplied a qualified policy.",
+      "exclusions": "No general plane-resistance field solver, universal stitching grid, unsupported thermal guarantee, pod or automatic hybrid-pair enabling.",
+      "existing": null,
+      "project": "KICADROUTE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "KICADROUTE-105",
+      "id": "b98c5f6b-54bb-481f-995e-bdeed66473dd",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/79dc75bd-db64-41d2-a919-fe92ec510642/issues/b98c5f6b-54bb-481f-995e-bdeed66473dd",
+      "native_parent": null,
+      "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+      "description_sha256": "cdffd790a647c82a0eceaa03450af70b29ccdf5967c72b9e1b6cf2a25534fe50"
+    },
+    {
+      "key": "FANOUT",
+      "name": "Qualify explicit QFN fanout and a bounded BGA extension through the owned router",
+      "findings": [
+        "REC-17"
+      ],
+      "milestone": "M3",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "ROUTER_DECISION"
+      ],
+      "evidence": "All reports identify upstream fanout without normal-path qualification; module presence is not execution evidence. Reuse assessment must identify actual owned/upstream implementation and licence at the selected revision.",
+      "entry_points": [
+        "src/kicad_route/cli.py",
+        "src/kicad_route/router"
+      ],
+      "scope": "Implement explicit selected-package fanout using the mechanism approved by ROUTER_DECISION. First deliver one ordinary QFN article, then one conventional BGA article under the same versioned mutation/preservation contract. Record unsupported packages and via technologies; expose results to the normal consumer without changing default unrelated routing.",
+      "preserve": "No blind/buried microvias or fabrication upgrade assumed; preserve net identity, poses, authored width/clearance/drill rules, protected copper and cancellation. Underpad vias require selected process support.",
+      "acceptance": [
+        "Real native QFN positive and invalid/unsupported geometry negatives establish usable escape with final DRC/connectivity.",
+        "A subsequent conventional BGA article establishes only its documented geometry/process envelope.",
+        "No automatic fallback to single-ended/relaxed geometry; failed attempts do not replace valid incumbent.",
+        "Normal consumer integration has reproducible commands and exact input/output identity."
+      ],
+      "verification": "Native save/reload plus routing on a selected QFN and BGA qualification article; compare authored geometry and final net connectivity, vias/process policy and mutation ledger. No implementation until the investigation selects the mechanism.",
+      "exclusions": "No general dense-package claim, purchase/order, broad upstream refresh or pod execution.",
+      "existing": null,
+      "project": "KICADROUTE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "KICADROUTE-106",
+      "id": "9fb1b0c2-e64d-442b-a9e4-14960d6feb0b",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/79dc75bd-db64-41d2-a919-fe92ec510642/issues/9fb1b0c2-e64d-442b-a9e4-14960d6feb0b",
+      "native_parent": null,
+      "project_id": "79dc75bd-db64-41d2-a919-fe92ec510642",
+      "description_sha256": "d06ee9f5c3a73673b47b9a326ccaef18d83b0a27234bba845613e09a6ef555da"
+    },
+    {
+      "key": "FEEDBACK",
+      "name": "Demonstrate bounded routing feedback that preserves final placement intent",
+      "findings": [
+        "REC-17",
+        "REC-23"
+      ],
+      "milestone": "M3",
+      "kind": "implementation",
+      "priority": "medium",
+      "dependencies": [
+        "GROUPS",
+        "ROUTER_DECISION"
+      ],
+      "evidence": "S5/S6 and A/F routing integration findings; placement_job currently has limited targeted feedback. Existing AGENTEE-516 already covers a challenging variant and retained incumbent. KRT campaign/blocked/barrier capabilities should be evaluated before a new controller.",
+      "entry_points": [
+        "src/agent_ee/placement_job.py",
+        "src/agent_ee/routing_adapter.py"
+      ],
+      "scope": "Use a challenging esp_prog or acquisition variant to demonstrate one bounded placement repair from real router evidence. Reuse selected existing feedback mechanisms and the authoritative constraint contract. Bind feedback to poses/rules/source/tools; expose unsupported feedback rather than treating missing data as zero.",
+      "preserve": "One total budget, best validated incumbent, hard groups/pin/mechanical constraints, unchanged rules and stale-feedback refusal; no unsolicited component/circuit edits.",
+      "acceptance": [
+        "Before/after complete native results show a real repaired routing defect within the fixed budget.",
+        "Final coordinate/group checks remain passing; stale or incompatible feedback refuses.",
+        "Failed/unknown trials do not overwrite the validated incumbent and cannot be called infeasible proof."
+      ],
+      "verification": "One fixed challenging non-pod variant, retained baseline and source-bound feedback; native reload/DRC, final constraints and interrupted/failed-repair control.",
+      "exclusions": "No unconstrained search campaign, automated spec changes, blanket KRT flag enabling or live pod.",
+      "existing": "AGENTEE-516",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-516",
+      "id": "40da87f6-c7c2-43fc-abff-fa8d7a79b846",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/40da87f6-c7c2-43fc-abff-fa8d7a79b846",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "b066a8bf97796edf7e9562e2da0920b33aaaf1ee67d3f6bc260435ee70958b86"
+    },
+    {
+      "key": "COVERAGE",
+      "name": "Qualify remaining required capabilities through representative complete cases",
+      "findings": [
+        "REC-02",
+        "REC-17",
+        "REC-22",
+        "REC-29"
+      ],
+      "milestone": "M3",
+      "kind": "qualification",
+      "priority": "medium",
+      "dependencies": [
+        "RELEASE",
+        "PREP",
+        "MECHANICAL",
+        "FEEDBACK",
+        "PLANES",
+        "FANOUT"
+      ],
+      "evidence": "All reports distinguish bounded routing fixtures from complete design coverage. system-acceptance has useful two/four/six-layer, pair/bus evidence; explicit AC chains now integrated. Owner grouping/side/mechanical requirements remain.",
+      "entry_points": [
+        "src/agent_ee/build_workflow.py",
+        "src/agent_ee/placement_job.py",
+        "docs/system-acceptance.md"
+      ],
+      "scope": "Reuse AGENTEE-517 as the later capability milestone: map outstanding required domains to a small set of complete non-pod cases using the same public workflow. Cover actual side/keepout, multi-layer, power/analog/clock, bus/pair, hierarchy and supported outline/pour behavior; retain already-qualified controls instead of reimplementing matrix rows.",
+      "preserve": "Every required constraint and current qualified capability; no silent unsupported geometry, native and electrical coverage, same final acceptance contracts and explicit physical limitations.",
+      "acceptance": [
+        "A small requirement-to-case map identifies exact remaining gaps and demonstrated domains.",
+        "Each claimed extension has public-path final-native evidence, meaningful negative and preserved existing controls.",
+        "Manual-edit regeneration, broader timing/DDR and advanced impedance remain explicit deferred/unsupported until their own evidence exists.",
+        "Freeze a qualified version for a future owner-released pod; do not start that campaign."
+      ],
+      "verification": "Run only cases needed for new domain coverage plus affected regressions; retain all exact native/claim artifacts. This milestone may be split further only along proven distinct deliverables, not every matrix row.",
+      "exclusions": "No 123-row parity prerequisite, OR-Tools/GPU program, arbitrary microwave/microvia domain or owner-held pod.",
+      "existing": "AGENTEE-517",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-517",
+      "id": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "d052a3daf4747e47b5a916e643fe6200ba225d90e4a090f795914d31d150d784"
+    },
+    {
+      "key": "POD",
+      "name": "OWNER HOLD: prepare and qualify the telemetry pod only after explicit release",
+      "findings": [
+        "REC-24",
+        "REC-27"
+      ],
+      "milestone": "Held",
+      "kind": "held",
+      "priority": "low",
+      "dependencies": [
+        "COVERAGE"
+      ],
+      "evidence": "Current owner task and AGENTS.md keep board campaigns paused. F F14 identifies obsolete pod fixture assumptions; original AGENTEE-518 requires qualified tooling and current selected power/mechanical inputs.",
+      "entry_points": [
+        "docs/telemetry-pod-delivery-plan.md",
+        "fixtures/telemetry-pod",
+        "docs/functional-block-placement-request.md"
+      ],
+      "scope": "Retain the broader product milestone. After a future explicit owner release, reconcile current FOME Rev-3-or-later requirements, selected connector/power/mechanics and held dependencies, then produce/review the complete pod using qualified tooling. No preparation or execution is authorized by this item while held.",
+      "preserve": "Existing AGENTEE-472/485 branch/artifact history and all current owner/manufacturer constraints. Keep obsolete fixture values historical; no automatic acceptance of old branches.",
+      "acceptance": [
+        "A dated direct owner release is recorded before any new pod work.",
+        "Current intent and owner-reserved inputs are reconciled before packing/routing; superseded dimensions/connectors are identified.",
+        "Final saved board proves grouping/sides/mechanics/electrical/native constraints with a verified package and required review.",
+        "Supplier/physical claims remain separately evidenced and any order/upload separately authorized."
+      ],
+      "verification": "When released, use the qualified public workflow on current source inputs with final-native and manufacturing verification; until then only hold metadata is maintained.",
+      "exclusions": "All live pod attempts, procurement, uploads, physical tests and resurrection of historical dispatch assignments.",
+      "existing": "AGENTEE-518",
+      "project": "AGENTEE",
+      "decisions": [
+        "RD-01",
+        "RD-02",
+        "RD-03",
+        "RD-04",
+        "RD-05"
+      ],
+      "stop": null,
+      "state": "Backlog",
+      "identifier": "AGENTEE-518",
+      "id": "e3e0fae2-a095-4fa4-9696-806b866a27c7",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/e3e0fae2-a095-4fa4-9696-806b866a27c7",
+      "native_parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "description_sha256": "0ff5833b5dd07b3f2f0a38b382dde547d82db41ac50f189ccaaaf83afb3db871"
+    }
+  ],
+  "recommended_first_three": [
+    "RUNTIME",
+    "CONTRACT",
+    "CLAIMS"
+  ],
+  "external_items": [
+    {
+      "identifier": "KICADROUTE-102",
+      "id": "4ae49930-c8fe-45cf-9b00-6f785767fe42",
+      "project": "79dc75bd-db64-41d2-a919-fe92ec510642",
+      "url": "https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/79dc75bd-db64-41d2-a919-fe92ec510642/issues/4ae49930-c8fe-45cf-9b00-6f785767fe42",
+      "findings": [
+        "REC-10"
+      ],
+      "state": "Backlog",
+      "description_sha256": "8998942d5d522b638151d86ae60dc3cf30370c9a29d76ecde859effca9c60742"
+    }
+  ],
+  "held_existing_items": [
+    {
+      "identifier": "AGENTEE-472",
+      "id": "af376c6e-d5bc-40df-9fed-35d69ea1661b",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": null,
+      "state": "Backlog",
+      "priority": "high",
+      "assignees": [],
+      "description_sha256": "f69c5ceb479b003d1f30071c0d4ea6098df8b26343c8482a8914adc1a5d4c361",
+      "body_verified": true
+    },
+    {
+      "identifier": "AGENTEE-485",
+      "id": "1ddfd542-7771-4ec4-95af-c8e2b9651b20",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "af376c6e-d5bc-40df-9fed-35d69ea1661b",
+      "state": "Backlog",
+      "priority": "high",
+      "assignees": [],
+      "description_sha256": "a7d9404f3c214f2a6c06e4c70353b6498e9e34f1863f4be59ca6b632aa1f0bf3",
+      "body_verified": true
+    },
+    {
+      "identifier": "AGENTEE-508",
+      "id": "100ded8e-f2d0-4198-b439-55c428a35542",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "1ddfd542-7771-4ec4-95af-c8e2b9651b20",
+      "state": "Backlog",
+      "priority": "high",
+      "assignees": [],
+      "description_sha256": "9130545d0c969603414d0703db34ef303eb1369bd26e4f107bc3b36562c499a1",
+      "body_verified": true
+    },
+    {
+      "identifier": "AGENTEE-511",
+      "id": "f398c456-6607-4b3c-b381-6c6aef0093d3",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "1ddfd542-7771-4ec4-95af-c8e2b9651b20",
+      "state": "Backlog",
+      "priority": "high",
+      "assignees": [],
+      "description_sha256": "db9616d7635af8fd3d794c60bd18374bfef14eef571ee5ac74759193ba27a6ef",
+      "body_verified": true
+    }
+  ]
+}
