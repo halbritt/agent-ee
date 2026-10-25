@@ -135,6 +135,61 @@ class PolarityCase(unittest.TestCase):
         return next(r for r in report['designators'] if r['designator'] == 'D1')
 
 
+class IdentityBoundaryTests(unittest.TestCase):
+    """The identity prerequisites of both fallbacks: missing, empty or mismatched bindings never pass."""
+
+    def setUp(self):
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.board = strip_pinfunction((FIXTURE / 'cpl.kicad_pcb').read_text()).encode()
+        self.found = cpl_rotation.board_footprints(self.board)
+        raw = (FIXTURE / 'supplier/C910020.raweasy.json').read_bytes()
+        self.suppliers = {'C910020': {'raw': raw, 'sha256': hashlib.sha256(raw).hexdigest(),
+                                      'provenance': 'design/supplier/C910020.provenance.json'}}
+
+    def pin1(self, *, netlist_lcsc='C910020', partnumber='OFW-D1', evidence=None, suppliers=None):
+        record, notes = {'lcsc': 'C910020'}, []
+        netlist = {'lcsc': netlist_lcsc, 'mpn': 'OFW-D1', 'pins': {'1': 'K', '2': 'A'},
+                   'nets': {'1': '/D1_1', '2': '/D1_2'}}
+        cpl_rotation._pin1(record, notes, self.found, None, 'D1', self.found['D1'], suppliers or self.suppliers,
+                           self.Decimal(1000), self.Decimal(0), netlist=netlist,
+                           pad_nets={'1': '/D1_1', '2': '/D1_2'}, partnumber=partnumber, evidence=evidence)
+        return record['polarity'], [n['mode'] for n in notes], notes
+
+    def test_netlist_fallback_needs_a_present_equal_lcsc_binding(self):
+        polarity, modes, _ = self.pin1()
+        self.assertEqual((polarity['board'], polarity['board_basis'], modes), ('cathode', 'sealed_netlist_libpart', []))
+        for binding in (None, '', 'C999999'):
+            with self.subTest(binding=binding):
+                polarity, modes, notes = self.pin1(netlist_lcsc=binding)
+                self.assertIsNone(polarity['board'])
+                self.assertEqual(polarity['board_basis'], 'board_pad_pinfunction')
+                self.assertEqual(modes, ['polarity_unknown'])
+                self.assertIn('BOM binding' if not binding else 'the BOM to', notes[0]['message'])
+
+    def test_evidence_needs_a_present_equal_bom_partnumber(self):
+        from agent_ee.polarity_evidence import feature_ids
+        raw = json.loads(self.suppliers['C910020']['raw'])
+        unnamed = {**self.suppliers, 'C910020': {**self.suppliers['C910020']}}
+        shapes = [sh.replace('~K~', '~1~').replace('~A~', '~2~') if sh.startswith('P~') else sh
+                  for sh in raw['dataStr']['shape']]
+        data = json.dumps({**raw, 'dataStr': {**raw['dataStr'], 'shape': shapes}}).encode()
+        unnamed['C910020'].update(raw=data, sha256=hashlib.sha256(data).hexdigest())
+        evidence = {'lcsc': 'C910020', 'mpn': 'OFW-D1', 'supplier_capture_sha256': unnamed['C910020']['sha256'],
+                    'pin_polarity': {'1': 'cathode', '2': 'anode'}, 'path': 'design/polarity/C910020.polarity.json',
+                    'manufacturer_source': {'path': 'design/requirements.md'}, 'package_feature_ids': ['d1'],
+                    'symbol_feature_ids': ['gpin1'], 'limitation': 'fixture'}
+        polarity, modes, _ = self.pin1(evidence=evidence, suppliers=unnamed)
+        self.assertEqual((polarity['supplier'], polarity['supplier_basis'], modes),
+                         ('cathode', 'supplemental_component_polarity_evidence', []))
+        for partnumber in (None, '', 'OFW-D9'):
+            with self.subTest(partnumber=partnumber):
+                polarity, modes, notes = self.pin1(evidence=evidence, suppliers=unnamed, partnumber=partnumber)
+                self.assertIsNone(polarity['supplier'])
+                self.assertEqual(modes, ['polarity_unknown'])
+                self.assertIn('Partnumber' if not partnumber else 'differs from BOM part', notes[0]['message'])
+
+
 class NetlistFallbackTests(PolarityCase):
     def test_named_pad_pinfunction_path_is_unchanged(self):
         result = self.run_case(self.scope(self.source()))

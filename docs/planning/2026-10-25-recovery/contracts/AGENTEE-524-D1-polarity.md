@@ -113,6 +113,10 @@ netlist stays `polarity_unknown`, and the resulting row exposes
   stays unknown; stale capture/source digests, absent feature ids, unknown
   LCSC, thin rationale, missing pin 1, uniform polarity and extra fields refuse,
   and a stale record is refused at capture.
+- Identity boundary (chief review of `75fb1a3b`): an absent or empty netlist
+  LCSC binding, and an absent or empty BOM Partnumber for an evidence row,
+  previously fell through; both now leave polarity unknown (`IdentityBoundaryTests`,
+  missing/empty/mismatched controls, valid paths preserved).
 - Existing `tests.test_cpl_rotation` (28) unchanged.
 - Real acquisition replay: below, retained under
   `~/.cache/agent-audits/agent-ee-566-20261025/acq-partb-4-polarity/`.

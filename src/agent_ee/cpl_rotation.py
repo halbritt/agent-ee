@@ -547,7 +547,9 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
             netlist_name = netlist['pins'].get('1')
             if board_name is None:
                 # Sealed-netlist fallback: only with the same part binding and the same pin-1 net.
-                if netlist.get('lcsc') and netlist['lcsc'] != lcsc:
+                if not netlist.get('lcsc'):
+                    board_note = f'sealed netlist records no LCSC binding for {ref}; fallback needs the BOM binding {lcsc}'
+                elif netlist['lcsc'] != lcsc:
                     board_note = f'sealed netlist binds {ref} to {netlist["lcsc"]}, the BOM to {lcsc}'
                 elif '1' not in netlist['nets'] or not pad_nets.get('1'):
                     board_note = 'sealed netlist or probe lacks the pin-1 net'
@@ -572,7 +574,9 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
             declared = evidence['pin_polarity'].get('1')
             if evidence['supplier_capture_sha256'] != supplier['sha256']:
                 supplier_note = 'polarity evidence is bound to another supplier capture'
-            elif partnumber is not None and evidence['mpn'] != partnumber:
+            elif not partnumber:
+                supplier_note = f'export BOM records no Partnumber for {ref}; evidence MPN {evidence["mpn"]!r} cannot bind'
+            elif evidence['mpn'] != partnumber:
                 supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from BOM part {partnumber!r}'
             elif netlist is not None and netlist.get('mpn') and evidence['mpn'] != netlist['mpn']:
                 supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from netlist part {netlist["mpn"]!r}'
