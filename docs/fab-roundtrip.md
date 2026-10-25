@@ -21,6 +21,35 @@ append this check and map it to a fabrication acceptance requirement:
 {"id": "roundtrip", "kind": "fab_roundtrip", "params": {"export_check": "fab"}}
 ```
 
+## Sealed-package mode (AGENTEE-524)
+
+With exactly `{"package_check": "fab"}` the check verifies the release that a
+`fab_package` done gate sealed, not a standalone export. It must follow that
+package; `fab_package` admits only such bound roundtrips and bound `jlc_dfm`
+checks after itself, and never reads either, so there is no
+package-then-check cycle.
+
+```json
+{"id": "roundtrip", "kind": "fab_roundtrip", "params": {"package_check": "fab"}}
+```
+
+- The package result must be a same-candidate `ok`/`pass`. Its sealed
+  `agent-ee.fab-artifacts/1` record is recomputed with `artifact_record` and
+  must equal the record the package result stored. Any difference, including a
+  consistently re-hashed manifest, is `malformed` before any geometry is read.
+- The parsed Gerber and drill bytes are the members of the sealed
+  `gerbers.zip`, read once and checked against its sealed digest. Each member
+  must have its staged file's manifest digest. Each sealed drill file must equal
+  its member byte for byte. Extra, duplicate, unsafe or omitted members refuse.
+  `details.compared` keeps the zip digest and, for every member, its sha256,
+  staged path and, for sealed drill files, the sealed digest.
+- The expected geometry is the same independent sealed pcbnew probe as in
+  export mode. An exporter fault that the package sealed honestly therefore
+  passes every digest check and fails here as a conservation defect. Tampering
+  after sealing fails the digest checks, which is not geometric coverage.
+- The comparisons, tolerances, unsupported cases and limitations below are
+  unchanged. The extra predicate is `fab-package:sealed-roundtrip/1`.
+
 ## Comparisons
 
 The check reuses the export manifest reader, pinned-tool verification, captured

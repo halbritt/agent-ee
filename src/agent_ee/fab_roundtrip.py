@@ -2,9 +2,23 @@
 
 This is a count/outline check, not an artwork renderer. Unsupported syntax is
 reported at its source line, never skipped. All dimensions stay integer nm.
+
+Params are exactly one of `{export_check}` (with optional `model_libraries`), the
+staging tree of an earlier `fab_export`, or `{package_check}` (AGENTEE-524), the
+sealed release of an earlier passing `fab_package`. In package mode the check
+follows the package (`fab_package.require_last` admits it) and the package never
+reads it. The sealed record is recomputed (`artifact_record`) and must equal the
+one the package result recorded. The Gerber and drill inputs are then the members
+of the sealed `gerbers.zip`, parsed from the bytes whose sha256 matched the sealed
+record; every member must equal its sealed staged file and every sealed drill file
+its member. `details.compared` retains those digests. In both modes the expected
+geometry is the independent sealed pcbnew `geometry` probe of the captured board.
 """
+import hashlib
+import io
 import math
 import re
+import zipfile
 from collections import Counter
 from fractions import Fraction
 from pathlib import PurePosixPath
@@ -13,6 +27,7 @@ from . import fab_consistency as package
 from .storage import digest, read_json, write_json
 
 PREDICATES = ['fab-package:roundtrip/1']
+PACKAGE_PREDICATES = ['fab-package:sealed-roundtrip/1']
 TOLERANCE_NM = 1000
 ATTRIBUTE = re.compile(r'(?:TF\.(?:GenerationSoftware|CreationDate|ProjectId|SameCoordinates|FileFunction|FilePolarity)|TA\.AperFunction|TO\.(?:P|N|C)),[^*%]+')
 DECIMAL = r'[+-]?\d{1,9}(?:\.\d{1,6})?'
@@ -537,8 +552,108 @@ def parse_excellon(data, path):
 
 
 def capability(params, scope, prerequisite, captured):
-    package.capability(params, scope, prerequisite, captured)
-    return list(PREDICATES)
+    if not isinstance(params, dict) or 'package_check' not in params:
+        package.capability(params, scope, prerequisite, captured)
+        return list(PREDICATES)
+    if set(params) != {'package_check'}:
+        raise ValueError('fab_roundtrip params must be {export_check} or exactly {package_check}')
+    prerequisite(params['package_check'], ('fab_package',))
+    package.earlier_geometry(scope, prerequisite, 'fab_roundtrip')
+    captured(scope.get('board'))
+    return PREDICATES + PACKAGE_PREDICATES
+
+
+def package_prerequisite(ctx):
+    """The earlier passing same-candidate `fab_package`, its staging and its recomputed sealed record."""
+    from .checks import CheckError, SAFE_ID
+    from .fab_package import artifact_record
+    pid = ctx.params.get('package_check')
+    if set(ctx.params) != {'package_check'} or not isinstance(pid, str) or not SAFE_ID.fullmatch(pid):
+        raise CheckError('unsupported', 'fab_roundtrip params must be {export_check} or exactly '
+                         '{package_check: <safe id>}')
+    specs = ctx.scope['checks']
+    position = next(i for i, s in enumerate(specs) if s is ctx.spec or s.get('id') == ctx.cid)
+    spec = next((s for s in specs[:position] if s.get('id') == pid), None)
+    path = ctx.run_dir / 'checks' / f'{pid}.json'
+    if spec is None or spec.get('kind') != 'fab_package' or not path.is_file():
+        raise CheckError('unsupported', 'fab_package prerequisite missing, later in scope order or not yet run')
+    result = read_json(path)
+    if (result.get('candidate_id') != ctx.manifest['candidate_id']
+            or (result.get('execution'), result.get('outcome')) != ('ok', 'pass')):
+        raise CheckError('unsupported', f'fab_package prerequisite {pid!r} did not pass '
+                         f'({result.get("execution")}/{result.get("outcome")})')
+    try:
+        artifacts = artifact_record(ctx.run_dir, result)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise CheckError('malformed', f'sealed package {pid!r} does not verify: {exc}') from exc
+    if artifacts != result.get('details', {}).get('artifacts'):
+        raise CheckError('malformed', f'sealed package {pid!r} differs from the record its result sealed '
+                         f'(artifacts {artifacts["artifacts_id"][:12]})')
+    stage = ctx.run_dir / 'work' / pid / 'fab'
+    rel = f'work/{pid}/fab/manifest.json'
+    if rel not in ctx.result['evidence']:
+        ctx.result['evidence'].append(rel)
+    return pid, result, stage, artifacts
+
+
+def zip_target(name, expected, basenames):
+    """The staged path a `gerbers.zip` member stands for, under the `check_zip` naming rules."""
+    parts = PurePosixPath(name).parts
+    if PurePosixPath(name).is_absolute() or '\\' in name or any(p in ('', '.', '..') for p in parts):
+        package.fail('zip', f'unsafe archive member {name!r}')
+    if name in expected:
+        return name
+    return basenames[name][0] if '/' not in name and len(basenames.get(name, ())) == 1 else None
+
+
+def sealed_members(stage, found, manifest, artifacts, pid):
+    """{staged path: exact released bytes} from the sealed zip, plus the retained equality proof.
+
+    The zip is read once and must match its sealed digest; each member must be a
+    distinct staged Gerber/drill file with the manifest digest, and each sealed
+    drill file must equal its member byte for byte. Raises Malformed otherwise.
+    """
+    sealed = artifacts['files']
+    zip_rel = f'work/{pid}/fab/gerbers.zip'
+    data = package.read_text(stage, 'gerbers.zip', 'zip')
+    zip_sha = hashlib.sha256(data).hexdigest()
+    if sealed.get(zip_rel) != zip_sha:
+        package.fail('hash', f'{zip_rel} differs from its sealed digest')
+    expected = {rel for rel in found if rel.startswith(('gerbers/', 'drill/'))}
+    basenames = {}
+    for rel in expected:
+        basenames.setdefault(PurePosixPath(rel).name, []).append(rel)
+    members, compared = {}, []
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                rel = zip_target(info.filename, expected, basenames)
+                if rel is None or rel in members:
+                    package.fail('zip', f'archive member {info.filename!r} is extra or duplicated')
+                body = archive.read(info)
+                member_sha = hashlib.sha256(body).hexdigest()
+                if member_sha != manifest['files'].get(rel):
+                    package.fail('zip', f'archive member {info.filename!r} differs from sealed {rel}')
+                record = {'member': info.filename, 'member_sha256': member_sha, 'staged_path': rel}
+                sealed_path = f'work/{pid}/fab/{rel}'
+                if sealed_path in sealed:
+                    if (stage / rel).read_bytes() != body or sealed[sealed_path] != member_sha:
+                        package.fail('zip', f'sealed {sealed_path} differs from archive member {info.filename!r}')
+                    record.update(sealed_path=sealed_path, sealed_sha256=sealed[sealed_path])
+                members[rel] = body
+                compared.append(record)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError) as exc:
+        package.fail('zip', f'gerbers.zip unreadable ({exc})')
+    if set(members) != expected:
+        package.fail('zip', f'gerbers.zip omits {sorted(expected - set(members))}')
+    unzipped = sorted(p for p in sealed if p.startswith(f'work/{pid}/fab/drill/')
+                      and p[len(f'work/{pid}/fab/'):] not in members)
+    if unzipped:
+        package.fail('zip', f'sealed drill files absent from gerbers.zip {unzipped}')
+    return members, {'gerbers_zip': zip_rel, 'gerbers_zip_sha256': zip_sha,
+                     'members': sorted(compared, key=lambda r: r['staged_path'])}
 
 
 def probe_facts(ctx):
@@ -740,9 +855,14 @@ def compare_copper(plot, rel, layer, record, defect, gaps, expected):
 
 def check_fab_roundtrip(ctx):
     from .checks import CheckError
-    eid, _, export_result, stage = package.export_prerequisite(ctx)
-    ids, facts = probe_facts(ctx)
     details = ctx.result['details']
+    if isinstance(ctx.params, dict) and 'package_check' in ctx.params:
+        eid, export_result, stage, artifacts = package_prerequisite(ctx)
+        details.update(package_check=eid, artifacts_id=artifacts['artifacts_id'])
+    else:
+        eid, _, export_result, stage = package.export_prerequisite(ctx)
+        artifacts = None
+    ids, facts = probe_facts(ctx)
     defects, gaps = [], []
     details.update(export_check=eid, geometry_checks=ids, defects=defects, coverage_gaps=gaps,
                    tolerance_nm=TOLERANCE_NM)
@@ -767,9 +887,21 @@ def check_fab_roundtrip(ctx):
             raise CheckError('unsupported', str(exc)) from exc
         for rel in missing:
             defect('missing_file', f'missing package file {rel}')
+        if artifacts is None:
+            def read(rel, label):
+                return package.read_text(stage, rel, label)
+        else:
+            # Only the exact released bytes are compared: the sealed zip's members.
+            if missing:
+                package.fail('inventory', f'sealed package lacks {missing}')
+            members, compared = sealed_members(stage, found, manifest, artifacts, eid)
+            details['compared'] = compared
+
+            def read(rel, label):
+                return members[rel]
         plots, by_layer = [], {}
         for rel in sorted(r for r in found if r.startswith('gerbers/')):
-            plot = parse_gerber(package.read_text(stage, rel, 'plot'), rel)
+            plot = parse_gerber(read(rel, 'plot'), rel)
             layer = package.plot_layer(plot['file_function'], len(board['copper'])) if plot['file_function'] else None
             if layer is None:
                 gaps.append({'detail': f'{rel}: no supported FileFunction layer identity'})
@@ -804,7 +936,7 @@ def check_fab_roundtrip(ctx):
                 if rel not in missing:
                     defect('missing_file', f'missing {role.upper()} drill file {rel}')
                 continue
-            drill = parse_excellon(package.read_text(stage, rel, 'drill'), rel)
+            drill = parse_excellon(read(rel, 'drill'), rel)
             expected_function = f'{"Plated" if role == "pth" else "NonPlated"},1,{len(board["copper"])},{role.upper()}'
             if drill['file_function'] != expected_function:
                 package.fail('drill', f'{rel}: plating/span attribute differs from {expected_function}')
@@ -820,7 +952,9 @@ def check_fab_roundtrip(ctx):
         details['drill'] = drills
         # Missing files are already established defects. For an intact staging
         # tree require the zip to contain these exact parsed bytes as well.
-        if not missing and not any(d['code'] in ('missing_file', 'missing_layer') for d in defects):
+        if artifacts is not None:
+            details['zip_members'] = len(details['compared']['members'])
+        elif not missing and not any(d['code'] in ('missing_file', 'missing_layer') for d in defects):
             details['zip_members'] = package.check_zip(stage, found)
     except ParseError as exc:
         details['parser_error'] = {'path': exc.path, 'line': exc.line, 'message': str(exc)}

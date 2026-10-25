@@ -1,7 +1,8 @@
 """Generation done gate: one check that exports, gates and seals the fab package (AGENTEE-94).
 
 Check kind `fab_package` (required `netlist_check` plus delegated export/model params) must be the last
-declared check except for bound `jlc_dfm` consumers. It runs the AGENTEE-23
+declared check except for bound `jlc_dfm` consumers and bound sealed-package `fab_roundtrip`
+verifications (`params.package_check`, AGENTEE-524). It runs the AGENTEE-23
 `fab_export` producer with the pinned `kicad-cli` in the executor sandbox into its own `work/<id>/fab/`, then the
 AGENTEE-73 `fab_consistency` gate on that staging tree (the same code paths as
 the standalone kinds, with the export being this check itself), then
@@ -140,12 +141,17 @@ def export_params(params):
     return {key: value for key, value in params.items() if key != 'model_libraries'}
 
 
+# Checks that may follow the done gate, each bound to it by this param (AGENTEE-524 adds the
+# sealed-package roundtrip). The package never reads them, so there is no cycle.
+BOUND_FOLLOWERS = {'jlc_dfm': 'fab_check', 'fab_roundtrip': 'package_check'}
+
+
 def require_last(specs, spec):
     position = next((i for i, s in enumerate(specs) if s.get('id') == spec.get('id')), None)
-    if position is None or any(s.get('kind') != 'jlc_dfm' or
-                               s.get('params', {}).get('fab_check') != spec.get('id')
+    if position is None or any(s.get('kind') not in BOUND_FOLLOWERS or
+                               (s.get('params') or {}).get(BOUND_FOLLOWERS[s['kind']]) != spec.get('id')
                                for s in specs[position + 1:]):
-        raise ValueError('fab_package done check last: only bound jlc_dfm checks may follow')
+        raise ValueError('fab_package done check last: only bound jlc_dfm and fab_roundtrip checks may follow')
 
 
 def declared_rotation(scope):

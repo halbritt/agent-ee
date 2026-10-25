@@ -174,7 +174,7 @@ A campaign therefore cannot drop it, or the done check, without changing its
 immutable baseline, which the campaign refuses. Removing the `fab_package`
 check or its requirement from a generation scope is refused at capture with
 `generation scope must declare its fab_package done check last` or
-`fab_package done check last: only bound jlc_dfm checks may follow` (or, when only
+`fab_package done check last: only bound jlc_dfm and fab_roundtrip checks may follow` (or, when only
 the requirement is removed, `every check must trace to a baseline requirement`
 on scope/2 and `generation scope requires an acceptance requirement mapped to
 fab_package` on scope/3).
