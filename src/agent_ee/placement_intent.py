@@ -131,9 +131,10 @@ def validate(intent, groups):
         _notes(row, path)
     for path, row in _rows(intent.get('proximity', []), 'intent.proximity'):
         _object(row, path, ('ref', 'near', 'max_mm', 'pads'), ('basis', 'context'))
-        if row.get('basis') == 'pad_edge':
-            raise ValueError(path + '.basis: pad_edge is unsupported; proximity scores minimum '
-                             'Chebyshev pad-centre distance, not pad-edge distance')
+        if row.get('basis') == 'pad_edge' and not isinstance(row.get('context'), dict) or (
+                row.get('basis') == 'pad_edge' and 'limit' not in row['context']):
+            raise ValueError(path + '.basis: pad_edge needs context.limit naming its authority; '
+                             'derived_default stays an advisory objective')
         for key in ('ref', 'near'):
             _text(row[key], path + '.' + key)
         if row['ref'] == row['near']:
@@ -154,17 +155,30 @@ def validate(intent, groups):
             validate_locality(intent['electrical_locality'])
         except ValueError as exc:
             raise ValueError('intent.electrical_locality: ' + str(exc)) from exc
-    _object(groups, 'groups', required=('groups',), optional=('schema', 'board'))
+    _object(groups, 'groups', required=('groups',), optional=('schema', 'board', 'rails'))
+    if 'rails' in groups:
+        _object(groups['rails'], 'groups.rails', optional=('shared', 'scoped'))
+        for net, evidence in groups['rails'].get('shared', {}).items():
+            _text(evidence, 'groups.rails.shared.' + net)
+        for net, scope in groups['rails'].get('scoped', {}).items():
+            _object(scope, 'groups.rails.scoped.' + net, optional=('intra_group', 'near_pairs'))
     if 'schema' in groups and (type(groups['schema']) is not int or groups['schema'] != 1):
         raise ValueError('groups.schema: expected legacy group schema 1 or omit schema')
     if 'board' in groups:
         _text(groups['board'], 'groups.board')
     names, members = set(), set()
     for path, row in _rows(groups['groups'], 'groups.groups'):
-        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why'))
+        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why', 'near'))
         _text(row['name'], path + '.name')
         _text(row['anchor'], path + '.anchor')
         _texts(row['refs'], path + '.refs')
+        if 'near' in row:
+            _texts(row['near'], path + '.near')
+            declared = {g.get('name') for g in groups['groups'] if isinstance(g, dict)}
+            for target in row['near']:
+                if target == row['name'] or target not in declared:
+                    raise ValueError(path + '.near: expected other declared group names; '
+                                     f'{target!r} is not one')
         if row['name'] in names:
             raise ValueError(path + '.name: duplicate group name')
         if row['anchor'] not in row['refs']:
@@ -213,7 +227,7 @@ def _refuse_nonempty(document, path, key):
                          'its semantics are not silently ignored')
 
 
-def adapt(document, groups, *, source=None):
+def adapt(document, groups, *, source=None, supported=frozenset()):
     """Classify every field of an exact original-dialect intent without dropping or weakening any.
 
     Returns an ``agent-ee.intent-compatibility/1`` record. ``native_intent`` and
@@ -225,7 +239,7 @@ def adapt(document, groups, *, source=None):
     """
     if isinstance(document, dict) and document.get('schema') == SCHEMA:
         validate(document, groups)
-        return {'schema': COMPATIBILITY_SCHEMA, 'dialect': 'native', 'source': source,
+        return {'schema': COMPATIBILITY_SCHEMA, 'dialect': 'native', 'source': source, 'withheld': {},
                 'native_intent': document, 'native_groups': groups, 'dispositions': [],
                 'unresolved_claims': [], 'pending': [], 'runnable': True}
     if not isinstance(document, dict):
@@ -242,7 +256,14 @@ def adapt(document, groups, *, source=None):
     def note(path, disposition, **detail):
         dispositions.append({'path': path, 'disposition': disposition, **detail})
         if disposition in ('operative_pending_capture', 'objective_pending_solver'):
-            pending.append({'path': path, 'needs': detail.get('needs', disposition)})
+            key = ('edge.side' if path.endswith('.side') and 'edge_connectors' in path else
+                   'edge.cable_entry' if path.endswith('.cable_entry') else
+                   'intent.proximity' if path.startswith('intent.proximity[') else
+                   'groups.near' if path.endswith('.near') else path)
+            if key in supported:
+                dispositions[-1]['supported_by'] = 'placement_job capture/solver (AGENTEE-479)'
+            else:
+                pending.append({'path': path, 'needs': detail.get('needs', disposition)})
 
     # Empty no-op containers: accepted only when empty.
     for key in ('blocks', 'keepouts', 'must_lock', 'decaps'):

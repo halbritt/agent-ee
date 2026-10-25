@@ -67,19 +67,48 @@ reproduces the contract's power links (4.592, 3.642, 5.242 mm) and the
 objective strictly decreasing when a dispersed member moves next to its
 partner.
 
-## Remaining (not in this slice)
+## Capture, solver and reporting (second slice)
 
-1. Capture hooks for `assembly.sides`, `envelope`, connector `side` and
-   `cable_entry` in `placement_job.capture`, flipping those dispositions to
-   `operative_supported`.
-2. `crates/placement-engine/src/job.rs`: compile R2/R1 links into `Prepared`
-   at `GROUP_WEIGHT` scale beside `proximity_terms`, switch `proximity_terms`
-   for `basis: pad_edge` rows to the signed rect gap, add constrained
-   group-cluster translation/swap proposals, and the deterministic post-anneal
-   member refinement accepted only with zero courtyard overlap, zero outline
-   violations, valid edge seating and no sourced-limit regression while the
-   soft objective strictly decreases.
-3. Emit the `group_links` report and `pad_edge` legs into `job-report.json`
-   and the place metrics, bound to the candidate sha256.
-4. The adversarial dispersed-member control on a real candidate, and the
-   real-design qualification procedure, follow once 2 and 3 exist.
+`placement_job.validate_intent` adapts a dialect intent with the supported
+set `DIALECT_SUPPORTED`, so `assembly.sides`, `envelope`, connector `side`
+and `cable_entry`, `pad_edge` proximity and `groups[].near` are no longer
+pending; the unmeasured cable-envelope claims and withheld dispositions stay
+in the problem's `compatibility` record, never satisfied. `_capture_native`
+verifies the native side of every pad-bearing footprint, the Edge.Cuts
+bounding box against the declared envelope and the native face of each
+seated connector, refusing on mismatch (`compatibility.native_checks`).
+
+Captured pads now carry `half_nm`, the axis-aligned half extents of their
+copper rect. The solver (`crates/placement-engine/src/job.rs`) scores a
+`basis: pad_edge` proximity row with the upstream signed rect gap per
+declared subject pad with net narrowing (`pad_rect`, `rect_gap`,
+`pad_edge_legs`), at the existing proximity weight; the excess over `max_nm`
+is a soft objective for `derived_default` rows. R2 intra-group signal and
+member-to-anchor links and R1 declared-near interface links are compiled
+from the problem's `groups[].near` and the explicit `rails` input
+(`compile_links`), scored as non-negative signed gaps at the group-scale
+`link` weight (`Terms.link`), and cached incrementally like proximity. A
+net spanning more than two groups outside the declared rails is never
+linked, so rails cannot merge blocks. After each seed's anneal,
+`refine_members` visits members by largest link gap and offers seats
+adjacent to the linked partner pad in every eligible rotation, accepting a
+seat only when the full evaluation stays hard-legal (zero overlap, outline,
+hole and edge violations) and the cost strictly decreases; anchors and
+fixed footprints never move. Seed rows report `refinement` moves and the
+measured `links`. `board_metrics` includes the `group_links` report and
+`pad_edge_legs` for the saved board. Rust controls: links compile from nets
+with a declared rail excluded, pad-edge terms equal the signed gap, and a
+legal dispersed member is moved next to its anchor with legality preserved,
+the anchor and fixed marks unmoved.
+
+## Remaining
+
+1. Emit the per-candidate `refinement` and `links` rows into the final
+   `job-report.json` claims section and bind annotated top/bottom group
+   views to the candidate sha256 (reporting only; measurements exist).
+2. Declare evidence-bound `rails` for the retained `esp_prog` groups (the
+   captured `groups.json` carries none, so its multi-group nets are surfaced
+   and not linked) and run the retained esp_prog and acquisition replays
+   through the full job as the real-design qualification procedure.
+3. The adversarial control on a real candidate and the independent
+   candidate-bound judgments remain later acceptance steps.

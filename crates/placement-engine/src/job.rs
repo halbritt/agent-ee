@@ -152,6 +152,8 @@ pub struct Pad {
     pub uuid: String,
     pub net: Option<usize>,
     pub at: (i64, i64),
+    /// Axis-aligned half extents of the copper rect in the local frame at quarter turn 0 (AGENTEE-479).
+    pub half: (i64, i64),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -370,6 +372,19 @@ pub struct Proximity {
     pub b: usize,
     pub b_pads: Vec<usize>,
     pub max_nm: i64,
+    /// `pad_edge`: upstream signed rect gap per declared subject pad, net-narrowed (AGENTEE-479).
+    pub pad_edge: bool,
+}
+
+/// A source-bound group relation measured as the signed pad-edge gap (AGENTEE-479 R1/R2).
+#[derive(Clone, Debug)]
+pub struct Link {
+    pub kind: String,
+    pub group: String,
+    pub a: usize,
+    pub a_pads: Vec<usize>,
+    pub b: usize,
+    pub b_pads: Vec<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -389,6 +404,8 @@ pub struct Weights {
     pub wire: i64,
     pub group: i64,
     pub proximity: i64,
+    /// Group relation links (AGENTEE-479 R1/R2); defaults to the group weight.
+    pub link: i64,
     pub edge: i64,
     /// Penalty per square micrometre of hard overlap during exploration.
     pub hard: i64,
@@ -410,6 +427,7 @@ pub struct Prepared {
     pub net_pads: Vec<Vec<(usize, usize)>>,
     pub groups: Vec<(String, usize, Vec<usize>)>,
     pub proximity: Vec<Proximity>,
+    pub links: Vec<Link>,
     pub locality: Vec<Locality>,
     pub weights: Weights,
     pub movable: Vec<usize>,
@@ -547,10 +565,16 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 _ => None,
             };
             let at = pad["local_nm"].as_array().context("pad local_nm")?;
+            let half = match pad.get("half_nm").and_then(Value::as_array) {
+                Some(h) => { let (hx, hy) = (h[0].as_i64().context("pad half x")?, h[1].as_i64().context("pad half y")?);
+                    ensure!(hx >= 0 && hy >= 0, "negative pad half extent"); (hx, hy) },
+                None => (0, 0),
+            };
             pads.push(Pad {
                 uuid: text(pad, "uuid")?.to_string(),
                 net,
                 at: (at[0].as_i64().context("pad x")?, at[1].as_i64().context("pad y")?),
+                half,
             });
         }
         let rotations: Vec<i64> = match row.get("rotations") {
@@ -636,10 +660,17 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     for row in input["proximity"].as_array().cloned().unwrap_or_default() {
         let a = physical_reference(text(&row, "ref")?, "proximity ref")?;
         let b = physical_reference(text(&row, "near")?, "proximity near")?;
-        let a_pads = row["ref_pads"].as_array().context("ref_pads")?.iter().map(|u| pad_of(a, u)).collect::<Result<_>>()?;
-        let b_pads = row["near_pads"].as_array().context("near_pads")?.iter().map(|u| pad_of(b, u)).collect::<Result<_>>()?;
-        proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")? });
+        let a_pads: Vec<usize> = row["ref_pads"].as_array().context("ref_pads")?.iter().map(|u| pad_of(a, u)).collect::<Result<_>>()?;
+        let b_pads: Vec<usize> = row["near_pads"].as_array().context("near_pads")?.iter().map(|u| pad_of(b, u)).collect::<Result<_>>()?;
+        let pad_edge = row.get("basis").and_then(Value::as_str) == Some("pad_edge");
+        if pad_edge {
+            ensure!(a_pads.iter().all(|&i| footprints[a].pads[i].half != (0, 0))
+                    && b_pads.iter().all(|&i| footprints[b].pads[i].half != (0, 0)),
+                "pad_edge proximity needs captured pad half extents");
+        }
+        proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")?, pad_edge });
     }
+    let links = compile_links(input, &footprints, &groups, &nets, &net_pads, &physical_reference)?;
     let mut locality = Vec::new();
     if let Some(raw) = input.get("locality") {
         let document = &raw["document"];
@@ -676,12 +707,13 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         wire: w.get("wire").and_then(Value::as_i64).unwrap_or(1),
         group: w.get("group").and_then(Value::as_i64).unwrap_or(1),
         proximity: w.get("proximity").and_then(Value::as_i64).unwrap_or(4),
+        link: w.get("link").and_then(Value::as_i64).or_else(|| w.get("group").and_then(Value::as_i64)).unwrap_or(1),
         edge: w.get("edge").and_then(Value::as_i64).unwrap_or(4),
         hard: w.get("hard").and_then(Value::as_i64).unwrap_or(50),
         escape: w.get("escape").and_then(Value::as_i64).unwrap_or(20),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, locality, weights, movable })
+    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, proximity, links, locality, weights, movable })
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -694,6 +726,7 @@ pub struct Terms {
     pub wire: i128,
     pub group: i128,
     pub proximity: i128,
+    pub link: i128,
     pub edge: i128,
     pub escape: i128,
 }
@@ -705,6 +738,7 @@ impl Terms {
         self.wire += sign * o.wire;
         self.group += sign * o.group;
         self.proximity += sign * o.proximity;
+        self.link += sign * o.link;
         self.edge += sign * o.edge;
         self.escape += sign * o.escape;
     }
@@ -714,12 +748,14 @@ impl Terms {
             + w.wire as i128 * self.wire
             + w.group as i128 * self.group
             + w.proximity as i128 * self.proximity
+            + w.link as i128 * self.link
             + w.edge as i128 * self.edge
             + w.escape as i128 * (self.escape / 1_000_000)
     }
     fn value(&self) -> Value {
         json!({"hard": self.hard.to_string(), "hard_count": self.hard_count, "wire_nm": self.wire.to_string(),
                "group_nm": self.group.to_string(), "proximity_excess_nm": self.proximity.to_string(),
+               "link_gap_nm": self.link.to_string(),
                "edge_setback_nm": self.edge.to_string(), "escape_overlap_nm2": self.escape.to_string()})
     }
 }
@@ -907,8 +943,40 @@ fn group_terms(p: &Prepared, f: usize, poses: &[Pose]) -> i128 {
     }
 }
 
+/// Axis-aligned copper rect of a pad under a pose (quarter turns keep rects axis-aligned).
+fn pad_rect(p: &Prepared, f: usize, pad: usize, pose: &Pose) -> Rect {
+    let (cx, cy) = pad_at(p, f, pad, pose);
+    let (hx, hy) = p.footprints[f].pads[pad].half;
+    let (hx, hy) = if pose.q.rem_euclid(2) == 1 { (hy, hx) } else { (hx, hy) };
+    Rect { x0: cx - hx, y0: cy - hy, x1: cx + hx, y1: cy + hy }
+}
+
+/// Upstream kicad-route@c4af095 signed axis-aligned gap: negative overlap depth is never clamped.
+pub fn rect_gap(a: &Rect, b: &Rect) -> i64 {
+    let dx = (a.x0 - b.x1).max(b.x0 - a.x1);
+    let dy = (a.y0 - b.y1).max(b.y0 - a.y1);
+    if dx < 0 && dy < 0 { dx.max(dy) }
+    else if dx > 0 && dy > 0 { ((dx as f64).hypot(dy as f64)).round() as i64 }
+    else { dx.max(dy) }
+}
+
+/// Per-subject-pad signed pad-edge legs with net narrowing (one leg per declared subject pad).
+fn pad_edge_legs(p: &Prepared, a: usize, a_pads: &[usize], b: usize, b_pads: &[usize], poses: &[Pose]) -> Vec<i64> {
+    a_pads.iter().map(|&pa| {
+        let net = p.footprints[a].pads[pa].net;
+        let same: Vec<usize> = b_pads.iter().copied().filter(|&pb| net.is_some() && p.footprints[b].pads[pb].net == net).collect();
+        let partners = if same.is_empty() { b_pads.to_vec() } else { same };
+        let ra = pad_rect(p, a, pa, &poses[a]);
+        partners.iter().map(|&pb| rect_gap(&ra, &pad_rect(p, b, pb, &poses[b]))).min().unwrap_or(i64::MAX)
+    }).collect()
+}
+
 fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
     let r = &p.proximity[k];
+    if r.pad_edge {
+        return pad_edge_legs(p, r.a, &r.a_pads, r.b, &r.b_pads, poses).iter()
+            .map(|&gap| (gap - r.max_nm).max(0) as i128).sum();
+    }
     let mut best = i64::MAX;
     for &pa in &r.a_pads {
         for &pb in &r.b_pads {
@@ -918,6 +986,179 @@ fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
         }
     }
     (best - r.max_nm).max(0) as i128
+}
+
+/// Non-negative signed pad-edge gap of one group link (R1 interface or R2 intra-group/anchor link).
+fn link_gap(p: &Prepared, k: usize, poses: &[Pose]) -> i64 {
+    let l = &p.links[k];
+    let mut best = i64::MAX;
+    for &pa in &l.a_pads {
+        let ra = pad_rect(p, l.a, pa, &poses[l.a]);
+        for &pb in &l.b_pads {
+            best = best.min(rect_gap(&ra, &pad_rect(p, l.b, pb, &poses[l.b])));
+        }
+    }
+    best
+}
+
+fn link_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
+    link_gap(p, k, poses).max(0) as i128
+}
+
+/// Compile R2 intra-group signal/anchor links and R1 declared-near interface links.
+///
+/// Shared rails are an explicit evidence-bound input (`rails.shared`, `rails.scoped`); a net
+/// spanning more than two groups outside them is never linked (it is reported upstream as an
+/// unknown multi-group net), so rails cannot merge blocks.
+fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usize, Vec<usize>)], nets: &[String],
+                 net_pads: &[Vec<(usize, usize)>], physical_reference: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Vec<Link>> {
+    let rails = input.get("rails").cloned().unwrap_or(Value::Null);
+    let shared: BTreeSet<String> = rails.get("shared").and_then(Value::as_array).cloned().unwrap_or_default()
+        .iter().filter_map(|v| v.as_str().map(String::from)).collect();
+    let scoped = rails.get("scoped").cloned().unwrap_or(Value::Null);
+    let group_of = |f: usize| footprints[f].group;
+    let mut span: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nets.len()];
+    for (n, pads) in net_pads.iter().enumerate() {
+        for &(f, _) in pads {
+            if let Some(g) = group_of(f) { span[n].insert(g); }
+        }
+    }
+    let group_index: BTreeMap<&str, usize> = groups.iter().enumerate().map(|(g, (name, _, _))| (name.as_str(), g)).collect();
+    let pads_on = |f: usize, n: usize| -> Vec<usize> {
+        footprints[f].pads.iter().enumerate().filter(|(_, pad)| pad.net == Some(n)).map(|(i, _)| i).collect()
+    };
+    let all_pads = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
+    let mut links = Vec::new();
+    for (g, (name, anchor, members)) in groups.iter().enumerate() {
+        for (n, net) in nets.iter().enumerate() {
+            let scoped_here = scoped.get(net).and_then(|s| s.get("intra_group")).and_then(Value::as_str) == Some(name.as_str());
+            if shared.contains(net) && !scoped_here { continue; }
+            if !shared.contains(net) && span[n].len() > 2 { continue; }
+            let on: Vec<usize> = members.iter().copied().filter(|&m| !pads_on(m, n).is_empty()).collect();
+            for i in 0..on.len() {
+                for j in i + 1..on.len() {
+                    links.push(Link { kind: "R2_intra_group_signal".into(), group: name.clone(), a: on[i],
+                                      a_pads: pads_on(on[i], n), b: on[j], b_pads: pads_on(on[j], n) });
+                }
+            }
+        }
+        for &m in members {
+            if m != *anchor && !footprints[m].pads.is_empty() && !footprints[*anchor].pads.is_empty() {
+                links.push(Link { kind: "R2_member_to_anchor".into(), group: name.clone(), a: m,
+                                  a_pads: all_pads(m), b: *anchor, b_pads: all_pads(*anchor) });
+            }
+        }
+        let group_row = &input["groups"][g];
+        for target in group_row.get("near").and_then(Value::as_array).cloned().unwrap_or_default() {
+            let target = target.as_str().context("group near")?;
+            let &h = group_index.get(target).with_context(|| format!("group {name}: unknown near group {target}"))?;
+            let (_, _, others) = &groups[h];
+            let mut best: Option<(i64, usize, Vec<usize>, usize, Vec<usize>)> = None;
+            for (n, net) in nets.iter().enumerate() {
+                let pair_ok = scoped.get(net).and_then(|s| s.get("near_pairs")).and_then(Value::as_array)
+                    .map(|pairs| pairs.iter().any(|pr| pr[0] == name.as_str() && pr[1] == target)).unwrap_or(false);
+                if shared.contains(net) && !pair_ok { continue; }
+                if !shared.contains(net) && span[n].len() > 2 { continue; }
+                for &a in members {
+                    let ap = pads_on(a, n);
+                    if ap.is_empty() { continue; }
+                    for &b in others {
+                        let bp = pads_on(b, n);
+                        if bp.is_empty() { continue; }
+                        let mut gap = i64::MAX;
+                        for &pa in &ap { for &pb in &bp {
+                            gap = gap.min(rect_gap(&pad_rect_initial(footprints, a, pa), &pad_rect_initial(footprints, b, pb)));
+                        } }
+                        if best.as_ref().is_none_or(|bst| gap < bst.0) { best = Some((gap, a, ap.clone(), b, bp.clone())); }
+                    }
+                }
+            }
+            if let Some((_, a, ap, b, bp)) = best {
+                links.push(Link { kind: "R1_declared_near_interface".into(), group: name.clone(), a, a_pads: ap, b, b_pads: bp });
+            }
+        }
+    }
+    let _ = physical_reference;
+    Ok(links)
+}
+
+fn pad_rect_initial(footprints: &[Footprint], f: usize, pad: usize) -> Rect {
+    let fp = &footprints[f];
+    let (x, y) = fp.pads[pad].at;
+    let (rx, ry) = rotate(x, y, fp.initial.q);
+    let (cx, cy) = (rx + fp.initial.x, ry + fp.initial.y);
+    let (hx, hy) = fp.pads[pad].half;
+    let (hx, hy) = if fp.initial.q.rem_euclid(2) == 1 { (hy, hx) } else { (hx, hy) };
+    Rect { x0: cx - hx, y0: cy - hy, x1: cx + hx, y1: cy + hy }
+}
+
+/// Deterministic post-anneal member refinement (AGENTEE-479 step 3).
+///
+/// Members are visited by largest link gap; each is offered seats adjacent to its linked
+/// partner pad in every eligible rotation. A seat is accepted only when the full evaluation
+/// stays hard-legal (zero overlap, outline, hole and edge violations) and the cost strictly
+/// decreases. Fixed, anchor and non-movable footprints never move.
+pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec<Value> {
+    let mut rows = Vec::new();
+    let mut current = full_evaluate(p, poses);
+    if current.hard != 0 || current.hard_count != 0 { return rows; }
+    let mut cost = current.cost(&p.weights);
+    for pass in 0..passes {
+        let mut improved = false;
+        let mut order: Vec<(i64, usize)> = (0..p.links.len()).map(|k| (link_gap(p, k, poses), k)).collect();
+        order.sort_by(|x, y| y.0.cmp(&x.0).then(x.1.cmp(&y.1)));
+        for (gap, k) in order {
+            if gap <= 0 { continue; }
+            let l = &p.links[k];
+            let (member, partner, member_pads, partner_pads) = if p.movable.contains(&l.a) && l.kind != "R2_member_to_anchor" || (l.kind == "R2_member_to_anchor") {
+                (l.a, l.b, &l.a_pads, &l.b_pads)
+            } else if p.movable.contains(&l.b) { (l.b, l.a, &l.b_pads, &l.a_pads) } else { continue };
+            if !p.movable.contains(&member) || p.footprints[member].group.map(|g| p.groups[g].1) == Some(member) { continue; }
+            let before = poses[member];
+            let mut best: Option<(i128, Pose, Terms)> = None;
+            for &q in &p.footprints[member].rotations {
+                for &pm in member_pads.iter() {
+                    for &pp in partner_pads.iter() {
+                        let target = pad_rect(p, partner, pp, &poses[partner]);
+                        let local = &p.footprints[member].pads[pm];
+                        let (lx, ly) = rotate(local.at.0, local.at.1, q);
+                        let (hx, hy) = if q.rem_euclid(2) == 1 { (local.half.1, local.half.0) } else { local.half };
+                        let gap = p.clearance_nm;
+                        let seats = [((target.x1 + gap + hx), (target.y0 + target.y1) / 2), ((target.x0 - gap - hx), (target.y0 + target.y1) / 2),
+                                     ((target.x0 + target.x1) / 2, (target.y1 + gap + hy)), ((target.x0 + target.x1) / 2, (target.y0 - gap - hy))];
+                        for (cx, cy) in seats {
+                            let trial = Pose { x: cx - lx, y: cy - ly, q };
+                            if trial == before { continue; }
+                            poses[member] = trial;
+                            let terms = full_evaluate(p, poses);
+                            poses[member] = before;
+                            if terms.hard != 0 || terms.hard_count != 0 { continue; }
+                            let c = terms.cost(&p.weights);
+                            if c < cost && best.as_ref().is_none_or(|b| c < b.0) { best = Some((c, trial, terms)); }
+                        }
+                    }
+                }
+            }
+            if let Some((c, trial, terms)) = best {
+                poses[member] = trial;
+                let gap_after = link_gap(p, k, poses);
+                poses[member] = before;
+                rows.push(json!({"pass": pass, "link": l.kind, "group": l.group, "member": p.footprints[member].native_ref,
+                                 "partner": p.footprints[partner].native_ref, "gap_before_nm": gap,
+                                 "gap_after_nm": gap_after,
+                                 "cost_before": cost.to_string(), "cost_after": c.to_string(),
+                                 "from": {"x_nm": before.x, "y_nm": before.y, "quarter_turns": before.q.rem_euclid(4)},
+                                 "to": {"x_nm": trial.x, "y_nm": trial.y, "quarter_turns": trial.q.rem_euclid(4)}}));
+                poses[member] = trial;
+                cost = c;
+                current = terms;
+                improved = true;
+            }
+        }
+        if !improved { break; }
+    }
+    let _ = current;
+    rows
 }
 
 fn rotate_rational([x, y]: [Rat; 2], q: i64) -> [Rat; 2] {
@@ -1017,6 +1258,9 @@ pub fn full_evaluate(p: &Prepared, poses: &[Pose]) -> Terms {
     for k in 0..p.proximity.len() {
         t.proximity += proximity_terms(p, k, poses);
     }
+    for k in 0..p.links.len() {
+        t.link += link_terms(p, k, poses);
+    }
     for k in 0..p.locality.len() { t.add(&locality_terms(p, k, poses), 1); }
     t
 }
@@ -1030,6 +1274,7 @@ pub struct SearchState {
     net_cost: Vec<i128>,
     group_cost: Vec<i128>,
     prox_cost: Vec<i128>,
+    link_cost: Vec<i128>,
     locality_cost: Vec<Terms>,
     cells: HashMap<(i64, i64), BTreeSet<usize>>,
     cell_of: Vec<Vec<(i64, i64)>>,
@@ -1054,6 +1299,7 @@ pub struct Trial {
     after_nets: Vec<(usize, i128)>,
     after_groups: Vec<(usize, i128)>,
     after_prox: Vec<(usize, i128)>,
+    after_links: Vec<(usize, i128)>,
     after_locality: Vec<(usize, Terms)>,
 }
 
@@ -1081,6 +1327,7 @@ impl SearchState {
             net_cost: (0..p.nets.len()).map(|n| net_terms(p, n, &poses)).collect(),
             group_cost: (0..p.footprints.len()).map(|f| group_terms(p, f, &poses)).collect(),
             prox_cost: (0..p.proximity.len()).map(|k| proximity_terms(p, k, &poses)).collect(),
+            link_cost: (0..p.links.len()).map(|k| link_terms(p, k, &poses)).collect(),
             locality_cost: (0..p.locality.len()).map(|k| locality_terms(p, k, &poses)).collect(),
             totals: full_evaluate(p, &poses),
             poses,
@@ -1192,6 +1439,14 @@ impl SearchState {
                 after_prox.push((k, v));
             }
         }
+        let mut after_links = Vec::new();
+        for (k, l) in p.links.iter().enumerate() {
+            if movers.contains(&l.a) || movers.contains(&l.b) {
+                let v = link_terms(p, k, &after);
+                delta.link += v - self.link_cost[k];
+                after_links.push((k, v));
+            }
+        }
         let mut after_locality = Vec::new();
         for (k, r) in p.locality.iter().enumerate() {
             if movers.contains(&r.a) || movers.contains(&r.b) {
@@ -1201,7 +1456,7 @@ impl SearchState {
                 after_locality.push((k, value));
             }
         }
-        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_locality })
+        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_links, after_locality })
     }
 
     /// Apply a trial atomically. A trial evaluated against another generation is refused.
@@ -1224,6 +1479,9 @@ impl SearchState {
         }
         for (k, v) in trial.after_prox {
             self.prox_cost[k] = v;
+        }
+        for (k, v) in trial.after_links {
+            self.link_cost[k] = v;
         }
         for (k, value) in trial.after_locality { self.locality_cost[k] = value; }
         self.totals.add(&trial.delta, 1);
@@ -1448,6 +1706,13 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
     Ok((best, state.counters, stop, step, (least_hard, least, diagnostic)))
 }
 
+/// Measured group links of a pose vector (signed pad-edge gaps in nm), for reports.
+pub fn link_rows(p: &Prepared, poses: &[Pose]) -> Value {
+    Value::Array(p.links.iter().enumerate().map(|(k, l)| json!({
+        "kind": l.kind, "group": l.group, "a": p.footprints[l.a].native_ref, "b": p.footprints[l.b].native_ref,
+        "gap_nm": link_gap(p, k, poses)})).collect())
+}
+
 fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
     Value::Array(p.footprints.iter().enumerate().map(|(f, fp)| {
         let pose = poses[f];
@@ -1530,6 +1795,18 @@ pub fn run(input: &Value) -> Result<Value> {
         }
         let t = Instant::now();
         let (best, c, stop, steps, least) = anneal(&p, seed, clustered, &limits)?;
+        // AGENTEE-479: deterministic post-anneal member refinement on the feasible result.
+        let (best, refinement) = match best {
+            Some(mut b) if !p.links.is_empty() => {
+                let rows = refine_members(&p, &mut b.poses, 3);
+                if !rows.is_empty() {
+                    b.terms = full_evaluate(&p, &b.poses);
+                    b.cost = b.terms.cost(&p.weights);
+                }
+                (Some(b), rows)
+            }
+            other => (other, Vec::new()),
+        };
         counters.evaluations += c.evaluations;
         counters.commits += c.commits;
         counters.rejects += c.rejects;
@@ -1544,7 +1821,9 @@ pub fn run(input: &Value) -> Result<Value> {
             "feasible": best.is_some(), "best_cost": best.as_ref().map(|b| b.cost.to_string()),
             "least_hard_count": if least.0.0 == i64::MAX { Value::Null } else { json!(least.0.0) },
             "least_hard_violations": least.1.clone(),
-            "best_terms": best.as_ref().map(|b| b.terms.value())}));
+            "best_terms": best.as_ref().map(|b| b.terms.value()),
+            "refinement": refinement,
+            "links": best.as_ref().map(|b| link_rows(&p, &b.poses))}));
         let _ = crate::progress::emit(json!({"event": "seed", "seed": seed, "status": seed_status, "feasible": best.is_some(),
             "poses": best.as_ref().map(|b| pose_rows(&p, &b.poses)), "cost": best.as_ref().map(|b| b.cost.to_string())}));
         found.extend(best);
@@ -1770,6 +2049,73 @@ mod tests {
                "groups": [{"name": "g", "anchor": "R1", "refs": ["R1", "R2"]}],
                "search": {"seeds": [{"seed": 0, "start": "scattered"}, {"seed": 1, "start": "clustered"}],
                           "steps_per_seed": 3000, "shortlist": 2, "verify_every": 1}})
+    }
+
+    fn with_half_extents(mut raw: Value, rails: Value) -> Value {
+        for row in raw["footprints"].as_array_mut().unwrap() {
+            for pad in row["pads"].as_array_mut().unwrap() { pad["half_nm"] = json!([300_000, 300_000]); }
+        }
+        raw["rails"] = rails;
+        raw
+    }
+
+    fn legal_dispersed(p: &Prepared) -> Vec<Pose> {
+        let at = |r: &str, x: i64, y: i64| (p.footprints.iter().position(|f| f.native_ref == r).unwrap(), Pose { x, y, q: 0 });
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        for (f, pose) in [at("R1", 3_000_000, 5_000_000), at("R2", 9_500_000, 5_000_000),
+                          at("R3", 9_000_000, 2_000_000), at("R4", 2_000_000, 8_000_000)] {
+            poses[f] = pose;
+        }
+        poses
+    }
+
+    #[test]
+    fn group_links_compile_from_nets_and_rails_never_merge_blocks() {
+        let p = prepare(&with_half_extents(input(vec![]), json!({"shared": ["GND"], "scoped": {}}))).unwrap();
+        let kinds: Vec<(&str, &str, &str)> = p.links.iter()
+            .map(|l| (l.kind.as_str(), p.footprints[l.a].native_ref.as_str(), p.footprints[l.b].native_ref.as_str())).collect();
+        assert_eq!(kinds, vec![("R2_intra_group_signal", "R1", "R2"), ("R2_member_to_anchor", "R2", "R1")]);
+        // GND is a declared rail: no link is compiled on it even though both members carry it.
+        assert!(p.links.iter().all(|l| l.a_pads.iter().all(|&i| p.footprints[l.a].pads[i].net != p.nets.iter().position(|n| n == "GND"))
+                                   || l.kind == "R2_member_to_anchor"));
+    }
+
+    #[test]
+    fn pad_edge_proximity_is_the_signed_rect_gap_per_subject_pad() {
+        let mut raw = with_half_extents(input(vec![]), json!({"shared": ["GND"], "scoped": {}}));
+        raw["proximity"] = json!([{"ref": "R2", "near": "R1", "ref_pads": [format!("{}-1", uuid(2))],
+                                   "near_pads": [format!("{}-1", uuid(1)), format!("{}-2", uuid(1))],
+                                   "max_nm": 0, "basis": "pad_edge"}]);
+        let p = prepare(&raw).unwrap();
+        let poses = legal_dispersed(&p);
+        // R2 pad 1 (net A) at x = 9.5e6 - 0.6e6 = 8.9e6; R1 pad 1 (net A) at 2.4e6: net narrowing picks pad 1, not the nearer GND pad 2.
+        let a = pad_rect(&p, p.proximity[0].a, p.proximity[0].a_pads[0], &poses[p.proximity[0].a]);
+        let b = pad_rect(&p, p.proximity[0].b, p.proximity[0].b_pads[0], &poses[p.proximity[0].b]);
+        assert_eq!(proximity_terms(&p, 0, &poses), rect_gap(&a, &b) as i128);
+        assert_eq!(rect_gap(&a, &b), 8_900_000 - 300_000 - (2_400_000 + 300_000));
+        assert_eq!(rect_gap(&Rect { x0: 0, y0: 0, x1: 100, y1: 100 }, &Rect { x0: 75, y0: 0, x1: 175, y1: 100 }), -25);
+    }
+
+    #[test]
+    fn refinement_moves_a_dispersed_member_next_to_its_partner_without_losing_legality() {
+        let p = prepare(&with_half_extents(input(vec![]), json!({"shared": ["GND"], "scoped": {}}))).unwrap();
+        let mut poses = legal_dispersed(&p);
+        let before = full_evaluate(&p, &poses);
+        assert_eq!((before.hard, before.hard_count), (0, 0), "the dispersed start must be legal");
+        let gap_before = link_gap(&p, 0, &poses);
+        assert!(gap_before > 3_000_000, "member R2 starts far from anchor R1: {gap_before}");
+        let rows = refine_members(&p, &mut poses, 3);
+        assert!(!rows.is_empty(), "refinement must act on the dispersed member");
+        let after = full_evaluate(&p, &poses);
+        assert_eq!((after.hard, after.hard_count), (0, 0), "refinement never accepts an illegal seat");
+        assert!(after.cost(&p.weights) < before.cost(&p.weights));
+        assert!(link_gap(&p, 0, &poses) < gap_before);
+        assert!(link_gap(&p, 0, &poses) >= p.clearance_nm, "members keep the native clearance");
+        let anchor = p.groups[0].1;
+        assert_eq!(poses[anchor], legal_dispersed(&p)[anchor], "the anchor never moves");
+        let fid = p.footprints.iter().position(|f| f.native_ref == "FID").unwrap();
+        assert_eq!(poses[fid], p.footprints[fid].initial, "fixed marks never move");
+        assert_eq!(rows[0]["member"], "R2");
     }
 
     #[test]

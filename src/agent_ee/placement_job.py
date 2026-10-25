@@ -263,6 +263,15 @@ def _pad_copper(pad, origin, q):
                          'note': 'native ERROR_OUTSIDE; holes filled; layers projected together'}}
 
 
+def _pad_half(pad, origin, q):
+    """Axis-aligned half extents of the pad copper rect in the local frame (AGENTEE-479 pad_edge)."""
+    copper = _pad_copper(pad, origin, q)
+    if copper is None:
+        return [0, 0]
+    x0, y0, x1, y1 = copper['rect_nm']
+    return [(x1 - x0) // 2, (y1 - y0) // 2]
+
+
 def _pad_hole(pad, origin, q, clearance):
     """Keep drills independently of copper, including bodyless NPTH marks."""
     import pcbnew
@@ -611,9 +620,66 @@ def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
     return problem, record
 
 
+def _rails(groups):
+    """Evidence-bound shared rails declared with the groups; absent means none are declared."""
+    rails = groups.get('rails') or {}
+    return {'shared': sorted(rails.get('shared', {})), 'scoped': rails.get('scoped', {})}
+
+
+DIALECT_SUPPORTED = frozenset(('intent.assembly.sides', 'intent.envelope', 'edge.side', 'edge.cable_entry',
+                               'intent.proximity', 'groups.near'))
+
+
+def _check_dialect_native(board, facts, record):
+    """Verify the operative dialect checks against the native board (AGENTEE-479 capture hooks)."""
+    import pcbnew
+    checks = []
+    by_ref = {f['ref']: f for f in facts['footprints']}
+    for row in record['dispositions']:
+        if row['disposition'] != 'operative_pending_capture':
+            continue
+        path = row['path']
+        if path == 'intent.assembly.sides':
+            wrong = sorted(f['ref'] for f in facts['footprints'] if f.get('side') and f['side'] != row['value']
+                           and any(True for _ in (board.FindFootprintByReference(f['ref']) or pcbnew.FOOTPRINT(board)).Pads()))
+            if wrong:
+                raise JobRefusal(f'{path}: footprints not on declared side {row["value"]}: ' + ', '.join(wrong))
+            checks.append({'path': path, 'verified': 'all pad-bearing footprints on side ' + row['value']})
+        elif path == 'intent.envelope':
+            box = board.GetBoardEdgesBoundingBox()
+            native = [pcbnew.ToMM(box.GetLeft()), pcbnew.ToMM(box.GetTop()), pcbnew.ToMM(box.GetRight()), pcbnew.ToMM(box.GetBottom())]
+            tolerance = row['tolerance_mm']
+            if any(abs(a - b) > tolerance for a, b in zip(native, row['rect'])):
+                raise JobRefusal(f'{path}: native Edge.Cuts bbox {native} differs from declared rect {row["rect"]} by more than {tolerance} mm')
+            checks.append({'path': path, 'verified': 'native Edge.Cuts bbox within tolerance', 'native_rect_mm': native})
+        elif path.endswith('.side'):
+            ref = next(e['ref'] for e in record['native_intent']['edge_connectors']
+                       if path.startswith(f"intent.edge_connectors[{record['native_intent']['edge_connectors'].index(e)}]"))
+            fp = board.FindFootprintByReference(ref)
+            if fp is None:
+                raise JobRefusal(f'{path}: connector {ref} is not on the board')
+            native_side = 'B' if fp.IsFlipped() else 'F'
+            if native_side != row['value']:
+                raise JobRefusal(f'{path}: {ref} is on native side {native_side}, declared {row["value"]}')
+            checks.append({'path': path, 'verified': f'{ref} on native side {native_side}'})
+        elif path.endswith('.context.cable_entry'):
+            checks.append({'path': path, 'verified': 'cable entry consistency checked at adaptation; '
+                                                     'seating verified by the edge rules', 'value': row['value']})
+    return checks
+
+
 def _capture_native(board_path, intent, groups):
     """Native capture once; returns (problem without search section, capture record)."""
     validate_intent(intent, groups)
+    from . import placement_intent
+    dialect = None
+    if placement_intent.is_dialect(intent):
+        dialect = placement_intent.adapt(intent, groups, supported=DIALECT_SUPPORTED)
+        intent, groups = dict(dialect['native_intent']), dict(dialect['native_groups'])
+        intent['proximity'] = dialect['proximity_pad_edge']
+        groups['groups'] = [dict(g, **({'near': n['near']} if (n := next((d for d in dialect['dispositions']
+                              if d['path'] == f"groups.groups[{i}].near"), None)) else {}))
+                            for i, g in enumerate(groups['groups'])]
     import pcbnew
     from .placement_probe import extract
     from .placement_escape import hints as escape_hints
@@ -622,6 +688,7 @@ def _capture_native(board_path, intent, groups):
     _validate_project_rules(project)
     facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
+    dialect_checks = _check_dialect_native(board, facts, dialect) if dialect else []
     for zone in board.Zones():
         if (not zone.GetIsRuleArea() or zone.GetDoNotAllowFootprints() or zone.GetDoNotAllowPads()
                 or zone.GetPlacementAreaEnabled()):
@@ -661,7 +728,8 @@ def _capture_native(board_path, intent, groups):
                                   if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
                'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
                          'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
-                                                    int(p.GetPosition().y) - origin[1], q))}
+                                                    int(p.GetPosition().y) - origin[1], q)),
+                         'half_nm': _pad_half(p, origin, q)}
                         for p in fp.Pads()]}
         if ref in edges:
             declaration = next(e for e in intent['edge_connectors'] if e['ref'] == ref)
@@ -708,9 +776,15 @@ def _capture_native(board_path, intent, groups):
                          'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
-               'groups': [{'name': g['name'], 'anchor': g['anchor'], 'refs': g['refs']} for g in groups['groups']],
+               'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups['groups']],
+               'rails': _rails(groups),
                'proximity': proximity,
-               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'edge': 4, 'hard': 50, 'escape': 20}}
+               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}}
+    if dialect:
+        problem['compatibility'] = {'schema': dialect['schema'], 'dialect': dialect['dialect'],
+                                    'unresolved_claims': dialect['unresolved_claims'], 'withheld': dialect['withheld'],
+                                    'native_checks': dialect_checks,
+                                    'dispositions': dialect['dispositions']}
     if 'electrical_locality' in intent:
         document = intent['electrical_locality']
         _locality_grade(facts, document)
@@ -727,7 +801,7 @@ def validate_intent(intent, groups):
         # AGENTEE-479: the exact original dialect is classified field by field. It never runs
         # while any operative or objective field is still pending; the refusal names them.
         try:
-            record = placement_intent.adapt(intent, groups)
+            record = placement_intent.adapt(intent, groups, supported=DIALECT_SUPPORTED)
         except ValueError as exc:
             raise JobRefusal(str(exc)) from exc
         if not record['runnable']:
@@ -1083,8 +1157,13 @@ def load_checkpoint(job_dir, identity):
 
 # ---------------------------------------------------------------- metrics
 
-def board_metrics(path, groups=None, edges=None):
-    """Measured route length, vias and geometric via-in-pad on a saved board (read-only)."""
+def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None):
+    """Measured route length, vias and geometric via-in-pad on a saved board (read-only).
+
+    With ``groups`` the AGENTEE-479 group-link report (signed pad-edge gaps) is
+    included; with ``proximity`` rows of basis ``pad_edge`` their per-leg
+    measurements are included. Both are measurements and diagnostics only.
+    """
     import pcbnew
     data = Path(path).read_bytes()
     board = pcbnew.LoadBoard(str(path))
@@ -1124,11 +1203,34 @@ def board_metrics(path, groups=None, edges=None):
             edge_rows.append({'ref': ref, 'declared': edge, 'basis': 'fab' if fab else 'pads',
                               'nearest': min(gaps, key=gaps.get),
                               'setback_mm': {k: round(v / NM, 4) for k, v in gaps.items()}})
+    group_links = None
+    if groups:
+        from . import group_links as links
+        refs = [r for g in groups for r in g['refs']]
+        footprints = links.pcbnew_footprints(board, refs)
+        group_links = links.measure({'groups': groups}, footprints, rails or {'shared_rails': {}, 'scoped': {}})
+        group_links['objective_mm'] = links.objective(group_links)
+    pad_edge_legs = None
+    if proximity:
+        from . import pad_edge
+        pads = {}
+        rows = []
+        for claim in proximity:
+            if claim.get('basis') != 'pad_edge':
+                continue
+            for ref in (claim['ref'], claim['near']):
+                if ref not in pads:
+                    pads[ref] = pad_edge.pcbnew_pads(board, ref) or []
+            result = pad_edge.claim_legs(claim, pads)
+            rows.append({'ref': claim['ref'], 'near': claim['near'], 'max_mm': claim.get('max_mm'),
+                         'authority': 'advisory_objective' if claim.get('context', {}).get('limit') == 'derived_default'
+                         else 'unassessed_authority', **result})
+        pad_edge_legs = rows
     return {'board_sha256': sha256_bytes(data), 'track_segments': segments, 'track_arcs': arcs,
             'route_length_mm': {k: round(v / NM, 4) for k, v in sorted(length.items())},
             'route_length_total_mm': round(sum(length.values()) / NM, 4), 'vias': len(vias),
             'via_in_pad': {'count': len(in_pad), 'sites': in_pad, 'method': 'via centre inside native pad copper (HitTest) on F.Cu/B.Cu'},
-            'grouping': grouping, 'edges': edge_rows,
+            'grouping': grouping, 'group_links': group_links, 'pad_edge_legs': pad_edge_legs, 'edges': edge_rows,
             'extraction': 'pcbnew GetTracks lengths (segments and arcs), all copper layers'}
 
 
