@@ -648,10 +648,33 @@ class EngineParityTests(unittest.TestCase):
                 'evaluate': [{}]}
 
     def test_links_agree_between_python_report_and_rust_engine(self):
+        self.check_parity(self.problem())
+
+    def test_explicit_apertures_in_anchor_and_near_endpoints_keep_report_and_engine_in_parity(self):
+        problem = self.problem()
+        # A copper-free aperture on member R2 placed right beside anchor R1, and one on near-group R3
+        # beside R2: neither may become a link endpoint in Python or Rust.
+        problem['footprints'][1]['pads'].append({'uuid': 'aperture-r2', 'number': '', 'net': '', 'local_nm': [-7_100_000, 0], 'half_nm': [0, 0]})
+        problem['footprints'][2]['pads'].append({'uuid': 'aperture-r3', 'number': '', 'net': 'GND', 'local_nm': [0, 3_000_000], 'half_nm': [0, 0]})
+        evaluation = self.check_parity(problem)
+        pads = {l['a_pad'] for l in evaluation['links']} | {l['b_pad'] for l in evaluation['links']}
+        self.assertFalse(pads & {'aperture-r2', 'aperture-r3'})
+        clean = self.check_parity(self.problem())
+        self.assertEqual(evaluation['links'], clean['links'])
+        self.assertEqual(evaluation['terms'], clean['terms'])
+
+    def test_all_aperture_member_has_no_anchor_link_and_nothing_is_forged(self):
+        problem = self.problem()
+        for pad in problem['footprints'][1]['pads']:
+            pad['half_nm'] = [0, 0]
+        evaluation = self.check_parity(problem)
+        self.assertNotIn(('R2_member_to_anchor', 'g'), {(l['kind'], l['group']) for l in evaluation['links']})
+        self.assertTrue(all(isinstance(l['gap_nm'], int) and l['candidate_pairs'] > 0 for l in evaluation['links']))
+
+    def check_parity(self, problem):
         import subprocess
         from agent_ee import group_links
         executable = self.engine()
-        problem = self.problem()
         done = subprocess.run([str(executable)], input=json.dumps(problem).encode(), capture_output=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr.decode(errors='replace')[-800:])
         evaluation = json.loads(done.stdout)['evaluations'][0]
@@ -660,6 +683,8 @@ class EngineParityTests(unittest.TestCase):
         for row in problem['footprints']:
             pads = []
             for pad in row['pads']:
+                if pad['half_nm'] == [0, 0]:
+                    continue  # pcbnew_footprints reports non-aperture pads only
                 cx, cy = (row['pose']['x_nm'] + pad['local_nm'][0]) / 1e6, (row['pose']['y_nm'] + pad['local_nm'][1]) / 1e6
                 hx, hy = pad['half_nm'][0] / 1e6, pad['half_nm'][1] / 1e6
                 pads.append({'number': pad['number'], 'rect': (cx - hx, cy - hy, cx + hx, cy + hy),
@@ -669,10 +694,16 @@ class EngineParityTests(unittest.TestCase):
         report = group_links.measure({'groups': problem['groups']}, footprints, problem['rails'])
         by_kind = {(r['kind'], r['group']): r for r in rust_links}
         g = report['groups']['g']
-        intra, rust_intra = g['R2_intra_group_signal_links'][0], by_kind[('R2_intra_group_signal', 'g')]
-        self.assertEqual(rust_intra['candidate_pairs'], 1)
-        self.assertEqual((pad_numbers[rust_intra['a_pad']], pad_numbers[rust_intra['b_pad']]), (intra['pad_a'], intra['pad_b']))
-        self.assertAlmostEqual(rust_intra['gap_nm'] / 1e6, intra['gap_mm'], places=4)
+        if g['R2_intra_group_signal_links']:
+            intra, rust_intra = g['R2_intra_group_signal_links'][0], by_kind[('R2_intra_group_signal', 'g')]
+            self.assertEqual(rust_intra['candidate_pairs'], 1)
+            self.assertEqual((pad_numbers[rust_intra['a_pad']], pad_numbers[rust_intra['b_pad']]), (intra['pad_a'], intra['pad_b']))
+            self.assertAlmostEqual(rust_intra['gap_nm'] / 1e6, intra['gap_mm'], places=4)
+        else:
+            self.assertNotIn(('R2_intra_group_signal', 'g'), by_kind)
+        rust_anchor = [l for l in rust_links if l['kind'] == 'R2_member_to_anchor' and l['group'] == 'g']
+        self.assertEqual([(l['a'], pad_numbers[l['a_pad']], pad_numbers[l['b_pad']], round(l['gap_nm'] / 1e6, 4)) for l in rust_anchor],
+                         [(l['member'], l['member_pad'], l['anchor_pad'], l['gap_mm']) for l in g['R2_member_to_anchor_links']])
         near, rust_near = g['R1_declared_near_interfaces'][0], by_kind[('R1_declared_near_interface', 'g')]
         self.assertEqual((rust_near['paired_by'], near['paired_by']), ('any_pad_fallback', 'any_pad_fallback'))
         self.assertEqual(rust_near['candidate_pairs'], near['candidate_pairs'])
@@ -683,6 +714,7 @@ class EngineParityTests(unittest.TestCase):
         self.assertEqual(int(evaluation['terms']['link_gap_nm']), unweighted_nm)
         self.assertEqual(evaluation['link_weight'], 1)
         self.assertAlmostEqual(unweighted_nm / 1e6, group_links.objective(report), places=3)
+        return evaluation
 
 
 class CaptureContractTests(EngineParityTests):
@@ -729,13 +761,34 @@ class CaptureContractTests(EngineParityTests):
         self.assertEqual((evaluation['links'], evaluation['link_weight']), ([], 0))
         self.assertEqual(evaluation['terms']['link_gap_nm'], '0')
 
+    def test_modern_record_without_proximity_rows_refuses_absent_or_null_half_extents(self):
+        # Chief counterexample on dfc47810: with no proximity rows a missing/null half_nm silently centred.
+        for value in ('absent', None, [300_000], ['a', 'b'], [-1, 1], [0, 300_000]):
+            problem = self.problem()
+            pad = problem['footprints'][1]['pads'][0]
+            if value == 'absent':
+                pad.pop('half_nm')
+            else:
+                pad['half_nm'] = value
+            code, out = self.run_engine(problem)
+            self.assertEqual(code, 1, (value, out))
+            self.assertIn(problem['footprints'][1]['uuid'], out['error'])
+            self.assertIn('half', out['error'])
+        code, out = self.run_engine(self.problem())
+        self.assertEqual((code, out['proximity_contract']), (0, 'pad_edge_signed_rect/1'))
+
     def test_modern_record_refuses_missing_or_mixed_extents_and_legacy_refuses_modern_fields(self):
         modern = self.legacy()
         from agent_ee import placement_job as job
         modern['schema'] = job.INPUT_SCHEMA
         code, out = self.run_engine(modern)
-        self.assertEqual((code, out['error']), (1, 'pad_edge proximity needs captured pad half extents'))
-        modern['footprints'][1]['pads'][0]['half_nm'] = [300_000, 300_000]
+        self.assertEqual(code, 1)
+        self.assertIn('lacks half_nm', out['error'])
+        # Every pad measured, but the pad_edge row names an explicit aperture: mixed geometry refuses.
+        for row in modern['footprints']:
+            for pad in row['pads']:
+                pad['half_nm'] = [300_000, 300_000]
+        modern['footprints'][1]['pads'][0]['half_nm'] = [0, 0]
         code, out = self.run_engine(modern)
         self.assertEqual((code, out['error']), (1, 'pad_edge proximity needs captured pad half extents'))
         marked = self.legacy()

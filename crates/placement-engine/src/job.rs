@@ -602,13 +602,26 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 _ => None,
             };
             let at = pad["local_nm"].as_array().context("pad local_nm")?;
-            let half = match pad.get("half_nm").and_then(Value::as_array) {
-                Some(h) => { let (hx, hy) = (h[0].as_i64().context("pad half x")?, h[1].as_i64().context("pad half y")?);
-                    ensure!(hx >= 0 && hy >= 0, "negative pad half extent"); (hx, hy) },
-                None => (0, 0),
+            let pad_uuid = text(pad, "uuid")?;
+            // Schema /2 captures every pad's half extents explicitly; [0, 0] marks a copper-free
+            // aperture (mask/paste only). Absent, null or malformed extents refuse: a modern
+            // record never silently scores a centre or joins an unmeasured pad to a link.
+            let half = match pad.get("half_nm") {
+                None if legacy => (0, 0),
+                None | Some(Value::Null) => bail!("{}: pad {} lacks half_nm; schema /2 requires an explicit [half_x_nm, half_y_nm] ([0, 0] marks an aperture)",
+                                                  uuids[i], pad_uuid),
+                Some(v) => {
+                    let h = v.as_array().filter(|h| h.len() == 2)
+                        .with_context(|| format!("{}: pad {} half_nm must be a two-integer array", uuids[i], pad_uuid))?;
+                    let (hx, hy) = (h[0].as_i64().with_context(|| format!("{}: pad {} half_nm[0] must be an integer", uuids[i], pad_uuid))?,
+                                    h[1].as_i64().with_context(|| format!("{}: pad {} half_nm[1] must be an integer", uuids[i], pad_uuid))?);
+                    ensure!(hx >= 0 && hy >= 0, "{}: pad {} negative pad half extent", uuids[i], pad_uuid);
+                    ensure!((hx == 0) == (hy == 0), "{}: pad {} half_nm mixes a zero and a non-zero extent", uuids[i], pad_uuid);
+                    (hx, hy)
+                }
             };
             pads.push(Pad {
-                uuid: text(pad, "uuid")?.to_string(),
+                uuid: pad_uuid.to_string(),
                 net,
                 at: (at[0].as_i64().context("pad x")?, at[1].as_i64().context("pad y")?),
                 half,
@@ -1036,18 +1049,20 @@ fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
 }
 
 /// Non-negative signed pad-edge gap of one group link (R1 interface or R2 intra-group/anchor link).
-fn link_argmin(p: &Prepared, k: usize, poses: &[Pose]) -> (i64, (usize, usize, usize, usize)) {
+/// The closest candidate copper pair of link `k`, or None for a link without candidates
+/// (compile_links never emits one; callers still treat None as "no link", never a sentinel).
+fn link_argmin(p: &Prepared, k: usize, poses: &[Pose]) -> Option<(i64, (usize, usize, usize, usize))> {
     let l = &p.links[k];
     let mut best: Option<(i64, (usize, usize, usize, usize))> = None;
     for &(a, pa, b, pb) in &l.pairs {
         let gap = rect_gap(&pad_rect(p, a, pa, &poses[a]), &pad_rect(p, b, pb, &poses[b]));
         if best.is_none_or(|(g, _)| gap < g) { best = Some((gap, (a, pa, b, pb))); }
     }
-    best.unwrap_or((i64::MAX, (0, 0, 0, 0)))
+    best
 }
 
 fn link_gap(p: &Prepared, k: usize, poses: &[Pose]) -> i64 {
-    link_argmin(p, k, poses).0
+    link_argmin(p, k, poses).map_or(0, |(gap, _)| gap)
 }
 
 fn link_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
@@ -1076,8 +1091,13 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
         }
     }
     let group_index: BTreeMap<&str, usize> = groups.iter().enumerate().map(|(g, (name, _, _))| (name.as_str(), g)).collect();
+    // Link candidates are real copper pads only; an explicit [0, 0] aperture never joins a link,
+    // exactly as the Python report excludes apertures. A footprint with no copper pad has no links.
+    let copper = |f: usize| -> Vec<usize> {
+        footprints[f].pads.iter().enumerate().filter(|(_, pad)| pad.half != (0, 0)).map(|(i, _)| i).collect()
+    };
     let pads_on = |f: usize, n: usize| -> Vec<usize> {
-        footprints[f].pads.iter().enumerate().filter(|(_, pad)| pad.net == Some(n)).map(|(i, _)| i).collect()
+        footprints[f].pads.iter().enumerate().filter(|(_, pad)| pad.net == Some(n) && pad.half != (0, 0)).map(|(i, _)| i).collect()
     };
     let cross = |a: usize, ap: &[usize], b: usize, bp: &[usize]| -> Vec<(usize, usize, usize, usize)> {
         ap.iter().flat_map(|&pa| bp.iter().map(move |&pb| (a, pa, b, pb))).collect()
@@ -1097,10 +1117,9 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
             }
         }
         for &m in members {
-            if m != *anchor && !footprints[m].pads.is_empty() && !footprints[*anchor].pads.is_empty() {
-                let all = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
+            if m != *anchor && !copper(m).is_empty() && !copper(*anchor).is_empty() {
                 links.push(Link { kind: "R2_member_to_anchor".into(), group: name.clone(), target: footprints[*anchor].native_ref.clone(),
-                                  paired_by: "any".into(), pairs: cross(m, &all(m), *anchor, &all(*anchor)) });
+                                  paired_by: "any".into(), pairs: cross(m, &copper(m), *anchor, &copper(*anchor)) });
             }
         }
         let group_row = &input["groups"][g];
@@ -1124,10 +1143,9 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
                 }
             }
             let (paired_by, pairs) = if signal.is_empty() {
-                // Accepted-contract fallback: no shared non-rail signal net, so any pad pair tethers the groups.
-                let all = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
+                // Accepted-contract fallback: no shared non-rail signal net, so any copper pad pair tethers the groups.
                 ("any_pad_fallback", members.iter().flat_map(|&a| others.iter().map(move |&b| (a, b)))
-                    .flat_map(|(a, b)| cross(a, &all(a), b, &all(b))).collect::<Vec<_>>())
+                    .flat_map(|(a, b)| cross(a, &copper(a), b, &copper(b))).collect::<Vec<_>>())
             } else { ("signal_net", signal) };
             if !pairs.is_empty() {
                 links.push(Link { kind: "R1_declared_near_interface".into(), group: name.clone(), target: target.to_string(),
@@ -1136,17 +1154,9 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
         }
     }
     let _ = physical_reference;
+    // Every compiled link carries at least one copper pair; the argmin below never needs a sentinel.
+    ensure!(links.iter().all(|l| !l.pairs.is_empty()), "compiled a group link without candidate pairs");
     Ok(links)
-}
-
-fn pad_rect_initial(footprints: &[Footprint], f: usize, pad: usize) -> Rect {
-    let fp = &footprints[f];
-    let (x, y) = fp.pads[pad].at;
-    let (rx, ry) = rotate(x, y, fp.initial.q);
-    let (cx, cy) = (rx + fp.initial.x, ry + fp.initial.y);
-    let (hx, hy) = fp.pads[pad].half;
-    let (hx, hy) = if fp.initial.q.rem_euclid(2) == 1 { (hy, hx) } else { (hx, hy) };
-    Rect { x0: cx - hx, y0: cy - hy, x1: cx + hx, y1: cy + hy }
 }
 
 /// Deterministic post-anneal member refinement (AGENTEE-479 step 3).
@@ -1167,7 +1177,7 @@ pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec
         for (gap, k) in order {
             if gap <= 0 { continue; }
             let l = &p.links[k];
-            let (_, (fa, _, fb, _)) = link_argmin(p, k, poses);
+            let Some((_, (fa, _, fb, _))) = link_argmin(p, k, poses) else { continue };
             let is_anchor = |f: usize| p.footprints[f].group.map(|g| p.groups[g].1) == Some(f);
             let member = if p.movable.contains(&fa) && !is_anchor(fa) { fa }
                          else if p.movable.contains(&fb) && !is_anchor(fb) { fb } else { continue };
@@ -1770,10 +1780,13 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
 /// Measured group links of a pose vector (signed pad-edge gaps in nm), for reports.
 pub fn link_rows(p: &Prepared, poses: &[Pose]) -> Value {
     Value::Array(p.links.iter().enumerate().map(|(k, l)| {
-        let (gap, (a, pa, b, pb)) = link_argmin(p, k, poses);
-        json!({"kind": l.kind, "group": l.group, "target": l.target, "paired_by": l.paired_by, "candidate_pairs": l.pairs.len(),
-               "a": p.footprints[a].native_ref, "a_pad": p.footprints[a].pads[pa].uuid,
-               "b": p.footprints[b].native_ref, "b_pad": p.footprints[b].pads[pb].uuid, "gap_nm": gap})
+        match link_argmin(p, k, poses) {
+            Some((gap, (a, pa, b, pb))) => json!({"kind": l.kind, "group": l.group, "target": l.target, "paired_by": l.paired_by,
+                "candidate_pairs": l.pairs.len(), "a": p.footprints[a].native_ref, "a_pad": p.footprints[a].pads[pa].uuid,
+                "b": p.footprints[b].native_ref, "b_pad": p.footprints[b].pads[pb].uuid, "gap_nm": gap}),
+            None => json!({"kind": l.kind, "group": l.group, "target": l.target, "paired_by": l.paired_by,
+                "candidate_pairs": 0, "gap_nm": Value::Null, "reason": "no copper pad pair"}),
+        }
     }).collect())
 }
 
@@ -2100,8 +2113,8 @@ mod tests {
         json!({"uuid": uuid, "native_ref": r, "role": role, "pose": {"x_nm": x, "y_nm": y, "quarter_turns": 0},
                "rotations": [0, 1, 2, 3], "occupancy": occ,
                "copper_local_nm": [[-900_000, -300_000, -300_000, 300_000], [300_000, -300_000, 900_000, 300_000]],
-               "pads": [{"uuid": format!("{uuid}-1"), "net": net, "local_nm": [-600_000, 0]},
-                        {"uuid": format!("{uuid}-2"), "net": "GND", "local_nm": [600_000, 0]}]})
+               "pads": [{"uuid": format!("{uuid}-1"), "net": net, "local_nm": [-600_000, 0], "half_nm": [300_000, 300_000]},
+                        {"uuid": format!("{uuid}-2"), "net": "GND", "local_nm": [600_000, 0], "half_nm": [300_000, 300_000]}]})
     }
 
     fn uuid(n: u32) -> String {
@@ -2246,9 +2259,11 @@ mod tests {
         // Modern contract: missing or mixed extents refuse rather than fall back.
         let mut modern = raw.clone();
         modern["schema"] = json!(INPUT_SCHEMA);
-        assert!(prepare(&modern).unwrap_err().to_string().contains("needs captured pad half extents"));
-        modern["footprints"][1]["pads"][0]["half_nm"] = json!([300_000, 300_000]);
-        assert!(prepare(&modern).unwrap_err().to_string().contains("needs captured pad half extents"));
+        assert!(prepare(&modern).unwrap_err().to_string().contains("lacks half_nm"));
+        // Every pad measured but the pad_edge row names an explicit aperture: mixed geometry refuses.
+        let mut mixed = with_half_extents(modern.clone(), json!({"shared": {}, "scoped": {}}));
+        mixed["footprints"][1]["pads"][0]["half_nm"] = json!([0, 0]);
+        assert!(prepare(&mixed).unwrap_err().to_string().contains("needs captured pad half extents"));
         let full = with_half_extents(modern, json!({"shared": {}, "scoped": {}}));
         let p = prepare(&full).unwrap();
         assert_eq!((p.legacy, p.proximity[0].metric), (false, MODERN_PROXIMITY_CONTRACT));
@@ -2256,6 +2271,61 @@ mod tests {
         let mut unknown = raw.clone();
         unknown["schema"] = json!("agent-ee.placement-job-input/3");
         assert!(prepare(&unknown).unwrap_err().to_string().contains("unsupported placement job schema"));
+    }
+
+    #[test]
+    fn modern_schema_requires_explicit_valid_half_extents_on_every_pad_even_without_proximity_rows() {
+        let base = with_half_extents(input(vec![]), json!({"shared": {"GND": "ground return"}, "scoped": {}}));
+        assert!(base.get("proximity").is_none());
+        let reference = full_evaluate(&prepare(&base).unwrap(), &prepare(&base).unwrap().footprints.iter().map(|f| f.initial).collect::<Vec<_>>());
+        let pad = |raw: &mut Value| raw["footprints"][1]["pads"][0].as_object_mut().unwrap().clone();
+        let _ = pad;
+        let cases: Vec<(&str, Value, &str)> = vec![
+            ("absent", Value::Null, "lacks half_nm"),
+            ("null", json!(null), "lacks half_nm"),
+            ("short", json!([300_000]), "two-integer array"),
+            ("long", json!([1, 2, 3]), "two-integer array"),
+            ("string", json!(["a", "b"]), "must be an integer"),
+            ("object", json!({"x": 1}), "two-integer array"),
+            ("negative", json!([-1, 300_000]), "negative pad half extent"),
+            ("half_zero", json!([0, 300_000]), "mixes a zero"),
+        ];
+        for (name, value, message) in cases {
+            let mut raw = base.clone();
+            if name == "absent" { raw["footprints"][1]["pads"][0].as_object_mut().unwrap().remove("half_nm"); }
+            else { raw["footprints"][1]["pads"][0]["half_nm"] = value; }
+            let err = prepare(&raw).unwrap_err().to_string();
+            assert!(err.contains(message) && err.contains(&uuid(2)), "{name}: {err}");
+        }
+        // The unchanged record still scores exactly as before.
+        let p = prepare(&base).unwrap();
+        assert_eq!(full_evaluate(&p, &p.footprints.iter().map(|f| f.initial).collect::<Vec<_>>()), reference);
+    }
+
+    #[test]
+    fn explicit_apertures_never_join_link_candidates_and_all_aperture_endpoints_have_no_link() {
+        let base = with_half_extents(input(vec![]), json!({"shared": {"GND": "ground return"}, "scoped": {}}));
+        let p0 = prepare(&base).unwrap();
+        let poses0 = legal_dispersed(&p0);
+        let rows0 = link_rows(&p0, &poses0);
+        // An explicit [0, 0] aperture on R2, sitting right next to the anchor R1, must not become the anchor link.
+        let mut raw = base.clone();
+        raw["footprints"][1]["pads"].as_array_mut().unwrap().push(json!({"uuid": "aperture-only", "net": "", "local_nm": [-7_100_000, 0], "half_nm": [0, 0]}));
+        let p = prepare(&raw).unwrap();
+        let poses = legal_dispersed(&p);
+        let rows = link_rows(&p, &poses);
+        assert_eq!(rows, rows0, "aperture changed the link rows");
+        assert_eq!(full_evaluate(&p, &poses).link, full_evaluate(&p0, &poses0).link);
+        assert!(p.links.iter().all(|l| l.pairs.iter().all(|&(a, pa, b, pb)| p.footprints[a].pads[pa].half != (0, 0) && p.footprints[b].pads[pb].half != (0, 0))));
+        // A member whose pads are all apertures has no anchor link and no fallback link, and nothing is forged.
+        let mut only = base.clone();
+        for pad in only["footprints"][1]["pads"].as_array_mut().unwrap() { pad["half_nm"] = json!([0, 0]); }
+        let p = prepare(&only).unwrap();
+        assert!(p.links.iter().all(|l| !(l.kind == "R2_member_to_anchor" && l.group == "g")), "{:?}", p.links.iter().map(|l| (&l.kind, &l.group)).collect::<Vec<_>>());
+        assert!(p.links.iter().all(|l| !l.pairs.is_empty()));
+        let poses = legal_dispersed(&p);
+        for row in link_rows(&p, &poses).as_array().unwrap() { assert!(row["gap_nm"].is_number(), "{row}"); }
+        assert!(full_evaluate(&p, &poses).link >= 0);
     }
 
     #[test]

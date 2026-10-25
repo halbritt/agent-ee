@@ -112,6 +112,15 @@ allowlist, and no historical bytes are rewritten.
 | `agent-ee.placement-job-input/2` (`INPUT_SCHEMA`) | every fresh `placement_job.capture` | `basis: pad_edge` rows use the signed pad-rect gap (`pad_edge_signed_rect/1`), other rows the pad-centre Chebyshev metric (`pad_centre_chebyshev/1`); a pad_edge row whose pads lack `half_nm`, or mix pads with and without it, refuses (`pad_edge proximity needs captured pad half extents`) | compiled (S1/S2/R1/R2), `weights.link` |
 | `agent-ee.placement-job-input/1` (`LEGACY_INPUT_SCHEMA`) | AGENTEE-515 jobs retained before 479 | every row scored as the historical engine did: pad-centre Chebyshev, the `basis` label recorded but not honoured (`legacy_pad_centre/1`) | none; `link_weight` reported as 0, so the historical objective is unchanged |
 
+Under `/2` every pad carries an explicit `half_nm` two-integer array; an absent,
+null, short, non-integer, negative or half-zero value refuses by footprint UUID
+and pad UUID, whether or not the record has proximity rows. `[0, 0]` is the
+explicit copper-free aperture marker (mask/paste only). Group-link candidates
+(R2 intra-group signal, R2 member-to-anchor, R1 declared-near signal and
+`any_pad_fallback`) are drawn from copper pads only, the same set the Python
+report measures; a member or endpoint whose pads are all apertures simply has
+no such link, reported as absent rather than as a sentinel gap or a forged pair.
+
 A `/1` record that carries any modern-only field (`rails`, `groups[].near`,
 `pads[].half_nm`, `proximity[].subject_declared`/`partner_declared`,
 `weights.link`) refuses: it is a mislabelled capture, not history. Any other
