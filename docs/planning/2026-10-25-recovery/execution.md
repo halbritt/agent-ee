@@ -10,7 +10,7 @@ Direct owner instruction to agent-564, 2026-10-25, after the planning request:
 
 Agent-564 completed consolidation before creating the implementation goal. This instruction authorizes parallel execution of the reconciled recovery backlog and supersedes the older sole-agent direction. AGENTEE-518 and existing telemetry-pod campaigns remain held. It does not authorize fabrication, purchases or project uploads. RD-01–05 and all sourced engineering constraints remain in force.
 
-Cairn shows six sessions in the stated range. Subsequent native-session reports corrected two initial registry labels: agent-566 is Opus 5.5 (`claude-opus-5-5`), and agent-569 is Sol (`gpt-6.1-sol`). The initial dispatch receipt preserves the registry snapshot; it is not the current model allocation. Use these existing sessions without switching their models or launching substitutes. Subscription authentication or quota failure stops the affected operation; no OpenRouter fallback.
+Cairn shows six sessions in the stated range. Native-session reports first corrected two initial registry labels: agent-566 was Opus 5.5 (`claude-opus-5-5`), and agent-569 is Sol (`gpt-6.1-sol`). At 13:08 PDT agent-566 reported its session had switched to Fable 5.1 (`claude-fable-5-1`); the chief did not initiate that switch. Its current work is assembly-profile assessment and implementation. The initial allocation and dispatch receipt preserve earlier snapshots. Use these existing sessions without switching their models or launching substitutes. Subscription authentication or quota failure stops the affected operation; no OpenRouter fallback.
 
 ## Initial allocation
 
@@ -48,12 +48,15 @@ This ledger records accepted integration separately from worker delivery. A desi
 | Item | Inspected or integrated evidence | Current result |
 | --- | --- | --- |
 | AGENTEE-515 verification preparation | `fdedf17e2736a37a58a2250f8a59abfcb9cd1e82`, [M1 verification matrix](contracts/m1-verification-matrix.md) | Landed and pushed; native M1 acceptance remains pending |
-| AGENTEE-524 package design | `21a39d0f374de56d0b6f5f7d58ffd21cdb7678a4`, [selected contract](contracts/AGENTEE-524-package.md) | Landed and pushed; agent-566 implements sealed-byte roundtrip checks, with no competing build-workflow writer |
-| AGENTEE-524 U1 reader investigation | `5b714a6d8109ba277664f37e78d0548d5a006f0d`, [decisive evidence](contracts/AGENTEE-524-U1-reader-investigation.md) | Landed and pushed; a corner correspondence bug explains the refusal within the existing tolerance. Agent-569 receives the narrow repair; full orientation remains unassessed |
-| AGENTEE-519 runtime | Landed `61c6cd49052487fa18fda7a55cec07618d10b3e6`; 20 focused tests, docs/origins and chief native replay passed | Pushed and original worktree removed. Doctor/planner verified, esp_prog captured 21 native objects before cancellation, acquisition completed four stages through schematic. Agent-567 runs the remaining full-result criterion on a frozen 519 worktree; issue stays open |
+| AGENTEE-524 package design and sealed-byte checks | Design `21a39d0f374de56d0b6f5f7d58ffd21cdb7678a4`; part A `877b41536b80669a0b399366b0c8132e5afbee00`; [native verification](contracts/AGENTEE-524-partA-verification.md) | Landed and pushed; chief strict 85 tests/no skips passed. Exact sealed acquisition bytes pass; an exporter fault passes custody but fails roundtrip geometry. Agent-566 owns profile/orientation part B; agent-568 owns the build consumer |
+| AGENTEE-524 U1 reader | Investigation `5b714a6d8109ba277664f37e78d0548d5a006f0d`; repair `b74cac20f0281fb34309b265526621f03f2b796d`; [repair evidence](contracts/AGENTEE-524-RECT-repair-evidence.md) | Landed and pushed; chief strict 55 tests/no skips plus exact private capture replay passed. One-to-one corner correspondence preserves the existing tolerance and declared geometry. This does not assess assembly orientation |
+| AGENTEE-519 runtime | Implementation `61c6cd49052487fa18fda7a55cec07618d10b3e6`; [full result](runtime-519-full-agent-567.md) landed `c6446c99b0d53617079328228a73508c73d3d03c` | Plane Done. Chief verified 13 receipt/native hashes. Acquisition completed seven stages with legacy acceptance; esp_prog failed before search on duplicate fixed-mark reference. All 204 originals preserved. REC-30 / AGENTEE-528 owns that separate repair; M1 remains open |
 | AGENTEE-520 intent | Landed `01227b586da29660d55b070f6677da539571deac`; 34 strict tests including all previously pending planner guards, docs/origins passed | Pushed and worktree removed; Plane Done. Chief exact-input replay confirms original esp_prog refuses before capture at `intent.assembly.sides` while acquisition still reaches schematic. Raw esp_prog compatibility remains 479 work |
-| AGENTEE-521 claims | Landed `e7a92977fda105e322c2775527834882ca950bdc`, [coherent contract](contracts/claims-evidence-qualification.md) | Design accepted; implementation dispatched to agent-565 (method compiler) and agent-568 (qualification/build consumer), with separate file ownership |
-| KICADROUTE-104 restrictions | Argon delivery `2352b95b` reviewed | Correction requested: exact RD references, limited geometric claims and explicit preservation-versus-native-DRC evidence. No feature enabled |
+| AGENTEE-521 claims | Contract `e7a92977fda105e322c2775527834882ca950bdc`; method compiler `ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7` | Compiler landed after chief strict 76 native tests/no skips and docs/origins. Agent-568 implements qualification/build consumer; agent-565 prepares actual acquisition typed inputs. Legacy receipt coverage remains unknown; no fabricated judgment concurrence |
+| KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
+| AGENTEE-528 fixed-mark identity | REC-30, observed at runtime source `61c6cd49`, unchanged parser at `877b4153` | Agent-567 assigned narrow identity repair from `c6446c99`; native graph is 519 → 528 → 515. Grouping contract preparation remains independent |
+| AGENTEE-479 compatibility/grouping | Agent-570 assigned original esp_prog field mapping and final-native grouping contract | Bounded design preparation; no stripped input or unsourced universal gap. Historical parent 472 remains held |
+| AGENTEE-522 mask mismatch | Agent-569 assigned one retained failing article and one legal control | Bounded localization only; no full search or production repair. Final native rejection remains mandatory |
 
 Qualification records must depend on frozen package evidence in one direction:
 package evidence → completed stage receipt → run-root qualification → build-report summary.
@@ -68,3 +71,9 @@ and `intent-520/` beside it. The latter harness honestly reports overall
 acquisition checkpoint succeeds with `accepted:false`; this is neither a
 missing-runtime regression nor M1 acceptance. Do not remove declarations or
 change the harness to call this input ready before 479 implements its mapping.
+
+Current Plane state and the new execution-only dependency are recorded in
+[the 13:18 checkpoint](execution-checkpoint-1318.json). This supplements the
+completed consolidation snapshot; it does not rewrite the three audit reports.
+The original full runtime attempt is a baseline, not a comparative performance
+claim or final manufacturing qualification.

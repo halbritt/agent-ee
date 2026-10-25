@@ -1,0 +1,244 @@
+{
+  "recorded_at": "2026-10-25T13:18:00-07:00",
+  "source_head": "ae477fc774ba1d7d3c6e5d1a91242bc708d3f0f7",
+  "scope": "Execution checkpoint; consolidation snapshots retained unchanged",
+  "items": {
+    "AGENTEE-512": {
+      "id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "name": "Recover a dependable agent-ee workflow from the three independent audits",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": null,
+      "updated_at": "2026-10-25T20:17:49.916028Z"
+    },
+    "AGENTEE-515": {
+      "id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+      "name": "Qualify acquisition build and imported esp_prog as the finite recovery release",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T20:17:49.706052Z"
+    },
+    "AGENTEE-519": {
+      "id": "4e0a70bd-9918-4992-9a90-34b0998dd28c",
+      "name": "Make the captured acquisition and esp_prog workflows reproducible in the supported runtime",
+      "state": "b9ffb5fc-cbc9-4473-91f5-8661ccbb6bde",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T20:17:49.089015Z"
+    },
+    "AGENTEE-521": {
+      "id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b",
+      "name": "Bind release claims to appropriate requirement evidence and explicit qualification states",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T20:17:49.300900Z"
+    },
+    "AGENTEE-524": {
+      "id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0",
+      "name": "Validate exact sealed exports and profile-specific assembly orientation",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T20:17:49.497925Z"
+    },
+    "AGENTEE-528": {
+      "id": "e41144f4-81e8-4b63-bd8b-0094b2bad276",
+      "name": "Admit distinct fixed copper marks without ambiguous placement identities",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "updated_at": "2026-10-25T20:15:05.149448Z"
+    }
+  },
+  "rec30_relations": {
+    "e41144f4-81e8-4b63-bd8b-0094b2bad276": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab"
+        }
+      ],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    },
+    "4e0a70bd-9918-4992-9a90-34b0998dd28c": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e41144f4-81e8-4b63-bd8b-0094b2bad276"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "da958295-c5d8-4fb8-81ef-ca4e3acd5314"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "bd909395-4a22-455f-9152-9292a185dde8"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "674c62cc-da92-45bf-8d05-7c74afdaa002"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        }
+      ],
+      "blocked_by": [],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    },
+    "5219d0d5-9365-4f71-bcb4-1474eb1375ab": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a"
+        }
+      ],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e41144f4-81e8-4b63-bd8b-0094b2bad276"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "8409122b-1c6f-4e20-9f74-343a2251942f"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    },
+    "531a39a9-ff5c-471e-a9d9-0804a48d6904": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "40da87f6-c7c2-43fc-abff-fa8d7a79b846"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "da958295-c5d8-4fb8-81ef-ca4e3acd5314"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "b6d05a39-83ef-410a-b976-c512ba0e2fb8"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "8409122b-1c6f-4e20-9f74-343a2251942f"
+        }
+      ],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e41144f4-81e8-4b63-bd8b-0094b2bad276"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  "dispatches": {
+    "rec30-fixed-mark-repair": {
+      "agent": 567,
+      "source": {
+        "record_id": "a5720dc6-9d9c-4fb9-aa4f-f4776e898007",
+        "version": 1
+      },
+      "event": "a0433445-274a-4920-9a1d-2921e5769c6d"
+    },
+    "m1-typed-input-preparation": {
+      "agent": 565,
+      "source": {
+        "record_id": "3cd1df6e-1991-4740-8246-5bfb5a7ba755",
+        "version": 1
+      },
+      "event": "45515321-91a5-4cfe-a85e-53d287e452a1"
+    }
+  }
+}

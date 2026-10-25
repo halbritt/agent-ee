@@ -37,3 +37,12 @@ Each row separates observation (**O**), proposed cause (**C**), impact (**I**) a
 | REC-29 — F plausible hierarchy concern; S workflow | **O:** hierarchical emission exists; arbitrary manual-edit-preserving regeneration remains limited. **C:** supported regeneration contract is narrower than native emit. **I:** some future workflows cannot safely re-emit. **R:** explicit refusal/documented domain until a real hierarchical edit case is qualified. | Deferred M3 qualification, not required for the captured acquisition build. |
 
 No report's universal gap, via spacing, IPC lead-protrusion substitute, “all nonpassing native defaults fail”, wholesale router refresh, or full subsystem replacement is adopted. Required unresolved engineering constraints block their dependent release claim; they do not become a generic disclaimer that lets a consequential defect pass.
+
+## Findings discovered during authorized recovery execution
+
+These additions were not findings of the three reports and do not change their
+historical baseline.
+
+| ID / evidence | Observation, cause, impact, remedy | Disposition / delivery |
+| --- | --- | --- |
+| REC-30 — [full runtime baseline](runtime-519-full-agent-567.md), source `61c6cd49`; parser unchanged at inspected `877b4153` | **O:** exact esp_prog capture has 21 objects, including two fixed copper marks named `Ref*` with distinct UUIDs. The real Rust parser refuses before search; cancellation preflight did not exercise it. **C:** `job.rs` places every non-silk role in a unique native-reference selector map. **I:** original representative input cannot enter placement even after rich-intent compatibility is supplied. **R:** preserve UUID identity and fixed geometry while separating mark labels from unambiguous component/group/locality selectors; keep duplicate component-reference and UUID refusals. | Confirmed and actionable. [AGENTEE-528](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/e41144f4-81e8-4b63-bd8b-0094b2bad276), depends on 519 and blocks 515. Repair scope excludes renaming/deleting original objects, stripping intent and full search. |
