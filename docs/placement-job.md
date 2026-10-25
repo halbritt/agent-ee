@@ -521,6 +521,12 @@ rules, including stricter coupling limits, always remain in force.
    owns no zones. An integrity mismatch yields `eligibility: INELIGIBLE`,
    `physical_checks: FAILED` and job status `integrity_failed`, even if DRC is
    otherwise clean. Router-output existence alone cannot yield `completed`.
+   After the native checks the same saved board is rendered into supplemental
+   annotated group views (`group_views`, see [group-views.md](group-views.md#final-check-wiring))
+   through the bounded child mechanism; `evidence_complete` is true only when the
+   manifest, both views, the final board, the raw input board and the validated
+   groups bind by hash. Missing views are reported as such and never change
+   `eligibility`; `acceptance_assessed` stays false.
    Native
    DRC with `--refill-zones`; opens; errors split into pre-existing,
    placement-introduced and routing-introduced; warnings by type; measured route

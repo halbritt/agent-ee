@@ -259,3 +259,27 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
                                'Native SVG timestamps are retained; byte determinism is not claimed.'])
     write_json(out / 'manifest.json', report)
     return report
+
+
+def main(argv=None):
+    """Narrow child entry used by placement_job.final_checks: produce one view set, print the manifest."""
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(prog='agent_ee.group_views', description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    produce_parser = sub.add_parser('produce', help='write top/bottom views and manifest.json into a new directory')
+    produce_parser.add_argument('--board', required=True, help='saved final native board (.kicad_pcb)')
+    produce_parser.add_argument('--groups', required=True, help='JSON file holding the validated groups document')
+    produce_parser.add_argument('--out', required=True, help='new output directory (must not exist)')
+    produce_parser.add_argument('--input-board', default=None, help='original raw input board, hashed independently')
+    args = parser.parse_args(argv)
+    groups = json.loads(Path(args.groups).read_bytes())
+    report = produce(args.board, groups, args.out, input_board_path=args.input_board)
+    sys.stdout.write(json.dumps({'schema': report['schema'], 'board_sha256': report['board_sha256'],
+                                 'input_board_sha256': report['input_board_sha256'],
+                                 'canonical_groups_sha256': report['canonical_groups_sha256']}) + '\n')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

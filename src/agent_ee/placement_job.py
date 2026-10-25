@@ -1906,7 +1906,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            clock=clock, cancel_dir=job_dir,
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
-                                           length_match=length_match, ac_match=ac_match)
+                                           length_match=length_match, ac_match=ac_match,
+                                           input_board=board_path, input_board_sha256=sha256_bytes(board_bytes))
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
@@ -1950,8 +1951,115 @@ def _completion_status(routed, incumbent, final):
     return 'completed'
 
 
+GROUP_VIEWS_SCHEMA = 'agent-ee.group-views/1'
+
+
+def _group_views(board, groups, out, *, input_board=None, input_board_sha256=None, clock, cancel_dir=None):
+    """Supplemental annotated views of the saved final board, rendered in a bounded child.
+
+    The helper runs through ``_run_child`` under the job clock and CANCEL file, so it can
+    neither overrun the remaining deadline nor ignore cancellation. Its manifest must bind
+    the exact saved final board, the validated groups identity and, separately, the raw
+    input board; anything else is reported as missing evidence, never as a stale or partial
+    view. A rendered view is supplemental evidence (``acceptance_assessed`` stays false), not
+    a placement or group-quality pass.
+    """
+    from .storage import identity
+    board, out = Path(board), Path(out)
+    result = {'status': 'missing', 'schema': GROUP_VIEWS_SCHEMA, 'directory': str(out), 'manifest': None,
+              'manifest_sha256': None, 'board_sha256': digest(board),
+              'input_board_sha256': digest(input_board) if input_board is not None else None,
+              'canonical_groups_sha256': identity(groups), 'views': {}, 'acceptance_assessed': False,
+              'evidence_required': True, 'problems': []}
+    if input_board_sha256 is not None and result['input_board_sha256'] != input_board_sha256:
+        result['problems'].append('raw input board on disk does not match the captured input identity')
+        return result
+    # The validated groups document travels as its own file; the request record keeps the
+    # identities this call was bound to, so a later reader can check what was asked for.
+    groups_file = out.parent / (out.name + '-groups.json')
+    groups_file.write_bytes(canonical(groups))
+    write_json(out.parent / (out.name + '-request.json'),
+               {'schema': 'agent-ee.group-views-request/1', 'board': str(board), 'board_sha256': result['board_sha256'],
+                'input_board': str(input_board) if input_board is not None else None,
+                'input_board_sha256': result['input_board_sha256'], 'groups_file': groups_file.name,
+                'groups_sha256': digest(groups_file), 'canonical_groups_sha256': result['canonical_groups_sha256']})
+    argv = [sys.executable, '-B', '-m', 'agent_ee.group_views', 'produce', '--board', str(board),
+            '--groups', str(groups_file), '--out', str(out)]
+    if input_board is not None:
+        argv += ['--input-board', str(input_board)]
+    _check_stop(clock, cancel_dir)
+    done = _run_child(argv, clock=clock, cancel_dir=cancel_dir)
+    if done.returncode != 0:
+        noise = (': Debug: ', 'property.h(')
+        tail = '\n'.join(line for line in done.stderr.decode(errors='replace').splitlines()
+                         if not any(marker in line for marker in noise))
+        result['problems'].append('group view helper exit %d: %s' % (done.returncode, tail[-2000:].strip()))
+        return result
+    manifest_path = out / 'manifest.json'
+    if not manifest_path.is_file():
+        result['problems'].append('group view helper produced no manifest')
+        return result
+    manifest = read_json(manifest_path)
+    problems = []
+    if manifest.get('schema') != GROUP_VIEWS_SCHEMA:
+        problems.append('unexpected group view manifest schema')
+    if manifest.get('board_sha256') != result['board_sha256'] or digest(board) != result['board_sha256']:
+        problems.append('group view manifest does not bind the saved final board')
+    if manifest.get('input_board_sha256') != result['input_board_sha256']:
+        problems.append('group view manifest does not bind the raw input board identity')
+    if manifest.get('canonical_groups_sha256') != result['canonical_groups_sha256']:
+        problems.append('group view manifest does not bind the validated groups')
+    if manifest.get('acceptance_assessed') is not False:
+        problems.append('group view manifest claims an assessment')
+    views = {}
+    for side in ('top', 'bottom'):
+        row = (manifest.get('views') or {}).get(side) or {}
+        path = out / str(row.get('path') or '')
+        if not row.get('path') or not path.is_file() or digest(path) != row.get('sha256'):
+            problems.append(f'{side} view missing or does not match its manifest hash')
+            continue
+        views[side] = {'path': row['path'], 'sha256': row['sha256'], 'face': row.get('face')}
+    result.update(manifest=manifest_path.name, manifest_sha256=digest(manifest_path), views=views,
+                  members=len(manifest.get('members') or []), unresolved=len(manifest.get('unresolved') or []),
+                  problems=problems, status='rendered' if not problems else 'missing')
+    return result
+
+
+def verify_group_views(final):
+    """Problems with the retained view evidence of a final record: changed or missing artifacts are visible."""
+    views = (final or {}).get('group_views')
+    if not isinstance(views, dict):
+        return ['final record carries no group view evidence']
+    if views.get('status') != 'rendered':
+        return ['group views were not rendered: ' + '; '.join(views.get('problems') or ['no reason recorded'])]
+    out = Path(views['directory'])
+    problems = []
+    manifest_path = out / str(views.get('manifest') or 'manifest.json')
+    if not manifest_path.is_file() or digest(manifest_path) != views.get('manifest_sha256'):
+        problems.append('group view manifest missing or changed')
+    else:
+        manifest = read_json(manifest_path)
+        if manifest.get('board_sha256') != final.get('board_sha256'):
+            problems.append('group view manifest no longer binds the final board')
+    for side in ('top', 'bottom'):
+        row = views.get('views', {}).get(side)
+        if row is None:
+            problems.append(f'{side} view absent from the final record')
+            continue
+        path = out / row['path']
+        if not path.is_file():
+            problems.append(f'{side} view file missing: {row["path"]}')
+        elif digest(path) != row['sha256']:
+            problems.append(f'{side} view file changed: {row["path"]}')
+    board = Path(final.get('board') or '')
+    if board.is_file() and digest(board) != final.get('board_sha256'):
+        problems.append('final board changed after its views were rendered')
+    return problems
+
+
 def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, rails=None, refinement=None, clock=None, cancel_dir=None,
-                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None):
+                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
+                 input_board=None, input_board_sha256=None):
     import pcbnew
     clock = clock or Clock(300)
     _check_stop(clock, cancel_dir)
@@ -2070,6 +2178,11 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'))
     metrics['edges'] = edge_intent['connectors']
     metrics['refinement'] = refinement
+    # Supplemental annotated views of this same saved board (AGENTEE-479 part 2 evidence). Missing or
+    # unbound views are visible as incomplete evidence; they never decide eligibility or acceptance.
+    group_views = _group_views(board, groups, final_dir.parent / (final_dir.name + '-group-views'),
+                               input_board=input_board, input_board_sha256=input_board_sha256,
+                               clock=clock, cancel_dir=cancel_dir)
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or impedance_result is not None and impedance_result.get('status') != 'PASS'
@@ -2086,7 +2199,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
             'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
-            'edge_intent': edge_intent, 'locality': locality, 'metrics': metrics}
+            'edge_intent': edge_intent, 'locality': locality, 'metrics': metrics,
+            'group_views': group_views, 'evidence_complete': group_views['status'] == 'rendered'}
 
 
 def preflight(config, executable=None, *, clock=None, cancel_dir=None, identities=None):

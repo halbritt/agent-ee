@@ -121,3 +121,21 @@ Durable chief evidence is at
 The helper is accepted within its documented rectangle-only supplemental scope.
 Agent-565 still owns final-check wiring and coordinate measurements; AGENTEE-479
 and M1 remain open.
+
+## Final-check wiring
+
+`placement_job.final_checks` renders the views of the **selected final saved
+board** after native finalization, through the job's bounded child mechanism
+(`_run_child` under the job `Clock` and `CANCEL` file), by running
+`python -m agent_ee.group_views produce --board … --groups … --out … [--input-board …]`.
+The validated groups document is passed as a request file; the raw input board
+from the job's captured inputs is passed separately so `input_board_sha256`
+stays distinct from the final `board_sha256`. The final record's `group_views`
+entry binds the manifest hash, both view hashes, the final board hash, the raw
+input hash and the canonical groups identity; `evidence_complete` is true only
+when every binding holds. A helper refusal, a missing manifest, an unbound hash
+or a lost view is reported as `status: missing` with the reason, never as a
+stale or partial success, and never changes `eligibility`; `acceptance_assessed`
+stays false. `placement_job.verify_group_views(final)` lists changed or missing
+view artifacts afterwards. A cancel or deadline stops the child like any other
+final check and leaves the prior incumbent untouched.
