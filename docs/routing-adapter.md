@@ -1711,3 +1711,14 @@ writes out of candidate projects. All 997 required consumer cases in 52 modules
 pass without skips in the rebuilt pinned environment. A retained native probe
 shows that public groups cannot yet express a name beginning with a hyphen;
 that safely refused input gap remains the next correction.
+
+### Exact group input and replay — 2026-10-25
+
+Pin `68dda6edc61d23fbe23a7751e131228eb304842e` adds a JSON-array public
+input for exact groups. Normal placement and stored command replay use it so
+leading hyphens and nested group boundaries survive invocation. Native matching
+and final checks are unchanged. The [qualification record](qualification/group-input-2026-10-25.md)
+retains both reproduced invocation defects, the native router repair and all
+998 passing required consumer cases with zero skips. The public exact-name job
+and changed-group resume negative pass; native rules and matcher behavior remain
+unchanged.

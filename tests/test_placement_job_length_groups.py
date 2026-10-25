@@ -1,5 +1,6 @@
 """Explicit single-ended useful-path matching through public placement and build."""
 import copy
+import json
 import os
 from pathlib import Path
 import shutil
@@ -46,7 +47,7 @@ class LengthGroupsJobTests(unittest.TestCase):
         cls.done = public_job(cls.root / 'inputs/job.json', cls.root / 'positive')
         cls.report = read_json(cls.root / 'positive/job-report.json')
 
-    def assert_matched(self, report):
+    def assert_matched(self, report, spec=SPEC):
         self.assertEqual(report['status'], 'completed', report)
         final = report['final']
         self.assertEqual(final['opens'], 0)
@@ -54,9 +55,9 @@ class LengthGroupsJobTests(unittest.TestCase):
         measured = final['length_matching']
         self.assertEqual(measured['status'], 'PASS', measured)
         self.assertEqual(measured['board_sha256'], digest(final['board']))
-        self.assertEqual(measured['requirement'], dict(spacing_widths=2, **SPEC))
+        self.assertEqual(measured['requirement'], dict(spacing_widths=2, **spec))
         group, = measured['groups']
-        self.assertEqual({path['net'] for path in group['paths']}, set(SPEC['groups'][0]))
+        self.assertEqual({path['net'] for path in group['paths']}, set(spec['groups'][0]))
         self.assertEqual(len(group['measurements']), 4)
         self.assertEqual(group['skew_violations'], [])
         router = read_json(report['route']['result_path'])
@@ -69,6 +70,42 @@ class LengthGroupsJobTests(unittest.TestCase):
         for name, suffix in [('project', '.kicad_pro'), ('rules', '.kicad_dru')]:
             self.assertEqual(digest(final.with_suffix(suffix)), self.config['inputs'][name]['sha256'])
         self.assertTrue(all(digest(e['path']) == e['sha256'] for e in self.config['inputs'].values()))
+
+    def test_public_job_preserves_option_like_names_and_refuses_changed_group_resume(self):
+        root = self.root / 'option-inputs'
+        config = prepare(root, self.checkout)
+        names = ['-DQ0', '--help', 'DQ*', '/sheet/DQ[3]']
+        mapping = root / 'rename.json'
+        write_json(mapping, dict(zip(SPEC['groups'][0], names)))
+        board = Path(config['inputs']['board']['path'])
+        project = board.with_suffix('.kicad_pro').read_bytes()
+        subprocess.run([sys.executable, str(Path(self.checkout) / 'src/kicad_route/kicad/rename_nets.py'),
+                        str(board), str(mapping)], check=True, capture_output=True, timeout=30)
+        board.with_suffix('.kicad_pro').write_bytes(project)
+        condition = ' || '.join(f"A.fromTo('J{2*i+1}-1', 'J{2*i+2}-1')" for i in range(4))
+        rules = Path(config['inputs']['rules']['path'])
+        rules.write_text('(version 1)\n'
+            '(rule "signal width floor" (constraint track_width (min 0.25mm)))\n'
+            f'(rule "required group skew" (condition {json.dumps(condition)}) (constraint skew (max 0.1mm)))\n')
+        for name in ('board', 'rules'):
+            config['inputs'][name]['sha256'] = digest(config['inputs'][name]['path'])
+        spec = copy.deepcopy(SPEC); spec['groups'] = [names]
+        config['router']['length_match'] = spec
+        request = root / 'job.json'; write_json(request, config)
+        out = self.root / 'option-names'
+        done = public_job(request, out)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        report = read_json(out / 'job-report.json')
+        self.assert_matched(report, spec)
+        self.assertTrue(all(digest(e['path']) == e['sha256'] for e in config['inputs'].values()))
+        before = {name: digest(out / name) for name in ('checkpoint.json', 'job-report.json')}
+        changed = copy.deepcopy(config)
+        changed['router']['length_match']['groups'][0][0] = '-MISSING'
+        request = root / 'changed.json'; write_json(request, changed)
+        refused = public_job(request, out, '--resume')
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('different job identity', refused.stdout + refused.stderr)
+        self.assertEqual(before, {name: digest(out / name) for name in before})
 
     def test_invalid_group_controls_refuse_before_routing(self):
         for index, value in enumerate([None, True, {}, dict(SPEC, unknown=1),

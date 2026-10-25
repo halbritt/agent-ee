@@ -8,7 +8,7 @@ MANIFEST=/opt/kicad-route.install.json
 LOCK=$(dirname -- "$(readlink -f -- "$0")")/krt-requirements.txt
 
 KICAD_ROUTE_URL=https://github.com/halbritt/kicad-route.git
-KICAD_ROUTE_COMMIT=21c08eca654e249ad24a5d6035757bc64602ed23
+KICAD_ROUTE_COMMIT=68dda6edc61d23fbe23a7751e131228eb304842e
 RUSTC_VERSION='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 CARGO_VERSION='cargo 1.99.1 (5f94df478 2026-08-27)'
 ROUTER_ARCH=amd64

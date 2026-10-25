@@ -168,6 +168,10 @@ Optional `spacing_widths` defaults to 2 and must be at least 1. Numeric controls
 must be finite and positive. Names are exact; missing, duplicated, out-of-scope,
 coupled-pair, multipoint or zone/graphical-copper members refuse. These controls
 are bound to resume identity and are separate from intra-pair matching.
+The job serializes each group as a JSON array for the public router, preserving
+names beginning with a hyphen and literal glob characters. Direct router users
+can use `--length-match-group-json '["-DQ0", "--help"]'`; saved router commands
+use the same form to preserve group boundaries during replay.
 
 Both the public router and `final_checks` measure the saved/refilled board with
 native KiCad terminal-to-terminal `fromTo` paths. `final.length_matching` binds

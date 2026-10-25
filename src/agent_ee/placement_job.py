@@ -1257,7 +1257,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             argv += ['--bus-' + key.removesuffix('_mm').replace('_', '-'), str(value)]
     if length_match is not None:
         for group in length_match['groups']:
-            argv += ['--length-match-group', *group]
+            argv += ['--length-match-group-json', json.dumps(group)]
         argv += ['--group-match-tolerance', str(length_match['tolerance_mm']),
                  '--group-meander-amplitude', str(length_match['amplitude_mm']),
                  '--group-meander-spacing', str(length_match['spacing_widths'])]

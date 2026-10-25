@@ -1,5 +1,9 @@
 # Explicit single-ended group length matching — 2026-10-25
 
+Later correction: [exact group input and replay](group-input-2026-10-25.md)
+closes the leading-hyphen input gap recorded below. This report preserves the
+original baseline and its observed limitations.
+
 Status: baseline qualified through the public placement command and actual build producer.
 Router revision: `21c08eca654e249ad24a5d6035757bc64602ed23`. The accepted
 17-part acquisition release `ef2609e2` remains unchanged. The broader goal is
