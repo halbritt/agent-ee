@@ -320,7 +320,8 @@ class AcquisitionOverlayTests(unittest.TestCase):
             self.assertEqual(sha256((RETAINED / name).read_bytes()), overlay['base'][key], name)
         with tempfile.TemporaryDirectory() as tmp:
             result = typed_overlay.prepare(RETAINED, ACQUISITION_OVERLAY, Path(tmp) / 'derived',
-                                           added_sources={'cpl': CPL_SOURCE, 'manufacturer-text': TEXT_SOURCE})
+                                           added_sources={'cpl': CPL_SOURCE, 'manufacturer-text': TEXT_SOURCE,
+                                               'operating-supplement': ROOT / 'fixtures/acquisition-typed/operating-supplement'})
             accounting = result['manifest']['accounting']
             self.assertEqual(accounting['obligations']['operational'], 1)
             self.assertEqual(accounting['obligations']['physical'], 2)
