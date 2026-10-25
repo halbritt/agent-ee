@@ -184,6 +184,48 @@ class CaptureTests(Fixture):
 
 
 class NativeTransformTests(Fixture):
+    def test_repeated_fixed_mark_labels_preserve_geometry_and_refuse_pose_mutations(self):
+        import pcbnew
+        board = pcbnew.LoadBoard(str(self.board))
+        mark = pcbnew.FOOTPRINT(board)
+        mark.SetReference('FID')
+        pad = pcbnew.PAD(mark)
+        pad.SetNumber('1')
+        pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+        pad.SetShape(pcbnew.PADSTACK.ALL_LAYERS, pcbnew.PAD_SHAPE_CIRCLE)
+        pad.SetSize(pcbnew.PADSTACK.ALL_LAYERS, _v(pcbnew, MM, MM))
+        pad.SetLayerSet(pad.SMDMask())
+        mark.Add(pad)
+        board.Add(mark)
+        mark.SetPosition(_v(pcbnew, 6 * MM, 3 * MM))
+        pcbnew.SaveBoard(str(self.board), board)
+        project_bytes = self.project.read_bytes()
+        declaration = intent()
+        declaration['fixed_poses'].append(dict(ref='FID~2', x=6.0, y=3.0, rot=0.0, side='F', basis='mechanical'))
+        problem, _ = job.capture(self.board, declaration, groups())
+        marks = {row['uuid']: row for row in problem['footprints'] if row['native_ref'] == 'FID'}
+        self.assertEqual(len(marks), 2)
+        self.assertTrue(all(row['role'] == 'fixed_copper_mark' for row in marks.values()))
+        evaluated = self._evaluate(problem, {})
+        placed = job.materialize(self.board, evaluated['poses'], self.dir / 'marks', project_bytes, intent=declaration)
+        self.assertEqual(placed['integrity'], 'preserved', placed['problems'])
+        reloaded, _ = job.capture(placed['board'], declaration, groups())
+        after = {row['uuid']: row for row in reloaded['footprints'] if row['native_ref'] == 'FID'}
+        for uuid, row in marks.items():
+            for field in ('native_ref', 'pose', 'role', 'copper_local_nm', 'mask_local_nm', 'holes_local_nm', 'pads'):
+                self.assertEqual(after[uuid][field], row[field], (uuid, field))
+            for field, changed in [('x_nm', row['pose']['x_nm'] + 1),
+                                   ('y_nm', row['pose']['y_nm'] + 1), ('quarter_turns', 1),
+                                   ('side', 'B'), ('moved', True)]:
+                with self.subTest(uuid=uuid, field=field):
+                    poses = json.loads(json.dumps(evaluated['poses']))
+                    target = next(p for p in poses if p['uuid'] == uuid)
+                    target[field] = changed
+                    directory = self.dir / f'protected-{uuid}-{field}'
+                    with self.assertRaisesRegex(job.JobRefusal, 'protected footprint pose'):
+                        job.materialize(self.board, poses, directory, project_bytes, intent=declaration)
+                    self.assertFalse(directory.exists())
+
     def test_sourced_locality_matches_saved_native_centroids_after_every_rotation(self):
         quote = 'Engineering maximum distance: 3 mm'
         import hashlib

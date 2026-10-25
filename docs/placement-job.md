@@ -386,11 +386,26 @@ rules, including stricter coupling limits, always remain in force.
    collision-checked aliases (`fp000`... in UUID order, never a UUID prefix),
    roles, occupancy labels, rules (largest net-class clearance, per-pad native
    clearance, copper-to-edge clearance, solder-mask minimum web), groups,
-   proximity rules and edge rules. `SearchState::evaluate` computes the delta of a
+   proximity rules and edge rules.
+
+   **Fixed mark identity (AGENTEE-528):** multiple `fixed_copper_mark` objects
+   may share a display `native_ref`; their full UUIDs and solver aliases remain
+   distinct. Duplicate references involving a `movable` or `fixed_body`
+   component still refuse. Group, proximity and electrical-locality selectors
+   require one physical footprint for each native reference; a repeated mark
+   label produces an explicit ambiguity error. No new alias or UUID selector
+   syntax is introduced. Capture's existing fixed-pose locator `Ref*~2` resolves
+   the base label and exact declared pose to a UUID; it does not rename the
+   native object. Both marks retain their protected pose and copper/mask
+   geometry through native save/reload. Parser evaluation of a retained problem
+   does not qualify unsupported public intent or establish placement feasibility.
+
+   `SearchState::evaluate` computes the delta of a
    move (single part, quarter turn, group translation) from a bucketed
    spatial index queried at the **new** pose plus the old contributors, with
    movers paired among themselves; `commit` is generation-checked and atomic,
    `reject` leaves the committed state unchanged, and a stale trial is refused.
+
    `full_evaluate` recomputes everything independently; every retained state is
    checked against it, and `verify_every` enables a per-commit differential check.
    All hard verdicts and objective terms are integer nanometres (areas i128).

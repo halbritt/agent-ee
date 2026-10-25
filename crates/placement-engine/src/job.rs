@@ -486,8 +486,8 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let mut nets: Vec<String> = Vec::new();
     let mut net_index: HashMap<String, usize> = HashMap::new();
     let groups_in = input["groups"].as_array().cloned().unwrap_or_default();
-    let mut footprints = Vec::new();
-    let mut ref_index: BTreeMap<String, usize> = BTreeMap::new();
+    let mut footprints: Vec<Footprint> = Vec::new();
+    let mut ref_index: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (i, row) in rows.iter().enumerate() {
         let role = match text(row, "role")? {
             "movable" => Role::Movable,
@@ -586,19 +586,30 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         };
         let native_ref = text(row, "native_ref")?.to_string();
         if role != Role::SilkOnly {
-            ensure!(ref_index.insert(native_ref.clone(), i).is_none(), "duplicate physical reference {native_ref}");
+            let named = ref_index.entry(native_ref.clone()).or_default();
+            // Mark labels are display text; their UUIDs still identify distinct obstacles.
+            ensure!(named.is_empty() || (role == Role::FixedCopperMark
+                    && named.iter().all(|&other| footprints[other].role == Role::FixedCopperMark)),
+                "duplicate physical reference {native_ref}");
+            named.push(i);
         }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
             occupancy, occupancy_rung: rung, copper, holes, mask, escape, pads, group: None, edge,
         });
     }
+    let physical_reference = |reference: &str, context: &str| -> Result<usize> {
+        let named = ref_index.get(reference)
+            .with_context(|| format!("{context}: unknown physical reference {reference}"))?;
+        ensure!(named.len() == 1, "{context}: ambiguous physical reference {reference} ({} fixed copper marks)", named.len());
+        Ok(named[0])
+    };
     let mut groups = Vec::new();
     for (g, group) in groups_in.iter().enumerate() {
         let name = text(group, "name")?.to_string();
         let member = |r: &Value| -> Result<usize> {
             let r = r.as_str().context("group member")?;
-            ref_index.get(r).copied().with_context(|| format!("group {name}: unknown physical member {r}"))
+            physical_reference(r, &format!("group {name}"))
         };
         let anchor = member(&group["anchor"])?;
         let members = group["refs"].as_array().context("group refs")?.iter().map(member).collect::<Result<Vec<_>>>()?;
@@ -623,8 +634,8 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     };
     let mut proximity = Vec::new();
     for row in input["proximity"].as_array().cloned().unwrap_or_default() {
-        let a = *ref_index.get(text(&row, "ref")?).context("proximity ref")?;
-        let b = *ref_index.get(text(&row, "near")?).context("proximity near")?;
+        let a = physical_reference(text(&row, "ref")?, "proximity ref")?;
+        let b = physical_reference(text(&row, "near")?, "proximity near")?;
         let a_pads = row["ref_pads"].as_array().context("ref_pads")?.iter().map(|u| pad_of(a, u)).collect::<Result<_>>()?;
         let b_pads = row["near_pads"].as_array().context("near_pads")?.iter().map(|u| pad_of(b, u)).collect::<Result<_>>()?;
         proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")? });
@@ -643,7 +654,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 ensure!(authority["enforcement"] != "integrity", "locality source integrity failed");
                 let endpoint = |key: &str| -> Result<(usize, [Rat; 2])> {
                     let e = &pair[key];
-                    let f = *ref_index.get(text(e, "reference")?).context("locality physical reference")?;
+                    let f = physical_reference(text(e, "reference")?, "locality endpoint")?;
                     let center = crate::locality::resolve(facts, e)?;
                     let initial = footprints[f].initial;
                     Ok((f, rotate_rational([center[0].clone() - Rat::from_integer(initial.x.into()),
@@ -1772,6 +1783,82 @@ mod tests {
         let wrong = aliases(&shared, &[Some("fp001".into()), None, None]).unwrap_err().to_string();
         assert!(wrong.contains("differs from the derived"), "{wrong}");
         assert!(aliases(&["0000".into()], &[None]).is_err());
+    }
+
+    fn repeated_marks() -> Value {
+        let mut raw = input(vec![fp(&uuid(6), "FID", "fixed_copper_mark", 3_000_000, 2_000_000, "")]);
+        for row in raw["footprints"].as_array_mut().unwrap().iter_mut().filter(|r| r["native_ref"] == "FID") {
+            for pad in row["pads"].as_array_mut().unwrap() { pad["net"] = json!(""); }
+            row["mask_local_nm"] = json!([[-500_000, -500_000, 500_000, 500_000]]);
+        }
+        raw
+    }
+
+    #[test]
+    fn repeated_fixed_mark_labels_keep_uuid_identity_and_protected_poses() {
+        // REC-30: the real esp_prog article has two fixed copper marks named Ref*.
+        let mut raw = repeated_marks();
+        raw["evaluate"] = json!([{}]);
+        let output = run(&raw).unwrap();
+        let poses = output["evaluations"][0]["poses"].as_array().unwrap();
+        let marks: Vec<_> = poses.iter().filter(|r| r["native_ref"] == "FID").collect();
+        assert_eq!(marks.len(), 2);
+        assert_ne!(marks[0]["uuid"], marks[1]["uuid"]);
+        assert_ne!(marks[0]["alias"], marks[1]["alias"]);
+        assert!(marks.iter().all(|r| r["moved"] == false));
+        for id in [uuid(5), uuid(6)] {
+            let old = raw["footprints"].as_array().unwrap().iter().find(|r| r["uuid"] == id).unwrap();
+            let pose = &old["pose"];
+            let at = [pose["x_nm"].as_i64().unwrap(), pose["y_nm"].as_i64().unwrap(), 0];
+            for axis in 0..3 {
+                let mut changed = at;
+                changed[axis] += 1;
+                raw["evaluate"] = json!([{id.clone(): changed}]);
+                assert!(run(&raw).unwrap_err().to_string().contains("fixed and cannot move"));
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_marks_do_not_admit_component_or_uuid_collisions() {
+        for role in ["movable", "fixed_body"] {
+            let mut raw = repeated_marks();
+            raw["footprints"][1]["native_ref"] = json!("R1");
+            raw["footprints"][1]["role"] = json!(role);
+            assert!(prepare(&raw).unwrap_err().to_string().contains("duplicate physical reference R1"));
+            raw = repeated_marks();
+            raw["footprints"][0]["native_ref"] = json!("FID");
+            raw["footprints"][0]["role"] = json!(role);
+            assert!(prepare(&raw).unwrap_err().to_string().contains("duplicate physical reference FID"));
+        }
+        let mut raw = repeated_marks();
+        raw["footprints"][5]["uuid"] = raw["footprints"][4]["uuid"].clone();
+        assert!(prepare(&raw).unwrap_err().to_string().contains("duplicate native footprint UUID"));
+    }
+
+    #[test]
+    fn ambiguous_mark_selectors_refuse_for_groups_proximity_and_locality() {
+        for selector in ["group", "proximity ref", "proximity near", "locality from", "locality to"] {
+            let mut raw = repeated_marks();
+            match selector {
+                "group" => raw["groups"][0]["refs"] = json!(["R1", "FID"]),
+                "proximity ref" | "proximity near" => {
+                    let (a, b) = if selector == "proximity ref" { ("FID", "R1") } else { ("R1", "FID") };
+                    raw["proximity"] = json!([{"ref": a, "near": b, "ref_pads": [], "near_pads": [], "max_nm": 1}]);
+                }
+                _ => {
+                    let (a, b) = if selector == "locality from" { ("FID", "R1") } else { ("R1", "FID") };
+                    raw["locality"] = json!({"document": {"schema": "agent-ee.electrical-locality/1",
+                        "obligations": [{"id": "ambiguous", "kind": "single-leg", "metric": "pad-centre-to-centre",
+                            "leg": {"from": {"reference": a, "pad": "1", "net": "A"},
+                                    "to": {"reference": b, "pad": "1", "net": "A"}, "max_distance_nm": 1}}]},
+                        "footprints": [{"ref": "R1", "pads": [{"number": "1", "net": "A",
+                            "position_nm": [4_400_000, 5_000_000], "copper_centroid_offset_nm": [[0, 1], [0, 1]]}]}]});
+                }
+            }
+            let error = prepare(&raw).unwrap_err().to_string();
+            assert!(error.contains("ambiguous physical reference FID"), "{selector}: {error}");
+        }
     }
 
     #[test]
