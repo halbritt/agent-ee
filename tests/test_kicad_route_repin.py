@@ -64,7 +64,7 @@ class RepinPolicyTest(unittest.TestCase):
             return Case(Path(self.tmp.name) / str(self.count), scenario).run(argv)
 
     def test_new_pin_identity(self):
-        self.assertEqual(attempt.PIN, '1c895b67dd6ca36620c0b5f757d6402e9692bf78')
+        self.assertEqual(attempt.PIN, '86f586c3ae262be12552652e963a3e11ba7b9287')
         self.assertNotEqual(attempt.PIN, OLD_PIN)
         self.assertEqual(attempt.default_layout(attempt.parse_request(REQUEST))['pin'], attempt.PIN)
         # The pin's owned engine and the modules added since 5f1c072 are byte-pinned.

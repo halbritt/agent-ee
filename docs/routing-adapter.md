@@ -1623,3 +1623,18 @@ Three stale pin/documentation expectations in the initial gate were corrected;
 the two affected modules pass again in strict native mode. This establishes the
 bounded intra-pair operation, not broader signal-integrity or manufacturing
 acceptance. The accepted acquisition package remains unchanged.
+
+
+### Coupled inner-layer transition qualification — 2026-10-24
+
+Pin `86f586c3ae262be12552652e963a3e11ba7b9287` adds opt-in permitted pair
+layers, independent saved-layer grading, symmetric straight-transition fanout
+and tuning after cleanup. The normal placement job preserves routing-only
+native keepouts and carries the layer policy through the actual build producer.
+The [qualification record](qualification/pair-transition-2026-10-24.md) binds
+positive and rejection artifacts, original rules and the matched stock result.
+The full 48-module consumer roster has passing evidence: 972 checks in the
+47-module pin run plus five new native qualification tests, with zero skips.
+Native facts/pour contracts and mirrored reader behavior remain unchanged.
+This qualifies the bounded coupled-transition case; it does not establish
+impedance, delay, AC/multi-pair matching or manufacturing acceptance.

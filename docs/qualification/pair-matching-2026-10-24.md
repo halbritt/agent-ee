@@ -66,6 +66,11 @@ Exact stock source/binary provenance is retained with the native-rule comparison
 | Owned / 2 mm | 46.934388 | 46.935175 | 0.000787 | Pass |
 | Stock / 2 mm | 47.132915 | 46.935175 | 0.197740 | Reject: skew |
 
+Measurement clarification: the table sums saved planar track/arc copper.
+KiCad's native electrical-length/skew rules are a separate acceptance check;
+the listed difference is not a native electrical-path or propagation-time
+measurement. The original input, output and acceptance records are unchanged.
+
 All four have zero opens and vias. Owned 2 mm has 22 segments and 93.869562 mm
 total copper, no native violations or warnings, and preserved anchors/rules.
 Its final board is `fdfe12ec918a9d69b713a6a904e2268fca8d553d9cb41e219685acf6932a6424`.

@@ -133,6 +133,15 @@ matching disabled. Existing protected copper is preserved, so an already
 connected pair outside tolerance is rejected rather than silently altered.
 These controls are part of the job identity and cannot change on resume.
 
+Optional `router.pair_layers` supplies the enabled native copper layers for new
+pair tracks, for example `["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]`. Omission
+keeps the router's outer-layer default. The nonempty list must contain unique
+layer names; native routing rejects disabled or non-copper layers. The final
+router grade checks saved track layers independently. Existing valid copper
+and through-via spans remain subject to native rules. Layer selection is bound
+to resume identity. Matching measures summed planar copper; native electrical
+length/skew rules are separate requirements and must also pass.
+
 The captured native project can also declare the router's existing assembly
 policy under `kicad_routing_tools.same_net_pad_clearance`. A positive value in
 millimetres keeps newly routed vias away from same-net SMD pads and paste
@@ -164,11 +173,13 @@ the process and must be recorded by the caller.
      native pad clearance, never a body.
    - `silk_only`: padless, zone-free, every graphic on a silkscreen layer. Only
      these are excluded from packing.
-   **Zone-free placement input:** every board-level zone is refused before a
-   prepared problem can reach the solver. This includes keepouts, rule areas
-   and ordinary copper pours, filled or unfilled. Footprint zones and rule areas
-   remain refused. Native checks after routing do not make an ignored placement
-   obstacle safe; this job has no placement zone engine. Declared `inputs.planes`
+   **Native routing keepouts:** board-level rule areas that allow footprints
+   and pads and have no placement-area restriction are preserved through the
+   job. Their routing restrictions are enforced by the router and native DRC.
+   Placement-restricting areas and ordinary copper pours, filled or unfilled,
+   are refused before solving. Footprint zones and rule areas remain refused.
+   Native checks after routing do not make an ignored placement obstacle safe;
+   this job has no placement zone engine. Declared `inputs.planes`
    are produced after placement and may be outer or enabled inner copper layers.
    Final verification requires their declared `island_removal` to be `always`.
    Search conservatively uses the largest declared netclass clearance, the
@@ -446,8 +457,11 @@ process that only calls `pcbnew.LoadBoard` and reads the consumed settings.
 Weak and strong explicit values followed by omission, absent projects and
 absent Default clearance exercise same-path cache history. The keepout control
 has native `items_not_allowed` findings and was feasible under the held parent;
-capture now refuses it before solving. Copper-zone, rule-area, footprint-zone
-and zero-zone controls define the supported domain. Capture cancellation,
+capture now refuses it before solving. Copper-zone, placement-restricting
+rule-area, footprint-zone and zero-zone controls define the placement boundary.
+`test_placement_job_transition` additionally preserves routing-only rule areas
+through the public job and actual build producer, while rejecting pad,
+footprint and placement-area restrictions. Capture cancellation,
 deadline, child failure, missing output and input mutation fail closed.
 
 ## Origins

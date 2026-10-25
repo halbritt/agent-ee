@@ -4,12 +4,12 @@
   "sources": {
     "agent_ee": "81e387ee (AGENTEE-450 re-pin base; contract first written at f06b30bc)",
     "fome_mc": "8c42f2ee3e7c5c77c51e21632a8900bfbef23726",
-    "kicad_route_pin": "1c895b67dd6ca36620c0b5f757d6402e9692bf78"
+    "kicad_route_pin": "86f586c3ae262be12552652e963a3e11ba7b9287"
   },
   "adapter": {
-    "pin": "1c895b67dd6ca36620c0b5f757d6402e9692bf78",
+    "pin": "86f586c3ae262be12552652e963a3e11ba7b9287",
     "pinned_code_files": 311,
-    "pinned_code_sha256": "106c7dd3996caae3efdd96553a8267ffa6cfbf03e217cf1a92643752e8539f70",
+    "pinned_code_sha256": "777b4407e38304ff9b1de950387bcc94a2eb3442965896ab9140077968bccbbf",
     "pinned_code_digest_rule": "sha256 of kicad_route_attempt.canonical_json(PINNED_CODE)",
     "pinned_campaign_py_sha256": "c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9",
     "command": "run",

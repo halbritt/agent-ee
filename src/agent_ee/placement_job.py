@@ -603,8 +603,11 @@ def _capture_native(board_path, intent, groups):
     _validate_project_rules(project)
     facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
-    if any(True for _ in board.Zones()):
-        raise JobRefusal('board-level zones, keepouts and rule areas are unsupported by the placement job')
+    for zone in board.Zones():
+        if (not zone.GetIsRuleArea() or zone.GetDoNotAllowFootprints() or zone.GetDoNotAllowPads()
+                or zone.GetPlacementAreaEnabled()):
+            raise JobRefusal('board-level zones with pours or placement constraints are unsupported; '
+                             'routing-only rule areas must allow footprints and pads')
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
@@ -1180,7 +1183,7 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
-          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None):
+          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1235,6 +1238,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             '--budget', str(int(remaining)), '--diff-pairs', 'auto']
     if grid_step_mm is not None:
         argv += ['--grid-step', str(grid_step_mm)]
+    if pair_layers is not None:
+        argv += ['--pair-layers', *pair_layers]
     if intra_pair_match is not None:
         argv += ['--diff-pair-intra-match', '--length-match-tolerance', str(intra_pair_match['tolerance_mm']),
                  '--meander-amplitude', str(intra_pair_match['amplitude_mm'])]
@@ -1362,6 +1367,12 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
+        pair_layers = config['router'].get('pair_layers')
+        if 'pair_layers' in config['router']:
+            if (not isinstance(pair_layers, list) or not pair_layers
+                    or any(not isinstance(layer, str) or not layer for layer in pair_layers)
+                    or len(set(pair_layers)) != len(pair_layers)):
+                raise JobRefusal('router.pair_layers requires a nonempty list of distinct copper layer names')
         matching = config['router'].get('intra_pair_match')
         if 'intra_pair_match' in config['router']:
             if not isinstance(matching, dict) or set(matching) != {'tolerance_mm', 'amplitude_mm'}:
@@ -1554,7 +1565,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=config['router'].get('grid_step_mm'),
-                           intra_pair_match=matching, planes=plane_bytes)
+                           intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
