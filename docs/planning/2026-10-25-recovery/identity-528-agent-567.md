@@ -64,3 +64,20 @@ No source filtering or stripped public input was used to bypass that refusal;
 the diagnostic control consumes the explicitly authorized retained problem.
 Full placement/routing, grouping compatibility, M1 release and hardware/supplier
 qualification remain separate work. No full strict Python suite was run.
+
+## Chief independent verification
+
+Agent-564 reviewed commit `89875fdef9c58722886a9d6085f5fd03cffb2909`
+and independently ran the nine capture/native-transform tests in the supported
+pinned runtime: nine passed, no errors, failures or skips. The reviewed retained
+control was replayed in a fresh output directory with unchanged input hashes:
+all 17 controls passed, both mark UUIDs and geometry survived native save/reload,
+and original rich intent remained explicitly refused. The installed planner's
+source/binary receipt verified before the real 21-object parser replay. No full
+placement/router search or M1 acceptance is claimed.
+
+Chief evidence is preserved outside the worktree at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/identity-528/`,
+with the unfiltered native log at `identity-528-native.log` in its parent.
+`tested-source-sha256.json` binds the independently tested Rust sources and
+relevant capture/test modules; integration checks those hashes after rebase.
