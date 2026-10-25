@@ -1,83 +1,1939 @@
 {
-  "schema": "agent-ee.recovery-design-contract/1",
-  "issue": "AGENTEE-479",
-  "issue_uuid": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
-  "findings": ["REC-01", "REC-02", "REC-03", "REC-14", "REC-15", "REC-23"],
-  "decisions": ["RD-01", "RD-02", "RD-03", "RD-04", "RD-05"],
-  "baseline_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
-  "compatibility_contract": {
-    "target_schema": "agent-ee.placement-intent/2",
-    "accepted_dialects": [
+  "schema": "agent-ee.recovery-contract/2",
+  "ticket": "AGENTEE-479",
+  "title": "Original-esp_prog Intent Compatibility and Functional-Group Design Contract (Corrected)",
+  "status": "design_contract_ready_for_chief_review",
+  "owner_of_contract": "agent-570",
+  "worktree_branch": "wt/ee479-group-intent-design-agent-570",
+  "base_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
+  "prior_reviewed_commit": "b053137c37524a204387dd358ff8f273b6bc33ba",
+  "chief_review_source": {
+    "record_id": "bb102db7-988e-4f4f-b274-40a266831aa4",
+    "version": 1,
+    "delivery_id": "40b5f35e-482c-44ca-8470-603e23ff573d"
+  },
+  "doctrine_retrieval_receipt": {
+    "packet_id": "pkt-62464263929b7cde",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_hash": "doctrine-f6bbb5196a3f8bf9",
+    "pincite_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "selected_chunks": [
+      "pincite:019c7b38-0923-7ca3-891c-8f4cf1f5ff23#p10-12",
+      "pincite:019c7b38-0953-7be0-8a7e-50f8e1a6a91b#p04-06",
+      "pincite:019c7b38-0985-7ff2-9157-e7dc42971c77#p15-17"
+    ]
+  },
+  "retained_artifacts_and_sources": {
+    "esp_prog_intent": {
+      "path": "build/agent545/inputs/intent.json",
+      "bytes": 16164,
+      "sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c"
+    },
+    "esp_prog_groups": {
+      "path": "build/agent545/inputs/groups.json",
+      "bytes": 1759,
+      "sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8"
+    },
+    "esp_prog_input_board": {
+      "path": "build/agent545/inputs/board.kicad_pcb",
+      "bytes": 123905,
+      "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7"
+    },
+    "esp_prog_final_a1_board": {
+      "path": "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb",
+      "bytes": 161570,
+      "sha256": "dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1"
+    },
+    "esp_prog_job_report_a1": {
+      "path": "build/agent545/board-run-portfolio/job-report-a1.json",
+      "bytes": 35957,
+      "sha256": "f0b23ec1200af3a0c113d6156d7eeb283925074c29eae76c7c972e7b4154f7a2"
+    },
+    "acquisition_delivery_board": {
+      "path": "build/acquisition-release/delivery/native/project/acquisition.kicad_pcb",
+      "bytes": 152140,
+      "sha256": "d0a898a2a254c090ba1a4185320938241c255e79c587c82abb27a0bcafcd66e7"
+    },
+    "acquisition_spec_md": {
+      "path": "build/acquisition-release/delivery/native/spec.md",
+      "bytes": 5169,
+      "sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373"
+    },
+    "acquisition_spec_record_json": {
+      "path": "build/acquisition-release/delivery/native/spec-record.json",
+      "bytes": 17157,
+      "sha256": "a03e16f40e34fb7af4ac229ea5916b27de47c576b6f7f181c914205e5a8f865b"
+    },
+    "acquisition_stage05_groups_json": {
+      "path": "build/acquisition-release/release-build-v7/stages/05-placement-routing-6324e3e9b5f242459350353ca9e6787e/candidate/groups.json",
+      "bytes": 502,
+      "sha256": "eb725e24138dc70ed7e615eb7ac5b77952178ccc5fd27fd8b041ec38c31ee396"
+    },
+    "acquisition_stage05_job_report_json": {
+      "path": "build/acquisition-release/release-build-v7/stages/05-placement-routing-6324e3e9b5f242459350353ca9e6787e/placement/job-report.json",
+      "bytes": 624098,
+      "sha256": "3b8931328f6eecb64da587ff783cfbe226fe8057822b39e7b80d124a69362c4e"
+    },
+    "placement_intent_py": {
+      "path": "src/agent_ee/placement_intent.py",
+      "bytes": 9437,
+      "sha256": "3c6d2d4148a25b33b8d02742a466bf3416320decad064ce41c8ef8ccc3d6451c"
+    },
+    "placement_job_py": {
+      "path": "src/agent_ee/placement_job.py",
+      "bytes": 111128,
+      "sha256": "5715b853a9b1b6d5034cf96b025a964cfc8125200407c690598486caf767cc6a"
+    },
+    "electrical_locality_py": {
+      "path": "src/agent_ee/electrical_locality.py",
+      "bytes": 21696,
+      "sha256": "8dbc4eaee81a536fcfb0fb5f6aecfdbd3ab3ad929c656458eccbe8c7c82783bc"
+    },
+    "placement_predicates_py": {
+      "path": "src/agent_ee/placement_predicates.py",
+      "bytes": 37186,
+      "sha256": "537586f806043d241f4f725622dd251ff5aabcd5e1713d8bdbf6ab2c586a7b39"
+    },
+    "block_contract_py": {
+      "path": "src/agent_ee/block_contract.py",
+      "bytes": 34866,
+      "sha256": "79748375f4d37487a2194dafee62010f445edaab183bc4d71dba745ccbcbc7ff"
+    },
+    "block_inventory_py": {
+      "path": "src/agent_ee/block_inventory.py",
+      "bytes": 41122,
+      "sha256": "5e6fc3ceb8161246438380a21d821a606927f81eca6e33f6e282d4ebfe4f2d63"
+    },
+    "placement_probe_py": {
+      "path": "src/agent_ee/placement_probe.py",
+      "bytes": 35386,
+      "sha256": "8434a8b599e4e33bddec229514f374b1a6a26cf190216aa44c6c979ce12d8ca5"
+    },
+    "placement_engine_job_rs": {
+      "path": "crates/placement-engine/src/job.rs",
+      "bytes": 101209,
+      "sha256": "49dc52a934a4141bfc69c30bad7c3065cb4af847ed4031f0a92600358bd2f1fa"
+    },
+    "retained_probe_script": {
+      "path": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py",
+      "bytes": 18847,
+      "sha256": "ee69649f447629dbfbb094ba5e026d8379cb7162efa998b445079f6d132a4637"
+    }
+  },
+  "executed_native_measurements": {
+    "probe_execution": {
+      "script": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py",
+      "python_executable": "/usr/bin/python3",
+      "python_version": "3.12.3",
+      "pcbnew_version": "10.0.7",
+      "worktree_base_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
+      "kicad_route_head": "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+    },
+    "current_head_validation_esp_prog": {
+      "status": "refused",
+      "error": "intent.assembly.sides: side selection is unsupported"
+    },
+    "esp_prog_input_proximity": {
+      "board_path": "build/agent545/inputs/board.kicad_pcb",
+      "compared_pads": 75,
+      "pcbnew_vs_krt_pad_rect_max_diff_mm": 0.0,
+      "emitted_proximity_legs": [
+        {
+          "claim_index": 0,
+          "ref": "Y1",
+          "near": "U1",
+          "subject_pad": "1",
+          "partner_pad": "9",
+          "net": "Net-(C4-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 8.1,
+          "krt_signed_rect_gap_mm": 2.9704,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 2.9704,
+          "native_polygon_copper_gap_mm": 2.9704,
+          "chebyshev_pad_centre_mm": 3.375,
+          "euclidean_pad_centre_mm": 4.3978,
+          "pad_rect_subject_mm": [
+            128.075,
+            98.45,
+            129.475,
+            99.65
+          ],
+          "pad_rect_partner_mm": [
+            131.9875,
+            101.2345,
+            132.3125,
+            102.5045
+          ]
+        },
+        {
+          "claim_index": 0,
+          "ref": "Y1",
+          "near": "U1",
+          "subject_pad": "2",
+          "partner_pad": "10",
+          "net": "Net-(C2-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 8.1,
+          "krt_signed_rect_gap_mm": 3.3268,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 3.3268,
+          "native_polygon_copper_gap_mm": 3.3268,
+          "chebyshev_pad_centre_mm": 4.4195,
+          "euclidean_pad_centre_mm": 4.7815,
+          "pad_rect_subject_mm": [
+            130.275,
+            96.85,
+            131.675,
+            98.05
+          ],
+          "pad_rect_partner_mm": [
+            132.6375,
+            101.2345,
+            132.9625,
+            102.5045
+          ]
+        },
+        {
+          "claim_index": 1,
+          "ref": "C2",
+          "near": "Y1",
+          "subject_pad": "1",
+          "partner_pad": "2",
+          "net": "Net-(C2-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 2.2,
+          "krt_signed_rect_gap_mm": 0.658,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 0.658,
+          "native_polygon_copper_gap_mm": 0.658,
+          "chebyshev_pad_centre_mm": 1.608,
+          "euclidean_pad_centre_mm": 1.796,
+          "pad_rect_subject_mm": [
+            129.117,
+            97.975,
+            129.617,
+            98.525
+          ],
+          "pad_rect_partner_mm": [
+            130.275,
+            96.85,
+            131.675,
+            98.05
+          ]
+        },
+        {
+          "claim_index": 2,
+          "ref": "C4",
+          "near": "Y1",
+          "subject_pad": "1",
+          "partner_pad": "1",
+          "net": "Net-(C4-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 2.2,
+          "krt_signed_rect_gap_mm": -0.075,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 0.0,
+          "native_polygon_copper_gap_mm": 0.0,
+          "chebyshev_pad_centre_mm": 0.8,
+          "euclidean_pad_centre_mm": 0.9952,
+          "pad_rect_subject_mm": [
+            129.117,
+            97.975,
+            129.617,
+            98.525
+          ],
+          "pad_rect_partner_mm": [
+            128.075,
+            98.45,
+            129.475,
+            99.65
+          ]
+        }
+      ]
+    },
+    "esp_prog_final_a1_proximity": {
+      "board_path": "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb",
+      "compared_pads": 75,
+      "pcbnew_vs_krt_pad_rect_max_diff_mm": 0.0,
+      "emitted_proximity_legs": [
+        {
+          "claim_index": 0,
+          "ref": "Y1",
+          "near": "U1",
+          "subject_pad": "1",
+          "partner_pad": "9",
+          "net": "Net-(C4-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 8.1,
+          "krt_signed_rect_gap_mm": 5.4237,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 5.4237,
+          "native_polygon_copper_gap_mm": 11.2845,
+          "chebyshev_pad_centre_mm": 5.3805,
+          "euclidean_pad_centre_mm": 6.9347,
+          "pad_rect_subject_mm": [
+            139.6,
+            101.95,
+            141.0,
+            103.15
+          ],
+          "pad_rect_partner_mm": [
+            134.2845,
+            98.0125,
+            135.5545,
+            98.3375
+          ]
+        },
+        {
+          "claim_index": 0,
+          "ref": "Y1",
+          "near": "U1",
+          "subject_pad": "2",
+          "partner_pad": "10",
+          "net": "Net-(C2-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 8.1,
+          "krt_signed_rect_gap_mm": 6.7893,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 6.7893,
+          "native_polygon_copper_gap_mm": 13.5866,
+          "chebyshev_pad_centre_mm": 7.5805,
+          "euclidean_pad_centre_mm": 8.3183,
+          "pad_rect_subject_mm": [
+            141.8,
+            100.35,
+            143.2,
+            101.55
+          ],
+          "pad_rect_partner_mm": [
+            134.2845,
+            97.3625,
+            135.5545,
+            97.6875
+          ]
+        },
+        {
+          "claim_index": 1,
+          "ref": "C2",
+          "near": "Y1",
+          "subject_pad": "1",
+          "partner_pad": "2",
+          "net": "Net-(C2-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 2.2,
+          "krt_signed_rect_gap_mm": 1.1553,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 1.1553,
+          "native_polygon_copper_gap_mm": 1.1553,
+          "chebyshev_pad_centre_mm": 2.092,
+          "euclidean_pad_centre_mm": 2.3407,
+          "pad_rect_subject_mm": [
+            140.158,
+            99.625,
+            140.658,
+            100.175
+          ],
+          "pad_rect_partner_mm": [
+            141.8,
+            100.35,
+            143.2,
+            101.55
+          ]
+        },
+        {
+          "claim_index": 2,
+          "ref": "C4",
+          "near": "Y1",
+          "subject_pad": "1",
+          "partner_pad": "1",
+          "net": "Net-(C4-Pad1)",
+          "paired_by": "net",
+          "pads_basis": "declared",
+          "max_mm": 2.2,
+          "krt_signed_rect_gap_mm": 1.7492,
+          "krt_passes": true,
+          "clamped_aabb_gap_mm": 1.7492,
+          "native_polygon_copper_gap_mm": 1.7492,
+          "chebyshev_pad_centre_mm": 2.2,
+          "euclidean_pad_centre_mm": 3.0359,
+          "pad_rect_subject_mm": [
+            137.958,
+            100.075,
+            138.458,
+            100.625
+          ],
+          "pad_rect_partner_mm": [
+            139.6,
+            101.95,
+            141.0,
+            103.15
+          ]
+        }
+      ]
+    },
+    "esp_prog_final_a1_groups": {
+      "footprints": {
+        "#00000000-0000-0000-0000-00005a3b5201": {
+          "x_mm": 129.875,
+          "y_mm": 98.25,
+          "rot_deg": 0.0,
+          "side": "B",
+          "group": "fixed_or_shared"
+        },
+        "#00000000-0000-0000-0000-00005d8c51dd": {
+          "x_mm": 129.875,
+          "y_mm": 98.25,
+          "rot_deg": 0.0,
+          "side": "B",
+          "group": "fixed_or_shared"
+        },
+        "#00000000-0000-0000-0000-00005e7dd057": {
+          "x_mm": 129.875,
+          "y_mm": 98.25,
+          "rot_deg": 0.0,
+          "side": "B",
+          "group": "fixed_or_shared"
+        },
+        "C1": {
+          "x_mm": 127.1,
+          "y_mm": 96.0,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "power"
+        },
+        "C2": {
+          "x_mm": 139.9,
+          "y_mm": 99.9,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "core"
+        },
+        "C3": {
+          "x_mm": 124.75,
+          "y_mm": 94.4,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "power"
+        },
+        "C4": {
+          "x_mm": 137.7,
+          "y_mm": 100.35,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "core"
+        },
+        "CON1": {
+          "x_mm": 140.55,
+          "y_mm": 98.2,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "target"
+        },
+        "CON2": {
+          "x_mm": 136.7,
+          "y_mm": 93.55,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "target"
+        },
+        "Q1": {
+          "x_mm": 124.1,
+          "y_mm": 96.9,
+          "rot_deg": -90.0,
+          "side": "F",
+          "group": "reset"
+        },
+        "Q2": {
+          "x_mm": 137.6,
+          "y_mm": 102.25,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "reset"
+        },
+        "R1": {
+          "x_mm": 126.0,
+          "y_mm": 97.9,
+          "rot_deg": -90.0,
+          "side": "F",
+          "group": "reset"
+        },
+        "R2": {
+          "x_mm": 125.95,
+          "y_mm": 99.15,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "reset"
+        },
+        "R3": {
+          "x_mm": 134.45,
+          "y_mm": 96.2,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "core"
+        },
+        "R4": {
+          "x_mm": 131.95,
+          "y_mm": 96.2,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "core"
+        },
+        "Ref*": {
+          "x_mm": 141.2,
+          "y_mm": 95.9,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "fixed_or_shared"
+        },
+        "Ref*~2": {
+          "x_mm": 118.1,
+          "y_mm": 99.9,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "fixed_or_shared"
+        },
+        "U1": {
+          "x_mm": 131.3,
+          "y_mm": 100.45,
+          "rot_deg": 90.0,
+          "side": "F",
+          "group": "core"
+        },
+        "U2": {
+          "x_mm": 124.25,
+          "y_mm": 102.05,
+          "rot_deg": 90.0,
+          "side": "F",
+          "group": "power"
+        },
+        "USB1": {
+          "x_mm": 117.5,
+          "y_mm": 100.1,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "usb_in"
+        },
+        "Y1": {
+          "x_mm": 141.4,
+          "y_mm": 101.75,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "core"
+        }
+      },
+      "groups": {
+        "usb_in": {
+          "anchor": "USB1",
+          "refs": [
+            "USB1"
+          ],
+          "R2_intra_group_signal_links": [],
+          "R2_member_to_anchor_links": [],
+          "R1_declared_near_interfaces": [
+            {
+              "from_group": "usb_in",
+              "to_group": "power",
+              "paired_by": "signal_net",
+              "from_ref": "USB1",
+              "from_pad": "1",
+              "to_ref": "U2",
+              "to_pad": "2",
+              "net": "Net-(C1-Pad1)",
+              "krt_signed_rect_gap_mm": 2.1621
+            },
+            {
+              "from_group": "usb_in",
+              "to_group": "core",
+              "paired_by": "signal_net",
+              "from_ref": "USB1",
+              "from_pad": "2",
+              "to_ref": "U1",
+              "to_pad": "7",
+              "net": "/D_N",
+              "krt_signed_rect_gap_mm": 12.8095
+            }
+          ],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              117.5,
+              100.1,
+              117.5,
+              100.1
+            ],
+            "D1_bbox_foreign_origin_intruders": [],
+            "D2_anchor_separation_inversions": [],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        },
+        "power": {
+          "anchor": "U2",
+          "refs": [
+            "U2",
+            "C1",
+            "C3"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "Net-(C1-Pad1)",
+              "ref_a": "C1",
+              "pad_a": "1",
+              "ref_b": "U2",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 4.592,
+              "euclidean_pad_centre_mm": 6.0639
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "C1",
+              "anchor": "U2",
+              "member_pad": "1",
+              "anchor_pad": "3",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 3.642,
+              "origin_distance_mm": 6.6877
+            },
+            {
+              "member": "C3",
+              "anchor": "U2",
+              "member_pad": "1",
+              "anchor_pad": "3",
+              "shared_net": "/+3.3V",
+              "krt_signed_rect_gap_mm": 5.242,
+              "origin_distance_mm": 7.6663
+            }
+          ],
+          "R1_declared_near_interfaces": [
+            {
+              "from_group": "power",
+              "to_group": "usb_in",
+              "paired_by": "signal_net",
+              "from_ref": "U2",
+              "from_pad": "2",
+              "to_ref": "USB1",
+              "to_pad": "1",
+              "net": "Net-(C1-Pad1)",
+              "krt_signed_rect_gap_mm": 2.1621
+            },
+            {
+              "from_group": "power",
+              "to_group": "core",
+              "paired_by": "any_pad_fallback",
+              "from_ref": "U2",
+              "from_pad": "2",
+              "to_ref": "U1",
+              "to_pad": "18",
+              "net": null,
+              "krt_signed_rect_gap_mm": -1.0875
+            }
+          ],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              124.25,
+              94.4,
+              127.1,
+              102.05
+            ],
+            "D1_bbox_foreign_origin_intruders": [
+              "reset:R1",
+              "reset:R2"
+            ],
+            "D2_anchor_separation_inversions": [
+              {
+                "member": "C1",
+                "own_anchor": "U2",
+                "d_own_mm": 6.6877,
+                "foreign_group": "core",
+                "foreign_anchor": "U1",
+                "d_foreign_mm": 6.119
+              },
+              {
+                "member": "C1",
+                "own_anchor": "U2",
+                "d_own_mm": 6.6877,
+                "foreign_group": "reset",
+                "foreign_anchor": "Q1",
+                "d_foreign_mm": 3.1321
+              },
+              {
+                "member": "C3",
+                "own_anchor": "U2",
+                "d_own_mm": 7.6663,
+                "foreign_group": "reset",
+                "foreign_anchor": "Q1",
+                "d_foreign_mm": 2.5831
+              }
+            ],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        },
+        "core": {
+          "anchor": "U1",
+          "refs": [
+            "U1",
+            "Y1",
+            "C2",
+            "C4",
+            "R3",
+            "R4"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "Net-(C2-Pad1)",
+              "ref_a": "C2",
+              "pad_a": "1",
+              "ref_b": "U1",
+              "pad_b": "10",
+              "krt_signed_rect_gap_mm": 4.9946,
+              "euclidean_pad_centre_mm": 5.9803
+            },
+            {
+              "net": "Net-(C2-Pad1)",
+              "ref_a": "C2",
+              "pad_a": "1",
+              "ref_b": "Y1",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 1.1553,
+              "euclidean_pad_centre_mm": 2.3407
+            },
+            {
+              "net": "Net-(C2-Pad1)",
+              "ref_a": "U1",
+              "pad_a": "10",
+              "ref_b": "Y1",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 6.7893,
+              "euclidean_pad_centre_mm": 8.3183
+            },
+            {
+              "net": "Net-(C4-Pad1)",
+              "ref_a": "C4",
+              "pad_a": "1",
+              "ref_b": "U1",
+              "pad_b": "9",
+              "krt_signed_rect_gap_mm": 2.9658,
+              "euclidean_pad_centre_mm": 3.9427
+            },
+            {
+              "net": "Net-(C4-Pad1)",
+              "ref_a": "C4",
+              "pad_a": "1",
+              "ref_b": "Y1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 1.7492,
+              "euclidean_pad_centre_mm": 3.0359
+            },
+            {
+              "net": "Net-(C4-Pad1)",
+              "ref_a": "U1",
+              "pad_a": "9",
+              "ref_b": "Y1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 5.4237,
+              "euclidean_pad_centre_mm": 6.9347
+            },
+            {
+              "net": "Net-(R3-Pad2)",
+              "ref_a": "R3",
+              "pad_a": "2",
+              "ref_b": "U1",
+              "pad_b": "3",
+              "krt_signed_rect_gap_mm": 5.4375,
+              "euclidean_pad_centre_mm": 5.8751
+            },
+            {
+              "net": "Net-(R4-Pad2)",
+              "ref_a": "R4",
+              "pad_a": "2",
+              "ref_b": "U1",
+              "pad_b": "4",
+              "krt_signed_rect_gap_mm": 5.0404,
+              "euclidean_pad_centre_mm": 5.7758
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "Y1",
+              "anchor": "U1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 4.0455,
+              "origin_distance_mm": 10.1833
+            },
+            {
+              "member": "C2",
+              "anchor": "U1",
+              "member_pad": "2",
+              "anchor_pad": "6",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 3.5875,
+              "origin_distance_mm": 8.6176
+            },
+            {
+              "member": "C4",
+              "anchor": "U1",
+              "member_pad": "2",
+              "anchor_pad": "5",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 1.3875,
+              "origin_distance_mm": 6.4008
+            },
+            {
+              "member": "R3",
+              "anchor": "U1",
+              "member_pad": "2",
+              "anchor_pad": "10",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 0.8875,
+              "origin_distance_mm": 5.2901
+            },
+            {
+              "member": "R4",
+              "anchor": "U1",
+              "member_pad": "2",
+              "anchor_pad": "10",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 1.8091,
+              "origin_distance_mm": 4.2994
+            }
+          ],
+          "R1_declared_near_interfaces": [
+            {
+              "from_group": "core",
+              "to_group": "usb_in",
+              "paired_by": "signal_net",
+              "from_ref": "U1",
+              "from_pad": "6",
+              "to_ref": "USB1",
+              "to_pad": "3",
+              "net": "/D_P",
+              "krt_signed_rect_gap_mm": 12.8095
+            },
+            {
+              "from_group": "core",
+              "to_group": "target",
+              "paired_by": "signal_net",
+              "from_ref": "R3",
+              "from_pad": "1",
+              "to_ref": "CON2",
+              "to_pad": "3",
+              "net": "/U0RXD",
+              "krt_signed_rect_gap_mm": 1.486
+            }
+          ],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              131.3,
+              96.2,
+              141.4,
+              101.75
+            ],
+            "D1_bbox_foreign_origin_intruders": [
+              "target:CON1"
+            ],
+            "D2_anchor_separation_inversions": [
+              {
+                "member": "Y1",
+                "own_anchor": "U1",
+                "d_own_mm": 10.1833,
+                "foreign_group": "target",
+                "foreign_anchor": "CON2",
+                "d_foreign_mm": 9.4515
+              },
+              {
+                "member": "C2",
+                "own_anchor": "U1",
+                "d_own_mm": 8.6176,
+                "foreign_group": "target",
+                "foreign_anchor": "CON2",
+                "d_foreign_mm": 7.1107
+              },
+              {
+                "member": "R3",
+                "own_anchor": "U1",
+                "d_own_mm": 5.2901,
+                "foreign_group": "target",
+                "foreign_anchor": "CON2",
+                "d_foreign_mm": 3.4763
+              }
+            ],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        },
+        "reset": {
+          "anchor": "Q1",
+          "refs": [
+            "Q1",
+            "Q2",
+            "R1",
+            "R2"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "/DTR",
+              "ref_a": "Q1",
+              "pad_a": "2",
+              "ref_b": "R2",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 0.1676,
+              "euclidean_pad_centre_mm": 1.2071
+            },
+            {
+              "net": "/RTS",
+              "ref_a": "Q2",
+              "pad_a": "2",
+              "ref_b": "R1",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 10.3413,
+              "euclidean_pad_centre_mm": 11.5361
+            },
+            {
+              "net": "Net-(Q1-Pad1)",
+              "ref_a": "Q1",
+              "pad_a": "1",
+              "ref_b": "R1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 2.075,
+              "euclidean_pad_centre_mm": 2.9157
+            },
+            {
+              "net": "Net-(Q2-Pad1)",
+              "ref_a": "Q2",
+              "pad_a": "1",
+              "ref_b": "R2",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 9.188,
+              "euclidean_pad_centre_mm": 10.2623
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "Q2",
+              "anchor": "Q1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 10.4517,
+              "origin_distance_mm": 14.5214
+            },
+            {
+              "member": "R1",
+              "anchor": "Q1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 0.1725,
+              "origin_distance_mm": 2.1471
+            },
+            {
+              "member": "R2",
+              "anchor": "Q1",
+              "member_pad": "2",
+              "anchor_pad": "2",
+              "shared_net": "/DTR",
+              "krt_signed_rect_gap_mm": 0.1676,
+              "origin_distance_mm": 2.9129
+            }
+          ],
+          "R1_declared_near_interfaces": [
+            {
+              "from_group": "reset",
+              "to_group": "core",
+              "paired_by": "signal_net",
+              "from_ref": "R2",
+              "from_pad": "2",
+              "to_ref": "U1",
+              "to_pad": "15",
+              "net": "/DTR",
+              "krt_signed_rect_gap_mm": 1.4563
+            },
+            {
+              "from_group": "reset",
+              "to_group": "target",
+              "paired_by": "signal_net",
+              "from_ref": "Q2",
+              "from_pad": "3",
+              "to_ref": "CON1",
+              "to_pad": "6",
+              "net": "/EN",
+              "krt_signed_rect_gap_mm": 4.6967
+            }
+          ],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              124.1,
+              96.9,
+              137.6,
+              102.25
+            ],
+            "D1_bbox_foreign_origin_intruders": [
+              "core:U1",
+              "power:U2"
+            ],
+            "D2_anchor_separation_inversions": [
+              {
+                "member": "Q2",
+                "own_anchor": "Q1",
+                "d_own_mm": 14.5214,
+                "foreign_group": "power",
+                "foreign_anchor": "U2",
+                "d_foreign_mm": 13.3515
+              },
+              {
+                "member": "Q2",
+                "own_anchor": "Q1",
+                "d_own_mm": 14.5214,
+                "foreign_group": "core",
+                "foreign_anchor": "U1",
+                "d_foreign_mm": 6.5521
+              },
+              {
+                "member": "Q2",
+                "own_anchor": "Q1",
+                "d_own_mm": 14.5214,
+                "foreign_group": "target",
+                "foreign_anchor": "CON2",
+                "d_foreign_mm": 8.7464
+              }
+            ],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        },
+        "target": {
+          "anchor": "CON2",
+          "refs": [
+            "CON1",
+            "CON2"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "/DCOM",
+              "ref_a": "CON1",
+              "pad_a": "2",
+              "ref_b": "CON2",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 6.4164,
+              "euclidean_pad_centre_mm": 8.4496
+            },
+            {
+              "net": "/EN",
+              "ref_a": "CON1",
+              "pad_a": "6",
+              "ref_b": "CON2",
+              "pad_b": "6",
+              "krt_signed_rect_gap_mm": 3.0532,
+              "euclidean_pad_centre_mm": 5.0213
+            },
+            {
+              "net": "/U0RXD",
+              "ref_a": "CON1",
+              "pad_a": "3",
+              "ref_b": "CON2",
+              "pad_b": "3",
+              "krt_signed_rect_gap_mm": 5.3118,
+              "euclidean_pad_centre_mm": 7.4066
+            },
+            {
+              "net": "/U0TXD",
+              "ref_a": "CON1",
+              "pad_a": "1",
+              "ref_b": "CON2",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 7.5797,
+              "euclidean_pad_centre_mm": 9.5531
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "CON1",
+              "anchor": "CON2",
+              "member_pad": "1",
+              "anchor_pad": "4",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 3.011,
+              "origin_distance_mm": 6.037
+            }
+          ],
+          "R1_declared_near_interfaces": [
+            {
+              "from_group": "target",
+              "to_group": "core",
+              "paired_by": "signal_net",
+              "from_ref": "CON2",
+              "from_pad": "3",
+              "to_ref": "R3",
+              "to_pad": "1",
+              "net": "/U0RXD",
+              "krt_signed_rect_gap_mm": 1.486
+            },
+            {
+              "from_group": "target",
+              "to_group": "reset",
+              "paired_by": "signal_net",
+              "from_ref": "CON1",
+              "from_pad": "6",
+              "to_ref": "Q2",
+              "to_pad": "3",
+              "net": "/EN",
+              "krt_signed_rect_gap_mm": 4.6967
+            }
+          ],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              136.7,
+              93.55,
+              140.55,
+              98.2
+            ],
+            "D1_bbox_foreign_origin_intruders": [],
+            "D2_anchor_separation_inversions": [],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        }
+      }
+    },
+    "acquisition_delivery_groups": {
+      "footprints": {
+        "C1": {
+          "x_mm": 110.15,
+          "y_mm": 127.35,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "power"
+        },
+        "C2": {
+          "x_mm": 107.6,
+          "y_mm": 123.05,
+          "rot_deg": -90.0,
+          "side": "F",
+          "group": "power"
+        },
+        "C3": {
+          "x_mm": 123.0,
+          "y_mm": 116.25,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "analog"
+        },
+        "C4": {
+          "x_mm": 122.85,
+          "y_mm": 110.45,
+          "rot_deg": 90.0,
+          "side": "F",
+          "group": "analog"
+        },
+        "C5": {
+          "x_mm": 126.65,
+          "y_mm": 110.75,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "analog"
+        },
+        "D1": {
+          "x_mm": 105.2,
+          "y_mm": 131.45,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "power"
+        },
+        "J1": {
+          "x_mm": 104.0,
+          "y_mm": 127.0,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "power"
+        },
+        "J2": {
+          "x_mm": 138.0,
+          "y_mm": 112.0,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "host"
+        },
+        "J3": {
+          "x_mm": 120.0,
+          "y_mm": 105.0,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "analog"
+        },
+        "R1": {
+          "x_mm": 120.6,
+          "y_mm": 109.05,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "analog"
+        },
+        "R2": {
+          "x_mm": 124.4,
+          "y_mm": 109.8,
+          "rot_deg": -90.0,
+          "side": "F",
+          "group": "analog"
+        },
+        "R3": {
+          "x_mm": 134.95,
+          "y_mm": 114.95,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "host"
+        },
+        "R4": {
+          "x_mm": 131.95,
+          "y_mm": 114.95,
+          "rot_deg": 0.0,
+          "side": "F",
+          "group": "host"
+        },
+        "R5": {
+          "x_mm": 105.0,
+          "y_mm": 124.05,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "power"
+        },
+        "R6": {
+          "x_mm": 105.1,
+          "y_mm": 122.55,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "power"
+        },
+        "U1": {
+          "x_mm": 110.3,
+          "y_mm": 123.7,
+          "rot_deg": 90.0,
+          "side": "F",
+          "group": "power"
+        },
+        "U2": {
+          "x_mm": 122.9,
+          "y_mm": 113.7,
+          "rot_deg": 180.0,
+          "side": "F",
+          "group": "analog"
+        }
+      },
+      "groups": {
+        "power": {
+          "anchor": "J1",
+          "refs": [
+            "U1",
+            "J1",
+            "D1",
+            "C1",
+            "C2",
+            "R5",
+            "R6"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "/VIN",
+              "ref_a": "D1",
+              "pad_a": "2",
+              "ref_b": "J1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 2.975,
+              "euclidean_pad_centre_mm": 4.4727
+            },
+            {
+              "net": "/VIN_PROTECTED",
+              "ref_a": "C1",
+              "pad_a": "1",
+              "ref_b": "D1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 3.1082,
+              "euclidean_pad_centre_mm": 4.7257
+            },
+            {
+              "net": "/VIN_PROTECTED",
+              "ref_a": "C1",
+              "pad_a": "1",
+              "ref_b": "R5",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 3.2459,
+              "euclidean_pad_centre_mm": 4.7202
+            },
+            {
+              "net": "/VIN_PROTECTED",
+              "ref_a": "C1",
+              "pad_a": "1",
+              "ref_b": "U1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 1.125,
+              "euclidean_pad_centre_mm": 2.517
+            },
+            {
+              "net": "/VIN_PROTECTED",
+              "ref_a": "D1",
+              "pad_a": "1",
+              "ref_b": "R5",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 6.3274,
+              "euclidean_pad_centre_mm": 7.4707
+            },
+            {
+              "net": "/VIN_PROTECTED",
+              "ref_a": "D1",
+              "pad_a": "1",
+              "ref_b": "U1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 5.6289,
+              "euclidean_pad_centre_mm": 7.0693
+            },
+            {
+              "net": "/VIN_PROTECTED",
+              "ref_a": "R5",
+              "pad_a": "1",
+              "ref_b": "U1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 2.825,
+              "euclidean_pad_centre_mm": 3.6119
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "U1",
+              "anchor": "J1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 2.5285,
+              "origin_distance_mm": 7.112
+            },
+            {
+              "member": "D1",
+              "anchor": "J1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 2.975,
+              "origin_distance_mm": 4.609
+            },
+            {
+              "member": "C1",
+              "anchor": "J1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 2.1,
+              "origin_distance_mm": 6.16
+            },
+            {
+              "member": "C2",
+              "anchor": "J1",
+              "member_pad": "2",
+              "anchor_pad": "2",
+              "shared_net": "GND",
+              "krt_signed_rect_gap_mm": 1.6481,
+              "origin_distance_mm": 5.3444
+            },
+            {
+              "member": "R5",
+              "anchor": "J1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 1.6,
+              "origin_distance_mm": 3.1149
+            },
+            {
+              "member": "R6",
+              "anchor": "J1",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 3.1,
+              "origin_distance_mm": 4.5839
+            }
+          ],
+          "R1_declared_near_interfaces": [],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              104.0,
+              122.55,
+              110.3,
+              131.45
+            ],
+            "D1_bbox_foreign_origin_intruders": [],
+            "D2_anchor_separation_inversions": [],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        },
+        "analog": {
+          "anchor": "J3",
+          "refs": [
+            "U2",
+            "J3",
+            "C3",
+            "C4",
+            "C5",
+            "R1",
+            "R2"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "/ANALOG0",
+              "ref_a": "C4",
+              "pad_a": "1",
+              "ref_b": "R1",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 1.3657,
+              "euclidean_pad_centre_mm": 2.6002
+            },
+            {
+              "net": "/ANALOG0",
+              "ref_a": "C4",
+              "pad_a": "1",
+              "ref_b": "U2",
+              "pad_b": "4",
+              "krt_signed_rect_gap_mm": 1.7002,
+              "euclidean_pad_centre_mm": 2.9565
+            },
+            {
+              "net": "/ANALOG0",
+              "ref_a": "R1",
+              "pad_a": "2",
+              "ref_b": "U2",
+              "pad_b": "4",
+              "krt_signed_rect_gap_mm": 4.3215,
+              "euclidean_pad_centre_mm": 5.5103
+            },
+            {
+              "net": "/ANALOG0_IN",
+              "ref_a": "J3",
+              "pad_a": "1",
+              "ref_b": "R1",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 2.7,
+              "euclidean_pad_centre_mm": 4.0562
+            },
+            {
+              "net": "/ANALOG1",
+              "ref_a": "C5",
+              "pad_a": "1",
+              "ref_b": "R2",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 0.55,
+              "euclidean_pad_centre_mm": 1.4803
+            },
+            {
+              "net": "/ANALOG1",
+              "ref_a": "C5",
+              "pad_a": "1",
+              "ref_b": "U2",
+              "pad_b": "5",
+              "krt_signed_rect_gap_mm": 1.325,
+              "euclidean_pad_centre_mm": 2.1173
+            },
+            {
+              "net": "/ANALOG1",
+              "ref_a": "R2",
+              "pad_a": "2",
+              "ref_b": "U2",
+              "pad_b": "5",
+              "krt_signed_rect_gap_mm": 1.525,
+              "euclidean_pad_centre_mm": 2.1744
+            },
+            {
+              "net": "/ANALOG1_IN",
+              "ref_a": "J3",
+              "pad_a": "3",
+              "ref_b": "R2",
+              "pad_b": "1",
+              "krt_signed_rect_gap_mm": 2.7,
+              "euclidean_pad_centre_mm": 3.9951
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "U2",
+              "anchor": "J3",
+              "member_pad": "5",
+              "anchor_pad": "3",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 6.675,
+              "origin_distance_mm": 9.1706
+            },
+            {
+              "member": "C3",
+              "anchor": "J3",
+              "member_pad": "1",
+              "anchor_pad": "2",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 9.9,
+              "origin_distance_mm": 11.6431
+            },
+            {
+              "member": "C4",
+              "anchor": "J3",
+              "member_pad": "2",
+              "anchor_pad": "2",
+              "shared_net": "GND",
+              "krt_signed_rect_gap_mm": 3.35,
+              "origin_distance_mm": 6.1502
+            },
+            {
+              "member": "C5",
+              "anchor": "J3",
+              "member_pad": "1",
+              "anchor_pad": "4",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 4.4,
+              "origin_distance_mm": 8.7912
+            },
+            {
+              "member": "R1",
+              "anchor": "J3",
+              "member_pad": "1",
+              "anchor_pad": "1",
+              "shared_net": "/ANALOG0_IN",
+              "krt_signed_rect_gap_mm": 2.7,
+              "origin_distance_mm": 4.0942
+            },
+            {
+              "member": "R2",
+              "anchor": "J3",
+              "member_pad": "1",
+              "anchor_pad": "3",
+              "shared_net": "/ANALOG1_IN",
+              "krt_signed_rect_gap_mm": 2.7,
+              "origin_distance_mm": 6.5115
+            }
+          ],
+          "R1_declared_near_interfaces": [],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              120.0,
+              105.0,
+              126.65,
+              116.25
+            ],
+            "D1_bbox_foreign_origin_intruders": [],
+            "D2_anchor_separation_inversions": [],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        },
+        "host": {
+          "anchor": "J2",
+          "refs": [
+            "J2",
+            "R3",
+            "R4"
+          ],
+          "R2_intra_group_signal_links": [
+            {
+              "net": "/SCL",
+              "ref_a": "J2",
+              "pad_a": "3",
+              "ref_b": "R4",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 1.6157,
+              "euclidean_pad_centre_mm": 3.1942
+            },
+            {
+              "net": "/SDA",
+              "ref_a": "J2",
+              "pad_a": "2",
+              "ref_b": "R3",
+              "pad_b": "2",
+              "krt_signed_rect_gap_mm": 1.6,
+              "euclidean_pad_centre_mm": 2.9586
+            }
+          ],
+          "R2_member_to_anchor_links": [
+            {
+              "member": "R3",
+              "anchor": "J2",
+              "member_pad": "1",
+              "anchor_pad": "3",
+              "shared_net": null,
+              "krt_signed_rect_gap_mm": 1.6,
+              "origin_distance_mm": 4.2432
+            },
+            {
+              "member": "R4",
+              "anchor": "J2",
+              "member_pad": "1",
+              "anchor_pad": "4",
+              "shared_net": "/V3V3",
+              "krt_signed_rect_gap_mm": 1.6,
+              "origin_distance_mm": 6.7309
+            }
+          ],
+          "R1_declared_near_interfaces": [],
+          "diagnostic_only_not_hard_gate": {
+            "D1_bbox_mm": [
+              131.95,
+              112.0,
+              138.0,
+              114.95
+            ],
+            "D1_bbox_foreign_origin_intruders": [],
+            "D2_anchor_separation_inversions": [],
+            "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates."
+          }
+        }
+      }
+    },
+    "synthetic_metric_controls": {
+      "C1_overlapping_pads_signed_vs_clamped": {
+        "rect_a": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "rect_b": [
+          0.75,
+          0.0,
+          1.75,
+          1.0
+        ],
+        "krt_signed_rect_gap_mm": -0.25,
+        "clamped_aabb_gap_mm": 0.0
+      },
+      "C2_rotated_45deg_pad_aabb_vs_rotated_polygon": {
+        "pad_size_mm": [
+          2.0,
+          0.6
+        ],
+        "rect_rotation_deg": 45.0,
+        "partner_rect_mm": [
+          1.2,
+          1.2,
+          1.8,
+          1.8
+        ],
+        "krt_pad_half_extent_mm": 0.9192,
+        "krt_signed_rect_gap_mm": 0.3971,
+        "exact_rotated_polygon_gap_mm": 1.3971,
+        "difference_mm": 1.0
+      },
+      "C3_declared_subject_per_leg_emission": {
+        "claim": {
+          "ref": "Y1",
+          "near": "U1",
+          "max_mm": 6.0,
+          "basis": "pad_edge",
+          "pads": {
+            "Y1": [
+              "1",
+              "2"
+            ],
+            "U1": [
+              "9",
+              "10"
+            ]
+          }
+        },
+        "emitted_leg_count": 2,
+        "emitted_legs": [
+          {
+            "subject_pad": "1",
+            "partner_pad": "9",
+            "paired_by": "net",
+            "gap_mm": 5.4237,
+            "passes_at_6mm": true
+          },
+          {
+            "subject_pad": "2",
+            "partner_pad": "10",
+            "paired_by": "net",
+            "gap_mm": 6.7893,
+            "passes_at_6mm": false
+          }
+        ]
+      },
+      "C4_partial_unresolved_declared_pad_names": {
+        "declared_pads": [
+          "1",
+          "7"
+        ],
+        "resolved_pads": [
+          "1"
+        ],
+        "missing_pads": [
+          "7"
+        ],
+        "blind_refuses_partial_measurement": true
+      }
+    }
+  },
+  "supported_intent_adapter_contract": {
+    "canonical_schema_constant": "agent-ee.placement-intent/1",
+    "canonical_schema_renamed": false,
+    "narrow_krt_adapter_identity": {
+      "kind": "floorplan-intent",
+      "schema": 1,
+      "min_reader": 12,
+      "units": "mm",
+      "refusal_policy": "Accept only exact inspected dialect (kind=='floorplan-intent', schema==1, min_reader==12, units=='mm') or native schema=='agent-ee.placement-intent/1'. Refuse any other min_reader (1..11 or >12), schema, kind, units, or unknown top-level/nested keys."
+    },
+    "field_classification": {
+      "operative_constraints_and_seat_selectors": [
+        {
+          "path": "fixed_poses[]",
+          "fields": [
+            "ref",
+            "x",
+            "y",
+            "rot",
+            "side"
+          ],
+          "effect": "Locks footprint at native (x,y,rot) and verifies native side."
+        },
+        {
+          "path": "edge_connectors[]",
+          "fields": [
+            "ref",
+            "edge",
+            "max_setback_mm",
+            "overhang_mm",
+            "side",
+            "class",
+            "context.mount_mode",
+            "context.cable_entry"
+          ],
+          "effect": "Controls _edge_rules and _edge_seat (placement_job.py:299-338): class=='edge_receptacle' or context.mount_mode=='edge_mount' selects drawn body:fab/body:silk seat rect; side verifies native face ('F'/'B')."
+        },
+        {
+          "path": "proximity[]",
+          "fields": [
+            "ref",
+            "near",
+            "max_mm",
+            "basis",
+            "pads"
+          ],
+          "effect": "Enforces kicad-route@c4af095 signed rect_gap on pad_rect per declared subject leg when basis=='pad_edge'."
+        },
+        {
+          "path": "assembly.sides",
+          "fields": [
+            "sides"
+          ],
+          "effect": "Verifies all pad-bearing footprints match declared side ('F' or 'B') without enabling side-flipping moves."
+        },
+        {
+          "path": "envelope",
+          "fields": [
+            "rect",
+            "tolerance_mm"
+          ],
+          "effect": "Verifies native board Edge.Cuts bbox matches rect within tolerance_mm."
+        },
+        {
+          "path": "legality_budget",
+          "fields": [
+            "oob_count"
+          ],
+          "effect": "Requires oob_count == 0."
+        },
+        {
+          "path": "groups.groups[]",
+          "fields": [
+            "name",
+            "anchor",
+            "refs",
+            "near"
+          ],
+          "effect": "Partitions circuit footprints into single-group membership and compiles R2 intra-group signal links and R1 declared near interface tethers."
+        }
+      ],
+      "noop_when_empty_refuse_when_nonempty": [
+        {
+          "path": "blocks",
+          "accepted_value": []
+        },
+        {
+          "path": "decaps",
+          "accepted_value": {}
+        },
+        {
+          "path": "keepouts",
+          "accepted_value": []
+        },
+        {
+          "path": "must_lock",
+          "accepted_value": []
+        },
+        {
+          "path": "context.cutouts",
+          "accepted_value": []
+        },
+        {
+          "path": "context.edge_contours",
+          "accepted_value": 0
+        },
+        {
+          "path": "context.file_locked",
+          "accepted_value": []
+        }
+      ],
+      "unresolved_claims_and_withheld_dispositions_retained_visibly": [
+        {
+          "path": "context.brief.consequences[status=='unmeasured']",
+          "ids": [
+            "interfaces[USB1].cable_envelope_mm",
+            "interfaces[CON2].cable_envelope_mm",
+            "interfaces[CON1].cable_envelope_mm"
+          ],
+          "handling": "Retained as status='unresolved_unmeasured' in job-report claims (never marked satisfied or dropped as executes:false); 3D cable envelope, z-height, and insertion travel are not measured by 2D placement."
+        },
+        {
+          "path": "dispositions.rules",
+          "keys": [
+            "decap_distance",
+            "zone_containment"
+          ],
+          "handling": "Retained as explicit rule dispositions in job-report."
+        },
+        {
+          "path": "dispositions.withheld / context.budget_withheld",
+          "keys": [
+            "overlap_area"
+          ],
+          "handling": "Retained as explicit withheld baseline budget note; native courtyard_overlap==0 remains mandatory for candidate completion."
+        }
+      ],
+      "descriptive_provenance_annotations": [
+        "assembly.why",
+        "fixed_poses[].basis",
+        "fixed_poses[].why",
+        "edge_connectors[].note",
+        "edge_connectors[].source",
+        "edge_connectors[].context.{basis,brief_row,compiled_from,role,was_class,was_source}",
+        "proximity[].context.{basis,limit,role,source}",
+        "context.{basis,decap_census,keepouts_note,note,pose_claims_withheld,reconciliation}",
+        "groups.groups[].{role,why}"
+      ]
+    },
+    "native_orientation_policy": "Preserve captured native orientations for fixed_poses (Ref*, Ref*~2 at 0 deg) and edge-seated connectors (USB1 at 0 deg west, CON1/CON2 at 90 deg east) for this selected M1 esp_prog case as a scoped M1 baseline rule, without claiming arbitrary acquired/pile footprint orientations on an input board are automatically correct."
+  },
+  "upstream_pad_edge_metric_contract": {
+    "metric_id": "kicad_route_c4af095_pad_rect_signed_gap",
+    "upstream_reference": "kicad-route@c4af095:src/kicad_route/router/py_placer/placement/floorplan.py#L5677-L5746,L6043-L6275 and legality.py#L90-L146",
+    "pad_rect_definition": "Axis-aligned board-space copper rect (gx - hx, gy - hy, gx + hx, gy + hy). For standard pads, hx = (sx/2)*|cos(rot)| + (sy/2)*|sin(rot)|, hy = (sx/2)*|sin(rot)| + (sy/2)*|cos(rot)|. For custom pads whose copper is not anchor-only, hx = max(|eb.left - gx|, |eb.right - gx|), hy = max(|eb.top - gy|, |eb.bottom - gy|) from GetEffectiveShape(layer).BBox(). Verified 0.0 mm max diff against kicad-route@c4af095 across all 75 esp_prog pads and 49 acquisition pads.",
+    "rect_gap_definition": "dx = max(a0 - b2, b0 - a2); dy = max(a1 - b3, b1 - a3); if dx < 0 and dy < 0: return max(dx, dy) (signed negative overlap, never clamped); elif dx > 0 and dy > 0: return hypot(dx, dy); else: return max(dx, dy).",
+    "partner_selection_and_arity": "When pads[ref] is declared: _pads_named selects all pads matching each declared number; any unmatched declared pad name yields proximity_unresolved (blind=True, no partial measurement). For each subject pad, _proximity_reach narrows partners to same-net pads (q.net_id == pad.net_id and pad.net_id > 0, paired_by='net') if non-empty, else all partners (paired_by='any'), taking minimum rect_gap. proximity_reaches emits ONE measurement/finding per declared subject pad. When pads[ref] is omitted: non_aperture_pads are used with paired_by='any' and ONE minimum is emitted for the pair."
+  },
+  "functional_grouping_predicates_and_m1_acceptance": {
+    "rejected_unconditional_hard_gates": [
       {
-        "id": "krt_floorplan_intent_v1",
-        "match": {"kind": "floorplan-intent", "schema": 1, "min_reader_max": 12, "units": "mm"},
-        "groups_match": {"schema": 1, "board": "board.kicad_pcb"}
+        "id": "D1_bbox_foreign_origin_intruders",
+        "former_id": "P2",
+        "classification": "diagnostic_only",
+        "reason": "Owner permits flexible group shapes and notes a small bbox does not prove good placement; L-shaped/wrapped groups or large IC footprints can legally enclose a foreign origin inside an axis-aligned bbox."
       },
       {
-        "id": "agent_ee_placement_intent_v1",
-        "match": {"schema": ["agent-ee.placement-intent/1", null]},
-        "groups_match": {"schema": [1, null]}
+        "id": "D2_anchor_separation_inversions",
+        "former_id": "P3",
+        "classification": "diagnostic_only",
+        "reason": "Universal closer-to-own-anchor-than-every-foreign-anchor inequalities can reject legal boundary passives or interleaved interface networks."
       }
     ],
-    "raw_bytes_preserved": true,
-    "dispositions": {
-      "enforced_hard": [
-        "intent.kind",
-        "intent.schema",
-        "intent.min_reader",
-        "intent.units",
-        "intent.board",
-        "intent.envelope.rect",
-        "intent.envelope.tolerance_mm",
-        "intent.assembly.sides",
-        "intent.legality_budget.oob_count",
-        "intent.fixed_poses[].{ref,x,y,rot,side}",
-        "intent.edge_connectors[].{ref,edge,side,max_setback_mm,overhang_mm}",
-        "intent.electrical_locality",
-        "groups.schema",
-        "groups.board",
-        "groups.groups[].{name,role,anchor,refs}",
-        "group_predicates.{complete_partition,intra_group_subpair_cohesion,bbox_non_intrusion}"
-      ],
-      "enforced_search_and_verified_report": [
-        "intent.proximity[].{ref,near,pads,max_mm,basis=pad_edge,context.limit=derived_default}",
-        "groups.groups[].near",
-        "group_predicates.{max_member_anchor_mm,near_group_distances}"
-      ],
-      "validated_empty": [
-        "intent.blocks",
-        "intent.keepouts",
-        "intent.must_lock",
-        "intent.decaps"
-      ],
-      "retained_descriptive_context": [
-        "intent.assembly.why",
-        "intent.defaults",
-        "intent.dispositions",
-        "intent.context",
-        "intent.fixed_poses[].{basis,why}",
-        "intent.edge_connectors[].{class,source,note,context}",
-        "intent.proximity[].{role,why,note,context}",
-        "groups.groups[].why"
+    "hard_structural_and_numeric_predicates": [
+      {
+        "id": "S1_complete_partition",
+        "scope": "all_grouped_designs",
+        "rule": "Every circuit footprint on the board belongs to exactly one declared group in groups.groups[] or fixed_poses[]/shared; missing, extra, or duplicate refs fail."
+      },
+      {
+        "id": "S2_shared_rail_non_merge",
+        "scope": "all_grouped_designs",
+        "rule": "Shared power and ground rails (POWER_GROUND_NETS) never merge groups or create cross-group/all-to-all attraction edges."
+      },
+      {
+        "id": "S3_explicit_proximity_and_locality",
+        "scope": "all_declared_clauses",
+        "rule": "All declared proximity[] legs (using krt_signed_rect_gap_mm <= max_mm + 1e-6) and electrical_locality obligations (with preserved authored_design_limit or datasheet_application_limit provenance) must pass."
+      }
+    ],
+    "source_bound_relation_predicates": [
+      {
+        "id": "R1_declared_near_interfaces",
+        "source": "groups.groups[].near + native netlist",
+        "definition": "Minimum krt_signed_rect_gap_mm between non-aperture pads of group G and declared near target group H over shared non-power/non-ground signal nets (falling back to any_pad_fallback when coupled via a 2-group rail net such as USB1-to-U2 VBUS). Used in solver objective (group_near_terms at existing GROUP_WEIGHT scale) and reported in job-report."
+      },
+      {
+        "id": "R2_intra_group_signal_and_anchor_links",
+        "source": "groups.groups[].{refs,anchor} + native netlist",
+        "definition": "Per-net krt_signed_rect_gap_mm between members of group G sharing a non-power/non-ground signal net (e.g. Net-(Q1-Pad1) R1<->Q1, Net-(Q2-Pad1) R2<->Q2, /RTS R1<->Q2, /DTR R2<->Q1 in reset; Net-(C1-Pad1) C1<->U2 in power), plus member-to-anchor pad_rect gap for local rail passives (e.g. C3<->U2 on /+3.3V). Used in solver objective and post-anneal member refinement, and reported in job-report."
+      }
+    ],
+    "m1_qualitative_grouping_acceptance_path": {
+      "automatic_pass_when_numeric_group_limits_absent": false,
+      "required_artifacts_bound_to_candidate_sha256": [
+        "1. Final native measured report (job-report.json / place metrics) recording final native coordinates, S1..S3 verdicts, R1 declared near interface gaps, R2 intra-group signal/anchor link gaps, and D1/D2 diagnostics with stated limitations.",
+        "2. Annotated native board views (top/bottom/group-overlay SVG/PNG renders from the final native .kicad_pcb).",
+        "3. Independent candidate-bound engineering judgment (block_contract.judge / qualification consumer owned by agent-568) bound to board_sha256, verifying each group forms a coherent functional cluster without dispersed members."
+      ]
+    },
+    "builder_concrete_placement_approach": {
+      "subsystem_replacement": false,
+      "arbitrary_2x_weight_claimed_as_truth": false,
+      "automatic_heuristic_escalation_on_seed_failure": false,
+      "steps": [
+        "1. Keep existing crates/placement-engine SA + quench architecture.",
+        "2. Compile R2 intra-group private-signal/anchor links and R1 declared groups[].near interface signal links into Prepared (crates/placement-engine/src/job.rs) at the existing GROUP_WEIGHT scale.",
+        "3. Add constrained group-cluster translation/swap proposals during SA and a deterministic post-anneal legal member-refinement pass that proposes moving each group's non-fixed members (ordered by largest R2 link gap, e.g. R2/Q2 in reset and C1/C3 in power) into legal non-overlapping seats adjacent to their connected intra-group partner/anchor.",
+        "4. Accept refinement moves only when they preserve 0 courtyard overlap, 0 outline violations, valid edge-connector seating, and all S3 proximity/locality limits while strictly reducing R2 + R1 link reach."
       ]
     }
   },
-  "retained_inputs": {
-    "esp_prog": {
-      "config": {"path": "build/agent545/board-config-portfolio.json", "bytes": 1315, "sha256": "2c34cbb527fde4e5ea528bdf87b3ee28c800ec70525a5d90efb02e6b58301c8b"},
-      "board": {"path": "build/agent545/inputs/board.kicad_pcb", "bytes": 123905, "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7"},
-      "project": {"path": "build/agent545/inputs/board.kicad_pro", "bytes": 1059, "sha256": "9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395"},
-      "intent": {"path": "build/agent545/inputs/intent.json", "bytes": 16164, "sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c"},
-      "groups": {"path": "build/agent545/inputs/groups.json", "bytes": 1759, "sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8"},
-      "retained_final_board": {"path": "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb", "bytes": 167794, "sha256": "dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1"}
+  "analytical_proposed_target_outcomes_not_yet_executed": {
+    "status": "analytical_proposed_not_executed",
+    "note": "These entries state the required target behavior of the post-AGENTEE-479 implementation and must not be cited as executed test runs until the builder slice lands.",
+    "cases": [
+      {
+        "case_id": "TARGET-1",
+        "subject": "Retained esp_prog inputs (intent.json + groups.json) after AGENTEE-528 + AGENTEE-479 implementation",
+        "expected_validation": "accepted_via_narrow_krt_adapter",
+        "expected_unresolved_claims_retained": [
+          "interfaces[USB1].cable_envelope_mm",
+          "interfaces[CON2].cable_envelope_mm",
+          "interfaces[CON1].cable_envelope_mm"
+        ]
+      },
+      {
+        "case_id": "TARGET-2",
+        "subject": "Retained esp_prog final-a1 board (dfffc042) evaluated by M1 qualitative grouping path",
+        "expected_S3_proximity": "pass (all 4 legs <= max_mm)",
+        "expected_grouping_verdict": "rejected_by_candidate_bound_judgment (reset:Q2 stranded 9.1880 mm rect_gap from reset:R2 on Net-(Q2-Pad1) and 10.3413 mm from reset:R1 on /RTS; power:C1/C3 displaced 3.6420 mm / 5.2420 mm rect_gap from power:U2 next to reset:Q1)"
+      },
+      {
+        "case_id": "TARGET-3",
+        "subject": "Retained acquisition delivery board (d0a898a2)",
+        "expected_S3_locality": "pass (all 10 obligations <= 3.0 mm with authored_design_limit provenance preserved)",
+        "expected_grouping_verdict": "accepted (all R2 intra-group links compact, D1/D2 diagnostics clean, candidate-bound judgment passes)"
+      },
+      {
+        "case_id": "TARGET-4",
+        "subject": "Negative control: unknown field or min_reader != 12 or non-empty blocks/keepouts in floorplan-intent",
+        "expected_validation": "refused (ValueError)"
+      }
+    ]
+  },
+  "cross_agent_boundaries": {
+    "AGENTEE_528_REC_30": {
+      "owner": "agent-567 (Sol)",
+      "scope": "Fixed copper-mark identity repair for two Fiducial1x3_transp footprints sharing reference 'Ref*' with distinct UUIDs (00000000-0000-0000-0000-00005d8c55cd at 141.2,95.9 and 00000000-0000-0000-0000-00005d8c55f6 at 118.1,99.9).",
+      "interface_with_AGENTEE_479": "intent.json fixed_poses[] names 'Ref*' (141.2, 95.9) and 'Ref*~2' (118.1, 99.9) in file order. AGENTEE-479 adapter maps fixed_poses[] onto the disambiguated/UUID-keyed fixed footprints produced by AGENTEE-528 without conflicting edits to capture/parser identity logic."
     },
-    "acquisition": {
-      "spec": {"path": "build/acquisition-release/inputs/spec.md", "bytes": 4471, "sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373"},
-      "envelope": {"path": "build/acquisition-release/inputs/envelope.json", "bytes": 2083, "sha256": "103fb7ada7523b7709205753c5b900e7909ae91cc52547c096151a0352e11d33"},
-      "placement": {"path": "build/acquisition-release/inputs/placement.json", "bytes": 17892, "sha256": "4dd9bc5d5d06e47377e6c8944a7737a5cc789c5b6ae740339427b67e2b861011"},
-      "electrical_locality": {"path": "build/acquisition-release/inputs/electrical-locality.json", "bytes": 13196, "sha256": "c39f6f070ceec7e9d47bb072a953350806bd926fe28f2dc1eb609b102a939679"},
-      "groups": {"path": "build/acquisition-release/inputs/groups.json", "bytes": 502, "sha256": "eb725e24138dc70ed7e615eb7ac5b77952178ccc5fd27fd8b041ec38c31ee396"},
-      "accepted_board": {"path": "build/acquisition-release/delivery/native/project/acquisition.kicad_pcb", "bytes": 152140, "sha256": "d0a898a2a254c090ba1a4185320938241c255e79c587c82abb27a0bcafcd66e7"}
+    "qualification_consumer": {
+      "owner": "agent-568",
+      "scope": "Qualification consumer and candidate-bound engineering judgment integration.",
+      "interface_with_AGENTEE_479": "job-report.json and place metrics expose structured R1/R2 group link measurements, D1/D2 diagnostics with limitations, and unresolved_claims[] (including unmeasured cable_envelope_mm rows) for agent-568's qualification consumer."
     }
   }
 }
