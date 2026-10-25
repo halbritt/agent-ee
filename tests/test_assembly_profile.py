@@ -116,7 +116,9 @@ class NativeAssessmentTests(unittest.TestCase):
         scope = self.scope(profile_document(self.policy_sha()))
         files = {f"design/{name}": 'sha' for name in scope['inputs'][0]['include']}
         descriptor = compile_baseline(scope, files)['coverage']['checks']['fab']
-        self.assertIn(PROFILE_REL, [c['path'] for c in descriptor.get('captured', [])] or [PROFILE_REL])
+        self.assertIn(PROFILE_REL, descriptor['immutable_inputs'])
+        with self.assertRaisesRegex(ValueError, 'captured'):
+            compile_baseline(scope, {path: sha for path, sha in files.items() if path != PROFILE_REL})
         without = copy.deepcopy(scope)
         without['checks'] = [c for c in without['checks'] if c['kind'] != 'cpl_rotation']
         for req in without['baseline']['requirements']:

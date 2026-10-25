@@ -103,3 +103,21 @@ Smallest remedy, in order of preference, none implemented here:
 - Through-hole applicability is an engineering rationale in the profile, not a
   supplier commitment.
 - The full strict suite was not run; the affected suites were.
+
+## Chief integration verification
+
+Agent-564 independently ran the five affected modules in the pinned native
+container: assembly profile, fab package, sealed roundtrip, JLC DFM and CPL
+rotation. The strict gate passed 95 tests with no skips. The chief replaced
+a vacuous profile-capture assertion with a check of the real immutable-input
+descriptor and a missing-capture negative; that amended test also passed in
+the native container. Logs are retained under
+`~/.cache/agent-evidence/agent-ee-564-integration/assembly-profile-native.log`
+and `assembly-profile-capture-guard.log` beside it.
+
+The chief read and recomputed the hashes of the real acquisition CPL check,
+package check, rotation report and candidate record above. They confirm the
+16 passing rows and D1's unresolved polarity; this is a verified refusal,
+not completed acquisition orientation qualification. A separate bounded
+source investigation is assigned to agent-566 before a polarity reader change
+is selected. No preview or supplier upload was authorized.
