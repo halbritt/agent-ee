@@ -1,0 +1,83 @@
+{
+  "schema": "agent-ee.recovery-design-contract/1",
+  "issue": "AGENTEE-479",
+  "issue_uuid": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+  "findings": ["REC-01", "REC-02", "REC-03", "REC-14", "REC-15", "REC-23"],
+  "decisions": ["RD-01", "RD-02", "RD-03", "RD-04", "RD-05"],
+  "baseline_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
+  "compatibility_contract": {
+    "target_schema": "agent-ee.placement-intent/2",
+    "accepted_dialects": [
+      {
+        "id": "krt_floorplan_intent_v1",
+        "match": {"kind": "floorplan-intent", "schema": 1, "min_reader_max": 12, "units": "mm"},
+        "groups_match": {"schema": 1, "board": "board.kicad_pcb"}
+      },
+      {
+        "id": "agent_ee_placement_intent_v1",
+        "match": {"schema": ["agent-ee.placement-intent/1", null]},
+        "groups_match": {"schema": [1, null]}
+      }
+    ],
+    "raw_bytes_preserved": true,
+    "dispositions": {
+      "enforced_hard": [
+        "intent.kind",
+        "intent.schema",
+        "intent.min_reader",
+        "intent.units",
+        "intent.board",
+        "intent.envelope.rect",
+        "intent.envelope.tolerance_mm",
+        "intent.assembly.sides",
+        "intent.legality_budget.oob_count",
+        "intent.fixed_poses[].{ref,x,y,rot,side}",
+        "intent.edge_connectors[].{ref,edge,side,max_setback_mm,overhang_mm}",
+        "intent.electrical_locality",
+        "groups.schema",
+        "groups.board",
+        "groups.groups[].{name,role,anchor,refs}",
+        "group_predicates.{complete_partition,intra_group_subpair_cohesion,bbox_non_intrusion}"
+      ],
+      "enforced_search_and_verified_report": [
+        "intent.proximity[].{ref,near,pads,max_mm,basis=pad_edge,context.limit=derived_default}",
+        "groups.groups[].near",
+        "group_predicates.{max_member_anchor_mm,near_group_distances}"
+      ],
+      "validated_empty": [
+        "intent.blocks",
+        "intent.keepouts",
+        "intent.must_lock",
+        "intent.decaps"
+      ],
+      "retained_descriptive_context": [
+        "intent.assembly.why",
+        "intent.defaults",
+        "intent.dispositions",
+        "intent.context",
+        "intent.fixed_poses[].{basis,why}",
+        "intent.edge_connectors[].{class,source,note,context}",
+        "intent.proximity[].{role,why,note,context}",
+        "groups.groups[].why"
+      ]
+    }
+  },
+  "retained_inputs": {
+    "esp_prog": {
+      "config": {"path": "build/agent545/board-config-portfolio.json", "bytes": 1315, "sha256": "2c34cbb527fde4e5ea528bdf87b3ee28c800ec70525a5d90efb02e6b58301c8b"},
+      "board": {"path": "build/agent545/inputs/board.kicad_pcb", "bytes": 123905, "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7"},
+      "project": {"path": "build/agent545/inputs/board.kicad_pro", "bytes": 1059, "sha256": "9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395"},
+      "intent": {"path": "build/agent545/inputs/intent.json", "bytes": 16164, "sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c"},
+      "groups": {"path": "build/agent545/inputs/groups.json", "bytes": 1759, "sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8"},
+      "retained_final_board": {"path": "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb", "bytes": 167794, "sha256": "dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1"}
+    },
+    "acquisition": {
+      "spec": {"path": "build/acquisition-release/inputs/spec.md", "bytes": 4471, "sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373"},
+      "envelope": {"path": "build/acquisition-release/inputs/envelope.json", "bytes": 2083, "sha256": "103fb7ada7523b7709205753c5b900e7909ae91cc52547c096151a0352e11d33"},
+      "placement": {"path": "build/acquisition-release/inputs/placement.json", "bytes": 17892, "sha256": "4dd9bc5d5d06e47377e6c8944a7737a5cc789c5b6ae740339427b67e2b861011"},
+      "electrical_locality": {"path": "build/acquisition-release/inputs/electrical-locality.json", "bytes": 13196, "sha256": "c39f6f070ceec7e9d47bb072a953350806bd926fe28f2dc1eb609b102a939679"},
+      "groups": {"path": "build/acquisition-release/inputs/groups.json", "bytes": 502, "sha256": "eb725e24138dc70ed7e615eb7ac5b77952178ccc5fd27fd8b041ec38c31ee396"},
+      "accepted_board": {"path": "build/acquisition-release/delivery/native/project/acquisition.kicad_pcb", "bytes": 152140, "sha256": "d0a898a2a254c090ba1a4185320938241c255e79c587c82abb27a0bcafcd66e7"}
+    }
+  }
+}
