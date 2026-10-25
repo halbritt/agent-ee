@@ -1,0 +1,97 @@
+{
+  "schema": "agent-ee.recovery-dispatches/1",
+  "chief": "agent-564",
+  "telemetry_pod_held": true,
+  "dispatches": [
+    {
+      "agent": 567,
+      "model": "gpt-6.1-sol",
+      "issue": "AGENTEE-519",
+      "base": "dab756e56a6a5358c00983074565af0e8e09862c",
+      "source": {
+        "record_id": "87132ff0-d869-4b4b-88ae-b356836630ee",
+        "version": 1
+      },
+      "event_id": "55efc0e5-c30d-4116-8add-ea37a4ffd39f",
+      "delivery_id": "72ec4a52-46aa-4910-b09f-7e5f71d1c6f2",
+      "observed_state": "leased",
+      "observed_at": "2026-10-25T12:22:06.66871-07:00",
+      "accepted": false
+    },
+    {
+      "agent": 568,
+      "model": "gpt-6.1-sol",
+      "issue": "AGENTEE-520",
+      "base": "dab756e56a6a5358c00983074565af0e8e09862c",
+      "source": {
+        "record_id": "14d39991-2bec-4cb9-b2bd-f2bf5d0196af",
+        "version": 1
+      },
+      "event_id": "0d69e006-971c-40ba-9952-24c3a40ecc87",
+      "delivery_id": "5d70f8ef-66e2-4ffd-aad0-7492f5a6475b",
+      "observed_state": "leased",
+      "observed_at": "2026-10-25T12:22:06.676814-07:00",
+      "accepted": false
+    },
+    {
+      "agent": 565,
+      "model": "claude-fable-5-1",
+      "issue": "AGENTEE-521",
+      "base": "dab756e56a6a5358c00983074565af0e8e09862c",
+      "source": {
+        "record_id": "fa5fca46-c995-4c00-a7b6-5748d62f53da",
+        "version": 1
+      },
+      "event_id": "f38f3f7e-8848-4a99-a6d1-a9328ad78f07",
+      "delivery_id": "b2d8ee19-ff10-4bf3-be12-52250f80e752",
+      "observed_state": "leased",
+      "observed_at": "2026-10-25T12:22:06.684442-07:00",
+      "accepted": false
+    },
+    {
+      "agent": 566,
+      "model": "claude-fable-5-1",
+      "issue": "AGENTEE-524",
+      "base": "dab756e56a6a5358c00983074565af0e8e09862c",
+      "source": {
+        "record_id": "c8774975-d87d-43a3-919b-0222af24a7c0",
+        "version": 1
+      },
+      "event_id": "d711dc77-443b-4809-979b-b687fa043e97",
+      "delivery_id": "417c1be3-2074-444d-9ba1-d59b05afe70e",
+      "observed_state": "leased",
+      "observed_at": "2026-10-25T12:22:06.693182-07:00",
+      "accepted": false
+    },
+    {
+      "agent": 569,
+      "model": "gpt-6-astra",
+      "issue": "AGENTEE-515",
+      "base": "dab756e56a6a5358c00983074565af0e8e09862c",
+      "source": {
+        "record_id": "a7014180-3a34-4b7d-85ac-403b58277ed1",
+        "version": 1
+      },
+      "event_id": "ec21ae0d-d849-4b4b-b7a2-825c5dc32c25",
+      "delivery_id": "d5b1daa9-d4ae-49e8-b8ef-cb2a619e4908",
+      "observed_state": "leased",
+      "observed_at": "2026-10-25T12:22:06.700675-07:00",
+      "accepted": false
+    },
+    {
+      "agent": 570,
+      "model": "gemini-4-argon-high",
+      "issue": "KICADROUTE-104",
+      "base": "dab756e56a6a5358c00983074565af0e8e09862c",
+      "source": {
+        "record_id": "6ad40bb4-5bb2-473a-8a1f-d43e9489caf4",
+        "version": 1
+      },
+      "event_id": "d762d01d-67eb-4f90-8a10-27109d072fea",
+      "delivery_id": "2a8c6c71-08fc-4608-988d-1b345686d7c9",
+      "observed_state": "leased",
+      "observed_at": "2026-10-25T12:22:06.708921-07:00",
+      "accepted": false
+    }
+  ]
+}

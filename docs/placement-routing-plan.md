@@ -3,7 +3,8 @@
 **Superseded execution sequence, 2026-10-25:** use the
 [audit recovery plan](planning/2026-10-25-recovery/recovery-plan.md) and
 [updated Plane backlog](planning/2026-10-25-recovery/backlog.md).
-Implementation and board campaigns remain paused. The dispatch assignments and
+Recovery execution now follows the [owner's subsequent instruction](planning/2026-10-25-recovery/execution.md)
+to agent-564; telemetry-pod campaigns remain held. The dispatch assignments and
 statuses below are historical; preserve their evidence, but do not restart them.
 
 This file is the repository copy of the chief's recorded plan. Source:

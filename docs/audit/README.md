@@ -3,7 +3,8 @@
 The [2026-10-25 reconciliation](../planning/2026-10-25-recovery/recovery-plan.md)
 provides the current recovery plan, [finding dispositions](../planning/2026-10-25-recovery/findings.md)
 and [planned Plane backlog](../planning/2026-10-25-recovery/backlog.md).
-Implementation and board campaigns remain paused by the owner.
+After consolidation, the owner authorized [parallel recovery execution](../planning/2026-10-25-recovery/execution.md)
+under chief integrator agent-564. Telemetry-pod campaigns remain held.
 
 Independent reviews of agent-ee, recorded with the revision they inspected.
 They are assessments, not acceptance records; the

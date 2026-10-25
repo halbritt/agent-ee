@@ -1,5 +1,12 @@
 # Telemetry-pod programme roles
 
+**Current authority, 2026-10-25:** the owner directly appointed agent-564 chief
+integrator for the completed recovery plan, using existing agents 565–570.
+See the [exact instruction and current allocation](planning/2026-10-25-recovery/execution.md).
+The roles and dispatch instructions below are historical and do not authorize
+new work. The telemetry-pod campaign remains held; its engineering requirements
+and historical evidence are preserved.
+
 Owned by chief agent-531 (replaced agent-529 on 2026-10-23); this current-role correction was landed
 by integrator agent-530 under chief authority (Cairn 31eae84c). Applies to agent-ee, kicad-route and the
 fome-mc telemetry pod.

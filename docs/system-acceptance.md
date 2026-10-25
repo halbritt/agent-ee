@@ -1,8 +1,10 @@
 # Intent-to-manufacturing acceptance map
 
-**Planning update, 2026-10-25:** implementation and board campaigns are paused by
-the owner. The [reconciled recovery plan](planning/2026-10-25-recovery/recovery-plan.md)
-and its Plane backlog govern the proposed execution order. The evidence below
+**Execution update, 2026-10-25:** after consolidation, the owner authorized
+agent-564 to integrate parallel recovery work with existing agents 565–570.
+The [execution record](planning/2026-10-25-recovery/execution.md) and
+[reconciled recovery plan](planning/2026-10-25-recovery/recovery-plan.md)
+govern the dependency-ordered work. Telemetry-pod campaigns remain held. The evidence below
 remains historical capability/acceptance evidence; its next-capability wording
 does not dispatch work or release the telemetry-pod hold.
 
