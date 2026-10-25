@@ -56,7 +56,7 @@ This ledger records accepted integration separately from worker delivery. A desi
 | KICADROUTE-104 restrictions | Selected contract `7bb195de14f6874202df196830272d0e17700770`, [evidence and decisions](krt104-router-preservation-contract.md) | Plane Done; no feature enabled. M3 adapters must preserve rule/pose/copper/pair/budget protections and generated pour-serving promises. QFN control proves preservation only, not native DRC |
 | AGENTEE-528 fixed-mark identity | REC-30, observed at runtime source `61c6cd49`, unchanged parser at `877b4153` | Agent-567 assigned narrow identity repair from `c6446c99`; native graph is 519 → 528 → 515. Grouping contract preparation remains independent |
 | AGENTEE-479 compatibility/grouping | Agent-570 initial proposal `b053137c` reviewed; correction requested | Not accepted: universal bounding-box exclusion and nearest-peer hard predicates lack design authority. Preserve actual upstream signed pad-edge semantics and label proposed functions separately from executed evidence. Original field mapping and final-native engineering judgment remain required; parent 472 held |
-| AGENTEE-522 mask mismatch | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) landed `82133d6d`; chief checked source and all 94 indexed evidence hashes | Capture omits resolved mask-graphic expansion. Agent-569 assigned focused repair with exact seed6/seed11 controls, native API cases and unchanged DRC/rules. No full search or accepted production repair yet |
+| AGENTEE-522 mask mismatch / AGENTEE-529 repair | [Diagnosis](contracts/AGENTEE-522-mask-expansion-investigation.md) landed `82133d6d`; chief checked source and all 94 indexed evidence hashes | Investigation 522 Done. Capture omits resolved mask-graphic expansion. Agent-569 assigned repair 529 with exact seed6/seed11 controls, native API cases and unchanged DRC/rules. No full search or accepted production repair yet |
 | AGENTEE-524 assembly profile | Part B landed `903721fb`; [verification](contracts/AGENTEE-524-partB-verification.md) | Chief strict 95 native tests/no skips plus amended immutable-capture guard passed. Real acquisition remains 16/17 because D1 polarity is unknown. Agent-566 owns the source-bound polarity repair; agent-565 independently assesses its exact source inference. Supplier confirmation remains pending |
 | AGENTEE-523 finalization preparation | [Bounded artwork probe](contracts/AGENTEE-523-artwork-reuse-probe.md), REC-31, source `903721fb` | Existing producer refuses native sibling reordering; diagnostic identity alignment passes unchanged translation checks. Focused comparison repair is justified. Graphic classification, final renders/DRC and via/pad process assessment remain pending |
 
@@ -82,9 +82,25 @@ claim or final manufacturing qualification.
 
 The acquisition typed-overlay delivery is pending chief review. Its 198-file
 base inventory is a separate scope from esp_prog; the runtime preservation
-manifest's combined total of 204 must not be described as acquisition-only.
+manifest's total of 204 includes those 198 files, acquisition `build.json`,
+esp_prog `board-config-portfolio.json`, and four esp_prog input files. It must
+not be described as acquisition-only or as six esp_prog input files.
 Typed clause coverage and compiling a receipt do not prove the engineering
 judgments, the operational reproduction requirement or physical/supplier results.
+
+Chief review of typed preparation `0fab78e5` reproduced a preservation defect:
+an existing `<out>.staging/valuable.txt` was deleted before a missing-added-input
+refusal. Agent-565 owns a focused repair that preserves pre-existing scratch
+and input/candidate paths. The qualitative return-path obligation in
+ACQ-MECH-3 must also receive a candidate-bound engineering judgment alongside
+its executable loop measurements. No preparation or build is accepted by this
+checkpoint.
+
+[The 13:41 Plane checkpoint](execution-checkpoint-1341.json) records readback
+of these updates and the native 522 → 529 relation. Repair 529 relates to M1;
+it is not an additional blanket M1 blocker because native rejection protects
+accepted candidates. Its complete scope and acceptance are in
+[AGENTEE-529](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/ed06d966-ee54-4368-bdd9-ef97cb134ac0).
 
 For D1, the selected software approach exposes canonical polarity from the
 sealed native netlist when board pad metadata is absent, with part and pad/net

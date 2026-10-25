@@ -1,0 +1,168 @@
+{
+  "source_head": "7b39e62d",
+  "items": {
+    "AGENTEE-522": {
+      "id": "674c62cc-da92-45bf-8d05-7c74afdaa002",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "state": "b9ffb5fc-cbc9-4473-91f5-8661ccbb6bde",
+      "name": "Localize the esp_prog solver-feasible mask-bridge discrepancy",
+      "updated_at": "2026-10-25T20:41:08.764661Z"
+    },
+    "AGENTEE-523": {
+      "id": "8409122b-1c6f-4e20-9f74-343a2251942f",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+      "name": "Finalize imported esp_prog artwork and assembly-profile via assessment",
+      "updated_at": "2026-10-25T20:41:08.985860Z"
+    },
+    "AGENTEE-524": {
+      "id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "name": "Validate exact sealed exports and profile-specific assembly orientation",
+      "updated_at": "2026-10-25T20:41:09.184846Z"
+    },
+    "AGENTEE-521": {
+      "id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "name": "Bind release claims to appropriate requirement evidence and explicit qualification states",
+      "updated_at": "2026-10-25T20:41:09.370940Z"
+    },
+    "AGENTEE-479": {
+      "id": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": null,
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "name": "Enforce functional-group intent through normal placement and final native checks",
+      "updated_at": "2026-10-25T20:41:09.563935Z"
+    },
+    "AGENTEE-512": {
+      "id": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": null,
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "name": "Recover a dependable agent-ee workflow from the three independent audits",
+      "updated_at": "2026-10-25T20:41:09.770188Z"
+    },
+    "AGENTEE-529": {
+      "id": "ed06d966-ee54-4368-bdd9-ef97cb134ac0",
+      "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "name": "Capture native mask-graphic expansion before placement evaluation",
+      "updated_at": "2026-10-25T20:41:08.492963Z"
+    }
+  },
+  "relations": {
+    "ed06d966-ee54-4368-bdd9-ef97cb134ac0": {
+      "blocking": [],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "674c62cc-da92-45bf-8d05-7c74afdaa002"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    },
+    "674c62cc-da92-45bf-8d05-7c74afdaa002": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ed06d966-ee54-4368-bdd9-ef97cb134ac0"
+        }
+      ],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    },
+    "5219d0d5-9365-4f71-bcb4-1474eb1375ab": {
+      "blocking": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a"
+        }
+      ],
+      "blocked_by": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "e41144f4-81e8-4b63-bd8b-0094b2bad276"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "8409122b-1c6f-4e20-9f74-343a2251942f"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "531a39a9-ff5c-471e-a9d9-0804a48d6904"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ba96850b-f4dd-471f-acff-6a1b3bbf706d"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "4e0a70bd-9918-4992-9a90-34b0998dd28c"
+        }
+      ],
+      "duplicate": [],
+      "relates_to": [
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "ed06d966-ee54-4368-bdd9-ef97cb134ac0"
+        },
+        {
+          "project_id": "59f359cc-21b8-457f-b059-241fd3c565fe",
+          "issue_id": "22fde6c5-4063-4bcd-abf1-48870d6c2b45"
+        }
+      ],
+      "start_after": [],
+      "start_before": [],
+      "finish_after": [],
+      "finish_before": []
+    }
+  },
+  "new_item": {
+    "identifier": "AGENTEE-529",
+    "id": "ed06d966-ee54-4368-bdd9-ef97cb134ac0",
+    "project": "59f359cc-21b8-457f-b059-241fd3c565fe",
+    "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+    "finding": "REC-04"
+  }
+}

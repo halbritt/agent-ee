@@ -53,6 +53,7 @@ at `7bb195de` establishes omitted **native mask-graphic expansion** at capture.
 Graphics themselves and their transforms are present. The measured 50,800 nm
 expansion turns the seed6 91,200 nm modeled gap into 40,400 nm, below the unchanged
 50,800 nm web; the retained seed11 control remains mask-legal. The diagnosis is
-accepted at `82133d6d`; a narrow capture repair is assigned under AGENTEE-522.
+accepted at `82133d6d`; investigation AGENTEE-522 is complete. A narrow capture
+repair is assigned under [AGENTEE-529](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/ed06d966-ee54-4368-bdd9-ef97cb134ac0), dependent on 522.
 This updates the unresolved cause and disposition to confirmed/actionable without
 rewriting the audit's historical observations or claiming a final-package escape.
