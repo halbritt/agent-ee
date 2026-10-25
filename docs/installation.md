@@ -136,8 +136,8 @@ the new binary and receipt together.
 ## Container image
 
 The [Dockerfile](../Dockerfile) pins the demonstrated toolchain: KiCad
-10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, ngspice
-42, Bubblewrap 0.9.0 and Python 3.12, the installed kicad-happy analyzer and
+10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, corrected
+ngspice 47, Bubblewrap 0.9.0 and Python 3.12, the installed kicad-happy analyzer and
 the pinned kicad-route with KRT for the routing stage, the Rust placement engine,
 and this checkout
 installed through the source launcher. It contains no reviewer harness or credential, so it supports

@@ -4232,6 +4232,16 @@
         "KRT-515"
       ],
       "note": "Exact latest-main docs-only upstream delta d24a760, retained under the adjacent upstream MIT notice. Research source evidence only, not executable parity."
+    },
+    {
+      "paths": [
+        "fixtures/acquisition-qualification/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original board-specific native geometry model, parser, declared engineering parameters and documentation; no vendor model, library or datasheet copied."
     }
   ]
 }
