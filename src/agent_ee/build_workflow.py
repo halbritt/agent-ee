@@ -529,12 +529,14 @@ def run(plan_path, out, *, resume=False, through='package'):
     if out == source or source in out.parents:
         raise ValueError('build output must be outside the source bundle')
     source_files = _source_inventory(source, plan)
-    map_schema = strict_json((source / plan['requirements']['map']).read_bytes()).get('schema')
-    if (map_schema == 'agent-ee.requirement-map/2') != (plan['schema'] == TYPED_SCHEMA):
-        raise ValueError('typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')
+    # Established preflight order: unsupported placement intent is refused before any other
+    # source file is opened, so a rejected intent never reaches the map schema read or output creation.
     from .placement_job import validate_intent
     validate_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
                     strict_json((source / plan['placement']['groups']).read_bytes()))
+    map_schema = strict_json((source / plan['requirements']['map']).read_bytes()).get('schema')
+    if (map_schema == 'agent-ee.requirement-map/2') != (plan['schema'] == TYPED_SCHEMA):
+        raise ValueError('typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')
     for reserved in ('build-generated', requirement_map.PROVENANCE):
         if any(path == reserved or path.startswith(reserved + '/') for path in source_files):
             raise ValueError('build source occupies generated namespace: ' + reserved)
