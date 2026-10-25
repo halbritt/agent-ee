@@ -414,6 +414,14 @@ def _mask_expansion(pad):
     return max(0, int(pad.GetSolderMaskExpansion(layer)))
 
 
+def _mask_graphic_bbox(graphic):
+    """Match native DRC: only PCB_SHAPE adds a resolved mask margin."""
+    import pcbnew
+    margin = (max(0, int(graphic.GetSolderMaskExpansion()))
+              if graphic.Type() == pcbnew.PCB_SHAPE_T else 0)
+    return _grow(_bbox(graphic), margin)
+
+
 def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
@@ -439,7 +447,7 @@ def classify_footprint(fp, fixed_pose, captured):
     copper_graphics = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) in COPPER]
     copper = [(_bbox(p), _pad_clearance(p)) for p in pads] + [(_bbox(g), 0) for g in copper_graphics]
     mask = [_grow(_bbox(p), _mask_expansion(p)) for p in pads if _on_mask(p)] + [
-        _bbox(g) for g in graphics if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')]
+        _mask_graphic_bbox(g) for g in graphics if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')]
     courtyards = captured['courtyards']
     if not pads and not zones and graphics and set(layers) <= set(SILK):
         return {'role': 'silk_only', 'occupancy': {'status': 'none', 'reason': 'silk-only non-electrical graphic'},
