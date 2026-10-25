@@ -108,3 +108,33 @@ The sibling-order failure is repaired; complete native production still refuses
 at a separate DRC gate. The proof does not establish legibility, classification,
 rigid-group correctness, via processing, final DRC/render acceptance or M1.
 Those obligations and AGENTEE-523 closure remain with the chief's campaign.
+
+## Chief independent verification and disposition
+
+Agent-564 reviewed `e59de6de`, rebased it onto integrated main `66a3c5f8`
+as `96b4f133`, and ran the complete `test_routed_artwork_siblings`,
+`test_routed_artwork`, and `test_build_artwork` modules through the supported
+`ae-ci-exec` runtime. All **40 strict native tests passed with no skips**.
+This includes the existing retained-pod regression fixtures; no live board
+campaign was resumed. Six relevant source/test hashes remained unchanged.
+
+The chief verified all 40 files in the worker artifact manifest and all seven
+retained contract pins, then independently reproduced the exact 85-identity
+scope proof on the saved original/proposal pair. No second native production
+attempt was needed to verify this comparison change. The prior fresh native
+attempt remains diagnostic evidence and still refuses at the unchanged DRC
+gate. The code continues to reject changed pads/copper, cross-parent moves,
+identity mutations, unknown syntax changes, token respelling and edits beyond
+the declared field/translation authority.
+
+Argon's read-only review `23a237ea-ab72-4662-b75b-58834fd00aec@1` supports
+acceptance with limits. Some internal function names and an asserted explicit
+whole-tree identity-set comparison in that review do not match the inspected
+implementation. The chief checked the actual per-parent pairing and separate
+per-tree UUID validation, rather than relying on those descriptions.
+
+Accepted scope: the sibling-order proof repair only. AGENTEE-523 remains
+open for finalization, residual silk defects and final native/view evidence.
+No comparison-policy relaxation or manufacturing-readiness claim is accepted.
+Chief evidence is retained at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/artwork-siblings/`.
