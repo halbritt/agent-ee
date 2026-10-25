@@ -413,3 +413,11 @@ The original sweep stays intact. Chief acceptance follows the new evidence.
 relationships for 479 and 515. Agent-567's bounded artwork fit continues
 independently. No production change is integrated by this checkpoint; M1,
 independent judgments and telemetry-pod holds remain as recorded above.
+
+The chief accepted the grouping adapter/solver stack through `b2a21094`, including
+the two reproduced pad-geometry corrections and a separate restoration of early
+intent preflight. [Integration evidence](grouping-479-integration.md) records the
+initial two failed tests, their distinct causes, 61 passing final native tests
+and the 93 applicable passes from unchanged grouping modules. AGENTEE-479 remains
+open for final-view wiring and representative workflow/quality verification;
+M1 and telemetry-pod status are unchanged.
