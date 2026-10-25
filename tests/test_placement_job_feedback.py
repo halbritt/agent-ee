@@ -7,6 +7,20 @@ from tests.test_placement_job import Fixture
 
 
 class RoutingFeedbackTests(Fixture):
+    def test_scoped_cleanup_cannot_drop_required_length_group_members(self):
+        record = {'status': 'routed', 'router_accepted': False, 'board': str(self.board)}
+        feedback = {'kind': 'dangling_net', 'nets': ['A']}
+        with patch.object(routing_adapter, 'preflight', return_value={'problems': []}), \
+                patch.object(job, '_produce_planes', return_value={}), \
+                patch.object(job, '_route_attempt', return_value=record) as run, \
+                patch.object(job, '_route_feedback', return_value=feedback):
+            result = job.route(self.dir, self.dir / 'route', self.dir, budget_s=10, timeout_s=10,
+                home=self.dir / 'home', planes=b'{}',
+                length_match=dict(groups=[['A', 'B']], tolerance_mm=.1, amplitude_mm=1, spacing_widths=2))
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(result['attempts'][0]['feedback']['recovery'], 'not_applied')
+        self.assertFalse(result['router_accepted'])
+
     def test_existing_copper_never_enables_generated_copper_repair(self):
         import pcbnew
         board = pcbnew.LoadBoard(str(self.board))

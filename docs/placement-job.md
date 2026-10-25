@@ -160,6 +160,26 @@ These are search preferences, not electrical bus identities or requirements
 for length, delay, impedance or coupling. Native final verification still
 decides connectivity, clearances and preservation.
 
+Optional `router.length_match` requests geometric matching of explicit
+single-ended two-terminal net groups. Supply `groups`, `tolerance_mm` and
+`amplitude_mm`, for example
+`{"groups": [["DQ0", "DQ1", "DQ2", "DQ3"]], "tolerance_mm": 0.1, "amplitude_mm": 3}`.
+Optional `spacing_widths` defaults to 2 and must be at least 1. Numeric controls
+must be finite and positive. Names are exact; missing, duplicated, out-of-scope,
+coupled-pair, multipoint or zone/graphical-copper members refuse. These controls
+are bound to resume identity and are separate from intra-pair matching.
+
+Both the public router and `final_checks` measure the saved/refilled board with
+native KiCad terminal-to-terminal `fromTo` paths. `final.length_matching` binds
+the board hash and request, all resolved terminals, measurement coverage and
+native skew findings. A connected loop cannot inflate the useful path length.
+Each group gets its own verification-only native copy and an explicit skew rule;
+a zero-length limit deliberately emits one measurement finding per path to
+prove coverage. Those measurement findings are labelled evidence, not defects
+in the original design. Original native rules remain unchanged and are graded
+separately. Missing measurements or ignored required checks fail. This operation
+does not establish propagation time, AC/inter-pair matching or signal integrity.
+
 Optional `router.pair_impedance` requests nominal differential impedance
 synthesis with an explicit target and verification limits:
 

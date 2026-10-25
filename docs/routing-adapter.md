@@ -1693,3 +1693,21 @@ modules and all 1,074 router cases have passing evidence; an initially incorrect
 NaN test assertion and its exact corrected rerun are retained. Matched stock KRT
 also passes with equal copper length and via count. This establishes geometric
 bus-routing parity on the article, without timing or manufacturing acceptance.
+
+### Explicit single-ended group matching integration — 2026-10-25
+
+Pin `21c08eca654e249ad24a5d6035757bc64602ed23` exposes existing group tuning
+with exact member validation and independent native terminal-to-terminal length
+verification. The exact code map has 313 files. Normal `router.length_match`
+requests carry through placement and the build producer; final verification
+reruns the native checker after saved-board adjustments and binds the exact
+request and board hash. A narrowed single-net repair cannot discard group
+members. Native rules and default behavior remain unchanged.
+
+The [qualification record](qualification/group-matching-2026-10-25.md) retains
+matched stock parity, native loop rejection, disabled-check and scope negatives,
+revalidation, pair coexistence and the correction that keeps checker config
+writes out of candidate projects. All 997 required consumer cases in 52 modules
+pass without skips in the rebuilt pinned environment. A retained native probe
+shows that public groups cannot yet express a name beginning with a hyphen;
+that safely refused input gap remains the next correction.

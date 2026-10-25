@@ -1186,7 +1186,7 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
-          bus=None):
+          bus=None, length_match=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1255,6 +1255,12 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         argv += ['--bus']
         for key, value in bus.items():
             argv += ['--bus-' + key.removesuffix('_mm').replace('_', '-'), str(value)]
+    if length_match is not None:
+        for group in length_match['groups']:
+            argv += ['--length-match-group', *group]
+        argv += ['--group-match-tolerance', str(length_match['tolerance_mm']),
+                 '--group-meander-amplitude', str(length_match['amplitude_mm']),
+                 '--group-meander-spacing', str(length_match['spacing_widths'])]
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -1270,9 +1276,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             feedback = _route_feedback(record, checkout, env=env, clock=route_clock, cancel_dir=cancel_dir)
             if feedback is None or feedback['kind'] in used:
                 break
-            if intra_pair_match is not None and feedback['kind'] != 'thermal_corridors':
+            if (intra_pair_match is not None or length_match is not None) and feedback['kind'] != 'thermal_corridors':
                 attempts[-1]['feedback'] = {**feedback, 'recovery': 'not_applied',
-                    'reason': 'single-net repair cannot preserve pair coupling and matching acceptance'}
+                    'reason': 'single-net repair cannot preserve required matching groups'}
                 break
             used.add(feedback['kind'])
             attempts[-1]['feedback'] = feedback
@@ -1379,6 +1385,24 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
+        length_match = config['router'].get('length_match')
+        if 'length_match' in config['router']:
+            required = {'groups', 'tolerance_mm', 'amplitude_mm'}
+            if (not isinstance(length_match, dict) or not required <= set(length_match)
+                    or set(length_match) - required - {'spacing_widths'}):
+                raise JobRefusal('router.length_match requires groups, tolerance_mm and amplitude_mm; spacing_widths is optional')
+            length_match = {'spacing_widths': 2, **length_match}
+            members = length_match['groups']
+            if (not isinstance(members, list) or not members
+                    or any(not isinstance(group, list) or len(group) < 2
+                           or not all(isinstance(name, str) and name for name in group)
+                           or len(set(group)) != len(group) for group in members)):
+                raise JobRefusal('router.length_match groups need at least two distinct exact net names')
+            if any(type(value) not in (int, float) or not math.isfinite(value) or value < .000001
+                   for key, value in length_match.items() if key != 'groups'):
+                raise JobRefusal('router.length_match controls must be finite and positive')
+            if length_match['spacing_widths'] < 1:
+                raise JobRefusal('router.length_match spacing must be at least one track width')
         bus = config['router'].get('bus')
         if 'bus' in config['router']:
             fields = {'detection_radius_mm', 'attraction_radius_mm', 'attraction_bonus', 'min_nets'}
@@ -1614,7 +1638,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=config['router'].get('grid_step_mm'),
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
-                           bus=bus)
+                           bus=bus, length_match=length_match)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
@@ -1623,7 +1647,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', groups, intent,
                                            clock=clock, cancel_dir=job_dir,
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
-                                           pair_impedance=impedance, router_checkout=config['router']['checkout'])
+                                           pair_impedance=impedance, router_checkout=config['router']['checkout'],
+                                           length_match=length_match)
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
@@ -1668,7 +1693,7 @@ def _completion_status(routed, incumbent, final):
 
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
-                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None):
+                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None):
     import pcbnew
     clock = clock or Clock(300)
     _check_stop(clock, cancel_dir)
@@ -1751,6 +1776,21 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
             if done.returncode != 0 or impedance_result.get('board_sha256') != digest(board):
                 impedance_result['status'] = 'FAIL'
                 impedance_result.setdefault('defects', []).append('final impedance result does not bind the saved board')
+    length_result = None
+    if length_match is not None:
+        out = final_dir.parent / (final_dir.name + '-length-verification')
+        out.mkdir()
+        request, result = out / 'request.json', out / 'result.json'
+        write_json(request, length_match)
+        checker = Path(router_checkout) / 'src/kicad_route/length_groups.py'
+        done = _run_child([sys.executable, '-B', str(checker), str(board), str(request), str(result)],
+                          clock=clock, cancel_dir=cancel_dir)
+        length_result = read_json(result) if result.is_file() else {
+            'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
+        if (done.returncode != 0 or length_result.get('board_sha256') != digest(board)
+                or length_result.get('requirement') != length_match):
+            length_result['status'] = 'FAIL'
+            length_result.setdefault('defects', []).append('final length result does not bind the saved board and requirement')
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
@@ -1758,10 +1798,12 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     metrics['edges'] = edge_intent['connectors']
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
-              or impedance_result is not None and impedance_result.get('status') != 'PASS')
+              or impedance_result is not None and impedance_result.get('status') != 'PASS'
+              or length_result is not None and length_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             **({'impedance': impedance_result} if impedance_result is not None else {}),
+            **({'length_matching': length_result} if length_result is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'rule_files': rule_files,
