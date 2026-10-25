@@ -512,30 +512,27 @@ def _rectangle(outline):
 
 
 def _clearance(settings):
-    """Board minimum and saved Default clearance, with native defaults if absent."""
+    """Conservative placement bound across native classes and the board minimum."""
     net = settings.m_NetSettings
     classes = [net.GetDefaultNetclass()] + [c for _, c in net.GetNetclasses().items()]
     values = [int(settings.m_MinClearance)] + [int(c.GetClearance()) for c in classes if c.HasClearance()]
     return max(values)
 
 
-def _check_rule_domain(board_path):
-    """Refuse rule configurations whose pair resolution is not qualified here."""
+def _project_rules(board_path):
+    """Read authored classes; native DRC evaluates their assignments/custom rules."""
     from .catalog import strict_json
-    if Path(board_path).with_suffix('.kicad_dru').exists():
-        raise JobRefusal('custom native rules are unsupported by the placement job')
     project = Path(board_path).with_suffix('.kicad_pro')
     if not project.exists():
         return {}
     project = strict_json(project.read_bytes())
+    if not isinstance(project, dict) or not isinstance(project.get('net_settings', {}), dict):
+        raise JobRefusal('native project/net_settings must be objects')
     settings = project.get('net_settings', {})
     classes = settings.get('classes', [])
-    if not isinstance(classes, list) or len(classes) > 1 or any(not isinstance(c, dict) or c.get('name') != 'Default'
+    if not isinstance(classes, list) or any(not isinstance(c, dict) or not isinstance(c.get('name'), str)
                                            for c in classes):
-        raise JobRefusal('non-default netclasses are unsupported by the placement job')
-    if any(name != 'Default' for name in settings.get('netclass_assignments', {}).values()) or any(
-            p.get('netclass') != 'Default' for p in settings.get('netclass_patterns', [])):
-        raise JobRefusal('non-default netclass assignments are unsupported by the placement job')
+        raise JobRefusal('native netclasses require named objects')
     return project
 
 
@@ -551,7 +548,7 @@ def _validate_project_rules(project):
         _rule_mm(design['solder_mask_min_width'], 'solder_mask_min_width')
     for cls in project.get('net_settings', {}).get('classes', []):
         if 'clearance' in cls:
-            _rule_mm(cls['clearance'], 'Default clearance')
+            _rule_mm(cls['clearance'], cls['name'] + ' clearance')
 
 
 def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
@@ -602,7 +599,7 @@ def _capture_native(board_path, intent, groups):
     from .placement_probe import extract
     from .placement_escape import hints as escape_hints
     before = Path(board_path).read_bytes()
-    project = _check_rule_domain(board_path)
+    project = _project_rules(board_path)
     _validate_project_rules(project)
     facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
@@ -761,6 +758,46 @@ def drc(board, out_dir, *, refill=False, label='drc', clock=None, cancel_dir=Non
     return data, {'argv': argv, 'exit_code': done.returncode, 'report_sha256': digest(report)}
 
 
+def verify_rule_loading(source, directory, *, clock, cancel_dir):
+    """Prove native rule loading on a disposable copy, including track-free inputs.
+
+    KiCad may silently discard malformed rules while returning a valid empty
+    DRC report. Reuse the native routing check's final disallow-track witness;
+    only this diagnostic copy gains a probe track and witness severity override.
+    """
+    import pcbnew as k
+    from .routing_native import LOAD_WITNESS, stage_board
+    _check_stop(clock, cancel_dir)
+    directory = Path(directory)
+    try:
+        target = stage_board(Path(source), directory, dict(marker='_agent_ee_placement_rule_probe',
+            rules='(version 1)\n', native_types=[]))
+    except ValueError as exc:
+        raise JobRefusal('cannot stage native rule loading proof: ' + str(exc)) from exc
+    project = target.with_suffix('.kicad_pro').read_bytes()
+    native = k.LoadBoard(str(target))
+    track = k.PCB_TRACK(native)
+    track.SetLayer(k.F_Cu)
+    track.SetStart(k.VECTOR2I(0, 0))
+    track.SetEnd(k.VECTOR2I(NM, 0))
+    track.SetWidth(250000)
+    native.Add(track)
+    if not k.SaveBoard(str(target), native):
+        raise JobRefusal('native rule loading probe SaveBoard failed')
+    target.with_suffix('.kicad_pro').write_bytes(project)
+    data, execution = drc(target, directory, clock=clock, cancel_dir=cancel_dir)
+    witness = [v for v in data['violations'] if v['type'] == 'items_not_allowed'
+               and v['severity'] == 'error' and f"rule '{LOAD_WITNESS}'" in v['description']]
+    valid = bool(witness) and not any(v['type'] == 'rule_compile_error' for v in data['violations'])
+    record = dict(status='pass' if valid else 'failed', rules_sha256=digest(Path(source).with_suffix('.kicad_dru')),
+                  probe_board_sha256=digest(target), execution=execution, witness=witness,
+                  purpose='rule loading only; probe geometry and findings do not grade the design')
+    write_json(directory / 'rule-loading.json', record)
+    if not valid:
+        raise JobRefusal('native custom rules failed loading witness; see ' + str(directory / 'rule-loading.json'))
+    return record
+
+
 def _owners(board):
     """Native item UUID -> owning footprint UUID, for intra-footprint classification."""
     owner = {}
@@ -849,7 +886,7 @@ def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False,
     return nodes
 
 
-def materialize(source, poses, destination, project_bytes, *, intent):
+def materialize(source, poses, destination, project_bytes, *, intent, rules_bytes=None):
     """Apply one pose vector to a disposable native board, save, reload and check.
 
     Returns the integrity record. Every footprint is addressed by full UUID; pads,
@@ -857,6 +894,9 @@ def materialize(source, poses, destination, project_bytes, *, intent):
     be unchanged, and every pad must sit where the engine's transform put it."""
     import pcbnew
     destination = Path(destination)
+    source_rules = Path(source).with_suffix('.kicad_dru')
+    if (source_rules.read_bytes() if source_rules.exists() else None) != rules_bytes:
+        raise JobRefusal('native custom rules differ from captured rules')
     board = pcbnew.LoadBoard(str(source))
     before = native_inventory(board)
     captured = [dict(uuid=u, ref=r['ref'], position_nm=[r['x_nm'], r['y_nm']], side=r['side'])
@@ -883,6 +923,8 @@ def materialize(source, poses, destination, project_bytes, *, intent):
         raise JobRefusal('native SaveBoard failed')
     # SaveBoard also writes sibling project files; the job restores the frozen project bytes.
     (destination / 'board.kicad_pro').write_bytes(project_bytes)
+    if rules_bytes is not None:
+        (destination / 'board.kicad_dru').write_bytes(rules_bytes)
     prl = destination / 'board.kicad_prl'
     if prl.exists():
         prl.unlink()
@@ -1154,7 +1196,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         raise JobRefusal('design name must be one nonempty path component')
     staged = route_dir / 'candidate' / design_name
     staged.mkdir(parents=True)
-    for name in ('board.kicad_pcb', 'board.kicad_pro'):
+    for name in ('board.kicad_pcb', 'board.kicad_pro', 'board.kicad_dru'):
+        if name.endswith('.kicad_dru') and not (Path(candidate_dir) / name).exists():
+            continue
         shutil.copyfile(Path(candidate_dir) / name, staged / name)
     started = time.monotonic()
     route_clock = Clock(min(budget_s, clock.remaining()))
@@ -1311,12 +1355,22 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
-        unknown = set(config['inputs']) - {'board', 'project', 'intent', 'groups', 'locality', 'planes'}
+        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
         report['design_name'] = board_path.stem
-        _, project_bytes = verified_input(config['inputs']['project'], 'project')
+        project_path, project_bytes = verified_input(config['inputs']['project'], 'project')
+        if project_path.resolve() != board_path.with_suffix('.kicad_pro').resolve():
+            raise JobRefusal('project input must be the native board sibling .kicad_pro')
+        rules_path = board_path.with_suffix('.kicad_dru')
+        rules_bytes = None
+        if 'rules' in config['inputs']:
+            declared, rules_bytes = verified_input(config['inputs']['rules'], 'rules')
+            if declared.resolve() != rules_path.resolve():
+                raise JobRefusal('rules input must be the native board sibling .kicad_dru')
+        elif rules_path.exists():
+            raise JobRefusal('native custom rules require a captured inputs.rules path and sha256')
         _, intent_bytes = verified_input(config['inputs']['intent'], 'intent')
         _, groups_bytes = verified_input(config['inputs']['groups'], 'groups')
         intent, groups = json.loads(intent_bytes), json.loads(groups_bytes)
@@ -1348,6 +1402,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
         problem, record = capture(board_path, intent, groups, clock=clock, cancel_dir=capture_cancel)
+        for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
+            verified_input(config['inputs'][name], name)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
@@ -1370,6 +1426,10 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     state['attempts'] = attempt = state.get('attempts', 0) + 1
     report['attempt'] = attempt
     checkpoint(job_dir, state)
+    if rules_bytes is not None:
+        with clock.phase('rule_validation'):
+            report['native_rules'] = verify_rule_loading(board_path, job_dir / f'native-rules-a{attempt}',
+                                                        clock=clock, cancel_dir=job_dir)
     search = dict(config['search'], completed_seeds=state['completed_seeds'])
 
     def on_seed(event):
@@ -1414,7 +1474,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                      'engine_feasible': bool(cand.get('feasible')), 'engine_violations': cand.get('violations', [])}
             directory = job_dir / 'candidates' / f'a{attempt}-{index:02d}-seed{cand["seed"]}'
             try:
-                check = materialize(board_path, cand['poses'], directory, project_bytes, intent=intent)
+                check = materialize(board_path, cand['poses'], directory, project_bytes,
+                                    intent=intent, rules_bytes=rules_bytes)
                 _check_stop(clock, job_dir)
                 report_, exec_ = drc(directory / 'board.kicad_pcb', directory, label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
@@ -1540,9 +1601,21 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     final_dir = Path(job_dir)
     final_dir.mkdir()
     shutil.copyfile(routed['board'], final_dir / 'board.kicad_pcb')
-    shutil.copyfile(Path(incumbent['directory']) / 'board.kicad_pro', final_dir / 'board.kicad_pro')
     board = final_dir / 'board.kicad_pcb'
     problems = []
+    rule_files = {}
+    for suffix in ('.kicad_pro', '.kicad_dru'):
+        authored = Path(incumbent['directory']) / ('board' + suffix)
+        emitted = Path(routed['board']).with_suffix(suffix)
+        expected = authored.read_bytes() if authored.exists() else None
+        actual = emitted.read_bytes() if emitted.exists() else None
+        if actual != expected:
+            problems.append(f'router changed or lost native {suffix} file')
+        # Always grade against the authored rules, including on a failed route.
+        if expected is not None:
+            board.with_suffix(suffix).write_bytes(expected)
+        rule_files[suffix] = {'authored_sha256': sha256_bytes(expected) if expected is not None else None,
+                              'routed_sha256': sha256_bytes(actual) if actual is not None else None}
     plane_fill = None
     if planes is not None:
         # Refill and save through the existing zone-only producer. Its strict
@@ -1598,7 +1671,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
-            'identity_problems': problems, 'drc': exec_, 'opens': len(report_['unconnected_items']),
+            'identity_problems': problems, 'rule_files': rule_files,
+            'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
             'edge_intent': edge_intent, 'locality': locality, 'metrics': metrics}

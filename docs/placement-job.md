@@ -45,6 +45,19 @@ The config (`agent-ee.placement-job-config/1`) names every external input by
 path **and SHA-256**; a mismatch refuses the job before any work. Fixture bytes
 stay outside the public repository.
 
+Native non-default netclasses and custom rules are carried through the job.
+`inputs.project` must name the board's same-stem `.kicad_pro`. If a same-stem
+`.kicad_dru` exists, `inputs.rules` must name it with its SHA-256; omission or a
+different companion path refuses the job. The full build derives this binding
+from the preceding native project automatically. Materialization, routing and
+final grading preserve the exact authored bytes. Changed or missing routed
+project/rule files make the result ineligible, even if copying the original
+rules back for final diagnostics yields a clean DRC result. Rule changes also
+change the resumable job identity. Before search, a disposable native rule-loading
+witness rejects malformed rules that KiCad can silently omit from a successful
+CLI report. Its added track and severity override never enter the actual design.
+See the [native-rule qualification](qualification/native-rules-2026-10-24.md).
+
 An optional `inputs.planes` supplies a path and SHA-256 for a captured
 [`agent-ee.plane-plan/1`](add-planes.md). Each routing attempt creates these zones
 on its own copy of the selected placement. The final board is refilled, saved
@@ -122,7 +135,8 @@ exercised this setting on the same native placement, retaining a complete route
 and eliminating its three measured via-center-in-pad sites.
 
 `job-report.json` records `setup`, `import`, `prepare`, `search`, `judge`,
-`export` and `final_validation` separately. Queue time (admission) is outside
+`export` and `final_validation` separately, plus `rule_validation` when custom
+rules are present. Queue time (admission) is outside
 the process and must be recorded by the caller.
 
 ## Order of work
@@ -147,12 +161,13 @@ the process and must be recorded by the caller.
    obstacle safe; this job has no placement zone engine. Declared `inputs.planes`
    are produced after placement and may be outer or enabled inner copper layers.
    Final verification requires their declared `island_removal` to be `always`.
-   Custom `.kicad_dru` files and non-default netclasses/assignments are refused
-   before a problem is returned. The supported clearance domain is the board
-   minimum, the Default netclass and native per-pad overrides. A larger Default
-   clearance contributes to the global copper bound. Named non-default classes
-   require separate native rule-resolution qualification, even when a global
-   maximum might conservatively cover a particular board.
+   Search conservatively uses the largest declared netclass clearance, the
+   board minimum and native per-pad overrides. Conditional custom rules are
+   evaluated by native KiCad on each saved shortlist candidate and the final
+   routed board; the search model does not implement a second rule evaluator.
+   A geometrically feasible search result cannot bypass those native checks.
+   Fully fixed boards retain their one unchanged placement and receive the
+   same native judging and routing, with zero search moves.
    Capture runs once in a fresh native subprocess, using the controller's
    existing bounded child runner. Every consumed board, Default netclass,
    hole, hole-pair, edge and mask bound therefore comes from an independent
@@ -395,8 +410,11 @@ phase-boundary cancellation and live stalled-child termination.
 clearance overrides and refusal boundaries. `test_placement_job_reservations`
 adds all-edge overhang controls, the reviewer R1–H1 regression, movable/fixed
 round and slot holes under rotation, hole-to-copper versus hole-to-hole rules,
-bodyless marks, supported Default clearance and a larger non-default netclass
-negative that native DRC rejects and capture explicitly refuses. The separate external esp_prog
+bodyless marks, Default clearance and a larger non-default netclass negative
+that both the search model and native DRC reject. `test_placement_job_rules`
+exercises native rule custody, a four-layer paired routing article, the build's
+actual placement-stage producer, rule violations and changed-rule resumption.
+The separate external esp_prog
 gate, `python3 -m unittest -fv tests.placement_clearance_agreement`, requires
 `AGENT_EE_ESP_PROG_PREPARED`, `AGENT_EE_USB1_SCAN`,
 `AGENT_EE_USB1_SCAN_PROBLEM` and `AGENT_EE_CLEARANCE_EVIDENCE`. They retain the

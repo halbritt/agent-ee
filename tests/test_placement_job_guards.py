@@ -108,6 +108,7 @@ class FinalInventoryTests(Fixture):
                     board.Add(_segment(pcbnew, board, pcbnew.Dwgs_User, (0, 0), (MM, MM)))
                 path = self.dir / f'{mutation}.kicad_pcb'
                 pcbnew.SaveBoard(str(path), board)
+                path.with_suffix('.kicad_pro').write_bytes(Path(placed['board']).with_suffix('.kicad_pro').read_bytes())
                 # Real native DRC still runs. Clean-report injection isolates eligibility
                 # from the board's unrelated physical errors, after that native check.
                 actual_drc = job.drc
@@ -143,6 +144,7 @@ class FinalInventoryTests(Fixture):
         board.Add(via)
         path = self.dir / 'routed.kicad_pcb'
         pcbnew.SaveBoard(str(path), board)
+        path.with_suffix('.kicad_pro').write_bytes(Path(placed['board']).with_suffix('.kicad_pro').read_bytes())
         final = job.final_checks({'status': 'routed', 'board': str(path)}, placed, job._owners(board), set(),
                                  self.dir / 'final', groups(), intent())
         self.assertEqual(final['identity_problems'], [])
@@ -156,6 +158,7 @@ class FinalInventoryTests(Fixture):
             outline.Append(pcbnew.VECTOR2I(x * MM, y * MM))
         board.Add(zone)
         pcbnew.SaveBoard(str(path), board)
+        path.with_suffix('.kicad_pro').write_bytes(Path(placed['board']).with_suffix('.kicad_pro').read_bytes())
         routed = {'status': 'routed', 'board': str(path)}
         protected = job.final_checks(routed, placed, job._owners(board), set(), self.dir / 'protected-zone', groups(), intent())
         self.assertTrue(protected['identity_problems'], 'an unowned zone must be protected')
@@ -187,7 +190,8 @@ class ControllerBoundaryTests(Fixture):
                   'eligibility': 'ineligible', 'physical_checks': 'FAILED'}
         passed = {**failed, 'eligibility': 'eligible', 'physical_checks': 'PASS'}
         with ExitStack() as stack:
-            stack.enter_context(patch.object(job, 'verified_input', side_effect=values))
+            stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
+                dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
             stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
             stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
             stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
@@ -238,7 +242,8 @@ class ControllerBoundaryTests(Fixture):
                 output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
                           'shortlist': [{'seed': 0, 'cost': '1', 'poses': []}]}
                 with ExitStack() as stack:
-                    stack.enter_context(patch.object(job, 'verified_input', side_effect=values))
+                    stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
+                        dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
                     stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
                     stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
                     stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))

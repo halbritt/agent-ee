@@ -1355,7 +1355,16 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
     let mut least_poses = state.poses.clone();
     let mut stop = Stop::Completed;
     let mut step = 0;
-    while step < total {
+    // A fully anchored board has exactly one placement. Grade it without
+    // selecting a move from an empty set; native checks still judge the board.
+    if p.movable.is_empty() {
+        least_hard = (state.totals.hard_count, state.totals.hard);
+        if least_hard == (0, 0) {
+            best = Some(Candidate { seed, poses: state.poses.clone(), terms: state.totals.clone(),
+                                   cost: state.totals.cost(w), step });
+        }
+    }
+    while step < total && !p.movable.is_empty() {
         if step % limits.check_every.max(1) == 0 {
             if let Some(s) = limits.stop() {
                 stop = s;
@@ -1763,6 +1772,25 @@ mod tests {
         let wrong = aliases(&shared, &[Some("fp001".into()), None, None]).unwrap_err().to_string();
         assert!(wrong.contains("differs from the derived"), "{wrong}");
         assert!(aliases(&["0000".into()], &[None]).is_err());
+    }
+
+    #[test]
+    fn fully_anchored_board_has_one_unchanged_candidate_and_honors_deadline() {
+        let mut raw = input(vec![]);
+        for fp in raw["footprints"].as_array_mut().unwrap() {
+            fp["role"] = json!("fixed_body");
+        }
+        let result = run(&raw).unwrap();
+        assert_eq!(result["status"], "completed");
+        let shortlist = result["shortlist"].as_array().unwrap();
+        assert_eq!(shortlist.len(), 1);
+        assert_eq!(shortlist[0]["full_evaluation_equal"], true);
+        assert!(shortlist[0]["poses"].as_array().unwrap().iter().all(|p| p["moved"] == false));
+        assert!(result["seeds"].as_array().unwrap().iter().all(|s| s["steps"] == 0));
+        raw["search"]["deadline_ms"] = json!(0);
+        let expired = run(&raw).unwrap();
+        assert_eq!(expired["status"], "deadline");
+        assert_eq!(expired["shortlist"], json!([]));
     }
 
     #[test]

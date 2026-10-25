@@ -312,6 +312,9 @@ def _execute(stage, plan, previous, directory, completed, out, *, diagnostic=Fal
         for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
                               intent=placement['intent'], groups=placement['groups']).items():
             config['inputs'][key] = dict(path=str(candidate / name), sha256=digest(candidate / name))
+        rules = (candidate / scope['board']).with_suffix('.kicad_dru')
+        if rules.exists():
+            config['inputs']['rules'] = dict(path=str(rules), sha256=digest(rules))
         if 'planes' in placement:
             path = candidate / placement['planes']
             config['inputs']['planes'] = dict(path=str(path), sha256=digest(path))

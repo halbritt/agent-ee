@@ -218,16 +218,13 @@ class ReservationTests(unittest.TestCase):
         with self.assertRaisesRegex(job.JobRefusal, 'secondary/tertiary drill unsupported'):
             job._pad_hole(pad, (0, 0), 0, 200_000)
 
-    def test_malformed_overhang_and_rule_domains_refuse(self):
+    def test_malformed_overhang_refuses(self):
         path, fixed = self.board('copper')
         for interval in (None, {}, {'min': -1, 'max': 2}, {'min': 3, 'max': 2},
                          {'min': 0, 'max': True}, {'min': 0, 'max': float('inf')}):
             with self.subTest(interval=interval), self.assertRaisesRegex(job.JobRefusal, 'overhang'):
                 job.capture(path, dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'west',
                     'overhang_mm': interval}]), {'groups': []})
-        path.with_suffix('.kicad_dru').write_text('(version 1)')
-        with self.assertRaisesRegex(job.JobRefusal, 'custom native rules'):
-            job.capture(path, fixed, {'groups': []})
 
     def test_open_zero_minimum_does_not_grant_undeclared_overhang(self):
         path, fixed = self.board('copper', body=True)
@@ -311,7 +308,7 @@ class ReservationTests(unittest.TestCase):
                             for v in result['violations']), result)
         self.assertEqual(job.check_edge_intent(path, declared)['status'], 'failed')
 
-    def test_larger_nondefault_netclass_negative_is_explicitly_refused(self):
+    def test_larger_nondefault_netclass_clearance_is_preserved_in_search(self):
         import pcbnew as k
         path, fixed = self.board('copper')
         board = k.LoadBoard(str(path))
@@ -330,8 +327,9 @@ class ReservationTests(unittest.TestCase):
         self.assertTrue(clearance, report)
         self.assertTrue(any('0.8000' in v['description'] for v in clearance), clearance)
         print('NONDEFAULT_NEGATIVE ' + json.dumps({'native': clearance, 'exit': execution['exit_code']}), flush=True)
-        with self.assertRaisesRegex(job.JobRefusal, 'non-default netclass'):
-            job.capture(path, fixed, {'groups': []})
+        problem, _ = job.capture(path, fixed, {'groups': []})
+        self.assertEqual(problem['rules']['copper_clearance_nm'], 800_000)
+        self.assertFalse(evaluate(problem, [{}])[0]['feasible'])
 
     def test_larger_default_clearance_is_included_in_supported_domain(self):
         path, fixed = self.board('copper')

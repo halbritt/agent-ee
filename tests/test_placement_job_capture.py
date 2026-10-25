@@ -148,7 +148,7 @@ class FreshRuleTests(Fixture):
                 self.assert_native_rules(path)
                 self.assertIsNotNone(warm)
 
-    def test_unsupported_and_invalid_rules_refuse(self):
+    def test_invalid_project_rules_refuse(self):
         for field, value in (('min_clearance', -0.1), ('min_hole_clearance', True),
                              ('min_hole_to_hole', '0.1'), ('min_copper_edge_clearance', None)):
             with self.subTest(field=field):
@@ -157,10 +157,6 @@ class FreshRuleTests(Fixture):
                 self.project.write_text(json.dumps(project))
                 with self.assertRaises(job.JobRefusal):
                     job.capture(self.board, intent(), groups())
-        self.project.write_text('{}')
-        self.board.with_suffix('.kicad_dru').write_text('(version 1)')
-        with self.assertRaisesRegex(job.JobRefusal, 'custom native rules'):
-            job.capture(self.board, intent(), groups())
 
 
 class CaptureBoundaryTests(Fixture):
