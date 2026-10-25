@@ -184,6 +184,32 @@ in the original design. Original native rules remain unchanged and are graded
 separately. Missing measurements or ignored required checks fail. This operation
 does not establish propagation time, AC/inter-pair matching or signal integrity.
 
+For nominal propagation-delay matching, supply `tolerance_ps` in place of
+`tolerance_mm`, for example
+`{"groups": [["DQ0", "DQ1"]], "tolerance_ps": 1, "amplitude_mm": 3}`.
+Exactly one tolerance domain is allowed. Every member needs an effective,
+enabled single-ended KiCad 10 tuning profile with explicit per-layer widths and
+delays and a positive via delay. The native board must declare the complete
+stackup, including every dielectric sheet's thickness and permittivity, and
+keep via-height calculation enabled. Preflight checks original input bytes
+before native saves can insert material defaults. Changed timing requirements
+invalidate resumption just as changed geometric requirements do.
+
+The router uses authored profile rates and the signal's used via span to plan
+meanders; existing connected members can set the target while retaining their
+geometry. Final native `fromTo` time-domain measurements must cover every member
+and satisfy the requested skew after all saves/refills. Unmodelled layers,
+profile-width mismatches, missing measurements, ignored checks and failed skew
+reject. `final.length_matching` also binds the native project hash. Native
+profile units are attoseconds/mm; the public tolerance is picoseconds.
+
+This checks nominal authored timing, not physical model calibration or signal
+integrity. Profile values need engineering substantiation and explicit review
+when stackup/geometry changes; KiCad does not refresh them automatically. The
+layered qualification uses a stated Er=4 assumption and calculations, not a
+supplier-qualified stackup. Native input pours remain outside the placement
+model; declare planes in `inputs.planes` for the normal plane producer.
+
 Optional `router.pair_impedance` requests nominal differential impedance
 synthesis with an explicit target and verification limits:
 

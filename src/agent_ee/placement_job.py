@@ -1258,7 +1258,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     if length_match is not None:
         for group in length_match['groups']:
             argv += ['--length-match-group-json', json.dumps(group)]
-        argv += ['--group-match-tolerance', str(length_match['tolerance_mm']),
+        unit = 'ps' if 'tolerance_ps' in length_match else 'mm'
+        flag = '--group-delay-tolerance' if unit == 'ps' else '--group-match-tolerance'
+        argv += [flag, str(length_match['tolerance_' + unit]),
                  '--group-meander-amplitude', str(length_match['amplitude_mm']),
                  '--group-meander-spacing', str(length_match['spacing_widths'])]
     Path(home).mkdir(parents=True, exist_ok=True)
@@ -1387,10 +1389,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     with clock.phase('setup'):
         length_match = config['router'].get('length_match')
         if 'length_match' in config['router']:
-            required = {'groups', 'tolerance_mm', 'amplitude_mm'}
+            unit = 'ps' if isinstance(length_match, dict) and 'tolerance_ps' in length_match else 'mm'
+            required = {'groups', 'tolerance_' + unit, 'amplitude_mm'}
             if (not isinstance(length_match, dict) or not required <= set(length_match)
                     or set(length_match) - required - {'spacing_widths'}):
-                raise JobRefusal('router.length_match requires groups, tolerance_mm and amplitude_mm; spacing_widths is optional')
+                raise JobRefusal('router.length_match requires groups, exactly one of tolerance_mm or tolerance_ps, and amplitude_mm; spacing_widths is optional')
             length_match = {'spacing_widths': 2, **length_match}
             members = length_match['groups']
             if (not isinstance(members, list) or not members
@@ -1492,6 +1495,20 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                  + done.stderr.decode(errors='replace')[-2000:])
             report['preflight']['impedance_stackup'] = {
                 'status': 'PASS', 'board_sha256': sha256_bytes(board_bytes), 'layer': pair_layers[0]}
+        if length_match is not None and 'tolerance_ps' in length_match:
+            done = _run_child([sys.executable, '-B', '-c',
+                'import json,sys; sys.path.insert(0, sys.argv[1]); '
+                'from native_delay import profiles; '
+                'profiles(sys.argv[2], json.loads(sys.argv[3]), required=True)',
+                str(Path(config['router']['checkout']) / 'src/kicad_route/router/py_router'),
+                str(board_path), json.dumps(sorted({n for g in length_match['groups'] for n in g}))],
+                clock=clock, cancel_dir=None)
+            if done.returncode:
+                raise JobRefusal('original delay model is unproven: '
+                                 + done.stderr.decode(errors='replace')[-2000:])
+            report['preflight']['delay_model'] = {
+                'status': 'PASS', 'board_sha256': sha256_bytes(board_bytes),
+                'project_sha256': sha256_bytes(project_bytes)}
     with clock.phase('import'):
         _check_stop(clock, None)
         # A pre-existing CANCEL still captures/checkpoints the initial identity,

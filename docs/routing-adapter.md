@@ -1722,3 +1722,15 @@ retains both reproduced invocation defects, the native router repair and all
 998 passing required consumer cases with zero skips. The public exact-name job
 and changed-group resume negative pass; native rules and matcher behavior remain
 unchanged.
+
+### Native propagation-delay groups — 2026-10-25
+
+Pin `48f02187bef97971b724975fa178fa41c9aca8b2` adds native-profile nominal
+delay matching through the existing group operation. The exact code map contains
+314 files. `router.length_match` accepts exactly one of `tolerance_mm` and
+`tolerance_ps`; the latter requires explicit native timing profiles and complete
+dielectric data. Original-input preflight prevents native defaults from hiding
+omissions, and saved native `fromTo` delay/skew coverage binds both board and
+project hashes. Existing connected group members and used via spans participate
+in timing targets. See the [qualification](qualification/delay-matching-2026-10-25.md)
+for engineering assumptions, matched stock results and current gate status.

@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = '68dda6edc61d23fbe23a7751e131228eb304842e'
+PIN = '48f02187bef97971b724975fa178fa41c9aca8b2'
 # SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
 PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
  'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
@@ -47,7 +47,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
  'src/kicad_route/campaign.py': 'c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9',
  'src/kicad_route/canary.py': '0384d1722889e207fcc544e9df65164920aa3cc153df5228349b42cd690a7243',
- 'src/kicad_route/cli.py': 'fb4d023ffbd314a7161957b03ba7ba14ddf5509d60fb5e835c25a11213410eb7',
+ 'src/kicad_route/cli.py': '49e053363d030473f478066e89a900d1100255d7e09f6fba0cb4f27908a2cc31',
  'src/kicad_route/common.py': '4fd09eef7547c947700067975a54e08c8e6b3ed8d3c5ac94cf8ae77e4a593038',
  'src/kicad_route/configuration_evidence.py': '08f81a88c9d911d474c45515cad1303bbf7eb6f15438f6c7c278d69c6e075d59',
  'src/kicad_route/contract.py': '5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698',
@@ -74,7 +74,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/kicad/specctra.py': '0cd5031726ab48c7b3c2bf1dd3978837574d7452d7a79dda154123acb1aeb9d1',
  'src/kicad_route/kicad/spokes.py': 'c419ea1123a6de2588358aa58d0dfaabd4d5f55d50d559023ce48d2271f12bd9',
  'src/kicad_route/ledger.py': '267c90f9c8c54b18cfad68ed00ebe0013018742dac353a43f8e657dfd5eb366d',
- 'src/kicad_route/length_groups.py': '42429b57f1648e8e158a07950308991f529268cc387adb135bb829d090b99d78',
+ 'src/kicad_route/length_groups.py': 'f2092b92a71c47b36bac3c2db79db24a2d3dd79506ca341069566e03da285bf4',
  'src/kicad_route/native_components.py': 'fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0',
  'src/kicad_route/netnames.py': '731bcf61a909ef2720fd90b074f6cfb991a1c6ea6bea7fecf5ba3cb7fc47304f',
  'src/kicad_route/pair_impedance.py': '4261d1f45febfbc7fdae31bcc8e01bef300503379316a2968ad091ef70306acb',
@@ -205,7 +205,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/layer_swap_optimization.py': '119b61cba4c0f2d0f1bb5421514ac1bedb0ba6dd4c7b58c28641871ab6c7ab71',
  'src/kicad_route/router/py_router/ledger_score.py': 'ce31d6080f0eceb3dc134ba0010f620ad1799cb01f8db93726e99d7fc85a881d',
  'src/kicad_route/router/py_router/leg_rip.py': '24c3fc9b503f2c7e0c2c0ef43e0c6b489b40e825f2d0abd69546f9f104c6022c',
- 'src/kicad_route/router/py_router/length_matching.py': '6826d10056a5176c4c241d19b827fd24b97746c623ac4d73738d776408512d77',
+ 'src/kicad_route/router/py_router/length_matching.py': '177387497379ee148a718fd77d168b8e217417320ccf5ab90e8647e3d281780c',
  'src/kicad_route/router/py_router/list_nets.py': '0faa09212907b347e48ce721d3c874125758ddf40d4f7bf48761072d7512908f',
  'src/kicad_route/router/py_router/make_movie.py': '670c89f82703cbe8bc401e9e13693b102cbcf756d3a746274ddab4111031b98b',
  'src/kicad_route/router/py_router/memory_debug.py': '6c0e549c44847f57ccfbfeb36f71f2e7b04fade388e0c12d5256971835243d63',
@@ -214,6 +214,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/movie_camera.py': '2fafc2e7f1eda4f603b7109531e9771cb509437340d6c3dcc82686f973c73052',
  'src/kicad_route/router/py_router/movie_placement.py': '12c22f1668add5daa8a1df911f25e0463823430d5faae65f24f45beb58deacf2',
  'src/kicad_route/router/py_router/mps_layer_swap.py': 'e744f54c365b8260a79885bb8faf24965384e0719c637885bba48b645bf3b432',
+ 'src/kicad_route/router/py_router/native_delay.py': '6b48434d7516d9dbfcfd89bfd943751978879321f98cf83677d420a9ac23e590',
  'src/kicad_route/router/py_router/net_cost.py': '5d4964c0e296fbab73182fed2b091d6005080062d5a663ebb85f90b9e2ad9c66',
  'src/kicad_route/router/py_router/net_ordering.py': 'd6dab7157f9a42bfcee9f5c88505712b3da1f24bde4ac22269d1646cf2a08c87',
  'src/kicad_route/router/py_router/net_queries.py': '6b47c762cfe67ca0b0f432a4b47f149d52f82a10c2f5d8a1781d26b652275cd9',
@@ -263,7 +264,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/py_router/route_render.py': '5fca0a39fbca4d58e0a77f503867e0fb48bed766ede31b9664a5a0b6c9f7131f',
  'src/kicad_route/router/py_router/route_summary.py': '3c8575595d90ca286dc06e36df2905aea583a10e986d13633fd36b5e8d026410',
  'src/kicad_route/router/py_router/route_trace.py': '4511cbacf524a9b72739ed06e4d1b1ff28cf035fef5aa634939cfba3f0c73e3b',
- 'src/kicad_route/router/py_router/routing_common.py': 'a698bbb0c09d6be2bb9e87e741e4cb23bb563e0fe9a7ebe6ed29356a00166311',
+ 'src/kicad_route/router/py_router/routing_common.py': '0c1b47d4c74ada1b408cecc4656779aafd761a39f6e33d65946495c1bab2e2fe',
  'src/kicad_route/router/py_router/routing_config.py': '559f8a9eaf818f1b11e5f00da67f93a04ec50416ef0c8a9874a986df151b2731',
  'src/kicad_route/router/py_router/routing_constants.py': '5bd4f2aa4d42b5b8f581111bd2ef534a5a1aa53af81b7757fbecfff529c2f718',
  'src/kicad_route/router/py_router/routing_context.py': '2285fa2acee5d0cd1893dd0d95f100b54abd35a7fc625849ab69b4d050911f0e',
