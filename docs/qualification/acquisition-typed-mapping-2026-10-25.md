@@ -194,3 +194,26 @@ no answer is recorded here. Summary:
   of the derived inputs (contract §2.2 run B), not by this compile.
 - The physical dimension stays pending: supplier confirmation and bench
   tests are declared and not performed.
+
+## Chief independent verification of the revision without D1 supplemental data
+
+Agent-564 inspected `268b3e8f0d4489fa4e1ee3c92ad0c0f0b30f6566` in a
+separate immutable managed checkout and ran five strict native modules:
+`test_typed_overlay`, `test_requirement_map`, `test_requirement_map_envelope`,
+`test_requirement_scope`, and `test_spec_record`. All 88 test executions passed
+with no skips, including the retained 198-file acquisition input and 24-file
+CPL revision, preservation negatives and real requirement-scope checks.
+
+An independent preparation and compilation against the retained v7 native
+scaffold reproduced scope `82c27ec7e467d82a6e3bf10dae3e15f212ea502c55bb5d17a8efdb690d593d8e`
+and baseline `8ecc4771c66e7756b32d4f4329cc93a8e9ba665760333411f6acc8aa98709d8d`.
+The 47 rows include 14 declared judgments with no records, one pending
+operational obligation and two pending physical obligations. This accepts the
+preparation procedure and clause accounting, not a new build, engineering
+concurrence or assembly result. The later D1 supplemental capture changes the
+input identity and requires its own validation.
+
+Evidence is retained at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/typed-overlay-268b3e8f/`;
+`typed-overlay-native.log` and `typed-overlay-compile.log` are in its parent.
+Ten tested source/test/overlay hashes are checked again after integration rebase.
