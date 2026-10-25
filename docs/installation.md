@@ -12,8 +12,10 @@ checks configure KiCad's `10.0` settings directory and `KICAD10_*` paths.
 
 The Python package declares version 0.1.0 and Python `>=3.12` in
 [pyproject.toml](../pyproject.toml). Orchestration uses the standard library.
-The system interpreter `/usr/bin/python3` must also import KiCad's `pcbnew`
-bindings. A virtual environment that hides system bindings is insufficient.
+The running interpreter must import KiCad's `pcbnew` bindings. The supported
+source launcher uses `/usr/bin/python3`; a package entry point can use a different
+interpreter. Doctor reports and probes the interpreter actually running it.
+A virtual environment that hides system bindings is insufficient.
 
 | Prerequisite | Use |
 | --- | --- |
@@ -71,7 +73,8 @@ The installer creates these symlinks to the current checkout:
 | `~/.claude/skills/agent-ee` | `skills/agent-ee` |
 
 Ensure `~/.local/bin` is on your shell's `PATH`. The source launcher uses the
-system Python and locates source relative to its resolved checkout. You can
+system Python and locates source relative to its resolved checkout. It also
+propagates that source directory to fresh native Python subprocesses. You can
 always invoke `./bin/agent-ee` from the checkout without installing links.
 
 Running the installer again is harmless when the existing symlinks point to
@@ -79,6 +82,13 @@ this checkout. It refuses any unrelated existing file or link and exits 1.
 An earlier link can have been created before a later conflict is encountered;
 the installer is not a transactional rollback operation. Inspect a conflicting
 destination before moving or removing it, then rerun the installer.
+
+For the recognized uv agent-ee console-link case, the refusal names
+`--migrate-uv-launcher`. After inspecting the link, rerun
+`./scripts/install.sh --migrate-uv-launcher` to preserve it as
+`~/.local/bin/agent-ee.uv-backup` and install the source-launcher link.
+An existing backup, unrelated target or regular executable is refused. The
+uv environment remains installed. See [captured runtime](recovery-runtime.md).
 
 The skill links follow the checkout, but the skill text currently points users
 to `~/git/agent-ee` for source examples. If installing elsewhere, use the actual
@@ -134,6 +144,10 @@ script against the receipt. Rebuilding an updated checkout requires installing
 the new binary and receipt together.
 
 ## Container image
+
+The [captured acquisition and esp_prog runtime procedure](recovery-runtime.md)
+provides a pinned-image execution path, offline input inventory and native
+checkpoint harness. It does not install host tools or claim release acceptance.
 
 The [Dockerfile](../Dockerfile) pins the demonstrated toolchain: KiCad
 10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, corrected
@@ -241,10 +255,13 @@ credential, auth failure or exhausted quota leaves that review incomplete. There
 is no API-key or OpenRouter fallback. Do not copy credential contents into a
 scope, report, issue or archive.
 
-`doctor` probes executable versions and the Python binding import, and prints
+`doctor` reports its actual Python interpreter, prefix, launcher and source;
+its Python version and binding probes use that interpreter. It probes executable
+versions and prints
 the SHA-256 of each probed binary, including the resolved Rust planner. An
 adjacent planner build receipt is hashed and checked against that binary when
-present. It does not
+present. `--router-checkout DIR` additionally verifies the pinned checkout and
+installed routing backend; failure makes doctor exit 1. Doctor does not
 read the credential file, validate subscription access, run a real sandboxed
 check, or perform inference. A passing doctor report is prerequisite evidence
 only. Run the fixture described in the [operator guide](operator-guide.md) for

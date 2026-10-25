@@ -21,7 +21,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `verify-campaign` | `CAMPAIGN` | Recompute historical convergence and verify result/calibration links |
 | `bench-review` | `RUN REPORT --out NEW [--max-seconds N]` | Capture physical samples and run calibrated checks plus fresh review |
 | `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
-| `doctor` | `[--checks-only]` | Probe prerequisite versions/imports and hash the probed binaries; no design or inference run |
+| `doctor` | `[--checks-only] [--router-checkout DIR]` | Probe prerequisite versions/imports and hash the probed binaries; no design or inference run |
 | `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only] [--roles R,...] [--routing-receipt RECEIPT]` | Capture inputs and run checks, initial reviews and adjudication |
 | `view3d` | `SOURCE --out NEW [--port N] [--no-browser] [--export-only]` | Export a saved board or captured candidate into a local 3D browser viewer |
 | `render3d` | `SOURCE --out NEW [--models DIR] [--fetch-models] [--width N --height N] [--quality basic\|high] [--jobs N] [--timeout SECONDS]` | Ray trace top, bottom and isometric PNGs with native KiCad |
@@ -115,23 +115,30 @@ See [native 3D renders](pcb-renders.md) for output records, examples and failure
 
 ## `doctor`
 
-The JSON object has `prerequisites` and `note`. Each normal probe records `path`,
+The JSON object has `prerequisites`, `runtime` and `note`. `runtime` names the
+actual interpreter, prefixes, launcher, CLI source and whether it is the system
+interpreter outside a venv. Each normal probe records `path`,
 `exit_code`, `version_output`, `diagnostics`, `binary` and `sha256`; a launch
 failure or 15-second probe timeout records `error` instead. The probes are
-kicad-cli, ngspice, bwrap, system Python (`/usr/bin/python3 --version`), pcbnew
-through system Python, and Claude. No design check or inference occurs.
+kicad-cli, ngspice, bwrap, the running Python interpreter, pcbnew through that
+interpreter, the Rust planner, and Claude. No design check or inference occurs.
 The kicad-cli record adds `erc_json_coordinates`: the ERC JSON coordinate regime
 (`scale_x100`, `native` or `withheld` with `reason`) the `erc` check applies to
 that version ([quirk guards](kicad-quirks.md)).
 
 `binary` is the file whose SHA-256 is reported. For executables it is the
-`path` found on `PATH`. For pcbnew, `path` remains `/usr/bin/python3` and `binary` is
-KiCad's `_pcbnew` native extension. These are the same files and digests that
-`runtime_files` records in every result. `binary` and `sha256` are `null` when
+`path` found on `PATH`. For pcbnew, `path` names the running interpreter and
+`binary` is KiCad's `_pcbnew` native extension imported by that interpreter.
+The source launcher uses `/usr/bin/python3`, which is also the interpreter
+used by the result runtime fingerprint. `binary` and `sha256` are `null` when
 the extension cannot be located; a probed file that cannot be read records
 `hash_error`. Either makes doctor exit 1. A hash identifies that one file, not
 every shared library it loads; stock libraries are identified per run by the
 scope's captured input hashes.
+
+`--router-checkout DIR` adds a required `kicad-route` record with checkout/pin,
+backend identity and `problems`. Any pin, installed-backend or source mismatch
+makes this probe fail. Without this option doctor does not check the router.
 
 `--checks-only` omits the reviewer harness probe (Claude) and names it under
 `skipped`. Use it where only native checks run, such as the

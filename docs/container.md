@@ -7,6 +7,12 @@ the Claude, Codex or Agy harnesses or any subscription credential, so the image
 cannot run initial reviews, adjudication or campaigns. `agent-ee doctor` without
 `--checks-only` therefore exits 1 inside the image because `claude` is absent.
 
+For the captured acquisition and imported esp_prog workflows, use the
+[runtime reproduction procedure](recovery-runtime.md). It records an immutable
+local image ID, verifies all retained inputs and exercises public commands
+through the schematic/cancelled-placement checkpoints. Full release acceptance
+is a later gate.
+
 The image has been built and exercised on one Linux x86-64 host with Docker
 29.8 (Ubuntu 24.04 host, kernel 6.8, AppArmor enabled). The project CI also passed on a hosted Ubuntu runner at commit `c0ddba2`: 230
 strict tests, no skips, documentation checks and both native RC gates. See the

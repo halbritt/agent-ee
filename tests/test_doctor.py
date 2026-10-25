@@ -227,6 +227,24 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("error", report["prerequisites"]["claude"])
 
+    def test_package_interpreter_failure_is_not_hidden_by_working_system_python(self):
+        self.missing.add('/venv/bin/python')
+        with patch('agent_ee.cli.sys.executable', '/venv/bin/python'):
+            code, report = self.doctor('--checks-only')
+        self.assertEqual(code, 1)
+        self.assertEqual(report['runtime']['executable'], '/venv/bin/python')
+        self.assertFalse(report['runtime']['uses_system_python'])
+        self.assertIn('error', report['prerequisites']['pcbnew'])
+        self.assertIn('error', report['prerequisites']['python3'])
+
+    def test_requested_router_checkout_is_required_and_reports_its_pin(self):
+        code, report = self.doctor('--checks-only', '--router-checkout', str(self.root / 'missing-router'))
+        self.assertEqual(code, 1)
+        router = report['prerequisites']['kicad-route']
+        self.assertEqual(len(router['pin']), 40)
+        self.assertTrue(router['problems'])
+        self.assertIsNone(router['sha256'])
+
 
 if __name__ == "__main__":
     unittest.main()

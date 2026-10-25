@@ -1,0 +1,845 @@
+{
+  "schema": "agent-ee.recovery-inputs/1",
+  "baseline_revision": "dab756e56a6a5358c00983074565af0e8e09862c",
+  "access": {
+    "kind": "owner-retained-local-files",
+    "inputs_root_example": "/home/halbritt/git/agent-ee",
+    "missing_inputs": "Obtain a local copy of these exact retained paths from the evidence custodian. No automatic network retrieval or fixture publication is authorized.",
+    "licensing": "Mixed captured stock KiCad libraries/models, supplier datasheets/catalog responses and authored engineering inputs. Origins remain in per-capture manifests. Redistribution clearance is not established; this inventory publishes hashes and paths only."
+  },
+  "representatives": {
+    "acquisition": {
+      "plan": "build/acquisition-release/build.json",
+      "source": "build/acquisition-release/inputs",
+      "declared_populated_parts": 17,
+      "historical_output": "build/acquisition-release/release-build-v7",
+      "historical_producing_revision": "466e6feb859e2cd9f34693155e24ccfe3b0aca8f"
+    },
+    "esp_prog": {
+      "config": "build/agent545/board-config-portfolio.json",
+      "source_article": "esp_prog-run29_pile-u2tab-v2",
+      "board_sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7",
+      "native_footprint_objects": 21,
+      "declared_populated_parts": null,
+      "population_note": "No assembly population manifest is supplied for this imported article. Native graphic footprint objects are not populated parts; preflight reports functional group references separately. Historical routed output is a different article with 35 native objects."
+    }
+  },
+  "files": {
+    "build/acquisition-release/build.json": {
+      "sha256": "d55768209c977d8c71b9c8d8623fb9a9ff38a8033bf80479ebaa4ae6f777766f",
+      "bytes": 1141
+    },
+    "build/acquisition-release/inputs/Analog_ADC.kicad_sym": {
+      "sha256": "af1ef0295c52c23bc73ffc6d6b2f63efcf5029badd8327a09b41cfef49f25770",
+      "bytes": 5718
+    },
+    "build/acquisition-release/inputs/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod": {
+      "sha256": "fe0dbfefbb181a0466f93a8de52d84ba7b00fcd9acdbb69575f4128a0af4e405",
+      "bytes": 1928
+    },
+    "build/acquisition-release/inputs/Capacitor_SMD.pretty/C_0805_2012Metric.kicad_mod": {
+      "sha256": "62775a51fe74ba7f1b572de327bdbd3fc92582721b2abcaa47787865590d89cb",
+      "bytes": 2030
+    },
+    "build/acquisition-release/inputs/Connector_Generic.kicad_sym": {
+      "sha256": "b148b6f6e4576d451f1e66663957e93bb10916f0a0c82f0f454be0d679fbd18d",
+      "bytes": 5726
+    },
+    "build/acquisition-release/inputs/Connector_JST.pretty/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.kicad_mod": {
+      "sha256": "dd59286748b9a6fa9174237072608f811cf3169dddf00eab54a5c196fcb6f7e8",
+      "bytes": 4473
+    },
+    "build/acquisition-release/inputs/Connector_JST.pretty/JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical.kicad_mod": {
+      "sha256": "f5488d79bbafc8c929bcfacf8e960e81dcfc126c598e03083de317607937b58e",
+      "bytes": 5623
+    },
+    "build/acquisition-release/inputs/Device.kicad_sym": {
+      "sha256": "88785d6f8fea6e5155d00e2344c279ba60678b896c838ac0d0a7850db921d005",
+      "bytes": 6855
+    },
+    "build/acquisition-release/inputs/Diode_SMD.pretty/D_SOD-123.kicad_mod": {
+      "sha256": "fd16785935b01254e1076f490e12f0f096da73cf087adefce51225585c62557a",
+      "bytes": 4584
+    },
+    "build/acquisition-release/inputs/ENGINEERING-REVIEW.md": {
+      "sha256": "c94d7db6e36564c4047b84c302da6e61ca6b45dda1f56de5d60faaf3db850267",
+      "bytes": 13779
+    },
+    "build/acquisition-release/inputs/OPERATING.md": {
+      "sha256": "b6e702b341a234e38da4ea0fb5f0831bd1fa61038d78e6e098d0c06a1e678319",
+      "bytes": 7804
+    },
+    "build/acquisition-release/inputs/Package_SO.pretty/TSSOP-10_3x3mm_P0.5mm.kicad_mod": {
+      "sha256": "2086038e5c7206b71f55b2b549ebc926ab2462fa36b107db5287ae1d38a0da96",
+      "bytes": 4944
+    },
+    "build/acquisition-release/inputs/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod": {
+      "sha256": "455a3f7c3e5eb5b8847eaa5df23e18651e78ab9f75afd09a0883758a0d901761",
+      "bytes": 4745
+    },
+    "build/acquisition-release/inputs/Regulator_Linear.kicad_sym": {
+      "sha256": "e4f4fc2a95c363ebc47bb96fa39d6859be763467aa7b151a2a3da1d3a1307447",
+      "bytes": 4350
+    },
+    "build/acquisition-release/inputs/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod": {
+      "sha256": "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23",
+      "bytes": 1943
+    },
+    "build/acquisition-release/inputs/adc-ties.json": {
+      "sha256": "aa3c42ed36b694b97a10ae5a671faeed6f4cb9858e9ed2fb79c583aa5d4aaf96",
+      "bytes": 1276
+    },
+    "build/acquisition-release/inputs/analysis/electrical-intervals.json": {
+      "sha256": "8998b329e058d39d48bd3568240b58b4904ba079460d46032105ef5cc51654a7",
+      "bytes": 9389
+    },
+    "build/acquisition-release/inputs/analysis/geometry-model.json": {
+      "sha256": "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4",
+      "bytes": 6329
+    },
+    "build/acquisition-release/inputs/analysis/geometry_adapter.py": {
+      "sha256": "c2b0b207b436afb2a6fbf74f05293cf961edbafa33ada0a9327fce125571cbb2",
+      "bytes": 765
+    },
+    "build/acquisition-release/inputs/analysis/geometry_model.py": {
+      "sha256": "fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294",
+      "bytes": 8559
+    },
+    "build/acquisition-release/inputs/analysis/power-removal/BAT46W.spice.txt": {
+      "sha256": "87bcd4900cc39d8c13c61c05358c395ce412c3744936adc41f0bfae0e3a672a4",
+      "bytes": 1427
+    },
+    "build/acquisition-release/inputs/analysis/power-removal/README.md": {
+      "sha256": "371fb60a626328172fac63bc49e94ddadfd0e351b6b99d146e110983ad9510d6",
+      "bytes": 940
+    },
+    "build/acquisition-release/inputs/analysis/power-removal/corners.lib": {
+      "sha256": "66ce94c6cbff313593ebdf965fbc46aa4962dfeab21740ff642915a97c2b892a",
+      "bytes": 384
+    },
+    "build/acquisition-release/inputs/analysis/power-removal/power.lib": {
+      "sha256": "a9099311d68b9ca48eebdeacea0fcace6a24a2457a5b47613db7f79ce6babb5d",
+      "bytes": 525
+    },
+    "build/acquisition-release/inputs/analysis/power-removal/tps7a20-adj_trans.lib": {
+      "sha256": "154acfdd2199ac44259908b90b07d15bc7e535a45c8c51d1413894c900718b69",
+      "bytes": 6286
+    },
+    "build/acquisition-release/inputs/analysis/power-startup/BAT46W.spice.txt": {
+      "sha256": "87bcd4900cc39d8c13c61c05358c395ce412c3744936adc41f0bfae0e3a672a4",
+      "bytes": 1427
+    },
+    "build/acquisition-release/inputs/analysis/power-startup/README.md": {
+      "sha256": "e621ab43203e938196556bdea332700854032438548297fcb772a0ae3a314d29",
+      "bytes": 938
+    },
+    "build/acquisition-release/inputs/analysis/power-startup/corners.lib": {
+      "sha256": "66ce94c6cbff313593ebdf965fbc46aa4962dfeab21740ff642915a97c2b892a",
+      "bytes": 384
+    },
+    "build/acquisition-release/inputs/analysis/power-startup/power.lib": {
+      "sha256": "a9099311d68b9ca48eebdeacea0fcace6a24a2457a5b47613db7f79ce6babb5d",
+      "bytes": 525
+    },
+    "build/acquisition-release/inputs/analysis/power-startup/tps7a20-adj_trans.lib": {
+      "sha256": "154acfdd2199ac44259908b90b07d15bc7e535a45c8c51d1413894c900718b69",
+      "bytes": 6286
+    },
+    "build/acquisition-release/inputs/assembly-release-ids.json": {
+      "sha256": "d3363fbb99697e14acc81d0eeac6ac6686cda19d379f2edc232cc2b27ec595d7",
+      "bytes": 141
+    },
+    "build/acquisition-release/inputs/assignments.json": {
+      "sha256": "d1f063c06945a2cf41b70003fecf1cbf99bf191dd52b1ebb0ff88dc4b5a51950",
+      "bytes": 4097
+    },
+    "build/acquisition-release/inputs/cad-members.json": {
+      "sha256": "6d0ca58a108dd7763f1524a4b0beeb907c8290a19a3cec8a2fe4eb33374b760e",
+      "bytes": 1473
+    },
+    "build/acquisition-release/inputs/cad-qualification.json": {
+      "sha256": "2c5ce0af5649c11f55119bac069060f5f22d109f8894f5a987b4ea7158b2b7cb",
+      "bytes": 48551
+    },
+    "build/acquisition-release/inputs/cad.json": {
+      "sha256": "e09eca6fcda08c88abfbb224942e39ad0a407c143abdaf66f42e1870b7507c60",
+      "bytes": 1955
+    },
+    "build/acquisition-release/inputs/circuit.json": {
+      "sha256": "15b8339e27832824914412e274e2efa4c46150502864418c8e0e604510f21da5",
+      "bytes": 10811
+    },
+    "build/acquisition-release/inputs/component-selections.json": {
+      "sha256": "dee07c223ea99d1da314dfb66caed5635c9e15d362d773637c20f8f98cb9b7ff",
+      "bytes": 5580
+    },
+    "build/acquisition-release/inputs/connectivity-diagnostic.json": {
+      "sha256": "d76c9734f497d188b7ddce44ede95583aff3322d80d1e635e5e5894bb5068c55",
+      "bytes": 45244
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-connectors-bulk.json": {
+      "sha256": "ccec5f13bb2017252d3a45c870271a46a5d424b2571ac3083cc28a506a7ffa56",
+      "bytes": 345
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-current-viewer.json": {
+      "sha256": "f282021636260792d5ee8cd85e527ec50251407ea2b21d8a3dc0a4c4618750d8",
+      "bytes": 450
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-filter-dimensions.json": {
+      "sha256": "479ce7547bbc5b4c1f5b128d181331c8f84d1d492821d94fcc65ee64e413809c",
+      "bytes": 123
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-filter-specific.json": {
+      "sha256": "8fe05fc2d0a2dff4d4ebfa20b8061afe05af325f4ce1f4d74d887ac1861134ba",
+      "bytes": 114
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-passives-manufacturer.json": {
+      "sha256": "7261c33ddf61ef9581aa5891d1c81f3fd0e482d6195e99dd935f70b458f2177f",
+      "bytes": 378
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-power-refined.json": {
+      "sha256": "936780a13d23f38184ef52ac3043ef463366d4341231af892ba0dca95f0bf63d",
+      "bytes": 240
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-resistor-mounting.json": {
+      "sha256": "483594d81b72ee2959badf14f6cccf3380ca622fbf6dcfd43759b49dfd0f7356",
+      "bytes": 156
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-resistor-release.json": {
+      "sha256": "3e7f26c81c561db8878966fcefcaf62f2360235217f0a62d0f1657efa0f3f569",
+      "bytes": 536
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-support-static.json": {
+      "sha256": "4164ab8bf2f280afb2a591b4cf0f420bba1d575d8907c82c70fcc81a5e2947a4",
+      "bytes": 857
+    },
+    "build/acquisition-release/inputs/datasheet-bindings-support.json": {
+      "sha256": "d3688a1783cba6b055d6428a3172068e0e5d8292e41ebd2fbda3122ee6e26747",
+      "bytes": 941
+    },
+    "build/acquisition-release/inputs/datasheet-bindings.json": {
+      "sha256": "8fb5e300c1c3ef2646ee9c339bc6e6fbeff840e60b393c084763c532081ae5a7",
+      "bytes": 199
+    },
+    "build/acquisition-release/inputs/datasheets-connectors-bulk/af098223ad259e1efd4ef186566d50d6e77cb1a6ea0623fbe5e3c5a9ec7e5c81.pdf": {
+      "sha256": "f0fc85a253cc95f38950a4406c88834f52c4b7697226692cafbb98fbb7c5727a",
+      "bytes": 3011022
+    },
+    "build/acquisition-release/inputs/datasheets-connectors-bulk/bb0b7c344f87ea4a2eb01dbf02c4541bd9482608f57c1dc3ca2f5e333a0dd2a4.pdf": {
+      "sha256": "447624f4f2f7d37c58c1eaa7ee314ad757fe7aff48f6186491ef6f69fbc00b96",
+      "bytes": 103369
+    },
+    "build/acquisition-release/inputs/datasheets-connectors-bulk/manifest.json": {
+      "sha256": "0851bd57b2b559e831d97b583c8218ac3f02ed190c5a362d63f76ad3afe9a685",
+      "bytes": 1338
+    },
+    "build/acquisition-release/inputs/datasheets-core/221813224c23a7b649ef22e3e1116744e53b8cbaa31fc43afd6872174f300295.pdf": {
+      "sha256": "eefff4d412ce2dcd7e659f47238edc9b2fa02e5971f2625af730502033701834",
+      "bytes": 2654255
+    },
+    "build/acquisition-release/inputs/datasheets-core/d71dbd1c98c12ef2248db2e01f12ab2d924c5f53e0e358901069e66409800059.pdf": {
+      "sha256": "96e2706d4b13656d2d550fdbb5be9861c56b058822109bb39a906d4ad1beb019",
+      "bytes": 3073216
+    },
+    "build/acquisition-release/inputs/datasheets-core/manifest.json": {
+      "sha256": "f1aa86638b048e96f07bd0d54c2217c2eef972d6022a1c5c801531f709526d21",
+      "bytes": 882
+    },
+    "build/acquisition-release/inputs/datasheets-current-viewer/6372524aeb01ce4095977a34bcb8a242c0647b0122d7a103bcdcee0f750a6553.pdf": {
+      "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6",
+      "bytes": 7856403
+    },
+    "build/acquisition-release/inputs/datasheets-current-viewer/6e88107150727761ab2f59c64db18c7a4aaa197e57b742be168df71063b78d98.pdf": {
+      "sha256": "1ce6a6849cfb19a58d6221d6e9a84e164209cd3d911adac7808d85224db5c520",
+      "bytes": 1058630
+    },
+    "build/acquisition-release/inputs/datasheets-current-viewer/84838d0ebd3e1734b1037b09b8d2702e912e9627525beba9a2ba0cd20d3c45d5.pdf": {
+      "sha256": "9a8a89cd730ba1b1b678b51bad5ab28083f45ed6a8d1ee61fcf7180834feebb5",
+      "bytes": 10764016
+    },
+    "build/acquisition-release/inputs/datasheets-current-viewer/manifest.json": {
+      "sha256": "ceeceb7b023a16345c269209142bb72b384921af5ef8fd11a53d0fdf0a9199a5",
+      "bytes": 1550
+    },
+    "build/acquisition-release/inputs/datasheets-filter-dimensions/manifest.json": {
+      "sha256": "61bde8bb7a55d2b4ff9ebd7026fb3f1e24230bcd5c4d544fa3c93e60f5e04311",
+      "bytes": 408
+    },
+    "build/acquisition-release/inputs/datasheets-filter-specific/manifest.json": {
+      "sha256": "3edd0b97211196a0620633783c4b4cbea89dfd0a57b29d1626b81c00d7bbdd23",
+      "bytes": 485
+    },
+    "build/acquisition-release/inputs/datasheets-passives-manufacturer/0dd9e379e48361cc43c96eaf5bf973b3e38e352f578fffc80815e095244f3116.pdf": {
+      "sha256": "ffeb8a25d4c2ffa490a28e0e00f70107f2cb94575d7e03365efc252d911ecf0c",
+      "bytes": 861713
+    },
+    "build/acquisition-release/inputs/datasheets-passives-manufacturer/ed513f046f893a677f85ed5f6d155ab3da52c2860205776c9f2fd65b9b038003.pdf": {
+      "sha256": "9ec4d286b65ee577d02ed04da205ae18020b4fe19ec054bb6b37874bf3419d47",
+      "bytes": 285415
+    },
+    "build/acquisition-release/inputs/datasheets-passives-manufacturer/manifest.json": {
+      "sha256": "e60e9bfa295b1d43a21daa551e7bf86b902e02da5d3d897b949f3a2c7731d266",
+      "bytes": 1407
+    },
+    "build/acquisition-release/inputs/datasheets-power-refined/0dd9e379e48361cc43c96eaf5bf973b3e38e352f578fffc80815e095244f3116.pdf": {
+      "sha256": "ffeb8a25d4c2ffa490a28e0e00f70107f2cb94575d7e03365efc252d911ecf0c",
+      "bytes": 861713
+    },
+    "build/acquisition-release/inputs/datasheets-power-refined/ff2e780dd8716f9ddf9cdb60a5b9b804b65917a304adaaf7e4e3c8dfa85bd8de.pdf": {
+      "sha256": "3bc31f4a5302521c7e298f95aef7e3425ea68ae287bd28a6cfa8d0689fcbe56b",
+      "bytes": 621388
+    },
+    "build/acquisition-release/inputs/datasheets-power-refined/manifest.json": {
+      "sha256": "bcbeb83436b4a877a5fd26f68b6ff05fd3734b51401bf314aa2cf409e0129484",
+      "bytes": 964
+    },
+    "build/acquisition-release/inputs/datasheets-regulator-qualified/24a62c3bba44bad0f419bbf8b75ac28c0402b7c3f91125020e1d3595e602b2a5.pdf": {
+      "sha256": "b6c487d79ebed6dd43bf220b07fc5b3ecb9ee55d87e6daa2312acda6546046c0",
+      "bytes": 8987811
+    },
+    "build/acquisition-release/inputs/datasheets-regulator-qualified/manifest.json": {
+      "sha256": "897ae4ce0d6234e6d8e70cc86cd16e861ab7294c5dcf6efebd32bcf8eb20afe1",
+      "bytes": 523
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-mounting/18f2e7baffabb9fa2fc2cf0579349bc32c3a05ea55d4c437bbcf434fb81ae291.pdf": {
+      "sha256": "591634ace247f61e9c6a263ca1ac98d7672fc163f5e87334c3460956f5c68b7b",
+      "bytes": 787817
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-mounting/manifest.json": {
+      "sha256": "f8b4c231da2d888436ac0d4519fe53302b05ebbb51f61b9d5f3af6236eefef12",
+      "bytes": 657
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-release/1bdf4d6ccb1acb551b90240e86f15ffebae1e261a40e291812ea6ebe55652867.pdf": {
+      "sha256": "99d6adb5c5531cd2e57dc39903076d9bf7981c5382697ea6e00959779a4d5d54",
+      "bytes": 56412
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-release/78e0066f2ca072520dc03976532bf751103a06bf4d2bc4b7ff0761b64ab28e30.pdf": {
+      "sha256": "7b6f0ae72708ca4b38126f84b5407a3e970a94cb60bc1a0afdaeb25a23d839bb",
+      "bytes": 542969
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-release/7bed43a30641d3bdd5a9433316b1c045a560480319b8be6248693677d7d2a934.pdf": {
+      "sha256": "fe66259a396b65ee3f6d9f6fb8aa2b259f0dee083159b0a121297d7f20500e88",
+      "bytes": 56420
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-release/940ef152c6ae41f6b9313dd00385e7228df3d5f8ff2f8f9cd8425972e390cf33.pdf": {
+      "sha256": "0cfc4542280b66a99dfd82d0b3b7f6db9dd756de6e01c225949c567091d63d88",
+      "bytes": 56374
+    },
+    "build/acquisition-release/inputs/datasheets-resistor-release/manifest.json": {
+      "sha256": "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597",
+      "bytes": 1883
+    },
+    "build/acquisition-release/inputs/datasheets-support/manifest.json": {
+      "sha256": "b89dd85643a67dfa519dffa2f3b33c7c9ec735a5c5841132fcb9704f682fa034",
+      "bytes": 2477
+    },
+    "build/acquisition-release/inputs/datasheets-support-static/manifest.json": {
+      "sha256": "36e6ac7bd0a64193a7f3c485431c3f639a0fcc1e6590e877dacc4a889b20c8a1",
+      "bytes": 2019
+    },
+    "build/acquisition-release/inputs/dfm-profile.json": {
+      "sha256": "6e53fafa6436a7bb8738c59be67fa5d72fa766dc671509fe7b31448c017a85f1",
+      "bytes": 270
+    },
+    "build/acquisition-release/inputs/diagnostic-context.json": {
+      "sha256": "f984de721e841e567dfafaf5e997d508ef021cc6b25d093e1ebfdcfd49894679",
+      "bytes": 447
+    },
+    "build/acquisition-release/inputs/electrical-locality.json": {
+      "sha256": "c39f6f070ceec7e9d47bb072a953350806bd926fe28f2dc1eb609b102a939679",
+      "bytes": 13196
+    },
+    "build/acquisition-release/inputs/engineering-calculations.json": {
+      "sha256": "95e3b36d5e54187023bc5f5aa8358d6eee6deecc10bab010aa93ebaebe20f5ed",
+      "bytes": 8553
+    },
+    "build/acquisition-release/inputs/engineering-decisions.json": {
+      "sha256": "3c922ca1c133ec59755b7ab84f7ee25025daa0a3523973362a6664787f589ae4",
+      "bytes": 2315
+    },
+    "build/acquisition-release/inputs/envelope.json": {
+      "sha256": "103fb7ada7523b7709205753c5b900e7909ae91cc52547c096151a0352e11d33",
+      "bytes": 2083
+    },
+    "build/acquisition-release/inputs/fab-profile.json": {
+      "sha256": "1d0a57537ac6aff720d9bc48037452f7b0410bff135655b2eb16d2deddcdaf93",
+      "bytes": 6439
+    },
+    "build/acquisition-release/inputs/fab-sources/capabilities.html": {
+      "sha256": "b759182143cfaeab35418522627db8ceeb1fe74947faf57c7d261885a258dbf6",
+      "bytes": 137003
+    },
+    "build/acquisition-release/inputs/fab-sources/capabilities.html.capture.json": {
+      "sha256": "9c84d8f2006782281029809fefa083194c0773c8e0745f95ef1c0c29192312ad",
+      "bytes": 443
+    },
+    "build/acquisition-release/inputs/fab-sources/copper-weight.html": {
+      "sha256": "13c9365a4a785fbde8a379adf6a4e60d67e2ea27784566cc6df405c50dc9d923",
+      "bytes": 112686
+    },
+    "build/acquisition-release/inputs/fab-sources/copper-weight.html.capture.json": {
+      "sha256": "c3f709a6becfa7c08722cb702ccb404320324bc8d7fd508873059d1d09ea333a",
+      "bytes": 449
+    },
+    "build/acquisition-release/inputs/fab-sources/selected-facts.txt": {
+      "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+      "bytes": 1200
+    },
+    "build/acquisition-release/inputs/groups.json": {
+      "sha256": "eb725e24138dc70ed7e615eb7ac5b77952178ccc5fd27fd8b041ec38c31ee396",
+      "bytes": 502
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/component-selections.json": {
+      "sha256": "32ae10b473f9c1e8c05b897004984b355d807f24a938188a670ff1d094c5bcc4",
+      "bytes": 4859
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/engineering-decisions.json": {
+      "sha256": "4d3d9ff29e0ff52b6b804be75f296d88e1d5a4000f6a2cea5994cdc47ac83a6c",
+      "bytes": 1227
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/envelope.json": {
+      "sha256": "5da0db2a85c477797f3e28d2aefedb84c0fc9aab96d67f00e26933001cb4658d",
+      "bytes": 2083
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/fab-profile.json": {
+      "sha256": "db0d7ca3b7f54af68def561e127461aee9dd95dc9300f0b8af2184c83a401604",
+      "bytes": 6337
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/parts.json": {
+      "sha256": "8a6cbb958a74c501ea77867ca4f4626817c97f84776140583e193b03362c8e21",
+      "bytes": 25431
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/requirement-map.json": {
+      "sha256": "55ff974f539e598d20c16e84c43024896deee111682da3d7525f0353db997206",
+      "bytes": 12387
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/spec-record.json": {
+      "sha256": "26e9dc0ae46d4303256311c346eff0fddee53e0477950885141097db86774e9d",
+      "bytes": 17007
+    },
+    "build/acquisition-release/inputs/history/initial-qualification/spec.md": {
+      "sha256": "d10c9e0be819e80c42497f3637688d331c9a1942c7a806e38e33248a388175dc",
+      "bytes": 5019
+    },
+    "build/acquisition-release/inputs/layout.json": {
+      "sha256": "27e18ee65fe8a037a1faff625eb7bf1ba48e68e1eb3f0c051e9abb6669991d3c",
+      "bytes": 798
+    },
+    "build/acquisition-release/inputs/lib3d/.agent-ee-models.json": {
+      "sha256": "cfb32ddf676b3c1212c30f95f5756aae0c841717ead6baf81bb41cd7a6f9c194",
+      "bytes": 3381
+    },
+    "build/acquisition-release/inputs/lib3d/Capacitor_SMD.3dshapes/C_0603_1608Metric.step": {
+      "sha256": "4857b3dc717675bf1fb22edda622ac3b3ae03cf44d81eefaf3fa3ba3a86d84c1",
+      "bytes": 43450
+    },
+    "build/acquisition-release/inputs/lib3d/Capacitor_SMD.3dshapes/C_0805_2012Metric.step": {
+      "sha256": "9a669c1a2f1ea25b88b401acef6efeaa80a067bd7da9db6993de719a7fbe155c",
+      "bytes": 43618
+    },
+    "build/acquisition-release/inputs/lib3d/Connector_JST.3dshapes/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.step": {
+      "sha256": "cab512a9b16c7568ed6e0047c17de04c4dd11893cdee71cb33fb51768543f927",
+      "bytes": 151559
+    },
+    "build/acquisition-release/inputs/lib3d/Connector_JST.3dshapes/JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical.step": {
+      "sha256": "0703774983dd0bf32b5175315a63ebb9c9439b35cb491768770aaa13ded27934",
+      "bytes": 236448
+    },
+    "build/acquisition-release/inputs/lib3d/Diode_SMD.3dshapes/D_SOD-123.step": {
+      "sha256": "b3dc4065573abc72e3d5b4cca0e908f72a24205a41b6284b1f75ccacbe99adf8",
+      "bytes": 52836
+    },
+    "build/acquisition-release/inputs/lib3d/Package_SO.3dshapes/TSSOP-10_3x3mm_P0.5mm.step": {
+      "sha256": "39602ed75f3c6c524a0e4bab680480a2804b32aa5aa5eb0d979f088f4fb9c652",
+      "bytes": 150086
+    },
+    "build/acquisition-release/inputs/lib3d/Package_TO_SOT_SMD.3dshapes/SOT-23-5.step": {
+      "sha256": "720a6eab0024069bbee68e7cb4c3ff1149468a34611225cdc852662c5d0ec2b7",
+      "bytes": 87532
+    },
+    "build/acquisition-release/inputs/lib3d/Resistor_SMD.3dshapes/R_0603_1608Metric.step": {
+      "sha256": "1875571c326d0d9e96f36b4efeb8094068ef7619f0a449c781caf0b49c2e5861",
+      "bytes": 40618
+    },
+    "build/acquisition-release/inputs/libraries.json": {
+      "sha256": "e96c0c4b201eee934899a5b6fb0285654505a455b229aff883d9620ab929c94a",
+      "bytes": 771
+    },
+    "build/acquisition-release/inputs/manufacturing-decision.json": {
+      "sha256": "7db99d7476a74b4e6f546da44ddcf866412cdeb409dcc834edbd0bc01a3a9be6",
+      "bytes": 689
+    },
+    "build/acquisition-release/inputs/named/C114065.json": {
+      "sha256": "3abf22cb1079092388761d8c71d93948f693f0a760a8350cfaf5b991701dbe5a",
+      "bytes": 1613
+    },
+    "build/acquisition-release/inputs/named/C114662.json": {
+      "sha256": "42f3349c91880d4ffff3a9690426630f3b00fc55319a3a688f825fb0cef43371",
+      "bytes": 1613
+    },
+    "build/acquisition-release/inputs/named/C131334.json": {
+      "sha256": "c6c53776c1e202ef9a972084fc77d921621923a186a69e9dbc2bab394b6d657f",
+      "bytes": 1505
+    },
+    "build/acquisition-release/inputs/named/C131337.json": {
+      "sha256": "0fcde9fc2e921b167170859b0e41456b08753ea2b4a9cd9622f5027bf7b4bab4",
+      "bytes": 1505
+    },
+    "build/acquisition-release/inputs/named/C14663.json": {
+      "sha256": "f9c8a389b347127ea08a2c92f045a99765a74bea6e31e9098220bb53557d91be",
+      "bytes": 1560
+    },
+    "build/acquisition-release/inputs/named/C15850.json": {
+      "sha256": "629bbd14990a1f0e848ce21c82382a11235c631a1549a44b836f758655e56bde",
+      "bytes": 1649
+    },
+    "build/acquisition-release/inputs/named/C21190.json": {
+      "sha256": "cbc38b4284d5ae5bd914c0163983b6daf6a6f1d9a44aea3e97476c03168539ca",
+      "bytes": 1621
+    },
+    "build/acquisition-release/inputs/named/C22548.json": {
+      "sha256": "9830ab99a4f45513816ac0d9ea42aa7219c81efa40705c40e5873f159c69bf01",
+      "bytes": 1607
+    },
+    "build/acquisition-release/inputs/named/C2862740.json": {
+      "sha256": "18976b466096afe8472ce49df0048fd680acd9ec337ff84b074ab90b92135d32",
+      "bytes": 1562
+    },
+    "build/acquisition-release/inputs/named/C31850.json": {
+      "sha256": "8942402f168c5326c1c03b0d791c23c54f195eb9ed5fac5bfc731b0c5f167393",
+      "bytes": 1610
+    },
+    "build/acquisition-release/inputs/named/C37593.json": {
+      "sha256": "32c7be0c67d41d5ac00f0d675d8e98aaa1b7be7a757167982e30786d27e23599",
+      "bytes": 1475
+    },
+    "build/acquisition-release/inputs/named/C404027.json": {
+      "sha256": "a49a778a72bce58b65be8e02c15ffb3f712d7a7c58179f8a9042a33d541188a6",
+      "bytes": 1515
+    },
+    "build/acquisition-release/inputs/named/C4190.json": {
+      "sha256": "403a38556586f59154d34ce76532b50b8cf27a483f87c6289cfba854f5e926f0",
+      "bytes": 1617
+    },
+    "build/acquisition-release/inputs/named/C83152.json": {
+      "sha256": "370162bd72f6e14aef7f3cbc451eda29d3cd8243e4bdaabc7949e579981b6552",
+      "bytes": 1510
+    },
+    "build/acquisition-release/inputs/named/C85973.json": {
+      "sha256": "c1989c9f081e681a511f38efe8af948c6488c1c953b3e7937869f2215e099620",
+      "bytes": 1671
+    },
+    "build/acquisition-release/inputs/parts.json": {
+      "sha256": "0aceffcb4a155867dc94d6081957a91475b5b12bc01ebf8565db1d0d0afa5cbe",
+      "bytes": 25305
+    },
+    "build/acquisition-release/inputs/placement.json": {
+      "sha256": "4dd9bc5d5d06e47377e6c8944a7737a5cc789c5b6ae740339427b67e2b861011",
+      "bytes": 17892
+    },
+    "build/acquisition-release/inputs/plane-selection.json": {
+      "sha256": "8d38be49a75defbf573a5142900c5d5e9d553b36f021f9ac5e1cfe3b87cb78ee",
+      "bytes": 692
+    },
+    "build/acquisition-release/inputs/planes.json": {
+      "sha256": "bcea5c2debbf9af5058e3c3a5535bc3d04550b2a49873bc8b088ddc78e097ee1",
+      "bytes": 363
+    },
+    "build/acquisition-release/inputs/power.kicad_sym": {
+      "sha256": "d3bc5f4e414b2b65617363963287a2792d7fbb4c4585b3b6cae25edace802a08",
+      "bytes": 3616
+    },
+    "build/acquisition-release/inputs/preparation.json": {
+      "sha256": "d47a27820e31e57c6ac87e7e125a839d95091f3ff895138f1ba19f12893e043a",
+      "bytes": 2128
+    },
+    "build/acquisition-release/inputs/project/acquisition.kicad_pro": {
+      "sha256": "ee7a57653a2c89fd158311f9b26a2cb3f41f0c03db248b65cc659ca4325f29df",
+      "bytes": 733
+    },
+    "build/acquisition-release/inputs/ratings.json": {
+      "sha256": "3459e763c2c5a25efce9805feba85507b79c01c86f4298a8b26ccdbb0e074d26",
+      "bytes": 109
+    },
+    "build/acquisition-release/inputs/requirement-map.json": {
+      "sha256": "df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863",
+      "bytes": 42636
+    },
+    "build/acquisition-release/inputs/scope-corrections.json": {
+      "sha256": "4d36e5bc6ad577bb0753190174c7154dfe0862b0c3eab58bec214a06226fda08",
+      "bytes": 1865
+    },
+    "build/acquisition-release/inputs/spec-record.json": {
+      "sha256": "a03e16f40e34fb7af4ac229ea5916b27de47c576b6f7f181c914205e5a8f865b",
+      "bytes": 17157
+    },
+    "build/acquisition-release/inputs/spec.md": {
+      "sha256": "fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373",
+      "bytes": 5169
+    },
+    "build/acquisition-release/inputs/stock-assembly/catalog.json": {
+      "sha256": "5fb929a833e716dbaf2a863f34f503ccf1b3384ab2ed77fc2cef2ead79d76d09",
+      "bytes": 5948
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C131334.json": {
+      "sha256": "acd409a6b679ed1f06d3f15345ec9783be132cac91d8424254e02a0e845dafea",
+      "bytes": 5268
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C131337.json": {
+      "sha256": "9c8d8f06a1706a8d6c0d1df62ef766a3cf3944625ca3089bfa5dd7666a8b3af9",
+      "bytes": 5278
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C14663.json": {
+      "sha256": "0b06a7665e6fb4b67aa12847fede72844a6a952e81126d98deccfb042005f20b",
+      "bytes": 4178
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C15850.json": {
+      "sha256": "de070b8e30e504ad9c054c3db0749019054f7ce37298d5797fd95d55daab3340",
+      "bytes": 8195
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C21190.json": {
+      "sha256": "59b6a1408e68adf242eba257830eb383850af6187f946d2ac70ce5376f91f9fe",
+      "bytes": 4465
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C31850.json": {
+      "sha256": "0e78674530383cc8a95cbc77231b09edb8914aa8653c8fbbc80f6bc85c65c484",
+      "bytes": 4466
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C37593.json": {
+      "sha256": "ad2592f0731019a4eba1cee30b88a7e70622fe52e2d1a1976033bb39e88c6c92",
+      "bytes": 5425
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C404027.json": {
+      "sha256": "80207ff97991f37e23ef08b75e7ffb7c04528fdb02fddd65c7e3b628eebbd7a6",
+      "bytes": 5096
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C4190.json": {
+      "sha256": "bfeef8b0be0ba14ff390a3691c068811481972bf8010444185ecc0063c68f052",
+      "bytes": 17522
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C83152.json": {
+      "sha256": "8b97649d6d2b1949903acc5b32eef714860b00528b1cc06eb4bb8bc248e10574",
+      "bytes": 4500
+    },
+    "build/acquisition-release/inputs/stock-assembly/responses/C85973.json": {
+      "sha256": "87a694e3e12cc6591c1b60620e71e55903841b300e3465c81ecd0d1eb6286a77",
+      "bytes": 4218
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/catalog.json": {
+      "sha256": "5f624f242ca1298929a389283218c411f0cffce85af86974eb0a9832accb0282",
+      "bytes": 5953
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C131334.json": {
+      "sha256": "183a0dfb4de7bc7605dbc264b9f7c5f3facac311f65ec118db889fd6b8167700",
+      "bytes": 5268
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C131337.json": {
+      "sha256": "cf36f5db482618932429b39c3af5565bf2ff9313d02e51b4cce0d1fec47ed081",
+      "bytes": 5278
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C14663.json": {
+      "sha256": "4fb274db0f4d4347dd87f3e82f7de4948c4d90a866ab4beb2d26343d8d616066",
+      "bytes": 4178
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C15850.json": {
+      "sha256": "01e4eeb634f35e7141c562bad098953f860795de46ffc2c01e978683c04027e7",
+      "bytes": 8195
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C21190.json": {
+      "sha256": "a8d05814bf1550fe557c67bd08c77607d4cf2a1076973666b2987f65cf06c058",
+      "bytes": 4465
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C2862740.json": {
+      "sha256": "81da3d6d5d1729ec0683bb8ee9ea3352a027ae27449f9612299854137a2b4321",
+      "bytes": 5197
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C31850.json": {
+      "sha256": "84439a74b5a48e5d0ae28f58b138aa64eb49ea01b27ddb55a8b2f568b1b178da",
+      "bytes": 4466
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C37593.json": {
+      "sha256": "19e118f0032459f98861118bb5d0788217064519c6213674ef4006e7344b6c48",
+      "bytes": 5425
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C4190.json": {
+      "sha256": "71cbe92247042945d3809dc89bf87fe55d944cff6311608b4f35dafbc0715a86",
+      "bytes": 17522
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C83152.json": {
+      "sha256": "8b97649d6d2b1949903acc5b32eef714860b00528b1cc06eb4bb8bc248e10574",
+      "bytes": 4500
+    },
+    "build/acquisition-release/inputs/stock-assembly-qualified/responses/C85973.json": {
+      "sha256": "d8e0f40eb6779321635cec784aa9e2f03a9910f9f0a5c882489aeb8983cb1733",
+      "bytes": 4218
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/catalog.json": {
+      "sha256": "30294438f5fc033829b9f72e1c4c50be1cdf020a1e56cd5c39115866ed44ff67",
+      "bytes": 5918
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C114065.json": {
+      "sha256": "81074a44c74e63d5a36344a0ec4f0418941e592d123dd22ce31a2dd4fa069aee",
+      "bytes": 4420
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C114662.json": {
+      "sha256": "1432115dddc7816a6f03b16785fe0153b08ac0cd20c644440954a8d3a7df8ecb",
+      "bytes": 4423
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C131334.json": {
+      "sha256": "bd2fcc742016d9875156bf43696e730add47a8524d3e7bd717659842f81b9654",
+      "bytes": 5268
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C131337.json": {
+      "sha256": "4da94964d9002782e729b7bf70189e420bded64398c2e5b87071b35fa1f9ed45",
+      "bytes": 5278
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C14663.json": {
+      "sha256": "e49056a3ed4413031433ae187b3629dbbe8aca654bcc0b9d9295bb8f9247cde4",
+      "bytes": 4178
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C15850.json": {
+      "sha256": "b5419f9d455217f5c2abbb4fd68eb8eafc9cf453e0d82779bd35649b62a0d672",
+      "bytes": 8195
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C22548.json": {
+      "sha256": "307c0f0a2b47bc7647cca8b20d9603f7f250946cee2044bd9b3a43bb37219dcd",
+      "bytes": 4407
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C2862740.json": {
+      "sha256": "25d09467904b3a9d58884359df70f8281dc8ad43660e5546f94c1e11b2ee9f3d",
+      "bytes": 5197
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C37593.json": {
+      "sha256": "08cd7d8c5adb7767976aec41e991cb2637230b182275a8505a39e8b9369c1a47",
+      "bytes": 5425
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C83152.json": {
+      "sha256": "4b816737917f95c19261bcda64ec1312d6284787c73eea52c348bdc0282b9502",
+      "bytes": 4500
+    },
+    "build/acquisition-release/inputs/stock-assembly-release/responses/C85973.json": {
+      "sha256": "912622188406908edaef43dcb72cc3481fd9ceb6754d118369499c8b8310369d",
+      "bytes": 4218
+    },
+    "build/acquisition-release/inputs/stock-connectors/catalog.json": {
+      "sha256": "cb0356cb1cba17ee28385662045deeb049ad13ae12adb8524dc5ed19230b7b07",
+      "bytes": 1424
+    },
+    "build/acquisition-release/inputs/stock-connectors/responses/C131334.json": {
+      "sha256": "acd409a6b679ed1f06d3f15345ec9783be132cac91d8424254e02a0e845dafea",
+      "bytes": 5268
+    },
+    "build/acquisition-release/inputs/stock-connectors/responses/C131337.json": {
+      "sha256": "23e5fbc6314f1edd1d378192340502a5cfc8301396d6e9cbf97b8bb8b9edb02e",
+      "bytes": 5278
+    },
+    "build/acquisition-release/inputs/stock-core/catalog.json": {
+      "sha256": "ba356d41b462f33b39b302a85527223d826b0b06c7e8e4381162adcb472f63e9",
+      "bytes": 1473
+    },
+    "build/acquisition-release/inputs/stock-core/responses/C37593.json": {
+      "sha256": "4f1c8b2722fca8eba52cac7446f41552aeef61d08a036b832f5b493e8105a09d",
+      "bytes": 5425
+    },
+    "build/acquisition-release/inputs/stock-core/responses/C404027.json": {
+      "sha256": "d61caf692d6ebdb9a883796bca50ee72e735fffb0c8abff12bf50842ff9ec66b",
+      "bytes": 5096
+    },
+    "build/acquisition-release/inputs/stock-filter/catalog.json": {
+      "sha256": "087a67f7a8bd2a151c0a2c2f2a8e2e8ecae9f80154d70705f39c43a729b19403",
+      "bytes": 959
+    },
+    "build/acquisition-release/inputs/stock-filter/responses/C85973.json": {
+      "sha256": "aac8e794fcba92dbe00f3de924dfbe6746df1ed14932d5dfe452d4e4f9f31ce8",
+      "bytes": 4218
+    },
+    "build/acquisition-release/inputs/stock-power-refined/catalog.json": {
+      "sha256": "b29999c226f54f4e8c41394363ee448c7e5e2d079a49993fe8fa8e6b4e7e074b",
+      "bytes": 1423
+    },
+    "build/acquisition-release/inputs/stock-power-refined/responses/C31850.json": {
+      "sha256": "5806a581641caf81098cbf779562388bb41961f41d6b2481dbb3d8e12e6b2b79",
+      "bytes": 4466
+    },
+    "build/acquisition-release/inputs/stock-power-refined/responses/C83152.json": {
+      "sha256": "8b97649d6d2b1949903acc5b32eef714860b00528b1cc06eb4bb8bc248e10574",
+      "bytes": 4500
+    },
+    "build/acquisition-release/inputs/stock-regulator-qualified/catalog.json": {
+      "sha256": "a82363648da7c1524f58c1985946c562f822f69ba74c337373402633224353c1",
+      "bytes": 980
+    },
+    "build/acquisition-release/inputs/stock-regulator-qualified/responses/C2862740.json": {
+      "sha256": "81da3d6d5d1729ec0683bb8ee9ea3352a027ae27449f9612299854137a2b4321",
+      "bytes": 5197
+    },
+    "build/acquisition-release/inputs/stock-resistor-release/catalog.json": {
+      "sha256": "9b00191dd3c0027a126ff61ac2339341a7d9975baf7b9ad1e41d40c1c9a4078b",
+      "bytes": 1903
+    },
+    "build/acquisition-release/inputs/stock-resistor-release/responses/C114065.json": {
+      "sha256": "81074a44c74e63d5a36344a0ec4f0418941e592d123dd22ce31a2dd4fa069aee",
+      "bytes": 4420
+    },
+    "build/acquisition-release/inputs/stock-resistor-release/responses/C114662.json": {
+      "sha256": "1432115dddc7816a6f03b16785fe0153b08ac0cd20c644440954a8d3a7df8ecb",
+      "bytes": 4423
+    },
+    "build/acquisition-release/inputs/stock-resistor-release/responses/C22548.json": {
+      "sha256": "be6cc686df929a0a8049b606a7ccdaa164ac8a7a63eaecda2f4afd9168ef0509",
+      "bytes": 4407
+    },
+    "build/acquisition-release/inputs/stock-support/catalog.json": {
+      "sha256": "dced7e1988d904414e114b21f57f75d0a9a76c46faa350d15e22f3e4ecc5bac2",
+      "bytes": 3456
+    },
+    "build/acquisition-release/inputs/stock-support/responses/C117956.json": {
+      "sha256": "e4f28aea97ed01f0d4b94ddfa418d88d24b7cd3d139c9bf472475599f88b5679",
+      "bytes": 4208
+    },
+    "build/acquisition-release/inputs/stock-support/responses/C14663.json": {
+      "sha256": "f0ddbe87e8d6776352e7ff6dedd269568c272dcf305393baba2897713b3d3e4a",
+      "bytes": 4178
+    },
+    "build/acquisition-release/inputs/stock-support/responses/C15850.json": {
+      "sha256": "775b0c0781847ea6f2665a1c67b993452e9218fcaff3f0d56c4fbabcb220091a",
+      "bytes": 8195
+    },
+    "build/acquisition-release/inputs/stock-support/responses/C21190.json": {
+      "sha256": "7110e85842c43e1f32518ad7a64a67f0ce0ec81ef1035bf415932ec8d46952e1",
+      "bytes": 4465
+    },
+    "build/acquisition-release/inputs/stock-support/responses/C4190.json": {
+      "sha256": "f5faec446c45e196ce8052a1d86bed1466dd1b7f5f72c4b1dcd7d7d36310e4ae",
+      "bytes": 17522
+    },
+    "build/acquisition-release/inputs/stock-support/responses/C64885.json": {
+      "sha256": "38a85ef9f088e18478594d5d4a3cf857ff539213a944f119d5be33e781d2e45d",
+      "bytes": 4544
+    },
+    "build/acquisition-release/inputs/symbol-captures.json": {
+      "sha256": "1823ff6ce155b94ba2c266687e338175f1e2e295301fccc6908f867ead94b6b4",
+      "bytes": 9591
+    },
+    "build/agent545/board-config-portfolio.json": {
+      "sha256": "2c34cbb527fde4e5ea528bdf87b3ee28c800ec70525a5d90efb02e6b58301c8b",
+      "bytes": 1315
+    },
+    "build/agent545/inputs/board.kicad_pcb": {
+      "sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7",
+      "bytes": 123905
+    },
+    "build/agent545/inputs/board.kicad_pro": {
+      "sha256": "9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395",
+      "bytes": 1059
+    },
+    "build/agent545/inputs/groups.json": {
+      "sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8",
+      "bytes": 1759
+    },
+    "build/agent545/inputs/intent.json": {
+      "sha256": "320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c",
+      "bytes": 16164
+    }
+  }
+}

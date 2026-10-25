@@ -73,10 +73,10 @@ def _runtime_files(checkpoint):
     return files
 
 
-def pcbnew_extension(*, checkpoint=None):
+def pcbnew_extension(*, checkpoint=None, python='/usr/bin/python3'):
     """Return (path, diagnostic) for KiCad's native _pcbnew extension module."""
     # pcbnew shares a large native extension rather than a standalone CLI.
-    argv = ['/usr/bin/python3', '-c', 'import _pcbnew; print(_pcbnew.__file__)']
+    argv = [python, '-c', 'import _pcbnew; print(_pcbnew.__file__)']
     if checkpoint is None:
         probe = subprocess.run(argv, capture_output=True, text=True, timeout=15)
         return (probe.stdout.strip(), '') if probe.returncode == 0 else (None, probe.stderr)
@@ -112,10 +112,13 @@ DOCTOR_PROBES = {"kicad-cli": ["kicad-cli", "version"], "ngspice": ["ngspice", "
 HARNESS_PROBES = ("claude",)
 
 
-def doctor(checks_only=False):
+def doctor(checks_only=False, router_checkout=None):
     """Probe versions and hash the probed binaries; real runs establish integration."""
     checks, skipped = {}, {}
     probes = dict(DOCTOR_PROBES)
+    # Package entry points may run in a venv that cannot see system pcbnew.
+    probes['python3'] = [sys.executable, '--version']
+    probes['pcbnew'] = [sys.executable, '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())']
     from .placement_rust_runtime import resolve_executable
     from .placement_runtime import PlanningProcessError
     try:
@@ -137,9 +140,9 @@ def doctor(checks_only=False):
             continue
         record = {"path": command[0] if name == "agent-ee-placement" else shutil.which(command[0]), "exit_code": p.returncode,
                   "version_output": p.stdout.strip(), "diagnostics": p.stderr.strip()}
-        # The hashed file is the one runtime_files() fingerprints in each result.
+        # Bind the version/import probe to the binary used by this interpreter.
         try:
-            record["binary"] = pcbnew_extension()[0] if name == "pcbnew" else record["path"]
+            record["binary"] = pcbnew_extension(python=sys.executable)[0] if name == "pcbnew" else record["path"]
             record["sha256"] = digest(record["binary"]) if record["binary"] else None
         except (OSError, subprocess.TimeoutExpired) as exc:
             record.update(sha256=None, hash_error=str(exc))
@@ -171,7 +174,21 @@ def doctor(checks_only=False):
             checks["kicad-happy"] = {"path": analyzer, "exit_code": 0, **installed}
         except (OSError, ValueError, KeyError, TypeError) as exc:
             checks["kicad-happy"] = {"path": analyzer, "error": str(exc)}
+    if router_checkout is not None:
+        from .routing_adapter import preflight
+        try:
+            router = preflight(router_checkout)
+            checks['kicad-route'] = {**router, 'exit_code': 1 if router['problems'] else 0,
+                                    'sha256': router['executable_sha256']}
+        except (OSError, ValueError) as exc:
+            checks['kicad-route'] = {'path': str(router_checkout), 'error': str(exc)}
     report = {"prerequisites": checks,
+        "runtime": {"executable": sys.executable, "version": sys.version,
+                    "prefix": sys.prefix, "base_prefix": sys.base_prefix,
+                    "system_python": '/usr/bin/python3',
+                    "uses_system_python": (Path(sys.executable).resolve() == Path('/usr/bin/python3').resolve()
+                                           and sys.prefix == sys.base_prefix),
+                    "launcher": sys.argv[0], "cli_source": __file__},
         "note": "Presence/version probes do not establish engineering integration. Run a declared scope."}
     if skipped:
         report["skipped"] = skipped
@@ -928,6 +945,8 @@ def main(argv=None):
     doctor_parser = sub.add_parser("doctor", help="inspect installed prerequisites; real runs establish integration")
     doctor_parser.add_argument("--checks-only", action="store_true",
                                help="probe only the native check toolchain, not reviewer harnesses")
+    doctor_parser.add_argument('--router-checkout', type=Path,
+                               help='also verify the pinned routing checkout and installed backend')
     bench = sub.add_parser("bench-review", help="capture bench evidence and rerun calibrated checks/reviews")
     bench.add_argument("run")
     bench.add_argument("report")
@@ -1031,7 +1050,7 @@ def main(argv=None):
             print(json.dumps(report, indent=2) if args.machine else render_diagnosis(report))
             return 0
         if args.command == "doctor":
-            return doctor(checks_only=args.checks_only)
+            return doctor(checks_only=args.checks_only, router_checkout=args.router_checkout)
         if args.command in ('bench-status', 'bench-recover', 'bench-launch'):
             from .bench_transactions import recover, status
             value = (status(args.path) if args.command == 'bench-status' else

@@ -1,9 +1,13 @@
 #!/usr/bin/python3
 """Run the source checkout using the system Python that provides KiCad bindings."""
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+source = str(Path(__file__).resolve().parents[1] / "src")
+sys.path.insert(0, source)
+# Native producers start fresh Python processes to avoid KiCad's project cache.
+os.environ['PYTHONPATH'] = source + (os.pathsep + os.environ['PYTHONPATH'] if os.environ.get('PYTHONPATH') else '')
 from agent_ee.cli import main
 
 raise SystemExit(main())
