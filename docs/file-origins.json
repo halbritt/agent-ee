@@ -4242,6 +4242,16 @@
         "AE"
       ],
       "note": "Original board-specific native geometry model, parser, declared engineering parameters and documentation; no vendor model, library or datasheet copied."
+    },
+    {
+      "paths": [
+        "fixtures/recovery/inputs.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-519 retained-input inventory: file paths, byte counts, SHA-256 hashes, article identities and access restrictions only. Names externally retained acquisition and esp_prog inputs without copying design, library, model, datasheet or supplier-response bytes. No redistribution clearance or upstream licence claim is granted by this inventory."
     }
   ]
 }
