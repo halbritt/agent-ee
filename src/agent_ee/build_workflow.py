@@ -529,8 +529,8 @@ def run(plan_path, out, *, resume=False, through='package'):
     if out == source or source in out.parents:
         raise ValueError('build output must be outside the source bundle')
     source_files = _source_inventory(source, plan)
-    # Established preflight order: unsupported placement intent is refused before any other
-    # source file is opened, so a rejected intent never reaches the map schema read or output creation.
+    # Preserve intent preflight before map-schema validation and output creation.
+    # The source inventory above has already read the source files.
     from .placement_job import validate_intent
     validate_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
                     strict_json((source / plan['placement']['groups']).read_bytes()))
