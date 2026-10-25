@@ -65,7 +65,10 @@ by the band convention and never numbers the terminals.
    It does not rest on the numeric pin 1 or on the 0° frame.
 3. **Residual limitation.** No manufacturer drawing binds the band to a
    numbered terminal, so the supplier mapping relies on the LCSC-contributed
-   drawing having placed the band on the physically banded end. The chief
+   drawing having placed the band on the physically banded end. The symbol
+   bar and the package band come from that same contributed CAD, so their
+   agreement is self-consistency, not independent supplier corroboration
+   (agent-565's inspection, accepted by the chief). The chief
    ruled this belongs in the software-assessment limits, with supplier preview
    pending; it is not an extra mandatory requirement where the manufacturer
    uses a band convention. Nothing here proves the assembled orientation.
