@@ -1,0 +1,48 @@
+{
+  "at": "2026-10-25T16:52:43.321973-07:00",
+  "inspected_main": "324dbb1dcb67338408b9defffc06955c41aec810",
+  "items": [
+    {
+      "identifier": "AGENTEE-479",
+      "id": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": null,
+      "description_read_back": true,
+      "assignees_preserved": true
+    },
+    {
+      "identifier": "AGENTEE-521",
+      "id": "386dad3e-21a7-47a8-b73e-56ab70bf5a9b",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "description_read_back": true,
+      "assignees_preserved": true
+    },
+    {
+      "identifier": "AGENTEE-515",
+      "id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "description_read_back": true,
+      "assignees_preserved": true
+    },
+    {
+      "identifier": "AGENTEE-523",
+      "id": "8409122b-1c6f-4e20-9f74-343a2251942f",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "description_read_back": true,
+      "assignees_preserved": true
+    },
+    {
+      "identifier": "AGENTEE-524",
+      "id": "2c449a98-3726-4587-95c3-7d5a3c0ecbb0",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "description_read_back": true,
+      "assignees_preserved": true
+    }
+  ],
+  "m1_complete": false,
+  "telemetry_pod": "owner-held"
+}
