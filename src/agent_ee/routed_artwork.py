@@ -294,6 +294,8 @@ def write_scope(before, after, targets=None, field_poses=None):
     With a field-pose request, exactly the requested fields change, each from
     its bound source pose to its exact requested pose (an angle change only
     where the request names one), and every other field token stays exact.
+    Supported UUID-bearing siblings may reorder inside the same board or
+    footprint parent; unknown syntax keeps its exact position and spelling.
     """
     from .silk_artwork import DECLARATION, movable_names
     targets = normalize_targets(targets)
@@ -306,7 +308,35 @@ def write_scope(before, after, targets=None, field_poses=None):
     for data, raw in zip((before, after), raws):
         _writer_escapes(data, raw)
     moves = []
-    def compare(b, a, rb, ra, names=frozenset(), owner=None, fp_uid=None):
+    def sibling_pairs(b, a, rb, ra, scope):
+        kinds = ({'footprint'} | {k for k in GRAPHICS if k.startswith('gr_')}
+                 if scope == 'board' else
+                 {'property'} | {k for k in GRAPHICS if k.startswith('fp_')})
+        def keyed(n):
+            if (not isinstance(n, list) or not n or not isinstance(n[0], str)
+                    or n[0] not in kinds):
+                return None
+            uid = children(n, 'uuid')
+            return (n[0], uid[0][1]) if uid else None
+        old = {i: key for i, n in enumerate(b) if (key := keyed(n)) is not None}
+        new = {i: key for i, n in enumerate(a) if (key := keyed(n)) is not None}
+        if old.keys() != new.keys() or set(old.values()) != set(new.values()):
+            raise ValueError('artwork sibling identity or parent changed')
+        positions = {key: i for i, key in new.items()}
+        for i, (n, raw) in enumerate(zip(b, rb)):
+            if i in old:
+                j = positions[old[i]]
+                yield n, a[j], raw, ra[j]
+            elif raw != ra[i]:
+                if isinstance(n, list) and n and isinstance(n[0], list):
+                    raise ValueError('artwork comparison refuses list-headed node')
+                # Legacy nodes without a UUID retain positional comparison only.
+                if isinstance(n, list) and n and n[0] in kinds:
+                    yield n, a[i], raw, ra[i]
+                else:
+                    raise ValueError('non-silk board token changed')
+
+    def compare(b, a, rb, ra, names=frozenset(), owner=None, fp_uid=None, scope='board'):
         if rb == ra:
             return
         if not isinstance(rb, list) or not isinstance(ra, list) or rb[:1] != ra[:1]:
@@ -314,7 +344,7 @@ def write_scope(before, after, targets=None, field_poses=None):
         # A list-headed node is not KiCad syntax; refuse it typed, not by hashing it.
         if not isinstance(b[0], str):
             raise ValueError('artwork comparison refuses list-headed node')
-        if b[0] == 'footprint':
+        if scope == 'footprint':
             if any(len(p) < 2 for p in children(b, 'property')):
                 raise ValueError('artwork comparison refuses nameless property')
             decl = [p[2:3] for p in children(b, 'property') if p[1:2] == [DECLARATION]]
@@ -363,9 +393,12 @@ def write_scope(before, after, targets=None, field_poses=None):
             return
         if len(b) != len(a):
             raise ValueError('board item added or removed')
-        for old, new, rold, rnew in zip(b, a, rb, ra):
+        if scope not in ('board', 'footprint'):
+            raise ValueError('non-silk board token changed')
+        for old, new, rold, rnew in sibling_pairs(b, a, rb, ra, scope):
             if rold != rnew:
-                compare(old, new, rold, rnew, names, owner, fp_uid)
+                child_scope = 'footprint' if scope == 'board' and old[0] == 'footprint' else 'item'
+                compare(old, new, rold, rnew, names, owner, fp_uid, child_scope)
     if any(r[0] != 'kicad_pcb' for r in roots):
         raise ValueError('artwork requires saved boards')
     # Reject duplicate identities even on otherwise unchanged subtrees.
