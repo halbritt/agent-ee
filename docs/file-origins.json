@@ -4247,6 +4247,16 @@
     },
     {
       "paths": [
+        "fixtures/group-rails/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original hash-pinned group-rails sidecars for the retained esp_prog and acquisition designs: net names, group names, source hashes and contract evidence text only; no CAD, netlist or supplier data copied."
+    },
+    {
+      "paths": [
         "fixtures/acquisition-typed/"
       ],
       "kind": "owned-fixture",

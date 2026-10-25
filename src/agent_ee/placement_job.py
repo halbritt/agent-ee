@@ -605,10 +605,16 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
     return captured
 
 
-def capture(board_path, intent, groups, *, rails=None, clock=None, cancel_dir=None):
-    """Capture native geometry and settings without inheriting cached defaults."""
+def capture(board_path, intent, groups, *, rails=None, groups_sha256=None, clock=None, cancel_dir=None):
+    """Capture native geometry and settings without inheriting cached defaults.
+
+    ``rails`` is a validated group-rails sidecar and ``groups_sha256`` the digest
+    of the exact groups bytes it binds; both are optional and never alter the
+    intent or groups documents.
+    """
     validate_intent(intent, groups)
-    captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups, 'rails': rails},
+    captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups, 'rails': rails,
+                                                     'groups_sha256': groups_sha256},
                             clock=clock, cancel_dir=cancel_dir)
     try:
         problem, record = captured['problem'], captured['record']
@@ -620,14 +626,15 @@ def capture(board_path, intent, groups, *, rails=None, clock=None, cancel_dir=No
     return problem, record
 
 
-def _rails(rails, board_bytes, groups, nets):
+def _rails(rails, board_bytes, groups, nets, groups_sha256=None):
     """The canonical rails for this capture: the validated sidecar bound to this board, or none."""
     from . import group_rails
     if rails is None:
         return dict(group_rails.EMPTY)
+    if groups_sha256 is None:
+        raise JobRefusal('group rails need the sha256 of the exact groups bytes they bind')
     try:
-        return group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes),
-                                    groups_sha256=sha256_bytes(canonical(groups)) if groups.get('_sha256') is None else groups['_sha256'],
+        return group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=groups_sha256,
                                     group_names={g['name'] for g in groups['groups']}, nets=nets)
     except ValueError as exc:
         raise JobRefusal(str(exc)) from exc
@@ -675,7 +682,7 @@ def _check_dialect_native(board, facts, record):
     return checks
 
 
-def _capture_native(board_path, intent, groups, rails=None):
+def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
     """Native capture once; returns (problem without search section, capture record)."""
     validate_intent(intent, groups)
     from . import placement_intent
@@ -784,7 +791,7 @@ def _capture_native(board_path, intent, groups, rails=None):
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
                'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups['groups']],
-               'rails': _rails(rails, before, groups, {p.GetNetname() for fp in board.GetFootprints() for p in fp.Pads()}),
+               'rails': _rails(rails, before, groups, {p.GetNetname() for fp in board.GetFootprints() for p in fp.Pads()}, groups_sha256),
                'proximity': proximity,
                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}}
     if dialect:
@@ -1658,7 +1665,6 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                      group_names={g['name'] for g in groups['groups']})
             except ValueError as exc:
                 raise JobRefusal('inputs.group_rails: ' + str(exc)) from exc
-            groups['_sha256'] = sha256_bytes(groups_bytes)
         plane_bytes = None
         plane_ids = ()
         if 'planes' in config['inputs']:
@@ -1717,7 +1723,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # as before, so that removing it can resume the same job. New cancellation
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
-        problem, record = capture(board_path, intent, groups, rails=rails, clock=clock, cancel_dir=capture_cancel)
+        problem, record = capture(board_path, intent, groups, rails=rails, groups_sha256=sha256_bytes(groups_bytes),
+                                  clock=clock, cancel_dir=capture_cancel)
         for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
             verified_input(config['inputs'][name], name)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
@@ -2098,7 +2105,8 @@ def execute(args, parser):
         request = json.load(sys.stdin)
         try:
             if args.placement_command == '_capture':
-                problem, record = _capture_native(args.board, request['intent'], request['groups'], request.get('rails'))
+                problem, record = _capture_native(args.board, request['intent'], request['groups'], request.get('rails'),
+                                                  request.get('groups_sha256'))
                 result = {'problem': problem, 'record': record}
             elif args.placement_command == '_check_locality':
                 from .placement_probe import extract
