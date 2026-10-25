@@ -9,3 +9,4 @@ accepted.
 | --- | --- | --- | --- |
 | 2026-10-25 | `404eba0e` | [Independent audit by agent-558 (Claude): intent-to-manufacturing shortcomings and corrective plan](2026-10-25-independent-audit.md) | [Workflow trace](2026-10-25-workflow-trace.md), [KRT coverage](2026-10-25-krt-coverage.md), [Validators and engineering correctness](2026-10-25-engineering-validators.md), [Process and convergence](2026-10-25-process-convergence.md) |
 | 2026-10-25 | `404eba0e` | [Independent audit by agent-557 (Argon)](2026-10-25-independent-audit-agent-557.md) | Single report |
+| 2026-10-25 | `404eba0e` | [Independent audit by agent-556 (Codex)](2026-10-25-independent-audit-agent-556.md) | Fresh constraint probes, workflow and KRT assessment, corrective plan; evidence locators in the report |
