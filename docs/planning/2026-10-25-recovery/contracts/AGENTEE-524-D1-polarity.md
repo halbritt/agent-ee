@@ -112,9 +112,9 @@ netlist stays `polarity_unknown`, and the resulting row exposes
   and a stale record is refused at capture.
 - Existing `tests.test_cpl_rotation` (28) unchanged.
 - Real acquisition replay: below, retained under
-  `~/.cache/agent-audits/agent-ee-566-20261025/acq-partb-3-polarity/`.
+  `~/.cache/agent-audits/agent-ee-566-20261025/acq-partb-4-polarity/`.
 
-## Real acquisition replay with the evidence record (`acq-partb-3-polarity`)
+## Real acquisition replay with the evidence record (`acq-partb-4-polarity`)
 
 Inputs: `cpl-inputs-rev3` = rev2 plus `polarity/C83152.polarity.json`
 (sha256 `23a0b7986e20c676c1ada1b5c09647743eb854b987b320104be741137468e851`); scope = the part B
@@ -122,7 +122,7 @@ scope plus `polarity_evidence: ["cpl/polarity/C83152.polarity.json"]`
 (sha256 `b4dcbbc9e0bce52ff13660f75da73f63615fdd65eab1c27ac5bb6acda175f5cf`).
 Image `sha256:6533216670ed0bbfabf5dc9d535ce25d59a35bb6c352dda2f99937484b958e7e`,
 `--network none`, checkout and retained build read-only; the v7 candidate
-inputs, board and profile unchanged. Candidate `278cfbef35d263c626761da4ef0996aab902421149427ad15e2af66ff20117e5`; 59 s.
+inputs, board and profile unchanged. Candidate `eeb0917a9830103c5955658f6ce31a14c70ea48252cbb903d4470d11acea4f5b`. An earlier identical run (`acq-partb-3-polarity`, candidate `278cfbef…`) used the record before the distance wording was corrected; its outcome was the same.
 
 - All 40 checks `ok` with `pass`/`info`. `cpl_rotation` passes with complete
   coverage: 5 corrected, 12 unmatched, `PREVIEW_REQUIRED`.
@@ -133,10 +133,10 @@ inputs, board and profile unchanged. Candidate `278cfbef35d263c626761da4ef0996aa
   is `complete` with no unassessed rows: corrected J1, J2, J3, U1, U2;
   native_supported C1, C2, C3, C4, C5, D1, R1, R2, R3, R4, R5, R6; anchor changed for J1, J2, J3.
   `supplier_confirmation` stays `pending_preview` with 17 preview obligations.
-- Hashes: `checks/cpl.json` `ad44f4f35de377b2893fe5324e734e77566abd2e84d830a5f347894e4f6b8346`,
-  `checks/fab.json` `79f31cfd57b27fe613fb0f299a6c0d04dde17ab82d42bffc8c51471ee46165ac`,
-  `work/cpl/cpl-rotation.json` `4e1c612437596f99fcfa8033608711245c196a5b392910a2b073ed932ad12366`,
-  `candidate.json` `5414d900eef6ff7160f208a12749394fb6ab9d617c20f8de12926e3391086886`.
+- Hashes: `checks/cpl.json` `c46d46c4810b3e72e46668bafc4bc9d92ba89c85dd18675a042efbcf3b41f82e`,
+  `checks/fab.json` `8b2280df6d17348fd94f649d7996b1022d2018fefac940079b9e7609b8b1a06a`,
+  `work/cpl/cpl-rotation.json` `34f482e4fc127f282c807192d430b758d6b4623571e026b90ffa91b547821a19`,
+  `candidate.json` `8eeaa00cf640f73ba5f128e6cbf796fe02f4ab0f8bb0c6080622ae2332f79773`.
 
 This is a software assessment under `jlcpcb-cpl-software/1` with the stated
 supplier-fidelity limitation; it is not supplier confirmation or proof of the
