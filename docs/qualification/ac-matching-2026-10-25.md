@@ -1,16 +1,12 @@
 # Series-part differential matching qualification — 2026-10-25
 
-Status: paused at the owner's request. Router
-`c4af095ed07593b63d7886c139fcb7e5c2e774f4` is integrated and pushed, with
-263 distinct required cases passing and no skips. The initial broad run lacked
-Freerouting in the worktree; its affected case passed after restoring that
-prerequisite. All initial failures remain in the evidence.
-
-Consumer integration is committed as unfinished work. Its five new public/build
-cases and the existing 54-module, 1,008-case pin gate have not executed: the image
-build and queued gate were stopped on the owner's pause. This record does not
-close the capability. The accepted 17-part acquisition project and manufacturing
-package remain unchanged.
+Status: qualified through the normal public placement command and the build
+placement producer. Router `c4af095ed07593b63d7886c139fcb7e5c2e774f4`
+is integrated and pushed. All 263 required router cases and 1,013 distinct
+required consumer cases have passing evidence, with no skips. The consumer
+coverage comprises the five new feature cases and all 1,008 prior pin regressions
+across 55 modules. The accepted 17-part acquisition project and manufacturing
+package remain unchanged; this capability does not complete the whole-system goal.
 
 `router.ac_match` declares complete chains by their populated series-part
 references, tolerance and allowed tuning amplitude. The normal placement command
@@ -90,6 +86,52 @@ Evidence is retained under `build/ac-matching`, including the original failures,
 The earlier projectless upstream example had width-rule failures; a partially
 generated initial article was also invalid. Both are preserved and explicitly
 excluded from qualification.
+
+## Native consumer results
+
+The public job and real build placement producer each measure P = N =
+62.3307 mm: composed skew is 0.0000 mm plus a conservative 0.0002 mm rounding
+bound, within the requested 0.1 mm. Both have zero opens. The build candidate
+has zero native DRC findings and preserves the exact project, rules and local
+footprint libraries. The standalone placement output has four explicit
+`lib_footprint_issues` warnings for its absent library table; those warnings
+remain recorded. The build producer carries the libraries and clears them.
+This PCB-only feature article has no schematic, so native schematic parity
+does not execute and is not claimed. Native connectivity, geometry and
+composed copper-path measurements establish the bounded routing result.
+
+The insufficient-amplitude case remains connected but has 0.1162 mm skew;
+the public command reports `verification_failed` and publishes no routed
+incumbent. Changed-request resume refuses without altering its checkpoint.
+Malformed chain declarations and negative controls refuse. NaN is rejected by
+the existing canonical-JSON guard before a job directory is created.
+
+The resumed full gate initially passed 999 cases. Its invocation omitted the
+retained external `esp_prog` input and three historical routing receipts, leaving
+one failed and twelve skipped prerequisite-dependent cases. Original inputs were
+copied and hash-verified; all thirteen affected cases passed on recheck. The new
+NaN test also expected a later structured refusal instead of the existing earlier
+JSON rejection. It now checks that early rejection and a valid-JSON negative
+tolerance, and passed its exact recheck. No production code or engineering
+threshold changed during this consumer qualification. All fourteen initial
+problems and all unaffected passing cases are retained. Current-pin documentation
+was corrected before its scheduled contract checks ran.
+
+The supported environment reports KiCad 10.0.7, Python 3.12.3 and ngspice 47.
+The newly built image is `agent-ee:exec-b446111f323d3d93`, image SHA-256
+`6533216670ed0bbfabf5dc9d535ce25d59a35bb6c352dda2f99937484b958e7e`.
+The exact router code map contains 315 files. Version output, container exit,
+case-by-case results and tested/integrated source hashes are retained in
+`build/ac-matching/consumer-gate-closure.json` and its referenced files.
+
+| Saved native output | PCB SHA-256 |
+| --- | --- |
+| `build/ac-matching/public/positive/final-a1/board.kicad_pcb` | `85f1ba5fa0eb4402f692406103658c952ca9c990189f0cd75a888d11b90a3287` |
+| `build/ac-matching/public/build-stage/placement-routing/candidate/chain.kicad_pcb` | `c37286d7818e5e6cd9b43dbe3c066c76d407ea03d8e9355aa7c66e47b03eb65f` |
+
+The earlier router qualification also retained a missing-Freerouting prerequisite
+failure and its successful exact-case recheck. Raw router outputs, original
+benchmark inputs and consumer outputs are archived outside the removed worktrees.
 
 ## Qualification and remaining scope
 

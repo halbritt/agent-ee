@@ -91,13 +91,19 @@ class AcMatchingJobTests(unittest.TestCase):
     def test_invalid_chain_request_cannot_start(self):
         for index, value in enumerate((None, dict(chains=[], tolerance_mm=.1, amplitude_mm=3),
                 dict(chains=[['C1', 'C1']], tolerance_mm=.1, amplitude_mm=3),
-                dict(chains=[['C1', 'C2']], tolerance_mm=float('nan'), amplitude_mm=3))):
+                dict(chains=[['C1', 'C2']], tolerance_mm=-.1, amplitude_mm=3))):
             with self.subTest(value=value):
                 config = copy.deepcopy(self.config)
                 config['router']['ac_match'] = value
                 report = job.run_job(config, self.root / f'invalid-{index}')
                 self.assertEqual(report['status'], 'refused', report)
                 self.assertIn('router.ac_match', report['reason'])
+        config = copy.deepcopy(self.config)
+        config['router']['ac_match']['tolerance_mm'] = float('nan')
+        out = self.root / 'nonfinite-json'
+        with self.assertRaisesRegex(ValueError, 'not JSON compliant'):
+            job.run_job(config, out)
+        self.assertFalse(out.exists())
 
     def test_build_producer_preserves_native_chain_and_libraries(self):
         out = self.root / 'build-stage'

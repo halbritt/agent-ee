@@ -1744,3 +1744,17 @@ when rebuilding meanders; differing-class native qualification caught and repair
 use of the run-wide width. All 249 distinct router cases pass with zero skips.
 Normal agent-ee job/build qualification and its mandatory consumer pin gate are
 recorded separately in the inter-pair qualification evidence.
+
+
+### Explicit AC-coupled differential chains — 2026-10-25
+
+Pin `c4af095ed07593b63d7886c139fcb7e5c2e774f4` carries explicit series-part
+chains through `router.ac_match`. Native topology preflight, preservation of
+existing sections and independent final composed-path measurement are required.
+The public job and real build producer pass the 0.1 mm bound with zero opens;
+the build candidate also has zero DRC findings and retains its local libraries.
+Connected-but-unmatched output and changed-request resume reject. All 1,013
+required consumer cases in 55 modules have passing evidence with no skips.
+See the [qualification record](qualification/ac-matching-2026-10-25.md) for the
+corrected gate prerequisites and test expectation, exact source/artifact binding, matched stock result
+and the limits of this geometric qualification.
