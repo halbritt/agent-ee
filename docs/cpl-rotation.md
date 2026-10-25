@@ -25,6 +25,9 @@ Parameters are exactly:
  "source_tolerance_nm": "200"}
 ```
 
+An optional `"polarity_evidence": ["design/polarity/C910020.polarity.json"]` lists captured
+component polarity records (see [polarized parts](#polarized-parts-pin-1-polarity-sources-agentee-524)).
+
 - `export_check` names an earlier `fab_export` check. Its result must be `ok`,
   and its sealed `fab/manifest.json` must still verify against the staging
   tree. The manifest must be bound to the captured board digest. Designators in
@@ -260,6 +263,40 @@ KiCad 10.0.7 footprints, without committing those bytes. SOIC-8 supplier
 footprints classify as `bottomside_left` and KiCad's SOIC-8 as `leftside_top`,
 which gives 270. A KiCad 1x02 vertical header (`topside_right`) against a
 horizontal supplier header (`leftside_top`) gives 90.
+
+## Polarized parts: pin-1 polarity sources (AGENTEE-524)
+
+For `D*`/`LED*` designators the board pin-1 function and the supplier symbol
+pin-1 name are cross-checked. Each side's source is recorded in the row's
+`polarity` record (`board_basis`, `supplier_basis`, `evidence`):
+
+- **Board.** The pad's `pinfunction` when present (`board_pad_pinfunction`).
+  When the pad carries none, the canonical libpart pin name (`K`/`A`) of the
+  export's sealed native XML netlist (`work/<netlist>/design.xml`, the same
+  prerequisite `fab_export` uses) is read instead (`sealed_netlist_libpart`),
+  but only when the netlist binds the row to the same LCSC as the BOM and its
+  pin-1 net equals the sealed probe's pad-1 net. A pad `pinfunction` that
+  contradicts the netlist, or a pad-1 net that differs from the netlist pin-1
+  net, is a `polarity_conflict` defect. Node `pinfunction` text is checked
+  against `<name>_<num>` and never parsed on its own.
+- **Supplier.** The captured symbol's pin-1 name (`supplier_symbol_pin_name`).
+  When it names no polarity, an optional captured
+  `agent-ee.component-polarity/1` record declared in `polarity_evidence` may
+  supply it (`supplemental_component_polarity_evidence`). The record names the
+  LCSC, MPN and manufacturer, the exact supplier capture digest, the pin→
+  polarity map, the captured manufacturer source (path, sha256, page, locator,
+  statement), the native package and symbol feature ids that carry the
+  convention, a rationale of at least 80 characters and the remaining
+  supplier drawing-fidelity limitation. Capture and the check verify every
+  digest and feature id against the same captured inputs; a malformed, stale
+  or absent-feature record refuses the check. The record is interpreted
+  component data, not a per-reference override: it is used only where the
+  symbol names nothing, a named symbol polarity that contradicts it is a
+  `polarity_conflict`, and an MPN that differs from the BOM Partnumber or the
+  netlist stays `polarity_unknown`.
+
+Supplier preview remains pending whatever the source; this evidence settles
+the pin-1 polarity facts, not the assembled orientation.
 
 ## Report and outcomes
 

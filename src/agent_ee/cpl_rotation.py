@@ -53,6 +53,11 @@ POLICY_SCHEMA_VERSION = 1
 PREDICATES = ['cpl-rotation:pad-centroid-midpoint', 'cpl-rotation:policy', 'cpl-rotation:pin1-frame']
 PARAMS = frozenset(('export_check', 'geometry_check', 'policy', 'supplier_footprints',
                     'source_tolerance_nm'))
+# Optional captured agent-ee.component-polarity/1 records (AGENTEE-524 D1): supplemental,
+# source-bound supplier polarity for captures whose symbol names no polarity.
+OPTIONAL_PARAMS = frozenset(('polarity_evidence',))
+BOARD_BASES = ('board_pad_pinfunction', 'sealed_netlist_libpart')
+SUPPLIER_BASES = ('supplier_symbol_pin_name', 'supplemental_component_polarity_evidence')
 POLICY_KEYS = frozenset(('schema_version', 'policy_id', 'provenance', 'footprint_rules',
                          'component_overrides'))
 OFFSET_KEYS = frozenset(('offset_x_mm', 'offset_y_mm'))
@@ -89,9 +94,15 @@ DEFECTS = frozenset(('reflection', 'rotation_conflict', 'polarity_conflict'))
 # ------------------------------------------------------------------ parameters
 
 def validate_params(params):
-    if not isinstance(params, dict) or set(params) != PARAMS:
+    if not isinstance(params, dict) or not PARAMS <= set(params) <= PARAMS | OPTIONAL_PARAMS:
         raise ValueError('cpl_rotation params must be exactly {export_check, geometry_check, policy, '
-                         'supplier_footprints, source_tolerance_nm}')
+                         'supplier_footprints, source_tolerance_nm} with optional polarity_evidence')
+    evidence = params.get('polarity_evidence', [])
+    if not isinstance(evidence, list) or not evidence or len(set(map(str, evidence))) != len(evidence):
+        if 'polarity_evidence' in params:
+            raise ValueError('polarity_evidence must be a nonempty list of distinct captured record paths')
+    for path in evidence:
+        _path(path, 'polarity evidence')
     for key in ('export_check', 'geometry_check'):
         if not isinstance(params[key], str) or not params[key]:
             raise ValueError(f'{key} must name an earlier check')
@@ -325,12 +336,73 @@ def _row_numbers(row):
     return Decimal(x), Decimal(y), Decimal(rot)
 
 
-def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance_nm):
+def read_bom_partnumbers(text):
+    """{ref: Partnumber} from the export BOM, the manufacturer part each row was bound to."""
+    reader = csv.reader(io.StringIO(text))
+    if next(reader, None) != BOM_COLUMNS:
+        raise ValueError('export bom.csv header is not the JLC BOM header')
+    numbers = {}
+    for line in reader:
+        if len(line) != len(BOM_COLUMNS):
+            raise ValueError(f'export bom.csv row {line} is malformed')
+        for ref in line[0].split(','):
+            numbers[ref] = line[5]
+    return numbers
+
+
+def netlist_pin_facts(xml_path):
+    """{ref: {lcsc, mpn, pins: {num: libpart pin name}, nets: {num: net}}} from a sealed native XML netlist.
+
+    Only the canonical libpart pin names are read (for example `K`/`A`); node `pinfunction`
+    text is cross-checked against `<name>_<num>` and never parsed on its own.
+    """
+    import xml.etree.ElementTree as ET
+    root = ET.parse(xml_path).getroot()
+    libparts = {}
+    for part in root.iter('libpart'):
+        pins = {}
+        for pin in part.iter('pin'):
+            if pin.get('num') in pins:
+                raise ValueError(f'libpart {part.get("lib")}:{part.get("part")} repeats pin {pin.get("num")}')
+            pins[pin.get('num')] = pin.get('name')
+        libparts[(part.get('lib'), part.get('part'))] = pins
+    facts = {}
+    for comp in root.iter('comp'):
+        ref = comp.get('ref')
+        source = comp.find('libsource')
+        key = (source.get('lib'), source.get('part')) if source is not None else None
+        fields = {f.get('name'): (f.text or '').strip() for f in comp.findall('./fields/field')}
+        if ref in facts:
+            raise ValueError(f'sealed netlist repeats reference {ref}')
+        facts[ref] = {'lcsc': fields.get('LCSC'), 'mpn': fields.get('MPN') or fields.get('Partnumber'),
+                      'pins': dict(libparts.get(key, {})), 'nets': {}}
+    for net in root.iter('net'):
+        for node in net.iter('node'):
+            fact = facts.get(node.get('ref'))
+            if fact is None:
+                continue
+            num = node.get('pin')
+            if num in fact['nets']:
+                raise ValueError(f'sealed netlist lists {node.get("ref")} pin {num} twice')
+            fact['nets'][num] = net.get('name')
+            function = node.get('pinfunction')
+            name = fact['pins'].get(num)
+            if function is not None and name is not None and function != f'{name}_{num}':
+                raise ValueError(f'sealed netlist {node.get("ref")} pin {num} function {function!r} '
+                                 f'disagrees with libpart name {name!r}')
+    return facts
+
+
+def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance_nm, *,
+             netlist=None, pad_nets=None, partnumbers=None, evidence=None):
     """Per-designator midpoint, policy and pin-1 evidence; pure over captured values.
 
     rows: native CPL rows [designator, x, y, Top|Bottom, rotation] (text).
     geometry: sealed pcbnew probe footprint records. bindings: {ref: LCSC}.
     suppliers: {LCSC: {'raw': bytes, 'provenance': path, 'sha256': hex}}.
+    netlist: `netlist_pin_facts` of the sealed native netlist (board-side polarity fallback);
+    pad_nets: {ref: {pad: net}} from the sealed probe; partnumbers: {ref: BOM Partnumber};
+    evidence: `polarity_evidence.load_evidence` records by LCSC (supplier-side supplement).
     """
     populated = {}
     for fp in geometry:
@@ -410,7 +482,9 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
         else:
             unmatched.append(entry)
 
-        _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta)
+        _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta,
+              netlist=(netlist or {}).get(ref), pad_nets=(pad_nets or {}).get(ref, {}),
+              partnumber=(partnumbers or {}).get(ref), evidence=(evidence or {}).get(record.get('lcsc')))
         for note in notes:
             note['execution'] = MODES[note['mode']]
         failures = [n for n in notes if n['mode'] not in DEFECTS]
@@ -425,7 +499,8 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
     return records, applied, unmatched
 
 
-def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta):
+def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta, *,
+          netlist=None, pad_nets=None, partnumber=None, evidence=None):
     def mode(name, message):
         notes.append({'mode': name, 'message': message})
     lcsc = record['lcsc']
@@ -467,17 +542,58 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
                                   f'offset {offset}')
     if POLARIZED.fullmatch(ref):
         board_name = _board_pin1_function(found, ref)
+        board_basis, board_note = BOARD_BASES[0], None
+        if netlist is not None:
+            netlist_name = netlist['pins'].get('1')
+            if board_name is None:
+                # Sealed-netlist fallback: only with the same part binding and the same pin-1 net.
+                if netlist.get('lcsc') and netlist['lcsc'] != lcsc:
+                    board_note = f'sealed netlist binds {ref} to {netlist["lcsc"]}, the BOM to {lcsc}'
+                elif '1' not in netlist['nets'] or not pad_nets.get('1'):
+                    board_note = 'sealed netlist or probe lacks the pin-1 net'
+                elif netlist['nets']['1'] != pad_nets['1']:
+                    mode('polarity_conflict', f'board pad 1 net {pad_nets["1"]!r} differs from sealed netlist '
+                                              f'pin 1 net {netlist["nets"]["1"]!r}')
+                elif polarity(netlist_name) is None:
+                    board_note = f'sealed netlist libpart pin 1 name {netlist_name!r} names no polarity'
+                else:
+                    board_name, board_basis = netlist_name, BOARD_BASES[1]
+            elif polarity(board_name) and polarity(netlist_name) and polarity(board_name) != polarity(netlist_name):
+                mode('polarity_conflict', f'board pad 1 pinfunction {board_name!r} contradicts sealed netlist '
+                                          f'libpart pin 1 {netlist_name!r}')
         try:
             pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == '1']
         except SupplierError as exc:
             pins = [{'name': None, 'displayed': f'unreadable: {exc}'}]
         # One pin 1 whose displayed number agrees; anything else stays unresolved.
         supplier_name = pins[0]['name'] if len(pins) == 1 and pins[0]['displayed'] == '1' else None
+        supplier_basis, supplier_note, used = SUPPLIER_BASES[0], None, None
+        if evidence is not None:
+            declared = evidence['pin_polarity'].get('1')
+            if evidence['supplier_capture_sha256'] != supplier['sha256']:
+                supplier_note = 'polarity evidence is bound to another supplier capture'
+            elif partnumber is not None and evidence['mpn'] != partnumber:
+                supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from BOM part {partnumber!r}'
+            elif netlist is not None and netlist.get('mpn') and evidence['mpn'] != netlist['mpn']:
+                supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from netlist part {netlist["mpn"]!r}'
+            elif polarity(supplier_name) is not None and polarity(supplier_name) != declared:
+                mode('polarity_conflict', f'supplier symbol pin 1 {supplier_name!r} contradicts polarity evidence '
+                                          f'{declared}')
+            elif polarity(supplier_name) is None:
+                supplier_name, supplier_basis = declared, SUPPLIER_BASES[1]
+                used = {'path': evidence['path'], 'manufacturer_source': evidence['manufacturer_source'],
+                        'package_feature_ids': evidence['package_feature_ids'],
+                        'symbol_feature_ids': evidence['symbol_feature_ids'], 'limitation': evidence['limitation']}
         sides = {'board': polarity(board_name), 'supplier': polarity(supplier_name)}
-        record['polarity'] = dict(sides, board_pin1_function=board_name, supplier_pin1_name=supplier_name)
-        if None in sides.values():
-            mode('polarity_unknown', f'pin-1 polarity unresolved: board {board_name!r}, supplier pin-1 '
-                                     f'records {pins}')
+        record['polarity'] = dict(sides, board_pin1_function=board_name, supplier_pin1_name=supplier_name,
+                                  board_basis=board_basis, supplier_basis=supplier_basis, evidence=used)
+        if any(n['mode'] == 'polarity_conflict' for n in notes):
+            pass
+        elif None in sides.values():
+            mode('polarity_unknown', f'pin-1 polarity unresolved: board {board_name!r}'
+                                     + (f' ({board_note})' if board_note else '')
+                                     + f', supplier pin-1 records {pins}'
+                                     + (f' ({supplier_note})' if supplier_note else ''))
         elif sides['board'] != sides['supplier']:
             mode('polarity_conflict', f'board pin 1 is {sides["board"]}, supplier pin 1 is {sides["supplier"]}')
 
@@ -555,7 +671,7 @@ def digest_bytes(data):
 def capability(params, files, inputs):
     """Static scope/3 contract: exact params; policy, provenance and raw supplier bytes are immutable."""
     params = validate_params(params)
-    paths = [params['policy'], *params['supplier_footprints']]
+    paths = [params['policy'], *params['supplier_footprints'], *params.get('polarity_evidence', [])]
     for path in paths:
         if path not in files:
             raise ValueError(f'{path} must be captured')
@@ -565,7 +681,12 @@ def capability(params, files, inputs):
                 raise ValueError(f'{path} must be captured')
             return (Path(inputs) / path).read_bytes()
         load_policy(read(params['policy']))
-        paths += [s['path'] for s in load_suppliers(read, params['supplier_footprints']).values()]
+        suppliers = load_suppliers(read, params['supplier_footprints'])
+        paths += [s['path'] for s in suppliers.values()]
+        if params.get('polarity_evidence'):
+            from .polarity_evidence import load_evidence
+            evidence = load_evidence(read, params['polarity_evidence'], suppliers)
+            paths += [e['manufacturer_source']['path'] for e in evidence.values()]
     return {'immutable_inputs': sorted(set(paths)), 'predicates': list(PREDICATES)}
 
 
@@ -605,8 +726,23 @@ def check_cpl_rotation(ctx):
                          'precedence': ['component_override', 'first footprint_rule prefix', 'none']}
     try:
         suppliers = load_suppliers(read, params['supplier_footprints'])
+        evidence = {}
+        if params.get('polarity_evidence'):
+            from .polarity_evidence import load_evidence
+            evidence = load_evidence(read, params['polarity_evidence'], suppliers)
     except (OSError, ValueError) as exc:
         raise CheckError('malformed', f'supplier footprint capture refused: {exc}') from exc
+    details['polarity_evidence'] = {lcsc: {'path': e['path'], 'mpn': e['mpn'],
+                                           'manufacturer_source': e['manufacturer_source']}
+                                    for lcsc, e in sorted(evidence.items())}
+    export_spec = next((c for c in ctx.scope['checks'] if c.get('id') == params['export_check']), {})
+    # The export's own sealed native netlist supplies canonical libpart pin names (K/A) when a
+    # polarized board pad carries no pinfunction (AGENTEE-524 D1); the same binding every row uses.
+    nid = (export_spec.get('params') or {}).get('netlist_check')
+    try:
+        netlist_facts = netlist_pin_facts(prerequisite(ctx, nid, 'netlist', 'design.xml'))
+    except (OSError, ValueError) as exc:
+        raise CheckError('malformed', f'sealed native netlist unusable for polarity: {exc}') from exc
 
     eid, gid = params['export_check'], params['geometry_check']
     manifest_path = prerequisite(ctx, eid, 'fab_export', 'fab/manifest.json')
@@ -626,6 +762,7 @@ def check_cpl_rotation(ctx):
         if any(r[0] in excluded for r in rows):
             raise ValueError(f'CPL lists designators the manifest excludes from assembly: {excluded}')
         bindings = read_bom_bindings((stage / 'bom.csv').read_text(encoding='utf-8'))
+        partnumbers = read_bom_partnumbers((stage / 'bom.csv').read_text(encoding='utf-8'))
     except (OSError, ValueError, UnicodeError) as exc:
         raise CheckError('malformed', f'fab_export {eid!r} staging is unusable: {exc}') from exc
     ctx.result['evidence'] += [f'work/{eid}/fab/cpl.csv', f'work/{eid}/fab/bom.csv']
@@ -633,14 +770,20 @@ def check_cpl_rotation(ctx):
     if read_json(ctx.run_dir / 'checks' / f'{gid}.json').get('details', {}).get('board_sha256') != board_sha:
         raise CheckError('unsupported', f'geometry check {gid!r} is not bound to the captured board digest')
     try:
-        geometry = read_json(geometry_path)['footprints']
+        probe = read_json(geometry_path)
+        geometry = probe['footprints']
         if not isinstance(geometry, list) or not all(isinstance(fp, dict) for fp in geometry):
             raise ValueError('footprints are not records')
+        pad_nets = {}
+        for pad in probe.get('pads') or []:
+            pad_nets.setdefault(pad['ref'], {})[str(pad['pad'])] = pad.get('net')
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'sealed geometry {gid!r} is unreadable: {exc}') from exc
 
     tolerance = _decimal_text(params['source_tolerance_nm'], 'source_tolerance_nm', nonnegative=True)
-    records, applied, unmatched = evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance)
+    records, applied, unmatched = evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance,
+                                           netlist=netlist_facts, pad_nets=pad_nets, partnumbers=partnumbers,
+                                           evidence=evidence)
     listed = sorted([e['designator'] for e in applied] + [e['designator'] for e in unmatched], key=natural_key)
     if listed != sorted((r[0] for r in rows), key=natural_key):
         raise CheckError('malformed', 'internal partition error: a CPL row is not listed exactly once')
@@ -691,7 +834,7 @@ def check_cpl_rotation(ctx):
         'bottom-side rotation follows the documented 180 - (angle - delta) transform, which has not been '
         'validated against a JLCPCB bottom-side preview',
         'pin-1 frames compare pad centres only; linear and corner frames cannot reveal a mirrored footprint',
-        'diode polarity is checked only for D*/LED* designators from pad pinfunction and supplier symbol '
+        'diode polarity is checked only for D*/LED* designators from pad pinfunction (or the sealed netlist libpart name when the pad has none), captured polarity evidence and supplier symbol '
         'pin names',
     ]
     if (execution, outcome) == ('ok', 'pass'):
