@@ -35,3 +35,8 @@ Builders commit focused changes on their assigned worktree branch and return the
 Keep code changes tied to the existing issue acceptance criteria. Reproductions have explicit time/run limits; report a decisive failure or an unresolved boundary instead of widening the audit. A failed dependency blocks only its consumers. Do not invent geometry thresholds, degrade native rules, remove provenance, auto-pass unavailable reviewers, substitute a nicer design, or call intermediate board output manufacturing-ready.
 
 Plane is the current state ledger. Agent identity is recorded in issue descriptions/comments because Cairn agents are not Plane user accounts. The integration record must distinguish dispatched, acknowledged, implemented, independently verified and landed. A sent Cairn event alone is not proof of work.
+
+## Integration decisions
+
+- [Retained esp_prog compatibility](intent-compatibility.md): 520 truthfully refuses the original richer unsupported intent; 479 must supply an explicit source-bound mapping before M1. Preserve all original declarations and the same design. This corrects the conflicting immediate-pass criterion in the planning snapshot, not the overall delivery requirement.
+- 519 and 520 have separate write ownership: 519 uses the existing public cancellation/checkpoint boundary for runtime preflight; 520 owns placement intent validation. Do not add a parallel preflight validator.
