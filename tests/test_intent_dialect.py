@@ -350,7 +350,9 @@ class GroupLinkTests(unittest.TestCase):
         link = power['R2_member_to_anchor_links'][0]
         self.assertEqual((link['member_pad'], link['anchor_pad'], link['shared_net']), ('1', '3', None))
         self.assertAlmostEqual(link['gap_mm'], 7.5)  # nearest anchor pad wins even across nets
-        self.assertEqual(power['R1_declared_near_interfaces'][0]['paired_by'], None)  # only rails cross
+        # Only rails cross power<->core, so the accepted-contract any-pad fallback tethers them.
+        self.assertEqual(power['R1_declared_near_interfaces'][0]['paired_by'], 'any')
+        self.assertIsNone(power['R1_declared_near_interfaces'][0]['net'])
         core = report['groups']['core']['R1_declared_near_interfaces'][0]
         self.assertEqual((core['net'], core['from_ref'], core['to_ref'], core['gap_mm']), ('/SIG', 'U1', 'J1', 25.0))
         self.assertIn('rejected as unconditional hard release gates', power['diagnostic_only_not_hard_gate']['limitation'])
@@ -413,3 +415,73 @@ class RetainedGroupReplayTests(unittest.TestCase):
                          ('2', 'U1', '7', '/D_N', 12.8095))
         self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], [])
         self.assertTrue(report['S1_complete_partition']['complete'])
+
+
+class GroupRailsSidecarTests(unittest.TestCase):
+    def sidecar(self):
+        return json.loads((ROOT / 'fixtures/group-rails/esp-prog.json').read_bytes())
+
+    def test_fixture_sidecars_validate_and_bind_to_their_sources(self):
+        from agent_ee import group_rails
+        esp = self.sidecar()
+        canonical = group_rails.validate(esp, board_sha256=ESP_BOARD_SHA, groups_sha256=ESP_GROUPS_SHA,
+                                         group_names={'usb_in', 'power', 'core', 'reset', 'target'},
+                                         nets={'GND', '/+3.3V', 'Net-(C1-Pad1)', '/D_N'})
+        self.assertEqual(set(canonical['shared']), {'GND', '/+3.3V', 'Net-(C1-Pad1)'})
+        self.assertEqual(canonical['scoped']['Net-(C1-Pad1)']['intra_group'], 'power')
+        self.assertEqual(canonical['bindings']['board_sha256'], ESP_BOARD_SHA)
+        acq = json.loads((ROOT / 'fixtures/group-rails/acquisition.json').read_bytes())
+        self.assertEqual(set(group_rails.validate(acq)['shared']), {'GND', '/V3V3'})
+
+    def test_stale_or_unknown_bindings_refuse_with_paths(self):
+        from agent_ee import group_rails
+        cases = [
+            ('stale_board', dict(board_sha256='0' * 64), 'group_rails.bindings.board_sha256'),
+            ('stale_groups', dict(groups_sha256='0' * 64), 'group_rails.bindings.groups_sha256'),
+            ('unknown_net', dict(nets={'GND'}), 'group_rails.shared./+3.3V'),
+            ('unknown_group', dict(group_names={'power'}), 'group_rails.scoped.Net-(C1-Pad1).near_pairs[0]'),
+        ]
+        for label, kwargs, expected in cases:
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError) as caught:
+                    group_rails.validate(self.sidecar(), **kwargs)
+                self.assertIn(expected, str(caught.exception))
+        doc = self.sidecar()
+        doc['scoped']['/D_N'] = {'evidence': 'x'}
+        with self.assertRaises(ValueError) as caught:
+            group_rails.validate(doc)
+        self.assertIn('group_rails.scoped./D_N', str(caught.exception))
+        doc = self.sidecar()
+        doc['shared']['GND'] = 'ground'
+        with self.assertRaises(ValueError) as caught:
+            group_rails.validate(doc)
+        self.assertIn('group_rails.shared.GND', str(caught.exception))
+        doc = self.sidecar()
+        doc['classifier'] = 'by-name'
+        with self.assertRaises(ValueError) as caught:
+            group_rails.validate(doc)
+        self.assertIn('group_rails.classifier', str(caught.exception))
+
+
+class NearFallbackTests(GroupLinkTests):
+    def test_rail_only_near_groups_use_any_pad_fallback_and_follow_movement(self):
+        from agent_ee import group_links
+        groups = {'groups': [{'name': 'power', 'anchor': 'U2', 'refs': ['U2', 'C1'], 'near': ['io']},
+                             {'name': 'io', 'anchor': 'J1', 'refs': ['J1']}]}
+        rails = {'shared': {'GND': 'return'}, 'scoped': {}}
+        layout = self.layout()
+        del layout['U1']
+        near = group_links.measure(groups, layout, rails)['groups']['power']['R1_declared_near_interfaces'][0]
+        self.assertEqual(near['paired_by'], 'any')
+        self.assertIsNone(near['net'])
+        self.assertEqual(near['candidate_pairs'], 5 * 2)
+        far_layout = self.layout()
+        del far_layout['U1']
+        far_layout['J1'] = {'x': 60.0, 'y': 20.0, 'side': 'F',
+                            'pads': [{'number': '1', 'rect': (59.5, 19.5, 60.5, 20.5), 'net_id': 4, 'net': '/SIG'},
+                                     {'number': '2', 'rect': (60.5, 19.5, 61.5, 20.5), 'net_id': 1, 'net': 'GND'}]}
+        far = group_links.measure(groups, far_layout, rails)['groups']['power']['R1_declared_near_interfaces'][0]
+        self.assertGreater(far['gap_mm'], near['gap_mm'])
+        self.assertGreater(group_links.objective(group_links.measure(groups, far_layout, rails)),
+                           group_links.objective(group_links.measure(groups, layout, rails)))
+        self.assertEqual((near['from_ref'], near['from_pad'], near['to_ref'], near['to_pad']), ('C1', '2', 'J1', '1'))

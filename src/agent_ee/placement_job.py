@@ -605,10 +605,10 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
     return captured
 
 
-def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
+def capture(board_path, intent, groups, *, rails=None, clock=None, cancel_dir=None):
     """Capture native geometry and settings without inheriting cached defaults."""
     validate_intent(intent, groups)
-    captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups},
+    captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups, 'rails': rails},
                             clock=clock, cancel_dir=cancel_dir)
     try:
         problem, record = captured['problem'], captured['record']
@@ -620,10 +620,17 @@ def capture(board_path, intent, groups, *, clock=None, cancel_dir=None):
     return problem, record
 
 
-def _rails(groups):
-    """Evidence-bound shared rails declared with the groups; absent means none are declared."""
-    rails = groups.get('rails') or {}
-    return {'shared': sorted(rails.get('shared', {})), 'scoped': rails.get('scoped', {})}
+def _rails(rails, board_bytes, groups, nets):
+    """The canonical rails for this capture: the validated sidecar bound to this board, or none."""
+    from . import group_rails
+    if rails is None:
+        return dict(group_rails.EMPTY)
+    try:
+        return group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes),
+                                    groups_sha256=sha256_bytes(canonical(groups)) if groups.get('_sha256') is None else groups['_sha256'],
+                                    group_names={g['name'] for g in groups['groups']}, nets=nets)
+    except ValueError as exc:
+        raise JobRefusal(str(exc)) from exc
 
 
 DIALECT_SUPPORTED = frozenset(('intent.assembly.sides', 'intent.envelope', 'edge.side', 'edge.cable_entry',
@@ -668,7 +675,7 @@ def _check_dialect_native(board, facts, record):
     return checks
 
 
-def _capture_native(board_path, intent, groups):
+def _capture_native(board_path, intent, groups, rails=None):
     """Native capture once; returns (problem without search section, capture record)."""
     validate_intent(intent, groups)
     from . import placement_intent
@@ -777,7 +784,7 @@ def _capture_native(board_path, intent, groups):
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
                'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups['groups']],
-               'rails': _rails(groups),
+               'rails': _rails(rails, before, groups, {p.GetNetname() for fp in board.GetFootprints() for p in fp.Pads()}),
                'proximity': proximity,
                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}}
     if dialect:
@@ -1616,7 +1623,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0.000001
                    for value in matching.values()):
                 raise JobRefusal('intra-pair matching values must be finite and at least 0.000001 mm')
-        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes'}
+        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
@@ -1641,6 +1648,17 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         except ValueError as exc:
             raise JobRefusal('placement intent/groups JSON: ' + str(exc)) from exc
         report['intent_contract'] = validate_intent(intent, groups)
+        rails = None
+        if 'group_rails' in config['inputs']:
+            from . import group_rails
+            _, rails_bytes = verified_input(config['inputs']['group_rails'], 'group_rails')
+            try:
+                rails = strict_json(rails_bytes)
+                group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes),
+                                     group_names={g['name'] for g in groups['groups']})
+            except ValueError as exc:
+                raise JobRefusal('inputs.group_rails: ' + str(exc)) from exc
+            groups['_sha256'] = sha256_bytes(groups_bytes)
         plane_bytes = None
         plane_ids = ()
         if 'planes' in config['inputs']:
@@ -1699,7 +1717,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # as before, so that removing it can resume the same job. New cancellation
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
-        problem, record = capture(board_path, intent, groups, clock=clock, cancel_dir=capture_cancel)
+        problem, record = capture(board_path, intent, groups, rails=rails, clock=clock, cancel_dir=capture_cancel)
         for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
             verified_input(config['inputs'][name], name)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
@@ -1846,7 +1864,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                                                            'adapter_sha256', 'problems')}
         with clock.phase('final_validation'):
             _check_stop(clock, job_dir)
+            selected_seed = next((row for row in report['engine']['seeds'] if row.get('seed') == selected['seed']), {})
             report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', groups, intent,
+                                           rails=problem.get('rails'), refinement=selected_seed.get('refinement'),
                                            clock=clock, cancel_dir=job_dir,
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
@@ -1894,7 +1914,7 @@ def _completion_status(routed, incumbent, final):
     return 'completed'
 
 
-def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
+def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, rails=None, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None):
     import pcbnew
     clock = clock or Clock(300)
@@ -2011,8 +2031,9 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
-    metrics = board_metrics(board, groups['groups'])
+    metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'))
     metrics['edges'] = edge_intent['connectors']
+    metrics['refinement'] = refinement
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or impedance_result is not None and impedance_result.get('status') != 'PASS'
@@ -2077,7 +2098,7 @@ def execute(args, parser):
         request = json.load(sys.stdin)
         try:
             if args.placement_command == '_capture':
-                problem, record = _capture_native(args.board, request['intent'], request['groups'])
+                problem, record = _capture_native(args.board, request['intent'], request['groups'], request.get('rails'))
                 result = {'problem': problem, 'record': record}
             elif args.placement_command == '_check_locality':
                 from .placement_probe import extract

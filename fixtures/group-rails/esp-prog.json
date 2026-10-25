@@ -1,0 +1,68 @@
+{
+ "bindings": {
+  "board_sha256": "b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7",
+  "groups_sha256": "d48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8"
+ },
+ "schema": "agent-ee.group-rails/1",
+ "scoped": {
+  "Net-(C1-Pad1)": {
+   "evidence": "scoped to C1<->U2 intra-power regulator input and the usb_in<->power near tether; never merges power with target",
+   "intra_group": "power",
+   "near_pairs": [
+    [
+     "usb_in",
+     "power"
+    ],
+    [
+     "power",
+     "usb_in"
+    ]
+   ]
+  }
+ },
+ "shared": {
+  "/+3.3V": {
+   "evidence": "groups.json power.why: ME6210 regulated 3.3V rail shared across power, core, target",
+   "groups": [
+    "power",
+    "core",
+    "target"
+   ],
+   "parts": [
+    "U2",
+    "C3",
+    "U1",
+    "CON2"
+   ]
+  },
+  "GND": {
+   "evidence": "5-group ground return across usb_in, power, core, reset, target (13 pads) in the captured netlist",
+   "groups": [
+    "usb_in",
+    "power",
+    "core",
+    "reset",
+    "target"
+   ]
+  },
+  "Net-(C1-Pad1)": {
+   "evidence": "groups.json power.why: USB VBUS +5V rail across USB1.1 (usb_in), C1.1/U2.2 (power), CON2.7 (target)",
+   "groups": [
+    "usb_in",
+    "power",
+    "target"
+   ],
+   "parts": [
+    "USB1",
+    "C1",
+    "U2",
+    "CON2"
+   ]
+  }
+ },
+ "source": {
+  "commit": "886282bc",
+  "contract": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-group-intent-contract.json",
+  "section": "functional_grouping_predicates_and_m1_acceptance.S2_evidence_bound_shared_rail_non_merge; executed_native_measurements.esp_prog_final_a1_groups.evidence_bound_rail_classification"
+ }
+}

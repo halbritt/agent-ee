@@ -381,10 +381,10 @@ pub struct Proximity {
 pub struct Link {
     pub kind: String,
     pub group: String,
-    pub a: usize,
-    pub a_pads: Vec<usize>,
-    pub b: usize,
-    pub b_pads: Vec<usize>,
+    pub target: String,
+    pub paired_by: String,
+    /// Candidate pad pairs (footprint a, pad a, footprint b, pad b); the gap is the dynamic minimum over them.
+    pub pairs: Vec<(usize, usize, usize, usize)>,
 }
 
 #[derive(Clone, Debug)]
@@ -989,16 +989,18 @@ fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
 }
 
 /// Non-negative signed pad-edge gap of one group link (R1 interface or R2 intra-group/anchor link).
-fn link_gap(p: &Prepared, k: usize, poses: &[Pose]) -> i64 {
+fn link_argmin(p: &Prepared, k: usize, poses: &[Pose]) -> (i64, (usize, usize, usize, usize)) {
     let l = &p.links[k];
-    let mut best = i64::MAX;
-    for &pa in &l.a_pads {
-        let ra = pad_rect(p, l.a, pa, &poses[l.a]);
-        for &pb in &l.b_pads {
-            best = best.min(rect_gap(&ra, &pad_rect(p, l.b, pb, &poses[l.b])));
-        }
+    let mut best: Option<(i64, (usize, usize, usize, usize))> = None;
+    for &(a, pa, b, pb) in &l.pairs {
+        let gap = rect_gap(&pad_rect(p, a, pa, &poses[a]), &pad_rect(p, b, pb, &poses[b]));
+        if best.is_none_or(|(g, _)| gap < g) { best = Some((gap, (a, pa, b, pb))); }
     }
-    best
+    best.unwrap_or((i64::MAX, (0, 0, 0, 0)))
+}
+
+fn link_gap(p: &Prepared, k: usize, poses: &[Pose]) -> i64 {
+    link_argmin(p, k, poses).0
 }
 
 fn link_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
@@ -1007,27 +1009,32 @@ fn link_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
 
 /// Compile R2 intra-group signal/anchor links and R1 declared-near interface links.
 ///
-/// Shared rails are an explicit evidence-bound input (`rails.shared`, `rails.scoped`); a net
-/// spanning more than two groups outside them is never linked (it is reported upstream as an
-/// unknown multi-group net), so rails cannot merge blocks.
+/// Shared rails are an explicit evidence-bound input (`rails.shared` object keyed by net,
+/// `rails.scoped`); a net spanning more than two groups outside them is never linked (it is
+/// reported upstream as an unknown multi-group net), so rails cannot merge blocks. Every link
+/// is a set of candidate pad pairs; the objective and the report take the same dynamic minimum.
 fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usize, Vec<usize>)], nets: &[String],
                  net_pads: &[Vec<(usize, usize)>], physical_reference: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Vec<Link>> {
     let rails = input.get("rails").cloned().unwrap_or(Value::Null);
-    let shared: BTreeSet<String> = rails.get("shared").and_then(Value::as_array).cloned().unwrap_or_default()
-        .iter().filter_map(|v| v.as_str().map(String::from)).collect();
+    let shared: BTreeSet<String> = match rails.get("shared") {
+        Some(Value::Object(o)) => o.keys().cloned().collect(),
+        Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+        _ => BTreeSet::new(),
+    };
     let scoped = rails.get("scoped").cloned().unwrap_or(Value::Null);
-    let group_of = |f: usize| footprints[f].group;
     let mut span: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nets.len()];
     for (n, pads) in net_pads.iter().enumerate() {
         for &(f, _) in pads {
-            if let Some(g) = group_of(f) { span[n].insert(g); }
+            if let Some(g) = footprints[f].group { span[n].insert(g); }
         }
     }
     let group_index: BTreeMap<&str, usize> = groups.iter().enumerate().map(|(g, (name, _, _))| (name.as_str(), g)).collect();
     let pads_on = |f: usize, n: usize| -> Vec<usize> {
         footprints[f].pads.iter().enumerate().filter(|(_, pad)| pad.net == Some(n)).map(|(i, _)| i).collect()
     };
-    let all_pads = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
+    let cross = |a: usize, ap: &[usize], b: usize, bp: &[usize]| -> Vec<(usize, usize, usize, usize)> {
+        ap.iter().flat_map(|&pa| bp.iter().map(move |&pb| (a, pa, b, pb))).collect()
+    };
     let mut links = Vec::new();
     for (g, (name, anchor, members)) in groups.iter().enumerate() {
         for (n, net) in nets.iter().enumerate() {
@@ -1037,15 +1044,16 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
             let on: Vec<usize> = members.iter().copied().filter(|&m| !pads_on(m, n).is_empty()).collect();
             for i in 0..on.len() {
                 for j in i + 1..on.len() {
-                    links.push(Link { kind: "R2_intra_group_signal".into(), group: name.clone(), a: on[i],
-                                      a_pads: pads_on(on[i], n), b: on[j], b_pads: pads_on(on[j], n) });
+                    links.push(Link { kind: "R2_intra_group_signal".into(), group: name.clone(), target: net.clone(),
+                                      paired_by: "signal_net".into(), pairs: cross(on[i], &pads_on(on[i], n), on[j], &pads_on(on[j], n)) });
                 }
             }
         }
         for &m in members {
             if m != *anchor && !footprints[m].pads.is_empty() && !footprints[*anchor].pads.is_empty() {
-                links.push(Link { kind: "R2_member_to_anchor".into(), group: name.clone(), a: m,
-                                  a_pads: all_pads(m), b: *anchor, b_pads: all_pads(*anchor) });
+                let all = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
+                links.push(Link { kind: "R2_member_to_anchor".into(), group: name.clone(), target: footprints[*anchor].native_ref.clone(),
+                                  paired_by: "any".into(), pairs: cross(m, &all(m), *anchor, &all(*anchor)) });
             }
         }
         let group_row = &input["groups"][g];
@@ -1053,7 +1061,7 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
             let target = target.as_str().context("group near")?;
             let &h = group_index.get(target).with_context(|| format!("group {name}: unknown near group {target}"))?;
             let (_, _, others) = &groups[h];
-            let mut best: Option<(i64, usize, Vec<usize>, usize, Vec<usize>)> = None;
+            let mut signal = Vec::new();
             for (n, net) in nets.iter().enumerate() {
                 let pair_ok = scoped.get(net).and_then(|s| s.get("near_pairs")).and_then(Value::as_array)
                     .map(|pairs| pairs.iter().any(|pr| pr[0] == name.as_str() && pr[1] == target)).unwrap_or(false);
@@ -1064,17 +1072,19 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
                     if ap.is_empty() { continue; }
                     for &b in others {
                         let bp = pads_on(b, n);
-                        if bp.is_empty() { continue; }
-                        let mut gap = i64::MAX;
-                        for &pa in &ap { for &pb in &bp {
-                            gap = gap.min(rect_gap(&pad_rect_initial(footprints, a, pa), &pad_rect_initial(footprints, b, pb)));
-                        } }
-                        if best.as_ref().is_none_or(|bst| gap < bst.0) { best = Some((gap, a, ap.clone(), b, bp.clone())); }
+                        if !bp.is_empty() { signal.extend(cross(a, &ap, b, &bp)); }
                     }
                 }
             }
-            if let Some((_, a, ap, b, bp)) = best {
-                links.push(Link { kind: "R1_declared_near_interface".into(), group: name.clone(), a, a_pads: ap, b, b_pads: bp });
+            let (paired_by, pairs) = if signal.is_empty() {
+                // Accepted-contract fallback: no shared non-rail signal net, so any pad pair tethers the groups.
+                let all = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
+                ("any", members.iter().flat_map(|&a| others.iter().map(move |&b| (a, b)))
+                    .flat_map(|(a, b)| cross(a, &all(a), b, &all(b))).collect::<Vec<_>>())
+            } else { ("signal_net", signal) };
+            if !pairs.is_empty() {
+                links.push(Link { kind: "R1_declared_near_interface".into(), group: name.clone(), target: target.to_string(),
+                                  paired_by: paired_by.into(), pairs });
             }
         }
     }
@@ -1110,15 +1120,19 @@ pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec
         for (gap, k) in order {
             if gap <= 0 { continue; }
             let l = &p.links[k];
-            let (member, partner, member_pads, partner_pads) = if p.movable.contains(&l.a) && l.kind != "R2_member_to_anchor" || (l.kind == "R2_member_to_anchor") {
-                (l.a, l.b, &l.a_pads, &l.b_pads)
-            } else if p.movable.contains(&l.b) { (l.b, l.a, &l.b_pads, &l.a_pads) } else { continue };
-            if !p.movable.contains(&member) || p.footprints[member].group.map(|g| p.groups[g].1) == Some(member) { continue; }
+            let (_, (fa, _, fb, _)) = link_argmin(p, k, poses);
+            let is_anchor = |f: usize| p.footprints[f].group.map(|g| p.groups[g].1) == Some(f);
+            let member = if p.movable.contains(&fa) && !is_anchor(fa) { fa }
+                         else if p.movable.contains(&fb) && !is_anchor(fb) { fb } else { continue };
+            let partner = if member == fa { fb } else { fa };
             let before = poses[member];
             let mut best: Option<(i128, Pose, Terms)> = None;
+            let seats_for: Vec<(usize, usize)> = l.pairs.iter().filter_map(|&(a, pa, b, pb)| {
+                if a == member && b == partner { Some((pa, pb)) } else if b == member && a == partner { Some((pb, pa)) } else { None }
+            }).collect();
             for &q in &p.footprints[member].rotations {
-                for &pm in member_pads.iter() {
-                    for &pp in partner_pads.iter() {
+                for &(pm, pp) in &seats_for {
+                    {
                         let target = pad_rect(p, partner, pp, &poses[partner]);
                         let local = &p.footprints[member].pads[pm];
                         let (lx, ly) = rotate(local.at.0, local.at.1, q);
@@ -1441,7 +1455,7 @@ impl SearchState {
         }
         let mut after_links = Vec::new();
         for (k, l) in p.links.iter().enumerate() {
-            if movers.contains(&l.a) || movers.contains(&l.b) {
+            if l.pairs.iter().any(|&(a, _, b, _)| movers.contains(&a) || movers.contains(&b)) {
                 let v = link_terms(p, k, &after);
                 delta.link += v - self.link_cost[k];
                 after_links.push((k, v));
@@ -1708,9 +1722,12 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
 
 /// Measured group links of a pose vector (signed pad-edge gaps in nm), for reports.
 pub fn link_rows(p: &Prepared, poses: &[Pose]) -> Value {
-    Value::Array(p.links.iter().enumerate().map(|(k, l)| json!({
-        "kind": l.kind, "group": l.group, "a": p.footprints[l.a].native_ref, "b": p.footprints[l.b].native_ref,
-        "gap_nm": link_gap(p, k, poses)})).collect())
+    Value::Array(p.links.iter().enumerate().map(|(k, l)| {
+        let (gap, (a, pa, b, pb)) = link_argmin(p, k, poses);
+        json!({"kind": l.kind, "group": l.group, "target": l.target, "paired_by": l.paired_by, "candidate_pairs": l.pairs.len(),
+               "a": p.footprints[a].native_ref, "a_pad": p.footprints[a].pads[pa].uuid,
+               "b": p.footprints[b].native_ref, "b_pad": p.footprints[b].pads[pb].uuid, "gap_nm": gap})
+    }).collect())
 }
 
 fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
@@ -2071,13 +2088,39 @@ mod tests {
 
     #[test]
     fn group_links_compile_from_nets_and_rails_never_merge_blocks() {
-        let p = prepare(&with_half_extents(input(vec![]), json!({"shared": ["GND"], "scoped": {}}))).unwrap();
-        let kinds: Vec<(&str, &str, &str)> = p.links.iter()
-            .map(|l| (l.kind.as_str(), p.footprints[l.a].native_ref.as_str(), p.footprints[l.b].native_ref.as_str())).collect();
-        assert_eq!(kinds, vec![("R2_intra_group_signal", "R1", "R2"), ("R2_member_to_anchor", "R2", "R1")]);
-        // GND is a declared rail: no link is compiled on it even though both members carry it.
-        assert!(p.links.iter().all(|l| l.a_pads.iter().all(|&i| p.footprints[l.a].pads[i].net != p.nets.iter().position(|n| n == "GND"))
-                                   || l.kind == "R2_member_to_anchor"));
+        let p = prepare(&with_half_extents(input(vec![]), json!({"shared": {"GND": "ground return"}, "scoped": {}}))).unwrap();
+        let kinds: Vec<(&str, &str, &str)> = p.links.iter().map(|l| (l.kind.as_str(), l.target.as_str(), l.paired_by.as_str())).collect();
+        assert_eq!(kinds, vec![("R2_intra_group_signal", "A", "signal_net"), ("R2_member_to_anchor", "R1", "any")]);
+        // GND is a declared rail: no signal link is compiled on it even though both members carry it.
+        let gnd = p.nets.iter().position(|n| n == "GND");
+        assert!(p.links[0].pairs.iter().all(|&(a, pa, _, _)| p.footprints[a].pads[pa].net != gnd));
+    }
+
+    #[test]
+    fn declared_near_groups_without_a_shared_signal_net_use_the_any_pad_fallback() {
+        // R3 and R4 form a second group on net B; it is "near" g, with which it shares only the GND rail.
+        let mut raw = with_half_extents(input(vec![]), json!({"shared": {"GND": "ground return"}, "scoped": {}}));
+        raw["groups"] = json!([{"name": "g", "anchor": "R1", "refs": ["R1", "R2"], "near": ["h"]},
+                               {"name": "h", "anchor": "R3", "refs": ["R3", "R4"]}]);
+        let p = prepare(&raw).unwrap();
+        let r1 = p.links.iter().position(|l| l.kind == "R1_declared_near_interface").expect("R1 link compiled");
+        assert_eq!((p.links[r1].paired_by.as_str(), p.links[r1].target.as_str()), ("any", "h"));
+        assert_eq!(p.links[r1].pairs.len(), 2 * 2 * 2 * 2, "all member pad pairs across the two groups");
+        let near: Vec<Pose> = legal_dispersed(&p);
+        let mut far = near.clone();
+        // Move the whole near group h (R3 and R4) away from g; every candidate pair lengthens.
+        let r3 = p.footprints.iter().position(|f| f.native_ref == "R3").unwrap();
+        let r4 = p.footprints.iter().position(|f| f.native_ref == "R4").unwrap();
+        far[r3] = Pose { x: 11_000_000, y: 8_500_000, q: 0 };
+        far[r4] = Pose { x: 11_000_000, y: 1_500_000, q: 0 };
+        let (gn, gf) = (link_gap(&p, r1, &near), link_gap(&p, r1, &far));
+        assert!(gf > gn, "moving the near group apart must raise the interface gap: {gn} -> {gf}");
+        assert!(link_terms(&p, r1, &far) > link_terms(&p, r1, &near), "the interface term of the soft objective follows the gap");
+        assert_eq!(full_evaluate(&p, &far).link, (0..p.links.len()).map(|k| link_terms(&p, k, &far)).sum::<i128>());
+        let rows = link_rows(&p, &far);
+        let row = rows.as_array().unwrap().iter().find(|r| r["kind"] == "R1_declared_near_interface").unwrap();
+        assert_eq!(row["paired_by"], "any");
+        assert_eq!(row["gap_nm"].as_i64().unwrap(), gf, "the report and the objective take the same dynamic minimum");
     }
 
     #[test]

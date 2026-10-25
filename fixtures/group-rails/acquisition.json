@@ -1,0 +1,22 @@
+{
+ "bindings": {
+  "board_sha256": "d0a898a2a254c090ba1a4185320938241c255e79c587c82abb27a0bcafcd66e7",
+  "groups_sha256": "eb725e24138dc70ed7e615eb7ac5b77952178ccc5fd27fd8b041ec38c31ee396"
+ },
+ "schema": "agent-ee.group-rails/1",
+ "scoped": {},
+ "shared": {
+  "/V3V3": {
+   "evidence": "ACQ-MECH-2 (spec.md 3232:3533): shared 3.3 V shall not merge the blocks; U1 output rail to U2 and J2 pin 4"
+  },
+  "GND": {
+   "evidence": "ACQ-MECH-2 (spec.md 3232:3533): shared ground shall not merge the blocks; J1.2 ground reference across power, analog and host blocks"
+  }
+ },
+ "source": {
+  "commit": "886282bc",
+  "contract": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-group-intent-contract.json",
+  "note": "bound to the retained stage-05 groups.json and the delivered native board; a new acquisition run must re-pin the board hash",
+  "section": "S2_evidence_bound_shared_rail_non_merge (acquisition ACQ-MECH-2: shared ground and 3.3 V shall not merge the blocks)"
+ }
+}

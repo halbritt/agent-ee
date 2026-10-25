@@ -40,6 +40,32 @@ def partition(groups, references, *, fixed=()):
             'undeclared_refs': extra, 'complete': not (duplicates or missing or extra)}
 
 
+def near_pairs(name, target, refs, target_refs, footprints, shared, scoped):
+    """R1 candidate pad pairs between two groups: shared non-rail signal-net pairs, else any pad pair.
+
+    The solver minimises over exactly this set under movement, so the report's
+    argmin and the solver's objective agree. ``paired_by`` labels which rule
+    produced the set: ``signal_net`` or the accepted-contract ``any`` fallback.
+    """
+    signal = []
+    for ref in refs:
+        for pad in footprints[ref]['pads']:
+            net = pad.get('net')
+            if pad.get('net_id', 0) <= 0 or not net:
+                continue
+            if net in shared and [name, target] not in scoped.get(net, {}).get('near_pairs', []):
+                continue
+            for other in target_refs:
+                for partner in footprints[other]['pads']:
+                    if partner.get('net_id') == pad.get('net_id'):
+                        signal.append((ref, pad, other, partner))
+    if signal:
+        return {'paired_by': 'signal_net', 'pairs': signal}
+    any_pairs = [(ref, pad, other, partner) for ref in refs for pad in footprints[ref]['pads']
+                 for other in target_refs for partner in footprints[other]['pads']]
+    return {'paired_by': 'any', 'pairs': any_pairs}
+
+
 def measure(groups, footprints, rails, *, fixed=()):
     """Measure group relations.
 
@@ -47,7 +73,7 @@ def measure(groups, footprints, rails, *, fixed=()):
     with non-aperture pads only. ``rails = {'shared_rails': {net: evidence text},
     'scoped': {net: {'intra_group': name, 'near_pairs': [[a, b], ...]}}}``.
     """
-    shared = set(rails.get('shared_rails', {}))
+    shared = set(rails.get('shared', rails.get('shared_rails', {})))
     scoped = rails.get('scoped', {})
     s1 = partition(groups, footprints, fixed=fixed)
     owner = s1['owner']
@@ -95,31 +121,18 @@ def measure(groups, footprints, rails, *, fixed=()):
         for target in group.get('near', []):
             target_refs = [r for r in next((g['refs'] for g in groups['groups'] if g['name'] == target), [])
                            if r in footprints]
-            best = None
-            for ref in present:
-                for pad in footprints[ref]['pads']:
-                    net = pad.get('net')
-                    if pad.get('net_id', 0) <= 0 or not net:
-                        continue
-                    if net in shared and [name, target] not in scoped.get(net, {}).get('near_pairs', []):
-                        continue
-                    for other in target_refs:
-                        for partner in footprints[other]['pads']:
-                            if partner.get('net_id') != pad.get('net_id'):
-                                continue
-                            gap = rect_gap(pad['rect'], partner['rect'])
-                            key = (gap, ref, pad['number'], other, partner['number'])
-                            if best is None or key < best[0]:
-                                best = (key, ref, pad, other, partner, net)
-            if best is None:
+            pairs = near_pairs(name, target, present, target_refs, footprints, shared, scoped)
+            if not pairs['pairs']:
                 near_links.append({'from_group': name, 'to_group': target, 'paired_by': None, 'gap_mm': None,
-                                   'reason': 'no shared non-rail signal net between the groups'})
-            else:
-                _, ref, pad, other, partner, net = best
-                near_links.append({'from_group': name, 'to_group': target, 'paired_by': 'signal_net',
-                                   'from_ref': ref, 'from_pad': pad['number'], 'to_ref': other,
-                                   'to_pad': partner['number'], 'net': net, 'gap_mm': round(best[0][0], 4),
-                                   'authority_role': 'soft_objective_and_measured_interface'})
+                                   'reason': 'no pads on either side'})
+                continue
+            best = min(pairs['pairs'], key=lambda t: (rect_gap(t[1]['rect'], t[3]['rect']), t[0], t[1]['number'], t[2], t[3]['number']))
+            ref, pad, other, partner = best
+            near_links.append({'from_group': name, 'to_group': target, 'paired_by': pairs['paired_by'],
+                               'from_ref': ref, 'from_pad': pad['number'], 'to_ref': other,
+                               'to_pad': partner['number'], 'net': pad.get('net') if pairs['paired_by'] == 'signal_net' else None,
+                               'gap_mm': round(rect_gap(pad['rect'], partner['rect']), 4), 'candidate_pairs': len(pairs['pairs']),
+                               'authority_role': 'soft_objective_and_measured_interface'})
         xs = [footprints[r]['x'] for r in present]
         ys = [footprints[r]['y'] for r in present]
         bbox = [round(min(xs), 4), round(min(ys), 4), round(max(xs), 4), round(max(ys), 4)] if present else None
@@ -146,8 +159,8 @@ def measure(groups, footprints, rails, *, fixed=()):
                                                           'D2_anchor_separation_inversions': inversions,
                                                           'limitation': D_LIMITATION}}
     return {'schema': REPORT_SCHEMA, 'metric': METRIC_ID, 'S1_complete_partition': s1,
-            'S2_shared_rails': {'shared_rails': dict(rails.get('shared_rails', {})), 'scoped': scoped,
-                                'unknown_multi_group_nets': unknown},
+            'S2_shared_rails': {'shared': dict(rails.get('shared', rails.get('shared_rails', {}))), 'scoped': scoped,
+                                'bindings': rails.get('bindings'), 'unknown_multi_group_nets': unknown},
             'groups': report, 'authority': 'measurements and diagnostics only; no automatic group pass'}
 
 
