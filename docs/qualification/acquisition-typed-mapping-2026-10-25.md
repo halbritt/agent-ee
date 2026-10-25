@@ -23,6 +23,26 @@ was modified; no judgment record, witness or candidate was created.
 | Added checks | `fab-export` (`fab_export`) and `cpl` (`cpl_rotation`, policy + 11 supplier provenance files) declared verbatim from agent-566's acq-partb-2 scope; `fab` gains `assembly_profile: cpl/assembly-profile.json` and nothing else |
 | Typed receipt | `agent-ee.requirement-map-receipt/2`, `method_binding: typed`, compiled against the accepted `release-build-v7` scaffold candidate `stages/03-scaffold-d1c92e58…/product/inputs` overlaid with the three derived files; `scope_sha256 79a76e38ac5f06644c99b0728797c03b59d38df72e45579e0a0f151a3383c5dc`, `baseline_id 986f6fcbea50dbb89c129a6f52155663b78744999c3dfa05f63f18a3d74b2201`, `coverage_id 10e725a2ade3f5e2745be8e7104d3d4c5dc82207872003721422310d8d455bca`; compile root inventory `914810bf00f477bfd42cebcd0bf175903bdaa78f45a7b8262cce99eb6f1cbcac` (27 overlaid files); compiled on main at 903721fb, which strips the profile from the delegated export |
 
+**Inventory scopes preserved.** The acquisition capture is 198 regular files
+(inventory sha256 `718b4619c597efdfb730727804614546fac174feacc93ec0fec2a7a39084cd54`
+in the manifest); 196 are copied unchanged, two are derived with both hashes
+recorded, and 25 files are added. The esp_prog article is a separate scope
+that this preparation never reads: the recovery baseline's frozen esp_prog
+configuration names `board.kicad_pcb` `b4aa540d…93eef7`, `board.kicad_pro`
+`9a9ab694…b6395`, `intent.json` `320cf961…330d3c` and `groups.json`
+`d48e2a5d…6837e8`, all untouched. The combined preservation figure of 204
+quoted by the chief is 198 acquisition inputs plus the esp_prog inputs; the
+baseline record lists four hashed esp_prog inputs, so the exact esp_prog
+count is the chief's to confirm against their own manifest. No original
+input in either scope was changed.
+
+**Revision history of this preparation.** `f30a0701` (first delivery, base
+`ae477fc7`) was rebased without content change onto `903721fb` as
+`0766bc6b` and then onto `82133d6d` as `e2572d98`; the CPL extension
+`880db1c7` became `abd191be` on the same rebase. The rebased commits
+supersede the earlier hashes; the frozen delivery is the branch head named
+in the chief notice.
+
 Accounting of the derived declaration: 46 receipt rows; modes `checks` 29,
 `judgment` 13, `bench` 2, `operational` 1, `context` 1, `limitation` 0;
 obligation kinds executable 29 (including the 8 envelope-derived rows),
