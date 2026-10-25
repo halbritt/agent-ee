@@ -22,7 +22,7 @@ The [routing adapter](routing-adapter.md) remains the authority for the protocol
 This page adds no check, threshold or schema that code reads. It adopts no pod
 value: adoption stays with the pod lane.
 
-Current pin: `e69ec315403ef8fb2de24f2b3074098aa007006c` (2026-10-24),
+Current pin: `1c895b67dd6ca36620c0b5f757d6402e9692bf78` (2026-10-24),
 with 311 files in the exact tracked `bin/` and `src/` hash map.
 The optional targeted thermal reservation is used by the placement job; the
 stage adapter's default request and result shapes are unchanged. The source

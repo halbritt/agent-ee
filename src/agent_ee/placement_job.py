@@ -1180,7 +1180,7 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
-          design_name='board', grid_step_mm=None, planes=None):
+          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1235,6 +1235,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             '--budget', str(int(remaining)), '--diff-pairs', 'auto']
     if grid_step_mm is not None:
         argv += ['--grid-step', str(grid_step_mm)]
+    if intra_pair_match is not None:
+        argv += ['--diff-pair-intra-match', '--length-match-tolerance', str(intra_pair_match['tolerance_mm']),
+                 '--meander-amplitude', str(intra_pair_match['amplitude_mm'])]
     Path(home).mkdir(parents=True, exist_ok=True)
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
@@ -1249,6 +1252,10 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         try:
             feedback = _route_feedback(record, checkout, env=env, clock=route_clock, cancel_dir=cancel_dir)
             if feedback is None or feedback['kind'] in used:
+                break
+            if intra_pair_match is not None and feedback['kind'] != 'thermal_corridors':
+                attempts[-1]['feedback'] = {**feedback, 'recovery': 'not_applied',
+                    'reason': 'single-net repair cannot preserve pair coupling and matching acceptance'}
                 break
             used.add(feedback['kind'])
             attempts[-1]['feedback'] = feedback
@@ -1355,6 +1362,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     if not resume:
         job_dir.mkdir(parents=True, exist_ok=True)
     with clock.phase('setup'):
+        matching = config['router'].get('intra_pair_match')
+        if 'intra_pair_match' in config['router']:
+            if not isinstance(matching, dict) or set(matching) != {'tolerance_mm', 'amplitude_mm'}:
+                raise JobRefusal('router.intra_pair_match requires tolerance_mm and amplitude_mm only')
+            if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0.000001
+                   for value in matching.values()):
+                raise JobRefusal('intra-pair matching values must be finite and at least 0.000001 mm')
         unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
@@ -1539,7 +1553,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             routed = route(selected['directory'], job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
-                           grid_step_mm=config['router'].get('grid_step_mm'), planes=plane_bytes)
+                           grid_step_mm=config['router'].get('grid_step_mm'),
+                           intra_pair_match=matching, planes=plane_bytes)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}

@@ -1603,3 +1603,23 @@ itself (`AGENT_EE_PIN` in fome-mc `production-capture/pipeline.py`) is fome-mc's
 81e387ee on the j6 and j6b2 branches; it moves only in fome-mc. This qualifies execution
 identity and the read-once path on these inputs. It is not a latency claim, a routing campaign
 or project adoption.
+
+
+### Intra-pair matching pin qualification (2026-10-24)
+
+The current pin is `1c895b67dd6ca36620c0b5f757d6402e9692bf78` (311 verified
+`bin/` and `src/` blobs; code-map SHA-256
+`106c7dd3996caae3efdd96553a8267ffa6cfbf03e217cf1a92643752e8539f70`).
+Only the public CLI and pair adapter changed; owned backend source, native facts,
+pour calculation/refill, layer-policy reports and via-count semantics are
+unchanged. Matching is opt-in through the normal placement job's router controls;
+its saved-copper grade is independent of backend success. Existing frozen
+receipts retain their original pins and are never relabelled.
+
+The [qualification](qualification/pair-matching-2026-10-24.md) records the
+fresh public/build-stage positives, meaningful negatives, same-input stock KRT
+comparison, clean environment and all 46 required modules with passing evidence.
+Three stale pin/documentation expectations in the initial gate were corrected;
+the two affected modules pass again in strict native mode. This establishes the
+bounded intra-pair operation, not broader signal-integrity or manufacturing
+acceptance. The accepted acquisition package remains unchanged.

@@ -123,6 +123,16 @@ change native widths or clearance requirements. Omission uses the router
 default; the pinned CLI rejects non-finite, sub-nanometre or incompatible
 controls. The chosen value is retained in the configuration and routing record.
 
+Optional `router.intra_pair_match` requests length matching of newly routed
+pairs. Supply both `tolerance_mm` and `amplitude_mm`, for example
+`{"tolerance_mm": 0.1, "amplitude_mm": 2.0}`. The amplitude bounds the meander
+search; it does not change a native clearance, gap, length or skew requirement.
+Both values must be finite and at least one nanometre. Saved pair lengths must
+meet the requested tolerance, and all native rules still apply. Omission leaves
+matching disabled. Existing protected copper is preserved, so an already
+connected pair outside tolerance is rejected rather than silently altered.
+These controls are part of the job identity and cannot change on resume.
+
 The captured native project can also declare the router's existing assembly
 policy under `kicad_routing_tools.same_net_pad_clearance`. A positive value in
 millimetres keeps newly routed vias away from same-net SMD pads and paste

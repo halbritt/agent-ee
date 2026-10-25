@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = 'e69ec315403ef8fb2de24f2b3074098aa007006c'
+PIN = '1c895b67dd6ca36620c0b5f757d6402e9692bf78'
 # SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
 PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
  'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
@@ -47,7 +47,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
  'src/kicad_route/campaign.py': 'c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9',
  'src/kicad_route/canary.py': '0384d1722889e207fcc544e9df65164920aa3cc153df5228349b42cd690a7243',
- 'src/kicad_route/cli.py': '4f225b98b0c1849dc43f1496e6a738b87c0062e5fbad9584df12b6dec52fc943',
+ 'src/kicad_route/cli.py': '9a8528df15bb11a01ada4bc1975babad9fc5506e0ed022b4f7418630a65bed40',
  'src/kicad_route/common.py': '4fd09eef7547c947700067975a54e08c8e6b3ed8d3c5ac94cf8ae77e4a593038',
  'src/kicad_route/configuration_evidence.py': '08f81a88c9d911d474c45515cad1303bbf7eb6f15438f6c7c278d69c6e075d59',
  'src/kicad_route/contract.py': '5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698',
@@ -55,7 +55,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/corpus.py': '7ec0dfdd8cd3baf33fc3536f36539af0706a0f21f469ddf8efee4fff100be41d',
  'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
  'src/kicad_route/determinism.py': 'c05ab76de1e24be3f9eeb66807e1f739ed722025e55b65481d877c56dd683abc',
- 'src/kicad_route/diff_pairs.py': 'c6dc5e7a21f28377209203744c4c7e1e4e2da7a101ee08450d31dd65f4607470',
+ 'src/kicad_route/diff_pairs.py': '7bb1db99e92f760c1e0cb0ce31284e90e0b508cd2e443eaa78330e07c6f83ced',
  'src/kicad_route/engine.py': '4f4451f6356a9b5ba63b01d4e1d97f7490b80deb0a1518e28b29e9ae13c9d1c1',
  'src/kicad_route/evidence.py': 'ae818865ecdd317abe9c82129782217817df4ae75548d4b9d85b08cda3b99881',
  'src/kicad_route/experiment_policy.py': '575e7aef8a2ba825ef05211603b16e00c05ebf4439e2976ef0a7884bd330265d',
