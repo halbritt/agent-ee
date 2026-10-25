@@ -1,0 +1,56 @@
+{
+  "schema": "agent-ee.router-preservation-contract/1",
+  "issue": "KICADROUTE-104",
+  "issue_uuid": "99a5700a-38ee-468c-9bf0-a359598bb0d6",
+  "stage": "ROUTER_DECISION",
+  "holder": "agent-570",
+  "holder_agent_id": "edb45025-2b0c-4f30-9a52-ca2aff8147c1",
+  "findings_addressed": ["REC-17", "REC-22"],
+  "decisions_enforced": ["RD-01", "RD-02", "RD-03", "RD-04", "RD-05"],
+  "inputs": {
+    "agent_ee_frozen_base": "dab756e56a6a5358c00983074565af0e8e09862c",
+    "agent_ee_observed_main": "95af4de179a62cd0ca19f31c7df8665c2881ffbe",
+    "kicad_route_base": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
+    "upstream_krt_commit": "8e56ba977521d245848ed294378b590b0f7539b9"
+  },
+  "doctrine_receipt": {
+    "packet_id": "pkt-c137855f1bb9958d",
+    "packet_content_sha256": "c137855f1bb9958d34b1e7149c28ca25a6d30e7460454647b5043946c0993c04",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "dispositions": {
+    "KRT_FLAGS_rule_floors": "retain-refusal",
+    "KRT_ENV_rule_floors": "retain-refusal",
+    "KRT_ENV_rescue_cap_move": "retain-refusal",
+    "KRT_ENV_dynamic_iterations": "retain-refusal",
+    "KRT_PROTECT_EXISTING_split": "allow",
+    "diff_pairs_coupled_guards": "retain-refusal",
+    "recovery_collision_barriers": "allow",
+    "recovery_thermal_spokes": "allow",
+    "recovery_copper_ownership_and_blocked_ordering": "allow",
+    "plane_plan_1_inventory": "retain-refusal",
+    "plane_plan_2_stitching_vias": "adapt",
+    "krt_repair_planes_and_add_gnd_vias": "adapt",
+    "qfn_and_bga_fanout": "adapt"
+  },
+  "downstream_contracts": {
+    "KICADROUTE-105": {
+      "uuid": "b98c5f6b-54bb-481f-995e-bdeed66473dd",
+      "choice": "Keep plane-plan/1 strictly track/via-invariant; implement agent-ee.plane-plan/2 for explicit netclass-checked stitching/return vias with >=2-layer filled-pour overlap; require per-net net_track_widths and net_via_sizes flooring, same_net_pad_clearance > 0, --no-fix-drc-settings, and KICAD_STOP_FILE checks before any KRT repair_planes/route_planes/add_gnd_vias reuse."
+    },
+    "KICADROUTE-106": {
+      "uuid": "9fb1b0c2-e64d-442b-a9e4-14960d6feb0b",
+      "choice": "Record qfn_fanout in routing_closure.py and UPSTREAM.json; gate bga_fanout persist_pour_served_pads on not args.no_fix_drc_settings and return finish_design_rules(args, 0); expose fanout only as an opt-in --component stage with preflight netclass/pitch refusal (width + clearance <= pitch/sqrt(2) for 45-deg QFN stubs), no via-in-pad unless declared, restored .kicad_pro sidecars, and full cli.preservation + native DRC."
+    },
+    "AGENTEE-516": {
+      "uuid": "40da87f6-c7c2-43fc-abff-fa8d7a79b846",
+      "choice": "Reject blanket KRT_FLAGS/KRT_ENV relaxation; extend placement_job._route_feedback within the candidate Clock budget to invoke (1) --barrier-from on barrier-eligible new-copper collisions, (2) copper_ownership.prepare_disposable whole-net removal instead of raw --force-reroute, and (3) hard-first unrouted net ordering from blocked-by.json."
+    },
+    "AGENTEE-517": {
+      "uuid": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a",
+      "choice": "Add native pcbnew/kicad-cli control and negative regression tests for plane-plan/2 stitching vias, netclass-floored plane repair, bounded QFN/BGA fanout preflight and preservation, and placement_job._route_feedback barrier/ownership/blocked retries."
+    }
+  }
+}
