@@ -26,6 +26,7 @@ product's hardware qualification.
 | Inspect a saved board or captured candidate in 3D | [3D PCB viewer](pcb-viewer.md) |
 | Render top, bottom and isometric board images | [Native 3D renders](pcb-renders.md) |
 | Read the ticket-by-ticket record of implemented capabilities | [Capability log](capability-log.md) |
+| Read the independent audits and their corrective plans | [Audits](audit/README.md) |
 | Build a captured design through the seven stages to a fabrication package | [Build workflow](build-workflow.md), [system acceptance map](system-acceptance.md) |
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
