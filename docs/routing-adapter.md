@@ -1734,3 +1734,13 @@ omissions, and saved native `fromTo` delay/skew coverage binds both board and
 project hashes. Existing connected group members and used via spans participate
 in timing targets. See the [qualification](qualification/delay-matching-2026-10-25.md)
 for engineering assumptions, matched stock results and current gate status.
+
+
+Coupled pair-to-pair length groups use the existing exact group input and native
+path checker. Router `13303bcf92b46428ee285bd73c8ac398d9b4a808` keeps selected pair
+centerlines available in one process until tuning finishes, then protects the
+accepted copper from later routing. It preserves each pair's native geometry
+when rebuilding meanders; differing-class native qualification caught and repaired
+use of the run-wide width. All 249 distinct router cases pass with zero skips.
+Normal agent-ee job/build qualification and its mandatory consumer pin gate are
+recorded separately in the inter-pair qualification evidence.

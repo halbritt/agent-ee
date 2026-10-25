@@ -39,7 +39,7 @@ positive and wrong-address negative have exercised this public command.
 | Architecture, parts and circuits | Circuit/connectivity intent, captured sourcing/CAD/rating records → bound parts and native pin inventory; build parts stage, `parts_stage`, `binding_fill` | Source parts, topology and electrical calculations. Actual selected TPS7A20/ADS1115 circuit is carried into the board. Consequential reversed-diode negative rejects despite clean ERC. The acquisition load, capacitance, startup/removal and other electrical obligations now have reviewed source/model evidence and final native checks; other circuit families remain unqualified. |
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Acquisition package bodies, height, connector access and board thickness are reviewed and checked. Broader side/hardware/keepout cases remain open. |
-| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials and final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition and esp_prog route with zero native errors/opens. Public jobs and build producers exercise declared planes, targeted two-sided recovery, preserved native rules, differential matching/transitions, nominal outer-layer impedance, symmetric stripline, geometric buses, explicit single-ended length groups and nominal native-profile propagation-delay matching; individual qualifications below bind the evidence and limits. Existing pours, placement-restricting rule areas, broader impedance/return paths, inter-pair matching, DDR/package lengths and fanout remain open. |
+| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials and final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition and esp_prog route with zero native errors/opens. Public jobs and build producers exercise declared planes, targeted two-sided recovery, preserved native rules, differential matching/transitions, nominal outer-layer impedance, symmetric stripline, geometric buses, explicit single-ended length groups and nominal native-profile propagation-delay matching and coupled pair-to-pair length matching; individual qualifications below bind the evidence and limits. Existing pours, placement-restricting rule areas, broader impedance/return paths, AC-composed matching, DDR/package lengths and fanout remain open. |
 | Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `topology_rules`, interval checks, passive/active SPICE, `dc_path` | Five independent ADC pin rules now enter the normal build's generated scope; wrong address-pin wiring rejects despite passing ERC and generator parity. Selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. Whole-net copper checks exercise two/four-layer controls, supply/return copper and disconnected/exceeded-budget negatives. Acquisition material/contact assumptions and component applicability are explicitly reviewed; model limits and unperformed physical obligations remain visible. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Acquisition mechanical/fabrication obligations are closed with dimensioned/source review and final checks. Remaining routing-feature cases are unmet. |
 | Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | The 17-part acquisition design is accepted through the default seven-stage build: 37 passing checks plus informational netlist, 9 plots/2 drills/12 BOM rows/17 placements. The eleven engineering obligations are closed with explicit assumption corrections; changed exported coordinates reject as stale. Supplier preview and physical tests are unperformed. |
@@ -192,7 +192,7 @@ copper determines the result.
 
 | KRT feature | Supported implementation and executable evidence | Observed result and remaining coverage |
 | --- | --- | --- |
-| D08 intra-pair portion | Public router matching controls; `router.intra_pair_match` in normal placement/build; `test_placement_job_matching` and captured `build/pair-matching/public-qualification/inputs/job.json` | Saved planar-copper difference 0.000787 mm meets the 0.1 mm request; the separate native 0.15 mm skew rule also passes, with zero opens/findings. Same-input stock d24a760 leaves a 0.197740 mm planar difference with matched settings. Insufficient room, tighter target, missing pairs and changed-control resume reject. AC-coupled legs and pair-to-pair matching remain open. |
+| D08 intra-pair portion | Public router matching controls; `router.intra_pair_match` in normal placement/build; `test_placement_job_matching` and captured `build/pair-matching/public-qualification/inputs/job.json` | Saved planar-copper difference 0.000787 mm meets the 0.1 mm request; the separate native 0.15 mm skew rule also passes, with zero opens/findings. Same-input stock d24a760 leaves a 0.197740 mm planar difference with matched settings. Insufficient room, tighter target, missing pairs and changed-control resume reject. Pair-to-pair groups now have separate qualified evidence below; AC-coupled legs remain open. |
 
 Completed capability milestone: coupled differential routing across a required
 inner-layer transition. [Qualification](qualification/pair-transition-2026-10-24.md)
@@ -281,17 +281,31 @@ whole-product completion follows.
 | --- | --- | --- |
 | D07 nominal single-ended profile timing | Existing public group operation with `--group-delay-tolerance`, normal `router.length_match.tolerance_ps`; router `test_delay_groups`, consumer `test_placement_job_delay_groups` | Six-layer article meets 1 ps skew: 323.78/323.00 ps. Final build has zero opens/findings. Missing original dielectric/profile/coverage, ignored via height, connected timing failure and changed-requirement resume reject. Matched current stock `e358107` remains connected but violates the same native timing limit at 42.90 ps. Nominal authored rates only; no physical signal-integrity, fabrication or broad superiority claim. |
 
-Next named capability: differential pair-to-pair length matching (remaining
-D08 portion). Use two unequal native pairs on a four-layer article with fixed
-functional groups. The normal job/build must match useful path lengths while
-preserving each pair's width/gap and intra-pair skew, then independently check the
-final saved copper against native rules. Insufficient tuning room and connected
-but unmatched pairs must reject. Compare stock on the same inputs, constraints
-and declared budget. Existing timing/group/pair and accepted acquisition
-workflows remain regressions.
+Completed bounded capability milestone: coupled pair-to-pair length matching.
+Router `13303bcf` is integrated; five public job/build cases and all 1,003 prior
+consumer cases pass, totaling 1,008 distinct cases in 54 modules without skips. See [qualification](qualification/inter-pair-matching-2026-10-25.md).
+The native four-layer article checks every useful P/N path, per-pair widths and
+gaps, intra-pair skew and coupling extent. The heterogeneous-class build has
+zero findings/opens; matched stock `e358107` has 33 native geometry findings
+and zero opens. Insufficient room, strict authored coupling and changed-request
+resume reject. This is software geometry qualification, not physical SI or
+manufacturing acceptance. Existing connected geometry and atomic failed-group
+discard have native router evidence.
+
+| KRT feature | Implementation and executable exercise | Bounded result |
+| --- | --- | --- |
+| D08 pair-to-pair geometry | Existing `router.length_match` complete-pair groups; router `test_inter_pair_matching`, consumer `test_placement_job_inter_pair` | Four useful paths span 0.0611 mm against 0.1 mm. Mixed native pair classes retain widths/gaps with zero final build findings/opens; matched stock `e358107` has 33 geometry findings. Strict authored coupling, incomplete pairs, insufficient room, batch failure and changed-request resume reject. Coupled time-domain and AC composition remain open. |
+
+Next named capability: AC-composed differential-pair matching.
+Use native series capacitors connecting two named pair segments, with unequal
+composed path lengths. The normal workflow must preserve actual connectivity and
+coupling on each segment and independently grade the composed path. A connected
+but incorrectly composed or unmatched pair must reject. Compare the same captured
+inputs and engineering constraints with stock; retain existing matching and
+accepted acquisition workflows as regressions.
 
 Existing successful workflows remain regressions. Asymmetric/multilayer/
-coplanar impedance, broader propagation-time and inter-pair matching, AC
+coplanar impedance, broader propagation-time and multilayer composed matching, AC
 composition, fanout, existing placement-input pours, broader return-path recovery
 and circuit synthesis remain required subsequent work. Latest stock KRT also
 adds an optional OR-Tools bus path; prior geometric bus evidence does not qualify

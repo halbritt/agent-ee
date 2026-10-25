@@ -259,6 +259,22 @@ and eliminating its three measured via-center-in-pad sites.
 rules are present. Queue time (admission) is outside
 the process and must be recorded by the caller.
 
+### Coupled pair groups
+
+The existing `router.length_match` operation also accepts complete coupled
+pairs, detected from native names and netclasses. Include both members of at
+least two pairs, for example `[["A_P", "A_N", "B_P", "B_N"]]`. Use
+`tolerance_mm`; coupled native delay-profile matching remains unqualified.
+Every named terminal-to-terminal path must satisfy the requested native skew.
+
+The router tunes the group before locking pair copper for subsequent passes,
+and preserves each pair's own native width/gap. A failure in one pair discards
+the batch output. Existing connected copper sets the target and is preserved.
+Single-ended members and coupled members must be in separate groups. If both
+`router.intra_pair_match` and a coupled group are requested, their tolerance and
+amplitude must agree because the backend shares those controls. Original native
+rules, including stricter coupling limits, always remain in force.
+
 ## Order of work
 
 1. **Runtime preflight**: pcbnew import, `kicad-cli version`, the Rust engine

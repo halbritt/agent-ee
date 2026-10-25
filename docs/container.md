@@ -33,7 +33,7 @@ hosted run exposed a user-namespace requirement, handled below.
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
-| kicad-route with KRT 0.23.1 | kicad-route `48f02187bef97971b724975fa178fa41c9aca8b2`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
+| kicad-route with KRT 0.23.1 | kicad-route `13303bcf92b46428ee285bd73c8ac398d9b4a808`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | Rust placement engine | This checkout's `crates/placement-engine`, committed Cargo lock and digest-pinned Rust 1.99.1 compiler | Locked dependency acquisition, offline Rust unit tests and release build, then source/binary receipt verification in the final image |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
@@ -198,7 +198,7 @@ hash-locked [wheel list](../docker/kicad-route/krt-requirements.txt):
 
 | Input | Pin | Enforcement |
 | --- | --- | --- |
-| kicad-route | Commit `48f02187bef97971b724975fa178fa41c9aca8b2` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
+| kicad-route | Commit `13303bcf92b46428ee285bd73c8ac398d9b4a808` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
 | Owned routing engine | `src/kicad_route/router/`, including `rust_router/Cargo.lock` and `UPSTREAM.json` | Ships inside the pin; no external KRT acquisition or prebuilt routing module |
 | Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | Existing CPython 3.12 manylinux x86-64 wheel lock, installed with `--require-hashes --only-binary=:all: --no-deps`; exact four distributions verified |
 | Rust toolchain | `rust:1.99.1-slim-bookworm` at the digest in Dockerfile | Digest-pinned image copied into the build stage; exact `rustc` and `cargo` version banners required |
