@@ -1,13 +1,15 @@
 """Bounded silk relocation with native saved-board DRC.
 
 The default placement pass writes only field positions. The routed artwork
-producer opts into graphic translations and proves its separate write scope.
+producer moves only explicitly classified free rigid groups and proves their scope.
 Text content, side, angle, font, size, thickness and visibility stay unchanged.
 """
 import json
 
 DECLARATION = 'agent_ee_movable_silk_fields'
 SILK_CONFLICTS = frozenset(('silk_overlap', 'silk_over_copper'))
+# Final artwork coverage; placement carry deliberately keeps its existing set.
+ARTWORK_CONFLICTS = SILK_CONFLICTS | {'silk_edge_clearance'}
 
 
 def movable_names(declaration=None):
@@ -23,13 +25,13 @@ def movable_names(declaration=None):
     return frozenset(names)
 
 
-def _obstacle_boxes(field, items, identities=None):
+def _obstacle_boxes(field, items, identities=None, exclude=frozenset()):
     """Native same-side bounds, optionally restricted to cited native identities."""
     import pcbnew as k
     copper, mask = ((k.F_Cu, k.F_Mask) if field.GetLayer() == k.F_SilkS else (k.B_Cu, k.B_Mask))
     for item in items:
         uid = item.m_Uuid.AsString()
-        if uid == field.m_Uuid.AsString() or (identities is not None and uid not in identities):
+        if uid == field.m_Uuid.AsString() or uid in exclude or (identities is not None and uid not in identities):
             continue
         if item.GetClass() in ('PCB_FIELD', 'PCB_TEXT') and not item.IsVisible():
             continue
@@ -144,8 +146,9 @@ def _box_contained(corners, outline):
                     for hole in holes))
 
 
-def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False, targets=None):
-    """Translate owned fields and opted-in graphics within 10 mm, deterministically.
+def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False, targets=None,
+             free_groups=(), conflict_types=SILK_CONFLICTS):
+    """Translate owned fields and explicit free groups within 10 mm, deterministically.
 
     targets, when given, is a set of (reference, field name) pairs: only those
     fields may move, each must name exactly one movable visible silk field,
@@ -158,7 +161,7 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False,
     """
     import pcbnew as k
 
-    conflicted = {i['uuid'] for v in findings if v['type'] in SILK_CONFLICTS for i in v['items']}
+    conflicted = {i['uuid'] for v in findings if v['type'] in conflict_types for i in v['items']}
     fields, obstacles = {}, []
     for fp in board.GetFootprints():
         props = {f.GetName(): f.GetText() for f in fp.GetFields()}
@@ -171,13 +174,11 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False,
         obstacles.extend(fp.GraphicalItems())
         obstacles.extend(fp.GetFields())
     obstacles.extend(board.GetDrawings())
-    if graphics:
-        # Only native silk shapes/text with a saved, supported translation proof.
-        for item in obstacles:
-            if (item.GetClass() in ('PCB_SHAPE', 'PCB_TEXT', 'FP_SHAPE', 'FP_TEXT') and
-                    item.GetLayer() in (k.F_SilkS, k.B_SilkS)):
-                fp = item.GetParentFootprint()
-                fields[item.m_Uuid.AsString()] = (fp.GetReference() if fp else '', item)
+    graphical = {item.m_Uuid.AsString(): item for item in obstacles
+                 if item.GetClass() in ('PCB_SHAPE', 'PCB_TEXT', 'FP_SHAPE', 'FP_TEXT') and
+                 item.GetLayer() in (k.F_SilkS, k.B_SilkS)}
+    if free_groups and not graphics:
+        raise ValueError('free artwork groups require explicit graphic scope')
     if targets is not None:
         if graphics:
             raise ValueError('artwork target set does not cover graphics')
@@ -206,9 +207,35 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False,
             if any(box.Intersects(other) for other in _obstacle_boxes(field, obstacles, reported)):
                 conflicted.add(uid)
     moved, moved_graphics, unresolved = [], [], []
-    for uid in sorted(conflicted & fields.keys(), key=lambda u: (fields[u][0], u)):
-        ref, field = fields[uid]
-        start = field.GetPosition()
+    units = {uid: (ref, [field]) for uid, (ref, field) in fields.items()}
+    free_ids = set()
+    for group in free_groups:
+        members = []
+        for uid in group['members']:
+            if uid not in graphical or uid in free_ids:
+                raise ValueError('native artwork group member missing or ambiguous')
+            item = graphical[uid]
+            fp = item.GetParentFootprint()
+            if (fp.m_Uuid.AsString() if fp else None) != group['owner_uuid']:
+                raise ValueError('native artwork group owner changed')
+            if item.GetClass() in ('PCB_TEXT', 'FP_TEXT') and not item.IsVisible():
+                raise ValueError('hidden native artwork cannot move')
+            members.append(item)
+            free_ids.add(uid)
+        if not members or len({item.GetLayer() for item in members}) != 1:
+            raise ValueError('native artwork group must name one side')
+        fp = members[0].GetParentFootprint()
+        units[group['members'][0]] = (fp.GetReference() if fp else '', members)
+    if graphics:
+        for uid in sorted((conflicted & graphical.keys()) - free_ids):
+            fp = graphical[uid].GetParentFootprint()
+            unresolved.append(dict(uuid=uid, reference=fp.GetReference() if fp else '', reason='anchored_artwork'))
+    selected = [uid for uid, (_, members) in units.items()
+                if any(item.m_Uuid.AsString() in conflicted for item in members)]
+    for uid in sorted(selected, key=lambda u: (units[u][0], u)):
+        ref, members = units[uid]
+        field = members[0]
+        starts = [(item.GetPosition().x, item.GetPosition().y) for item in members]
         reason = None
         is_field = field.GetClass() == 'PCB_FIELD'
         parent = field.GetParentFootprint()
@@ -224,7 +251,7 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False,
         if reason:
             unresolved.append(dict(uuid=uid, reference=ref, reason=reason))
             continue
-        boxes = list(_obstacle_boxes(field, obstacles))
+        boxes = list(_obstacle_boxes(field, obstacles, exclude={item.m_Uuid.AsString() for item in members}))
         # Reserve other components' same-side courtyard interiors for assembled bodies.
         side = k.F_CrtYd if field.GetLayer() == k.F_SilkS else k.B_CrtYd
         owner = parent.m_Uuid.AsString() if parent else None
@@ -238,21 +265,28 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False,
                    if x*x + y*y <= 1600]
         offsets.sort(key=lambda p: (p[0]*p[0] + p[1]*p[1], p))
         for dx, dy in offsets:
-            field.SetPosition(k.VECTOR2I(start.x + dx, start.y + dy))
-            box = field.GetBoundingBox()
-            box.Inflate(margin)
-            corners = [(box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
-                       (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())]
-            if (_box_contained(corners, outline) and
-                    not any(box.Intersects(other) for other in boxes)):
+            for item, (x, y) in zip(members, starts):
+                item.SetPosition(k.VECTOR2I(x + dx, y + dy))
+            clear = True
+            for item in members:
+                box = item.GetBoundingBox()
+                box.Inflate(margin)
+                corners = [(box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
+                           (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())]
+                if not _box_contained(corners, outline) or any(box.Intersects(other) for other in boxes):
+                    clear = False
+                    break
+            if clear:
                 if dx or dy:
-                    (moved if is_field else moved_graphics).append(dict(
-                        uuid=uid, reference=ref, field=field.GetName() if is_field else None,
-                        from_nm=[start.x, start.y], to_nm=[start.x + dx, start.y + dy]))
+                    for item, (x, y) in zip(members, starts):
+                        (moved if is_field else moved_graphics).append(dict(
+                            uuid=item.m_Uuid.AsString(), reference=ref, field=field.GetName() if is_field else None,
+                            from_nm=[x, y], to_nm=[x + dx, y + dy]))
                 break
         else:
-            field.SetPosition(start)
-            unresolved.append(dict(uuid=uid, reference=ref, reason='bounded_search_exhausted'))
+            for item, (x, y) in zip(members, starts):
+                item.SetPosition(k.VECTOR2I(x, y))
+                unresolved.append(dict(uuid=item.m_Uuid.AsString(), reference=ref, reason='bounded_search_exhausted'))
     report = dict(grid_nm=250000, max_displacement_nm=10000000,
                   moved_fields=moved, search_diagnostics=unresolved)
     if graphics:

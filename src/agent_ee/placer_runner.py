@@ -423,7 +423,7 @@ class CollisionMeasurementRefusal(ValueError):
 
 
 def _drc_comparison(before, after, before_states=None, after_states=None, sources=None,
-                    unchanged_copper=None):
+                    unchanged_copper=None, artwork_text=None):
     """Preserve rigid intra-footprint findings; moved cross-footprint collisions are new.
 
     Native geometry is supplied by the publication path, never by the caller's
@@ -435,6 +435,12 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
             unchanged_copper.get('status') != 'allowed' or
             any(not isinstance(unchanged_copper.get(f), str) for f in ('before_sha256', 'after_sha256'))):
         raise ValueError('unchanged-copper proof is not an allowed write scope')
+    if artwork_text is not None:
+        from .routed_artwork import _report_digest
+        if (artwork_text.get('schema') != 'agent-ee.intrinsic-text/1' or
+                artwork_text.get('proof') != unchanged_copper or
+                artwork_text.get('reports') != [_report_digest(before), _report_digest(after)]):
+            raise ValueError('intrinsic text context differs from exact artwork proof/reports')
     if (before['ignored_checks'] != after['ignored_checks'] or
             before.get('included_severities') != after.get('included_severities')):
         raise ValueError('native baseline/candidate DRC evaluation settings differ')
@@ -450,6 +456,18 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
             raise ValueError('native DRC finding lacks item identities')
         identities = tuple(sorted(i['uuid'] for i in items))
         provenance = finding['constraint_provenance']
+        if (artwork_text is not None and finding['type'] == 'text_height' and
+                len(items) == 1 and identities[0] in artwork_text['identities']):
+            import copy
+            import math
+            pos = items[0].get('pos')
+            if (not isinstance(pos, dict) or set(pos) != {'x', 'y'} or
+                    any(type(v) not in (int, float) or not math.isfinite(v) for v in pos.values()) or
+                    finding.get('severity') not in ('error', 'warning', 'exclusion')):
+                raise ValueError('intrinsic text finding has malformed position or severity')
+            normalized = copy.deepcopy(finding)
+            del normalized['items'][0]['pos']
+            return ('artwork-intrinsic-text', identities[0], _canonical(normalized))
         # An existing advisory cannot hide a new sourced violation on the same
         # items; crossing the outline is new even below an already violated floor.
         identity = (finding['type'], identities, provenance['enforcement'],
@@ -490,7 +508,11 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
 
     for report in (before, after):
         for finding in report['violations']:
+            declared = finding.get('constraint_provenance')
             classify_finding(finding, sources)
+            if (artwork_text is not None and finding['type'] == 'text_height' and
+                    declared is not None and declared != finding['constraint_provenance']):
+                raise ValueError('intrinsic text finding provenance changed')
     if (before_states is None or after_states is None) and unchanged_copper is None:
         # A missing measurement leaves only the item pair: neither a worsened hard
         # collision nor a lost hard measurement on baseline items can be decided.
@@ -517,7 +539,7 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
             chosen.add(index)
             remaining[identity] -= 1
     added = [v for i, v in enumerate(after['violations']) if i in chosen]
-    return {'added_findings': added,
+    result = {'added_findings': added,
             'blocking_findings': [v for v in after['violations'] if v['type'] == 'copper_outside_outline'] + [v for v in added if v['type'] == DRC_KEEPOUT and
                 not (after_states is not None and {i['uuid'] for i in v['items']} <=
                      getattr(after_states, 'noncopper', set()))] + [v for v in added if
@@ -531,6 +553,12 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
                                   v['constraint_provenance']['enforcement'] == 'advisory'],
             'silkscreen_findings': [v for v in added if v['type'].startswith('silk_')],
             'added_by_type': dict(Counter(v['type'] for v in added))}
+    if artwork_text is not None:
+        common = old & Counter(key(v, after_states) for v in after['violations'])
+        result['intrinsic_text_baseline'] = sorted(identity[1] for identity, count in common.items()
+                                                 if identity[0] == 'artwork-intrinsic-text'
+                                                 for _ in range(count))
+    return result
 
 
 def _proposal_drc(source, output):

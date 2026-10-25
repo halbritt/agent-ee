@@ -24,6 +24,114 @@ raise SystemExit(main())
 '''
 GRAPHICS = frozenset(f'{prefix}_{kind}' for prefix in ('fp', 'gr')
                      for kind in ('line', 'arc', 'rect', 'circle', 'poly', 'text'))
+ARTWORK_POLICY = 'agent-ee.artwork-policy/1'
+
+
+def normalize_artwork_policy(policy):
+    """Explicit free-group classification; every unlisted graphic stays anchored."""
+    if policy is None:
+        return None
+    if (not isinstance(policy, dict) or set(policy) != {'schema', 'source_sha256', 'free_groups'} or
+            policy['schema'] != ARTWORK_POLICY or
+            not isinstance(policy['source_sha256'], str) or
+            re.fullmatch('[0-9a-f]{64}', policy['source_sha256']) is None or
+            not isinstance(policy['free_groups'], list) or len(policy['free_groups']) > 256):
+        raise ValueError('malformed artwork policy')
+    groups, seen = [], set()
+    def identifier(value):
+        return isinstance(value, str) and 0 < len(value) <= 128 and not any(c.isspace() for c in value)
+    for group in policy['free_groups']:
+        if (not isinstance(group, dict) or set(group) != {'owner_uuid', 'members'} or
+                (group['owner_uuid'] is not None and not identifier(group['owner_uuid'])) or
+                not isinstance(group['members'], list) or not 0 < len(group['members']) <= 1024 or
+                any(not identifier(uid) or uid in seen for uid in group['members']) or
+                len(set(group['members'])) != len(group['members'])):
+            raise ValueError('ambiguous artwork group membership')
+        seen.update(group['members'])
+        groups.append(dict(owner_uuid=group['owner_uuid'], members=sorted(group['members'])))
+    return dict(schema=ARTWORK_POLICY, source_sha256=policy['source_sha256'],
+                free_groups=sorted(groups, key=lambda g: (g['owner_uuid'] or '', g['members'])))
+
+
+def canonical_artwork_policy(policy):
+    policy = normalize_artwork_policy(policy)
+    if policy is None:
+        raise ValueError('artwork policy cannot be null')
+    return json.dumps(policy, sort_keys=True, separators=(',', ':'))
+
+
+def decode_artwork_policy(text):
+    try:
+        value = json.loads(text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError('malformed artwork policy JSON') from exc
+    policy = normalize_artwork_policy(value)
+    if policy is None:
+        raise ValueError('artwork policy cannot be null')
+    return policy
+
+
+def _artwork_inventory(root):
+    result = {}
+    def walk(node, owner=None):
+        if node[0] == 'footprint':
+            uid = children(node, 'uuid')
+            owner = uid[0][1] if uid else None
+        uid = children(node, 'uuid')
+        if uid:
+            result[uid[0][1]] = (owner, node)
+        for child in node[1:]:
+            if isinstance(child, list) and child:
+                walk(child, owner)
+    walk(root)
+    return result
+
+
+def _graphic_origin(node):
+    translated_content(node)  # Validate supported coordinates even on unchanged members.
+    kind = node[0].rsplit('_', 1)[-1]
+    name = {'line': 'start', 'arc': 'start', 'rect': 'start', 'circle': 'center', 'text': 'at'}.get(kind)
+    points = children(node, name) if name else children(children(node, 'pts')[0], 'xy')
+    if not points:
+        raise ValueError('artwork group member lacks its origin coordinate')
+    return tuple(nanometres(v) for v in points[0][1:3])
+
+
+def _check_artwork_groups(roots, before, policy):
+    if policy['source_sha256'] != hashlib.sha256(before).hexdigest():
+        raise ValueError('artwork policy names a different source board')
+    inventories = [_artwork_inventory(root) for root in roots]
+    allowed = set()
+    for group in policy['free_groups']:
+        deltas, layers = set(), set()
+        for uid in group['members']:
+            nodes = []
+            for inventory in inventories:
+                if uid not in inventory:
+                    raise ValueError('artwork group member missing')
+                owner, node = inventory[uid]
+                layer = children(node, 'layer')
+                if (owner != group['owner_uuid'] or node[0] not in GRAPHICS or
+                        layer not in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']]) or
+                        (owner is None and not node[0].startswith('gr_')) or
+                        (owner is not None and not node[0].startswith('fp_'))):
+                    raise ValueError('artwork group owner or kind differs from classification')
+                if node[0].endswith('_text'):
+                    attributes = node[2:] if node[0] == 'gr_text' else node[3:]
+                    if ('hide' in attributes or children(node, 'hide') or
+                            any('hide' in effect for effect in children(node, 'effects'))):
+                        raise ValueError('hidden artwork cannot be a free group')
+                layers.add(layer[0][1])
+                nodes.append(node)
+            if nodes[0][0] != nodes[1][0]:
+                raise ValueError('artwork group member kind changed')
+            # Preserve the ordinary raw-token proof below; this checks only rigidity.
+            origins = [_graphic_origin(node) for node in nodes]
+            deltas.add(tuple(a-b for b, a in zip(*origins)))
+            allowed.add(uid)
+        if len(deltas) != 1 or len(layers) != 1:
+            raise ValueError('rigid artwork group must keep one side and common translation')
+    return allowed
 
 
 def translated_content(node):
@@ -261,6 +369,13 @@ def _target_argv(targets):
 def receipt_scope(argv):
     """Recover a receipt's write-scope authority (targets or field poses) from its argv."""
     rest = argv[5:]
+    if rest[:1] == ['--artwork-policy']:
+        if len(rest) != 2 or not isinstance(rest[1], str):
+            raise ValueError('artwork receipt policy arguments malformed')
+        policy = decode_artwork_policy(rest[1])
+        if canonical_artwork_policy(policy) != rest[1]:
+            raise ValueError('artwork receipt policy is not canonical')
+        return {'artwork_policy': policy}
     if rest[:1] != ['--field-pose']:
         return {'targets': receipt_targets(argv)}
     if len(rest) != 2 or not isinstance(rest[1], str):
@@ -284,7 +399,7 @@ def receipt_targets(argv):
     return targets
 
 
-def write_scope(before, after, targets=None, field_poses=None):
+def write_scope(before, after, targets=None, field_poses=None, artwork_policy=None):
     """Compare every saved token except allowed silk translations; unknowns refuse.
 
     Unchanged nodes must keep their exact raw spelling. Backslashes are
@@ -296,10 +411,15 @@ def write_scope(before, after, targets=None, field_poses=None):
     where the request names one), and every other field token stays exact.
     Supported UUID-bearing siblings may reorder inside the same board or
     footprint parent; unknown syntax keeps its exact position and spelling.
+    Graphics are anchored unless a source-bound artwork policy explicitly
+    classifies their whole free group. Every group member keeps one translation.
     """
     from .silk_artwork import DECLARATION, movable_names
     targets = normalize_targets(targets)
     field_poses = normalize_field_poses(field_poses)
+    artwork_policy = normalize_artwork_policy(artwork_policy)
+    if artwork_policy is not None and (targets is not None or field_poses is not None):
+        raise ValueError('artwork policy and field-only scopes are exclusive')
     if targets is not None and field_poses is not None:
         raise ValueError('artwork target and field-pose request are exclusive')
     posed = {e['field_uuid']: e['footprint_uuid'] for e in field_poses['fields']} if field_poses else None
@@ -389,6 +509,8 @@ def write_scope(before, after, targets=None, field_poses=None):
                 equal = translated_content(rb) == translated_content(ra)
             if not equal:
                 raise ValueError('silk edit exceeds translation authority')
+            if not field and uid[0][1] not in free_artwork:
+                raise ValueError('anchored artwork cannot move without a source-bound policy')
             moves.append(uid[0][1])
             return
         if len(b) != len(a):
@@ -415,6 +537,7 @@ def write_scope(before, after, targets=None, field_poses=None):
                 if isinstance(c, list):
                     identities(c)
         identities(root)
+    free_artwork = _check_artwork_groups(roots, before, artwork_policy) if artwork_policy is not None else set()
     if targets is not None:
         # Each target names exactly one footprint and one of its fields.
         for ref, name in targets:
@@ -437,23 +560,30 @@ def write_scope(before, after, targets=None, field_poses=None):
         proof['targets'] = [list(t) for t in sorted(targets)]
     if field_poses is not None:
         proof['field_poses'] = field_poses
+    if artwork_policy is not None:
+        proof['artwork_policy'] = artwork_policy
     return proof
 
 
-def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, field_poses=None):
+def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, field_poses=None, artwork_policy=None):
     """Create an immutable source snapshot and an ordinary campaign implementation step.
 
     targets restricts the repair to named (reference, field) pairs, receipted
     in canonical order in the producer argv. A field-pose request is receipted
-    whole, as its canonical JSON.
+    whole, as its canonical JSON. Free rigid groups use --artwork-policy with
+    canonical source-bound membership, independently replayed by the qualifier.
     """
     from .placement_adapter import tool_snapshot, _relative
     _relative(board, 'artwork board')
     targets = normalize_targets(targets)
+    artwork_policy = normalize_artwork_policy(artwork_policy)
+    if artwork_policy is not None and (targets is not None or field_poses is not None):
+        raise ValueError('artwork policy and field-only scopes are exclusive')
     if targets is not None and field_poses is not None:
         raise ValueError('artwork target and field-pose request are exclusive')
     scope = (_target_argv(targets) if targets else
-             ['--field-pose', canonical_field_poses(field_poses)] if field_poses is not None else [])
+             ['--field-pose', canonical_field_poses(field_poses)] if field_poses is not None else
+             ['--artwork-policy', canonical_artwork_policy(artwork_policy)] if artwork_policy is not None else [])
     tool_dir = tool_snapshot(Path(tool_dir).resolve())
     (tool_dir / 'artwork.py').write_text(LAUNCHER)
     return {'schema': 'agent-ee.stage-step/1', 'stage': stage, 'step': STEP,
@@ -524,18 +654,65 @@ def _native_pose(field):
     return (pos.x, pos.y, Fraction(Decimal(repr(field.GetTextAngle().AsDegrees()))) % 360)
 
 
-def produce(source, root, targets=None, field_poses=None):
+def _report_digest(report):
+    return hashlib.sha256(json.dumps(report, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def artwork_drc_pin(board, report):
+    """Capture immediately after native DRC, before comparison annotates findings."""
+    return dict(board_sha256=digest(board), report_sha256=_report_digest(report),
+                payloads={suffix: digest(board.with_suffix(suffix)) if board.with_suffix(suffix).is_file() else None
+                          for suffix in ('.kicad_pro', '.kicad_dru')})
+
+
+def compare_artwork_drc(source, output, before, after, *, native_pins, **scope):
+    """Reprove exact saved boards/rules before matching intrinsic text positions."""
+    from .placer_runner import _drc_comparison
+    pins = [artwork_drc_pin(path, report) for path, report in ((source, before), (output, after))]
+    if pins != native_pins or pins[0]['payloads'] != pins[1]['payloads']:
+        raise ValueError('artwork native board, report or rule pin changed')
+    proof = write_scope(source.read_bytes(), output.read_bytes(), **scope)
+    inventories = [_artwork_inventory(parse_sexpr(path.read_bytes())) for path in (source, output)]
+    def text_content(node):
+        node = copy.deepcopy(node)
+        at = children(node, 'at')
+        if len(at) != 1 or len(at[0]) < 3:
+            raise ValueError('intrinsic text position missing')
+        at[0][1:3] = [0, 0]
+        return node
+    text_ids = []
+    for uid in proof['moved_identities']:
+        owner, old = inventories[0][uid]
+        new_owner, new = inventories[1][uid]
+        if (old[0] in ('property', 'fp_text', 'gr_text') and owner == new_owner and
+                text_content(old) == text_content(new)):
+            text_ids.append(uid)
+    context = dict(schema='agent-ee.intrinsic-text/1', proof=proof,
+                   reports=[pin['report_sha256'] for pin in pins], identities=text_ids)
+    comparison = _drc_comparison(before, after, unchanged_copper=proof, artwork_text=context)
+    comparison['artwork_drc_pins'] = pins
+    return comparison
+
+
+def produce(source, root, targets=None, field_poses=None, artwork_policy=None):
     """Write a disposable candidate, retain native DRC and fail on any new non-silk finding.
 
     With targets only the named footprint fields may move; graphics stay put.
     A field-pose request writes exactly its requested poses, without a search,
-    and the reloaded saved board must carry exactly those poses.
+    and the reloaded saved board must carry exactly those poses. Graphics stay
+    anchored unless a source-bound policy explicitly names free rigid groups.
     """
     import pcbnew as k
-    from .placer_runner import _native_drc, _drc_comparison
-    from .silk_artwork import relocate, SILK_CONFLICTS, containment_witness
+    from .placer_runner import _native_drc
+    from .silk_artwork import relocate, ARTWORK_CONFLICTS, containment_witness
     targets = normalize_targets(targets)
     field_poses = normalize_field_poses(field_poses)
+    artwork_policy = normalize_artwork_policy(artwork_policy)
+    scope = dict(targets=targets, field_poses=field_poses, artwork_policy=artwork_policy)
+    if artwork_policy is not None and (targets is not None or field_poses is not None):
+        raise ValueError('artwork policy and field-only scopes are exclusive')
+    # Classification applies even to unchanged groups and is source-bound.
+    write_scope(source.read_bytes(), source.read_bytes(), targets=targets, artwork_policy=artwork_policy)
     if targets is not None and field_poses is not None:
         raise ValueError('artwork target and field-pose request are exclusive')
     if field_poses is not None and digest(source) != field_poses['source_sha256']:
@@ -559,11 +736,14 @@ def produce(source, root, targets=None, field_poses=None):
             original.with_suffix(suffix).write_bytes(payload)
             output.with_suffix(suffix).write_bytes(payload)
     before = _native_drc(original, baseline)
+    before_pin = artwork_drc_pin(original, before)
     board = k.LoadBoard(str(output))
     if field_poses is not None:
         artwork = dict(field_poses=field_poses, moved_fields=_apply_field_poses(k, board, field_poses))
     else:
-        artwork = relocate(board, before['violations'], graphics=targets is None, targets=targets)
+        artwork = relocate(board, before['violations'], graphics=targets is None, targets=targets,
+                           free_groups=artwork_policy['free_groups'] if artwork_policy else (),
+                           conflict_types=ARTWORK_CONFLICTS)
     if not k.SaveBoard(str(output), board, True):
         raise ValueError('native artwork save failed')
     if field_poses is not None:
@@ -577,17 +757,19 @@ def produce(source, root, targets=None, field_poses=None):
             output.with_suffix(suffix).unlink(missing_ok=True)
         else:
             output.with_suffix(suffix).write_bytes(payload)
-    proof = write_scope(source.read_bytes(), output.read_bytes(), targets=targets, field_poses=field_poses)
+    proof = write_scope(source.read_bytes(), output.read_bytes(), **scope)
     after = _native_drc(output, output.parent)
+    after_pin = artwork_drc_pin(output, after)
     # The silk-only write scope is the copper-unchanged witness that lets unmeasured
     # collisions keep baseline treatment; it must cover exactly the DRC'd bytes.
     if (digest(original), digest(output)) != (proof['before_sha256'], proof['after_sha256']):
         raise ValueError('artwork DRC boards differ from the write-scope proof')
-    comparison = _drc_comparison(before, after, unchanged_copper=proof)
-    if any(v['type'] not in SILK_CONFLICTS for v in comparison['added_findings']):
+    comparison = compare_artwork_drc(original, output, before, after,
+                                     native_pins=[before_pin, after_pin], **scope)
+    if any(v['type'] not in ARTWORK_CONFLICTS for v in comparison['added_findings']):
         raise ValueError('artwork introduced a non-silk native DRC finding')
     defects = [dict(type='placement_silkscreen_conflict', status='open', verdict='defect', native=v)
-               for v in after['violations'] if v['type'] in SILK_CONFLICTS]
+               for v in after['violations'] if v['type'] in ARTWORK_CONFLICTS]
     comparison['open_defects'] = defects
     artwork.update(schema='agent-ee.placement-silkscreen/1', write_scope=proof)
     write_json(root / ARTWORK, artwork)
@@ -607,7 +789,9 @@ def main():
     parser.add_argument('board', type=Path)
     parser.add_argument('--target', nargs=2, action='append', metavar=('REFERENCE', 'FIELD'))
     parser.add_argument('--field-pose', metavar='JSON', help='canonical exact field-pose request')
+    parser.add_argument('--artwork-policy', metavar='JSON', help='source-bound free rigid groups')
     args = parser.parse_args()
     produce(args.board, Path('/work'), targets=args.target,
-            field_poses=None if args.field_pose is None else decode_field_poses(args.field_pose))
+            field_poses=None if args.field_pose is None else decode_field_poses(args.field_pose),
+            artwork_policy=None if args.artwork_policy is None else decode_artwork_policy(args.artwork_policy))
     return 0

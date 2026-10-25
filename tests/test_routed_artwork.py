@@ -16,6 +16,22 @@ import test_silk_artwork as silk_fixture
 from toolchain import fome_mc_store, require_toolchain
 
 
+def authored_free_graphics(board):
+    """Explicit singleton classification for these authored free-graphic fixtures.
+
+    This test helper is never used for imported designs or body outlines.
+    """
+    root = parse_sexpr(board)
+    groups = []
+    for owner, parent in [(None, root), *[(children(fp, 'uuid')[0][1], fp)
+                                         for fp in children(root, 'footprint')]]:
+        for item in parent[1:]:
+            if (isinstance(item, list) and item and item[0] in art.GRAPHICS and
+                    children(item, 'layer') in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']])):
+                groups.append(dict(owner_uuid=owner, members=[children(item, 'uuid')[0][1]]))
+    return dict(schema=art.ARTWORK_POLICY, source_sha256=hashlib.sha256(board).hexdigest(), free_groups=groups)
+
+
 class RoutedArtworkTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -117,7 +133,7 @@ class RoutedArtworkTest(unittest.TestCase):
                                if v['type'] in ('silk_overlap', 'silk_over_copper')]
                     self.assertTrue(defects)
                     original = pd._identities(source)
-                    report = art.produce(source, self.root / 'run')
+                    report = art.produce(source, self.root / 'run', artwork_policy=authored_free_graphics(source.read_bytes()))
                     self.assertFalse(report['open_defects'])
                     current = pd._identities(self.root / 'run' / art.BOARD, report['containment'])
                     for defect in defects:
@@ -233,7 +249,7 @@ class RoutedArtworkTest(unittest.TestCase):
                 self.root = Path(d)
                 try:
                     source = self.board(graphic=True, footprint=footprint)
-                    report = art.produce(source, self.root / 'run')
+                    report = art.produce(source, self.root / 'run', artwork_policy=authored_free_graphics(source.read_bytes()))
                     self.assertFalse(report['open_defects'])
                     artwork = read_json(self.root / 'run' / art.ARTWORK)
                     self.assertTrue(artwork['moved_graphics'])
@@ -265,7 +281,7 @@ class RoutedArtworkTest(unittest.TestCase):
 
     def test_graphic_scope_refuses_reshape_layer_and_unknown_attribute_changes(self):
         b = b'(kicad_pcb (gr_line (start 1 2) (end 3 2) (layer "F.SilkS") (uuid "s")))'
-        self.assertEqual(art.write_scope(b, b.replace(b'1 2', b'2 3').replace(b'3 2', b'4 3'))['status'], 'allowed')
+        self.assertEqual(art.write_scope(b, b.replace(b'1 2', b'2 3').replace(b'3 2', b'4 3'), artwork_policy=authored_free_graphics(b))['status'], 'allowed')
         for a in (b.replace(b'3 2', b'4 2'), b.replace(b'F.SilkS', b'F.Mask'),
                   b.replace(b'(uuid', b'(unknown yes) (uuid')):
             with self.subTest(a=a), self.assertRaises(ValueError):
@@ -337,7 +353,7 @@ class RoutedArtworkTest(unittest.TestCase):
                     art.write_scope(left, right)
             # The well-formed spelling of the same translation stays allowed.
             control = b'(kicad_pcb ' + control + b')'
-            allowed = art.write_scope(control, moved(control))
+            allowed = art.write_scope(control, moved(control), artwork_policy=authored_free_graphics(control))
             self.assertEqual(allowed['status'], 'allowed')
             self.assertEqual(allowed['moved_identities'], identities)
 
@@ -408,8 +424,10 @@ class RoutedArtworkTest(unittest.TestCase):
                                 edge.SetEnd(k.VECTOR2I(*b))
                                 owner.Add(edge)
                     k.SaveBoard(str(source), board, True)
-                    report = art.produce(source, self.root / 'run')
-                    current = pd._identities(self.root / 'run' / art.BOARD, report['containment'])
+                    # Inspect the deliberately bad saved state directly. The final
+                    # artwork producer now repairs edge conflicts as well.
+                    from agent_ee.silk_artwork import containment_witness
+                    current = pd._identities(source, containment_witness(source))
                     # Even a silent DRC cannot establish on-board containment.
                     affected = [d for d in defects if pd._items(d) & bad]
                     self.assertTrue(affected)
@@ -427,7 +445,7 @@ class RoutedArtworkTest(unittest.TestCase):
         design = self.root / 'design'
         design.mkdir()
         (design / 'board.kicad_pcb').write_bytes(source.read_bytes())
-        spec = art.step(self.root / 'tool', 'board.kicad_pcb')
+        spec = art.step(self.root / 'tool', 'board.kicad_pcb', artwork_policy=authored_free_graphics(source.read_bytes()))
         receipt_dir = self.root / 'receipt'
         receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1})
         self.assertEqual(receipt['status'], 'completed', read_json(receipt_dir / 'run/execution.json'))
@@ -490,7 +508,7 @@ class RoutedArtworkTest(unittest.TestCase):
         graphic.SetStart(k.VECTOR2I(-100000000, graphic.GetStart().y))
         graphic.SetEnd(k.VECTOR2I(100000000, graphic.GetEnd().y))
         k.SaveBoard(str(source), board, True)
-        report = art.produce(source, self.root / 'run')
+        report = art.produce(source, self.root / 'run', artwork_policy=authored_free_graphics(source.read_bytes()))
         self.assertTrue(report['open_defects'])
         self.assertTrue(any(uid == i['uuid'] for d in report['open_defects'] for i in d['native']['items']))
         artwork = read_json(self.root / 'run' / art.ARTWORK)
@@ -527,10 +545,10 @@ class RoutedArtworkTest(unittest.TestCase):
         for escape in (b'\\"', b'\\\\', b'\\n', b'\\r'):
             self.assertIn(escape, before)
         self.assertEqual(art.write_scope(before, before)['moved_identities'], [])
-        report = art.produce(source, self.root / 'run')
+        report = art.produce(source, self.root / 'run', artwork_policy=authored_free_graphics(source.read_bytes()))
         self.assertFalse(report['open_defects'])
         output = (self.root / 'run' / art.BOARD).read_bytes()
-        proof = art.write_scope(before, output)
+        proof = art.write_scope(before, output, artwork_policy=authored_free_graphics(before))
         self.assertEqual(proof, report['write_scope'])
         self.assertTrue(proof['moved_identities'])
         # The escaped properties keep their exact saved spelling.
@@ -608,7 +626,7 @@ class RoutedArtworkTest(unittest.TestCase):
                    'targeted footprint graphic': move(both, b'R73', 'line')}
         for name, after in outside.items():
             # Each is allowed without a target, so only the target refuses it.
-            self.assertEqual(art.write_scope(board, after)['status'], 'allowed')
+            self.assertEqual(art.write_scope(board, after, artwork_policy=authored_free_graphics(board))['status'], 'allowed')
             with self.subTest(case=name), self.assertRaisesRegex(ValueError, 'outside the artwork target'):
                 art.write_scope(board, after, targets=target)
         duplicate = board.replace(footprint(b'U1'), footprint(b'C128').replace(b'"C128-', b'"dup-').replace(
@@ -815,16 +833,17 @@ class RoutedArtworkTest(unittest.TestCase):
         self.assertEqual((design / 'board.kicad_pcb').read_bytes(), source.read_bytes())
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())
-        # The same graphic search, receipted without the flag, still qualifies; relabelling
-        # its argv with an explicit null is refused by the qualifier.
-        default = art.step(self.root / 'tool2', 'board.kicad_pcb')
+        # Explicitly classify the authored free graphic for the positive receipt;
+        # appending a second, null field-pose scope is refused by the qualifier.
+        default = art.step(self.root / 'tool2', 'board.kicad_pcb',
+                           artwork_policy=authored_free_graphics(source.read_bytes()))
         receipt_dir = self.root / 'default'
         receipt = stage_receipts.run_step(receipt_dir, design, default, {'implementation': 2})
         self.assertEqual(receipt['status'], 'completed', read_json(receipt_dir / 'run/execution.json'))
         self.assertTrue(art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())['moved_identities'])
         forged = copy.deepcopy(receipt)
         forged['spec']['argv'] += ['--field-pose', 'null']
-        with self.assertRaisesRegex(ValueError, 'is null'):
+        with self.assertRaisesRegex(ValueError, 'policy arguments malformed'):
             art.qualify_receipt(receipt_dir, forged, 'board.kicad_pcb', policy_files())
 
     def test_native_field_pose_producer_writes_exact_rotation_and_receipts_it(self):

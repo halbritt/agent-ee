@@ -4,7 +4,7 @@ import unittest
 
 from agent_ee import routed_artwork as art
 from agent_ee.symbol_library import children, parse_sexpr
-from test_routed_artwork import FieldPoseFixture as F
+from test_routed_artwork import FieldPoseFixture as F, authored_free_graphics
 
 
 def raw_board(tree):
@@ -55,7 +55,7 @@ class ArtworkSiblingOrderTests(unittest.TestCase):
         before = article()
         self.assertEqual(art.write_scope(before, reordered(before))['moved_identities'], [])
         after = reordered(article(u31='1 2.4 90', c128='1 1.85 0', line='(start 1 2) (end 2 2)'))
-        proof = art.write_scope(before, after)
+        proof = art.write_scope(before, after, artwork_policy=authored_free_graphics(before))
         self.assertEqual(proof['moved_identities'], sorted([F.uid(1), F.uid(4), F.uid(11)]))
         fields_only = reordered(article(u31='1 2.4 90', c128='1 1.85 0'))
         targets = [('U31', 'Reference'), ('C128', 'Reference')]
@@ -111,7 +111,7 @@ class ArtworkSiblingOrderTests(unittest.TestCase):
             elif mutation == 'spelling':
                 find(tree, F.uid(3))[2] = 'd.pdf'
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                art.write_scope(before, raw_board(tree))
+                art.write_scope(before, raw_board(tree), artwork_policy=authored_free_graphics(before))
 
     def test_cross_parent_swap_same_inventory_and_duplicates_refuse(self):
         before = article()
@@ -121,7 +121,7 @@ class ArtworkSiblingOrderTests(unittest.TestCase):
         i, j = a.index(left), b.index(right)
         a[i], b[j] = right, left
         with self.assertRaises(ValueError):
-            art.write_scope(before, raw_board(tree))
+            art.write_scope(before, raw_board(tree), artwork_policy=authored_free_graphics(before))
         for duplicate in ('existing', 'two-uuid-children'):
             tree = parse_sexpr(reordered(before), raw=True)
             line = find(tree, F.uid(11))
@@ -142,7 +142,7 @@ class ArtworkSiblingOrderTests(unittest.TestCase):
             tree = parse_sexpr(before, raw=True)
             tree[1][1:] = tree[1][1:][::-1]
             with self.subTest(prefix=prefix), self.assertRaises(ValueError):
-                art.write_scope(before, raw_board(tree))
+                art.write_scope(before, raw_board(tree), artwork_policy=authored_free_graphics(before))
         before = b'(kicad_pcb (opaque (uuid "a")) (opaque (uuid "b")))'
         with self.assertRaises(ValueError):
             art.write_scope(before, b'(kicad_pcb (opaque (uuid "b")) (opaque (uuid "a")))')

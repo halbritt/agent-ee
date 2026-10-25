@@ -2504,7 +2504,8 @@
     {
       "paths": [
         "tests/test_routed_artwork.py",
-        "tests/test_routed_artwork_siblings.py"
+        "tests/test_routed_artwork_siblings.py",
+        "tests/test_artwork_policy.py"
       ],
       "kind": "owned-source",
       "origins": [
