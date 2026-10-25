@@ -776,12 +776,19 @@ def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
             ref = row[key]
             if sum(r['native_ref'] == ref and r['role'] == 'movable' for r in rows) != 1:
                 raise JobRefusal(f'intent.proximity[{index}].{key}: must identify one movable footprint')
-            if set(pads[ref]) - {p['number'] for p in by_ref[ref]['pads']}:
+            if ref in pads and set(pads[ref]) - {p['number'] for p in by_ref[ref]['pads']}:
                 raise JobRefusal(f'intent.proximity[{index}].pads.{ref}: selected pad is missing')
         a, b = by_ref[row['ref']], by_ref[row['near']]
+        # Upstream declaration modes (contract 3.1): a declared side selects exactly the named pads;
+        # an undeclared side means all non-aperture pads, and an undeclared subject gives one
+        # minimum leg over all pairs without net narrowing. The flags travel to the engine and the report.
         pick = lambda fp_row, numbers: [p['uuid'] for p in fp_row['pads'] if p['number'] in numbers]
+        non_aperture = lambda fp_row: [p['uuid'] for p in fp_row['pads'] if p.get('half_nm') != [0, 0]]
+        subject_declared, partner_declared = row['ref'] in pads, row['near'] in pads
         proximity.append({'ref': row['ref'], 'near': row['near'], 'max_nm': _mm(row['max_mm']),
-                          'ref_pads': pick(a, pads[row['ref']]), 'near_pads': pick(b, pads[row['near']]),
+                          'ref_pads': pick(a, pads[row['ref']]) if subject_declared else non_aperture(a),
+                          'near_pads': pick(b, pads[row['near']]) if partner_declared else non_aperture(b),
+                          'subject_declared': subject_declared, 'partner_declared': partner_declared,
                           'basis': row.get('basis'), 'limit': row.get('context', {}).get('limit')})
     problem = {'schema': INPUT_SCHEMA,
                'outline': {'kind': 'rectangle', 'rect_nm': _rectangle(facts['outline'])},

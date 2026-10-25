@@ -374,6 +374,9 @@ pub struct Proximity {
     pub max_nm: i64,
     /// `pad_edge`: upstream signed rect gap per declared subject pad, net-narrowed (AGENTEE-479).
     pub pad_edge: bool,
+    /// Upstream declaration mode: a declared subject emits one net-narrowed leg per subject pad;
+    /// an undeclared subject gives one minimum over all pairs with no net narrowing.
+    pub subject_declared: bool,
 }
 
 /// A source-bound group relation measured as the signed pad-edge gap (AGENTEE-479 R1/R2).
@@ -668,7 +671,8 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                     && b_pads.iter().all(|&i| footprints[b].pads[i].half != (0, 0)),
                 "pad_edge proximity needs captured pad half extents");
         }
-        proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")?, pad_edge });
+        let subject_declared = row.get("subject_declared").and_then(Value::as_bool).unwrap_or(true);
+        proximity.push(Proximity { a, a_pads, b, b_pads, max_nm: int(&row, "max_nm")?, pad_edge, subject_declared });
     }
     let links = compile_links(input, &footprints, &groups, &nets, &net_pads, &physical_reference)?;
     let mut locality = Vec::new();
@@ -974,6 +978,13 @@ fn pad_edge_legs(p: &Prepared, a: usize, a_pads: &[usize], b: usize, b_pads: &[u
 fn proximity_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
     let r = &p.proximity[k];
     if r.pad_edge {
+        if !r.subject_declared {
+            // Undeclared subject: one minimum leg over all subject/partner pairs, no net narrowing.
+            let best = r.a_pads.iter().flat_map(|&pa| r.b_pads.iter().map(move |&pb| (pa, pb)))
+                .map(|(pa, pb)| rect_gap(&pad_rect(p, r.a, pa, &poses[r.a]), &pad_rect(p, r.b, pb, &poses[r.b])))
+                .min().unwrap_or(i64::MAX);
+            return (best - r.max_nm).max(0) as i128;
+        }
         return pad_edge_legs(p, r.a, &r.a_pads, r.b, &r.b_pads, poses).iter()
             .map(|&gap| (gap - r.max_nm).max(0) as i128).sum();
     }
@@ -2137,6 +2148,28 @@ mod tests {
         assert_eq!(proximity_terms(&p, 0, &poses), rect_gap(&a, &b) as i128);
         assert_eq!(rect_gap(&a, &b), 8_900_000 - 300_000 - (2_400_000 + 300_000));
         assert_eq!(rect_gap(&Rect { x0: 0, y0: 0, x1: 100, y1: 100 }, &Rect { x0: 75, y0: 0, x1: 175, y1: 100 }), -25);
+    }
+
+    #[test]
+    fn undeclared_subject_takes_one_minimum_over_all_pairs_without_net_narrowing() {
+        let mut raw = with_half_extents(input(vec![]), json!({"shared": {"GND": "ground return"}, "scoped": {}}));
+        let row = |declared: bool| json!({"ref": "R2", "near": "R1", "ref_pads": [format!("{}-1", uuid(2)), format!("{}-2", uuid(2))],
+                                           "near_pads": [format!("{}-1", uuid(1)), format!("{}-2", uuid(1))],
+                                           "max_nm": 0, "basis": "pad_edge", "subject_declared": declared});
+        raw["proximity"] = json!([row(true), row(false)]);
+        let p = prepare(&raw).unwrap();
+        let poses = legal_dispersed(&p);
+        // Declared: two legs, each net-narrowed (A->A, GND->GND), summed.
+        let legs = pad_edge_legs(&p, p.proximity[0].a, &p.proximity[0].a_pads, p.proximity[0].b, &p.proximity[0].b_pads, &poses);
+        assert_eq!(legs.len(), 2);
+        assert_eq!(proximity_terms(&p, 0, &poses), legs.iter().map(|&g| g.max(0) as i128).sum::<i128>());
+        // Undeclared: the single global minimum over all four pairs; smaller than any narrowed leg sum.
+        let all_min = (0..2).flat_map(|pa| (0..2).map(move |pb| (pa, pb)))
+            .map(|(pa, pb)| rect_gap(&pad_rect(&p, p.proximity[1].a, pa, &poses[p.proximity[1].a]), &pad_rect(&p, p.proximity[1].b, pb, &poses[p.proximity[1].b])))
+            .min().unwrap();
+        assert_eq!(proximity_terms(&p, 1, &poses), all_min.max(0) as i128);
+        assert!(proximity_terms(&p, 1, &poses) < proximity_terms(&p, 0, &poses));
+        assert!(all_min < *legs.iter().max().unwrap(), "the cross-net pair is nearer than the narrowed leg");
     }
 
     #[test]

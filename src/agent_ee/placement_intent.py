@@ -64,8 +64,7 @@ def _proximity_shape(row, path, *, require_both):
     _number(row['max_mm'], path + '.max_mm', nonnegative=True)
     required = (row['ref'], row['near']) if require_both else ()
     _object(row['pads'], path + '.pads', required, (row['ref'], row['near']))
-    if not row['pads']:
-        raise ValueError(path + '.pads: expected pad names for the subject and/or partner')
+    # The original dialect may leave either side undeclared (all non-aperture pads), including both.
     for ref, pads in row['pads'].items():
         _texts(pads, path + '.pads.' + ref)
 

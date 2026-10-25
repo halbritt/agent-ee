@@ -162,7 +162,6 @@ class DialectAdapterTests(unittest.TestCase):
             ('same_ref_near', with_prox(near='Y1'), 'intent.proximity[0].near'),
             ('unknown_pad_selector', with_prox(pads={'U1': ['9'], 'Y1': ['1'], 'UNDECLARED': ['1']}),
              'intent.proximity[0].pads.UNDECLARED'),
-            ('empty_pads', with_prox(pads={}), 'intent.proximity[0].pads'),
             ('empty_pad_list', with_prox(pads={'U1': [], 'Y1': ['1']}), 'intent.proximity[0].pads.U1'),
             ('duplicate_pad_names', with_prox(pads={'U1': ['9', '9'], 'Y1': ['1']}), 'intent.proximity[0].pads.U1'),
             ('pads_not_object', with_prox(pads=['1']), 'intent.proximity[0].pads'),
@@ -196,9 +195,17 @@ class DialectAdapterTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as caught:
                     placement_intent.adapt(document, minimal_groups())
                 self.assertIn(expected, str(caught.exception))
-        # The undeclared-subject fallback stays permitted: partner pads only.
+        # The undeclared-subject fallback stays permitted: partner pads only, and neither side declared.
         record = placement_intent.adapt(with_prox(pads={'U1': ['9', '10']}), minimal_groups())
         self.assertEqual(record['proximity_pad_edge'][0]['pads'], {'U1': ['9', '10']})
+        record = placement_intent.adapt(with_prox(pads={}), minimal_groups())
+        self.assertEqual(record['proximity_pad_edge'][0]['pads'], {})
+        # The native form still declares both sides.
+        native = {'schema': placement_intent.SCHEMA, 'proximity': [{'ref': 'Y1', 'near': 'U1', 'max_mm': 1.0,
+                                                                    'pads': {'U1': ['9']}}]}
+        with self.assertRaises(ValueError) as caught:
+            placement_intent.validate(native, {'groups': []})
+        self.assertIn('intent.proximity[0].pads.Y1', str(caught.exception))
 
     def test_unknown_authority_label_is_visible_not_hard(self):
         document = minimal_dialect()
@@ -250,6 +257,23 @@ class PadEdgeMetricTests(unittest.TestCase):
         self.assertEqual(result['missing'], [{'ref': 'Y1', 'pad': '7'}])
         self.assertEqual(pad_edge.claim_legs({'ref': 'Y1', 'near': 'ZZ', 'max_mm': 1}, self.pads())['status'],
                          'unresolved')
+
+    def test_declaration_modes_match_the_upstream_contract(self):
+        pads = self.pads()
+        # Both declared: one leg per subject pad, net-narrowed (pad 2 pairs with 10 on net B, not nearer 11).
+        both = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['1', '2'], 'U1': ['9', '10', '11']}}, pads)
+        self.assertEqual([(l['subject_pad'], l['partner_pad'], l['paired_by']) for l in both['legs']], [('1', '9', 'net'), ('2', '10', 'net')])
+        # Partner only: undeclared subject -> ONE minimum leg over all subject pads, no net narrowing.
+        partner_only = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'U1': ['9', '10', '11']}}, pads)
+        self.assertEqual(len(partner_only['legs']), 1)
+        self.assertEqual(partner_only['pads_basis'], 'all_non_aperture')
+        self.assertEqual((partner_only['legs'][0]['subject_pad'], partner_only['legs'][0]['partner_pad'], partner_only['legs'][0]['paired_by']),
+                         ('3', '11', 'any'))  # a duplicate-numbered pad 3 is nearest pad 11 despite the foreign net
+        self.assertAlmostEqual(partner_only['legs'][0]['gap_mm'], 0.5)
+        # Neither declared: one minimum over all pads of both footprints.
+        neither = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0}, pads)
+        self.assertEqual(len(neither['legs']), 1)
+        self.assertEqual(neither['legs'][0]['paired_by'], 'any')
 
     def test_duplicate_pad_numbers_all_select_and_undeclared_subject_emits_one_leg(self):
         claim = {'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['3'], 'U1': ['9']}}
@@ -485,3 +509,46 @@ class NearFallbackTests(GroupLinkTests):
         self.assertGreater(group_links.objective(group_links.measure(groups, far_layout, rails)),
                            group_links.objective(group_links.measure(groups, layout, rails)))
         self.assertEqual((near['from_ref'], near['from_pad'], near['to_ref'], near['to_pad']), ('C1', '2', 'J1', '1'))
+
+
+class CaptureDeclarationModeTests(unittest.TestCase):
+    """Declaration modes survive native capture: both declared, partner only, neither; missing declared pad refuses."""
+
+    def setUp(self):
+        from tests.test_placement_job import Fixture
+        fixture = Fixture('setUp')
+        fixture.setUp()
+        self.board = fixture.board
+        self.addCleanup(lambda: None)
+
+    def dialect(self, pads):
+        document = minimal_dialect()
+        document['fixed_poses'] = [{'ref': 'FID', 'x': 3.0, 'y': 3.0, 'rot': 0.0, 'side': 'F', 'basis': 'mechanical', 'why': 'w'}]
+        document['edge_connectors'] = []
+        document['envelope'] = {'rect': [0.0, 0.0, 20.0, 12.0], 'tolerance_mm': 0.5}
+        document['context']['brief'] = {'consequences': []}
+        document['proximity'] = [{'ref': 'C1', 'near': 'R1', 'max_mm': 3.0, 'basis': 'pad_edge', 'pads': pads,
+                                  'context': {'limit': 'derived_default', 'basis': 'corpus', 'role': 'r', 'source': 's'}}]
+        return document
+
+    def groups(self):
+        return {'schema': 1, 'board': 'board.kicad_pcb', 'groups': [{'name': 'g', 'anchor': 'R1', 'refs': ['R1', 'C1'], 'why': 'w'}]}
+
+    def test_modes_reach_the_engine_input_and_missing_declared_pads_refuse(self):
+        from agent_ee import placement_job as job
+        try:
+            import pcbnew  # noqa: F401
+        except ImportError:
+            self.skipTest('pcbnew is not importable')
+        both = job.capture(self.board, self.dialect({'C1': ['1'], 'R1': ['1']}), self.groups())[0]['proximity'][0]
+        self.assertEqual((both['subject_declared'], both['partner_declared'], len(both['ref_pads']), len(both['near_pads'])),
+                         (True, True, 1, 1))
+        partner = job.capture(self.board, self.dialect({'R1': ['1']}), self.groups())[0]['proximity'][0]
+        self.assertEqual((partner['subject_declared'], partner['partner_declared'], len(partner['near_pads'])), (False, True, 1))
+        self.assertEqual(len(partner['ref_pads']), 2, 'an undeclared subject selects all non-aperture pads')
+        neither = job.capture(self.board, self.dialect({}), self.groups())[0]['proximity'][0]
+        self.assertEqual((neither['subject_declared'], neither['partner_declared']), (False, False))
+        self.assertEqual((len(neither['ref_pads']), len(neither['near_pads'])), (2, 2))
+        with self.assertRaises(job.JobRefusal) as caught:
+            job.capture(self.board, self.dialect({'C1': ['9'], 'R1': ['1']}), self.groups())
+        self.assertIn('intent.proximity[0].pads.C1', str(caught.exception))
