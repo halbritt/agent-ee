@@ -265,6 +265,26 @@
     3780
    ]
   },
+  "judgments/acq-mech-3-return-paths.json": {
+   "questions": [
+    "For the final candidate copper, is the B.Cu return under U1, U2 and each analog filter continuous beneath the measured loops (no slot, cut or isolated island between a loop and its return), and does each input/filter/output loop have a return path adjacent to its forward path on the saved board?",
+    "Which captured plane/return declarations (planes.json, plane-selection.json) and manufacturer layout guidance apply, and does the retained removed-plane negative demonstrate that the final-check set rejects a broken return?"
+   ],
+   "requirement": "ACQ-MECH-3",
+   "sources": [
+    "candidate project/acquisition.kicad_pcb copper (final candidate)",
+    "planes.json",
+    "plane-selection.json",
+    "analysis/geometry-model.json loop definitions",
+    "datasheets-regulator-qualified (TPS7A20 layout guidance)",
+    "datasheets-core (ADS1115 layout guidance)",
+    "ENGINEERING-REVIEW.md ACQ-MECH-3"
+   ],
+   "span": [
+    3834,
+    3852
+   ]
+  },
   "judgments/acq-mech-4-assembly-applicability.json": {
    "questions": [
     "Are the exact body/land geometries of every populated part captured-source backed (cad-qualification.json, datasheet bindings), and is the assembly process (SMT parts versus through-hole JST PH manual/selective solder) applicable under the declared dfm-profile and assembly-release ids? Supplier process confirmation remains pending."
@@ -284,13 +304,15 @@
   },
   "judgments/acq-mech-4-mated-height-scope.json": {
    "questions": [
-    "Record the JST PH top-entry nominal 8 mm mated reference from the captured ePH sheet and the scope correction that removed the absolute installed-height claim; no enclosure fit is claimed."
+    "Record the JST PH top-entry nominal 8 mm mated reference from the captured ePH sheet and the scope correction that removed the absolute installed-height claim; no enclosure fit is claimed.",
+    "Is the cable exit above J1/J2/J3 clear on the final candidate (no body or tall part within the mating column), beyond the access_obstruction measurement which covers only the modelled columns?"
    ],
    "requirement": "ACQ-MECH-4",
    "sources": [
     "scope-corrections.json ACQ-MECH-4",
     "datasheets-connectors-bulk (JST ePH)",
-    "lib3d models used by review-acq-mech-4-model-height"
+    "lib3d models used by review-acq-mech-4-model-height",
+    "analysis/geometry-model.json access_obstruction definition"
    ],
    "span": [
     4027,
@@ -553,7 +575,7 @@
      "record": "judgments/acq-mech-3-limit-rationale.json"
     },
     {
-     "byte_end": 3852,
+     "byte_end": 3834,
      "byte_start": 3780,
      "checks": [
       "engineering-geometry",
@@ -562,6 +584,13 @@
      ],
      "id": "ACQ-MECH-3-LOOPS",
      "mode": "checks"
+    },
+    {
+     "byte_end": 3852,
+     "byte_start": 3834,
+     "id": "ACQ-MECH-3-RETURN-PATHS",
+     "mode": "judgment",
+     "record": "judgments/acq-mech-3-return-paths.json"
     }
    ]
   },
@@ -791,9 +820,14 @@
     "obligation": "judgment"
    },
    {
-    "byte_end": 3852,
+    "byte_end": 3834,
     "byte_start": 3780,
     "obligation": "executable"
+   },
+   {
+    "byte_end": 3852,
+    "byte_start": 3834,
+    "obligation": "judgment"
    }
   ],
   "ACQ-MECH-4": [

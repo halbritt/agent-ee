@@ -14,14 +14,14 @@ was modified; no judgment record, witness or candidate was created.
 | `spec.md` | sha256 `fbf659b7909af7af4c370ce309c6138c661029261a9a4906237f86be45444373` (equal to `spec-record.json` `spec.sha256`) |
 | `spec-record.json` | 18 requirement clauses + 1 prose clause, byte-identical capture verified by `spec_record.verify` |
 | `requirement-map.json` (map/1) | sha256 `df11c81d221f410ed016f3583ae14860570d117bbc81fcc40f9f6121367dc863` |
-| Overlay | `fixtures/acquisition-typed/overlay.json`, sha256 `076eed026d341403e53a8fb509e706a1bb0e4d5160a5a041cb937d98b8455eb0` |
-| Derived `requirement-map.json` (map/2) | sha256 `53f632d4a86fa92024466755e395f2fa52ab0af29708c78d4bfac1460e1b0772` |
+| Overlay | `fixtures/acquisition-typed/overlay.json`, sha256 `d65c660b8ccf1c843ca8151dae1d2c21e2943fab74f3f4b7e914623cc8232b8d` |
+| Derived `requirement-map.json` (map/2) | sha256 `f2adf786ed345274fdcdaa8658e797fdf6c6a5ac758605d6b200c2aa2120ea95` |
 | Derived `analysis/electrical-intervals.json` | base `8998b329e058d39d48bd3568240b58b4904ba079460d46032105ef5cc51654a7` → derived `93d049c4d7bf30b2e74df37817e8bc3dbfa2d4de4b29312e7203693e6fe2f203` (requirement ids and source locators re-bound to spans; parameters, assertions and bounds unchanged) |
-| Added `obligations.json` | sha256 `e8c76333b9135fd03993908a74ce416b54c4ff93dd2dba4ded73fc440f047b51` |
+| Added `obligations.json` | sha256 `851029c041ec92aaa96133f7720e507b95217c6989b85ecf8e3c8863ce7bbdc2` |
 | Unchanged files | 196 of 198 |
 | Added CPL inputs (`cpl/`, agent-566 revision) | `assembly-profile.json` `f8182f507c12a5e9b5113b545f675d5960efeb5c2f8ad977b649d5dbaa2ab755`, `jlc-cpl-policy.json` `36b349c7a2ed1622e03a5193574c8b60c75a23ce6b2dde041edcfbb1c175db4b` (= profile `policy_sha256`), 11 `supplier/<LCSC>.raweasy.json` + 11 `.provenance.json` captures; every hash is in the overlay and verified on copy; third-party CAD bytes stay outside Git |
 | Added checks | `fab-export` (`fab_export`) and `cpl` (`cpl_rotation`, policy + 11 supplier provenance files) declared verbatim from agent-566's acq-partb-2 scope; `fab` gains `assembly_profile: cpl/assembly-profile.json` and nothing else |
-| Typed receipt | `agent-ee.requirement-map-receipt/2`, `method_binding: typed`, compiled against the accepted `release-build-v7` scaffold candidate `stages/03-scaffold-d1c92e58…/product/inputs` overlaid with the three derived files; `scope_sha256 79a76e38ac5f06644c99b0728797c03b59d38df72e45579e0a0f151a3383c5dc`, `baseline_id 986f6fcbea50dbb89c129a6f52155663b78744999c3dfa05f63f18a3d74b2201`, `coverage_id 10e725a2ade3f5e2745be8e7104d3d4c5dc82207872003721422310d8d455bca`; compile root inventory `914810bf00f477bfd42cebcd0bf175903bdaa78f45a7b8262cce99eb6f1cbcac` (27 overlaid files); compiled on main at 903721fb, which strips the profile from the delegated export |
+| Typed receipt | `agent-ee.requirement-map-receipt/2`, `method_binding: typed`, compiled against the accepted `release-build-v7` scaffold candidate `stages/03-scaffold-d1c92e58…/product/inputs` overlaid with the three derived files; `scope_sha256 82c27ec7e467d82a6e3bf10dae3e15f212ea502c55bb5d17a8efdb690d593d8e`, `baseline_id 8ecc4771c66e7756b32d4f4329cc93a8e9ba665760333411f6acc8aa98709d8d`, `coverage_id 10e725a2ade3f5e2745be8e7104d3d4c5dc82207872003721422310d8d455bca`; compile root inventory `fb589578c992a5900f30bddbfc671778e00158043b68f912fb8836d0847c46ed` (27 overlaid files); compiled on main at 903721fb, which strips the profile from the delegated export |
 
 **Inventory scopes preserved.** The acquisition capture is 198 regular files
 (inventory sha256 `718b4619c597efdfb730727804614546fac174feacc93ec0fec2a7a39084cd54`
@@ -30,10 +30,10 @@ recorded, and 25 files are added. The esp_prog article is a separate scope
 that this preparation never reads: the recovery baseline's frozen esp_prog
 configuration names `board.kicad_pcb` `b4aa540d…93eef7`, `board.kicad_pro`
 `9a9ab694…b6395`, `intent.json` `320cf961…330d3c` and `groups.json`
-`d48e2a5d…6837e8`, all untouched. The combined preservation figure of 204
-quoted by the chief is 198 acquisition inputs plus the esp_prog inputs; the
-baseline record lists four hashed esp_prog inputs, so the exact esp_prog
-count is the chief's to confirm against their own manifest. No original
+`d48e2a5d…6837e8`, all untouched. The combined preservation figure of 204 in
+`fixtures/recovery/inputs.json` (204 hashed entries) is 198 acquisition
+input files + the acquisition `build.json` + the esp_prog
+`board-config-portfolio.json` + four esp_prog input files. No original
 input in either scope was changed.
 
 **Revision history of this preparation.** `f30a0701` (first delivery, base
@@ -43,11 +43,11 @@ input in either scope was changed.
 supersede the earlier hashes; the frozen delivery is the branch head named
 in the chief notice.
 
-Accounting of the derived declaration: 46 receipt rows; modes `checks` 29,
-`judgment` 13, `bench` 2, `operational` 1, `context` 1, `limitation` 0;
+Accounting of the derived declaration: 47 receipt rows; modes `checks` 29,
+`judgment` 14, `bench` 2, `operational` 1, `context` 1, `limitation` 0;
 obligation kinds executable 29 (including the 8 envelope-derived rows),
-judgment 13, physical 2, operational 1, context 1. Every check id bound in
-map/1 remains bound; no check definition was re-authored. Thirteen judgment
+judgment 14, physical 2, operational 1, context 1. Every check id bound in
+map/1 remains bound; no check definition was re-authored. Fourteen judgment
 records are declared and none exists, so `coverage_view` reports every
 judgment span `pending`, the operational span `pending`, both physical spans
 `pending`, and every executable span `pending` until check rows exist.
@@ -95,7 +95,8 @@ check ids listed; nothing else changed in those check definitions.
 | ACQ-MECH-2 | whole | executable → checks | `engineering-geometry`, three anchor `placement` checks | as map/1 |
 | ACQ-MECH-3-DISTANCES | 3536:3703 | executable → checks | `locality` | 3 mm pad distances measured |
 | ACQ-MECH-3-LIMIT-RATIONALE | 3703:3780 | judgment | `judgments/acq-mech-3-limit-rationale.json` | agent-selected limits need their rationale recorded |
-| ACQ-MECH-3-LOOPS | 3780:3852 | executable → checks | `engineering-geometry` (loop lengths), `locality`, `drc` | routed loops and return are measured |
+| ACQ-MECH-3-LOOPS | 3780:3834 | executable → checks | `engineering-geometry` (loop lengths), `locality`, `drc` | "final routing shall preserve short corresponding loops": loop lengths are measured |
+| ACQ-MECH-3-RETURN-PATHS | 3834:3852 | judgment | `judgments/acq-mech-3-return-paths.json` | "and return paths": loop-length, locality and DRC measurements do not establish return-path adequacy; candidate-bound copper judgment, no universal return-via threshold |
 | ACQ-MECH-4-BODIES | 3855:3947 | executable → checks | `courtyard`, `containment`, `dfm` | native geometry |
 | ACQ-MECH-4-MODEL-ENVELOPE | 3947:4027 | executable → checks | `review-acq-mech-4-model-height` | model height against 8 mm envelope |
 | ACQ-MECH-4-MATED-HEIGHT-SCOPE | 4027:4137 | judgment | `judgments/acq-mech-4-mated-height-scope.json` | scope correction; no absolute height claim |
@@ -114,6 +115,23 @@ the equivalent `netlist_parity` checks of the ELEC spans remain bound); thirteen
 map/1 folded into check-bound clauses are now visible judgment obligations;
 the supplier-confirmation sentence of ACQ-MECH-1 is a declared physical
 obligation instead of being covered by stackup checks.
+
+### Sentences reviewed and kept executable
+
+Checked after the chief's ACQ-MECH-3 correction, without widening into a new
+audit: `ACQ-ELEC-3-REMOVAL` 1822:1929 ("evaluated with effective capacitance
+bounds") stays bound to `power-removal`; the bounds are authored operands and
+their justification is a question in `acq-elec-3-back-power-contract.json`,
+since the sentence has no byte split that would separate them.
+`ACQ-ELEC-2-RAIL` 1385:1546 ("all internal loads included") stays executable;
+the load allocation question lives in `acq-elec-2-source-evaluation.json`.
+`ACQ-MECH-4-ACCESS` 4137:4209 ("mating columns and cable exit clear") stays
+bound to the `access_obstruction` measurement; the cable-exit question beyond
+the modelled columns is added to `acq-mech-4-mated-height-scope.json`.
+`ACQ-NATIVE-2` warning dispositions are the existing waiver mechanism, and
+`ACQ-DELIV-1`'s "absent or stale evidence must reject the package" is the
+package gate itself. None of these drops a judgment obligation as direct as
+the return-path sentence.
 
 ## Engineering questions for the judgment records
 
@@ -142,8 +160,11 @@ no answer is recorded here. Summary:
    external obligation (no isolation on J2/J3 nets).
 7. **MECH-1 bench scope**: no holes, no enclosure, and the 1.2 mm correction
    against JST PH 0.8–1.6 mm with the JLCPCB tolerance.
-8. **MECH-3 limit rationale**: source or engineering rationale for the 3 mm
-   pad limits and the loop-length limits in `geometry-model.json`.
+8. **MECH-3 limit rationale and return paths**: source or engineering
+   rationale for the 3 mm pad limits and the loop-length limits in
+   `geometry-model.json`; continuity of the B.Cu return under U1, U2 and the
+   filters beneath each measured loop on the final candidate, with the
+   captured plane declarations and the removed-plane negative as sources.
 9. **MECH-4 mated height scope and assembly applicability**: ePH 8 mm
    reference and the scope correction; captured-source body geometry and
    SMT versus through-hole process applicability under `dfm-profile.json`.

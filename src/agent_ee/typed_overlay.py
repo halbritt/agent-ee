@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import tempfile
 
 from . import requirement_map
 from .candidate import safe_relative
@@ -230,12 +231,30 @@ def derive_obligations(record, spec_raw, overlay):
 
 
 def _inventory(root):
+    """Ordinary files under root by relative path; any file or directory link refuses."""
+    root = Path(root)
     files = {}
-    for path in sorted(p for p in Path(root).rglob('*') if not p.is_dir()):
+    for path in sorted(root.rglob('*')):
         if path.is_symlink():
-            raise ValueError(f'base contains a link: {path}')
+            raise ValueError(f'input tree contains a link: {path}')
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f'input tree contains a special file: {path}')
         files[path.relative_to(root).as_posix()] = sha256(path.read_bytes())
     return files
+
+
+def _disjoint(label, path, others):
+    """Refuse an output or scratch path that aliases or nests with any input tree."""
+    for name, other in others.items():
+        if path == other or path in other.parents or other in path.parents:
+            raise ValueError(f'{label} {path} aliases or nests with {name} {other}')
+
+
+def _owned_scratch(out):
+    """A fresh directory this invocation owns, beside the intended output; never a pre-existing path."""
+    return Path(tempfile.mkdtemp(prefix=out.name + '.staging-', dir=out.parent))
 
 
 def _copy_added_inputs(overlay, sources, staging):
@@ -249,9 +268,16 @@ def _copy_added_inputs(overlay, sources, staging):
         raise ValueError('source directories for undeclared added inputs: ' + ', '.join(sorted(extra)))
     for at, entry in overlay['added_inputs'].items():
         root = Path(sources[at]).resolve()
+        if not root.is_dir() or root.is_symlink():
+            raise ValueError(f'added input source {root} is not a directory')
         for name, digest in entry['files'].items():
             source = root / name
-            if source.is_symlink() or not source.is_file():
+            for component in [source, *source.parents]:
+                if component == root:
+                    break
+                if component.is_symlink():
+                    raise ValueError(f'added input {at}/{name} passes through a link: {component}')
+            if not source.is_file():
                 raise ValueError(f'added input {at}/{name} is not an ordinary file under {root}')
             raw = source.read_bytes()
             if sha256(raw) != digest:
@@ -293,31 +319,43 @@ def prepare(base, overlay_path, out, *, compile_against=None, added_sources=None
     if declared != set(overlay['judgments']):
         raise ValueError('judgment briefs must match the judgment records the map declares: '
                          f'{sorted(declared ^ set(overlay["judgments"]))}')
-    base_files = _inventory(base)
     if out.exists():
         raise ValueError(f'{out} exists')
-    staging = out.with_name(out.name + '.staging')
-    if staging.exists():
-        shutil.rmtree(staging)
-    shutil.copytree(base, staging, symlinks=False)
-    map_bytes, obligation_bytes = json_bytes(derived), json_bytes(obligations)
-    (staging / 'requirement-map.json').write_bytes(map_bytes)
-    (staging / 'obligations.json').write_bytes(obligation_bytes)
-    added = ['obligations.json'] + _copy_added_inputs(overlay, added_sources, staging)
-    locators = _span_locators(derived, record)
-    changed = {'requirement-map.json': sha256(map_bytes)}
-    for path, rule in overlay['derived_files'].items():
-        target = staging / path
-        if not target.is_file() or path in BASE_FILES:
-            raise ValueError(f'derived file {path} is not an ordinary base file')
-        derived_bytes = rebind_intervals(target.read_bytes(), rule['rebind'], locators)
-        target.write_bytes(derived_bytes)
-        changed[path] = sha256(derived_bytes)
-    # Validate the typed accounting against the derived set before sealing it.
-    files = _inventory(staging)
-    bound = requirement_map.load_obligations(obligation_bytes, record, raw['spec.md'])
-    scope, receipts = requirement_map.account_requirements(
-        derived, record, raw['spec.md'], files=files, inputs=staging, obligations=bound)
+    if not out.parent.is_dir():
+        raise ValueError(f'{out.parent} is not a directory')
+    trees = {'base': base}
+    for at, directory in added_sources.items():
+        trees[f'added input {at}'] = Path(directory).resolve()
+    if compile_against is not None:
+        trees['candidate'] = Path(compile_against).resolve()
+    _disjoint('output', out, trees)
+    _disjoint('output parent', out.parent, {k: v for k, v in trees.items() if v == out.parent})
+    base_files = _inventory(base)  # refuses file and directory links before anything is copied
+    staging = _owned_scratch(out)
+    try:
+        _disjoint('scratch', staging, trees)
+        shutil.copytree(base, staging, symlinks=False, dirs_exist_ok=True)
+        map_bytes, obligation_bytes = json_bytes(derived), json_bytes(obligations)
+        (staging / 'requirement-map.json').write_bytes(map_bytes)
+        (staging / 'obligations.json').write_bytes(obligation_bytes)
+        added = ['obligations.json'] + _copy_added_inputs(overlay, added_sources, staging)
+        locators = _span_locators(derived, record)
+        changed = {'requirement-map.json': sha256(map_bytes)}
+        for path, rule in overlay['derived_files'].items():
+            target = staging / path
+            if not target.is_file() or path in BASE_FILES:
+                raise ValueError(f'derived file {path} is not an ordinary base file')
+            derived_bytes = rebind_intervals(target.read_bytes(), rule['rebind'], locators)
+            target.write_bytes(derived_bytes)
+            changed[path] = sha256(derived_bytes)
+        # Validate the typed accounting against the derived set before sealing it.
+        files = _inventory(staging)
+        bound = requirement_map.load_obligations(obligation_bytes, record, raw['spec.md'])
+        scope, receipts = requirement_map.account_requirements(
+            derived, record, raw['spec.md'], files=files, inputs=staging, obligations=bound)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)  # only the directory this invocation created
+        raise
     manifest = {'schema': MANIFEST_SCHEMA, 'name': overlay['name'], 'overlay_sha256': sha256(overlay_raw),
                 'base': {'files': len(base_files), 'inventory_sha256': sha256(json_bytes(base_files)), **expected},
                 'derived': {'requirement_map_sha256': sha256(map_bytes), 'obligations_sha256': sha256(obligation_bytes),
@@ -334,8 +372,12 @@ def prepare(base, overlay_path, out, *, compile_against=None, added_sources=None
                                                for k in requirement_map.OBLIGATION_KINDS},
                                'judgment_records_declared': sorted(declared), 'judgment_records_present': [],
                                'limitations': scope['limitations']}}
-    (staging / 'overlay-manifest.json').write_bytes(json_bytes(manifest))
-    staging.rename(out)
+    try:
+        (staging / 'overlay-manifest.json').write_bytes(json_bytes(manifest))
+        staging.rename(out)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     result = {'out': str(out), 'manifest': manifest}
     if compile_against is not None:
         result['receipt'] = compile_typed(out, Path(compile_against).resolve())
@@ -350,13 +392,14 @@ def compile_typed(derived, candidate):
     contain); the candidate itself and its provenance are left untouched.
     """
     manifest = json.loads((derived / 'overlay-manifest.json').read_bytes())
-    root = derived.with_name(derived.name + '.compile')
-    if root.exists():
-        shutil.rmtree(root)
-    shutil.copytree(candidate, root, symlinks=False)
+    candidate = Path(candidate).resolve()
+    _disjoint('derived inputs', derived, {'candidate': candidate})
+    _inventory(candidate)  # refuses links before the recursive copy
+    root = Path(tempfile.mkdtemp(prefix=derived.name + '.compile-', dir=derived.parent))
+    shutil.copytree(candidate, root, symlinks=False, dirs_exist_ok=True)
     provenance = root / requirement_map.PROVENANCE
     if provenance.exists():
-        shutil.rmtree(provenance)
+        shutil.rmtree(provenance)  # inside the directory this invocation created
     overlaid = list(manifest['derived']['changed_files']) + manifest['derived']['added_files']
     for name in overlaid:
         target = root / name
@@ -367,7 +410,7 @@ def compile_typed(derived, candidate):
         (derived / 'requirement-map.json').read_bytes(), (derived / 'spec-record.json').read_bytes(),
         (derived / 'spec.md').read_bytes(), files=files, inputs=root,
         obligations_raw=(derived / 'obligations.json').read_bytes())
-    receipt['compile_root'] = {'candidate': str(candidate), 'overlaid': sorted(overlaid),
+    receipt['compile_root'] = {'candidate': str(candidate), 'path': str(root), 'overlaid': sorted(overlaid),
                                'inventory_sha256': sha256(json_bytes(files))}
     return receipt
 

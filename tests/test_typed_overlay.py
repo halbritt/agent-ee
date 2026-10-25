@@ -189,6 +189,100 @@ class PodOverlayTests(unittest.TestCase):
                 self.assertFalse((Path(self.tmp.name) / ('out-' + mutate.__name__)).exists())
 
 
+class PreservationTests(PodOverlayTests):
+    """Scratch and output handling never deletes or reads through anything this invocation did not create."""
+
+    def added(self):
+        source = Path(self.tmp.name) / 'cpl-source'
+        (source / 'supplier').mkdir(parents=True, exist_ok=True)
+        (source / 'policy.json').write_bytes(b'{"policy": 1}\n')
+        overlay = copy.deepcopy(self.overlay)
+        overlay['added_inputs'] = {'cpl': {'files': {'policy.json': sha256(b'{"policy": 1}\n')}}}
+        return source, overlay
+
+    def test_preexisting_scratch_paths_survive_a_refused_and_a_successful_run(self):
+        out = Path(self.tmp.name) / 'out'
+        for sentinel in (out.with_name('out.staging'), out.with_name('out.compile')):
+            sentinel.mkdir()
+            (sentinel / 'valuable.txt').write_bytes(b'keep me')
+        source, overlay = self.added()
+        with self.assertRaises(ValueError):  # added source missing: refused after staging began
+            self.prepare(overlay, name='out')
+        self.assertFalse(out.exists())
+        for sentinel in (out.with_name('out.staging'), out.with_name('out.compile')):
+            self.assertEqual((sentinel / 'valuable.txt').read_bytes(), b'keep me')
+        leftovers = [p.name for p in Path(self.tmp.name).iterdir() if p.name.startswith('out.staging-')]
+        self.assertEqual(leftovers, [], 'the invocation must remove only its own scratch directory')
+        result = self.prepare(overlay, name='out', added_sources={'cpl': source})
+        self.assertTrue(out.is_dir())
+        for sentinel in (out.with_name('out.staging'), out.with_name('out.compile')):
+            self.assertEqual((sentinel / 'valuable.txt').read_bytes(), b'keep me')
+        self.assertEqual(result['manifest']['derived']['added_files'], ['obligations.json', 'cpl/policy.json'])
+
+    def test_failing_added_source_validation_leaves_no_output_and_touches_no_input(self):
+        source, overlay = self.added()
+        before = {n: sha256((self.base / n).read_bytes()) for n in typed_overlay.BASE_FILES}
+        overlay['added_inputs']['cpl']['files']['policy.json'] = sha256(b'other')
+        with self.assertRaises(ValueError):
+            self.prepare(overlay, name='drift', added_sources={'cpl': source})
+        self.assertFalse((Path(self.tmp.name) / 'drift').exists())
+        self.assertEqual({n: sha256((self.base / n).read_bytes()) for n in typed_overlay.BASE_FILES}, before)
+        self.assertEqual((source / 'policy.json').read_bytes(), b'{"policy": 1}\n')
+        self.assertEqual([p.name for p in Path(self.tmp.name).iterdir() if 'staging-' in p.name], [])
+
+    def test_nested_or_aliased_paths_refuse_before_any_copy(self):
+        source, overlay = self.added()
+        path = Path(self.tmp.name) / 'overlay.json'
+        path.write_bytes(json_bytes(overlay))
+        cases = {'out inside base': (self.base / 'derived', {'cpl': source}),
+                 'out equals base': (self.base, {'cpl': source}),
+                 'base inside out': (self.base.parent, {'cpl': source}),
+                 'out inside added source': (source / 'derived', {'cpl': source}),
+                 'added source inside out': (Path(self.tmp.name) / 'out2', {'cpl': Path(self.tmp.name) / 'out2' / 'cpl'})}
+        for label, (out, sources) in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    typed_overlay.prepare(self.base, path, out, added_sources=sources)
+        self.assertEqual({n: sha256((self.base / n).read_bytes()) for n in typed_overlay.BASE_FILES},
+                         {n: sha256((POD / n).read_bytes()) for n in typed_overlay.BASE_FILES})
+        self.assertFalse((self.base / 'derived').exists())
+        self.assertFalse((Path(self.tmp.name) / 'out2').exists())
+        self.assertEqual([p.name for p in self.base.iterdir() if 'staging-' in p.name], [])
+
+    def test_directory_and_file_links_are_refused_before_recursive_copy(self):
+        source, overlay = self.added()
+        outside = Path(self.tmp.name) / 'outside'
+        outside.mkdir()
+        (outside / 'secret.txt').write_bytes(b'not an input')
+        link = self.base / 'linked'
+        link.symlink_to(outside, target_is_directory=True)
+        try:
+            with self.assertRaises(ValueError):
+                self.prepare(overlay, name='linkbase', added_sources={'cpl': source})
+            self.assertFalse((Path(self.tmp.name) / 'linkbase').exists())
+        finally:
+            link.unlink()
+        (source / 'linkdir').symlink_to(outside, target_is_directory=True)
+        overlay['added_inputs']['cpl']['files']['linkdir/secret.txt'] = sha256(b'not an input')
+        with self.assertRaises(ValueError):
+            self.prepare(overlay, name='linksource', added_sources={'cpl': source})
+        self.assertFalse((Path(self.tmp.name) / 'linksource').exists())
+        (source / 'file-link.json').symlink_to(outside / 'secret.txt')
+        overlay['added_inputs']['cpl']['files'] = {'file-link.json': sha256(b'not an input')}
+        with self.assertRaises(ValueError):
+            self.prepare(overlay, name='linkfile', added_sources={'cpl': source})
+        self.assertEqual((outside / 'secret.txt').read_bytes(), b'not an input')
+
+    def test_successful_runs_are_deterministic(self):
+        source, overlay = self.added()
+        first = self.prepare(overlay, name='a', added_sources={'cpl': source})['manifest']
+        second = self.prepare(overlay, name='b', added_sources={'cpl': source})['manifest']
+        for key in ('overlay_sha256', 'base', 'accounting'):
+            self.assertEqual(first[key], second[key])
+        self.assertEqual({k: v for k, v in first['derived'].items() if k != 'added_inputs'},
+                         {k: v for k, v in second['derived'].items() if k != 'added_inputs'})
+
+
 @unittest.skipUnless((RETAINED / 'spec.md').exists() and (CPL_SOURCE / 'assembly-profile.json').exists(),
                      'retained acquisition inputs or the CPL input revision are not present on this host')
 class AcquisitionOverlayTests(unittest.TestCase):
@@ -206,8 +300,9 @@ class AcquisitionOverlayTests(unittest.TestCase):
             self.assertEqual(accounting['obligations']['operational'], 1)
             self.assertEqual(accounting['obligations']['physical'], 2)
             self.assertEqual(accounting['obligations']['context'], 1)
-            self.assertEqual(accounting['obligations']['judgment'], 13)
-            self.assertEqual(len(accounting['judgment_records_declared']), 13)
+            self.assertEqual(accounting['obligations']['judgment'], 14)
+            self.assertEqual(len(accounting['judgment_records_declared']), 14)
+            self.assertIn('judgments/acq-mech-3-return-paths.json', accounting['judgment_records_declared'])
             self.assertEqual(accounting['judgment_records_present'], [])
             derived = Path(tmp) / 'derived'
             self.assertFalse((derived / 'judgments').exists())

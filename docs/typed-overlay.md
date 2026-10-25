@@ -22,6 +22,17 @@ directory is appended to the scope inputs. `check_additions` may `declare`
 new checks (ids must be new) and add `params` to existing checks (keys must
 be new); both apply to the derived map only.
 
+Scratch and output handling never touches anything the invocation did not
+create: the base, every added-input source and the scaffold candidate are
+inventoried first and refuse any file or directory link; the output path and
+its scratch directory must be disjoint from (neither equal to, inside, nor
+containing) those trees; staging happens in a fresh `mkdtemp` directory
+beside the output that only this invocation owns and that is removed on
+failure; a pre-existing `<out>.staging` or `<out>.compile` is never deleted;
+an existing output path is a refusal. `compile_typed` copies the candidate
+into its own fresh `<derived>.compile-*` directory (path recorded in the
+receipt) and drops only that copy's provenance subtree.
+
 `prepare` refuses when the base hashes differ from the declaration, when an
 overlay span names a check the base map does not declare, when an obligation
 is missing for a captured clause, when a judgment brief and a declared
