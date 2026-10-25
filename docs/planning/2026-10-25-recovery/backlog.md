@@ -1,5 +1,7 @@
 # Dependency-ordered Plane backlog
 
+**Execution update:** the owner subsequently authorized agent-564 to coordinate agents 565–570. See [execution.md](execution.md). This document and the JSON/readback receipts below preserve the completed planning snapshot; live Plane state and the execution record supersede its global-pause and sole-agent wording. The pod hold remains active.
+
 All listed work is **Backlog and unassigned**. Implementation is paused; the pod has an additional owner hold. [AGENTEE-512](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/e691b454-8ba9-43c7-a6f8-188a177d2b9c) is the reused recovery parent; [AGENTEE-514](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/22fde6c5-4063-4bcd-abf1-48870d6c2b45) records RD-01–05. Those decisions are selected for this plan, so the decision-record ticket is related to each item rather than an unresolved technical blocker.
 
 First implementation item after the owner lifts the pause: [AGENTEE-519](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/4e0a70bd-9918-4992-9a90-34b0998dd28c). Next: [AGENTEE-520](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/ba96850b-f4dd-471f-acff-6a1b3bbf706d), then [AGENTEE-521](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/59f359cc-21b8-457f-b059-241fd3c565fe/issues/386dad3e-21a7-47a8-b73e-56ab70bf5a9b).

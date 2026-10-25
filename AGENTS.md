@@ -1,5 +1,22 @@
 # Agent notes for agent-ee
 
+## Current owner direction — 2026-10-25
+
+Direct owner instruction to agent-564, after the audit consolidation:
+
+> There are 5 agents already spawned, 565 through 570, once the plan is complete, you take over as chief integrator, create a goal for yourself to parallelize the work and utilize the capabilities of the agents in question, sol and opus for builders, fable and argon for more complex tasks.
+
+The consolidation is complete at `9c290c16`. Agent-564 is chief integrator for
+the [recovery plan](docs/planning/2026-10-25-recovery/recovery-plan.md).
+This direct instruction supersedes the prior sole-agent direction and lifts
+the implementation pause for the dependency-ordered recovery work. The
+telemetry-pod campaign remains held. See the
+[execution record](docs/planning/2026-10-25-recovery/execution.md) for current
+holders, boundaries and integration rules. Use existing registered sessions;
+do not revive historical assignments. Builders deliver isolated committed
+changes to agent-564, who verifies, integrates and pushes main and closes
+their worktrees. Do not independently push main or broaden a dispatch.
+
 ## Current owner direction — 2026-10-24
 
 Direct owner instruction to agent-544: "There was a whole group of agents working

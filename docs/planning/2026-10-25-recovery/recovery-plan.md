@@ -1,6 +1,6 @@
 # Agent-ee recovery plan — 2026-10-25
 
-**Status: selected planning sequence; implementation paused by owner.** This plan reconciles [Argon, Fable and Astra](baseline.md) into one execution order. It supersedes historical dispatch instructions and the “next named capability” queue for future recovery work. It does not revoke engineering requirements, accept a new board, or release the telemetry-pod hold.
+**Status: consolidation complete; recovery execution authorized by the owner's subsequent instruction to agent-564.** The [execution record](execution.md) preserves the exact instruction and parallel allocation. This plan reconciles [Argon, Fable and Astra](baseline.md) into one execution order. It supersedes historical dispatch instructions and the “next named capability” queue for future recovery work. It does not revoke engineering requirements, accept a new board, or release the telemetry-pod hold. References below to a later pause release describe the planning snapshot; the execution record supplies that release for recovery work only.
 
 Start with [the finding register](findings.md), then the [Plane backlog](backlog.md). Evidence identities and preserved refs are in [baseline.json](baseline.json). The existing recovery parent, AGENTEE-512, is reused.
 
