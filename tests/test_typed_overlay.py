@@ -274,6 +274,27 @@ class PreservationTests(PodOverlayTests):
             self.prepare(overlay, name='linkfile', added_sources={'cpl': source})
         self.assertEqual((outside / 'secret.txt').read_bytes(), b'not an input')
 
+    def test_failed_compile_removes_only_its_own_copy_and_keeps_the_derived_output(self):
+        source, overlay = self.added()
+        out = Path(self.tmp.name) / 'out'
+        sentinel = out.with_name('out.compile')
+        sentinel.mkdir()
+        (sentinel / 'valuable.txt').write_bytes(b'keep me')
+        # A candidate without the native design files cannot compile a scope; the failure
+        # must leave the derived inputs, the sentinel and the candidate untouched and no
+        # owned compile copy behind.
+        candidate = Path(self.tmp.name) / 'candidate'
+        candidate.mkdir()
+        (candidate / 'unrelated.txt').write_bytes(b'candidate file')
+        with self.assertRaises(ValueError):
+            self.prepare(overlay, name='out', added_sources={'cpl': source}, compile_against=candidate)
+        self.assertTrue((out / 'overlay-manifest.json').is_file())
+        self.assertEqual((sentinel / 'valuable.txt').read_bytes(), b'keep me')
+        self.assertEqual(sorted(p.name for p in candidate.iterdir()), ['unrelated.txt'])
+        self.assertEqual([p.name for p in Path(self.tmp.name).iterdir() if p.name.startswith('out.compile-')], [])
+        with self.assertRaises(ValueError):  # a candidate nested in the derived output is refused up front
+            typed_overlay.compile_typed(out, out / 'inner')
+
     def test_successful_runs_are_deterministic(self):
         source, overlay = self.added()
         first = self.prepare(overlay, name='a', added_sources={'cpl': source})['manifest']
