@@ -38,7 +38,7 @@ positive and wrong-address negative have exercised this public command.
 | Architecture, parts and circuits | Circuit/connectivity intent, captured sourcing/CAD/rating records → bound parts and native pin inventory; build parts stage, `parts_stage`, `binding_fill` | Source parts, topology and electrical calculations. Actual selected TPS7A20/ADS1115 circuit is carried into the board. Consequential reversed-diode negative rejects despite clean ERC. The acquisition load, capacitance, startup/removal and other electrical obligations now have reviewed source/model evidence and final native checks; other circuit families remain unqualified. |
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Acquisition package bodies, height, connector access and board thickness are reviewed and checked. Broader side/hardware/keepout cases remain open. |
-| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition with a bottom ground plane and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. A fresh two-sided acquisition pour fails native checks on all three tried placements and is rejected. Fine-pitch plane repair, existing-zone placement, netclasses, broader multilayer/paired/bus/fanout features and routed constraint coverage remain open. |
+| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition with a bottom ground plane and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. The retained two-sided acquisition variant now passes the normal job with automatic targeted thermal reservation and scoped dangling-net reroute; earlier failed attempts remain evidence. The four-layer/default-via regression and all 44 required pin modules pass. Existing-zone placement, netclasses, broader multilayer/paired/bus/fanout features and routed constraint coverage remain open. |
 | Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `topology_rules`, interval checks, passive/active SPICE, `dc_path` | Five independent ADC pin rules now enter the normal build's generated scope; wrong address-pin wiring rejects despite passing ERC and generator parity. Selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. Whole-net copper checks exercise two/four-layer controls, supply/return copper and disconnected/exceeded-budget negatives. Acquisition material/contact assumptions and component applicability are explicitly reviewed; model limits and unperformed physical obligations remain visible. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Acquisition mechanical/fabrication obligations are closed with dimensioned/source review and final checks. Remaining routing-feature cases are unmet. |
 | Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | The 17-part acquisition design is accepted through the default seven-stage build: 37 passing checks plus informational netlist, 9 plots/2 drills/12 BOM rows/17 placements. The eleven engineering obligations are closed with explicit assumption corrections; changed exported coordinates reject as stale. Supplier preview and physical tests are unperformed. |
@@ -161,13 +161,27 @@ not demonstrate parity. The prior matched esp_prog seed 10 comparison leaves
 
 ## Exact next work
 
-Next milestone: complete fine-pitch two-sided power/ground-plane routing through
-the normal placement job. Representative design: the retained rejected
-three-block acquisition variant with front and back ground planes. Reuse its
-immutable inputs and failed seeds; diagnose the starved thermal/open connection
-before choosing another bounded strategy. Completion evidence must include
-saved-board native refill/DRC/connectivity, preserved block/side/locality
-constraints and a passing normal job, with the accepted single-sided acquisition
-and esp_prog retained as regressions. A successful diagnostic or fewer opens is
-not completion. Broader paired/bus/fanout/matched-KRT qualification follows one
-named capability at a time. No required missing, stale or unknown check can pass.
+Completed capability milestone: fine-pitch two-sided ground-plane recovery. The
+retained three-block acquisition variant passes the normal public placement job,
+including saved-board refill/connectivity and final block/side/locality checks.
+The accepted acquisition regression also passes; see [plane feedback evidence](qualification/plane-feedback-2026-10-24.md).
+The final pin gate passes (945 checks without skips), including the corrected
+four-layer implicit-via-size mismatch. A matched 300-second stock-KRT exercise
+leaves one thermal-spoke error; the production agent-ee routing function repairs
+it and passes. This is one bounded correctness result, not broad KRT parity. Preserve the earlier rejected attempts and the accepted acquisition
+package; no manufacturing acceptance is claimed for the standalone two-sided
+routing article.
+
+Next named capability: carry declared native netclasses and routing rules into
+normal placement/routing, then verify differential-pair length/skew through that
+entrypoint. The current placement capture explicitly refuses non-default classes
+and custom `.kicad_dru` files; preserving those real constraints is the first
+missing operation on this path. Exercise a bounded
+four-layer signal-integrity article (Q4), reusing the native CAN pair controls
+where applicable. Required evidence: coupled geometry and declared layers on the
+saved board, positive length/skew checks plus a consequential negative, preserved
+native rules, and matched stock-KRT commands/constraints/budgets. Wider bus,
+time/impedance, fanout and return-path obligations remain separate open work;
+this milestone will not imply those have passed. Existing acquisition and
+esp_prog workflows remain regressions. No required missing, stale or unknown
+check can pass.

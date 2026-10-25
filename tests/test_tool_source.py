@@ -421,8 +421,9 @@ prune(older_than_days=0)
     def test_repository_wide_step_builders_mount_only_snapshots(self):
         """Discover source-mount constructors; every discovered builder must be exercised."""
         import ast
-        from agent_ee import (add_planes, binding_fill, pod_driver, rung1_stages,
-                              scaffold, schematic_stage)
+        from agent_ee import (add_planes, binding_fill, block_variant_stage, parts_stage,
+                              placement_adapter, pod_driver, rung1_stages, scaffold,
+                              schematic_stage)
         route = require_kicad_route()
         repo = self.root / 'repo'
         repo.mkdir()
@@ -432,12 +433,27 @@ prune(older_than_days=0)
                 'pod_driver._scaffold_step': [pod_driver._scaffold_step(self.root, ['b.kicad_pcb'])],
                 'pod_driver._constraint_step': [pod_driver._constraint_step(self.root, {'board': 'b.kicad_pcb'})],
             }
+        section = {'netlist': 'blocks/native.xml', 'arrangement': 'blocks/arrangement.json',
+                   'allocation': 'blocks/allocation.json', 'candidates': ['blocks/RC.json'],
+                   'side_eligibility': 'blocks/eligibility.json', 'contract': 'blocks/contract.json',
+                   'stage_owned': {'eligibility': 'blocks/eligibility-template.json',
+                                   'contract': 'blocks/contract-template.json',
+                                   'report': 'blocks/producer.json'}}
+        declaration = {'schema': placement_adapter.ADAPTER_SCHEMA, 'helper': 'agent-ee.placer/1',
+                       'policy': 'placement-policy.json', 'fixed_footprints': [],
+                       'timeout_s': 300, 'blocks': section}
         cases.update({
             'add_planes.step': [add_planes.step(self.source, board='b.kicad_pcb', plan='planes.json')],
             'binding_fill.configuration': [binding_fill.configuration(self.source, intent='intent.json',
                 manifest='parts.json', part_refs='refs.json', deviations='deviations.json',
                 captures='.', dependencies=[])],
+            'block_variant_stage.step': [block_variant_stage.step(self.source,
+                scope={'board': 'b.kicad_pcb', 'schematic': 'b.kicad_sch'}, declaration=declaration,
+                mutable_inputs=['b.kicad_pcb', 'b.kicad_sch', *block_variant_stage.output_paths(section)])],
             'fab_stage.step': [fab_stage.step(self.source, 'b.kicad_pcb', 'b.kicad_sch')],
+            'parts_stage.configuration': [parts_stage.configuration(self.source, bundle='.',
+                manifest='parts.json', circuit='circuit.json', layout='layout.json',
+                output='connectivity-intent.json')],
             'rung1_campaign.scaffold_step': [rc.scaffold_step(self.source, rc.STEPS_DIR, rc.FIXTURE_PROJECT)],
             'rung1_campaign.step_specs': rc.step_specs(self.source, rc.STEPS_DIR, route),
             'rung1_qualified.schematic_step_specs': q.schematic_step_specs(source_root=self.source),

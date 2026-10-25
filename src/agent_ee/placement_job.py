@@ -1063,6 +1063,80 @@ def _produce_planes(candidate, raw, output, *, phase=None, clock, cancel_dir):
             'deferred_connectivity': report['deferred_connectivity']}
 
 
+def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
+    """Retain one public router invocation and bind its saved candidate."""
+    route_dir.mkdir(parents=True, exist_ok=True)
+    with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
+        done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
+    record = {'argv': argv, 'exit_code': done.returncode}
+    results = sorted((route_dir / 'out').rglob('result.json'))
+    if len(results) != 1:
+        return {**record, 'status': 'missing_output'}
+    result = read_json(results[0])
+    record.update(result_path=str(results[0]), result_sha256=digest(results[0]),
+                  router_exit=result.get('exit_code'), router_status=result.get('status') or result.get('outcome'))
+    candidate = result.get('candidate')
+    if not candidate:
+        return {**record, 'status': 'no_candidate'}
+    board = route_dir / candidate['board']
+    sha = digest(board)
+    if sha != result.get('validation', {}).get('candidate_board_sha256'):
+        return {**record, 'status': 'stale_candidate'}
+    accepted = (done.returncode == result.get('exit_code') == 0
+                and result.get('process', {}).get('status') == 'PASS'
+                and result.get('routing', {}).get('status') == 'COMPLETE'
+                and result.get('routing', {}).get('unconnected_total') == 0
+                and result.get('validation', {}).get('status') == 'PASS')
+    return {**record, 'status': 'routed', 'board': str(board), 'board_sha256': sha,
+            'router_accepted': accepted}
+
+
+def _route_feedback(record, checkout, *, env, clock, cancel_dir):
+    """Select one bounded repair from native findings; never relax a rule."""
+    if record.get('status') != 'routed' or record['router_accepted']:
+        return None
+    result_path = Path(record['result_path'])
+    result = read_json(result_path)
+    validation = result['validation']
+    if (result.get('process', {}).get('status') != 'PASS'
+            or result.get('routing', {}).get('unconnected_total') != 0
+            or validation.get('drc', {}).get('new_parity', {}).get('count') != 0):
+        return None
+    preservation = validation.get('preservation', {})
+    if not preservation or any(v != 'PASS' for k, v in preservation.items() if k != 'pour_integrity'):
+        return None
+    findings = read_json(result_path.parent / 'validate' / 'new-findings.json')['violations']
+    kinds = {v['type'] for v in findings}
+    if 'starved_thermal' in kinds and kinds <= {'starved_thermal', 'track_dangling'}:
+        from . import kicad_route_attempt as attempt
+        argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(result_path.parent)]
+        done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, env=env, cwd=result_path.parent)
+        path = result_path.parent / 'spokes.json'
+        if done.returncode != 3 or not path.is_file():
+            return None
+        report = read_json(path)
+        pads = report['starved_pads']
+        if not pads or not all(p.get('new') is True and p.get('attributed') is True
+                               and p.get('uuid') and p.get('layer') for p in pads):
+            return None
+        return {'kind': 'thermal_corridors', 'evidence': str(path), 'sha256': digest(path),
+                'pads': sorted({p['uuid'] + '@' + p['layer'] for p in pads})}
+    if (kinds == {'track_dangling'} and all(v == 'PASS' for v in preservation.values())
+            and result.get('settings', {}).get('pairs') == []):
+        # The public force-reroute option cannot be combined with pair routing.
+        # Only a positively established pair-free attempt may use this repair.
+        import pcbnew
+        board = pcbnew.LoadBoard(record['board'])
+        tracks = {t.m_Uuid.AsString(): t for t in board.GetTracks()}
+        items = [i['uuid'] for v in findings for i in v.get('items', [])]
+        if not items or any(i not in tracks or not tracks[i].GetNetname() for i in items):
+            return None
+        return {'kind': 'dangling_net', 'nets': sorted({tracks[i].GetNetname() for i in items}),
+                'evidence': str(result_path.parent / 'validate/new-findings.json'),
+                'sha256': digest(result_path.parent / 'validate/new-findings.json')}
+    return None
+
+
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, planes=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
@@ -1083,6 +1157,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     for name in ('board.kicad_pcb', 'board.kicad_pro'):
         shutil.copyfile(Path(candidate_dir) / name, staged / name)
     started = time.monotonic()
+    route_clock = Clock(min(budget_s, clock.remaining()))
     plane_record = None
     if planes is not None:
         try:
@@ -1105,10 +1180,15 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             raise JobStopped('deadline')
         return {'status': 'plane_deadline', 'preflight': check,
                 'elapsed_s': time.monotonic() - started}
+    # These jobs normally start without copper. Prove that on the actual native
+    # input before allowing the router to revisit its own generated tracks.
+    import pcbnew
+    owned_copper = planes is not None and not list(pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks())
     argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(route_dir / 'out'),
             '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged),
             '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
-            '--label', 'placement-job', '--protect', 'existing', '--budget', str(int(remaining)), '--diff-pairs', 'auto']
+            '--label', 'placement-job', '--protect', 'locked' if owned_copper else 'existing',
+            '--budget', str(int(remaining)), '--diff-pairs', 'auto']
     if grid_step_mm is not None:
         argv += ['--grid-step', str(grid_step_mm)]
     Path(home).mkdir(parents=True, exist_ok=True)
@@ -1116,28 +1196,47 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
            'KICAD_ROUTE_STATE': str(checkout), 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
            'GIT_OPTIONAL_LOCKS': '0'}
-    with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
-        done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
-        code = done.returncode
-    record = {'argv': argv, 'exit_code': code, 'elapsed_s': time.monotonic() - started, 'preflight': check}
+    record = _route_attempt(route_dir, argv=argv, env=env, clock=clock, cancel_dir=cancel_dir)
+    attempts = [dict(record)]
+    used, pads = set(), []
+    # At most one retry for each demonstrated defect class, within the original
+    # candidate's remaining allocation. Failed trials and source bytes survive.
+    while owned_copper and route_clock.remaining() >= 1:
+        try:
+            feedback = _route_feedback(record, checkout, env=env, clock=route_clock, cancel_dir=cancel_dir)
+            if feedback is None or feedback['kind'] in used:
+                break
+            used.add(feedback['kind'])
+            attempts[-1]['feedback'] = feedback
+            if route_clock.remaining() < 1:
+                break
+            retry_dir = route_dir / ('repair-' + feedback['kind'])
+            retry = list(argv)
+            retry[retry.index('--out') + 1] = str(retry_dir / 'out')
+            retry[retry.index('--budget') + 1] = str(int(route_clock.remaining()))
+            if feedback['kind'] == 'thermal_corridors':
+                pads = feedback['pads']
+            else:
+                retry[retry.index('--dir') + 1] = str(Path(record['board']).parent)
+                del retry[retry.index('--diff-pairs'):retry.index('--diff-pairs') + 2]
+                retry += ['--nets', *feedback['nets'], '--backend-arg=--force-reroute']
+            for pad in pads:
+                retry += ['--reserve-spoke-pad', pad]
+            attempts.append({'argv': retry, 'status': 'running'})
+            record = _route_attempt(retry_dir, argv=retry, env=env,
+                                    clock=route_clock, cancel_dir=cancel_dir)
+            attempts[-1] = dict(record)
+        except JobStopped as exc:
+            if exc.status != 'deadline' or clock.remaining() <= 0:
+                raise
+            attempts[-1]['feedback_deadline'] = True
+            if attempts[-1].get('status') == 'running':
+                attempts[-1]['status'] = 'deadline'
+            break
+    record.update(attempts=attempts, elapsed_s=time.monotonic() - started, preflight=check,
+                  copper_policy='generated_from_track_free_input' if owned_copper else 'preserve_existing')
     if plane_record is not None:
         record['planes'] = plane_record
-    results = sorted((route_dir / 'out').rglob('result.json')) if (route_dir / 'out').exists() else []
-    if len(results) != 1:
-        record['status'] = 'missing_output'
-        return record
-    result = read_json(results[0])
-    record['result_path'] = str(results[0])
-    record['result_sha256'] = digest(results[0])
-    candidate = result.get('candidate')
-    record['router_exit'] = result.get('exit_code')
-    record['router_status'] = result.get('status') or result.get('outcome')
-    if not candidate:
-        record['status'] = 'no_candidate'
-        return record
-    # The router reports the candidate relative to its working directory.
-    board = route_dir / candidate['board']
-    record.update(status='routed', board=str(board), board_sha256=digest(board))
     return record
 
 
@@ -1418,6 +1517,8 @@ def _completion_status(routed, incumbent, final):
     """Native rejection or absent checks cannot be overridden by router success."""
     if routed.get('status') != 'routed':
         return 'route_failed'
+    if routed.get('router_accepted') is False:
+        return 'verification_failed'
     if final.get('integrity') != 'preserved':
         return 'integrity_failed'
     if final.get('edge_intent', {}).get('status') != 'pass':

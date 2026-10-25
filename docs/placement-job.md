@@ -54,6 +54,17 @@ candidate. The final result records native plane evidence and the producer's
 hash-bound receipt; existing footprints, placements and other protected native
 content still have to match. Unknown input names are refused.
 
+For a plane job whose staged native input contains no tracks or vias, the router
+may rip up its own generated copper (`--protect locked`). Authored copper keeps
+the default `--protect existing` policy. A fully connected result with a newly
+starved thermal may receive one retry reserving the exact native pad/layer
+corridors. A remaining dangling track may receive one scoped reroute, only when
+the saved result establishes that it has no differential pairs and every other
+preservation check passes. Both repairs share the original candidate's remaining
+budget, retain all attempts and undergo unchanged native and final placement
+checks. A rejected router result cannot complete the job. See the
+[qualification and limits](qualification/plane-feedback-2026-10-24.md).
+
 An optional `inputs.locality` supplies a path and SHA-256 for the existing
 `agent-ee.electrical-locality/1` document. The public build derives this input
 from its required `electrical-locality/1` check, so search and final acceptance
@@ -258,7 +269,7 @@ the process and must be recorded by the caller.
    `best-diagnostic.json` and may be routed **only as an exploratory run**; the
    report then says `NO valid incumbent`.
 7. **Pinned router process** on a fresh copy (`kicad-route run`, the adapter's
-   argv shape, `--protect existing`, `--diff-pairs auto`, the checkout's own
+   argv shape, copper protection as described above, `--diff-pairs auto`, the checkout's own
    state). The sandboxed `routing_adapter.step` refuses a candidate without a
    schematic, so a schematic-less board is routed by this direct process call;
    the router's preflight identity is recorded either way.

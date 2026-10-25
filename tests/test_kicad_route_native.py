@@ -1,4 +1,4 @@
-"""Actual kicad-route (pinned b577449) and its owned engine on the original placed RC, read-only.
+"""Actual kicad-route (current adapter pin) and its owned engine on the original placed RC, read-only.
 
 AGENT_EE_KICAD_ROUTE_CHECKOUT names a clean kicad-route checkout at the pin with
 its installed KRT state; the standard image sets it to /opt/kicad-route. Unset,
