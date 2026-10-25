@@ -232,3 +232,12 @@ Retain the outer-layer article and existing successful workflows as regressions.
 Propagation-time matching, buses, fanout and broader return-path recovery remain
 subsequent required work.
 No required missing, stale or unknown check can pass.
+
+Active stripline candidate: router `95c3baf2dcbc3d38759cf08839f76d71901d28a5`.
+[Current qualification record](qualification/pair-stripline-2026-10-25.md) tracks
+native positive/negative coverage, matched stock results and remaining gates.
+The native targeted cases pass, including either reference missing or split,
+a split only between traces and an enlarged terminal opening. The actual
+PCB-only snapshot path now retains the footprint libraries. Broader router and
+public agent-ee integration gates remain in progress; this is not yet an
+integrated capability claim.

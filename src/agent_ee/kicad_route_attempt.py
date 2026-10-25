@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = '5801a9f39618853ab941beac7069c68a5270e16e'
+PIN = '95c3baf2dcbc3d38759cf08839f76d71901d28a5'
 # SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
 PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
  'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
@@ -47,7 +47,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
  'src/kicad_route/campaign.py': 'c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9',
  'src/kicad_route/canary.py': '0384d1722889e207fcc544e9df65164920aa3cc153df5228349b42cd690a7243',
- 'src/kicad_route/cli.py': '441a8681c2441fb7fc5293019d1d995308b7af64532acea143306aa4f8efbc2e',
+ 'src/kicad_route/cli.py': 'c6b1ee521c3274f15d1151bf97fc1541ce93ee00f1ca9f7cbc49e9c658962c3b',
  'src/kicad_route/common.py': '4fd09eef7547c947700067975a54e08c8e6b3ed8d3c5ac94cf8ae77e4a593038',
  'src/kicad_route/configuration_evidence.py': '08f81a88c9d911d474c45515cad1303bbf7eb6f15438f6c7c278d69c6e075d59',
  'src/kicad_route/contract.py': '5f6c7acd40138f5f13d140bcdda7539aacf1edcd011daa8f36a76e72663bb698',
@@ -76,7 +76,7 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/ledger.py': '267c90f9c8c54b18cfad68ed00ebe0013018742dac353a43f8e657dfd5eb366d',
  'src/kicad_route/native_components.py': 'fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0',
  'src/kicad_route/netnames.py': '731bcf61a909ef2720fd90b074f6cfb991a1c6ea6bea7fecf5ba3cb7fc47304f',
- 'src/kicad_route/pair_impedance.py': '305b6d3bd8a70df043da9c81b3b73035228f436b0fe09c6d362d6e120de6fc6b',
+ 'src/kicad_route/pair_impedance.py': '4261d1f45febfbc7fdae31bcc8e01bef300503379316a2968ad091ef70306acb',
  'src/kicad_route/plane_plan.py': 'fab213cc155347af3c36bda5694b7aa871058c6f8b77eaf52ebd2b209bfb2d80',
  'src/kicad_route/planes.py': 'ad1e35f16ae34e3efe9accb7dc6505ada6e35431e30dfcca4111ad2df661df61',
  'src/kicad_route/pour.py': '1583883ee1682bf0f72d709b1e146384d37b481a423584de9bd564ac18f1b6b7',
@@ -346,11 +346,10 @@ PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef
  'src/kicad_route/router/tests/test_writer_removal_identity.py': 'aded55348599d148a698b502a14d029addcb7558be7223b41d517a6b36b17a25',
  'src/kicad_route/sandbox.py': '344bfb3313c48947bbff262a6fb6b7b0661712687663925901027fe877b182a3',
  'src/kicad_route/skills.py': '5bb0cf561e9869082e8d8f4f3a971778a912b491f54e9dfd4c348e814bb6f703',
- 'src/kicad_route/snapshot.py': '7c51203f4a439cc99a575e6bc5433f3ab78dda7735dcd03c940f6169fe7fb9a4',
+ 'src/kicad_route/snapshot.py': 'a9e817ff3d6f89dd3ee09a8269a8f5fc456b1b075a9ff00ced9e7a5b952d8d20',
  'src/kicad_route/spokes.py': 'fe8cf4c2560bcf565080aab1abca39fef22e8cdabf5514d79a864fde2afceec0',
  'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
  'src/kicad_route/statemanifest.py': '40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322'}
-
 RESULT_SCHEMA = 'kicad-route/route/1'
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'

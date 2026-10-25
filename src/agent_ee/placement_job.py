@@ -1390,8 +1390,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            or impedance[key] <= 0 for key in fields - {'reference_net'})
                     or impedance['tolerance_percent'] >= 100):
                 raise JobRefusal('pair impedance needs positive finite numbers, tolerance below 100 percent and a reference net')
-            if not pair_layers or len(pair_layers) != 1 or pair_layers[0] not in ('F.Cu', 'B.Cu'):
-                raise JobRefusal('qualified pair impedance requires exactly one explicit outer pair layer')
+            if not pair_layers or len(pair_layers) != 1:
+                raise JobRefusal('qualified pair impedance requires exactly one explicit pair layer')
         matching = config['router'].get('intra_pair_match')
         if 'intra_pair_match' in config['router']:
             if not isinstance(matching, dict) or set(matching) != {'tolerance_mm', 'amplitude_mm'}:
