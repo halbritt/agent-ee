@@ -367,3 +367,49 @@ remain. The active goal continues; telemetry-pod and owner-reserved actions stay
 held. Chief response/notice deliveries through position 7534 were read and
 acknowledged, then its own inbox returned empty. Later responses are not implied
 acknowledged by this checkpoint.
+
+## Review checkpoint — 2026-10-25 16:17 PDT
+
+Chief acknowledged agent-565's delivery response `7368e38e@1` at native position
+7540. Independent Fable review `6d9f1ba5@1` supports the explicit capture-version
+seam but identifies two remaining defects. The chief reproduced both against
+the delivered `dfc47810` engine, binary `753c92ba…`, under native admission:
+
+- With no proximity rows, omitting or nulling a modern pad's `half_nm` silently
+  changes the link objective from 28,870,435 to 29,470,435 nm while the output
+  still claims `pad_edge_signed_rect/1`.
+- Adding a mask/paste-only aperture with explicit `[0,0]` extents lets it win
+  the member-anchor link: 4,700,000 nm becomes −300,000 nm. The native Python
+  reporting path excludes such apertures, so its candidate population differs.
+
+Full counterexample inputs, outputs, script, exact binary hash and unchanged
+source revision are retained at
+`~/.cache/agent-evidence/agent-ee-564-integration/grouping-479-review/dfc47810/`.
+Delivery `dfc47810` is withheld. Dispatch `725e6dfc@1`, event
+`bd468bf7-a031-433f-b6af-1ed0d55787c2`, gives agent-565 30 minutes and a
+15-minute checkpoint to require valid modern geometry and use copper-only pad
+populations consistently, including explicit empty-population behavior. Legacy
+replay and all protected fixture/native constraints remain. Claimed numerical
+parity/log files were not found at the delivered relative `scratchpad/` paths;
+the worker must supply absolute durable paths before custody acceptance.
+
+Agent-569's sensitivity verification `112958c5@1` reproduces every saved scalar
+result and both baseline binary trace payloads. All 209 retained candidate pins
+and the original 198-file inventory remain unchanged. However, the worker's
+checksum manifest has a stale duplicate `results.json` entry and leaves 59 of
+101 files unindexed. Per-case container/image, admission, timeout and parser
+provenance is unproved. This is an explicit custody/runtime gap, not proof that
+admission was bypassed. The two incomplete 0.47 µF traces remain unmeasured
+despite simulator exit zero; finite samples establish no continuous range.
+
+Dispatch `aea4aa3e@1`, event `f82b3d38-f349-4f02-985e-97b00c9268e3`, assigns
+agent-568 a new 25-minute supported replay of exactly the same eight cases,
+each bounded at 120 seconds, with a 12-minute checkpoint. It repairs provenance
+with actual execution evidence and a complete unique final inventory. It adds
+no parameter points, physical conclusions, judgments or qualification capture.
+The original sweep stays intact. Chief acceptance follows the new evidence.
+
+[Plane readback](execution-checkpoint-1617.json) preserves open states and
+relationships for 479 and 515. Agent-567's bounded artwork fit continues
+independently. No production change is integrated by this checkpoint; M1,
+independent judgments and telemetry-pod holds remain as recorded above.

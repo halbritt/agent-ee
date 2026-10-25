@@ -1,0 +1,25 @@
+{
+  "checkpoint": "2026-10-25T16:17:00-07:00",
+  "items": [
+    {
+      "id": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+      "sequence_id": 479,
+      "name": "Enforce functional-group intent through normal placement and final native checks",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": null,
+      "assignees": [],
+      "updated_at": "2026-10-25T23:18:14.274482Z"
+    },
+    {
+      "id": "5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+      "sequence_id": 515,
+      "name": "Qualify acquisition build and imported esp_prog as the finite recovery release",
+      "state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+      "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+      "assignees": [],
+      "updated_at": "2026-10-25T23:18:14.507284Z"
+    }
+  ],
+  "m1_accepted": false,
+  "telemetry_pod": "held"
+}
