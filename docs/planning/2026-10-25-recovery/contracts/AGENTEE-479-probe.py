@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Reproducible native measurement probe for AGENTEE-479 design contract.
 
-Executes against retained boards in agent-ee using native pcbnew (10.0.7) and
-verifies 0.0 mm pad_rect parity with kicad-route@c4af095 placement.legality.
-Separates executed native measurements from analytical/proposed target rules.
+Loads agent_ee modules from the owned worktree checkout (WT_ROOT/src), retained
+build/ artifacts from ARTIFACTS_ROOT, and kicad-route modules from KRT_ROOT.
+Verifies loaded module file paths and SHA-256 digests against the claimed git
+revisions before executing native pcbnew (10.0.7) measurements.
 """
 from __future__ import annotations
 
@@ -16,32 +17,92 @@ import sys
 
 import pcbnew
 
-REPO_ROOT = pathlib.Path("/home/halbritt/git/agent-ee")
+WT_ROOT = pathlib.Path(__file__).resolve().parents[4]
+ARTIFACTS_ROOT = pathlib.Path("/home/halbritt/git/agent-ee")
 KRT_ROOT = pathlib.Path("/home/halbritt/git/kicad-route")
-sys.path.insert(0, str(REPO_ROOT / "src"))
+EXPECTED_AGENT_EE_SRC_COMMIT = "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+EXPECTED_KRT_COMMIT = "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+
+sys.path.insert(0, str(WT_ROOT / "src"))
 sys.path.insert(0, str(KRT_ROOT / "src/kicad_route/router"))
 sys.path.insert(0, str(KRT_ROOT / "src/kicad_route/router/py_router"))
 sys.path.insert(0, str(KRT_ROOT / "src/kicad_route/router/py_placer"))
 
+import kicad_parser  # noqa: E402
 from kicad_parser import _pcbnew_custom_copper_is_anchor, parse_kicad_pcb  # noqa: E402
 from placement import floorplan, legality  # noqa: E402
-from agent_ee import placement_intent, placement_predicates  # noqa: E402
+from agent_ee import (  # noqa: E402
+    block_contract,
+    block_inventory,
+    electrical_locality,
+    placement_intent,
+    placement_job,
+    placement_predicates,
+    placement_probe,
+)
 from agent_ee.placement_job import _pad_copper, _quarter_turns  # noqa: E402
 
-POWER_GROUND_NETS = {
-    "GND", "GNDA", "GNDD", "VSS", "AGND", "DGND",
-    "+5V", "+3V3", "+3.3V", "/+3.3V", "V3V3", "/V3V3", "VDD", "VCC", "VBUS",
+# Evidence-bound two-case rail classifications (never a universal string heuristic):
+# - esp_prog: bound to build/agent545/inputs/groups.json ("why" clauses) and native netlist
+# - acquisition: bound to ACQ-MECH-2 ("Shared ground and 3.3 V shall not merge the blocks")
+EVIDENCE_BOUND_RAILS = {
+    "esp_prog": {
+        "shared_rails": {
+            "GND": "5-group ground return across usb_in, power, core, reset, target (13 pads)",
+            "/+3.3V": "groups.json power.why: ME6210 regulated 3.3V rail shared across power, core, target",
+            "Net-(C1-Pad1)": "groups.json power.why: USB VBUS +5V rail across USB1.1 (usb_in), C1.1/U2.2 (power), and CON2.7 (target); scoped to C1<->U2 intra-power and usb_in<->power near tether, never merging power with target",
+        },
+        "scoped_rail_bindings": {
+            "Net-(C1-Pad1)": {
+                "intra_group": "power",
+                "near_pairs": [["usb_in", "power"], ["power", "usb_in"]],
+            },
+        },
+    },
+    "acquisition": {
+        "shared_rails": {
+            "GND": "ACQ-MECH-2: shared ground across power, analog, host (12 pads)",
+            "/V3V3": "ACQ-MECH-2: shared 3.3 V rail from U1.5 across power, analog, host (7 pads)",
+        },
+        "scoped_rail_bindings": {},
+    },
 }
 
 
-def file_meta(root: pathlib.Path, rel: str) -> dict:
-    p = root / rel
-    data = p.read_bytes()
-    return {
-        "path": rel,
-        "bytes": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-    }
+def git_checkout_state(root: pathlib.Path) -> dict:
+    head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    dirty = [
+        line for line in subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True).splitlines()
+        if line.strip()
+    ]
+    return {"root": str(root), "head": head, "dirty_count": len(dirty), "dirty_entries": dirty}
+
+
+def verify_loaded_modules() -> dict:
+    loaded = {}
+    ee_mods = [
+        placement_intent, placement_job, electrical_locality,
+        placement_predicates, block_contract, block_inventory, placement_probe,
+    ]
+    for mod in ee_mods:
+        p = pathlib.Path(mod.__file__).resolve()
+        rel = p.relative_to(WT_ROOT).as_posix()
+        disk_sha = hashlib.sha256(p.read_bytes()).hexdigest()
+        git_bytes = subprocess.check_output(["git", "-C", str(WT_ROOT), "show", f"{EXPECTED_AGENT_EE_SRC_COMMIT}:{rel}"])
+        git_sha = hashlib.sha256(git_bytes).hexdigest()
+        if disk_sha != git_sha:
+            raise RuntimeError(f"Loaded module {p} sha256 {disk_sha} != {EXPECTED_AGENT_EE_SRC_COMMIT}:{rel} {git_sha}")
+        loaded[mod.__name__] = {"file": str(p), "rel_path": rel, "sha256": disk_sha, "pinned_commit": EXPECTED_AGENT_EE_SRC_COMMIT}
+    for mod in (kicad_parser, legality, floorplan):
+        p = pathlib.Path(mod.__file__).resolve()
+        rel = p.relative_to(KRT_ROOT).as_posix()
+        disk_sha = hashlib.sha256(p.read_bytes()).hexdigest()
+        git_bytes = subprocess.check_output(["git", "-C", str(KRT_ROOT), "show", f"{EXPECTED_KRT_COMMIT}:{rel}"])
+        git_sha = hashlib.sha256(git_bytes).hexdigest()
+        if disk_sha != git_sha:
+            raise RuntimeError(f"Loaded KRT module {p} sha256 {disk_sha} != {EXPECTED_KRT_COMMIT}:{rel} {git_sha}")
+        loaded[mod.__name__] = {"file": str(p), "rel_path": rel, "sha256": disk_sha, "pinned_commit": EXPECTED_KRT_COMMIT}
+    return loaded
 
 
 def pcbnew_krt_pad_rect_mm(pad: pcbnew.PAD) -> tuple[float, float, float, float]:
@@ -97,7 +158,7 @@ def polygon_gap_mm(fp_a: pcbnew.FOOTPRINT, pad_a: pcbnew.PAD, fp_b: pcbnew.FOOTP
 
 
 def measure_proximity_board(rel_pcb: str, intent: dict) -> dict:
-    pcb_path = str(REPO_ROOT / rel_pcb)
+    pcb_path = str(ARTIFACTS_ROOT / rel_pcb)
     k_pcb = parse_kicad_pcb(pcb_path)
     b = pcbnew.LoadBoard(pcb_path)
     fp_by_ref = {fp.GetReference(): fp for fp in b.GetFootprints() if fp.GetReference() and fp.GetReference() != "Ref*"}
@@ -113,6 +174,8 @@ def measure_proximity_board(rel_pcb: str, intent: dict) -> dict:
     legs = []
     for idx, claim in enumerate(intent["proximity"]):
         ref, near = claim["ref"], claim["near"]
+        limit_origin = (claim.get("context") or {}).get("limit", "declared")
+        is_hard_gate = limit_origin != "derived_default"
         a_fp, b_fp = k_pcb.footprints[ref], k_pcb.footprints[near]
         subject, partners, declared = floorplan.proximity_pads(claim, a_fp, b_fp)
         reaches = floorplan.proximity_reaches(subject, partners, declared)
@@ -137,8 +200,11 @@ def measure_proximity_board(rel_pcb: str, intent: dict) -> dict:
                 "paired_by": how,
                 "pads_basis": "declared" if declared else "part",
                 "max_mm": claim["max_mm"],
+                "context_limit_authority": limit_origin,
+                "is_hard_release_gate": is_hard_gate,
+                "authority_role": "hard_release_gate" if is_hard_gate else "soft_objective_and_advisory_measurement",
                 "krt_signed_rect_gap_mm": round(gap, 4),
-                "krt_passes": bool(gap <= claim["max_mm"] + legality.EPS),
+                "krt_metric_within_value": bool(gap <= claim["max_mm"] + legality.EPS),
                 "clamped_aabb_gap_mm": round(clamped_aabb, 4),
                 "native_polygon_copper_gap_mm": round(poly_mm, 4),
                 "chebyshev_pad_centre_mm": round(cheb, 4),
@@ -154,12 +220,25 @@ def measure_proximity_board(rel_pcb: str, intent: dict) -> dict:
     }
 
 
-def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
-    pcb_path = str(REPO_ROOT / rel_pcb)
+def measure_groups_board(design_key: str, rel_pcb: str, groups_spec: list[dict]) -> dict:
+    pcb_path = str(ARTIFACTS_ROOT / rel_pcb)
     k_pcb = parse_kicad_pcb(pcb_path)
+    rail_spec = EVIDENCE_BOUND_RAILS[design_key]
+    shared_rails = set(rail_spec["shared_rails"])
+    scoped_bindings = rail_spec.get("scoped_rail_bindings", {})
     owner = {r: g["name"] for g in groups_spec for r in g["refs"]}
     anchor_by_group = {g["name"]: g["anchor"] for g in groups_spec}
     group_by_name = {g["name"]: g for g in groups_spec}
+    # Audit multi-group nets against captured rail/interface evidence
+    net_groups: dict[str, set[str]] = {}
+    for r, gname in owner.items():
+        for p in k_pcb.footprints[r].pads:
+            if p.net_id > 0 and p.net_name:
+                net_groups.setdefault(p.net_name, set()).add(gname)
+    unknown_multi_group_nets = sorted(
+        n for n, gs in net_groups.items()
+        if len(gs) > 2 and n not in shared_rails
+    )
     coords = {
         ref: {
             "x_mm": round(fp.x, 4),
@@ -178,11 +257,13 @@ def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
         xs = [k_pcb.footprints[r].x for r in refs]
         ys = [k_pcb.footprints[r].y for r in refs]
         bbox = [round(min(xs), 4), round(min(ys), 4), round(max(xs), 4), round(max(ys), 4)]
-        # R2: intra-group non-power/ground signal links
         signal_nets = {}
         for r in refs:
             for p in k_pcb.footprints[r].pads:
-                if p.net_id > 0 and p.net_name and p.net_name not in POWER_GROUND_NETS:
+                if p.net_id > 0 and p.net_name and (
+                    p.net_name not in shared_rails
+                    or scoped_bindings.get(p.net_name, {}).get("intra_group") == gname
+                ):
                     signal_nets.setdefault(p.net_name, []).append((r, p))
         intra_links = []
         for net_name, endpoints in sorted(signal_nets.items()):
@@ -209,7 +290,6 @@ def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
                         "krt_signed_rect_gap_mm": round(gap, 4),
                         "euclidean_pad_centre_mm": round(math.hypot(pa.global_x - pb.global_x, pa.global_y - pb.global_y), 4),
                     })
-        # Member-to-anchor minimum pad_rect gap (covers local regulator caps on rail nets)
         anchor_links = []
         for r in refs:
             if r == anchor:
@@ -230,7 +310,6 @@ def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
                 "krt_signed_rect_gap_mm": round(gap, 4),
                 "origin_distance_mm": round(math.hypot(k_pcb.footprints[r].x - k_pcb.footprints[anchor].x, k_pcb.footprints[r].y - k_pcb.footprints[anchor].y), 4),
             })
-        # Diagnostic D1 (bbox foreign origins) & D2 (anchor separation inversions)
         intruders = [
             f"{owner[r]}:{r}" for r in owner
             if owner[r] != gname and bbox[0] <= k_pcb.footprints[r].x <= bbox[2] and bbox[1] <= k_pcb.footprints[r].y <= bbox[3]
@@ -246,7 +325,6 @@ def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
                 d_foreign = math.hypot(k_pcb.footprints[r].x - k_pcb.footprints[oa].x, k_pcb.footprints[r].y - k_pcb.footprints[oa].y)
                 if d_foreign < d_own:
                     inversions.append({"member": r, "own_anchor": anchor, "d_own_mm": round(d_own, 4), "foreign_group": og, "foreign_anchor": oa, "d_foreign_mm": round(d_foreign, 4)})
-        # R1: declared inter-group near interfaces
         near_links = []
         for near_name in g.get("near", []):
             if near_name not in group_by_name:
@@ -260,13 +338,17 @@ def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
                         for pb in floorplan.non_aperture_pads(k_pcb.footprints[rb]):
                             g_val = legality.rect_gap(legality.pad_rect(pa), legality.pad_rect(pb))
                             all_pairs.append((g_val, ra, pa, rb, pb))
-                            if pa.net_id > 0 and pa.net_id == pb.net_id and pa.net_name not in POWER_GROUND_NETS:
+                            if pa.net_id > 0 and pa.net_id == pb.net_id and (
+                                pa.net_name not in shared_rails
+                                or [gname, near_name] in scoped_bindings.get(pa.net_name, {}).get("near_pairs", [])
+                            ):
                                 sig_pairs.append((g_val, ra, pa, rb, pb))
             kfn = lambda t: (t[0], t[1], t[2].pad_number, t[3], t[4].pad_number)
             chosen = min(sig_pairs, key=kfn) if sig_pairs else min(all_pairs, key=kfn)
             near_links.append({
                 "from_group": gname,
                 "to_group": near_name,
+                "authority_role": "soft_objective_and_measured_interface",
                 "paired_by": "signal_net" if sig_pairs else "any_pad_fallback",
                 "from_ref": chosen[1],
                 "from_pad": chosen[2].pad_number,
@@ -288,52 +370,54 @@ def measure_groups_board(rel_pcb: str, groups_spec: list[dict]) -> dict:
                 "limitation": "Diagnostic/objective only; axis-aligned bbox and centroid-to-anchor inequalities can flag legal L-shaped/interleaved or large-IC layouts and are rejected as unconditional hard release gates.",
             },
         }
-    return {"footprints": coords, "groups": group_reports}
+    return {
+        "evidence_bound_rail_classification": rail_spec,
+        "unknown_multi_group_nets": unknown_multi_group_nets,
+        "footprints": coords,
+        "groups": group_reports,
+    }
 
 
 if __name__ == "__main__":
-    esp_intent = json.loads((REPO_ROOT / "build/agent545/inputs/intent.json").read_text())
-    esp_groups = json.loads((REPO_ROOT / "build/agent545/inputs/groups.json").read_text())
-    acq_jr = json.loads((REPO_ROOT / "build/acquisition-release/release-build-v7/stages/05-placement-routing-6324e3e9b5f242459350353ca9e6787e/placement/job-report.json").read_text())
-    acq_groups = json.loads((REPO_ROOT / "build/acquisition-release/release-build-v7/stages/05-placement-routing-6324e3e9b5f242459350353ca9e6787e/candidate/groups.json").read_text())["groups"]
-    # Current head validation behavior
+    loaded_modules = verify_loaded_modules()
+    esp_intent = json.loads((ARTIFACTS_ROOT / "build/agent545/inputs/intent.json").read_text())
+    esp_groups = json.loads((ARTIFACTS_ROOT / "build/agent545/inputs/groups.json").read_text())
+    acq_groups = json.loads((ARTIFACTS_ROOT / "build/acquisition-release/release-build-v7/stages/05-placement-routing-6324e3e9b5f242459350353ca9e6787e/candidate/groups.json").read_text())["groups"]
     try:
         placement_intent.validate(esp_intent, esp_groups)
         head_val = {"status": "passed"}
     except ValueError as exc:
         head_val = {"status": "refused", "error": str(exc)}
-    # Synthetic geometry controls executed via kicad-route@c4af095 primitives
     c1_gap = legality.rect_gap((0.0, 0.0, 1.0, 1.0), (0.75, 0.0, 1.75, 1.0))
     rad45 = math.radians(45.0)
     hx45 = 1.0 * abs(math.cos(rad45)) + 0.3 * abs(math.sin(rad45))
     c2_krt_gap = legality.rect_gap((-hx45, -hx45, hx45, hx45), (1.2, 1.2, 1.8, 1.8))
     c2_rot_pt = 0.3 / math.sqrt(2.0)
     c2_rot_gap = math.hypot(1.2 - c2_rot_pt, 1.2 - c2_rot_pt)
-    # C3: multi-leg declared subject where leg 1 passes (<=8.1) and leg 2 fails (>8.1)
-    esp_final_pcb = parse_kicad_pcb(str(REPO_ROOT / "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb"))
+    esp_final_pcb = parse_kicad_pcb(str(ARTIFACTS_ROOT / "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb"))
     c3_claim = {"ref": "Y1", "near": "U1", "max_mm": 6.0, "basis": "pad_edge", "pads": {"Y1": ["1", "2"], "U1": ["9", "10"]}}
     c3_sub, c3_part, c3_decl = floorplan.proximity_pads(c3_claim, esp_final_pcb.footprints["Y1"], esp_final_pcb.footprints["U1"])
     c3_reaches = floorplan.proximity_reaches(c3_sub, c3_part, c3_decl)
-    # C4: partially unresolved pad name ('7' missing on 4-pad Y1)
     c4_claim = {"ref": "Y1", "near": "U1", "max_mm": 8.1, "basis": "pad_edge", "pads": {"Y1": ["1", "7"], "U1": ["9", "10"]}}
-    c4_sub, c4_part, _ = floorplan.proximity_pads(c4_claim, esp_final_pcb.footprints["Y1"], esp_final_pcb.footprints["U1"])
+    c4_sub, _, _ = floorplan.proximity_pads(c4_claim, esp_final_pcb.footprints["Y1"], esp_final_pcb.footprints["U1"])
     c4_have = {p.pad_number for p in c4_sub}
     c4_missing = [n for n in c4_claim["pads"]["Y1"] if n not in c4_have]
-    wt_root = pathlib.Path(__file__).resolve().parents[4]
     out = {
         "probe_execution": {
             "script": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py",
             "python_executable": sys.executable,
             "python_version": sys.version.split()[0],
             "pcbnew_version": pcbnew.Version(),
-            "worktree_base_commit": subprocess.check_output(["git", "-C", str(wt_root), "rev-parse", "7a7497ebee11d34663bcbb9db2f15ca0d557e547"], text=True).strip(),
-            "kicad_route_head": subprocess.check_output(["git", "-C", str(KRT_ROOT), "rev-parse", "c4af095"], text=True).strip(),
+            "agent_ee_source_checkout": git_checkout_state(WT_ROOT),
+            "artifacts_checkout": git_checkout_state(ARTIFACTS_ROOT),
+            "kicad_route_checkout": git_checkout_state(KRT_ROOT),
+            "verified_loaded_modules": loaded_modules,
         },
         "current_head_validation_esp_prog": head_val,
         "esp_prog_input_proximity": measure_proximity_board("build/agent545/inputs/board.kicad_pcb", esp_intent),
         "esp_prog_final_a1_proximity": measure_proximity_board("build/agent545/board-run-portfolio/final-a1/board.kicad_pcb", esp_intent),
-        "esp_prog_final_a1_groups": measure_groups_board("build/agent545/board-run-portfolio/final-a1/board.kicad_pcb", esp_groups["groups"]),
-        "acquisition_delivery_groups": measure_groups_board("build/acquisition-release/delivery/native/project/acquisition.kicad_pcb", acq_groups),
+        "esp_prog_final_a1_groups": measure_groups_board("esp_prog", "build/agent545/board-run-portfolio/final-a1/board.kicad_pcb", esp_groups["groups"]),
+        "acquisition_delivery_groups": measure_groups_board("acquisition", "build/acquisition-release/delivery/native/project/acquisition.kicad_pcb", acq_groups),
         "synthetic_metric_controls": {
             "C1_overlapping_pads_signed_vs_clamped": {
                 "rect_a": [0.0, 0.0, 1.0, 1.0],
@@ -354,7 +438,7 @@ if __name__ == "__main__":
                 "claim": c3_claim,
                 "emitted_leg_count": len(c3_reaches),
                 "emitted_legs": [
-                    {"subject_pad": p.pad_number, "partner_pad": q.pad_number, "paired_by": how, "gap_mm": round(g, 4), "passes_at_6mm": bool(g <= 6.0 + legality.EPS)}
+                    {"subject_pad": p.pad_number, "partner_pad": q.pad_number, "paired_by": how, "gap_mm": round(g, 4), "within_6mm": bool(g <= 6.0 + legality.EPS)}
                     for g, p, q, how in c3_reaches
                 ],
             },

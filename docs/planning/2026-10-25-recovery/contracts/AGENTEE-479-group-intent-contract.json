@@ -1,17 +1,42 @@
 {
-  "schema": "agent-ee.recovery-contract/2",
+  "schema": "agent-ee.recovery-contract/3",
   "ticket": "AGENTEE-479",
+  "findings_addressed": {
+    "core_grouping_and_compatibility": [
+      "REC-01",
+      "REC-03",
+      "REC-23"
+    ],
+    "related_intent_and_metric_findings": [
+      "REC-06",
+      "REC-14"
+    ],
+    "coordinated_with": [
+      "AGENTEE-528 (REC-30)",
+      "AGENTEE-520 (agent-568 qualification consumer)"
+    ]
+  },
   "title": "Original-esp_prog Intent Compatibility and Functional-Group Design Contract (Corrected)",
   "status": "design_contract_ready_for_chief_review",
   "owner_of_contract": "agent-570",
   "worktree_branch": "wt/ee479-group-intent-design-agent-570",
   "base_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
-  "prior_reviewed_commit": "b053137c37524a204387dd358ff8f273b6bc33ba",
-  "chief_review_source": {
-    "record_id": "bb102db7-988e-4f4f-b274-40a266831aa4",
-    "version": 1,
-    "delivery_id": "40b5f35e-482c-44ca-8470-603e23ff573d"
-  },
+  "prior_reviewed_commits": [
+    "b053137c37524a204387dd358ff8f273b6bc33ba",
+    "d0b1368f56f3bdda332e6097cdf59ff75d7b2a8d"
+  ],
+  "chief_review_sources": [
+    {
+      "record_id": "bb102db7-988e-4f4f-b274-40a266831aa4",
+      "version": 1,
+      "delivery_id": "40b5f35e-482c-44ca-8470-603e23ff573d"
+    },
+    {
+      "record_id": "62232b01-b36a-44aa-8ca8-f3d7095361bc",
+      "version": 1,
+      "delivery_id": "4768668b-d28b-4db8-a711-6d1bc8868be4"
+    }
+  ],
   "doctrine_retrieval_receipt": {
     "packet_id": "pkt-62464263929b7cde",
     "corpus_version": "corpus-2026-07-12-a11702cc9217",
@@ -116,8 +141,8 @@
     },
     "retained_probe_script": {
       "path": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py",
-      "bytes": 18847,
-      "sha256": "ee69649f447629dbfbb094ba5e026d8379cb7162efa998b445079f6d132a4637"
+      "bytes": 22904,
+      "sha256": "fda2d4360a3f363e7207f498e97310d8e9ce8e8c820fdd52aaf18c1b72e7079c"
     }
   },
   "executed_native_measurements": {
@@ -126,8 +151,88 @@
       "python_executable": "/usr/bin/python3",
       "python_version": "3.12.3",
       "pcbnew_version": "10.0.7",
-      "worktree_base_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
-      "kicad_route_head": "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+      "agent_ee_source_checkout": {
+        "root": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570",
+        "head": "d0b1368f56f3bdda332e6097cdf59ff75d7b2a8d",
+        "dirty_count": 1,
+        "dirty_entries": [
+          " M docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py"
+        ]
+      },
+      "artifacts_checkout": {
+        "root": "/home/halbritt/git/agent-ee",
+        "head": "daa900861e388a8e4a9b4088e01817e35feb1f58",
+        "dirty_count": 0,
+        "dirty_entries": []
+      },
+      "kicad_route_checkout": {
+        "root": "/home/halbritt/git/kicad-route",
+        "head": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
+        "dirty_count": 0,
+        "dirty_entries": []
+      },
+      "verified_loaded_modules": {
+        "agent_ee.placement_intent": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/placement_intent.py",
+          "rel_path": "src/agent_ee/placement_intent.py",
+          "sha256": "3c6d2d4148a25b33b8d02742a466bf3416320decad064ce41c8ef8ccc3d6451c",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "agent_ee.placement_job": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/placement_job.py",
+          "rel_path": "src/agent_ee/placement_job.py",
+          "sha256": "5715b853a9b1b6d5034cf96b025a964cfc8125200407c690598486caf767cc6a",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "agent_ee.electrical_locality": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/electrical_locality.py",
+          "rel_path": "src/agent_ee/electrical_locality.py",
+          "sha256": "8dbc4eaee81a536fcfb0fb5f6aecfdbd3ab3ad929c656458eccbe8c7c82783bc",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "agent_ee.placement_predicates": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/placement_predicates.py",
+          "rel_path": "src/agent_ee/placement_predicates.py",
+          "sha256": "537586f806043d241f4f725622dd251ff5aabcd5e1713d8bdbf6ab2c586a7b39",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "agent_ee.block_contract": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/block_contract.py",
+          "rel_path": "src/agent_ee/block_contract.py",
+          "sha256": "79748375f4d37487a2194dafee62010f445edaab183bc4d71dba745ccbcbc7ff",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "agent_ee.block_inventory": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/block_inventory.py",
+          "rel_path": "src/agent_ee/block_inventory.py",
+          "sha256": "5e6fc3ceb8161246438380a21d821a606927f81eca6e33f6e282d4ebfe4f2d63",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "agent_ee.placement_probe": {
+          "file": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570/src/agent_ee/placement_probe.py",
+          "rel_path": "src/agent_ee/placement_probe.py",
+          "sha256": "8434a8b599e4e33bddec229514f374b1a6a26cf190216aa44c6c979ce12d8ca5",
+          "pinned_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547"
+        },
+        "kicad_parser": {
+          "file": "/home/halbritt/git/kicad-route/src/kicad_route/router/py_router/kicad_parser.py",
+          "rel_path": "src/kicad_route/router/py_router/kicad_parser.py",
+          "sha256": "ffb7274af0b09fbacc8a070de86c50c3cb41c5aae0afd07702ac8a5e16e40370",
+          "pinned_commit": "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+        },
+        "placement.legality": {
+          "file": "/home/halbritt/git/kicad-route/src/kicad_route/router/py_placer/placement/legality.py",
+          "rel_path": "src/kicad_route/router/py_placer/placement/legality.py",
+          "sha256": "154aaa36d5bc2fbcb9e8a0ec5ea043c01e6527e272d10588538de34a741981b7",
+          "pinned_commit": "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+        },
+        "placement.floorplan": {
+          "file": "/home/halbritt/git/kicad-route/src/kicad_route/router/py_placer/placement/floorplan.py",
+          "rel_path": "src/kicad_route/router/py_placer/placement/floorplan.py",
+          "sha256": "5e212aa6bf6117540fd3e9b11fa65c5616e95221794340c56a536c6835cff7f9",
+          "pinned_commit": "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+        }
+      }
     },
     "current_head_validation_esp_prog": {
       "status": "refused",
@@ -148,8 +253,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 8.1,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 2.9704,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 2.9704,
           "native_polygon_copper_gap_mm": 2.9704,
           "chebyshev_pad_centre_mm": 3.375,
@@ -177,8 +285,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 8.1,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 3.3268,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 3.3268,
           "native_polygon_copper_gap_mm": 3.3268,
           "chebyshev_pad_centre_mm": 4.4195,
@@ -206,8 +317,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 2.2,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 0.658,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 0.658,
           "native_polygon_copper_gap_mm": 0.658,
           "chebyshev_pad_centre_mm": 1.608,
@@ -235,8 +349,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 2.2,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": -0.075,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 0.0,
           "native_polygon_copper_gap_mm": 0.0,
           "chebyshev_pad_centre_mm": 0.8,
@@ -271,8 +388,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 8.1,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 5.4237,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 5.4237,
           "native_polygon_copper_gap_mm": 11.2845,
           "chebyshev_pad_centre_mm": 5.3805,
@@ -300,8 +420,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 8.1,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 6.7893,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 6.7893,
           "native_polygon_copper_gap_mm": 13.5866,
           "chebyshev_pad_centre_mm": 7.5805,
@@ -329,8 +452,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 2.2,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 1.1553,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 1.1553,
           "native_polygon_copper_gap_mm": 1.1553,
           "chebyshev_pad_centre_mm": 2.092,
@@ -358,8 +484,11 @@
           "paired_by": "net",
           "pads_basis": "declared",
           "max_mm": 2.2,
+          "context_limit_authority": "derived_default",
+          "is_hard_release_gate": false,
+          "authority_role": "soft_objective_and_advisory_measurement",
           "krt_signed_rect_gap_mm": 1.7492,
-          "krt_passes": true,
+          "krt_metric_within_value": true,
           "clamped_aabb_gap_mm": 1.7492,
           "native_polygon_copper_gap_mm": 1.7492,
           "chebyshev_pad_centre_mm": 2.2,
@@ -380,6 +509,29 @@
       ]
     },
     "esp_prog_final_a1_groups": {
+      "evidence_bound_rail_classification": {
+        "shared_rails": {
+          "GND": "5-group ground return across usb_in, power, core, reset, target (13 pads)",
+          "/+3.3V": "groups.json power.why: ME6210 regulated 3.3V rail shared across power, core, target",
+          "Net-(C1-Pad1)": "groups.json power.why: USB VBUS +5V rail across USB1.1 (usb_in), C1.1/U2.2 (power), and CON2.7 (target); scoped to C1<->U2 intra-power and usb_in<->power near tether, never merging power with target"
+        },
+        "scoped_rail_bindings": {
+          "Net-(C1-Pad1)": {
+            "intra_group": "power",
+            "near_pairs": [
+              [
+                "usb_in",
+                "power"
+              ],
+              [
+                "power",
+                "usb_in"
+              ]
+            ]
+          }
+        }
+      },
+      "unknown_multi_group_nets": [],
       "footprints": {
         "#00000000-0000-0000-0000-00005a3b5201": {
           "x_mm": 129.875,
@@ -541,6 +693,7 @@
             {
               "from_group": "usb_in",
               "to_group": "power",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "USB1",
               "from_pad": "1",
@@ -552,6 +705,7 @@
             {
               "from_group": "usb_in",
               "to_group": "core",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "USB1",
               "from_pad": "2",
@@ -615,6 +769,7 @@
             {
               "from_group": "power",
               "to_group": "usb_in",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "U2",
               "from_pad": "2",
@@ -626,6 +781,7 @@
             {
               "from_group": "power",
               "to_group": "core",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "any_pad_fallback",
               "from_ref": "U2",
               "from_pad": "2",
@@ -810,6 +966,7 @@
             {
               "from_group": "core",
               "to_group": "usb_in",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "U1",
               "from_pad": "6",
@@ -821,6 +978,7 @@
             {
               "from_group": "core",
               "to_group": "target",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "R3",
               "from_pad": "1",
@@ -948,6 +1106,7 @@
             {
               "from_group": "reset",
               "to_group": "core",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "R2",
               "from_pad": "2",
@@ -959,6 +1118,7 @@
             {
               "from_group": "reset",
               "to_group": "target",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "Q2",
               "from_pad": "3",
@@ -1067,6 +1227,7 @@
             {
               "from_group": "target",
               "to_group": "core",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "CON2",
               "from_pad": "3",
@@ -1078,6 +1239,7 @@
             {
               "from_group": "target",
               "to_group": "reset",
+              "authority_role": "soft_objective_and_measured_interface",
               "paired_by": "signal_net",
               "from_ref": "CON1",
               "from_pad": "6",
@@ -1102,6 +1264,14 @@
       }
     },
     "acquisition_delivery_groups": {
+      "evidence_bound_rail_classification": {
+        "shared_rails": {
+          "GND": "ACQ-MECH-2: shared ground across power, analog, host (12 pads)",
+          "/V3V3": "ACQ-MECH-2: shared 3.3 V rail from U1.5 across power, analog, host (7 pads)"
+        },
+        "scoped_rail_bindings": {}
+      },
+      "unknown_multi_group_nets": [],
       "footprints": {
         "C1": {
           "x_mm": 110.15,
@@ -1643,14 +1813,14 @@
             "partner_pad": "9",
             "paired_by": "net",
             "gap_mm": 5.4237,
-            "passes_at_6mm": true
+            "within_6mm": true
           },
           {
             "subject_pad": "2",
             "partner_pad": "10",
             "paired_by": "net",
             "gap_mm": 6.7893,
-            "passes_at_6mm": false
+            "within_6mm": false
           }
         ]
       },
@@ -1713,9 +1883,10 @@
             "near",
             "max_mm",
             "basis",
-            "pads"
+            "pads",
+            "context.limit"
           ],
-          "effect": "Enforces kicad-route@c4af095 signed rect_gap on pad_rect per declared subject leg when basis=='pad_edge'."
+          "effect": "basis=='pad_edge' selects kicad-route@c4af095 signed rect_gap on pad_rect per declared subject leg. Authority is governed separately by context.limit: rows with context.limit=='derived_default' (all 3 esp_prog crystal/cap rows at 8.1/2.2 mm from corpus 75th percentile) remain labelled solver objectives (job.rs::proximity_terms) and advisory per-leg native measurements, never hard release cutoffs; only rows with sourced/authored authority act as hard release predicates."
         },
         {
           "path": "assembly.sides",
@@ -1747,7 +1918,7 @@
             "refs",
             "near"
           ],
-          "effect": "Partitions circuit footprints into single-group membership and compiles R2 intra-group signal links and R1 declared near interface tethers."
+          "effect": "Partitions circuit footprints into single-group membership and compiles R2 intra-group signal/anchor links and R1 declared near interface objective tethers."
         }
       ],
       "noop_when_empty_refuse_when_nonempty": [
@@ -1813,7 +1984,7 @@
         "edge_connectors[].note",
         "edge_connectors[].source",
         "edge_connectors[].context.{basis,brief_row,compiled_from,role,was_class,was_source}",
-        "proximity[].context.{basis,limit,role,source}",
+        "proximity[].context.{basis,role,source}",
         "context.{basis,decap_census,keepouts_note,note,pose_claims_withheld,reconciliation}",
         "groups.groups[].{role,why}"
       ]
@@ -1823,9 +1994,9 @@
   "upstream_pad_edge_metric_contract": {
     "metric_id": "kicad_route_c4af095_pad_rect_signed_gap",
     "upstream_reference": "kicad-route@c4af095:src/kicad_route/router/py_placer/placement/floorplan.py#L5677-L5746,L6043-L6275 and legality.py#L90-L146",
-    "pad_rect_definition": "Axis-aligned board-space copper rect (gx - hx, gy - hy, gx + hx, gy + hy). For standard pads, hx = (sx/2)*|cos(rot)| + (sy/2)*|sin(rot)|, hy = (sx/2)*|sin(rot)| + (sy/2)*|cos(rot)|. For custom pads whose copper is not anchor-only, hx = max(|eb.left - gx|, |eb.right - gx|), hy = max(|eb.top - gy|, |eb.bottom - gy|) from GetEffectiveShape(layer).BBox(). Verified 0.0 mm max diff against kicad-route@c4af095 across all 75 esp_prog pads and 49 acquisition pads.",
+    "pad_rect_definition": "Axis-aligned board-space copper rect (gx - hx, gy - hy, gx + hx, gy + hy). Verified 0.0 mm max diff against kicad-route@c4af095 across all 75 esp_prog pads and 49 acquisition pads.",
     "rect_gap_definition": "dx = max(a0 - b2, b0 - a2); dy = max(a1 - b3, b1 - a3); if dx < 0 and dy < 0: return max(dx, dy) (signed negative overlap, never clamped); elif dx > 0 and dy > 0: return hypot(dx, dy); else: return max(dx, dy).",
-    "partner_selection_and_arity": "When pads[ref] is declared: _pads_named selects all pads matching each declared number; any unmatched declared pad name yields proximity_unresolved (blind=True, no partial measurement). For each subject pad, _proximity_reach narrows partners to same-net pads (q.net_id == pad.net_id and pad.net_id > 0, paired_by='net') if non-empty, else all partners (paired_by='any'), taking minimum rect_gap. proximity_reaches emits ONE measurement/finding per declared subject pad. When pads[ref] is omitted: non_aperture_pads are used with paired_by='any' and ONE minimum is emitted for the pair."
+    "authority_separation": "Metric compatibility (measuring pad_edge via signed rect_gap on pad_rect and emitting each declared subject leg) is strictly separated from limit authority: proximity[] rows with context.limit=='derived_default' remain soft solver objectives (job.rs::proximity_terms) and advisory measurements; only sourced/authored design limits act as hard release gates."
   },
   "functional_grouping_predicates_and_m1_acceptance": {
     "rejected_unconditional_hard_gates": [
@@ -1833,7 +2004,7 @@
         "id": "D1_bbox_foreign_origin_intruders",
         "former_id": "P2",
         "classification": "diagnostic_only",
-        "reason": "Owner permits flexible group shapes and notes a small bbox does not prove good placement; L-shaped/wrapped groups or large IC footprints can legally enclose a foreign origin inside an axis-aligned bbox."
+        "reason": "Owner permits flexible group shapes and notes a small bbox does not prove good placement."
       },
       {
         "id": "D2_anchor_separation_inversions",
@@ -1842,39 +2013,41 @@
         "reason": "Universal closer-to-own-anchor-than-every-foreign-anchor inequalities can reject legal boundary passives or interleaved interface networks."
       }
     ],
-    "hard_structural_and_numeric_predicates": [
+    "hard_structural_and_sourced_numeric_predicates": [
       {
         "id": "S1_complete_partition",
         "scope": "all_grouped_designs",
         "rule": "Every circuit footprint on the board belongs to exactly one declared group in groups.groups[] or fixed_poses[]/shared; missing, extra, or duplicate refs fail."
       },
       {
-        "id": "S2_shared_rail_non_merge",
+        "id": "S2_evidence_bound_shared_rail_non_merge",
         "scope": "all_grouped_designs",
-        "rule": "Shared power and ground rails (POWER_GROUND_NETS) never merge groups or create cross-group/all-to-all attraction edges."
+        "rule": "Shared supply/return rails bound to captured net/part evidence (acquisition ACQ-MECH-2: GND and /V3V3; esp_prog groups.json + netlist: GND, /+3.3V, and Net-(C1-Pad1) outside its scoped USB1<->U2/C1 regulator input role) never merge blocks or generate all-to-all cross-group edges. Any multi-group net without captured rail/interface provenance is surfaced visibly in unknown_multi_group_nets rather than classified by a fixed string list."
       },
       {
-        "id": "S3_explicit_proximity_and_locality",
-        "scope": "all_declared_clauses",
-        "rule": "All declared proximity[] legs (using krt_signed_rect_gap_mm <= max_mm + 1e-6) and electrical_locality obligations (with preserved authored_design_limit or datasheet_application_limit provenance) must pass."
+        "id": "S3_sourced_or_authored_hard_limits_only",
+        "scope": "sourced_and_authored_clauses_only",
+        "rule": "Only explicitly sourced or authored-design numeric limits (acquisition electrical_locality obligations with authored_design_limit or datasheet_application_limit provenance, or proximity[] rows with explicit authored/datasheet authority) are hard release gates. Proximity rows carrying context.limit=='derived_default' (such as esp_prog's 8.1 mm and 2.2 mm 75th-percentile corpus defaults) remain labelled solver objectives (job.rs::proximity_terms) and advisory per-leg measurements."
       }
     ],
     "source_bound_relation_predicates": [
       {
         "id": "R1_declared_near_interfaces",
+        "authority_role": "soft_objective_and_measured_interface",
         "source": "groups.groups[].near + native netlist",
-        "definition": "Minimum krt_signed_rect_gap_mm between non-aperture pads of group G and declared near target group H over shared non-power/non-ground signal nets (falling back to any_pad_fallback when coupled via a 2-group rail net such as USB1-to-U2 VBUS). Used in solver objective (group_near_terms at existing GROUP_WEIGHT scale) and reported in job-report."
+        "definition": "Minimum krt_signed_rect_gap_mm between non-aperture pads of group G and declared near target group H over shared non-rail signal nets (or scoped regulator input net Net-(C1-Pad1) for usb_in<->power). Acts as a solver objective (group_near_terms at existing GROUP_WEIGHT scale) and measured report row until design-specific numeric authority is declared."
       },
       {
         "id": "R2_intra_group_signal_and_anchor_links",
+        "authority_role": "soft_objective_refinement_and_measured_evidence",
         "source": "groups.groups[].{refs,anchor} + native netlist",
-        "definition": "Per-net krt_signed_rect_gap_mm between members of group G sharing a non-power/non-ground signal net (e.g. Net-(Q1-Pad1) R1<->Q1, Net-(Q2-Pad1) R2<->Q2, /RTS R1<->Q2, /DTR R2<->Q1 in reset; Net-(C1-Pad1) C1<->U2 in power), plus member-to-anchor pad_rect gap for local rail passives (e.g. C3<->U2 on /+3.3V). Used in solver objective and post-anneal member refinement, and reported in job-report."
+        "definition": "Per-net krt_signed_rect_gap_mm between members of group G sharing an intra-group signal net (or scoped regulator input net Net-(C1-Pad1) for C1.1<->U2.2 in power), plus member-to-anchor pad_rect gap (covering C3.1<->U2.3 on /+3.3V). Used in solver objective, post-anneal member refinement, and the M1 qualitative grouping report."
       }
     ],
     "m1_qualitative_grouping_acceptance_path": {
       "automatic_pass_when_numeric_group_limits_absent": false,
       "required_artifacts_bound_to_candidate_sha256": [
-        "1. Final native measured report (job-report.json / place metrics) recording final native coordinates, S1..S3 verdicts, R1 declared near interface gaps, R2 intra-group signal/anchor link gaps, and D1/D2 diagnostics with stated limitations.",
+        "1. Final native measured report (job-report.json / place metrics) recording final native coordinates, S1..S3 verdicts, advisory derived_default proximity[] legs, R1 declared near interface gaps, R2 intra-group signal/anchor link gaps, and D1/D2 diagnostics with stated limitations.",
         "2. Annotated native board views (top/bottom/group-overlay SVG/PNG renders from the final native .kicad_pcb).",
         "3. Independent candidate-bound engineering judgment (block_contract.judge / qualification consumer owned by agent-568) bound to board_sha256, verifying each group forms a coherent functional cluster without dispersed members."
       ]
@@ -1884,10 +2057,10 @@
       "arbitrary_2x_weight_claimed_as_truth": false,
       "automatic_heuristic_escalation_on_seed_failure": false,
       "steps": [
-        "1. Keep existing crates/placement-engine SA + quench architecture.",
-        "2. Compile R2 intra-group private-signal/anchor links and R1 declared groups[].near interface signal links into Prepared (crates/placement-engine/src/job.rs) at the existing GROUP_WEIGHT scale.",
-        "3. Add constrained group-cluster translation/swap proposals during SA and a deterministic post-anneal legal member-refinement pass that proposes moving each group's non-fixed members (ordered by largest R2 link gap, e.g. R2/Q2 in reset and C1/C3 in power) into legal non-overlapping seats adjacent to their connected intra-group partner/anchor.",
-        "4. Accept refinement moves only when they preserve 0 courtyard overlap, 0 outline violations, valid edge-connector seating, and all S3 proximity/locality limits while strictly reducing R2 + R1 link reach."
+        "1. Keep existing crates/placement-engine SA + quench architecture and keep proximity_terms as a soft objective for derived_default proximity rows.",
+        "2. Compile R2 intra-group signal/anchor links and R1 declared groups[].near interface signal links into Prepared (crates/placement-engine/src/job.rs) at the existing GROUP_WEIGHT scale.",
+        "3. Add constrained group-cluster translation/swap proposals during SA and a deterministic post-anneal legal member-refinement pass that proposes moving each group's non-fixed members (ordered by largest R2 link gap) into legal non-overlapping seats adjacent to their connected intra-group partner/anchor.",
+        "4. Accept refinement moves only when they preserve 0 courtyard overlap, 0 outline violations, valid edge-connector seating, and any hard sourced/authored S3 limits while strictly reducing the soft objective (R2 + R1 + derived_default proximity_terms)."
       ]
     }
   },
@@ -1908,13 +2081,13 @@
       {
         "case_id": "TARGET-2",
         "subject": "Retained esp_prog final-a1 board (dfffc042) evaluated by M1 qualitative grouping path",
-        "expected_S3_proximity": "pass (all 4 legs <= max_mm)",
-        "expected_grouping_verdict": "rejected_by_candidate_bound_judgment (reset:Q2 stranded 9.1880 mm rect_gap from reset:R2 on Net-(Q2-Pad1) and 10.3413 mm from reset:R1 on /RTS; power:C1/C3 displaced 3.6420 mm / 5.2420 mm rect_gap from power:U2 next to reset:Q1)"
+        "expected_proximity_reporting": "advisory_objective_derived_default (all 4 emitted legs measure within 8.1/2.2 mm under krt_signed_rect_gap_mm; reported as advisory measurements, not hard release gates)",
+        "expected_grouping_verdict": "rejected_by_candidate_bound_judgment (reset:Q2 stranded 9.1880 mm rect_gap from reset:R2 on Net-(Q2-Pad1) and 10.3413 mm from reset:R1 on /RTS; power:C1 displaced 4.5920 mm rect_gap from U2.2 on shared Net-(C1-Pad1) [3.6420 mm nearest-pad to U2.3] and power:C3 displaced 5.2420 mm rect_gap from U2.3 on /+3.3V beside reset:Q1)"
       },
       {
         "case_id": "TARGET-3",
         "subject": "Retained acquisition delivery board (d0a898a2)",
-        "expected_S3_locality": "pass (all 10 obligations <= 3.0 mm with authored_design_limit provenance preserved)",
+        "expected_S3_locality": "pass (all 10 obligations <= 3.0 mm with authored_design_limit provenance preserved as hard S3 gates)",
         "expected_grouping_verdict": "accepted (all R2 intra-group links compact, D1/D2 diagnostics clean, candidate-bound judgment passes)"
       },
       {
@@ -1933,7 +2106,7 @@
     "qualification_consumer": {
       "owner": "agent-568",
       "scope": "Qualification consumer and candidate-bound engineering judgment integration.",
-      "interface_with_AGENTEE_479": "job-report.json and place metrics expose structured R1/R2 group link measurements, D1/D2 diagnostics with limitations, and unresolved_claims[] (including unmeasured cable_envelope_mm rows) for agent-568's qualification consumer."
+      "interface_with_AGENTEE_479": "job-report.json and place metrics expose structured R1/R2 group link measurements, D1/D2 diagnostics with limitations, advisory derived_default proximity[] legs, and unresolved_claims[] (including unmeasured cable_envelope_mm rows) for agent-568's qualification consumer."
     }
   }
 }
