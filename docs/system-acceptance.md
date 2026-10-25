@@ -1,6 +1,6 @@
 # Intent-to-manufacturing acceptance map
 
-**UNFINISHED — 2026-10-24, agent-545.** Correct operation through the ordinary
+**UNFINISHED — 2026-10-25, agent-545.** Correct operation through the ordinary
 entrypoint comes before optimization. One executing agent owns implementation,
 verification and integration. The requested KRT research and retired-campaign
 cleanup are complete. Live telemetry-pod attempts remain held. Purchases,
@@ -39,7 +39,7 @@ positive and wrong-address negative have exercised this public command.
 | Architecture, parts and circuits | Circuit/connectivity intent, captured sourcing/CAD/rating records → bound parts and native pin inventory; build parts stage, `parts_stage`, `binding_fill` | Source parts, topology and electrical calculations. Actual selected TPS7A20/ADS1115 circuit is carried into the board. Consequential reversed-diode negative rejects despite clean ERC. The acquisition load, capacitance, startup/removal and other electrical obligations now have reviewed source/model evidence and final native checks; other circuit families remain unqualified. |
 | Native schematic | Parts receipt + connectivity/layout → editable native project and dependent sheets; scaffold/schematic stages, `schematic_emitter`, forward annotation | Stable identity, exact pin/footprint/net agreement, all pins accounted for, native rules preserved. Fresh 17-part design passes ERC and exact topology. Hierarchical regeneration/child edits exercised separately; preserving arbitrary manual edits remains limited. |
 | Board and mechanical intent | Native project + envelope, anchors, blocks, side and locality declarations → placed native PCB; scaffold, `placement_job` | All 17 acquisition footprints belong to three blocks; all three fixed connectors and eight hard pin distances pass after routing. Acquisition package bodies, height, connector access and board thickness are reviewed and checked. Broader side/hardware/keepout cases remain open. |
-| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition with a bottom ground plane and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. The retained two-sided acquisition variant now passes the normal job with automatic targeted thermal reservation and scoped dangling-net reroute; earlier failed attempts remain evidence. The four-layer/default-via regression and all 44 required pin modules pass. Native netclasses/custom rules now survive normal placement/routing and the build producer; a four-layer paired article and length/skew/rule-loading negatives pass. The asymmetric intra-pair matching article now passes the public job and build producer, with a connected-skew negative; all required pin gates have passing evidence. Coupled inner-layer transitions now pass the public job and build producer, with native routing keepouts preserved and forbidden-layer/incomplete-route negatives. Existing pours and placement-restricting rule areas, inter-pair/time matching, buses/fanout and broader constraint coverage remain open. |
+| Placement and routing feedback | Placement constraints + seed/route policy + captured planes → saved board, trials, final-placement reports; `placement_job`, Rust planner, routing adapter | Accepted acquisition with a bottom ground plane and esp_prog both route with zero native errors/opens. Declared outer/inner planes now reach the normal job and independent final native checks; two/four-layer feature cases pass. The retained two-sided acquisition variant now passes the normal job with automatic targeted thermal reservation and scoped dangling-net reroute; earlier failed attempts remain evidence. The four-layer/default-via regression and all 44 required pin modules pass. Native netclasses/custom rules now survive normal placement/routing and the build producer; a four-layer paired article and length/skew/rule-loading negatives pass. The asymmetric intra-pair matching article now passes the public job and build producer, with a connected-skew negative; all required pin gates have passing evidence. Coupled inner-layer transitions now pass the public job and build producer, with native routing keepouts preserved and forbidden-layer/incomplete-route negatives. Nominal outer-layer differential impedance now passes the public job/build producer with original-stackup and final filled-reference checks. Existing pours and placement-restricting rule areas, inner-layer/multilayer impedance, inter-pair/time matching, buses/fanout and broader constraint coverage remain open. |
 | Electrical verification | Final native netlist/PCB + source-bound calculations/models → individual checks; `topology_rules`, interval checks, passive/active SPICE, `dc_path` | Five independent ADC pin rules now enter the normal build's generated scope; wrong address-pin wiring rejects despite passing ERC and generator parity. Selected parts and assembly checks pass acquisition. Corrected ngspice 47 passes 139 native regressions and unchanged actual startup. Whole-net copper checks exercise two/four-layer controls, supply/return copper and disconnected/exceeded-budget negatives. Acquisition material/contact assumptions and component applicability are explicitly reviewed; model limits and unperformed physical obligations remain visible. Clean ERC is not functional acceptance. |
 | Physical/assembly/fabrication checks | Final reloaded/refilled board + authoritative rules, population/profile/placement intent → native and independent results | Acquisition has zero unwaived DRC findings and zero center-in-pad vias. Final grouping/locality is checked. Acquisition mechanical/fabrication obligations are closed with dimensioned/source review and final checks. Remaining routing-feature cases are unmet. |
 | Manufacturing package | Accepted native identity + manufacturing profile → Gerbers, drills, BOM, CPL, documentation and bound validation; package stage, `fab_export`, `fab_package`, `fab_consistency` | The 17-part acquisition design is accepted through the default seven-stage build: 37 passing checks plus informational netlist, 9 plots/2 drills/12 BOM rows/17 placements. The eleven engineering obligations are closed with explicit assumption corrections; changed exported coordinates reject as stale. Supplier preview and physical tests are unperformed. |
@@ -154,8 +154,8 @@ See [electrical disposition](qualification/acquisition-electrical-2026-10-24.md)
    in actual jobs; consequential diode error and stale package reject independently.
    Extend to final suite, clean setup and interrupted full-build resumption.
 
-KRT source map: 69 capabilities, 107 tools and 127 hash-bound source files at observed
-latest `d24a7602012b96c5cfa610ea05a171646ad601bd` (v0.23.7), under
+KRT source map: 69 capabilities, 107 tools and 127 hash-bound source files at
+inventory revision `d24a7602012b96c5cfa610ea05a171646ad601bd` (v0.23.7), under
 [research/krt-2026-10-24](research/krt-2026-10-24). This maps features; it does
 not demonstrate parity. The prior matched esp_prog seed 10 comparison leaves
 44 opens in both tools. No broad equivalence or superiority claim is established.
@@ -207,13 +207,28 @@ for after explicit setup/fixture corrections, with initial failures retained.
 | --- | --- | --- |
 | D02 coupled vias; portions of R02/R04 | Public `--pair-layers`, `router.pair_layers`, routing-only native keepout custody; `test_placement_job_transition`, router `test_pair_transition` | Original orthogonal four-layer article crosses an outer-layer barrier on In1.Cu, preserving anchors/rules. Outer-only routing, forbidden saved layers, invalid layer names, placement restrictions and changed-policy resume reject. Matched stock d24a760 retains a native skew violation; integrated owned routing passes. Through vias only; hybrid and wider technology coverage remain open. |
 
-Next named capability: controlled-impedance differential geometry on a declared
-stackup. Use a bounded four-layer differential interconnect with a continuous
-reference plane. Carry its target and stackup into geometry selection through
-the supported workflow, then independently inspect saved widths/gaps, reference
-coverage and calculated impedance. Require a positive native case and rejection
-of wrong geometry or a missing required reference. Reuse existing solvers and
-checks; retain the acquisition, esp_prog, matching and transition cases as
-regressions. Propagation-time matching, buses, fanout and broader return-path
-recovery remain subsequent required work.
+Completed capability milestone: nominal outer-layer differential impedance.
+The [qualification](qualification/pair-impedance-2026-10-25.md) binds the public
+placement job and actual build producer, explicit original stackup, final filled
+reference, measured geometry and an independent KiCad analytical calculation.
+The 100 ohm ±10% article saves zero opens/findings and six tracks at 0.325537 mm
+width and 0.35 mm gap. Missing original dielectric data, reference slots, missing
+coverage and connected neck/escape violations reject. All 983 required agent-ee
+cases have passing evidence, with the initial external-input omission and its
+correction preserved. The corrected neck test supersedes a faulty disconnected
+control; production runtime files are unchanged by that test correction.
+
+| KRT feature | Implementation and executable exercise | Bounded result |
+| --- | --- | --- |
+| D04 differential outer-layer portion | Native stackup solver plus saved-geometry/reference checker; `router.pair_impedance`; `test_placement_job_impedance` and router `test_pair_impedance` | Public job/build producer pass nominal 100 ohm ±10% and explicit 3 mm total terminal-escape limit. Matched stock `4cf6d29ddbe7d19b511352d0abbb26842f609be6`, newly observed on 2026-10-25, also passes. Parity on this article; no superiority. Uncoated coupled trunks only; single-ended, inner-layer, multilayer and coplanar impedance coverage remains open. |
+
+Next named capability: differential stripline on an explicit four-layer stackup.
+Use an inner-layer interconnect between actual through-hole terminals with two
+adjacent filled reference planes. Carry the target through the normal job and
+build producer, measure actual coupled geometry against both reference layers,
+and handle terminal antipads explicitly. Require a positive native result and
+rejection when either required reference is missing or split beneath a trunk.
+Retain the outer-layer article and existing successful workflows as regressions.
+Propagation-time matching, buses, fanout and broader return-path recovery remain
+subsequent required work.
 No required missing, stale or unknown check can pass.

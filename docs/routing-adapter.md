@@ -1638,3 +1638,22 @@ The full 48-module consumer roster has passing evidence: 972 checks in the
 Native facts/pour contracts and mirrored reader behavior remain unchanged.
 This qualifies the bounded coupled-transition case; it does not establish
 impedance, delay, AC/multi-pair matching or manufacturing acceptance.
+
+### Nominal differential microstrip integration — 2026-10-25
+
+Pin `5801a9f39618853ab941beac7069c68a5270e16e` adds opt-in impedance
+synthesis from explicit native stackup and independent saved-geometry/reference
+grading. Its exact code map contains 312 files. The ordinary placement job and
+build producer carry the target, tolerance, reference net and escape allowance;
+the original stackup is checked before native save can insert defaults, and
+the actual final board is checked after zone fill. Default adapter schemas,
+facts/pour producers and mirrored readers remain unchanged.
+
+The [qualification record](qualification/pair-impedance-2026-10-25.md) binds
+public positives, complete-connectivity negatives, unchanged native rules,
+an independent KiCad analytical calculation and a matched stock comparison.
+All 983 required cases across 49 modules have passing evidence without skips;
+the initial missing-`esp_prog`-input failure and its corrected rerun are retained.
+Only nominal outer-layer differential microstrip
+trunks are qualified here. Inner-layer/multilayer impedance, coplanar models,
+supplier tolerances and physical measurement are not discharged by this result.

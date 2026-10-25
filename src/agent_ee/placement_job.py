@@ -1133,7 +1133,9 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
                 and result.get('routing', {}).get('unconnected_total') == 0
                 and result.get('validation', {}).get('status') == 'PASS')
     return {**record, 'status': 'routed', 'board': str(board), 'board_sha256': sha,
-            'router_accepted': accepted}
+            'router_accepted': accepted,
+            **({'impedance_plan': result['settings']['pair_impedance']}
+               if 'pair_impedance' in result.get('settings', {}) else {})}
 
 
 def _route_feedback(record, checkout, *, env, clock, cancel_dir):
@@ -1183,7 +1185,7 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
-          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None):
+          design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1240,6 +1242,11 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         argv += ['--grid-step', str(grid_step_mm)]
     if pair_layers is not None:
         argv += ['--pair-layers', *pair_layers]
+    if pair_impedance is not None:
+        argv += ['--pair-impedance', str(pair_impedance['target_ohm']),
+                 '--impedance-tolerance', str(pair_impedance['tolerance_percent']),
+                 '--impedance-reference', pair_impedance['reference_net'],
+                 '--impedance-uncoupled', str(pair_impedance['max_uncoupled_mm'])]
     if intra_pair_match is not None:
         argv += ['--diff-pair-intra-match', '--length-match-tolerance', str(intra_pair_match['tolerance_mm']),
                  '--meander-amplitude', str(intra_pair_match['amplitude_mm'])]
@@ -1373,6 +1380,18 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                     or any(not isinstance(layer, str) or not layer for layer in pair_layers)
                     or len(set(pair_layers)) != len(pair_layers)):
                 raise JobRefusal('router.pair_layers requires a nonempty list of distinct copper layer names')
+        impedance = config['router'].get('pair_impedance')
+        if 'pair_impedance' in config['router']:
+            fields = {'target_ohm', 'tolerance_percent', 'reference_net', 'max_uncoupled_mm'}
+            if not isinstance(impedance, dict) or set(impedance) != fields:
+                raise JobRefusal('router.pair_impedance requires target_ohm, tolerance_percent, reference_net and max_uncoupled_mm')
+            if (not isinstance(impedance['reference_net'], str) or not impedance['reference_net'].strip()
+                    or any(type(impedance[key]) not in (int, float) or not math.isfinite(impedance[key])
+                           or impedance[key] <= 0 for key in fields - {'reference_net'})
+                    or impedance['tolerance_percent'] >= 100):
+                raise JobRefusal('pair impedance needs positive finite numbers, tolerance below 100 percent and a reference net')
+            if not pair_layers or len(pair_layers) != 1 or pair_layers[0] not in ('F.Cu', 'B.Cu'):
+                raise JobRefusal('qualified pair impedance requires exactly one explicit outer pair layer')
         matching = config['router'].get('intra_pair_match')
         if 'intra_pair_match' in config['router']:
             if not isinstance(matching, dict) or set(matching) != {'tolerance_mm', 'amplitude_mm'}:
@@ -1420,6 +1439,19 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             intent['electrical_locality'] = document
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
+        if impedance is not None:
+            # Native load/save inserts dielectric defaults. Check the authored
+            # bytes before placement can make an omitted value look declared.
+            done = _run_child([sys.executable, '-B', '-c',
+                'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); '
+                'from kicad_route.pair_impedance import model; model(Path(sys.argv[2]), sys.argv[3])',
+                str(Path(config['router']['checkout']) / 'src'), str(board_path), pair_layers[0]],
+                clock=clock, cancel_dir=None)
+            if done.returncode:
+                raise JobRefusal('original impedance stackup is unproven: '
+                                 + done.stderr.decode(errors='replace')[-2000:])
+            report['preflight']['impedance_stackup'] = {
+                'status': 'PASS', 'board_sha256': sha256_bytes(board_bytes), 'layer': pair_layers[0]}
     with clock.phase('import'):
         _check_stop(clock, None)
         # A pre-existing CANCEL still captures/checkpoints the initial identity,
@@ -1565,7 +1597,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=config['router'].get('grid_step_mm'),
-                           intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers)
+                           intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
@@ -1573,7 +1605,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             _check_stop(clock, job_dir)
             report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', groups, intent,
                                            clock=clock, cancel_dir=job_dir,
-                                           owned_zone_uuids=plane_ids, planes=plane_bytes)
+                                           owned_zone_uuids=plane_ids, planes=plane_bytes,
+                                           pair_impedance=impedance, router_checkout=config['router']['checkout'])
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
@@ -1618,7 +1651,7 @@ def _completion_status(routed, incumbent, final):
 
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, clock=None, cancel_dir=None,
-                 owned_zone_uuids=(), planes=None):
+                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None):
     import pcbnew
     clock = clock or Clock(300)
     _check_stop(clock, cancel_dir)
@@ -1686,15 +1719,32 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
                 or plane_result.get('board_sha256') != digest(board)
                 or plane_result.get('plan_sha256') != sha256_bytes(planes)):
             problems.append('final saved plane verification failed')
+    impedance_result = None
+    if pair_impedance is not None:
+        plan = routed.get('impedance_plan')
+        impedance_result = {'status': 'FAIL', 'defects': ['router omitted or changed required impedance plan']}
+        if isinstance(plan, dict) and plan.get('requirement') == pair_impedance and plan.get('status') == 'PASS':
+            request, result = final_dir / 'impedance-plan.json', final_dir / 'impedance.json'
+            write_json(request, plan)
+            checker = Path(router_checkout) / 'src/kicad_route/pair_impedance.py'
+            done = _run_child([sys.executable, '-B', str(checker), str(board), str(request), str(result), '--check'],
+                              clock=clock, cancel_dir=cancel_dir)
+            impedance_result = read_json(result) if result.is_file() else {
+                'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
+            if done.returncode != 0 or impedance_result.get('board_sha256') != digest(board):
+                impedance_result['status'] = 'FAIL'
+                impedance_result.setdefault('defects', []).append('final impedance result does not bind the saved board')
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
     metrics = board_metrics(board, groups['groups'])
     metrics['edges'] = edge_intent['connectors']
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
-              or locality['status'] not in ('pass', 'info', 'not_declared'))
+              or locality['status'] not in ('pass', 'info', 'not_declared')
+              or impedance_result is not None and impedance_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
+            **({'impedance': impedance_result} if impedance_result is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'rule_files': rule_files,

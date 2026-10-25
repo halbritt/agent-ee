@@ -142,6 +142,31 @@ and through-via spans remain subject to native rules. Layer selection is bound
 to resume identity. Matching measures summed planar copper; native electrical
 length/skew rules are separate requirements and must also pass.
 
+Optional `router.pair_impedance` requests nominal differential microstrip
+synthesis with an explicit target and verification limits:
+
+```json
+{"pair_layers": ["F.Cu"],
+ "pair_impedance": {"target_ohm": 100, "tolerance_percent": 10,
+                    "reference_net": "GND", "max_uncoupled_mm": 3}}
+```
+
+All four fields are required; the numbers must be finite and positive, with
+tolerance below 100 percent. The current capability requires one explicit outer
+signal layer and native stackup copper thickness, adjacent dielectric thickness
+and Er. The router uses its existing analytic model to select width above the
+native class floor. It preserves the authored project and rules. The declared
+plane plan must produce actual filled reference copper on the adjacent layer.
+Missing stackup data, an unreachable target or missing reference cannot pass.
+
+After final zone refill, the job independently measures saved widths, parallel
+pair gaps, coupled length and actual native reference fill, and binds its report
+to the final board hash. Terminal escapes are reported separately and limited
+by `max_uncoupled_mm`; they acquire no impedance claim. Targets and limits are
+part of resume identity. This initial model excludes via/arc routes, multilayer
+impedance and coplanar pours. It is a nominal uncoated microstrip calculation,
+not a supplier guarantee, field simulation or physical measurement.
+
 The captured native project can also declare the router's existing assembly
 policy under `kicad_routing_tools.same_net_pad_clearance`. A positive value in
 millimetres keeps newly routed vias away from same-net SMD pads and paste
