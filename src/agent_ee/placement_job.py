@@ -626,16 +626,32 @@ def capture(board_path, intent, groups, *, rails=None, groups_sha256=None, clock
     return problem, record
 
 
-def _rails(rails, board_bytes, groups, nets, groups_sha256=None):
-    """The canonical rails for this capture: the validated sidecar bound to this board, or none."""
+def _rails(rails, board_bytes, groups, board, groups_sha256=None):
+    """The canonical rails for this capture: the validated sidecar bound to this board, or none.
+
+    Declared group/part annotations are checked against the board's actual net
+    membership, so a sidecar can only cite members that really share the net.
+    """
     from . import group_rails
     if rails is None:
         return dict(group_rails.EMPTY)
     if groups_sha256 is None:
         raise JobRefusal('group rails need the sha256 of the exact groups bytes they bind')
+    owner = {ref: g['name'] for g in groups['groups'] for ref in g['refs']}
+    nets, net_parts, net_groups = set(), {}, {}
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            net = pad.GetNetname()
+            if not net:
+                continue
+            nets.add(net)
+            net_parts.setdefault(net, set()).add(fp.GetReference())
+            if fp.GetReference() in owner:
+                net_groups.setdefault(net, set()).add(owner[fp.GetReference()])
     try:
         return group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=groups_sha256,
-                                    group_names={g['name'] for g in groups['groups']}, nets=nets)
+                                    group_names={g['name'] for g in groups['groups']}, nets=nets,
+                                    net_groups=net_groups, net_parts=net_parts)
     except ValueError as exc:
         raise JobRefusal(str(exc)) from exc
 
@@ -798,7 +814,7 @@ def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
                'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups['groups']],
-               'rails': _rails(rails, before, groups, {p.GetNetname() for fp in board.GetFootprints() for p in fp.Pads()}, groups_sha256),
+               'rails': _rails(rails, before, groups, board, groups_sha256),
                'proximity': proximity,
                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}}
     if dialect:

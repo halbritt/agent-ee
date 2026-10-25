@@ -1090,7 +1090,7 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
             let (paired_by, pairs) = if signal.is_empty() {
                 // Accepted-contract fallback: no shared non-rail signal net, so any pad pair tethers the groups.
                 let all = |f: usize| -> Vec<usize> { (0..footprints[f].pads.len()).collect() };
-                ("any", members.iter().flat_map(|&a| others.iter().map(move |&b| (a, b)))
+                ("any_pad_fallback", members.iter().flat_map(|&a| others.iter().map(move |&b| (a, b)))
                     .flat_map(|(a, b)| cross(a, &all(a), b, &all(b))).collect::<Vec<_>>())
             } else { ("signal_net", signal) };
             if !pairs.is_empty() {
@@ -1774,7 +1774,8 @@ fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
         SearchState::new(p, poses.clone())?;
         let terms = full_evaluate(p, &poses);
         out.push(json!({"terms": terms.value(), "feasible": terms.hard == 0 && terms.hard_count == 0,
-                        "violations": violations(p, &poses), "poses": pose_rows(p, &poses)}));
+                        "violations": violations(p, &poses), "poses": pose_rows(p, &poses),
+                        "links": link_rows(p, &poses), "link_weight": p.weights.link}));
     }
     Ok(json!({"schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": "evaluated", "evaluations": out,
               "timing": {"prepare_s": prepare_s, "evaluate_s": started.elapsed().as_secs_f64()},
@@ -2115,7 +2116,7 @@ mod tests {
                                {"name": "h", "anchor": "R3", "refs": ["R3", "R4"]}]);
         let p = prepare(&raw).unwrap();
         let r1 = p.links.iter().position(|l| l.kind == "R1_declared_near_interface").expect("R1 link compiled");
-        assert_eq!((p.links[r1].paired_by.as_str(), p.links[r1].target.as_str()), ("any", "h"));
+        assert_eq!((p.links[r1].paired_by.as_str(), p.links[r1].target.as_str()), ("any_pad_fallback", "h"));
         assert_eq!(p.links[r1].pairs.len(), 2 * 2 * 2 * 2, "all member pad pairs across the two groups");
         let near: Vec<Pose> = legal_dispersed(&p);
         let mut far = near.clone();
@@ -2130,7 +2131,7 @@ mod tests {
         assert_eq!(full_evaluate(&p, &far).link, (0..p.links.len()).map(|k| link_terms(&p, k, &far)).sum::<i128>());
         let rows = link_rows(&p, &far);
         let row = rows.as_array().unwrap().iter().find(|r| r["kind"] == "R1_declared_near_interface").unwrap();
-        assert_eq!(row["paired_by"], "any");
+        assert_eq!(row["paired_by"], "any_pad_fallback");
         assert_eq!(row["gap_nm"].as_i64().unwrap(), gf, "the report and the objective take the same dynamic minimum");
     }
 

@@ -375,7 +375,7 @@ class GroupLinkTests(unittest.TestCase):
         self.assertEqual((link['member_pad'], link['anchor_pad'], link['shared_net']), ('1', '3', None))
         self.assertAlmostEqual(link['gap_mm'], 7.5)  # nearest anchor pad wins even across nets
         # Only rails cross power<->core, so the accepted-contract any-pad fallback tethers them.
-        self.assertEqual(power['R1_declared_near_interfaces'][0]['paired_by'], 'any')
+        self.assertEqual(power['R1_declared_near_interfaces'][0]['paired_by'], 'any_pad_fallback')
         self.assertIsNone(power['R1_declared_near_interfaces'][0]['net'])
         core = report['groups']['core']['R1_declared_near_interfaces'][0]
         self.assertEqual((core['net'], core['from_ref'], core['to_ref'], core['gap_mm']), ('/SIG', 'U1', 'J1', 25.0))
@@ -463,7 +463,7 @@ class GroupRailsSidecarTests(unittest.TestCase):
             ('stale_board', dict(board_sha256='0' * 64), 'group_rails.bindings.board_sha256'),
             ('stale_groups', dict(groups_sha256='0' * 64), 'group_rails.bindings.groups_sha256'),
             ('unknown_net', dict(nets={'GND'}), 'group_rails.shared./+3.3V'),
-            ('unknown_group', dict(group_names={'power'}), 'group_rails.scoped.Net-(C1-Pad1).near_pairs[0]'),
+            ('unknown_group', dict(group_names={'power'}), 'group_rails.shared./+3.3V.groups'),
         ]
         for label, kwargs, expected in cases:
             with self.subTest(case=label):
@@ -496,7 +496,7 @@ class NearFallbackTests(GroupLinkTests):
         layout = self.layout()
         del layout['U1']
         near = group_links.measure(groups, layout, rails)['groups']['power']['R1_declared_near_interfaces'][0]
-        self.assertEqual(near['paired_by'], 'any')
+        self.assertEqual(near['paired_by'], 'any_pad_fallback')
         self.assertIsNone(near['net'])
         self.assertEqual(near['candidate_pairs'], 5 * 2)
         far_layout = self.layout()
@@ -552,3 +552,133 @@ class CaptureDeclarationModeTests(unittest.TestCase):
         with self.assertRaises(job.JobRefusal) as caught:
             job.capture(self.board, self.dialect({'C1': ['9'], 'R1': ['1']}), self.groups())
         self.assertIn('intent.proximity[0].pads.C1', str(caught.exception))
+
+
+class ChiefCounterexampleTests(unittest.TestCase):
+    """Chief review 7e9c18a6 of 87bbbf05: unknown multi-group nets must not seed signal candidates."""
+
+    def inputs(self):
+        groups = {'groups': [{'name': 'A', 'anchor': 'U1', 'refs': ['U1', 'R1'], 'near': ['B']},
+                             {'name': 'B', 'anchor': 'U2', 'refs': ['U2']}, {'name': 'C', 'anchor': 'U3', 'refs': ['U3']}]}
+        footprints = {
+            'U1': {'x': 0, 'y': 0, 'side': 'F', 'pads': [{'number': '1', 'rect': (0, 0, 1, 1), 'net': 'X', 'net_id': 1},
+                                                         {'number': '2', 'rect': (2, 0, 3, 1), 'net': '/S', 'net_id': 2}]},
+            'R1': {'x': 7, 'y': 0, 'side': 'F', 'pads': [{'number': '1', 'rect': (7, 0, 8, 1), 'net': '/S', 'net_id': 2},
+                                                         {'number': '2', 'rect': (7, 0, 8, 1), 'net': 'X', 'net_id': 1}]},
+            'U2': {'x': 20, 'y': 0, 'side': 'F', 'pads': [{'number': '1', 'rect': (20, 0, 21, 1), 'net': 'X', 'net_id': 1}]},
+            'U3': {'x': 30, 'y': 0, 'side': 'F', 'pads': [{'number': '1', 'rect': (30, 0, 31, 1), 'net': 'X', 'net_id': 1}]}}
+        return groups, footprints
+
+    def test_unknown_multi_group_net_is_visible_and_never_a_signal_candidate(self):
+        from agent_ee import group_links
+        groups, footprints = self.inputs()
+        report = group_links.measure(groups, footprints, {'shared': {}, 'scoped': {}})
+        self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], ['X'])
+        a = report['groups']['A']
+        self.assertEqual([l['net'] for l in a['R2_intra_group_signal_links']], ['/S'])
+        near = a['R1_declared_near_interfaces'][0]
+        self.assertEqual(near['paired_by'], 'any_pad_fallback')
+        self.assertIsNone(near['net'])
+        self.assertEqual(near['candidate_pairs'], 4)  # all four A pads against the one B pad
+        self.assertEqual((near['from_ref'], near['from_pad'], near['to_ref'], near['to_pad'], near['gap_mm']),
+                         ('R1', '1', 'U2', '1', 12.0))
+
+    def test_rails_annotations_must_match_board_membership_and_shapes(self):
+        from agent_ee import group_rails
+        base = {'schema': group_rails.SCHEMA, 'bindings': {'board_sha256': 'a' * 64, 'groups_sha256': 'b' * 64},
+                'shared': {'X': {'evidence': 'e', 'groups': ['A', 'B', 'C'], 'parts': ['U1', 'U2']}},
+                'scoped': {'X': {'evidence': 'e', 'intra_group': 'A', 'near_pairs': [['A', 'B']]}}}
+        membership = dict(group_names={'A', 'B', 'C'}, nets={'X', '/S'},
+                          net_groups={'X': {'A', 'B', 'C'}, '/S': {'A'}}, net_parts={'X': {'U1', 'R1', 'U2', 'U3'}, '/S': {'U1', 'R1'}})
+        group_rails.validate(base, **membership)
+        cases = [
+            ('missing_group', lambda d: d['shared']['X'].__setitem__('groups', ['A', 'MISSING_GROUP']), 'group_rails.shared.X.groups'),
+            ('group_without_pad', lambda d: d['shared'].__setitem__('/S', {'evidence': 'e', 'groups': ['B']}), 'group_rails.shared./S.groups'),
+            ('missing_part', lambda d: d['shared']['X'].__setitem__('parts', ['U1', 'MISSING_PART']), 'group_rails.shared.X.parts'),
+            ('duplicate_group', lambda d: d['shared']['X'].__setitem__('groups', ['A', 'A']), 'group_rails.shared.X.groups'),
+            ('empty_parts', lambda d: d['shared']['X'].__setitem__('parts', []), 'group_rails.shared.X.parts'),
+            ('near_pairs_object', lambda d: d['scoped']['X'].__setitem__('near_pairs', {}), 'group_rails.scoped.X.near_pairs'),
+            ('near_pair_without_pad', lambda d: (d['shared'].__setitem__('/S', {'evidence': 'e'}),
+                                                 d['scoped'].__setitem__('/S', {'evidence': 'e', 'near_pairs': [['A', 'B']]})),
+             'group_rails.scoped./S.near_pairs[0]'),
+            ('intra_group_without_pad', lambda d: (d['shared'].__setitem__('/S', {'evidence': 'e'}),
+                                                   d['scoped'].__setitem__('/S', {'evidence': 'e', 'intra_group': 'B'})),
+             'group_rails.scoped./S.intra_group'),
+            ('duplicate_pair', lambda d: d['scoped']['X'].__setitem__('near_pairs', [['A', 'B'], ['A', 'B']]), 'near_pairs[1]'),
+        ]
+        for label, mutate, expected in cases:
+            with self.subTest(case=label):
+                doc = json.loads(json.dumps(base))
+                mutate(doc)
+                with self.assertRaises(ValueError) as caught:
+                    group_rails.validate(doc, **membership)
+                self.assertIn(expected, str(caught.exception))
+
+
+class EngineParityTests(unittest.TestCase):
+    """Same poses, same candidate sets, same argmin and the same unweighted gap in Python and Rust."""
+
+    def engine(self):
+        from agent_ee.placement_rust_runtime import resolve_executable
+        try:
+            return resolve_executable()
+        except Exception as exc:
+            self.skipTest(f'placement engine unavailable: {exc}')
+
+    def problem(self):
+        def fp(n, ref, x, y, net):
+            uuid = f'00000000-0000-0000-0000-0000{n:08x}'
+            return {'uuid': uuid, 'native_ref': ref, 'role': 'movable', 'pose': {'x_nm': x, 'y_nm': y, 'quarter_turns': 0},
+                    'rotations': [0, 1, 2, 3],
+                    'occupancy': {'status': 'derived', 'label': 'derived_occupancy', 'rung': 'pads',
+                                  'local_rect_nm': [-1_000_000, -500_000, 1_000_000, 500_000]},
+                    'copper_local_nm': [[-900_000, -300_000, -300_000, 300_000], [300_000, -300_000, 900_000, 300_000]],
+                    'pads': [{'uuid': f'{uuid}-1', 'number': '1', 'net': net, 'local_nm': [-600_000, 0], 'half_nm': [300_000, 300_000]},
+                             {'uuid': f'{uuid}-2', 'number': '2', 'net': 'GND', 'local_nm': [600_000, 0], 'half_nm': [300_000, 300_000]}]}
+        return {'schema': 'agent-ee.placement-job-input/1', 'problem_sha256': 'a' * 64,
+                'outline': {'kind': 'rectangle', 'rect_nm': [0, 0, 12_000_000, 10_000_000]},
+                'rules': {'copper_clearance_nm': 200_000, 'copper_edge_clearance_nm': 300_000, 'mask_min_web_nm': 100_000},
+                'footprints': [fp(1, 'R1', 3_000_000, 5_000_000, 'A'), fp(2, 'R2', 9_500_000, 5_000_000, 'A'),
+                               fp(3, 'R3', 9_000_000, 2_000_000, 'B'), fp(4, 'R4', 2_000_000, 8_000_000, 'B')],
+                'groups': [{'name': 'g', 'anchor': 'R1', 'refs': ['R1', 'R2'], 'near': ['h']},
+                           {'name': 'h', 'anchor': 'R3', 'refs': ['R3', 'R4']}],
+                'rails': {'shared': {'GND': 'ground return'}, 'scoped': {}},
+                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20},
+                'evaluate': [{}]}
+
+    def test_links_agree_between_python_report_and_rust_engine(self):
+        import subprocess
+        from agent_ee import group_links
+        executable = self.engine()
+        problem = self.problem()
+        done = subprocess.run([str(executable)], input=json.dumps(problem).encode(), capture_output=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr.decode(errors='replace')[-800:])
+        evaluation = json.loads(done.stdout)['evaluations'][0]
+        rust_links = evaluation['links']
+        footprints, pad_numbers = {}, {}
+        for row in problem['footprints']:
+            pads = []
+            for pad in row['pads']:
+                cx, cy = (row['pose']['x_nm'] + pad['local_nm'][0]) / 1e6, (row['pose']['y_nm'] + pad['local_nm'][1]) / 1e6
+                hx, hy = pad['half_nm'][0] / 1e6, pad['half_nm'][1] / 1e6
+                pads.append({'number': pad['number'], 'rect': (cx - hx, cy - hy, cx + hx, cy + hy),
+                             'net_id': {'A': 1, 'B': 2, 'GND': 3}[pad['net']], 'net': pad['net']})
+                pad_numbers[pad['uuid']] = pad['number']
+            footprints[row['native_ref']] = {'x': row['pose']['x_nm'] / 1e6, 'y': row['pose']['y_nm'] / 1e6, 'side': 'F', 'pads': pads}
+        report = group_links.measure({'groups': problem['groups']}, footprints, problem['rails'])
+        by_kind = {(r['kind'], r['group']): r for r in rust_links}
+        g = report['groups']['g']
+        intra, rust_intra = g['R2_intra_group_signal_links'][0], by_kind[('R2_intra_group_signal', 'g')]
+        self.assertEqual(rust_intra['candidate_pairs'], 1)
+        self.assertEqual((pad_numbers[rust_intra['a_pad']], pad_numbers[rust_intra['b_pad']]), (intra['pad_a'], intra['pad_b']))
+        self.assertAlmostEqual(rust_intra['gap_nm'] / 1e6, intra['gap_mm'], places=4)
+        near, rust_near = g['R1_declared_near_interfaces'][0], by_kind[('R1_declared_near_interface', 'g')]
+        self.assertEqual((rust_near['paired_by'], near['paired_by']), ('any_pad_fallback', 'any_pad_fallback'))
+        self.assertEqual(rust_near['candidate_pairs'], near['candidate_pairs'])
+        self.assertEqual((rust_near['a'], pad_numbers[rust_near['a_pad']], rust_near['b'], pad_numbers[rust_near['b_pad']]),
+                         (near['from_ref'], near['from_pad'], near['to_ref'], near['to_pad']))
+        self.assertAlmostEqual(rust_near['gap_nm'] / 1e6, near['gap_mm'], places=4)
+        unweighted_nm = sum(max(0, r['gap_nm']) for r in rust_links)
+        self.assertEqual(int(evaluation['terms']['link_gap_nm']), unweighted_nm)
+        self.assertEqual(evaluation['link_weight'], 1)
+        self.assertAlmostEqual(unweighted_nm / 1e6, group_links.objective(report), places=3)

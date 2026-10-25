@@ -40,18 +40,22 @@ def partition(groups, references, *, fixed=()):
             'undeclared_refs': extra, 'complete': not (duplicates or missing or extra)}
 
 
-def near_pairs(name, target, refs, target_refs, footprints, shared, scoped):
+ANY_PAD_FALLBACK = 'any_pad_fallback'
+
+
+def near_pairs(name, target, refs, target_refs, footprints, shared, scoped, excluded=frozenset()):
     """R1 candidate pad pairs between two groups: shared non-rail signal-net pairs, else any pad pair.
 
     The solver minimises over exactly this set under movement, so the report's
     argmin and the solver's objective agree. ``paired_by`` labels which rule
-    produced the set: ``signal_net`` or the accepted-contract ``any`` fallback.
+    produced the set: ``signal_net`` or the accepted-contract ``any_pad_fallback``.
+    Unknown multi-group nets (``excluded``) never form a signal candidate.
     """
     signal = []
     for ref in refs:
         for pad in footprints[ref]['pads']:
             net = pad.get('net')
-            if pad.get('net_id', 0) <= 0 or not net:
+            if pad.get('net_id', 0) <= 0 or not net or net in excluded:
                 continue
             if net in shared and [name, target] not in scoped.get(net, {}).get('near_pairs', []):
                 continue
@@ -63,7 +67,7 @@ def near_pairs(name, target, refs, target_refs, footprints, shared, scoped):
         return {'paired_by': 'signal_net', 'pairs': signal}
     any_pairs = [(ref, pad, other, partner) for ref in refs for pad in footprints[ref]['pads']
                  for other in target_refs for partner in footprints[other]['pads']]
-    return {'paired_by': 'any', 'pairs': any_pairs}
+    return {'paired_by': ANY_PAD_FALLBACK, 'pairs': any_pairs}
 
 
 def measure(groups, footprints, rails, *, fixed=()):
@@ -84,6 +88,9 @@ def measure(groups, footprints, rails, *, fixed=()):
             if pad.get('net_id', 0) > 0 and pad.get('net'):
                 net_groups.setdefault(pad['net'], set()).add(name)
     unknown = sorted(net for net, names in net_groups.items() if len(names) > 2 and net not in shared)
+    # An unknown multi-group net has no established signal provenance: it stays visible above and
+    # is excluded from every signal candidate set, exactly as the solver excludes it.
+    excluded = set(unknown)
     report = {}
     for group in groups['groups']:
         name, refs, anchor = group['name'], group['refs'], group['anchor']
@@ -92,8 +99,8 @@ def measure(groups, footprints, rails, *, fixed=()):
         for ref in present:
             for pad in footprints[ref]['pads']:
                 net = pad.get('net')
-                if pad.get('net_id', 0) > 0 and net and (net not in shared or
-                                                          scoped.get(net, {}).get('intra_group') == name):
+                if pad.get('net_id', 0) > 0 and net and net not in excluded and (
+                        net not in shared or scoped.get(net, {}).get('intra_group') == name):
                     signal.setdefault(net, []).append((ref, pad))
         intra = []
         for net, endpoints in sorted(signal.items()):
@@ -121,7 +128,7 @@ def measure(groups, footprints, rails, *, fixed=()):
         for target in group.get('near', []):
             target_refs = [r for r in next((g['refs'] for g in groups['groups'] if g['name'] == target), [])
                            if r in footprints]
-            pairs = near_pairs(name, target, present, target_refs, footprints, shared, scoped)
+            pairs = near_pairs(name, target, present, target_refs, footprints, shared, scoped, excluded)
             if not pairs['pairs']:
                 near_links.append({'from_group': name, 'to_group': target, 'paired_by': None, 'gap_mm': None,
                                    'reason': 'no pads on either side'})
