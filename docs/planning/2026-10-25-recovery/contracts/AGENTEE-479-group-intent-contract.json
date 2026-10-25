@@ -17,7 +17,7 @@
     ]
   },
   "title": "Original-esp_prog Intent Compatibility and Functional-Group Design Contract (Corrected)",
-  "status": "design_contract_ready_for_chief_review",
+  "status": "design_contract_accepted_for_implementation",
   "owner_of_contract": "agent-570",
   "worktree_branch": "wt/ee479-group-intent-design-agent-570",
   "base_commit": "7a7497ebee11d34663bcbb9db2f15ca0d557e547",
@@ -141,8 +141,8 @@
     },
     "retained_probe_script": {
       "path": "docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py",
-      "bytes": 22904,
-      "sha256": "fda2d4360a3f363e7207f498e97310d8e9ce8e8c820fdd52aaf18c1b72e7079c"
+      "bytes": 23346,
+      "sha256": "b88005c781babf93f40c8f3f136e4173236fb31aa047ef914e8baa67e3d95601"
     }
   },
   "executed_native_measurements": {
@@ -153,7 +153,7 @@
       "pcbnew_version": "10.0.7",
       "agent_ee_source_checkout": {
         "root": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee479-group-intent-design-agent-570",
-        "head": "d0b1368f56f3bdda332e6097cdf59ff75d7b2a8d",
+        "head": "d7366bfccc62905db0121563cb90c00e5ad5c4d0",
         "dirty_count": 1,
         "dirty_entries": [
           " M docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py"
@@ -161,7 +161,7 @@
       },
       "artifacts_checkout": {
         "root": "/home/halbritt/git/agent-ee",
-        "head": "daa900861e388a8e4a9b4088e01817e35feb1f58",
+        "head": "bede8f382d2abc99ffd2783d8667cf0347df0808",
         "dirty_count": 0,
         "dirty_entries": []
       },
@@ -1835,7 +1835,8 @@
         "missing_pads": [
           "7"
         ],
-        "blind_refuses_partial_measurement": true
+        "missing_declared_pad_detected": true,
+        "upstream_refusal_source_trace": "floorplan.py:6189-6217; not invoked by this probe"
       }
     }
   },
@@ -2108,5 +2109,14 @@
       "scope": "Qualification consumer and candidate-bound engineering judgment integration.",
       "interface_with_AGENTEE_479": "job-report.json and place metrics expose structured R1/R2 group link measurements, D1/D2 diagnostics with limitations, advisory derived_default proximity[] legs, and unresolved_claims[] (including unmeasured cable_envelope_mm rows) for agent-568's qualification consumer."
     }
+  },
+  "chief_acceptance": {
+    "reviewed_delivery": "d7366bfccc62905db0121563cb90c00e5ad5c4d0",
+    "independent_artifact_entries_verified": 19,
+    "primary_loaded_modules_verified": 10,
+    "evidence_directory": "/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/grouping-479-d7366bfc",
+    "scope": "Design/implementation contract only. No implementation, target judgment or M1 qualification accepted.",
+    "authority_rule": "A label other than derived_default is not proof of sourced authority. Hard bounds require a named source or explicit engineering rationale and applicability; unassessed authority remains visible and cannot silently become a hard gate.",
+    "probe_boundary": "Read-only historical measurements on the two retained designs. C4 detects missing declared pads; upstream refusal is source-traced, not invoked. Target verdicts remain proposed and require independent candidate-bound judgments."
   }
 }

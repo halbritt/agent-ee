@@ -174,8 +174,13 @@ def measure_proximity_board(rel_pcb: str, intent: dict) -> dict:
     legs = []
     for idx, claim in enumerate(intent["proximity"]):
         ref, near = claim["ref"], claim["near"]
-        limit_origin = (claim.get("context") or {}).get("limit", "declared")
-        is_hard_gate = limit_origin != "derived_default"
+        limit_origin = (claim.get("context") or {}).get("limit")
+        # This historical probe adjudicates the retained corpus-derived rows only.
+        # An unfamiliar label or a missing source is not authority for a hard gate.
+        if limit_origin != "derived_default":
+            raise ValueError("This probe requires the inspected derived_default authority; "
+                             "other authority needs source-bound assessment")
+        is_hard_gate = False
         a_fp, b_fp = k_pcb.footprints[ref], k_pcb.footprints[near]
         subject, partners, declared = floorplan.proximity_pads(claim, a_fp, b_fp)
         reaches = floorplan.proximity_reaches(subject, partners, declared)
@@ -446,7 +451,8 @@ if __name__ == "__main__":
                 "declared_pads": c4_claim["pads"]["Y1"],
                 "resolved_pads": sorted(c4_have),
                 "missing_pads": c4_missing,
-                "blind_refuses_partial_measurement": bool(c4_missing),
+                "missing_declared_pad_detected": bool(c4_missing),
+                "upstream_refusal_source_trace": "floorplan.py:6189-6217; not invoked by this probe",
             },
         },
     }

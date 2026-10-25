@@ -11,7 +11,7 @@
 
 ## 1. Verified Retained Artifacts, Source Attribution, and Probe Execution
 
-All byte lengths and SHA-256 digests below were verified directly via `len(path.read_bytes())` and `hashlib.sha256` in `AGENTEE-479-probe.py` executed under `/usr/bin/python3` (`Python 3.12.3`, `pcbnew 10.0.7`). `AGENTEE-479-probe.py` derives `WT_ROOT` from `__file__` (`WT_ROOT / "src"`), reads retained `build/` inputs from `ARTIFACTS_ROOT` (`/home/halbritt/git/agent-ee`), and loads `kicad-route` modules from `KRT_ROOT` (`/home/halbritt/git/kicad-route`). On startup, `verify_loaded_modules()` asserts that every loaded `agent_ee.*` module's `__file__` SHA-256 matches `git show 7a7497ebee11d34663bcbb9db2f15ca0d557e547:<rel_path>` and every loaded `kicad-route` module (`kicad_parser`, `placement.legality`, `placement.floorplan`) matches `git show c4af095ed07593b63d7886c139fcb7e5c2e774f4:<rel_path>`, and records the actual checkout `HEAD` and `git status --porcelain` dirty state for all three roots:
+The chief independently verified all 19 byte lengths and SHA-256 digests below against the retained artifacts and named historical source revisions. Native measurements were reproduced by `AGENTEE-479-probe.py` under `/usr/bin/python3` (`Python 3.12.3`, `pcbnew 10.0.7`). `AGENTEE-479-probe.py` derives `WT_ROOT` from `__file__` (`WT_ROOT / "src"`), reads retained `build/` inputs from `ARTIFACTS_ROOT` (`/home/halbritt/git/agent-ee`), and loads `kicad-route` modules from `KRT_ROOT` (`/home/halbritt/git/kicad-route`). On startup, `verify_loaded_modules()` asserts that each of seven primary `agent_ee` modules' `__file__` SHA-256 matches `git show 7a7497ebee11d34663bcbb9db2f15ca0d557e547:<rel_path>` and each of three primary `kicad-route` modules (`kicad_parser`, `placement.legality`, `placement.floorplan`) matches `git show c4af095ed07593b63d7886c139fcb7e5c2e774f4:<rel_path>`, and records the actual checkout `HEAD` and `git status --porcelain` dirty state for all three roots:
 
 ```bash
 /usr/bin/python3 docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py
@@ -37,7 +37,7 @@ All byte lengths and SHA-256 digests below were verified directly via `len(path.
 | `src/agent_ee/block_inventory.py` | `41122` | `5e6fc3ceb8161246438380a21d821a606927f81eca6e33f6e282d4ebfe4f2d63` | Block inventory builder at `agent-ee@7a7497eb` |
 | `src/agent_ee/placement_probe.py` | `35386` | `8434a8b599e4e33bddec229514f374b1a6a26cf190216aa44c6c979ce12d8ca5` | Native board probe at `agent-ee@7a7497eb` |
 | `crates/placement-engine/src/job.rs` | `101209` | `49dc52a934a4141bfc69c30bad7c3065cb4af847ed4031f0a92600358bd2f1fa` | Rust placement engine (`Prepared`, `group_terms`, `proximity_terms`, `locality_terms`) |
-| `docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py` | `22904` | `fda2d4360a3f363e7207f498e97310d8e9ce8e8c820fdd52aaf18c1b72e7079c` | Retained reproducible measurement script for this contract |
+| `docs/planning/2026-10-25-recovery/contracts/AGENTEE-479-probe.py` | `23346` | `b88005c781babf93f40c8f3f136e4173236fb31aa047ef914e8baa67e3d95601` | Retained reproducible measurement script for this contract |
 
 
 ---
@@ -138,7 +138,7 @@ Executed via `AGENTEE-479-probe.py` (`/usr/bin/python3`, `pcbnew 10.0.7`):
 1. **`C1` (Overlapping pad rects — signed vs. clamped)**: `rect_a = [0.0, 0.0, 1.0, 1.0]`, `rect_b = [0.75, 0.0, 1.75, 1.0]` -> `krt_signed_rect_gap_mm = -0.2500 mm` vs. clamped AABB `0.0000 mm`.
 2. **`C2` (`45°`-rotated rectangular pad — `pad_half_extents` AABB vs. rotated polygon)**: a `2.0 x 0.6 mm` pad at `(0, 0)` rotated `45°` (`hx = hy = 0.9192 mm`) against a partner rect `[1.2, 1.2, 1.8, 1.8]` -> `krt_signed_rect_gap_mm = 0.3971 mm` vs. exact rotated polygon gap `1.3971 mm` (`1.0000 mm` difference).
 3. **`C3` (Per-subject-pad multi-leg emission)**: `Y1 -> U1` on `dfffc042` evaluated with `max_mm = 6.0` emits **2 legs**: `Y1.1 -> U1.9` (`5.4237 mm`, `within_6mm: True`) and `Y1.2 -> U1.10` (`6.7893 mm`, `within_6mm: False`). A min-over-subject-pads reducer would miss the second leg (`6.7893 mm`).
-4. **`C4` (Partially unresolved declared pad name)**: `pads: {"Y1": ["1", "7"], "U1": ["9", "10"]}` on 4-pad `Y1` resolves `["1"]` and flags missing `["7"]` (`blind = True`), refusing to measure the partial subset.
+4. **`C4` (Partially unresolved declared pad name)**: `pads: {"Y1": ["1", "7"], "U1": ["9", "10"]}` on 4-pad `Y1` resolves `["1"]` and detects missing `["7"]`. This probe does not invoke `rule_proximity`; the actual `blind = True` refusal is source-traced at `floorplan.py:6189-6217` and remains a required implementation negative control.
 
 
 ---
@@ -162,7 +162,7 @@ Per Chief review (`bb102db7-988e-4f4f-b274-40a266831aa4`) and `docs/functional-b
    - **`S3` — Sourced or Authored-Design Hard Locality & Proximity Limits Only**:
      - Only explicitly sourced or authored-design numeric limits act as hard release gates:
        - `acquisition`'s `electrical_locality` obligations (`<= 3.0 mm` `pad-centre-to-centre` with preserved `authored_design_limit` or `datasheet_application_limit` provenance).
-       - Any `proximity[]` clause carrying explicit authored/datasheet limit authority (`context.limit != "derived_default"`).
+       - Any `proximity[]` clause carrying explicit authored/datasheet limit authority with a named source or explicit engineering rationale and applicability. A missing or unfamiliar `context.limit` is not proof of such authority and must not silently become a hard gate.
      - `proximity[]` clauses carrying `context.limit == "derived_default"` (`esp_prog`'s 3 corpus 75th-percentile crystal/load-cap rows at `8.1 mm` and `2.2 mm`) are **labelled solver objectives (`job.rs::proximity_terms`) and advisory per-leg measurements**, never hard release gates.
 2. **Source-Bound Pin/Interface Relation Objectives & Measured Evidence (`R1`, `R2`)**:
    - **`R1` — Declared Inter-Group `near` Interface Tethers (`groups.groups[].near`)**:
@@ -236,3 +236,26 @@ The table below states the **analytical / proposed target behavior** required on
 1. **Step 1 (`src/agent_ee/placement_intent.py`)**: Keep `SCHEMA = 'agent-ee.placement-intent/1'`; add narrow validation for `kind == "floorplan-intent" and schema == 1 and min_reader == 12 and units == "mm"` (and `groups.groups[].near`), enforcing operative vs. empty-noop vs. unresolved-claim vs. descriptive rules (Section 2.2).
 2. **Step 2 (`src/agent_ee/placement_job.py` & `crates/placement-engine/src/job.rs`)**: Implement exact `kicad_route_c4af095_pad_rect_signed_gap` (`pcbnew_krt_pad_rect_mm`, signed `rect_gap`, `_pads_named` with `blind` per-name unresolved check, same-net partner narrowing, and per-subject-pad leg emission) for `basis: "pad_edge"`, preserving `context.limit == "derived_default"` as soft objective (`proximity_terms`) + advisory per-leg report while enforcing only sourced/authored `S3` limits as hard gates; verify `assembly.sides` and `edge_connectors[].side` / `envelope.rect` natively, and retain `claims.unresolved_claims[]`.
 3. **Step 3 (`crates/placement-engine/src/job.rs` & `src/agent_ee/block_contract.py`)**: Compile `R2` intra-group signal/anchor links and `R1` `groups[].near` interface objective links into `Prepared` at `GROUP_WEIGHT` scale, add constrained group-cluster moves + post-anneal legal member refinement, emit `R1`/`R2`/`D1`/`D2` and `unknown_multi_group_nets` in `board_metrics` / `job-report.json`, and require the 3-part M1 qualitative grouping acceptance path (`job-report.json` + annotated views + candidate-bound `block_contract.judge` verdict) whenever numeric group limits are absent.
+
+
+## Chief acceptance and verification
+
+Agent-564 independently reproduced the six measurement/control groups from
+`d7366bfc`, verified all 19 listed artifact/source identities, and checked the
+ten primary loaded module digests against the specified historical revisions.
+The probe exited zero with Python 3.12.3 and pcbnew 10.0.7. Native library
+initialization and duplicate-reference warnings were retained; they do not
+constitute DRC, placement or manufacturing acceptance.
+
+The chief narrowed the probe authority guard to its inspected
+`derived_default` cases, corrected the C4 evidence label, and reran it. All
+actual measurements stayed identical. The companion JSON records that rerun;
+its dirty state honestly includes the chief's uncommitted probe edit at the
+time of execution. Exact evidence is retained under
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/grouping-479-d7366bfc/`.
+
+This contract is accepted for implementation with the scoped adapter, existing
+placer, measured relation objectives and independent qualitative acceptance
+described above. An authority label alone cannot create a hard bound. Target
+verdicts in Section 5 are proposed verification expectations, not completed
+judgments. No production grouping change or M1 result is accepted here.
