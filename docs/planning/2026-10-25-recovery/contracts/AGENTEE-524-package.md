@@ -1,10 +1,13 @@
 # AGENTEE-524 design: exact sealed-package geometry and assembly orientation
 
-Design only. There are no production edits in this commit. Agent-566 (Opus 5.5)
-wrote it for chief integrator agent-564 at immutable input `dab756e5`. It covers
-REC-15, REC-16 and REC-07 (package semantics) and decisions RD-01 to RD-05.
-Implementation waits for the AGENTEE-521 claims contract. Section 5 lists the
-interface this design assumes from it.
+Design only, with no production edits. Agent-566 wrote it for chief integrator
+agent-564 at immutable input `dab756e5`. Revision 2 answers the chief review of
+`40c070de`. The model in this session's native context is `claude-opus-5-5`
+(Opus 5.5). The registry lists Fable 5.1; that record is the chief's to correct.
+
+Covers REC-15, REC-16 and REC-07 (package semantics) and decisions RD-01 to
+RD-05. Captured inputs stay immutable. No blanket rotation transform is applied.
+There is no supplier upload or order.
 
 ## 1. Current checker facts (at `dab756e5`)
 
@@ -21,53 +24,110 @@ interface this design assumes from it.
 | The retained acquisition package (`release-build-v7`, artifacts `df866200…`) declares `netlist`, `geometry`, `fab_package` and no `fab_export`, `fab_roundtrip` or `cpl_rotation`. Its rotation is `not_declared` and its CPL has 17 rows, all Top. No rotation policy or EasyEDA supplier footprints were captured in its candidate. Its geometry probe includes every fact the roundtrip needs (`flash_layers`, `drill_nm`, vias, `zone_fill_outlines`, `copper_conductor_shapes`, proven outline). | `build/acquisition-release/release-build-v7/stages/07-package-*/scope.json`, `accepted-package.json`, `review/work/geometry/geometry.json` |
 | `build_workflow._package` writes `accepted-package.json` from the single passing `fab_package`, with `supplier_preview_performed=False`. It does not check that the exports' geometry was preserved. | `build_workflow.py:200-217` |
 
-## 2. Smallest change, part A: a roundtrip bound to the sealed package (REC-16)
 
-**Contract.** `fab_roundtrip` params take exactly one of `export_check` (current behaviour, unchanged) or `package_check`. Both still allow the optional `model_libraries`. With `package_check`:
+## 2. Part A: a roundtrip bound to the exact released bytes (REC-16)
 
-1. **Ordering without a cycle.** `fab_package.require_last` also admits `fab_roundtrip` checks whose `params.package_check` names this package, the same pattern as `jlc_dfm`. The roundtrip comes after the package and the package never reads the roundtrip, so there is no cycle. The relative order of the bound `jlc_dfm` and the bound roundtrip is free.
-2. **Byte and candidate binding.** The check resolves the prior `fab_package` result (same candidate, `ok/pass`) and calls `artifact_record(run_dir, prior)`. It refuses (`malformed`) unless:
-   - the recomputed `artifacts_id` equals `prior.details.artifacts.artifacts_id`;
-   - `manifest.board_sha256` equals the captured board digest;
-   - every Gerber, drill and zip file it parses has the digest the sealed record lists for it.
-   The stage directory is `work/<pkg>/fab/`. `verify_tool` and `check_zip` are reused unchanged.
-3. **Comparison.** The comparison body of `check_fab_roundtrip` is unchanged. The limitations text stays verbatim and the 1000 nm tolerance and the slot/attribution refusals stay as they are. Only the input resolution is split out into a small function, `_resolve_input(ctx) -> (eid, export_result, stage, binding)`.
-4. **Result.** The result adds `details.package_check`, `details.artifacts_id` and `details.gerbers_zip_sha256`, plus the predicate `fab-package:sealed-roundtrip/1`. The existing predicate `fab-package:roundtrip/1` stays.
-5. **Release binding.** `build_workflow._package` requires exactly one passing roundtrip bound to the package, with matching `artifacts_id`. It records the roundtrip in `accepted-package.json` as `verifications: [{check_id, kind, artifacts_id, result_sha256}]`. `fab_roundtrip` joins `MANDATORY` for build plans only. Bare-board and diagnostic scopes do not get it automatically.
+**Contract.** `fab_roundtrip` params take exactly one of `export_check` (current behaviour, unchanged) or `package_check`. Both still allow the optional `model_libraries`.
 
-It reuses `artifact_record`, `verify_tool`, `inventory`, `check_zip`, `parse_gerber`/`parse_excellon`, `expected_counts`/`expected_copper` and `compare_copper`. It adds no exporter and no new geometry predicate.
+1. **Ordering without a cycle.** `fab_package.require_last` also admits a `fab_roundtrip` whose `params.package_check` names this package, the same pattern as `jlc_dfm`. The package never reads the roundtrip.
+2. **Binding to the prior result.** The check resolves the same-candidate `ok/pass` `fab_package` result and calls `artifact_record(run_dir, prior)`. It refuses unless the recomputed `artifacts_id` equals `prior.details.artifacts.artifacts_id` and `manifest.board_sha256` equals the captured board digest.
+3. **Comparing exactly the released bytes.** Today the parsers read **staged files** a second time: `read_text` → `read_bytes` runs after `inventory` has already hashed them (`fab_consistency.py:420-466`). `check_zip` then compares archive members with the staged files, and it runs only when no file is missing (`fab_roundtrip.py:822-824`). In sealed mode the sealed set is `gerbers.zip` plus `drill/*`, so this changes to:
+   - Read `gerbers.zip` once and check its sha256 against the sealed record.
+   - Parse each Gerber and drill **archive member from those in-memory bytes**. Recording the member sha256 is the retained proof.
+   - Require each member's sha256 to equal the sealed digest of the same-named staged file, and the archive to have no extra or duplicate members (reusing the `check_zip` rules).
+   - Read each sealed `drill/*.drl` once, hash the exact bytes, and require them to equal the zip member.
 
-## 3. Smallest change, part B: orientation assessment by profile (REC-15)
+   `details.compared` lists `{member, member_sha256, sealed_path, sealed_sha256}` for every parsed input. Any mismatch refuses before a verdict is reached. `export_check` mode keeps its current path.
+4. **The geometry reference is independent of the package.** The expected counts come from the earlier sealed `geometry` checks: pcbnew facts of the captured native board, from `probe_facts`. They do not come from the export. Whether the package bytes are honest and whether they preserve native geometry are therefore separate questions.
+5. **Reuse.**
+   - Unchanged: `artifact_record`, `verify_tool` and `sealed_versions` (both work with `eid=<pkg>` because the package's export evidence lives under `work/<pkg>/`), `parse_gerber`, `parse_excellon`, `expected_counts`, `expected_copper`, `compare_copper`, `histograms_match`, `plot_layer`, `reconcile_layers` and `board_facts`.
+   - Factored: the member-safety rules of `check_zip` become a reader that returns the member bytes.
+   - New: only `_resolve_input` and `_sealed_members`.
+6. **Result.** Adds `details.package_check`, `artifacts_id`, `gerbers_zip_sha256` and `compared`, plus the predicate `fab-package:sealed-roundtrip/1`. The limitations text and the 1000 nm tolerance stay verbatim. This is an explicit **file-release verification** record. It makes no claim beyond what the checker supports.
 
-**Profile selection (M1).** The selected assembly profile is the declared `cpl_rotation` check's captured policy (`policy_id`, `sha256`, `schema_version` 1) applied to the JLC-template export that `fab_export` already verifies (`verify_jlc_templates`). `jlcpcb-cpl/1` is the only supported profile. This design adds no scope-level profile key for M1 (see open question Q1).
+## 3. Part B: explicit, profile-bound orientation assessment (REC-15)
 
-**Assessment record.** Add a pure function, `fab_package.orientation_assessment(rotation, report, sealed_cpl_text)`. It returns `agent-ee.assembly-orientation/1`, a `details.assembly_orientation` field derived only from the sealed, recomputed `rotation_record`:
+### 3.1 The profile is explicit evidence
 
-| Case | Per-designator `basis` | Overall `state` |
-| --- | --- | --- |
-| No `cpl_rotation` (`not_declared`) | `unassessed`, for both angle and Mid X/Y (anchor, not pad centroid) | `unassessed` |
-| Passing report, row with no policy rule or a 0° rule, pin-1 agrees with delta 0 | `native_supported` (native angle kept, pin-1 evidence cited) | |
-| Passing report, row with a nonzero rule, pin-1 agrees with the delta | `corrected` (rule id, before/after angle, centroid Mid X/Y) | |
-| All rows `native_supported` or `corrected` | | `assessed`, `supplier_preview: required` (status `PREVIEW_REQUIRED`) |
-| `ok` | not reachable in M1. It needs a captured preview-evidence kind that does not exist yet. | |
+A new captured, immutable `agent-ee.assembly-profile/1` file is declared on `fab_package` by a new param, `assembly_profile`. `export_params` strips it, the same way it strips `model_libraries`. Fields:
 
-A native angle passes only as `native_supported`, and only with that pin-1 evidence. A failing or incomplete rotation report already makes `fab_package` fail or come back `unsupported`, and that behaviour stays. `DONE_ROTATION_STATUSES`, the preview obligations and their sealing stay the same, so bare-board and diagnostic done gates are unaffected. The assessment only feeds the separate supplier claim in section 5.
+| Field | Content |
+| --- | --- |
+| `profile_id` | `jlcpcb-smt-cpl/1`, the only supported id |
+| `supplier`, `service` | The supplier and service the profile applies to |
+| `cpl_convention` | Position is the pad-box centroid in absolute X with Y negated; rotation is the native angle plus the policy delta, with the bottom side mirrored as in `cpl_rotation` |
+| `rotation_check`, `policy_sha256` | The `cpl_rotation` check this profile uses and the policy it must have applied |
+| `applicability` | Allowed sides, and whether through-hole parts are in scope |
+| `sources` | Citations for every convention claim |
 
-## 4. Decisive focused tests (synthetic, offline, extending the existing suites)
+`orientation_assessment(profile, rotation_record, report, sealed_cpl)` refuses `unsupported` in each of these cases:
+- the profile id is unknown;
+- the profile's `policy_sha256` differs from the sealed rotation policy;
+- a CPL row's side or mount type is outside `applicability`;
+- the profile is missing while assembly orientation is requested.
 
-**`tests/test_fab_roundtrip.py`, sealed-package mode:**
+The presence or absence of a rotation check never stands in for a profile.
+
+### 3.2 States (sealed in `details.assembly_orientation`)
+
+| Per-designator `basis` | Meaning |
+| --- | --- |
+| `unassessed` | No profile, or no `cpl_rotation` (`not_declared`). Covers both the angle and the anchor Mid X/Y. |
+| `native_supported` | No rule or a 0° rule, and the board/EasyEDA pin-1 frames agree with delta 0 in a passing, complete report |
+| `corrected` | A nonzero per-footprint or per-designator rule, with pin-1 frames agreeing with that delta |
+
+| Overall field | Value |
+| --- | --- |
+| `software_assessment` | `complete` only when every sealed CPL row is `native_supported` or `corrected` under the profile |
+| `supplier_confirmation` | Always `pending_preview` in M1 (`PREVIEW_REQUIRED`, with `preview_obligations` unchanged). `confirmed` needs a captured preview-evidence kind that M1 does not create. |
+
+`DONE_ROTATION_STATUSES` and the bare-board and diagnostic done gates are unchanged.
+
+### 3.3 Real acquisition inputs (probed 2026-10-25, read-only, nothing captured into the candidate)
+
+The acquisition CPL has 17 rows, all Top, with no exclusions, covering 11 unique LCSC parts. I fetched the public EasyEDA endpoint `https://easyeda.com/api/products/<LCSC>/components?version=6.4.19.5` once per part and ran the existing strict reader (`parse_package(result, lcsc, 200)`) on the returned `result` object:
+
+| LCSC | Rows | EasyEDA package | Reader |
+| --- | --- | --- | --- |
+| C15850 | C1, C2 | C0805 | parses |
+| C14663 | C3 | C0603 | parses |
+| C85973 | C4, C5 | C0603 | parses |
+| C83152 | D1 | SOD-123 | parses (D* polarity cross-check applies) |
+| C131337 | J1 | CONN-TH B2B-PH-K-S | parses (through-hole: applicability must say so) |
+| C131334 | J2, J3 | CONN-TH B4B-PH-K-S | parses (through-hole) |
+| C22548, C114662, C114065 | R1–R6 | R0603 | parses |
+| C37593 | U2 | MSOP-10 (KiCad TSSOP-10_3x3mm_P0.5mm) | parses; a pad-set match is unproven until the run |
+| **C2862740** | **U1** | SOT-23-5 | **refused**: `PAD gge308 number '3': outline differs from declared rectangle`. Still refused at 25,400 nm, so this is a genuine record disagreement, not a tolerance problem. |
+
+**Bounded capture and policy work. This is M1 work, not deferred.**
+1. Capture each `result` object byte-exact as `supplier/<LCSC>.raweasy.json`, with `agent-ee.supplier-footprint/1` provenance (real `source_url`, `retrieved_at`, `retrieval`). The captures go in a **new** captured input directory. The retained `release-build-v7` stays untouched. This is a fetch only, with no upload.
+2. **Policy.** Write one rule per footprint prefix, and only where the board-vs-supplier pin-1 cycle difference is nonzero. Each rule cites its pin-1 evidence and the source of the EasyEDA frame. Footprints with a zero difference get no rule and come out `native_supported`. No blanket transform. If a rule rests only on the pin-1 frame comparison, its provenance says so, and the profile labels that basis software-assessed only.
+3. **U1 (the blocked subset is exactly one row).** The strict reader refuses C2862740, so `cpl_rotation` reports `supplier_missing`/unsupported and coverage is `incomplete`. Software assessment therefore cannot be `complete`, and the result is honest refusal, not a pass. Alternatives that would be sufficient under the profile, in order:
+   - (a) A focused reader change that classifies this pad shape exactly, with a regression on the captured bytes. Pad 3 must not be dropped or approximated.
+   - (b) A second public CAD source for the same LCSC footprint (for example the LCSC/EasyEDA Pro export of the same part) that the reader accepts, cited in the profile.
+   - (c) An owner-saved JLC placement-preview record for U1. This would be supplier confirmation, not software assessment, and needs owner action because the preview uses a project upload.
+
+   Without one of these, M1 records "16 of 17 assessed, U1 unsupported" and the finding stays open. The design does not call it complete.
+4. **Real-design proof.** Run `cpl_rotation` plus the profile on the retained acquisition release inputs. Expected:
+   - 16 rows `native_supported` or `corrected`, and U1 unsupported until (a), (b) or (c);
+   - a full pass after (a) or (b);
+   - the sealed CPL is the corrected file, and the native CPL is retained.
+
+## 4. Decisive focused tests
+
+**`tests/test_fab_roundtrip.py`, sealed mode.** Each geometry test asserts that the binding gates **passed**, so it cannot fail at the digest gate by accident:
 
 | # | Case | Expected |
 | --- | --- | --- |
-| T1 | Pass on a sealed package | Pass; `artifacts_id` equals the package's |
-| T2 | One Gerber byte flipped after sealing | Refuses (digest) |
-| T3 | Gerber edited and manifest re-hashed consistently | Refuses (`artifacts_id` mismatch with the prior result) |
-| T4 | Pad removed from an F.Cu plot, all hashes rewritten | Conservation `defect` |
-| T5 | PTH drill diameter changed | `drill_histogram` defect |
-| T6 | Zip member differs from the staged file | `zip` refusal |
+| T1 | Honest package | Pass; `compared` lists every member with sha256 equal to its sealed file; `artifacts_id` matches |
+| T2 | Tamper after sealing (flip a byte in a staged Gerber or zip member) | Digest refusal and no geometry verdict. Asserts `compared` is absent |
+| T3 | Gerber edited, then manifest re-hashed without updating the prior result | `artifacts_id` mismatch refusal |
+| T4 | **Exporter fault, honestly sealed.** Fixture: build the export staging, delete one F.Cu pad flash from the Gerber, then regenerate the manifest, zip, sealed evidence and `fab_package` result with the existing helpers, so every hash and `artifacts_id` is self-consistent. Asserts `artifact_record` succeeds and `compared` hashes all match. | Conservation `defect` against the independent native `geometry.json` (pad count/extents on F.Cu) |
+| T5 | Same setup with one PTH tool diameter changed | `drill_histogram` defect, under the same pass assertions on the binding gates |
+| T6 | Staged drill file differs from its zip member, both sealed | Refusal naming the member |
 | T7 | Stale board digest | Refusal |
-| T8 | `package_check` naming a later or non-package check | `unsupported` |
-| T9 | Both `export_check` and `package_check` | `unsupported` |
+| T8 | `package_check` naming a non-package or later check | `unsupported` |
+| T9 | Both params given | `unsupported` |
 | T10 | Existing `export_check` tests | Unchanged |
 
 **`tests/test_fab_package.py`:**
@@ -75,40 +135,38 @@ A native angle passes only as `native_supported`, and only with that pin-1 evide
 | # | Case | Expected |
 | --- | --- | --- |
 | P1 | `require_last` | Admits a bound roundtrip; refuses an unbound one |
-| P2 | `orientation_assessment` for `not_declared` | `unassessed`, with every CPL designator listed |
-| P3 | Passing report with mixed rules | Correct `native_supported`/`corrected` split; designators equal the sealed CPL |
-| P4 | Report where a CPL row is missing from it | Refusal |
-| P5 | Changed CPL coordinate or angle after sealing | `artifact_record` refusal |
-| P6 | Unsupported profile (policy schema 2 or unknown key) | Existing `cpl_rotation` refusal, so the package is `unsupported` |
+| P2 | No profile, or `not_declared` | Every row `unassessed` |
+| P3 | Unknown `profile_id`, `policy_sha256` mismatch, row outside applicability | `unsupported` |
+| P4 | Mixed rules | `native_supported`/`corrected` split; designators equal the sealed CPL |
+| P5 | Passing report with one `supplier_missing` row | Unreachable: the report is incomplete, so the package fails. Tests that incomplete coverage cannot produce `complete` |
+| P6 | Altered sealed CPL coordinate or angle | `artifact_record` refusal |
+| P7 | `supplier_confirmation` | Stays `pending_preview` whatever the inputs |
 
-**New `tests/test_build_package.py` (no existing test exercises `build_workflow._package`; `test_build_review.py`/`test_build_artwork.py` cover the neighbouring stages):**
+**Native.**
+- N1: sealed-mode roundtrip on the retained acquisition package (expect pass) under the AGENTEE-519 runtime.
+- N2: the section 3.3 real-design orientation run.
+- N3: T4/T5-style faults injected into a **copy** of that package.
 
-| # | Case | Expected |
-| --- | --- | --- |
-| B1 | `_package` without a bound passing roundtrip | Refused |
-| B2 | Roundtrip with a mismatched `artifacts_id` | Refused |
-| B3 | `accepted-package.json` | Carries `verifications` and `assembly_orientation`, never `assembly_ready: true` |
+## 5. AGENTEE-521 boundary
 
-**Native acceptance (needs the AGENTEE-519 runtime).** Recheck the retained acquisition release package under the pinned image with a bound roundtrip. Expected: pass on the sealed files, orientation `unassessed`. Then run T2, T4 and T5 controls on a copy.
+The 521 states are independent qualification dimensions, not a ladder. 524 produces two package-level records and touches **no** `build_workflow` code:
 
-## 5. Interface assumed from AGENTEE-521 (chief to reconcile)
+- `fab_roundtrip.details` (file-release verification, part A);
+- `fab_package.details.assembly_orientation` (part B: `software_assessment` and `supplier_confirmation`).
 
-| 521 claim state | Inputs from this design | Ceiling in M1 |
-| --- | --- | --- |
-| `file_release` | `fab_package` pass plus the bound roundtrip pass with equal `artifacts_id` | Can pass |
-| `supplier_assembly` | `assembly_orientation.state`; `unassessed` blocks it | At most `pending_preview`, with the designator list. Never `ready` without captured preview evidence. |
-| `physical` | None from this design | Unchanged: `physical_validation_performed=False` |
-
-If 521 names these states differently, only the mapping changes. Sections 2 to 4 stand.
+How the build stage consumes them is integrated after 521 lands, with a single owner for that stage. The earlier proposal to edit `MANDATORY` and `_package` is withdrawn.
 
 ## 6. Reuse assessment: AGENTEE-449 (`wt/ee449e-root`, `1356da4b`, unaccepted)
 
-- **Reusable as a pattern, not as code:** `require_last` admitting bound post-package checks, the `assembly_ledger` that keeps preview obligations as open entries, and `artifact_record` with `final=False`.
-- **Not reused:** `board_fab` does not parse geometry or orientation, so it does not cover this item.
-- **Conflict risk:** if 449 is later integrated, its `require_last` change and part A's change edit the same predicate. Merge them as one predicate over a set of bound kinds.
+- **Reusable as a pattern, not as code:** the bound post-package `require_last` set and the `assembly_ledger` that keeps preview obligations as open entries.
+- **Not reused:** `board_fab` does not parse geometry or orientation.
+- **Conflict risk:** if 449 is integrated later, merge its `require_last` change with part A's as one predicate over a set of bound kinds.
 
-## 7. Blockers and open questions
+## 7. Recommended smallest implementation handoff
 
-- **Q1 (chief/521):** confirm that "selected profile" means the declared rotation policy for M1, not a new scope key.
-- **Acquisition orientation:** acquisition has no captured rotation policy or EasyEDA footprints for its 17 CPL rows. Without them it stays `unassessed`, which is honest but not assembly-ready. Assessing it needs a bounded capture of public supplier footprint data plus an engineering-authored policy. That is a separate dispatch decision, with no supplier upload.
-- **Runtime:** native requalification depends on AGENTEE-519.
+| Slice | Content | Dependencies |
+| --- | --- | --- |
+| Slice 1 (builder) | Part A only: `fab_roundtrip.py` sealed mode, factoring the `check_zip` member reader, and `require_last`, with T1–T10 and P1. | Needs only the 519 runtime for N1 |
+| Slice 2 (capture) | The 11 acquisition captures with provenance in a new input directory, plus the pin-1 survey report that becomes the policy evidence. | No production code |
+| Slice 3 (builder) | Part B: the profile schema and `orientation_assessment`, with P2–P7, then N2. | After slice 2 and the 521 contract |
+| U1 | Decide among 3.3 (a), (b) and (c). (a) is a focused reader change with its own regression. | Chief's choice |
