@@ -139,3 +139,42 @@ Any future footprint-silk redesign must preserve assembly/polarity information,
 clear mask/edge constraints, and have explicit edit authority. This slice supplies
 no such redesign or deletion permission. Final readable renders, classification
 approval, native DRC, via/pad assembly assessment and M1 acceptance remain separate.
+
+
+## Chief source and native verification — 2026-10-25 15:47 PDT
+
+The chief independently read the complete three-module production diff and
+new policy tests, then rebased delivery `7cc16786` onto main `fa6ccd25` as
+`c6461f21`. All eight delivered file hashes remained identical across that
+rebase. The same supported native image passed **133 scoped tests without
+skips**: 106 in the six official strict modules listed above and 27 selected
+`RoutedArtworkTest` cases. The tested production, test, runtime-input and
+verification-runner hashes were compared again after the run.
+
+A separate chief replay using final source recomputed the exact raw write proof
+and complete comparison from the saved native artifacts. Both saved board
+copies and adjacent projects equal the original final-a1 files byte for byte.
+All 217 residuals remain visible. Changed source policy, report pin, evaluation
+metadata and finding position each refuse against the original pins. This is
+a pure-source replay; the chief ran no second retained-board producer or DRC.
+The earlier producer's source and the final hide-label correction remain
+separately identified. Native final-source fixtures exercise that correction.
+
+The verification supports this bounded policy implementation, not final artwork
+readability or manufacturing readiness. Agent-569's finite independent custody
+review `51870346@1` remains pending at this checkpoint; serial landing waits for
+its result. Agent-567 separately proposes the concrete next formatting/outline
+repair under `61ea2c16@1`. The prior dispatch's no-style-change boundary does
+not establish a permanent owner prohibition on a future authorized repair.
+No native rule, source footprint or artwork formatting is changed here.
+
+Chief evidence is retained at
+`/home/halbritt/.cache/agent-evidence/agent-ee-564-integration/artwork-policy-523/`:
+source/runtime bindings, strict log and runner, saved-artifact replay, negative
+controls, and the review receipt. Doctrine packet `pkt-b9f1742e9c90b56c`, hash
+`b9f1742e9c90b56c09a5b13213add828287ceca8d93a313f44c6ae100a2ac597`,
+uses `doctrine-f6bbb5196a3f8bf9` / `retriever-ec995ecdd083b2c8`; the release
+retrieval gate passed. The schema-validated receipt, citations and explicit
+nonmaterial omission rationales are retained. The selected principles preserve
+source authority, named invariants and distinctions between verification and
+target acceptance. AGENTEE-523 and M1 remain open.
