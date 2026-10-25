@@ -15,9 +15,33 @@ from .spec_record import sha256, verify
 from .storage import digest, json_bytes
 
 SCHEMA = 'agent-ee.requirement-map/1'
+SCHEMA_2 = 'agent-ee.requirement-map/2'
 RECEIPT_SCHEMA = 'agent-ee.requirement-map-receipt/1'
+RECEIPT_SCHEMA_2 = 'agent-ee.requirement-map-receipt/2'
+OBLIGATIONS_SCHEMA = 'agent-ee.obligations/1'
 COMPILER = 'agent-ee.requirement-scope/3'
 PROVENANCE = 'requirements-map'
+# AGENTEE-521: an authored obligation kind per source span selects which
+# evidence modes may discharge that span. Derived envelope obligations keep
+# their existing executable/bench accounting and are never partitioned.
+OBLIGATION_KINDS = ('executable', 'operational', 'judgment', 'physical', 'context')
+MODES_FOR_OBLIGATION = {'executable': ('checks', 'limitation'), 'operational': ('operational', 'limitation'),
+                        'judgment': ('judgment', 'limitation'), 'physical': ('bench', 'limitation'),
+                        'context': ('context',)}
+DERIVED_MODES = ('checks', 'limitation', 'bench')
+# The only operational criterion the build consumer can assess for M1. A
+# generic "resume happened" never satisfies an arbitrary authored criterion.
+OPERATIONAL_CRITERIA = ('public_build_and_resume',)
+# Method class is derived from the executed check kind, never from a caller
+# label. Kinds outside this table are unclassified and cover nothing.
+KIND_CLASS = {
+    **dict.fromkeys(('erc', 'drc', 'geometry', 'placement', 'board_envelope', 'fab_profile', 'fab_package',
+                     'fab_export', 'fab_roundtrip', 'assembly_readiness', 'parts_subset', 'cpl_rotation'), 'native'),
+    **dict.fromkeys(('netlist', 'netlist_parity', 'topology_rules', 'hardware_interface', 'net_names'), 'topology'),
+    **dict.fromkeys(('interval_assertions', 'active_spice', 'rc_transient', 'dc_path'), 'model'),
+    **dict.fromkeys(('measurements', 'dfm_geometry'), 'measurement'),
+}
+STATUS_ORDER = ('failed', 'unknown', 'pending', 'pass', 'not_applicable')
 
 
 class Refused(ValueError):
@@ -37,8 +61,8 @@ def decode(raw):
 def map_declaration(raw):
     declaration = decode(raw)
     exact_keys(declaration, 'schema spec_record_sha256 scope requirements prose')
-    if declaration['schema'] != SCHEMA:
-        raise ValueError(f'expected {SCHEMA}')
+    if declaration['schema'] not in (SCHEMA, SCHEMA_2):
+        raise ValueError(f'expected {SCHEMA} or {SCHEMA_2}')
     scope = declaration['scope']
     if not isinstance(scope, dict) or scope.get('schema') != 'agent-ee.scope/3':
         raise ValueError('map scope must be an agent-ee.scope/3 template')
@@ -83,9 +107,10 @@ def indexed(entries, expected, label):
     return found
 
 
-def disposition(entry, *, context=False):
+def disposition(entry, *, context=False, typed=False):
     safe_id(entry['id'], 'requirement id')
     modes = {'checks', 'limitation', 'bench'} | ({'context'} if context else set())
+    modes |= {'operational', 'judgment'} if typed else set()
     selected = modes.intersection(entry)
     if len(selected) != 1:
         refuse('mapping', entry['id'], 'exactly one of ' + ', '.join(sorted(modes)) + ' is required')
@@ -95,6 +120,15 @@ def disposition(entry, *, context=False):
     if mode == 'checks':
         if not isinstance(detail, list) or not detail:
             refuse('unmapped_requirement', entry['id'], 'checks must be nonempty')
+    elif mode == 'operational':
+        exact_keys(detail, 'criterion')
+        if not isinstance(detail['criterion'], str) or detail['criterion'] not in OPERATIONAL_CRITERIA:
+            refuse('unsupported_criterion', entry['id'],
+                   f'operational criterion {detail["criterion"]!r} is unsupported; supported: '
+                   + ', '.join(OPERATIONAL_CRITERIA) + '. Prose is source context, never a predicate')
+    elif mode == 'judgment':
+        exact_keys(detail, 'record')
+        safe_relative(text(detail['record']))
     else:
         fields = 'criterion procedure' if mode == 'bench' else 'reason'
         exact_keys(detail, fields)
@@ -105,7 +139,7 @@ def disposition(entry, *, context=False):
     return mode
 
 
-def source_mappings(original, declarations, spec_raw, *, context=False, reserved=()):
+def source_mappings(original, declarations, spec_raw, *, context=False, reserved=(), typed=False):
     """Account for whole sources or an authored, byte-complete partition.
 
     Only prose may be context. Derived envelope obligations retain their exact
@@ -118,7 +152,7 @@ def source_mappings(original, declarations, spec_raw, *, context=False, reserved
     for rid, entry in mapped.items():
         source = expected[rid]
         if 'spans' not in entry:
-            disposition(entry, context=context)
+            disposition(entry, context=context, typed=typed)
             sources.append(source)
             entries.append(entry)
             continue
@@ -145,7 +179,7 @@ def source_mappings(original, declarations, spec_raw, *, context=False, reserved
             mapping = span['mapping']
             if not isinstance(mapping, dict) or 'id' not in mapping:
                 raise ValueError(f'{rid}: span mapping needs an id')
-            mode = disposition(mapping, context=context)
+            mode = disposition(mapping, context=context, typed=typed)
             if mapping['id'] in reserved:
                 refuse('duplicate_mapping', mapping['id'], 'clause id collides with a source id')
             if rid in ('POD-AC-8', 'POD-AC-9') and mode != 'bench':
@@ -230,8 +264,103 @@ def envelope_sources(scope, files, inputs):
             for row in derived]
 
 
-def account_requirements(declaration, record, spec_raw, *, files=None, inputs=None):
-    """Build executable obligations and a receipt for every declared source."""
+def load_obligations(raw, record, spec_raw):
+    """Authored obligation kinds bound to byte-complete partitions of every captured clause.
+
+    Each span names its exact spec bytes and their hash; an edited clause
+    therefore invalidates its obligation. Returns {clause id: [spans]}.
+    """
+    declaration = decode(raw)
+    exact_keys(declaration, 'schema spec_sha256 clauses')
+    if declaration['schema'] != OBLIGATIONS_SCHEMA:
+        raise ValueError(f'expected {OBLIGATIONS_SCHEMA}')
+    if declaration['spec_sha256'] != sha256(spec_raw):
+        refuse('obligation_spec', 'obligations', 'obligations name different spec bytes')
+    if not isinstance(declaration['clauses'], list):
+        raise ValueError('obligations clauses must be a list')
+    clauses = {c['id']: ('requirement', c) for c in record['requirements']}
+    clauses.update({c['id']: ('prose', c) for c in record['prose']})
+    bound = {}
+    for entry in declaration['clauses']:
+        if not isinstance(entry, dict) or not isinstance(entry.get('id'), str):
+            raise ValueError('obligation entry needs an id')
+        rid = entry['id']
+        exact_keys(entry, 'id spans')
+        if rid not in clauses:
+            refuse('obligation_unknown_id', rid, 'not a captured spec clause')
+        if rid in bound:
+            refuse('duplicate_mapping', rid, 'duplicate obligation entry')
+        kind, clause = clauses[rid]
+        if not isinstance(entry['spans'], list) or not entry['spans']:
+            refuse('obligation_partition', rid, 'spans must be nonempty')
+        first, last = (clause['locator'][k] for k in ('byte_start', 'byte_end'))
+        cursor, spans = first, []
+        for span in entry['spans']:
+            exact_keys(span, 'byte_start byte_end text_sha256 obligation')
+            start, end = span['byte_start'], span['byte_end']
+            if type(start) is not int or type(end) is not int or not cursor <= start < end <= last:
+                refuse('obligation_partition', rid, 'overlapping, unordered or out-of-clause span')
+            if spec_raw[cursor:start].strip():
+                refuse('obligation_partition', rid, f'uncovered clause bytes {cursor}:{start}')
+            try:
+                spec_raw[start:end].decode('utf-8')
+            except UnicodeDecodeError:
+                refuse('obligation_partition', rid, 'span splits a UTF-8 code point')
+            if span['text_sha256'] != sha256(spec_raw[start:end]):
+                refuse('obligation_text_drift', rid, f'span {start}:{end} hash differs from the spec bytes')
+            obligation = span['obligation']
+            if obligation not in OBLIGATION_KINDS:
+                refuse('obligation_kind', rid, f'unknown obligation kind {obligation!r}')
+            if obligation == 'context' and kind != 'prose':
+                refuse('obligation_kind', rid, 'only prose may be context')
+            if rid in ('POD-AC-8', 'POD-AC-9') and obligation != 'physical':
+                refuse('bench_only', rid, 'pod acceptance item must be a physical obligation')
+            spans.append({'byte_start': start, 'byte_end': end, 'text_sha256': span['text_sha256'],
+                          'obligation': obligation})
+            cursor = end
+        if spec_raw[cursor:last].strip():
+            refuse('obligation_partition', rid, f'uncovered clause bytes {cursor}:{last}')
+        bound[rid] = spans
+    missing = set(clauses) - set(bound)
+    if missing:
+        raise Refused([{'code': 'obligation_missing', 'id': rid, 'message': f'{rid}: no obligation'}
+                       for rid in sorted(missing)])
+    return bound
+
+
+def bind_obligation(source, mode, obligations):
+    """The obligation span coinciding exactly with this mapped source, or a refusal."""
+    parent = source.get('parent_id', source['id'])
+    if 'baseline' in source:
+        # Derived envelope obligations keep their existing executable/bench accounting.
+        if mode not in DERIVED_MODES:
+            refuse('incompatible_evidence_method', source['id'],
+                   f'derived envelope obligation cannot be discharged by {mode}')
+        return {'obligation': 'executable', 'obligation_text_sha256': source['text_sha256']}
+    start, end = source['locator']['byte_start'], source['locator']['byte_end']
+    span = next((s for s in obligations.get(parent, []) if (s['byte_start'], s['byte_end']) == (start, end)), None)
+    if span is None:
+        refuse('span_alignment', source['id'],
+               f'mapped bytes {start}:{end} coincide with no obligation span of {parent}; '
+               'a map may not merge or split obligation spans')
+    if mode not in MODES_FOR_OBLIGATION[span['obligation']]:
+        refuse('incompatible_evidence_method', source['id'],
+               f'bytes {start}:{end} carry obligation {span["obligation"]!r}; mode {mode!r} cannot discharge it '
+               f'(allowed: {", ".join(MODES_FOR_OBLIGATION[span["obligation"]])})')
+    return {'obligation': span['obligation'], 'obligation_text_sha256': span['text_sha256']}
+
+
+def account_requirements(declaration, record, spec_raw, *, files=None, inputs=None, obligations=None):
+    """Build executable obligations and a receipt for every declared source.
+
+    A requirement-map/2 declaration is typed: every mapped source must coincide
+    with an authored obligation span whose kind admits the chosen mode.
+    """
+    typed = declaration['schema'] == SCHEMA_2
+    if typed and obligations is None:
+        refuse('obligations_required', 'obligations', f'{SCHEMA_2} requires an {OBLIGATIONS_SCHEMA} declaration')
+    if not typed and obligations is not None:
+        refuse('obligations_unexpected', 'obligations', f'{SCHEMA} cannot bind obligations; author {SCHEMA_2}')
     sources = list(record['requirements'])
     derived = envelope_sources(declaration['scope'], files, inputs)
     collisions = {r['id'] for r in sources} & {r['id'] for r in derived}
@@ -239,9 +368,10 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
         refuse('duplicate_source', sorted(collisions)[0], 'spec and envelope requirement IDs collide')
     sources += derived
     reserved = {r['id'] for r in sources + record['prose']}
-    sources, entries = source_mappings(sources, declaration['requirements'], spec_raw, reserved=reserved)
+    sources, entries = source_mappings(sources, declaration['requirements'], spec_raw, reserved=reserved,
+                                       typed=typed)
     prose_sources, prose_entries = source_mappings(record['prose'], declaration['prose'], spec_raw,
-                                                  context=True, reserved=reserved)
+                                                  context=True, reserved=reserved, typed=typed)
     sources += prose_sources
     mapping = {}
     for entry in entries + prose_entries:
@@ -256,14 +386,14 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
             raise ValueError('input destination reserved for compiler provenance')
     checks, requirements, receipts = [], [], []
     for entry in mapping.values():
-        if disposition(entry, context=entry in prose_entries) == 'checks':
+        if disposition(entry, context=entry in prose_entries, typed=typed) == 'checks':
             add_checks(entry, checks)
     limitations = scope.setdefault('limitations', [])
     if not isinstance(limitations, list) or any(not isinstance(s, str) or not s.strip() for s in limitations):
         raise ValueError('scope limitations must be a list of nonempty strings')
     for source in sources:
         entry = mapping[source['id']]
-        mode = disposition(entry, context=source in prose_sources)
+        mode = disposition(entry, context=source in prose_sources, typed=typed)
         rid = safe_id(entry['id'], 'requirement id')
         receipt = {'id': rid, 'mode': mode, 'mapping': entry[mode],
                    'locator': source['locator'], 'text_sha256': source['text_sha256']}
@@ -271,7 +401,16 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
             receipt['parent_id'] = source['parent_id']
         if 'baseline' in source:
             receipt['source'] = source['baseline']['source']
+        if typed:
+            receipt.update(bind_obligation(source, mode, obligations))
+            receipt['bound_ids'] = [c['id'] for c in entry['checks']] if mode == 'checks' else []
         receipts.append(receipt)
+        if mode == 'operational':
+            limitations.append(f'{rid}: OPERATIONAL PENDING: {entry[mode]["criterion"]}; '
+                               'assessed by the build consumer from sealed receipts, never by checks')
+        elif mode == 'judgment':
+            limitations.append(f'{rid}: JUDGMENT PENDING: record {entry[mode]["record"]}; '
+                               'admitted by the build consumer, never a check result')
         if mode == 'checks':
             ids = [check['id'] for check in entry['checks']]
             requirement = source.get('baseline', {'id': rid, 'statement': source['text'], 'intent': 'acceptance',
@@ -290,17 +429,26 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
     return scope, receipts
 
 
-def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None):
+def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None, obligations_raw=None):
     """Compile against a captured inventory (or declared native scaffold paths).
 
     No tools execute here. Readable immutable contracts are validated through
-    the same capability/baseline code used by candidate capture.
+    the same capability/baseline code used by candidate capture. A map/1
+    compiles exactly as before; a map/2 also needs its obligations bytes.
     """
     declaration = map_declaration(map_raw)
     if declaration['spec_record_sha256'] != sha256(record_raw):
         refuse('spec_record_hash', 'spec-record', 'map names different spec-record bytes')
     record = verify(record_raw, spec_raw)
+    typed = declaration['schema'] == SCHEMA_2
+    if typed and obligations_raw is None:
+        refuse('obligations_required', 'obligations', f'{SCHEMA_2} requires an {OBLIGATIONS_SCHEMA} declaration')
+    if not typed and obligations_raw is not None:
+        refuse('obligations_unexpected', 'obligations', f'{SCHEMA} cannot bind obligations; author {SCHEMA_2}')
+    obligations = load_obligations(obligations_raw, record, spec_raw) if typed else None
     provenance = {'spec.md': spec_raw, 'spec-record.json': record_raw, 'requirement-map.json': map_raw}
+    if typed:
+        provenance['obligations.json'] = obligations_raw
     files = dict(files)
     if any(p == PROVENANCE or p.startswith(PROVENANCE + '/') for p in files):
         raise ValueError('input destination reserved for compiler provenance')
@@ -310,7 +458,8 @@ def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None):
     from .capabilities import compile_coverage
     from .cli import validate_scope
     with compilation_inputs(inputs, files, provenance) as captured:
-        scope, receipts = account_requirements(declaration, record, spec_raw, files=files, inputs=captured)
+        scope, receipts = account_requirements(declaration, record, spec_raw, files=files, inputs=captured,
+                                               obligations=obligations)
         scope.setdefault('inputs', []).append({'path': PROVENANCE, 'at': PROVENANCE})
         scope.setdefault('requirements', []).append(f'{PROVENANCE}/spec.md')
         # A map consisting entirely of limitations cannot create a passing scope.
@@ -322,38 +471,125 @@ def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None):
     for receipt in receipts:
         if receipt['mode'] == 'checks':
             receipt['checks'] = [coverage['checks'][c['id']] for c in receipt['mapping']]
-    receipt = {'schema': RECEIPT_SCHEMA,
+    receipt = {'schema': RECEIPT_SCHEMA_2 if typed else RECEIPT_SCHEMA,
                'compiler': {'version': COMPILER, 'module': __name__, 'source_sha256': digest(__file__)},
                'map_sha256': sha256(map_raw), 'spec_record_sha256': sha256(record_raw),
                'spec_sha256': sha256(spec_raw), 'scope_sha256': sha256(json_bytes(scope)),
                'baseline_id': baseline['baseline_id'], 'coverage_id': coverage['coverage_id'],
                'requirements': receipts, 'limitations': scope['limitations']}
+    if typed:
+        receipt['obligations_sha256'] = sha256(obligations_raw)
+        receipt['method_binding'] = 'typed'
     return scope, receipt
 
 
-def compile_map_file(map_path, record_path, spec_path, *, inputs=None):
+def method_class(kind):
+    """Evidence class of an executed check kind; unknown kinds cover nothing."""
+    return KIND_CLASS.get(kind, 'unclassified')
+
+
+def _worst(statuses):
+    statuses = [s for s in statuses if s != 'not_applicable'] or ['not_applicable']
+    return min(statuses, key=STATUS_ORDER.index)
+
+
+def coverage_view(receipt, result_rows):
+    """Per-clause, per-span coverage from a compiled receipt and executed check rows.
+
+    ``result_rows`` are ordinary result/1 check rows ({id, kind, execution,
+    outcome, ...}); their executed ``kind`` selects the method class. This
+    view cannot assess operational, judgment or physical evidence: those
+    spans are ``pending`` until the build consumer supplies its bound
+    assessment. A receipt/1 has no method binding and reports ``unknown``.
+    """
+    if not isinstance(receipt, dict) or receipt.get('schema') not in (RECEIPT_SCHEMA, RECEIPT_SCHEMA_2):
+        raise ValueError('expected a requirement-map receipt')
+    rows = {}
+    for row in result_rows:
+        if not isinstance(row, dict) or not isinstance(row.get('id'), str):
+            raise ValueError('check rows need an id')
+        if row['id'] in rows:
+            raise ValueError(f'duplicate check row {row["id"]}')
+        rows[row['id']] = row
+    legacy = receipt['schema'] == RECEIPT_SCHEMA
+    view = {}
+    for entry in receipt['requirements']:
+        parent = entry.get('parent_id', entry['id'])
+        clause = view.setdefault(parent, {'spans': [], 'status': None})
+        # Derived envelope rows carry the envelope field locator, not spec bytes.
+        locator = entry['locator'] if isinstance(entry['locator'], dict) else {}
+        span = {'id': entry['id'], 'byte_start': locator.get('byte_start'), 'byte_end': locator.get('byte_end'),
+                'mode': entry['mode'], 'executed': []}
+        if legacy:
+            span.update(obligation=None, bound_ids=[], status='unknown',
+                        reason='legacy map/1: method binding unqualified')
+            clause['spans'].append(span)
+            continue
+        span.update(obligation=entry['obligation'], bound_ids=list(entry['bound_ids']))
+        mode = entry['mode']
+        if mode == 'checks':
+            statuses = []
+            for cid in span['bound_ids']:
+                row = rows.get(cid)
+                if row is None:
+                    statuses.append('pending')
+                    continue
+                executed = {'id': cid, 'kind': row.get('kind'), 'class': method_class(row.get('kind')),
+                            'execution': row.get('execution'), 'outcome': row.get('outcome')}
+                span['executed'].append(executed)
+                if executed['class'] == 'unclassified':
+                    statuses.append('unknown')
+                elif executed['execution'] == 'ok' and executed['outcome'] in ('pass', 'info'):
+                    statuses.append('pass')
+                elif executed['execution'] == 'ok' and executed['outcome'] == 'defect':
+                    statuses.append('failed')
+                else:
+                    statuses.append('unknown')
+            span['status'] = _worst(statuses) if statuses else 'pending'
+            if span['status'] == 'unknown' and any(e['class'] == 'unclassified' for e in span['executed']):
+                span['reason'] = 'unclassified check kind supplies no method coverage'
+        elif mode == 'limitation':
+            span.update(status='failed', reason='NOT CHECKED: ' + entry['mapping']['reason'])
+        elif mode in ('operational', 'judgment'):
+            span.update(status='pending', reason=f'{mode} evidence is assessed by the build consumer')
+        elif mode == 'bench':
+            span.update(status='pending', reason='physical obligation; no bench result admitted here')
+        else:
+            span.update(status='not_applicable', reason='prose context')
+        clause['spans'].append(span)
+    for clause in view.values():
+        clause['status'] = _worst([s['status'] for s in clause['spans']])
+    return view
+
+
+def compile_map_file(map_path, record_path, spec_path, *, inputs=None, obligations_path=None):
     from .candidate import source_manifest
     map_path = Path(map_path).resolve()
     raw = map_path.read_bytes()
     record_raw, spec_raw = Path(record_path).read_bytes(), Path(spec_path).read_bytes()
+    obligations_raw = Path(obligations_path).read_bytes() if obligations_path is not None else None
     template = map_declaration(raw)['scope']
     if inputs is None:
         files = {template['schematic']: None, template['board']: None}
-        return compile_map(raw, record_raw, spec_raw, files=files)
+        return compile_map(raw, record_raw, spec_raw, files=files, obligations_raw=obligations_raw)
     # Use the ordinary candidate input selector and hash its actual bytes. A
     # single captured root also lets all contract readers share the same paths.
     root = Path(inputs).resolve()
     selected, _, _ = source_manifest({'inputs': [{'path': str(root), 'at': 'captured'}]}, root)
     files = {path.removeprefix('captured/'): hashed for path, hashed in selected.items()}
-    return compile_map(raw, record_raw, spec_raw, files=files, inputs=root)
+    return compile_map(raw, record_raw, spec_raw, files=files, inputs=root, obligations_raw=obligations_raw)
 
 
-def write_map_outputs(output, map_path, record_path, spec_path, scope, receipt):
+def write_map_outputs(output, map_path, record_path, spec_path, scope, receipt, *, obligations_path=None):
     """Write only compiled metadata; the design scaffold remains its own producer."""
     payloads = {}
-    for name, path, key in (('spec.md', spec_path, 'spec_sha256'),
-                            ('spec-record.json', record_path, 'spec_record_sha256'),
-                            ('requirement-map.json', map_path, 'map_sha256')):
+    sources = [('spec.md', spec_path, 'spec_sha256'), ('spec-record.json', record_path, 'spec_record_sha256'),
+               ('requirement-map.json', map_path, 'map_sha256')]
+    if (obligations_path is not None) != (receipt.get('schema') == RECEIPT_SCHEMA_2):
+        raise ValueError('obligations path must accompany exactly a requirement-map-receipt/2')
+    if obligations_path is not None:
+        sources.append(('obligations.json', obligations_path, 'obligations_sha256'))
+    for name, path, key in sources:
         raw = Path(path).read_bytes()
         if sha256(raw) != receipt[key]:
             raise ValueError(f'{path}: source changed after compilation')

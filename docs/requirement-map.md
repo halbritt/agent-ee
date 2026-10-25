@@ -1,7 +1,9 @@
 # Compiling a spec-record requirement map
 
 `agent_ee.requirement_scope` accepts an authored
-`agent-ee.requirement-map/1` alongside a verified [spec record](spec-record.md).
+`agent-ee.requirement-map/1` alongside a verified [spec record](spec-record.md);
+a typed `agent-ee.requirement-map/2` adds source-bound obligations (see
+below) and is compiled through the same `requirement_map` entry points.
 It compiles the declared checks into scope/3 using `capabilities.KINDS`,
 `cli.validate_scope`, `capabilities.compile_coverage` and
 `baseline.compile_baseline`. It adds no check kind and runs no tools or models.
@@ -76,6 +78,86 @@ limitations or bench obligations until suitable evidence is declared.
 
 For the telemetry pod, `POD-AC-8` and `POD-AC-9` must use `bench`; both check and
 limitation mappings for these IDs are refused.
+
+## Typed maps: obligations and evidence methods (requirement-map/2)
+
+`agent-ee.requirement-map/2` is the same declaration with two more
+dispositions and a mandatory companion file, `agent-ee.obligations/1`. A
+map/1 compiles exactly as before and carries no method binding; a map/2 binds
+every mapped source span to an authored obligation kind so that a clause can
+only be discharged by an appropriate kind of evidence. This implements the
+[claims contract](planning/2026-10-25-recovery/contracts/claims-evidence-qualification.md)
+§4. The compiler still executes nothing and assesses no evidence.
+
+The obligations file names the spec bytes it binds:
+
+```json
+{ "schema": "agent-ee.obligations/1", "spec_sha256": "…",
+  "clauses": [
+    { "id": "ACQ-DELIV-2", "spans": [
+        { "byte_start": 4462, "byte_end": 4700, "text_sha256": "…", "obligation": "operational" } ] },
+    { "id": "ACQ-MECH-3", "spans": [
+        { "byte_start": 3536, "byte_end": 3703, "text_sha256": "…", "obligation": "executable" },
+        { "byte_start": 3703, "byte_end": 3852, "text_sha256": "…", "obligation": "judgment" } ] } ] }
+```
+
+Every captured requirement and prose clause needs an entry
+(`obligation_missing`); unknown ids, duplicate entries and a `spec_sha256`
+that is not the spec refuse (`obligation_unknown_id`, `duplicate_mapping`,
+`obligation_spec`). Spans follow the clause-partition rules: ordered,
+non-overlapping, inside the clause, no uncovered non-blank bytes, no split
+code point (`obligation_partition`), and each `text_sha256` must equal the
+hash of those spec bytes (`obligation_text_drift`), so an edited clause
+invalidates its obligation. Kinds are `executable`, `operational`,
+`judgment`, `physical` and `context`; `context` is allowed only for prose
+(`obligation_kind`). `POD-AC-8`/`POD-AC-9` must be `physical`. Derived
+envelope requirements are executable by construction and are not listed.
+
+| Obligation | Admissible dispositions | Receipt and scope result |
+| --- | --- | --- |
+| `executable` | `checks`, `limitation` | checks become baseline acceptance checks as in map/1 |
+| `operational` | `operational {criterion}`, `limitation` | `ID: OPERATIONAL PENDING: criterion; …` limitation; no check; the build consumer assesses it from sealed receipts |
+| `judgment` | `judgment {record}`, `limitation` | `ID: JUDGMENT PENDING: record path; …` limitation; the build consumer admits the record |
+| `physical` | `bench`, `limitation` | `ID: BENCH REQUIRED: …` as in map/1 |
+| `context` | `context` | prose context as in map/1 |
+
+A map entry, whole or per `spans[]` mapping, must coincide exactly with one
+obligation span: a map may neither merge two obligation spans nor split one
+(`span_alignment`). A disposition the span's kind does not admit refuses
+`incompatible_evidence_method`. The only supported operational criterion is
+`public_build_and_resume`; any other string, including prose that asserts
+the build resumed, refuses `unsupported_criterion`, because prose is source
+context and never a predicate. A judgment `record` is a safe relative path.
+Typed dispositions in a map/1 remain the ordinary exactly-one refusal.
+
+A map/2 without obligations refuses `obligations_required`; a map/1 with
+obligations refuses `obligations_unexpected`. `compile_map`,
+`compile_map_file` and `write_map_outputs` take the obligations as an
+optional keyword (`obligations_raw`, `obligations_path`); the bytes join the
+`requirements-map/` provenance as `obligations.json`, so the baseline
+identity covers them while the compiled scope is byte-identical to the map/1
+compile of the same dispositions.
+
+The receipt becomes `agent-ee.requirement-map-receipt/2` with
+`method_binding: "typed"`, `obligations_sha256`, and per source row
+`obligation`, `obligation_text_sha256` and `bound_ids` (check ids for
+`checks`, otherwise empty). A map/1 receipt is unchanged.
+
+`requirement_map.coverage_view(receipt, result_rows)` turns a receipt and
+ordinary result/1 check rows into `{clause id: {status, spans: [{id,
+byte_start, byte_end, obligation, mode, bound_ids, executed: [{id, kind,
+class, execution, outcome}], status, reason}]}}`. The method `class`
+(`native`, `topology`, `model`, `measurement`) is derived from the executed
+row's `kind` through `requirement_map.KIND_CLASS`; a kind outside that table
+is `unclassified` and provides no coverage (`unknown`). A `checks` span is
+`pass` only when every bound id executed `ok` with `pass`/`info`, `failed`
+on a `defect`, `pending` when a row is missing and `unknown` otherwise. A
+`limitation` span is `failed` (`NOT CHECKED`), `bench`, `operational` and
+`judgment` spans are `pending` because this view cannot assess physical,
+operational or judgment evidence; the build consumer supplies that bound
+assessment. Prose context is `not_applicable`. A clause's status is the
+worst of its spans. A map/1 receipt reports every clause `unknown` with
+reason `legacy map/1: method binding unqualified`; nothing is promoted.
 
 ## Prose accounting
 

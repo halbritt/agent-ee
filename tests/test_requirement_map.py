@@ -16,8 +16,9 @@ from agent_ee.baseline import compile_baseline
 from agent_ee.capabilities import KINDS, compile_coverage
 from agent_ee.candidate import capture
 from agent_ee.cli import run_review, validate_scope
-from agent_ee.requirement_map import (PROVENANCE, compile_map, compile_map_file, decode,
-                                      write_map_outputs)
+from agent_ee.requirement_map import (KIND_CLASS, OBLIGATIONS_SCHEMA, PROVENANCE, RECEIPT_SCHEMA,
+                                      RECEIPT_SCHEMA_2, SCHEMA_2, compile_map, compile_map_file,
+                                      coverage_view, decode, method_class, write_map_outputs)
 from agent_ee.requirement_scope import Refused, main, sha256
 from agent_ee.storage import digest, json_bytes, read_json, write_json
 from tests.toolchain import require_toolchain
@@ -448,6 +449,278 @@ class RequirementMapTests(unittest.TestCase):
             self.assertEqual(report['outcome'], 'refused')
             self.assertEqual(report['findings'][0]['id'], read_json(MAP)['requirements'][0]['id'])
             self.assertFalse((root / 'refused').exists())
+
+
+class TypedMapTests(unittest.TestCase):
+    """AGENTEE-521 part A: obligations/1 spans, map/2 modes, receipt/2 and coverage_view."""
+
+    def setUp(self):
+        self.value = read_json(MAP)
+        self.value['schema'] = SCHEMA_2
+        self.record_raw = RECORD.read_bytes()
+        self.spec_raw = SPEC.read_bytes()
+        self.record = read_json(RECORD)
+        self.files = {self.value['scope'][p]: None for p in ('schematic', 'board')}
+        self.obligations = self.derive_obligations()
+
+    def derive_obligations(self):
+        """One whole-clause span per captured clause, kinds taken from the fixture's dispositions."""
+        clauses = []
+        for source in self.record['requirements']:
+            entry = mapped(self.value, source['id'])
+            kind = 'physical' if 'bench' in entry else 'executable'
+            clauses.append(dict(id=source['id'], spans=[self.span(source, kind)]))
+        for source in self.record['prose']:
+            entry = mapped(self.value, source['id'])
+            kind = 'context' if 'context' in entry else 'physical' if 'bench' in entry else 'executable'
+            clauses.append(dict(id=source['id'], spans=[self.span(source, kind)]))
+        return dict(schema=OBLIGATIONS_SCHEMA, spec_sha256=sha256(self.spec_raw), clauses=clauses)
+
+    def span(self, source, kind, start=None, end=None):
+        start = source['locator']['byte_start'] if start is None else start
+        end = source['locator']['byte_end'] if end is None else end
+        return dict(byte_start=start, byte_end=end, text_sha256=sha256(self.spec_raw[start:end]), obligation=kind)
+
+    def clause(self, rid):
+        return next(c for c in self.obligations['clauses'] if c['id'] == rid)
+
+    def source(self, rid):
+        return next(r for r in self.record['requirements'] + self.record['prose'] if r['id'] == rid)
+
+    def compile(self, value=None, obligations=None):
+        obligations = self.obligations if obligations is None else obligations
+        return compile_map(json_bytes(self.value if value is None else value), self.record_raw, self.spec_raw,
+                           files=self.files, obligations_raw=None if obligations is False else json_bytes(obligations))
+
+    def refused(self, code, rid, **kwargs):
+        with self.assertRaises(Refused) as caught:
+            self.compile(**kwargs)
+        self.assertIn((code, rid), {(f['code'], f['id']) for f in caught.exception.findings})
+
+    def legacy(self):
+        """The unmodified committed map/1 fixture, the compatibility control."""
+        return compile_map(MAP.read_bytes(), self.record_raw, self.spec_raw, files=self.files)
+
+    def test_typed_map_compiles_to_the_same_scope_with_a_bound_receipt(self):
+        scope, receipt = self.compile()
+        legacy_scope, legacy_receipt = self.legacy()
+        self.assertEqual(json_bytes(scope), json_bytes(legacy_scope))
+        self.assertEqual(legacy_receipt['schema'], RECEIPT_SCHEMA)
+        self.assertNotIn('obligation', legacy_receipt['requirements'][0])
+        self.assertNotIn('method_binding', legacy_receipt)
+        self.assertEqual(receipt['schema'], RECEIPT_SCHEMA_2)
+        self.assertEqual(receipt['method_binding'], 'typed')
+        self.assertEqual(receipt['obligations_sha256'], sha256(json_bytes(self.obligations)))
+        self.assertEqual(receipt['scope_sha256'], legacy_receipt['scope_sha256'])
+        # The obligations bytes are a captured provenance input, so the baseline identity differs.
+        self.assertNotEqual(receipt['baseline_id'], legacy_receipt['baseline_id'])
+        for row in receipt['requirements']:
+            with self.subTest(rid=row['id']):
+                self.assertIn(row['obligation'], ('executable', 'physical', 'context'))
+                self.assertEqual(row['obligation_text_sha256'], row['text_sha256'])
+                self.assertEqual(bool(row['bound_ids']), row['mode'] == 'checks')
+        native = next(r for r in receipt['requirements'] if r['id'] == 'POD-AC-3')
+        self.assertEqual(native['bound_ids'], [c['id'] for c in mapped(self.value, 'POD-AC-3')['checks']])
+
+    def test_schema_and_obligation_presence_must_agree(self):
+        self.refused('obligations_required', 'obligations', obligations=False)
+        value = copy.deepcopy(self.value)
+        value['schema'] = 'agent-ee.requirement-map/1'
+        self.refused('obligations_unexpected', 'obligations', value=value)
+        # Typed modes are not a map/1 vocabulary: the existing exactly-one refusal stands.
+        entry = mapped(value, 'POD-FN-LEAN-AND-PITCH-ANGLE')
+        entry.clear()
+        entry.update(id='POD-FN-LEAN-AND-PITCH-ANGLE', operational=dict(criterion='public_build_and_resume'))
+        with self.assertRaises(Refused) as caught:
+            compile_map(json_bytes(value), self.record_raw, self.spec_raw, files=self.files)
+        self.assertIn(('mapping', 'POD-FN-LEAN-AND-PITCH-ANGLE'),
+                      {(f['code'], f['id']) for f in caught.exception.findings})
+
+    def test_operational_mode_needs_a_supported_criterion_and_stays_visibly_pending(self):
+        rid = 'POD-FN-LEAN-AND-PITCH-ANGLE'
+        entry = mapped(self.value, rid)
+        entry.clear()
+        entry.update(id=rid, operational=dict(criterion='public_build_and_resume'))
+        self.clause(rid)['spans'][0]['obligation'] = 'operational'
+        scope, receipt = self.compile()
+        row = next(r for r in receipt['requirements'] if r['id'] == rid)
+        self.assertEqual((row['mode'], row['obligation'], row['bound_ids']), ('operational', 'operational', []))
+        self.assertTrue(any(s.startswith(rid + ': OPERATIONAL PENDING: public_build_and_resume')
+                            for s in scope['limitations']))
+        self.assertNotIn(rid, [r['id'] for r in scope['baseline']['requirements']])
+        for criterion in ('resume', 'A prose sentence saying the build resumed', ''):
+            with self.subTest(criterion=criterion):
+                entry['operational'] = dict(criterion=criterion)
+                self.refused('unsupported_criterion', rid)
+        entry['operational'] = dict(criterion='public_build_and_resume')
+        self.clause(rid)['spans'][0]['obligation'] = 'executable'
+        self.refused('incompatible_evidence_method', rid)
+
+    def test_mixed_method_spans_bind_each_clause_byte_range(self):
+        rid = 'POD-AC-3'
+        source = self.source(rid)
+        start, end = (source['locator'][k] for k in ('byte_start', 'byte_end'))
+        split = self.spec_raw.index(b'. ', start, end) + 1
+        entry = mapped(self.value, rid)
+        checks = copy.deepcopy(entry['checks'])
+        entry.clear()
+        entry.update(id=rid, spans=[
+            dict(byte_start=start, byte_end=split, mapping=dict(id=rid + '-NATIVE', checks=checks)),
+            dict(byte_start=split + 1, byte_end=end,
+                 mapping=dict(id=rid + '-JUDGMENT', judgment=dict(record='judgments/pod-ac-3.json')))])
+        self.clause(rid)['spans'] = [self.span(source, 'executable', start, split),
+                                     self.span(source, 'judgment', split + 1, end)]
+        scope, receipt = self.compile()
+        parts = [r for r in receipt['requirements'] if r.get('parent_id') == rid]
+        self.assertEqual([(r['id'], r['mode'], r['obligation']) for r in parts],
+                         [(rid + '-NATIVE', 'checks', 'executable'), (rid + '-JUDGMENT', 'judgment', 'judgment')])
+        for part, (a, b) in zip(parts, ((start, split), (split + 1, end))):
+            self.assertEqual(part['obligation_text_sha256'], sha256(self.spec_raw[a:b]))
+            self.assertEqual((part['locator']['byte_start'], part['locator']['byte_end']), (a, b))
+        self.assertEqual([r['id'] for r in scope['baseline']['requirements']], [rid + '-NATIVE'])
+        self.assertTrue(any(s.startswith(rid + '-JUDGMENT: JUDGMENT PENDING: record judgments/pod-ac-3.json')
+                            for s in scope['limitations']))
+        # A map may not merge the two obligation spans back into one clause mapping.
+        entry.clear()
+        entry.update(id=rid, checks=checks)
+        self.refused('span_alignment', rid)
+        # Nor may it split an obligation span that was authored whole.
+        self.clause(rid)['spans'] = [self.span(source, 'executable')]
+        entry.clear()
+        entry.update(id=rid, spans=[
+            dict(byte_start=start, byte_end=split, mapping=dict(id=rid + '-NATIVE', checks=checks)),
+            dict(byte_start=split + 1, byte_end=end,
+                 mapping=dict(id=rid + '-REST', limitation=dict(reason='Disposition not verified')))])
+        self.refused('span_alignment', rid + '-NATIVE')
+
+    def test_obligation_negatives_refuse_with_the_clause_named(self):
+        rid, bench = 'POD-AC-3', 'POD-AC-8'
+        prose = next(r['id'] for r in self.record['prose'] if 'limitation' in mapped(self.value, r['id']))
+        source = self.source(rid)
+        start, end = (source['locator'][k] for k in ('byte_start', 'byte_end'))
+        split = self.spec_raw.index(b'. ', start, end) + 1
+
+        def drop(o):
+            o['clauses'] = [c for c in o['clauses'] if c['id'] != rid]
+
+        def overlap(o):
+            c = next(c for c in o['clauses'] if c['id'] == rid)
+            c['spans'] = [self.span(source, 'executable', start, split + 4),
+                          self.span(source, 'executable', split + 1, end)]
+
+        def gap(o):
+            c = next(c for c in o['clauses'] if c['id'] == rid)
+            c['spans'] = [self.span(source, 'executable', start, split - 3),
+                          self.span(source, 'executable', split + 1, end)]
+
+        def outside(o):
+            c = next(c for c in o['clauses'] if c['id'] == rid)
+            c['spans'] = [self.span(source, 'executable', start, end + 1)]
+
+        def drift(o):
+            c = next(c for c in o['clauses'] if c['id'] == rid)
+            c['spans'][0]['text_sha256'] = sha256(b'edited clause')
+
+        def wrong_kind(o):
+            next(c for c in o['clauses'] if c['id'] == rid)['spans'][0]['obligation'] = 'physical'
+
+        def unknown_kind(o):
+            next(c for c in o['clauses'] if c['id'] == rid)['spans'][0]['obligation'] = 'any-method'
+
+        def context_for_requirement(o):
+            next(c for c in o['clauses'] if c['id'] == rid)['spans'][0]['obligation'] = 'context'
+
+        def context_for_prose_mapped_as_limitation(o):
+            next(c for c in o['clauses'] if c['id'] == prose)['spans'][0]['obligation'] = 'context'
+
+        def bench_item_not_physical(o):
+            next(c for c in o['clauses'] if c['id'] == bench)['spans'][0]['obligation'] = 'executable'
+
+        def unknown_id(o):
+            o['clauses'].append(dict(id='POD-NOPE-1', spans=[self.span(source, 'executable')]))
+
+        def duplicate(o):
+            o['clauses'].append(copy.deepcopy(next(c for c in o['clauses'] if c['id'] == rid)))
+
+        def spec_hash(o):
+            o['spec_sha256'] = sha256(b'other spec')
+
+        cases = ((drop, 'obligation_missing', rid), (overlap, 'obligation_partition', rid),
+                 (gap, 'obligation_partition', rid), (outside, 'obligation_partition', rid),
+                 (drift, 'obligation_text_drift', rid), (wrong_kind, 'incompatible_evidence_method', rid),
+                 (unknown_kind, 'obligation_kind', rid), (context_for_requirement, 'obligation_kind', rid),
+                 (context_for_prose_mapped_as_limitation, 'incompatible_evidence_method', prose),
+                 (bench_item_not_physical, 'bench_only', bench),
+                 (unknown_id, 'obligation_unknown_id', 'POD-NOPE-1'), (duplicate, 'duplicate_mapping', rid),
+                 (spec_hash, 'obligation_spec', 'obligations'))
+        for mutate, code, named in cases:
+            with self.subTest(case=mutate.__name__):
+                obligations = copy.deepcopy(self.obligations)
+                mutate(obligations)
+                self.refused(code, named, obligations=obligations)
+
+    def test_coverage_view_classifies_executed_kinds_and_keeps_typed_modes_pending(self):
+        rid = 'POD-AC-3'
+        op = 'POD-FN-LEAN-AND-PITCH-ANGLE'
+        entry = mapped(self.value, op)
+        entry.clear()
+        entry.update(id=op, operational=dict(criterion='public_build_and_resume'))
+        self.clause(op)['spans'][0]['obligation'] = 'operational'
+        scope, receipt = self.compile()
+        kinds = {c['id']: c['kind'] for c in scope['checks']}
+        bound = next(r for r in receipt['requirements'] if r['id'] == rid)['bound_ids']
+        self.assertTrue(bound)
+        rows = [dict(id=cid, kind=kinds[cid], execution='ok', outcome='pass') for cid in bound]
+        view = coverage_view(receipt, rows)
+        self.assertEqual(view[rid]['status'], 'pass')
+        executed = view[rid]['spans'][0]['executed']
+        self.assertEqual([e['class'] for e in executed], [KIND_CLASS[kinds[cid]] for cid in bound])
+        self.assertEqual(view[op]['status'], 'pending')
+        self.assertIn('build consumer', view[op]['spans'][0]['reason'])
+        self.assertEqual(view['POD-AC-8']['status'], 'pending')
+        context = next(r['id'] for r in receipt['requirements'] if r['mode'] == 'context')
+        self.assertEqual(view[context]['status'], 'not_applicable')
+        limitation = next(r['id'] for r in receipt['requirements'] if r['mode'] == 'limitation')
+        self.assertEqual(view[limitation]['status'], 'failed')
+        self.assertTrue(view[limitation]['spans'][0]['reason'].startswith('NOT CHECKED: '))
+        # One defect fails the clause; a missing row is pending; an unknown executed kind covers nothing.
+        failed = coverage_view(receipt, [dict(r, outcome='defect') if r['id'] == bound[0] else r for r in rows])
+        self.assertEqual(failed[rid]['status'], 'failed')
+        self.assertEqual(coverage_view(receipt, rows[1:])[rid]['status'], 'pending')
+        unknown = coverage_view(receipt, [dict(r, kind='not-a-kind') if r['id'] == bound[0] else r for r in rows])
+        self.assertEqual(unknown[rid]['status'], 'unknown')
+        self.assertIn('unclassified', unknown[rid]['spans'][0]['reason'])
+        self.assertEqual(method_class('not-a-kind'), 'unclassified')
+        self.assertEqual(coverage_view(receipt, [dict(r, execution='unsupported', outcome='unknown')
+                                                 for r in rows])[rid]['status'], 'unknown')
+        with self.assertRaises(ValueError):
+            coverage_view(receipt, rows + rows[:1])
+        # A receipt/1 carries no binding: every clause is unknown, never silently passing.
+        _, legacy_receipt = self.legacy()
+        legacy_view = coverage_view(legacy_receipt, rows)
+        self.assertEqual({v['status'] for v in legacy_view.values()}, {'unknown'})
+        self.assertIn('legacy map/1', legacy_view[rid]['spans'][0]['reason'])
+
+    def test_file_entry_points_carry_obligations_into_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            map_path, obligations_path = root / 'requirement-map.json', root / 'obligations.json'
+            write_json(map_path, self.value)
+            write_json(obligations_path, self.obligations)
+            scope, receipt = compile_map_file(map_path, RECORD, SPEC, obligations_path=obligations_path)
+            self.assertEqual(receipt['schema'], RECEIPT_SCHEMA_2)
+            with self.assertRaises(Refused):
+                compile_map_file(map_path, RECORD, SPEC)
+            write_map_outputs(root / 'out', map_path, RECORD, SPEC, scope, receipt, obligations_path=obligations_path)
+            self.assertEqual((root / 'out' / PROVENANCE / 'obligations.json').read_bytes(),
+                             obligations_path.read_bytes())
+            with self.assertRaises(ValueError):
+                write_map_outputs(root / 'out2', map_path, RECORD, SPEC, scope, receipt)
+            self.assertFalse((root / 'out2').exists())
+            legacy_scope, legacy_receipt = self.legacy()
+            with self.assertRaises(ValueError):
+                write_map_outputs(root / 'out3', MAP, RECORD, SPEC, legacy_scope, legacy_receipt,
+                                  obligations_path=obligations_path)
 
 
 class NativeMapTests(unittest.TestCase):
