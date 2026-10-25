@@ -1,7 +1,7 @@
 # Geometric bus routing qualification — 2026-10-25
 
-Status: native router and public job/build-producer exercises pass; broad
-regression gates and trunk integration are still pending. Router candidate is
+Status: qualified through the normal public placement job and actual build
+producer, with every required regression case closed. Integrated router is
 `7a8a150ae646a283cee21386ee08fd8ed8fadcf2`. The accepted acquisition release
 `ef2609e2` and integrated stripline milestone `87ce8bcb` remain unchanged.
 
@@ -45,6 +45,10 @@ The build-producer board SHA-256 is
 
 Ten router cases pass, including a mixed differential-pair/bus board, native
 rejection after a saved lane is removed and invalid-control refusals. The
+missing-lane artifact specifically reports one open on D7. Its copied
+revalidation also records native-save project drift and missing baseline
+custody; the overall validation failure is not claimed to have only one cause.
+`build/bus/negative-native-results.json` retains those distinctions. The
 134 existing pair/interface cases also pass. Four consumer cases have passing
 evidence: public operation, build production, invalid controls and changed-
 control resume. The original negative test expected a bus-specific refusal for
@@ -56,8 +60,12 @@ original error and 45.052-second public run remain retained.
 The clean image is `agent-ee:exec-7d4d4050d2a00395`, ID
 `sha256:299e7a280fd80c46a9d3661be039cbaccc5df817456de4a7094ff72228f63e5a`.
 All 103 placement-engine Rust tests passed during its build. Native checks use
-KiCad 10.0.7. The complete 1,074-case router smoke run and 50-module previous
-consumer roster remain in progress; they must finish before integration.
+KiCad 10.0.7. The complete router smoke passes all 1,074 cases in 2,318.62
+seconds, without skips. Its one warning is KiCad's SWIG API deprecation. All
+987 existing consumer cases across 50 modules pass without skips; the four
+public bus cases bring the required roster to 991 cases in 51 modules. The
+retained gate closures name individual cases and bind their logs and qualified
+source bytes. They preserve the initial NaN assertion error and exact correction.
 
 ## Matched stock comparison
 
@@ -102,6 +110,8 @@ ae-ci-exec . -- bin/agent-ee place run \
 
 This interconnect article is not a circuit or manufacturing release. Timing,
 length matching, SI, arbitrary bus topologies and experimental topological bus
-routing are not discharged by this result. Broad regressions, final evidence
-sealing and trunk integration remain pending. No unchanged acquisition build
-was repeated.
+routing are not discharged by this result. Evidence is retained in `build/bus`
+and a verified read-only copy at
+`~/.cache/agent-ee-qualification/agent545/bus-routing-20261025`.
+`integration.json` records exact integrated revisions; `SEAL.json` identifies
+the sealed files. No unchanged acquisition build was repeated.

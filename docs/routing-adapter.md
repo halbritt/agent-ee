@@ -1674,3 +1674,22 @@ cases have passing evidence. Three stale pin/documentation assertions and one
 missing wheel-runtime environment variable were corrected and their exact
 cases rerun; the original failed/skipped results remain retained. This qualifies
 a nominal software article, not fabricated impedance or a circuit release.
+
+### Geometric single-ended bus routing integration — 2026-10-25
+
+Pin `7a8a150ae646a283cee21386ee08fd8ed8fadcf2` exposes the existing backend's
+geometric bus detection, shared corridor, middle-out ordering and deferred taps
+through the public router. The normal placement job and build producer carry
+opt-in `router.bus` controls; omitted controls preserve previous behavior.
+Coupled pairs remain protected and excluded from the single-ended bus pass.
+The result binds actual observed groups to its backend diagnostic and board.
+Default native rules, facts/pour calculations and mirrored readers are unchanged.
+
+The [qualification](qualification/bus-routing-2026-10-25.md) records eight
+lanes, an unrelated parallel net, a third-terminal tap, a native obstacle,
+mixed pair preservation and missing-lane rejection. The complete build candidate
+has zero opens and native findings. All 991 required consumer cases in 51
+modules and all 1,074 router cases have passing evidence; an initially incorrect
+NaN test assertion and its exact corrected rerun are retained. Matched stock KRT
+also passes with equal copper length and via count. This establishes geometric
+bus-routing parity on the article, without timing or manufacturing acceptance.
