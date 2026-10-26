@@ -287,6 +287,31 @@ class PadEdgeMetricTests(unittest.TestCase):
 
 @unittest.skipUnless((ESP / 'intent.json').exists(), 'retained esp_prog inputs are not present on this host')
 class RetainedEspProgTests(unittest.TestCase):
+    def test_public_metrics_reports_every_declared_pad_edge_leg(self):
+        import subprocess
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        board_path = ESP / 'board.kicad_pcb'
+        done = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'place', 'metrics',
+                               str(board_path), '--intent', str(ESP / 'intent.json'),
+                               '--groups', str(ESP / 'groups.json')],
+                              capture_output=True, text=True, timeout=30)
+        # This raw input has an edge-intent failure; measurement must still
+        # report all legs while preserving the unsuccessful exit status.
+        self.assertEqual(done.returncode, 1, done.stderr)
+        metrics = json.loads(done.stdout)
+        self.assertEqual(metrics['board_sha256'], ESP_BOARD_SHA)
+        rows = metrics['pad_edge_legs']
+        self.assertEqual([(r['ref'], r['near']) for r in rows],
+                         [('Y1', 'U1'), ('C2', 'Y1'), ('C4', 'Y1')])
+        seen = {(i, leg['subject_pad'], leg['partner_pad']): round(leg['gap_mm'], 4)
+                for i, row in enumerate(rows) for leg in row['legs']}
+        self.assertEqual(seen, {(0, '1', '9'): 2.9704, (0, '2', '10'): 3.3268,
+                                (1, '1', '2'): 0.658, (2, '1', '1'): -0.075})
+        self.assertTrue(all(r['status'] == 'measured' and r['authority'] == 'advisory_objective'
+                            for r in rows))
+        self.assertEqual(metrics['edge_intent']['status'], 'failed')
+
     def test_original_bytes_adapt_and_are_preserved(self):
         intent_raw, groups_raw = (ESP / 'intent.json').read_bytes(), (ESP / 'groups.json').read_bytes()
         self.assertEqual(hashlib.sha256(intent_raw).hexdigest(), ESP_INTENT_SHA)

@@ -2268,10 +2268,11 @@ def execute(args, parser):
         report = run_job(config, args.out, resume=args.resume)
         print(json.dumps({k: report.get(k) for k in ('status', 'phases', 'elapsed_s', 'incumbent')}, indent=1))
         return 0 if report['status'] == 'completed' else 1
-    groups = read_json(args.groups)['groups'] if args.groups else None
-    metrics = board_metrics(args.board, groups)
+    groups_document = read_json(args.groups) if args.groups else {'groups': []}
+    intent = read_json(args.intent) if args.intent else {}
+    metrics = board_metrics(args.board, groups_document['groups'], proximity=intent.get('proximity'))
     if args.intent:
-        metrics['edge_intent'] = check_edge_intent(args.board, read_json(args.intent))
+        metrics['edge_intent'] = check_edge_intent(args.board, intent)
         metrics['edges'] = metrics['edge_intent']['connectors']
     print(json.dumps(metrics, indent=1))
     return 1 if metrics.get('edge_intent', {}).get('status') == 'failed' else 0
