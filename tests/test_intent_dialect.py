@@ -91,6 +91,30 @@ class DialectAdapterTests(unittest.TestCase):
         self.assertTrue(record['runnable'])
         self.assertEqual(record['dialect'], 'native')
 
+    def test_normalize_intent_preserves_proximity_and_near_without_mutating_inputs(self):
+        dialect = minimal_dialect()
+        groups = minimal_groups()
+        rails = json.loads((ROOT / 'fixtures/group-rails/esp-prog.json').read_bytes())
+        rails['bindings'] = {'board_sha256': 'a' * 64, 'groups_sha256': 'b' * 64}
+        rails['shared'] = {'GND': {'evidence': 'return', 'groups': ['core', 'usb']}}
+        rails['scoped'] = {'GND': {'evidence': 'return', 'intra_group': 'core', 'near_pairs': [['core', 'usb']]}}
+        before_intent, before_groups, before_rails = copy.deepcopy(dialect), copy.deepcopy(groups), copy.deepcopy(rails)
+        bundle = placement_intent.normalize_intent(dialect, groups, rails=rails,
+                                                   board_sha256='a' * 64, groups_sha256='b' * 64)
+        self.assertEqual((dialect, groups, rails), (before_intent, before_groups, before_rails))
+        self.assertEqual(bundle['intent']['schema'], placement_intent.SCHEMA)
+        self.assertEqual(bundle['intent']['proximity'][0]['basis'], 'pad_edge')
+        self.assertEqual(bundle['groups']['groups'][0]['near'], ['usb'])
+        self.assertEqual(bundle['groups']['groups'][1]['near'], ['core'])
+        self.assertEqual(bundle['rails']['shared'], {'GND': 'return'})
+        self.assertEqual(bundle['rails']['scoped']['GND']['intra_group'], 'core')
+        self.assertEqual(bundle['intent_contract']['schema'], placement_intent.SCHEMA)
+        self.assertTrue(bundle['compatibility']['runnable'])
+        again = placement_intent.normalize_intent(bundle['intent'], bundle['groups'], rails=rails,
+                                                  board_sha256='a' * 64, groups_sha256='b' * 64)
+        self.assertEqual((again['intent'], again['groups'], again['rails']),
+                         (bundle['intent'], bundle['groups'], bundle['rails']))
+
     def test_dialect_negatives_refuse_with_exact_paths(self):
         def mutate(**changes):
             document = minimal_dialect()
@@ -470,20 +494,23 @@ class GroupRailsSidecarTests(unittest.TestCase):
     def sidecar(self):
         return json.loads((ROOT / 'fixtures/group-rails/esp-prog.json').read_bytes())
 
+    def groups_for(self, names):
+        return {'groups': [{'name': n, 'anchor': f'U_{n}', 'refs': [f'U_{n}']} for n in names]}
+
     def test_fixture_sidecars_validate_and_bind_to_their_sources(self):
-        from agent_ee import group_rails
         esp = self.sidecar()
-        canonical = group_rails.validate(esp, board_sha256=ESP_BOARD_SHA, groups_sha256=ESP_GROUPS_SHA,
-                                         group_names={'usb_in', 'power', 'core', 'reset', 'target'},
-                                         nets={'GND', '/+3.3V', 'Net-(C1-Pad1)', '/D_N'})
+        bundle = placement_intent.normalize_intent(
+            {}, self.groups_for(('usb_in', 'power', 'core', 'reset', 'target')),
+            rails=esp, board_sha256=ESP_BOARD_SHA, groups_sha256=ESP_GROUPS_SHA,
+            nets={'GND', '/+3.3V', 'Net-(C1-Pad1)', '/D_N'})
+        canonical = bundle['rails']
         self.assertEqual(set(canonical['shared']), {'GND', '/+3.3V', 'Net-(C1-Pad1)'})
         self.assertEqual(canonical['scoped']['Net-(C1-Pad1)']['intra_group'], 'power')
         self.assertEqual(canonical['bindings']['board_sha256'], ESP_BOARD_SHA)
         acq = json.loads((ROOT / 'fixtures/group-rails/acquisition.json').read_bytes())
-        self.assertEqual(set(group_rails.validate(acq)['shared']), {'GND', '/V3V3'})
+        self.assertEqual(set(placement_intent.validate_rails(acq)['shared']), {'GND', '/V3V3'})
 
     def test_stale_or_unknown_bindings_refuse_with_paths(self):
-        from agent_ee import group_rails
         cases = [
             ('stale_board', dict(board_sha256='0' * 64), 'group_rails.bindings.board_sha256'),
             ('stale_groups', dict(groups_sha256='0' * 64), 'group_rails.bindings.groups_sha256'),
@@ -493,22 +520,22 @@ class GroupRailsSidecarTests(unittest.TestCase):
         for label, kwargs, expected in cases:
             with self.subTest(case=label):
                 with self.assertRaises(ValueError) as caught:
-                    group_rails.validate(self.sidecar(), **kwargs)
+                    placement_intent.validate_rails(self.sidecar(), **kwargs)
                 self.assertIn(expected, str(caught.exception))
         doc = self.sidecar()
         doc['scoped']['/D_N'] = {'evidence': 'x'}
         with self.assertRaises(ValueError) as caught:
-            group_rails.validate(doc)
+            placement_intent.validate_rails(doc)
         self.assertIn('group_rails.scoped./D_N', str(caught.exception))
         doc = self.sidecar()
         doc['shared']['GND'] = 'ground'
         with self.assertRaises(ValueError) as caught:
-            group_rails.validate(doc)
+            placement_intent.validate_rails(doc)
         self.assertIn('group_rails.shared.GND', str(caught.exception))
         doc = self.sidecar()
         doc['classifier'] = 'by-name'
         with self.assertRaises(ValueError) as caught:
-            group_rails.validate(doc)
+            placement_intent.validate_rails(doc)
         self.assertIn('group_rails.classifier', str(caught.exception))
 
 
@@ -609,13 +636,12 @@ class ChiefCounterexampleTests(unittest.TestCase):
                          ('R1', '1', 'U2', '1', 12.0))
 
     def test_rails_annotations_must_match_board_membership_and_shapes(self):
-        from agent_ee import group_rails
-        base = {'schema': group_rails.SCHEMA, 'bindings': {'board_sha256': 'a' * 64, 'groups_sha256': 'b' * 64},
+        base = {'schema': placement_intent.RAILS_SCHEMA, 'bindings': {'board_sha256': 'a' * 64, 'groups_sha256': 'b' * 64},
                 'shared': {'X': {'evidence': 'e', 'groups': ['A', 'B', 'C'], 'parts': ['U1', 'U2']}},
                 'scoped': {'X': {'evidence': 'e', 'intra_group': 'A', 'near_pairs': [['A', 'B']]}}}
         membership = dict(group_names={'A', 'B', 'C'}, nets={'X', '/S'},
                           net_groups={'X': {'A', 'B', 'C'}, '/S': {'A'}}, net_parts={'X': {'U1', 'R1', 'U2', 'U3'}, '/S': {'U1', 'R1'}})
-        group_rails.validate(base, **membership)
+        placement_intent.validate_rails(base, **membership)
         cases = [
             ('missing_group', lambda d: d['shared']['X'].__setitem__('groups', ['A', 'MISSING_GROUP']), 'group_rails.shared.X.groups'),
             ('group_without_pad', lambda d: d['shared'].__setitem__('/S', {'evidence': 'e', 'groups': ['B']}), 'group_rails.shared./S.groups'),
@@ -636,7 +662,7 @@ class ChiefCounterexampleTests(unittest.TestCase):
                 doc = json.loads(json.dumps(base))
                 mutate(doc)
                 with self.assertRaises(ValueError) as caught:
-                    group_rails.validate(doc, **membership)
+                    placement_intent.validate_rails(doc, **membership)
                 self.assertIn(expected, str(caught.exception))
 
 

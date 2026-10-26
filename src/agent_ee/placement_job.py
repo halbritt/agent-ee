@@ -20,7 +20,7 @@ inside one footprint that the unchanged input already has (esp_prog's U2
 artwork) stay FAILED physical checks: such an incumbent is never "clean".
 """
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 import hashlib
 import json
 import math
@@ -618,7 +618,7 @@ def capture(board_path, intent, groups, *, rails=None, groups_sha256=None, clock
     of the exact groups bytes it binds; both are optional and never alter the
     intent or groups documents.
     """
-    validate_intent(intent, groups)
+    normalize_intent(intent, groups)
     captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups, 'rails': rails,
                                                      'groups_sha256': groups_sha256},
                             clock=clock, cancel_dir=cancel_dir)
@@ -638,9 +638,9 @@ def _rails(rails, board_bytes, groups, board, groups_sha256=None):
     Declared group/part annotations are checked against the board's actual net
     membership, so a sidecar can only cite members that really share the net.
     """
-    from . import group_rails
+    from . import placement_intent
     if rails is None:
-        return dict(group_rails.EMPTY)
+        return dict(placement_intent.EMPTY_RAILS)
     if groups_sha256 is None:
         raise JobRefusal('group rails need the sha256 of the exact groups bytes they bind')
     owner = {ref: g['name'] for g in groups['groups'] for ref in g['refs']}
@@ -655,9 +655,10 @@ def _rails(rails, board_bytes, groups, board, groups_sha256=None):
             if fp.GetReference() in owner:
                 net_groups.setdefault(net, set()).add(owner[fp.GetReference()])
     try:
-        return group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=groups_sha256,
-                                    group_names={g['name'] for g in groups['groups']}, nets=nets,
-                                    net_groups=net_groups, net_parts=net_parts)
+        return placement_intent.validate_rails(
+            rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=groups_sha256,
+            group_names={g['name'] for g in groups['groups']}, nets=nets,
+            net_groups=net_groups, net_parts=net_parts)
     except ValueError as exc:
         raise JobRefusal(str(exc)) from exc
 
@@ -704,21 +705,66 @@ def _check_dialect_native(board, facts, record):
     return checks
 
 
+def escape_hints(row, *, width, gap, clearance):
+    """Infer local outward rectangles from captured pads and native pair sizes.
+
+    One P and one N pad must share a row/column off the occupancy centre. The
+    preference extends two pair pitches past the pad edge and allows a track
+    half-width plus native clearance to either side. These dimensions are an
+    agent-selected search heuristic, not an impedance or routability proof.
+    Ambiguous, diagonal and multi-pad terminals get no inferred preference.
+    """
+    if width is None or gap is None or width <= 0 or gap <= 0:
+        return []
+    body = row['occupancy'].get('local_rect_nm')
+    if body is None:
+        return []
+    nets = defaultdict(list)
+    for pad in row['pads']:
+        nets[pad['net']].append(pad)
+    boxes = {c.get('geometry', {}).get('pad_uuid'): c['rect_nm']
+             for c in row['copper_local_nm']}
+    result = []
+    for name in sorted(nets):
+        suffix = next((s for s in ('_P', '+', 'P') if name.endswith(s)), None)
+        if suffix is None:
+            continue
+        mate = name[:-len(suffix)] + {'_P': '_N', '+': '-', 'P': 'N'}[suffix]
+        if len(nets[name]) != 1 or len(nets.get(mate, [])) != 1:
+            continue
+        p, n = nets[name][0], nets[mate][0]
+        a, b = p['local_nm'], n['local_nm']
+        normal = 0 if a[0] == b[0] and a[1] != b[1] else (
+            1 if a[1] == b[1] and a[0] != b[0] else None)
+        if normal is None or a[normal] * 2 == body[normal] + body[normal + 2]:
+            continue
+        if p['uuid'] not in boxes or n['uuid'] not in boxes:
+            continue
+        pa, pb = boxes[p['uuid']], boxes[n['uuid']]
+        rect = [min(pa[0], pb[0]), min(pa[1], pb[1]), max(pa[2], pb[2]), max(pa[3], pb[3])]
+        tangent = 1 - normal
+        margin = clearance + (width + 1) // 2
+        rect[tangent] -= margin
+        rect[tangent + 2] += margin
+        depth = 2 * (width + gap)
+        if a[normal] * 2 > body[normal] + body[normal + 2]:
+            rect[normal] = rect[normal + 2]
+            rect[normal + 2] += depth
+        else:
+            rect[normal + 2] = rect[normal]
+            rect[normal] -= depth
+        result.append({'authority': 'agent-heuristic/1', 'kind': 'differential-terminal-space',
+                       'nets': [name, mate], 'pads': [p['uuid'], n['uuid']], 'rect_nm': rect,
+                       'width_nm': width, 'gap_nm': gap, 'clearance_nm': clearance})
+    return result
+
+
 def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
     """Native capture once; returns (problem without search section, capture record)."""
-    validate_intent(intent, groups)
-    from . import placement_intent
-    dialect = None
-    if placement_intent.is_dialect(intent):
-        dialect = placement_intent.adapt(intent, groups, supported=DIALECT_SUPPORTED)
-        intent, groups = dict(dialect['native_intent']), dict(dialect['native_groups'])
-        intent['proximity'] = dialect['proximity_pad_edge']
-        groups['groups'] = [dict(g, **({'near': n['near']} if (n := next((d for d in dialect['dispositions']
-                              if d['path'] == f"groups.groups[{i}].near"), None)) else {}))
-                            for i, g in enumerate(groups['groups'])]
+    normalized = normalize_intent(intent, groups)
+    intent, groups, dialect = normalized['intent'], normalized['groups'], normalized['compatibility']
     import pcbnew
     from .placement_probe import extract
-    from .placement_escape import hints as escape_hints
     before = Path(board_path).read_bytes()
     project = _project_rules(board_path)
     _validate_project_rules(project)
@@ -838,30 +884,23 @@ def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
                      'facts_sha256': sha256_bytes(canonical(facts))}
 
 
-def validate_intent(intent, groups):
+def normalize_intent(intent, groups, *, rails=None, locality=None, board_sha256=None, groups_sha256=None,
+                     nets=None, net_groups=None, net_parts=None, source=None):
+    """Validate and normalize intent, groups, rails, and locality in one pass."""
     from . import placement_intent
-    if placement_intent.is_dialect(intent):
-        # AGENTEE-479: the exact original dialect is classified field by field. It never runs
-        # while any operative or objective field is still pending; the refusal names them.
-        try:
-            record = placement_intent.adapt(intent, groups, supported=DIALECT_SUPPORTED)
-        except ValueError as exc:
-            raise JobRefusal(str(exc)) from exc
-        if not record['runnable']:
-            pending = ', '.join(p['path'] for p in record['pending'])
-            raise JobRefusal('original-dialect intent is classified but not runnable; pending: ' + pending)
-        intent, groups = record['native_intent'], record['native_groups']
     try:
-        placement_intent.validate(intent, groups)
+        return placement_intent.normalize_intent(
+            intent, groups, rails=rails, locality=locality,
+            board_sha256=board_sha256, groups_sha256=groups_sha256,
+            nets=nets, net_groups=net_groups, net_parts=net_parts,
+            source=source, supported=DIALECT_SUPPORTED,
+        )
     except ValueError as exc:
         raise JobRefusal(str(exc)) from exc
-    return {'schema': placement_intent.SCHEMA,
-            'input_form': 'versioned' if 'schema' in intent else 'legacy_unversioned',
-            'validator_sha256': digest(Path(placement_intent.__file__)),
-            'constraints': ['fixed_native_pose', 'edge_identity', 'edge_setback', 'edge_overhang',
-                            'sourced_electrical_locality'],
-            'preferences': ['group_anchor_distance', 'minimum_chebyshev_pad_centre_proximity'],
-            'unsupported': ['keepouts', 'assembly.sides', 'blocks', 'side_changes', 'group_regions']}
+
+
+def validate_intent(intent, groups):
+    return normalize_intent(intent, groups)['intent_contract']
 
 
 # ---------------------------------------------------------------- Rust search
@@ -1683,22 +1722,31 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             groups = strict_json(groups_bytes)
         except ValueError as exc:
             raise JobRefusal('placement intent/groups JSON: ' + str(exc)) from exc
-        report['intent_contract'] = validate_intent(intent, groups)
         rails = None
         if 'group_rails' in config['inputs']:
-            from . import group_rails
             _, rails_bytes = verified_input(config['inputs']['group_rails'], 'group_rails')
             try:
                 rails = strict_json(rails_bytes)
-                group_rails.validate(rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes),
-                                     group_names={g['name'] for g in groups['groups']})
             except ValueError as exc:
                 raise JobRefusal('inputs.group_rails: ' + str(exc)) from exc
+        locality = None
+        if 'locality' in config['inputs']:
+            _, raw = verified_input(config['inputs']['locality'], 'locality')
+            try:
+                locality = strict_json(raw)
+            except ValueError as exc:
+                raise JobRefusal('inputs.locality JSON: ' + str(exc)) from exc
+        normalized = normalize_intent(
+            intent, groups, rails=rails, locality=locality,
+            board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes),
+        )
+        if locality is not None:
+            intent = dict(intent, electrical_locality=locality)
+        report['intent_contract'] = normalized['intent_contract']
         plane_bytes = None
         plane_ids = ()
         if 'planes' in config['inputs']:
             from .add_planes import validate_plan, zone_ids
-            from .catalog import strict_json
             _, plane_bytes = verified_input(config['inputs']['planes'], 'planes')
             try:
                 plane_plan = validate_plan(strict_json(plane_bytes))
@@ -1707,16 +1755,6 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             if any(zone['island_removal'] != 'always' for zone in plane_plan['zones']):
                 raise JobRefusal('placement job final planes require island_removal=always')
             plane_ids = zone_ids(plane_plan)
-        if 'locality' in config['inputs']:
-            _, raw = verified_input(config['inputs']['locality'], 'locality')
-            try:
-                document = strict_json(raw)
-            except ValueError as exc:
-                raise JobRefusal('inputs.locality JSON: ' + str(exc)) from exc
-            if 'electrical_locality' in intent and intent['electrical_locality'] != document:
-                raise JobRefusal('inline locality differs from the captured locality input')
-            intent['electrical_locality'] = document
-            report['intent_contract'] = validate_intent(intent, groups)
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
         if impedance is not None:

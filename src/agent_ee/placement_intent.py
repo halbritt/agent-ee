@@ -2,14 +2,18 @@
 import math
 
 SCHEMA = 'agent-ee.placement-intent/1'
+RAILS_SCHEMA = 'agent-ee.group-rails/1'
+EMPTY_RAILS = {'shared': {}, 'scoped': {}, 'bindings': None}
+DIALECT_SUPPORTED = frozenset(('intent.assembly.sides', 'intent.envelope', 'edge.side', 'edge.cable_entry',
+                               'intent.proximity', 'groups.near'))
 
 
-def _object(value, path, required=(), optional=()):
+def _object(value, path, required=(), optional=(), *, kind='placement intent'):
     if not isinstance(value, dict):
         raise ValueError(f'{path}: expected object')
     for key in value:
         if key not in {*required, *optional}:
-            raise ValueError(f'{path}.{key}: unsupported placement intent field')
+            raise ValueError(f'{path}.{key}: unsupported {kind} field')
     for key in required:
         if key not in value:
             raise ValueError(f'{path}.{key}: required field is missing')
@@ -156,7 +160,7 @@ def validate(intent, groups):
                 row.get('basis') == 'pad_edge' and 'limit' not in row['context']):
             raise ValueError(path + '.basis: pad_edge needs context.limit naming its authority; '
                              'derived_default stays an advisory objective')
-        _proximity_shape(row, path, require_both=True)
+        _proximity_shape(row, path, require_both=row.get('basis') != 'pad_edge')
         if 'context' in row:
             _object(row['context'], path + '.context', optional=('limit', 'basis', 'role', 'source'))
             for key, value in row['context'].items():
@@ -469,3 +473,140 @@ def adapt_bytes(intent_raw, groups_raw):
     source = {'intent_sha256': hashlib.sha256(intent_raw).hexdigest(), 'intent_bytes': len(intent_raw),
               'groups_sha256': hashlib.sha256(groups_raw).hexdigest(), 'groups_bytes': len(groups_raw)}
     return adapt(intent, groups, source=source)
+
+
+# ---------------------------------------------------------------- AGENTEE-479 S2: group-rails sidecar & normalization
+
+def validate_rails(document, *, board_sha256=None, groups_sha256=None, group_names=None, nets=None,
+                   net_groups=None, net_parts=None):
+    """Validate the group-rails sidecar and, when captured identities are given, bind it to them."""
+    _object(document, 'group_rails', ('schema', 'bindings', 'shared', 'scoped'), ('source',), kind='group-rails')
+    if document['schema'] != RAILS_SCHEMA:
+        raise ValueError(f'group_rails.schema: expected {RAILS_SCHEMA}')
+    bindings = document['bindings']
+    _object(bindings, 'group_rails.bindings', ('board_sha256', 'groups_sha256'), kind='group-rails')
+    for key in ('board_sha256', 'groups_sha256'):
+        value = bindings[key]
+        if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+            raise ValueError(f'group_rails.bindings.{key}: expected a sha256 hex digest')
+    if board_sha256 is not None and bindings['board_sha256'] != board_sha256:
+        raise ValueError('group_rails.bindings.board_sha256: sidecar is bound to a different board')
+    if groups_sha256 is not None and bindings['groups_sha256'] != groups_sha256:
+        raise ValueError('group_rails.bindings.groups_sha256: sidecar is bound to different groups')
+    if 'source' in document:
+        _object(document['source'], 'group_rails.source', optional=('contract', 'commit', 'section', 'note'), kind='group-rails')
+        for key, value in document['source'].items():
+            _text(value, 'group_rails.source.' + key)
+    _object(document['shared'], 'group_rails.shared',
+            optional=tuple(document['shared']) if isinstance(document['shared'], dict) else (), kind='group-rails')
+    for net, row in document['shared'].items():
+        _text(net, 'group_rails.shared')
+        _object(row, f'group_rails.shared.{net}', ('evidence',), ('parts', 'groups'), kind='group-rails')
+        _text(row['evidence'], f'group_rails.shared.{net}.evidence')
+        for key in ('parts', 'groups'):
+            if key in row:
+                _texts(row[key], f'group_rails.shared.{net}.{key}')
+        if nets is not None and net not in nets:
+            raise ValueError(f'group_rails.shared.{net}: net is not on the captured board')
+        if 'groups' in row:
+            if group_names is not None:
+                unknown = [g for g in row['groups'] if g not in group_names]
+                if unknown:
+                    raise ValueError(f'group_rails.shared.{net}.groups: unknown group {unknown[0]!r}')
+            if net_groups is not None:
+                absent = [g for g in row['groups'] if g not in net_groups.get(net, set())]
+                if absent:
+                    raise ValueError(f'group_rails.shared.{net}.groups: {absent[0]!r} has no pad on this net')
+        if 'parts' in row and net_parts is not None:
+            absent = [p for p in row['parts'] if p not in net_parts.get(net, set())]
+            if absent:
+                raise ValueError(f'group_rails.shared.{net}.parts: {absent[0]!r} has no pad on this net')
+    _object(document['scoped'], 'group_rails.scoped',
+            optional=tuple(document['scoped']) if isinstance(document['scoped'], dict) else (), kind='group-rails')
+    for net, row in document['scoped'].items():
+        _object(row, f'group_rails.scoped.{net}', ('evidence',), ('intra_group', 'near_pairs'), kind='group-rails')
+        _text(row['evidence'], f'group_rails.scoped.{net}.evidence')
+        if net not in document['shared']:
+            raise ValueError(f'group_rails.scoped.{net}: a scoped net must also be a declared shared rail')
+        if 'intra_group' in row:
+            _text(row['intra_group'], f'group_rails.scoped.{net}.intra_group')
+            if group_names is not None and row['intra_group'] not in group_names:
+                raise ValueError(f'group_rails.scoped.{net}.intra_group: unknown group {row["intra_group"]!r}')
+        if 'near_pairs' in row and not isinstance(row['near_pairs'], list):
+            raise ValueError(f'group_rails.scoped.{net}.near_pairs: expected a list of [from_group, to_group]')
+        seen_pairs = set()
+        for index, pair in enumerate(row.get('near_pairs', [])):
+            path = f'group_rails.scoped.{net}.near_pairs[{index}]'
+            if not isinstance(pair, list) or len(pair) != 2 or not all(isinstance(v, str) and v for v in pair) or pair[0] == pair[1]:
+                raise ValueError(path + ': expected [from_group, to_group]')
+            if group_names is not None and any(v not in group_names for v in pair):
+                raise ValueError(path + ': unknown group name')
+            if tuple(pair) in seen_pairs:
+                raise ValueError(path + ': duplicate pair')
+            seen_pairs.add(tuple(pair))
+            if net_groups is not None and any(v not in net_groups.get(net, set()) for v in pair):
+                raise ValueError(path + ': a named group has no pad on this net')
+        if 'intra_group' in row and net_groups is not None and row['intra_group'] not in net_groups.get(net, set()):
+            raise ValueError(f'group_rails.scoped.{net}.intra_group: {row["intra_group"]!r} has no pad on this net')
+    return canonical_rails(document)
+
+
+def canonical_rails(document):
+    """The one rails shape consumed by the solver, the report and the receipts."""
+    return {'shared': {net: row['evidence'] for net, row in document['shared'].items()},
+            'scoped': {net: {k: v for k, v in row.items() if k in ('intra_group', 'near_pairs')}
+                       for net, row in document['scoped'].items()},
+            'bindings': dict(document['bindings'])}
+
+
+def normalize_intent(intent, groups, *, rails=None, locality=None, board_sha256=None, groups_sha256=None,
+                     nets=None, net_groups=None, net_parts=None, source=None, supported=DIALECT_SUPPORTED):
+    """Validate and normalize placement intent, groups, rails, and locality in one pass without mutating inputs."""
+    from pathlib import Path
+    from .storage import digest
+    if is_dialect(intent):
+        compatibility = adapt(intent, groups, source=source, supported=supported)
+        if not compatibility['runnable']:
+            pending = ', '.join(p['path'] for p in compatibility['pending'])
+            raise ValueError('original-dialect intent is classified but not runnable; pending: ' + pending)
+        norm_intent = dict(compatibility['native_intent'])
+        if compatibility['proximity_pad_edge']:
+            norm_intent['proximity'] = [dict(r) for r in compatibility['proximity_pad_edge']]
+        norm_groups = dict(
+            compatibility['native_groups'],
+            groups=[dict(g, **({'near': list(src['near'])} if 'near' in src else {}))
+                    for g, src in zip(compatibility['native_groups']['groups'], groups['groups'])],
+        )
+        input_form = 'versioned'
+    else:
+        validate(intent, groups)
+        norm_intent = dict(intent)
+        if 'proximity' in norm_intent:
+            norm_intent['proximity'] = [dict(r) for r in norm_intent['proximity']]
+        norm_groups = dict(groups, groups=[dict(g, **({'near': list(g['near'])} if 'near' in g else {}))
+                                           for g in groups['groups']])
+        compatibility = None
+        input_form = 'versioned' if 'schema' in intent else 'legacy_unversioned'
+    if locality is not None:
+        if 'electrical_locality' in norm_intent and norm_intent['electrical_locality'] != locality:
+            raise ValueError('inline locality differs from the captured locality input')
+        from .electrical_locality import validate as validate_locality
+        _locality_fields(locality, 'intent.electrical_locality')
+        try:
+            validate_locality(locality)
+        except ValueError as exc:
+            raise ValueError('intent.electrical_locality: ' + str(exc)) from exc
+        norm_intent['electrical_locality'] = locality
+    norm_rails = (dict(EMPTY_RAILS) if rails is None else
+                  validate_rails(rails, board_sha256=board_sha256, groups_sha256=groups_sha256,
+                                 group_names={g['name'] for g in norm_groups['groups']},
+                                 nets=nets, net_groups=net_groups, net_parts=net_parts))
+    intent_contract = {
+        'schema': SCHEMA, 'input_form': input_form, 'validator_sha256': digest(Path(__file__)),
+        'constraints': ['fixed_native_pose', 'edge_identity', 'edge_setback', 'edge_overhang',
+                        'sourced_electrical_locality'],
+        'preferences': ['group_anchor_distance', 'minimum_chebyshev_pad_centre_proximity'],
+        'unsupported': ['keepouts', 'assembly.sides', 'blocks', 'side_changes', 'group_regions'],
+    }
+    return {'intent': norm_intent, 'groups': norm_groups, 'rails': norm_rails,
+            'intent_contract': intent_contract, 'compatibility': compatibility}

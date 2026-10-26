@@ -531,9 +531,9 @@ def run(plan_path, out, *, resume=False, through='package'):
     source_files = _source_inventory(source, plan)
     # Preserve intent preflight before map-schema validation and output creation.
     # The source inventory above has already read the source files.
-    from .placement_job import validate_intent
-    validate_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
-                    strict_json((source / plan['placement']['groups']).read_bytes()))
+    from .placement_job import normalize_intent
+    normalize_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
+                     strict_json((source / plan['placement']['groups']).read_bytes()))
     map_schema = strict_json((source / plan['requirements']['map']).read_bytes()).get('schema')
     if (map_schema == 'agent-ee.requirement-map/2') != (plan['schema'] == TYPED_SCHEMA):
         raise ValueError('typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')

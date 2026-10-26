@@ -515,5 +515,87 @@ class EspProgCaptureTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256((root / 'board.kicad_pcb').read_bytes()).hexdigest(), ESP_PROG['board.kicad_pcb'])
 
 
+def _terminal_row():
+    return {'uuid': 'owner', 'native_ref': 'J7',
+            'occupancy': {'local_rect_nm': [-2000000, -2000000, 2000000, 2000000]},
+            'pads': [{'uuid': 'p', 'net': '/io/DP', 'local_nm': [1800000, -325000]},
+                     {'uuid': 'n', 'net': '/io/DN', 'local_nm': [1800000, 325000]}],
+            'copper_local_nm': [
+                {'rect_nm': [1400000, -475000, 2200000, -175000], 'geometry': {'pad_uuid': 'p'}},
+                {'rect_nm': [1400000, 175000, 2200000, 475000], 'geometry': {'pad_uuid': 'n'}}]}
+
+
+class EscapeHintsTests(unittest.TestCase):
+    def hints(self, row):
+        return job.escape_hints(row, width=200000, gap=250000, clearance=150000)
+
+    def test_outward_terminal_space_and_rotation_invariance(self):
+        import copy
+        row = _terminal_row()
+        before = copy.deepcopy(row)
+        hints = self.hints(row)
+        self.assertEqual(row, before)
+        self.assertEqual(len(hints), 1)
+        hint = hints[0]
+        self.assertEqual((hint['authority'], hint['pads']), ('agent-heuristic/1', ['p', 'n']))
+        x0, y0, x1, y1 = hint['rect_nm']
+        self.assertEqual(x0, 2200000)
+        self.assertGreater(x1, 3000000)
+        self.assertLess(y0, -475000)
+        self.assertGreater(y1, 475000)
+        for p, n in (('/a_P', '/a_N'), ('D+', 'D-'), ('/bus/CLKP', '/bus/CLKN')):
+            r = _terminal_row()
+            r['native_ref'] = 'arbitrary'
+            r['pads'][0]['net'], r['pads'][1]['net'] = p, n
+            self.assertEqual(self.hints(r)[0]['nets'], [p, n])
+        r = _terminal_row()
+        r['pads'][1]['net'] = '/another/sheet/DN'
+        self.assertEqual(self.hints(r), [])
+        r = _terminal_row()
+        r['pads'].append(dict(r['pads'][0], uuid='p2'))
+        self.assertEqual(self.hints(r), [])
+        r = _terminal_row()
+        for pad in r['pads']:
+            pad['local_nm'][0] = 0
+        self.assertEqual(self.hints(r), [])
+        r = _terminal_row()
+        original = self.hints(r)[0]['rect_nm']
+        for _ in range(4):
+            for pad in r['pads']:
+                x, y = pad['local_nm']
+                pad['local_nm'] = [y, -x]
+            for item in r['copper_local_nm']:
+                x0, y0, x1, y1 = item['rect_nm']
+                item['rect_nm'] = [y0, -x1, y1, -x0]
+            x0, y0, x1, y1 = original
+            original = [y0, -x1, y1, -x0]
+            self.assertEqual(self.hints(r)[0]['rect_nm'], original)
+
+
+class NativeEscapeHintsTests(Fixture):
+    def test_capture_binds_hint_to_saved_native_pads_through_rotation(self):
+        import pcbnew
+        board = pcbnew.LoadBoard(str(self.board))
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'U1')
+        for number, name in (('1', '/link_P'), ('2', '/link_N')):
+            net = pcbnew.NETINFO_ITEM(board, name)
+            board.Add(net)
+            next(p for p in fp.Pads() if p.GetNumber() == number).SetNet(net)
+        expected = None
+        for turn in range(4):
+            fp.SetOrientationDegrees(90 * turn)
+            pcbnew.SaveBoard(str(self.board), board)
+            before = self.board.read_bytes(), self.project.read_bytes()
+            problem, capture = job.capture(self.board, intent(), groups())
+            row = next(f for f in problem['footprints'] if f['native_ref'] == 'U1')
+            hints = row['escape_local_nm']
+            self.assertEqual(len(hints), 1)
+            expected = hints if expected is None else expected
+            self.assertEqual((hints, hints[0]['nets']), (expected, ['/link_P', '/link_N']))
+            note = next(f for f in capture['footprints'] if f['native_ref'] == 'U1')
+            self.assertEqual(note['routing_preferences'], hints)
+            self.assertEqual(before, (self.board.read_bytes(), self.project.read_bytes()))
+
+
 if __name__ == '__main__':
     unittest.main()
