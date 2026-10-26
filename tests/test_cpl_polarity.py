@@ -12,7 +12,7 @@ from agent_ee import cpl_rotation
 from agent_ee.baseline import compile_baseline, freeze_evidence, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
-from agent_ee.polarity_evidence import SCHEMA, feature_ids, validate_record
+from agent_ee.cpl_rotation import SCHEMA, feature_ids, validate_record
 from agent_ee.storage import digest, read_json, write_json
 from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 from tests.toolchain import require_toolchain
@@ -168,7 +168,6 @@ class IdentityBoundaryTests(unittest.TestCase):
                 self.assertIn('BOM binding' if not binding else 'the BOM to', notes[0]['message'])
 
     def test_evidence_needs_a_present_equal_bom_partnumber(self):
-        from agent_ee.polarity_evidence import feature_ids
         raw = json.loads(self.suppliers['C910020']['raw'])
         unnamed = {**self.suppliers, 'C910020': {**self.suppliers['C910020']}}
         shapes = [sh.replace('~K~', '~1~').replace('~A~', '~2~') if sh.startswith('P~') else sh

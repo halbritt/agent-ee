@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 from agent_ee import checks, cpl_rotation, fab_package
-from agent_ee.assembly_profile import (ASSESSMENT_SCHEMA, POSITION_CONVENTION, SCHEMA, mount_types,
-                                       orientation_assessment, unassessed_record, validate_profile)
+from agent_ee.fab_package import (ASSESSMENT_SCHEMA, POSITION_CONVENTION, SCHEMA, mount_types,
+                                  orientation_assessment, unassessed_record, validate_profile)
 from agent_ee.baseline import compile_baseline, freeze_evidence, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks

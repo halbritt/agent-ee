@@ -1081,6 +1081,66 @@ def verify_manifest(fab, manifest):
     return actual
 
 
+def read_native_cpl(text):
+    """Parse and validate a staged JLC CPL CSV into [designator, x, y, Top|Bottom, rotation] rows."""
+    reader = csv.reader(io.StringIO(text))
+    if next(reader, None) != CPL_HEADER.split(','):
+        raise ValueError('export cpl.csv header is not the JLC CPL header')
+    rows = []
+    for line in reader:
+        if len(line) != 5 or not REF_RE.fullmatch(line[0]) or line[3] not in ('Top', 'Bottom'):
+            raise ValueError(f'export cpl.csv row {line} is malformed')
+        if not all(NUMBER_RE.fullmatch(v) for v in (line[1], line[2], line[4])):
+            raise ValueError(f'export cpl.csv row {line} has a non-decimal coordinate or rotation')
+        rows.append(line)
+    if not rows:
+        raise ValueError('export cpl.csv has no rows')
+    return rows
+
+
+def read_bom_records(text):
+    """Parse a staged JLC BOM CSV once into ({ref: LCSC}, {ref: Partnumber})."""
+    reader = csv.reader(io.StringIO(text))
+    if next(reader, None) != BOM_COLUMNS:
+        raise ValueError('export bom.csv header is not the JLC BOM header')
+    bindings, partnumbers = {}, {}
+    for line in reader:
+        if len(line) != len(BOM_COLUMNS):
+            raise ValueError(f'export bom.csv row {line} is malformed')
+        for ref in line[0].split(','):
+            if ref in bindings:
+                raise ValueError(f'export bom.csv lists {ref} twice')
+            bindings[ref] = line[6]
+            partnumbers[ref] = line[5]
+    return bindings, partnumbers
+
+
+def load_verified_staging(stage, *, board_sha256=None):
+    """Load and verify a staged fab directory (manifest, inventory, BOM, CPL, and exclusions) once."""
+    stage = Path(stage)
+    manifest_path = stage / 'manifest.json'
+    if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.stat().st_size == 0:
+        raise ValueError('manifest.json is absent, empty or not a regular file')
+    manifest = read_json(manifest_path)
+    files = verify_manifest(stage, manifest)
+    if board_sha256 is not None and manifest.get('board_sha256') != board_sha256:
+        raise ValueError('export manifest is bound to another board digest')
+    cpl_text = (stage / 'cpl.csv').read_text(encoding='utf-8')
+    rows = read_native_cpl(cpl_text)
+    claimed = manifest.get('designators', {}).get('excluded')
+    if not isinstance(claimed, list) or any(not isinstance(e, dict) or not isinstance(e.get('designator'), str)
+                                            for e in claimed):
+        raise ValueError('manifest designators.excluded is not a list of designator records')
+    excluded = sorted({e['designator'] for e in claimed}, key=natural_key)
+    if any(r[0] in excluded for r in rows):
+        raise ValueError(f'CPL lists designators the manifest excludes from assembly: {excluded}')
+    bom_text = (stage / 'bom.csv').read_text(encoding='utf-8')
+    bindings, partnumbers = read_bom_records(bom_text)
+    return {'manifest': manifest, 'manifest_sha256': digest(manifest_path), 'files': files,
+            'cpl_text': cpl_text, 'cpl_rows': rows, 'excluded': excluded,
+            'bom_text': bom_text, 'bindings': bindings, 'partnumbers': partnumbers}
+
+
 # ---------------------------------------------------------------- the check
 
 def _prerequisite(ctx, nid):

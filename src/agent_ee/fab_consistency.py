@@ -881,8 +881,18 @@ def check_fab_consistency(ctx):
     gate(ctx, *export_prerequisite(ctx))
 
 
-def gate(ctx, eid, export_spec, export_result, stage):
+def gate(ctx, eid, export_spec, export_result, stage, *, result=None):
     """Verify one sealed export staging tree; `fab_package` runs this on its own export (eid == ctx.cid)."""
+    saved = ctx.result
+    if result is not None:
+        ctx.result = result
+    try:
+        return _gate(ctx, eid, export_spec, export_result, stage)
+    finally:
+        ctx.result = saved
+
+
+def _gate(ctx, eid, export_spec, export_result, stage):
     from .checks import CheckError
     nid, netlist, netlist_fields = netlist_components(ctx, export_spec)
     geometry_ids, geometry = geometry_footprints(ctx)

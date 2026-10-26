@@ -43,7 +43,8 @@ from fractions import Fraction
 from pathlib import Path
 
 from .easyeda_footprint import SupplierError, parse_package, symbol_pins
-from .fab_export import BOM_COLUMNS, CPL_HEADER, NUMBER_RE, REF_RE, natural_key, verify_manifest
+from .fab_export import (BOM_COLUMNS, CPL_HEADER, NUMBER_RE, REF_RE, load_verified_staging,
+                         natural_key, read_bom_records, read_native_cpl, verify_manifest)
 from .land_pattern import (PatternError, _decimal_text, _json, _path, board_footprint, board_footprints,
                            validate_provenance)
 from .storage import digest, read_json, write_json
@@ -338,16 +339,7 @@ def _row_numbers(row):
 
 def read_bom_partnumbers(text):
     """{ref: Partnumber} from the export BOM, the manufacturer part each row was bound to."""
-    reader = csv.reader(io.StringIO(text))
-    if next(reader, None) != BOM_COLUMNS:
-        raise ValueError('export bom.csv header is not the JLC BOM header')
-    numbers = {}
-    for line in reader:
-        if len(line) != len(BOM_COLUMNS):
-            raise ValueError(f'export bom.csv row {line} is malformed')
-        for ref in line[0].split(','):
-            numbers[ref] = line[5]
-    return numbers
+    return read_bom_records(text)[1]
 
 
 def netlist_pin_facts(xml_path):
@@ -621,35 +613,8 @@ def render_cpl(rows):
 
 # --------------------------------------------------------- captured inputs
 
-def read_native_cpl(text):
-    reader = csv.reader(io.StringIO(text))
-    if next(reader, None) != CPL_HEADER.split(','):
-        raise ValueError('export cpl.csv header is not the JLC CPL header')
-    rows = []
-    for line in reader:
-        if len(line) != 5 or not REF_RE.fullmatch(line[0]) or line[3] not in ('Top', 'Bottom'):
-            raise ValueError(f'export cpl.csv row {line} is malformed')
-        if not all(NUMBER_RE.fullmatch(v) for v in (line[1], line[2], line[4])):
-            raise ValueError(f'export cpl.csv row {line} has a non-decimal coordinate or rotation')
-        rows.append(line)
-    if not rows:
-        raise ValueError('export cpl.csv has no rows')
-    return rows
-
-
 def read_bom_bindings(text):
-    reader = csv.reader(io.StringIO(text))
-    if next(reader, None) != BOM_COLUMNS:
-        raise ValueError('export bom.csv header is not the JLC BOM header')
-    bindings = {}
-    for line in reader:
-        if len(line) != len(BOM_COLUMNS):
-            raise ValueError(f'export bom.csv row {line} is malformed')
-        for ref in line[0].split(','):
-            if ref in bindings:
-                raise ValueError(f'export bom.csv lists {ref} twice')
-            bindings[ref] = line[6]
-    return bindings
+    return read_bom_records(text)[0]
 
 
 def load_suppliers(read, paths):
@@ -666,6 +631,98 @@ def load_suppliers(read, paths):
             raise ValueError(f'two supplier footprints are captured for {lcsc}')
         suppliers[lcsc] = {'raw': raw, 'provenance': path, 'sha256': record['sha256'], 'path': record['path']}
     return suppliers
+
+
+SCHEMA = 'agent-ee.component-polarity/1'
+POLARITY_KEYS = frozenset({'schema', 'lcsc', 'mpn', 'manufacturer', 'supplier_capture_sha256', 'pin_polarity',
+                           'manufacturer_source', 'package_feature_ids', 'symbol_feature_ids', 'rationale', 'limitation'})
+POLARITY_SOURCE_KEYS = frozenset({'path', 'sha256', 'page', 'locator', 'statement'})
+POLARITIES = ('anode', 'cathode')
+MIN_RATIONALE = 80
+SHA256 = re.compile(r'[0-9a-f]{64}')
+FEATURE_ID = re.compile(r'[A-Za-z][A-Za-z0-9_]*[0-9]')
+
+
+def _polarity_text(value, label, minimum=1):
+    if not isinstance(value, str) or len(value.strip()) < minimum:
+        raise ValueError(f'polarity evidence {label} must be text of at least {minimum} characters')
+    return value
+
+
+def feature_ids(shapes):
+    """Every native EasyEDA shape id (`gge…`) named by a list of shape records."""
+    found = set()
+    for shape in shapes:
+        if isinstance(shape, str):
+            found.update(field for part in shape.split('^^') for field in part.split('~')
+                         if FEATURE_ID.fullmatch(field))
+    return found
+
+
+def validate_record(document, suppliers, read):
+    """Verify a captured component-polarity record against captured suppliers and inputs."""
+    if not isinstance(document, dict) or set(document) != POLARITY_KEYS:
+        raise ValueError('polarity evidence fields must be exactly ' + ', '.join(sorted(POLARITY_KEYS)))
+    if document['schema'] != SCHEMA:
+        raise ValueError(f'polarity evidence schema must be {SCHEMA}')
+    lcsc = _polarity_text(document['lcsc'], 'lcsc')
+    _polarity_text(document['mpn'], 'mpn')
+    _polarity_text(document['manufacturer'], 'manufacturer')
+    supplier = suppliers.get(lcsc)
+    if supplier is None:
+        raise ValueError(f'polarity evidence names {lcsc}, which has no declared supplier capture')
+    sha = document['supplier_capture_sha256']
+    if not isinstance(sha, str) or not SHA256.fullmatch(sha) or sha != supplier['sha256']:
+        raise ValueError(f'polarity evidence for {lcsc} is bound to another supplier capture digest')
+    try:
+        pins = {p['number'] for p in symbol_pins(supplier['raw'], lcsc)['pins']}
+        raw = _json(supplier['raw'])
+    except (SupplierError, ValueError) as exc:
+        raise ValueError(f'polarity evidence for {lcsc}: supplier capture unreadable: {exc}') from exc
+    mapping = document['pin_polarity']
+    if (not isinstance(mapping, dict) or '1' not in mapping or not mapping
+            or any(not isinstance(k, str) or v not in POLARITIES for k, v in mapping.items())):
+        raise ValueError(f'polarity evidence for {lcsc} pin_polarity must map pin "1" (and others) to anode|cathode')
+    unknown = sorted(set(mapping) - pins)
+    if unknown:
+        raise ValueError(f'polarity evidence for {lcsc} names symbol pins the capture lacks: {unknown}')
+    if len(set(mapping.values())) < 2 and len(mapping) > 1:
+        raise ValueError(f'polarity evidence for {lcsc} gives every pin the same polarity')
+    source = document['manufacturer_source']
+    if not isinstance(source, dict) or set(source) != POLARITY_SOURCE_KEYS:
+        raise ValueError('polarity evidence manufacturer_source must be exactly {path, sha256, page, locator, statement}')
+    _path(source['path'], 'manufacturer source path')
+    if not isinstance(source['sha256'], str) or not SHA256.fullmatch(source['sha256']):
+        raise ValueError('polarity evidence manufacturer_source.sha256 must be a lowercase sha256')
+    if type(source['page']) is not int or source['page'] < 1:
+        raise ValueError('polarity evidence manufacturer_source.page must be a positive integer')
+    _polarity_text(source['locator'], 'manufacturer_source.locator', 8)
+    _polarity_text(source['statement'], 'manufacturer_source.statement', 4)
+    if digest_bytes(read(source['path'])) != source['sha256']:
+        raise ValueError(f'polarity evidence manufacturer source {source["path"]} differs from its declared sha256')
+    shapes = raw.get('dataStr', {}).get('shape', []) if isinstance(raw, dict) else []
+    package = raw.get('packageDetail', {}).get('dataStr', {}).get('shape', []) if isinstance(raw, dict) else []
+    for key, available in (('package_feature_ids', feature_ids(package)), ('symbol_feature_ids', feature_ids(shapes))):
+        ids = document[key]
+        if not isinstance(ids, list) or not ids or any(not isinstance(i, str) or not FEATURE_ID.fullmatch(i) for i in ids):
+            raise ValueError(f'polarity evidence {key} must list native shape ids')
+        missing = sorted(set(ids) - available)
+        if missing:
+            raise ValueError(f'polarity evidence {key} names shapes absent from the {lcsc} capture: {missing}')
+    _polarity_text(document['rationale'], 'rationale', MIN_RATIONALE)
+    _polarity_text(document['limitation'], 'limitation', 8)
+    return document
+
+
+def load_evidence(read, paths, suppliers):
+    """{LCSC: validated record with its captured path} for every declared evidence path."""
+    evidence = {}
+    for path in paths:
+        record = validate_record(_json(read(path)), suppliers, read)
+        if record['lcsc'] in evidence:
+            raise ValueError(f'two polarity evidence records are declared for {record["lcsc"]}')
+        evidence[record['lcsc']] = {**record, 'path': path}
+    return evidence
 
 
 def digest_bytes(data):
@@ -688,7 +745,6 @@ def capability(params, files, inputs):
         suppliers = load_suppliers(read, params['supplier_footprints'])
         paths += [s['path'] for s in suppliers.values()]
         if params.get('polarity_evidence'):
-            from .polarity_evidence import load_evidence
             evidence = load_evidence(read, params['polarity_evidence'], suppliers)
             paths += [e['manufacturer_source']['path'] for e in evidence.values()]
     return {'immutable_inputs': sorted(set(paths)), 'predicates': list(PREDICATES)}
@@ -732,7 +788,6 @@ def check_cpl_rotation(ctx):
         suppliers = load_suppliers(read, params['supplier_footprints'])
         evidence = {}
         if params.get('polarity_evidence'):
-            from .polarity_evidence import load_evidence
             evidence = load_evidence(read, params['polarity_evidence'], suppliers)
     except (OSError, ValueError) as exc:
         raise CheckError('malformed', f'supplier footprint capture refused: {exc}') from exc
@@ -752,21 +807,10 @@ def check_cpl_rotation(ctx):
     manifest_path = prerequisite(ctx, eid, 'fab_export', 'fab/manifest.json')
     stage = manifest_path.parent
     try:
-        manifest = read_json(manifest_path)
-        verify_manifest(stage, manifest)
-        if manifest.get('board_sha256') != board_sha:
-            raise ValueError('export manifest is bound to another board digest')
-        cpl_text = (stage / 'cpl.csv').read_text(encoding='utf-8')
-        rows = read_native_cpl(cpl_text)
-        claimed = manifest.get('designators', {}).get('excluded')
-        if not isinstance(claimed, list) or any(not isinstance(e, dict) or not isinstance(e.get('designator'), str)
-                                                for e in claimed):
-            raise ValueError('manifest designators.excluded is not a list of designator records')
-        excluded = sorted({e['designator'] for e in claimed}, key=natural_key)
-        if any(r[0] in excluded for r in rows):
-            raise ValueError(f'CPL lists designators the manifest excludes from assembly: {excluded}')
-        bindings = read_bom_bindings((stage / 'bom.csv').read_text(encoding='utf-8'))
-        partnumbers = read_bom_partnumbers((stage / 'bom.csv').read_text(encoding='utf-8'))
+        staged = load_verified_staging(stage, board_sha256=board_sha)
+        manifest, rows = staged['manifest'], staged['cpl_rows']
+        excluded = staged['excluded']
+        bindings, partnumbers = staged['bindings'], staged['partnumbers']
     except (OSError, ValueError, UnicodeError) as exc:
         raise CheckError('malformed', f'fab_export {eid!r} staging is unusable: {exc}') from exc
     ctx.result['evidence'] += [f'work/{eid}/fab/cpl.csv', f'work/{eid}/fab/bom.csv']
