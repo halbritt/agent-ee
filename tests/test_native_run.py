@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import os
@@ -33,6 +34,52 @@ def _argv_variants(root):
     yield 'replay', replay
 
 
+# Frozen copies of the readers that re-tokenised the argv before AGENTEE-540 batch d moved them onto
+# parse_profile (stage_receipts.sandbox_profile, benchmark_run.sandbox_path_operands at 307a5da1).
+# They are the independent reference for historical compatibility; do not route them through native_run.
+def historical_sandbox_profile(sandbox_argv):
+    if not isinstance(sandbox_argv, list) or '--' not in sandbox_argv:
+        raise ValueError('malformed sandbox argv')
+    options = sandbox_argv[:sandbox_argv.index('--')]
+    profile, index = [], 0
+    while index < len(options):
+        token = options[index]
+        if token in ('--bind', '--ro-bind', '--ro-bind-fd') and index + 2 < len(options):
+            source, dest = options[index + 1], options[index + 2]
+            profile += [token, source if source == dest else '<host>', dest]
+            index += 3
+        else:
+            profile.append(token)
+            index += 1
+    return profile
+
+
+HISTORICAL_FLAGS = {'--die-with-parent', '--new-session', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
+                    '--unshare-net', '--clearenv'}
+HISTORICAL_ONE = {'--proc', '--dev', '--tmpfs', '--dir', '--chdir'}
+HISTORICAL_TWO = {'--ro-bind', '--bind', '--symlink', '--setenv'}
+
+
+def historical_path_operands(argv):
+    if not argv or argv[0] != 'bwrap' or '--' not in argv:
+        return None
+    end = argv.index('--')
+    found, i = [], 1
+    while i < end:
+        option = argv[i]
+        if option in HISTORICAL_FLAGS:
+            i += 1
+        elif option in HISTORICAL_ONE and i + 1 < end:
+            i += 2
+        elif option in HISTORICAL_TWO and i + 2 < end:
+            if option in ('--ro-bind', '--bind'):
+                found.append(i + 1)
+            i += 3
+        else:
+            return None
+    return found if i == end else None
+
+
 class ProfileTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -42,15 +89,16 @@ class ProfileTest(unittest.TestCase):
     def test_normalized_profile_matches_the_stage_receipt_form(self):
         for label, argv in _argv_variants(self.root):
             with self.subTest(label):
-                self.assertEqual(native_run.parse_profile(argv).normalized(), stage_receipts.sandbox_profile(argv))
+                self.assertEqual(native_run.parse_profile(argv).normalized(), historical_sandbox_profile(argv))
+                self.assertEqual(stage_receipts.sandbox_profile(argv), historical_sandbox_profile(argv))
 
     def test_path_sources_match_the_benchmark_operand_parser(self):
         for label, argv in _argv_variants(self.root):
             if label == 'replay':
                 continue   # the benchmark parser never saw replay's --remount-ro options
             with self.subTest(label):
-                self.assertEqual(native_run.parse_profile(argv).path_source_indexes(),
-                                 benchmark_run.sandbox_path_operands(argv))
+                self.assertEqual(native_run.parse_profile(argv).path_source_indexes(), historical_path_operands(argv))
+                self.assertEqual(benchmark_run.sandbox_path_operands(argv), historical_path_operands(argv))
 
     def test_binds_network_and_tool_argv(self):
         argv = executor.sandbox_argv(self.root / 'inputs', self.root / 'work', ['kicad-cli', 'version'])
@@ -77,7 +125,8 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(parsed.tool_argv, ('kicad-cli', 'version'))
         self.assertEqual([(b.option, b.source, b.dest) for b in parsed.binds if b.option == '--ro-bind-fd'],
                          [('--ro-bind-fd', str(source), '/tool')])
-        self.assertEqual(parsed.normalized(), stage_receipts.sandbox_profile(argv))
+        self.assertEqual(parsed.normalized(), historical_sandbox_profile(argv))
+        self.assertEqual(benchmark_run.sandbox_path_operands(argv), historical_path_operands(argv))
         self.assertEqual(executor.sandbox_invocation(argv), (list(parsed.tool_argv), parsed.mount_identities))
 
     def test_unknown_layouts_are_refused(self):
@@ -487,13 +536,31 @@ class HostTest(unittest.TestCase):
         sink = self.root / 'console.log'
         with sink.open('wb') as stream:
             record = native_run.run(self.host(code, merge_stderr=True), work=None, sink=stream)
-        self.assertEqual((record.stdout, record.stderr), (b'abc\n', b''))
+        self.assertEqual((record.stdout, record.stderr), (b'', b''))
         self.assertEqual(sink.read_bytes(), b'abc\n')
+        self.assertEqual((record['stdout_sha256'], record['console_sha256']),
+                         (hashlib.sha256(b'abc\n').hexdigest(),) * 2)
+        with self.assertRaises(ValueError), io.BytesIO() as stream:
+            native_run.run(self.host('1'), work=self.root / 'w', sink=stream)
         with self.assertRaises(ValueError):
             Intent('x', ['true'], merge_stderr=True)
         with self.assertRaises(ValueError):
             native_run.run(Intent('x', ['true']), inputs=self.root, work=self.root / 'w', sink=io.BytesIO(),
                            adapter=native_run.Sandbox())
+
+    def test_sink_memory_stays_flat_and_digests_cover_the_stream(self):
+        # 4 MiB through the sink: nothing is kept, the digest still covers every byte (review finding 2).
+        code = 'import sys; [sys.stdout.buffer.write(bytes([i % 251]) * 65536) for i in range(64)]; sys.stderr.write("tail")'
+        expected = hashlib.sha256(b''.join(bytes([i % 251]) * 65536 for i in range(64)))
+        sink = self.root / 'big.log'
+        with sink.open('wb') as stream:
+            record = native_run.run(self.host(code), work=None, sink=stream)
+        self.assertEqual(record.stdout, b'')
+        self.assertEqual(sink.stat().st_size, 64 * 65536)
+        self.assertEqual(record['stdout_sha256'], expected.hexdigest())
+        console = expected.copy()
+        console.update(b'tail')
+        self.assertEqual((record.stderr, record['console_sha256']), (b'tail', console.hexdigest()))
 
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
@@ -589,7 +656,7 @@ class SandboxTest(unittest.TestCase):
         self.assertNotIn(b'writable', record.stdout)
         self.assertEqual(len(record.stdout) + len(record.stderr), 200)
         parsed = native_run.profile(record)
-        self.assertEqual(parsed.normalized(), stage_receipts.sandbox_profile(record['sandbox_argv']))
+        self.assertEqual(parsed.normalized(), historical_sandbox_profile(record['sandbox_argv']))
         self.assertEqual(json.loads((self.root / 'w/execution.json').read_text()), dict(record))
 
     def test_bounded_run_refuses_descriptor_mounts(self):

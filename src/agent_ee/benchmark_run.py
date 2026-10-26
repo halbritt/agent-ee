@@ -445,7 +445,14 @@ def launch(container, output):
 
     with (output/'console.log').open('wb') as console:
         execution = native_run.run(intent,work=None,adapter=docker,on_launch=launched,sink=console)
+    # A client that never started (docker missing) or never ran to its own exit is a launch failure,
+    # raised before any exit record, as Popen raised before.
+    if execution['execution']=='unavailable':
+        raise FileNotFoundError(execution.stdout.decode(errors='replace') or f'{command[0]} could not be started')
     returncode = execution.returncode
+    if execution['execution'] not in ('ok','failed') or returncode is None:
+        raise RuntimeError(f"benchmark container launch {execution['execution']}: "
+                           +(execution.stderr.decode(errors='replace').strip() or 'no diagnostic'))
     write_json(output/'exit.json',{'exit_code':returncode})
     if returncode:
         raise subprocess.CalledProcessError(returncode,command)

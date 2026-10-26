@@ -1253,6 +1253,22 @@ class FontSubstitutionTests(unittest.TestCase):
 
 
 class ContainerCommandTests(unittest.TestCase):
+    def test_launch_that_cannot_start_docker_raises_before_an_exit_record(self):
+        # Review finding (AGENTEE-540 batch d): an unavailable client used to return with exit_code null.
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from agent_ee.benchmark_run import container_run, launch
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            container = container_run('agent-ee-21-x', 'sha256:'+'a'*64, Path('/src'), [(output, False)], ['_execute'])
+            with mock.patch('agent_ee.native_run.subprocess.Popen', side_effect=FileNotFoundError('docker')), \
+                    self.assertRaisesRegex(FileNotFoundError, 'docker'):
+                launch(container, output)
+            self.assertTrue((output/'command.json').is_file())
+            self.assertFalse((output/'exit.json').exists())
+            self.assertFalse((output/'process.json').exists())
+
     def test_image_launch_keeps_network_init_and_read_only_mounts(self):
         from pathlib import Path
         from agent_ee.benchmark_run import container_command

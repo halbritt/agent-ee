@@ -193,7 +193,8 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     Execution as its native_execution attribute (execution "callback_failed"). An operator
     interrupt (SIGINT held during the launch) likewise re-raises KeyboardInterrupt carrying the
     stopped run's Execution (execution "interrupted") for host, docker and bounded sandbox runs.
-    sink, a binary file (host and docker), receives stdout as it arrives; it is also kept.
+    sink, a binary file (host and docker), receives stdout as it arrives instead of it being kept in
+    memory (Execution.stdout is then empty; the record's digests cover the full stream); work must be None.
     """
     if not isinstance(intent, Intent):
         raise TypeError("native run needs an Intent")
@@ -299,13 +300,18 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     SIGTERM to the group and waits that long before SIGKILL on an early stop. on_tick runs before
     every poll of the loop. log_bytes caps the combined stdout+stderr kept; the first read past it
     stops the run as output_limit (logs_truncated), and the post-stop drain stays within the cap.
-    sink gets each stdout chunk as it arrives (flushed); merge_stderr sends stderr into stdout.
+    sink gets each stdout chunk as it arrives (flushed) and the stream is then not kept (the returned
+    stdout is empty); its digests, computed over the full stream, are in the fields. merge_stderr
+    sends stderr into stdout.
     When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
     is re-raised with (fields, stdout, stderr) attached as native_execution.
     """
     cancel = cancel or Cancellation()
     fields = {"execution": "not_run", "exit_code": None}
     output, errors, pending = bytearray(), bytearray(), bytearray()
+    # With a sink the stream is not kept: memory stays flat however long the run, and its digests
+    # are computed incrementally over the full stream.
+    stdout_hash = hashlib.sha256()
     start = time.monotonic()
     proc = None
     with tempfile.TemporaryFile() as input_stream:
@@ -357,8 +363,10 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                     if key.fileobj is proc.stderr:
                         errors.extend(chunk)
                     else:
-                        output.extend(chunk)
-                        if sink is not None:
+                        stdout_hash.update(chunk)
+                        if sink is None:
+                            output.extend(chunk)
+                        else:
                             sink.write(chunk)
                             sink.flush()
                         if deliver and on_line is not None:
@@ -433,6 +441,11 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
             except Exception as exc:
                 fields["cleanup_error"] = f"stop cleanup failed: {exc}"
     fields["duration_s"] = round(time.monotonic() - start, 3)
+    if sink is not None:
+        console = stdout_hash.copy()
+        console.update(errors)
+        fields.update(stdout_sha256=stdout_hash.hexdigest(), stderr_sha256=hashlib.sha256(errors).hexdigest(),
+                      console_sha256=console.hexdigest())
     if failure is not None:
         failure.native_execution = (fields, bytes(output), bytes(errors))
         raise failure
@@ -511,10 +524,11 @@ def _write_records(opened, record, output, stderr):
 
 
 def _digests(record, output, stderr):
-    record["console_sha256"] = hashlib.sha256(output + stderr).hexdigest()
+    """Digests of the kept output, unless supervise already recorded them over a sink's full stream."""
+    record.setdefault("console_sha256", hashlib.sha256(output + stderr).hexdigest())
     record["console"] = "console.log"
-    record["stdout_sha256"] = hashlib.sha256(output).hexdigest()
-    record["stderr_sha256"] = hashlib.sha256(stderr).hexdigest()
+    record.setdefault("stdout_sha256", hashlib.sha256(output).hexdigest())
+    record.setdefault("stderr_sha256", hashlib.sha256(stderr).hexdigest())
 
 
 class Host:
@@ -528,6 +542,8 @@ class Host:
             raise ValueError(f"the host adapter cannot run a {intent.isolation} intent")
         if mounts:
             raise ValueError("a host run has no mount namespace; pass host paths in argv")
+        if sink is not None and work is not None:
+            raise ValueError("a sink run keeps its stream in the sink; it writes no record files (work=None)")
         forget_scope()
         try:
             with _records(work) as opened:
@@ -588,6 +604,8 @@ class Docker:
             raise ValueError(f"the docker adapter cannot run a {intent.isolation} intent")
         if mounts:
             raise ValueError("docker runs declare their volumes on the adapter")
+        if sink is not None and work is not None:
+            raise ValueError("a sink run keeps its stream in the sink; it writes no record files (work=None)")
         command = self.argv(intent)
 
         def kill_container():
