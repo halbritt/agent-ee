@@ -212,37 +212,7 @@ def derive_map(declaration, overlay):
 
 
 def derive_obligations(record, spec_raw, overlay):
-    clauses = []
-    for source in record['requirements'] + record['prose']:
-        rid = source['id']
-        if rid not in overlay['obligations']:
-            raise ValueError(f'overlay declares no obligation for captured clause {rid}')
-        spans = []
-        for span in overlay['obligations'][rid]:
-            exact_keys(span, 'byte_start byte_end obligation')
-            start, end = span['byte_start'], span['byte_end']
-            spans.append({'byte_start': start, 'byte_end': end,
-                          'text_sha256': sha256(spec_raw[start:end]), 'obligation': span['obligation']})
-        clauses.append({'id': rid, 'spans': spans})
-    extra = set(overlay['obligations']) - {c['id'] for c in clauses}
-    if extra:
-        raise ValueError('overlay obligations name unknown clauses: ' + ', '.join(sorted(extra)))
-    return {'schema': requirement_map.OBLIGATIONS_SCHEMA, 'spec_sha256': sha256(spec_raw), 'clauses': clauses}
-
-
-def _inventory(root):
-    """Ordinary files under root by relative path; any file or directory link refuses."""
-    root = Path(root)
-    files = {}
-    for path in sorted(root.rglob('*')):
-        if path.is_symlink():
-            raise ValueError(f'input tree contains a link: {path}')
-        if path.is_dir():
-            continue
-        if not path.is_file():
-            raise ValueError(f'input tree contains a special file: {path}')
-        files[path.relative_to(root).as_posix()] = sha256(path.read_bytes())
-    return files
+    return requirement_map.compile_obligations(record, spec_raw, overlay['obligations'])
 
 
 def _disjoint(label, path, others):
@@ -330,7 +300,7 @@ def prepare(base, overlay_path, out, *, compile_against=None, added_sources=None
         trees['candidate'] = Path(compile_against).resolve()
     _disjoint('output', out, trees)
     _disjoint('output parent', out.parent, {k: v for k, v in trees.items() if v == out.parent})
-    base_files = _inventory(base)  # refuses file and directory links before anything is copied
+    base_files = requirement_map.input_inventory(base)  # refuses file and directory links before anything is copied
     staging = _owned_scratch(out)
     try:
         _disjoint('scratch', staging, trees)
@@ -349,7 +319,7 @@ def prepare(base, overlay_path, out, *, compile_against=None, added_sources=None
             target.write_bytes(derived_bytes)
             changed[path] = sha256(derived_bytes)
         # Validate the typed accounting against the derived set before sealing it.
-        files = _inventory(staging)
+        files = requirement_map.input_inventory(staging)
         bound = requirement_map.load_obligations(obligation_bytes, record, raw['spec.md'])
         scope, receipts = requirement_map.account_requirements(
             derived, record, raw['spec.md'], files=files, inputs=staging, obligations=bound)
@@ -394,7 +364,7 @@ def compile_typed(derived, candidate):
     manifest = json.loads((derived / 'overlay-manifest.json').read_bytes())
     candidate = Path(candidate).resolve()
     _disjoint('derived inputs', derived, {'candidate': candidate})
-    _inventory(candidate)  # refuses links before the recursive copy
+    requirement_map.input_inventory(candidate)  # refuses links before the recursive copy
     root = Path(tempfile.mkdtemp(prefix=derived.name + '.compile-', dir=derived.parent))
     try:
         shutil.copytree(candidate, root, symlinks=False, dirs_exist_ok=True)
@@ -406,7 +376,7 @@ def compile_typed(derived, candidate):
             target = root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(derived / name, target)
-        files = _inventory(root)
+        files = requirement_map.input_inventory(root)
         scope, receipt = requirement_map.compile_map(
             (derived / 'requirement-map.json').read_bytes(), (derived / 'spec-record.json').read_bytes(),
             (derived / 'spec.md').read_bytes(), files=files, inputs=root,

@@ -139,6 +139,18 @@ def disposition(entry, *, context=False, typed=False):
     return mode
 
 
+def _partition_span(spec_raw, start, end, cursor, last, *, rid, span_code, uncovered_code, label, bound_label):
+    if type(start) is not int or type(end) is not int or not cursor <= start < end <= last:
+        refuse(span_code, rid, f'overlapping, unordered or out-of-{bound_label} span')
+    if spec_raw[cursor:start].strip():
+        refuse(uncovered_code, rid, f'uncovered {label} bytes {cursor}:{start}')
+    try:
+        quote = spec_raw[start:end].decode('utf-8')
+    except UnicodeDecodeError:
+        refuse(span_code, rid, 'span splits a UTF-8 code point')
+    return quote, sha256(spec_raw[start:end])
+
+
 def source_mappings(original, declarations, spec_raw, *, context=False, reserved=(), typed=False):
     """Account for whole sources or an authored, byte-complete partition.
 
@@ -166,15 +178,10 @@ def source_mappings(original, declarations, spec_raw, *, context=False, reserved
         for span in entry['spans']:
             exact_keys(span, 'byte_start byte_end mapping')
             start, end = span['byte_start'], span['byte_end']
-            if (type(start) is not int or type(end) is not int or
-                    not cursor <= start < end <= last):
-                refuse(kind + '_span', rid, 'overlapping, unordered or out-of-source span')
-            if spec_raw[cursor:start].strip():
-                refuse('uncovered_' + kind, rid, f'uncovered {kind} bytes {cursor}:{start}')
-            try:
-                quote = spec_raw[start:end].decode('utf-8')
-            except UnicodeDecodeError:
-                refuse(kind + '_span', rid, 'span splits a UTF-8 code point')
+            quote, text_hash = _partition_span(
+                spec_raw, start, end, cursor, last, rid=rid,
+                span_code=kind + '_span', uncovered_code='uncovered_' + kind,
+                label=kind, bound_label='source')
             text(quote)
             mapping = span['mapping']
             if not isinstance(mapping, dict) or 'id' not in mapping:
@@ -184,7 +191,7 @@ def source_mappings(original, declarations, spec_raw, *, context=False, reserved
                 refuse('duplicate_mapping', mapping['id'], 'clause id collides with a source id')
             if rid in ('POD-AC-8', 'POD-AC-9') and mode != 'bench':
                 refuse('bench_only', rid, 'every clause of a bench-only requirement must be a bench obligation')
-            sources.append({'id': mapping['id'], 'text': quote, 'text_sha256': sha256(spec_raw[start:end]),
+            sources.append({'id': mapping['id'], 'text': quote, 'text_sha256': text_hash,
                             'locator': {**source['locator'], 'byte_start': start, 'byte_end': end},
                             'parent_id': rid})
             entries.append(mapping)
@@ -298,15 +305,11 @@ def load_obligations(raw, record, spec_raw):
         for span in entry['spans']:
             exact_keys(span, 'byte_start byte_end text_sha256 obligation')
             start, end = span['byte_start'], span['byte_end']
-            if type(start) is not int or type(end) is not int or not cursor <= start < end <= last:
-                refuse('obligation_partition', rid, 'overlapping, unordered or out-of-clause span')
-            if spec_raw[cursor:start].strip():
-                refuse('obligation_partition', rid, f'uncovered clause bytes {cursor}:{start}')
-            try:
-                spec_raw[start:end].decode('utf-8')
-            except UnicodeDecodeError:
-                refuse('obligation_partition', rid, 'span splits a UTF-8 code point')
-            if span['text_sha256'] != sha256(spec_raw[start:end]):
+            _, text_hash = _partition_span(
+                spec_raw, start, end, cursor, last, rid=rid,
+                span_code='obligation_partition', uncovered_code='obligation_partition',
+                label='clause', bound_label='clause')
+            if span['text_sha256'] != text_hash:
                 refuse('obligation_text_drift', rid, f'span {start}:{end} hash differs from the spec bytes')
             obligation = span['obligation']
             if obligation not in OBLIGATION_KINDS:
@@ -326,6 +329,65 @@ def load_obligations(raw, record, spec_raw):
         raise Refused([{'code': 'obligation_missing', 'id': rid, 'message': f'{rid}: no obligation'}
                        for rid in sorted(missing)])
     return bound
+
+
+def input_inventory(root):
+    """Ordinary files under root by relative path; any file or directory link or special file refuses."""
+    from .stage_receipts import file_tree
+    files, other = file_tree(root)
+    if other:
+        raise ValueError('build inputs contain links or special files: ' + str(other))
+    return files
+
+
+def compile_obligations(record, spec_raw, obligation_map):
+    """Compile an obligations/1 document from per-clause span declarations and spec bytes."""
+    clauses = []
+    for source in record['requirements'] + record['prose']:
+        rid = source['id']
+        if rid not in obligation_map:
+            raise ValueError(f'overlay declares no obligation for captured clause {rid}')
+        spans = []
+        for span in obligation_map[rid]:
+            exact_keys(span, 'byte_start byte_end obligation')
+            start, end = span['byte_start'], span['byte_end']
+            spans.append({'byte_start': start, 'byte_end': end,
+                          'text_sha256': sha256(spec_raw[start:end]), 'obligation': span['obligation']})
+        clauses.append({'id': rid, 'spans': spans})
+    extra = set(obligation_map) - {c['id'] for c in clauses}
+    if extra:
+        raise ValueError('overlay obligations name unknown clauses: ' + ', '.join(sorted(extra)))
+    return {'schema': OBLIGATIONS_SCHEMA, 'spec_sha256': sha256(spec_raw), 'clauses': clauses}
+
+
+def bind_receipt(receipt, spec_raw, *, source_hashes, accounting, provisional=False):
+    """Verify that a requirement-map receipt matches captured inputs, accounting, and UTF-8 spec spans."""
+    if provisional:
+        receipt.update(source_hashes)
+    if any(receipt.get(field) != pin for field, pin in source_hashes.items()):
+        raise ValueError('Requirement receipt differs from captured source inputs')
+    fields = ('id', 'parent_id', 'mode', 'mapping', 'locator', 'text_sha256', 'obligation',
+              'obligation_text_sha256', 'bound_ids')
+    expected_rows = {row['id']: {key: row.get(key) for key in fields} for row in accounting}
+    actual_rows = {row['id']: {key: row.get(key) for key in fields} for row in receipt['requirements']}
+    if len(actual_rows) != len(receipt['requirements']) or actual_rows != expected_rows:
+        raise ValueError('Requirement receipt differs from sealed requirements accounting')
+    for entry in receipt['requirements']:
+        locator = entry['locator']
+        if isinstance(locator, dict) and {'byte_start', 'byte_end'} <= locator.keys():
+            start, end = locator['byte_start'], locator['byte_end']
+            if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(spec_raw):
+                raise ValueError('Requirement receipt has an invalid source span')
+            try:
+                spec_raw[:start].decode('utf-8')
+                spec_raw[start:end].decode('utf-8')
+            except UnicodeError as exc:
+                raise ValueError('Requirement receipt splits a source code point') from exc
+            pin = sha256(spec_raw[start:end])
+            if entry.get('obligation_text_sha256') != pin or entry['text_sha256'] != pin:
+                raise ValueError('Requirement receipt source span hash is stale')
+        elif entry['obligation'] not in ('executable', 'physical') or not entry.get('source'):
+            raise ValueError('Typed non-spec obligation is not an executable envelope source')
 
 
 def bind_obligation(source, mode, obligations):

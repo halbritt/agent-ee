@@ -14,8 +14,10 @@ import shutil
 import subprocess
 import sys
 
-from agent_ee import build_workflow as build, qualification
+from agent_ee import build_workflow as build
 from agent_ee.storage import read_json, write_json
+
+qualification = build
 
 
 def probe(plan_path, run, out):
