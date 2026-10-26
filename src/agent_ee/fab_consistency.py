@@ -29,7 +29,6 @@ import math
 import os
 import re
 import shutil
-import stat
 import zipfile
 import xml.etree.ElementTree as ET
 from decimal import Decimal, DecimalException
@@ -38,17 +37,10 @@ from pathlib import PurePosixPath
 from . import kicad_embedded, models3d
 from .executor import SANDBOX_PATH
 from .fab_export import (ASSEMBLY_RULES, BOM_COLUMNS as BOM_HEADER, CPL_COLUMNS as CPL_HEADER, RULE_FIELDS,
-                         assembly_exclusions, header_records, verify_jlc_templates)
+                         assembly_exclusions, verify_jlc_templates, load_verified_manifest,
+                         ManifestError as Malformed, SCHEMA as MANIFEST_SCHEMA, LEGACY_SCHEMAS, REQUIRED_FILES)
 from .storage import digest, read_json, write_json
 
-MANIFEST_SCHEMA = 'agent-ee.fab-manifest/2'
-LEGACY_MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
-MANIFEST_SCHEMAS = frozenset((MANIFEST_SCHEMA, LEGACY_MANIFEST_SCHEMA))
-MANIFEST_KEYS = frozenset(('schema', 'candidate_id', 'board_path', 'board_sha256', 'tool', 'files',
-                           'headers', 'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
-                           'generated_utc'))
-OPTIONAL_MANIFEST_KEYS = frozenset(('bom_variant', 'probe_features'))
-REQUIRED_FILES = ('bom.csv', 'cpl.csv', 'gerbers.zip', 'pcb_summary.json')
 NON_COPPER_FAB = frozenset(('F.Mask', 'B.Mask', 'F.Paste', 'B.Paste', 'F.SilkS', 'B.SilkS',
                             'Edge.Cuts'))
 REQUIRED_NON_COPPER = frozenset(('F.Mask', 'B.Mask', 'Edge.Cuts'))
@@ -62,7 +54,6 @@ LCSC = re.compile(r'C\d+')
 NUMBER = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?')
 VARIABLE = re.compile(r'\$\{([^}]*)\}|\$\(([^)]*)\)')
 EMBED = 'kicad-embed://'
-MAX_FILES = 4096
 MAX_TEXT_BYTES = 64 * 1024 * 1024
 MAX_CITATIONS = 50
 COORDINATE_TOLERANCE = Decimal('0.01')
@@ -118,10 +109,6 @@ def earlier_geometry(scope, prerequisite, kind):
     if not earlier:
         raise ValueError(f'{kind} needs an earlier geometry check for native footprint evidence')
     return earlier
-
-
-class Malformed(ValueError):
-    """Package structure or required evidence is invalid."""
 
 
 def fail(code, message):
@@ -328,136 +315,6 @@ def check_build_logs(ctx, eid, export_result, defects, gaps):
 
 
 # ----------------------------------------------------------------------- manifest
-
-def unique_object(pairs):
-    keys = [key for key, _ in pairs]
-    if len(keys) != len(set(keys)):
-        fail('manifest', 'duplicate JSON key')
-    return dict(pairs)
-
-
-def load_manifest(ctx, stage):
-    path = stage / 'manifest.json'
-    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
-        fail('manifest', 'manifest.json is absent, empty or not a regular file')
-    try:
-        data = json.loads(path.read_bytes().decode('utf-8'), object_pairs_hook=unique_object,
-                          parse_constant=lambda token: fail('manifest', f'non-finite {token}'))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        fail('manifest', f'manifest.json is not JSON ({exc})')
-    if (not isinstance(data, dict) or not (MANIFEST_KEYS <= set(data) <= MANIFEST_KEYS | OPTIONAL_MANIFEST_KEYS)
-            or not isinstance(data['schema'], str) or data['schema'] not in MANIFEST_SCHEMAS):
-        fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields (or legacy {LEGACY_MANIFEST_SCHEMA})')
-    board = ctx.scope.get('board')
-    captured = ctx.manifest['files'].get(board)
-    if data['candidate_id'] != ctx.manifest['candidate_id']:
-        fail('stale', 'manifest names a different candidate')
-    if data['board_path'] != board or not isinstance(captured, str):
-        fail('stale', f'manifest board_path {data["board_path"]!r} is not the captured scope board')
-    if data['board_sha256'] != captured or digest(ctx.inputs / board) != captured:
-        fail('stale', 'manifest board_sha256 differs from the captured board digest')
-    tool = data['tool']
-    if (not isinstance(tool, dict) or set(tool) != {'path', 'version', 'sha256'} or
-            not all(isinstance(tool[k], str) and tool[k] for k in tool) or
-            not SHA256.fullmatch(tool['sha256'])):
-        fail('manifest', 'tool needs path, version and sha256')
-    if not isinstance(data['generated_utc'], str) or not data['generated_utc']:
-        fail('manifest', 'generated_utc must be text')
-    try:
-        expected_headers = header_records()
-    except ValueError as exc:
-        fail('manifest', str(exc))
-    if data['headers'] != expected_headers:
-        fail('manifest', 'manifest headers do not match captured JLC templates')
-    files = data['files']
-    if not isinstance(files, dict) or not files or len(files) > MAX_FILES:
-        fail('manifest', 'files must be a nonempty bounded mapping')
-    for rel, sha in files.items():
-        parts = PurePosixPath(rel).parts
-        if (not isinstance(rel, str) or rel != PurePosixPath(rel).as_posix() or not parts or
-                PurePosixPath(rel).is_absolute() or '\\' in rel or
-                any(p in ('', '.', '..') for p in parts) or rel == 'manifest.json' or
-                not isinstance(sha, str) or not SHA256.fullmatch(sha)):
-            fail('manifest', f'unsafe or unhashed file entry {rel!r}')
-    copper = data['copper_layers']
-    layers = data['enabled_fab_layers']
-    if isinstance(copper, bool) or not isinstance(copper, int) or copper < 1:
-        fail('manifest', 'copper_layers must be a positive integer')
-    if (not isinstance(layers, list) or not layers or
-            any(not isinstance(n, str) or not n for n in layers) or len(set(layers)) != len(layers)):
-        fail('manifest', 'enabled_fab_layers must be unique layer names')
-    drill = data['drill']
-    if (not isinstance(drill, dict) or set(drill) != {'pth', 'npth'} or
-            not all(isinstance(drill[k], str) and drill[k] for k in drill) or
-            drill['pth'] == drill['npth']):
-        fail('manifest', 'drill must name distinct pth and npth files')
-    designators = data['designators']
-    non_dnp = designators.get('board_non_dnp') if isinstance(designators, dict) else None
-    if (not ({'board_non_dnp', 'excluded', 'exclusion_rule'} <= set(designators or {})
-                 <= {'board_non_dnp', 'excluded', 'exclusion_rule', 'mechanical'}) or
-            not isinstance(non_dnp, list) or
-            any(not isinstance(r, str) or not r for r in non_dnp) or
-            len(set(non_dnp)) != len(non_dnp)):
-        fail('manifest', 'designators must hold unique board_non_dnp references, excluded and exclusion_rule')
-    rule, excluded = designators['exclusion_rule'], designators['excluded']
-    if rule is not None and rule not in ASSEMBLY_RULES:
-        fail('manifest', f'designators.exclusion_rule {rule!r} is not a known assembly rule')
-    if (not isinstance(excluded, list) or
-            any(not isinstance(e, dict) or set(e) != {'designator', 'rule'} or e['rule'] != rule or
-                e['designator'] not in non_dnp for e in excluded) or
-            len({e['designator'] for e in excluded}) != len(excluded)):
-        fail('manifest', 'designators.excluded must be unique board_non_dnp designators under exclusion_rule')
-    if data['schema'] == MANIFEST_SCHEMA and 'mechanical' not in designators:
-        fail('manifest', f'{MANIFEST_SCHEMA} requires designators.mechanical (an empty list when the board has none)')
-    mechanical = designators.get('mechanical', [])
-    if (not isinstance(mechanical, list) or
-            any(not isinstance(ref, str) or not ref for ref in mechanical) or
-            len(set(mechanical)) != len(mechanical)):
-        fail('manifest', 'designators.mechanical must hold unique references')
-    return data
-
-
-def inventory(stage, manifest, missing_files=None):
-    """Verify regular, nonempty, hash-bound files against the exact manifest.
-
-    Roundtrip may collect absent files as named defects through missing_files;
-    the assembly gate retains its strict missing-file refusal.
-    """
-    found = {}
-    pending = [stage]
-    while pending:
-        directory = pending.pop()
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                rel = os.path.relpath(entry.path, stage).replace(os.sep, '/')
-                mode = entry.stat(follow_symlinks=False).st_mode
-                if stat.S_ISLNK(mode):
-                    fail('inventory', f'{rel} is a symbolic link')
-                if stat.S_ISDIR(mode):
-                    pending.append(entry.path)
-                elif not stat.S_ISREG(mode):
-                    fail('inventory', f'{rel} is not a regular file')
-                elif rel != 'manifest.json':
-                    found[rel] = entry.stat(follow_symlinks=False).st_size
-                if len(found) > MAX_FILES:
-                    fail('inventory', 'staging tree exceeds the file limit')
-    declared = manifest['files']
-    extra, missing = sorted(set(found) - set(declared)), sorted(set(declared) - set(found))
-    if extra or (missing and missing_files is None):
-        fail('inventory', f'staging files not in manifest {extra}; manifest files absent {missing}')
-    if missing_files is not None:
-        missing_files.extend(missing)
-    empty = sorted(rel for rel, size in found.items() if size == 0)
-    if empty:
-        fail('empty', f'empty staged artifact(s) {empty}')
-    stale = sorted(rel for rel in found if digest(stage / rel) != declared[rel])
-    if stale:
-        fail('hash', f'staged bytes differ from manifest hashes {stale}')
-    absent = [name for name in REQUIRED_FILES if name not in found]
-    if absent:
-        fail('inventory', f'required package file(s) absent {absent}')
-    return found
-
 
 def read_text(stage, rel, label):
     if (stage / rel).stat().st_size > MAX_TEXT_BYTES:
@@ -900,13 +757,13 @@ def _gate(ctx, eid, export_spec, export_result, stage):
     details.update(export_check=eid, netlist_check=nid, geometry_checks=geometry_ids, staging=f'work/{eid}/fab')
     defects, gaps = [], []
     try:
-        manifest = load_manifest(ctx, stage)
+        verified = load_verified_manifest(stage, context=ctx)
+        manifest, found = verified['manifest'], verified['files']
         details['manifest_sha256'] = digest(stage / 'manifest.json')
         details['tool'] = verify_tool(ctx, eid, export_result, manifest['tool'], gaps)
         details['build_logs'] = check_build_logs(ctx, eid, export_result, defects, gaps)
         ctx.result['evidence'] += [rel for record in details['tool']['version_records']
                                    for rel in (record, record[:-len('execution.json')] + 'stdout.log')]
-        found = inventory(stage, manifest)
         details['inventory'] = {'files': len(found), 'bytes': sum(found.values())}
         board = board_facts(ctx)
         reconcile_native(board, geometry, netlist, gaps)
@@ -986,10 +843,10 @@ def _gate(ctx, eid, export_spec, export_result, stage):
             manifest['designators']['mechanical'] != mechanical):
         raise CheckError('malformed', 'stale: manifest mechanical differs from the captured board')
     details['mechanical'] = mechanical
-    if manifest['schema'] == LEGACY_MANIFEST_SCHEMA:
+    if manifest['schema'] == LEGACY_SCHEMAS[0]:
         details['legacy_manifest_schema'] = {
-            'severity': 'advisory', 'schema': LEGACY_MANIFEST_SCHEMA,
-            'detail': f'{LEGACY_MANIFEST_SCHEMA} manifests are accepted as legacy only; the mechanical '
+            'severity': 'advisory', 'schema': LEGACY_SCHEMAS[0],
+            'detail': f'{LEGACY_SCHEMAS[0]} manifests are accepted as legacy only; the mechanical '
                       'declaration is not required for them, so a missing designators.mechanical is not refused'}
     details['copper_features'] = sorted(copper)
     rule = (export_spec.get('params') or {}).get('assembly_exclusion')

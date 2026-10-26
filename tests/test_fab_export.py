@@ -10,6 +10,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from agent_ee import executor
@@ -22,7 +23,7 @@ from agent_ee.fab_export import (BOM_COLUMNS, BOM_HEADER, BOM_HEADER_SHA256, BOM
                                  GERBER_TIMES, SCHEMA, VARIANT_BOM_FIELDS, ascii_text, assembled_parts,
                                  assembly_exclusions, board_facts, bom_rows, check_fab_export, cpl_rows,
                                  copper_feature_problems,
-                                 header_records, inventory, jlc_template_header, normalise, render_bom,
+                                 header_records, inventory, jlc_template_header, load_verified_manifest, normalise, render_bom,
                                  render_cpl, scan_sexpr, validate_params, variant_parts,
                                  verify_jlc_templates, verify_manifest, write_zip)
 from agent_ee.storage import digest, read_json, write_json
@@ -672,6 +673,58 @@ class CopperFeatureTests(unittest.TestCase):
             bindings = {} if comp is None else {'JP1': comp}
             self.assertTrue(copper_feature_problems(self.data, {'JP1'}, bindings))
         self.assertEqual(copper_feature_problems(self.data, {'JP1'}, {'JP1': {'excluded': []}}), [])
+
+
+class VerifiedManifestTests(unittest.TestCase):
+    def test_shared_cpl_renderer_preserves_quoted_rows_and_newlines(self):
+        from agent_ee.cpl_rotation import render_cpl as rotation_renderer
+        self.assertIs(rotation_renderer, render_cpl)
+        self.assertEqual(rotation_renderer([['R1', '1.00', '-2', 'Top', '90'],
+                                           ['J,2', '3', '4', 'Bottom', '0']]).encode(),
+                         b'Designator,Mid X,Mid Y,Layer,Rotation\nR1,1.00,-2,Top,90\n"J,2",3,4,Bottom,0\n')
+
+    def test_reader_verifies_inventory_and_preserves_roundtrip_missing_file_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage = root / 'fab'
+            stage.mkdir()
+            (root / 'board.kicad_pcb').write_bytes(BOARD)
+            for name in ('bom.csv', 'cpl.csv', 'gerbers.zip', 'pcb_summary.json', 'extra.gbr'):
+                (stage / name).write_bytes(b'fixture')
+            manifest = {'schema': SCHEMA, 'candidate_id': 'fixture', 'board_path': 'board.kicad_pcb',
+                        'board_sha256': digest(root / 'board.kicad_pcb'),
+                        'tool': {'path': 'kicad-cli', 'version': 'fixture', 'sha256': 'a' * 64},
+                        'files': inventory(stage), 'headers': header_records(), 'copper_layers': 2,
+                        'enabled_fab_layers': ['F.Cu', 'B.Cu'], 'drill': {'pth': 'p.drl', 'npth': 'n.drl'},
+                        'designators': {'board_non_dnp': [], 'excluded': [], 'exclusion_rule': None,
+                                        'mechanical': []}, 'generated_utc': 'fixture'}
+            write_json(stage / 'manifest.json', manifest)
+            context = SimpleNamespace(scope={'board': 'board.kicad_pcb'}, inputs=root,
+                                      manifest={'candidate_id': 'fixture', 'files': {
+                                          'board.kicad_pcb': manifest['board_sha256']}})
+            self.assertEqual(load_verified_manifest(stage)['files'], manifest['files'])
+            self.assertEqual(load_verified_manifest(stage, context=context)['manifest'], manifest)
+            (stage / 'extra.gbr').unlink()
+            for kwargs in ({}, {'context': context}):
+                with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, 'absent|missing'):
+                    load_verified_manifest(stage, **kwargs)
+            missing = []
+            verified = load_verified_manifest(stage, context=context, missing_files=missing)
+            self.assertEqual(missing, ['extra.gbr'])
+            self.assertNotIn('extra.gbr', verified['files'])
+            (stage / 'cpl.csv').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'hash:'):
+                load_verified_manifest(stage, context=context, missing_files=[])
+
+    def test_strict_reader_rejects_duplicate_keys_and_nonfinite_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            for text, message in (('{"schema": 1, "schema": 2}', 'duplicate JSON key'),
+                                  ('{"value": NaN}', 'non-finite NaN')):
+                with self.subTest(text=text):
+                    (stage / 'manifest.json').write_text(text)
+                    with self.assertRaisesRegex(ValueError, message):
+                        load_verified_manifest(stage, context=SimpleNamespace())
 
 
 class PackagingTests(unittest.TestCase):

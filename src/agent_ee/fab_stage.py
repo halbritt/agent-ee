@@ -9,7 +9,7 @@ from . import cpl_rotation
 from .baseline import freeze_evidence, verify_evidence
 from .candidate import capture, source_manifest
 from .checks import run_checks
-from .fab_export import JLC_TEMPLATE_DIR, inventory, verify_manifest
+from .fab_export import JLC_TEMPLATE_DIR, inventory, load_verified_manifest
 from .fab_package import ROTATION_STATUSES, preview_obligations
 from .storage import digest, read_json, write_json
 
@@ -98,7 +98,7 @@ def _step_package(ctx):
             or record['schematic']['sha256'] != ctx.manifest['files'][ctx.scope['schematic']]):
         raise CheckError('malformed', 'declared fab package manifest disagrees with its output or candidate')
     native = path.parent / 'run/out/checks/work/fab/fab'
-    native_files = verify_manifest(native, read_json(native / 'manifest.json'))
+    native_files = load_verified_manifest(native)['files']
     for rel, sha in {**native_files, 'manifest.json': digest(native / 'manifest.json')}.items():
         if receipt['artifacts'].get(f'out/checks/work/fab/fab/{rel}') != sha:
             raise CheckError('malformed', 'declared fab step native export is not sealed')
@@ -118,10 +118,10 @@ def grade_native(ctx):
         if package is None:
             return
         native, output, files = package
-        fresh_manifest = read_json(ctx.work / 'fab/manifest.json')
-        native_manifest = read_json(native / 'manifest.json')
-        actual = verify_manifest(ctx.work / 'fab', fresh_manifest)
-        sealed = verify_manifest(native, native_manifest)
+        fresh = load_verified_manifest(ctx.work / 'fab')
+        retained = load_verified_manifest(native)
+        fresh_manifest, actual = fresh['manifest'], fresh['files']
+        native_manifest, sealed = retained['manifest'], retained['files']
         context_fields = {'candidate_id', 'generated_utc'}
         if ({k: v for k, v in fresh_manifest.items() if k not in context_fields}
                 != {k: v for k, v in native_manifest.items() if k not in context_fields}):
@@ -134,7 +134,7 @@ def grade_native(ctx):
         for rel in actual:
             source = native / rel if rel == 'cpl.csv' else output / rel
             shutil.copyfile(source, ctx.work / 'fab' / rel)
-        verify_manifest(ctx.work / 'fab', fresh_manifest)
+        load_verified_manifest(ctx.work / 'fab')
         ctx.result['details']['fab_step_files'] = files
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'declared fab step refused: {exc}') from exc
@@ -296,8 +296,7 @@ def package(run, target, manifest_path):
     results = [read_json(run / 'checks' / f"{spec['id']}.json") for spec in candidate['scope']['checks']]
     verify_evidence(run, results, required=True)
     native = run / 'work/fab/fab'
-    manifest = read_json(native / 'manifest.json')
-    verify_manifest(native, manifest)
+    manifest = load_verified_manifest(native)['manifest']
     report_path = run / 'work/cpl/cpl-rotation.json'
     report = read_json(report_path)
     if (report['execution'], report['outcome'], report['coverage']) != ('ok', 'pass', 'complete'):

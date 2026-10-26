@@ -871,11 +871,11 @@ def check_fab_roundtrip(ctx):
         defects.append({'code': code, 'locator': locator})
 
     try:
-        manifest = package.load_manifest(ctx, stage)
+        missing = []
+        verified = package.load_verified_manifest(stage, context=ctx, missing_files=missing)
+        manifest, found = verified['manifest'], verified['files']
         details['manifest_sha256'] = digest(stage / 'manifest.json')
         details['tool'] = package.verify_tool(ctx, eid, export_result, manifest['tool'], gaps)
-        missing = []
-        found = package.inventory(stage, manifest, missing)
         board = package.board_facts(ctx)
         enabled = package.reconcile_layers(manifest, board)
         if facts['copper_layers'] != board['copper']:

@@ -46,7 +46,7 @@ from .assembly_readiness import (AssemblyReadinessExecutionError, ISO_DATE_RE, L
                                  load_catalog_snapshot)
 from .catalog import decimal_number
 from .cpl_rotation import read_bom_bindings, read_native_cpl
-from .fab_export import natural_key, scan_sexpr, verify_manifest
+from .fab_export import natural_key, scan_sexpr, load_verified_manifest
 from .footprint_library import THERMAL_VIA_PROPERTIES, thermal_via_property
 from .hardware_interface import unique_object
 from .storage import digest, read_json, write_json
@@ -596,8 +596,7 @@ def check_jlc_cost_estimate(ctx):
     manifest_path = prerequisite(ctx, eid, 'fab_export', 'fab/manifest.json')
     stage = manifest_path.parent
     try:
-        manifest = read_json(manifest_path)
-        verify_manifest(stage, manifest)
+        manifest = load_verified_manifest(stage)['manifest']
         if manifest.get('board_sha256') != board_sha:
             raise ValueError('export manifest is bound to another board digest')
         layers = manifest.get('copper_layers')

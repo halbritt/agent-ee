@@ -32,9 +32,7 @@ unlisted geometry; one that still appears as a CPL row refuses the staging. Stat
 physically validates a JLCPCB placement model.
 """
 
-import csv
 import hashlib
-import io
 import json
 import re
 import shutil
@@ -44,7 +42,7 @@ from pathlib import Path
 
 from .easyeda_footprint import SupplierError, parse_package, symbol_pins
 from .fab_export import (BOM_COLUMNS, CPL_HEADER, NUMBER_RE, REF_RE, load_verified_staging,
-                         natural_key, read_bom_records, read_native_cpl, verify_manifest)
+                         natural_key, read_bom_records, read_native_cpl, render_cpl)
 from .land_pattern import (PatternError, _decimal_text, _json, _path, board_footprint, board_footprints,
                            validate_provenance)
 from .storage import digest, read_json, write_json
@@ -602,13 +600,6 @@ def aggregate(records):
     if failing:
         return max((r['execution'] for r in failing), key=SEVERITY.get), 'unknown', 'incomplete'
     return 'ok', 'pass', 'complete'
-
-
-def render_cpl(rows):
-    out = io.StringIO()
-    out.write(CPL_HEADER + '\n')
-    csv.writer(out, lineterminator='\n').writerows(rows)
-    return out.getvalue()
 
 
 # --------------------------------------------------------- captured inputs

@@ -272,8 +272,8 @@ def artifact_record(run_dir, check):
     manifest_path = fab / 'manifest.json'
     if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.stat().st_size == 0:
         raise ValueError(f'fab_package {cid!r} manifest is absent or empty')
-    manifest = read_json(manifest_path)
-    listed = fab_export.verify_manifest(fab, manifest)
+    verified = fab_export.load_verified_manifest(fab)
+    manifest, listed = verified['manifest'], verified['files']
     if manifest.get('candidate_id') != check.get('candidate_id'):
         raise ValueError(f'fab_package {cid!r} manifest belongs to another candidate')
     drill = manifest.get('drill') or {}
