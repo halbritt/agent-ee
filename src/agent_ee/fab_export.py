@@ -1229,6 +1229,8 @@ def load_verified_manifest(stage, *, context=None, missing_files=None):
     roundtrip can collect missing files as defects through missing_files. Strict
     inventories report byte sizes, ordinary inventories report file digests.
     """
+    if missing_files is not None and context is None:
+        raise ValueError('missing_files requires context')
     stage = Path(stage)
     manifest_path = stage / 'manifest.json'
     if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.stat().st_size == 0:

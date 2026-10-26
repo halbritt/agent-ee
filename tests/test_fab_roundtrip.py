@@ -300,6 +300,21 @@ class NativeRoundtripTests(NativeCase):
                 self.assertIn(name, result['location'])
                 self.witness(result, True)
 
+    def test_multiple_missing_package_files_remain_named_sealed_defects(self):
+        missing = []
+
+        def remove_files(ctx, stage):
+            for pattern in ('gerbers/*B_Mask*', 'drill/*-NPTH.drl'):
+                path = next(stage.glob(pattern))
+                missing.append(path.relative_to(stage).as_posix())
+                path.unlink()
+
+        result = self.run_case(mutate=remove_files)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        locators = {d['locator'] for d in result['details']['defects'] if d['code'] == 'missing_file'}
+        self.assertLessEqual({f'missing package file {relative}' for relative in missing}, locators)
+        self.witness(result, True)
+
     def test_dropped_hole_wrong_diameter_plating_and_flash_never_pass(self):
         cases = [('drill/*-PTH.drl', 'X120.0Y-108.0\n', '', 'ok', 'drill_histogram'),
                  ('drill/*-NPTH.drl', 'T1C1.500', 'T1C1.600', 'ok', 'drill_histogram'),

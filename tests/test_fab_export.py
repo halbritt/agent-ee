@@ -676,6 +676,12 @@ class CopperFeatureTests(unittest.TestCase):
 
 
 class VerifiedManifestTests(unittest.TestCase):
+    def test_missing_file_collection_requires_strict_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for missing in ([], ['already-missing.gbr']):
+                with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, 'missing_files requires context'):
+                    load_verified_manifest(Path(tmp) / 'absent', missing_files=missing)
+
     def test_shared_cpl_renderer_preserves_quoted_rows_and_newlines(self):
         from agent_ee.cpl_rotation import render_cpl as rotation_renderer
         self.assertIs(rotation_renderer, render_cpl)

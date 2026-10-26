@@ -38,9 +38,9 @@ from pathlib import PurePosixPath
 
 from . import kicad_embedded, models3d
 from .executor import SANDBOX_PATH
-from .fab_export import (ASSEMBLY_RULES, BOM_COLUMNS as BOM_HEADER, CPL_COLUMNS as CPL_HEADER, RULE_FIELDS,
+from .fab_export import (BOM_COLUMNS as BOM_HEADER, CPL_COLUMNS as CPL_HEADER, RULE_FIELDS,
                          assembly_exclusions, verify_jlc_templates, load_verified_manifest,
-                         ManifestError as Malformed, SCHEMA as MANIFEST_SCHEMA, LEGACY_SCHEMAS, REQUIRED_FILES)
+                         ManifestError as Malformed, LEGACY_SCHEMAS)
 from .storage import digest, read_json, write_json
 
 NON_COPPER_FAB = frozenset(('F.Mask', 'B.Mask', 'F.Paste', 'B.Paste', 'F.SilkS', 'B.SilkS',

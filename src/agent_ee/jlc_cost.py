@@ -51,7 +51,7 @@ from .cpl_rotation import read_bom_bindings, read_native_cpl
 from .fab_export import natural_key, scan_sexpr, load_verified_manifest
 from .footprint_library import THERMAL_VIA_PROPERTIES, thermal_via_property
 from .hardware_interface import unique_object
-from .storage import digest, read_json, write_json
+from .storage import digest, write_json
 from .symbol_library import LibraryError, children, field, nanometres
 
 REPORT = 'agent-ee.jlc-cost-estimate/1'
