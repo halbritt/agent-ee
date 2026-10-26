@@ -22,9 +22,13 @@ A board description is a plain dict:
   ``holes_local_nm``, ``pads`` and ``seats_local_nm`` (``body:fab`` and
   ``body:silk`` rectangles, or None).
 
-The Rust engine owns the contour limits, the occupancy rung names, the
-escape-space label and the numeric edge rules: it validates every problem it
-reads. This module emits those values once and does not repeat the checks.
+The Rust engine owns the contour limits, the occupancy rung names and the
+escape-space label: it validates every problem it reads, and this module emits
+those values once without repeating the checks. Declared edge connectors are
+checked once on their authored millimetre values by the intent validator
+(placement_intent.validate_edge_connector), before conversion, because rounding
+to nanometres can hide a reversed, negative or open-ended interval; the engine
+then validates the converted values at its own input boundary.
 """
 from collections import defaultdict
 import hashlib
@@ -116,20 +120,26 @@ def fixed_pose_owners(fixed_poses, footprints):
 
 
 def edge_rules(declarations, footprints):
-    """Declared edges by reference, converted to engine units; the engine validates the values."""
+    """Declared edges by reference, checked on their authored values, then converted to engine units.
+
+    The authored check is the intent validator's own (rounding to nanometres can hide a
+    reversed, negative or open-ended interval); the engine validates the converted values.
+    """
+    from .placement_intent import validate_edge_connector
     edges = {}
-    for row in declarations:
+    for index, row in enumerate(declarations):
+        try:
+            validate_edge_connector(row, f'edges[{index}]')
+        except ValueError as exc:
+            raise JobRefusal(f'{row.get("ref") if isinstance(row, dict) else row}: {exc}') from exc
         ref = row['ref']
         if ref in edges or sum(f['ref'] == ref for f in footprints) != 1:
             raise JobRefusal(f'{ref}: edge connector must identify one native footprint')
-        rule = {'edge': row.get('edge'), 'max_setback_nm': None}
+        rule = {'edge': row['edge'], 'max_setback_nm': None}
         if row.get('max_setback_mm') is not None:
             rule['max_setback_nm'] = rule_mm(row['max_setback_mm'], f'{ref}: malformed edge setback')
         if 'overhang_mm' in row:
-            # The shape is checked here because conversion would hide it; the engine checks the values.
             interval = row['overhang_mm']
-            if not isinstance(interval, dict) or not interval or set(interval) - {'min', 'max'}:
-                raise JobRefusal(f'{ref}: malformed overhang interval')
             rule['overhang_nm'] = {
                 'min': rule_mm(interval.get('min', 0), f'{ref}: malformed overhang interval'),
                 'max': rule_mm(interval['max'], f'{ref}: malformed overhang interval') if 'max' in interval else None}

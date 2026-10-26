@@ -130,18 +130,26 @@ class BuilderTests(unittest.TestCase):
         changed['weights']['edge'] += 1
         self.assertNotEqual(problem_builder.identity(changed), measured['problem_sha256'])
 
-    def test_edge_values_are_left_to_the_engine_but_shapes_and_identity_are_checked(self):
+    def test_edges_are_checked_on_authored_values_before_conversion(self):
+        """One authored-value check (the intent validator's), also on the direct board_metrics edges."""
         description = board()
-        for declared, message in (({'ref': 'J9', 'edge': 'west'}, 'J9: edge connector must identify one'),
-                                  ({'ref': 'J1', 'edge': 'west', 'overhang_mm': {'lo': 0}}, 'malformed overhang'),
-                                  ({'ref': 'J1', 'edge': 'west', 'max_setback_mm': 'x'}, 'malformed edge setback')):
+        fixed = bundle()['intent']['fixed_poses']
+        for declared, message in (
+                ({'ref': 'J9', 'edge': 'west'}, 'J9: edge connector must identify one'),
+                ({'ref': 'J1', 'edge': 'up'}, r'edges\[0\]\.edge: expected west'),
+                ({'ref': 'J1', 'edge': 'west', 'overhang_mm': {'lo': 0}}, r'edges\[0\]\.overhang_mm\.lo'),
+                ({'ref': 'J1', 'edge': 'west', 'max_setback_mm': 'x'}, r'edges\[0\]\.max_setback_mm'),
+                ({'ref': 'J1', 'edge': 'west', 'max_setback_mm': -1e-7}, r'edges\[0\]\.max_setback_mm'),
+                ({'ref': 'J1', 'edge': 'west', 'overhang_mm': {'min': 2, 'max': 1}}, 'positive minimum'),
+                # Review finding: 1.0000002 > 1.0000001 mm, but both round to 1000000 nm.
+                ({'ref': 'J1', 'edge': 'west', 'overhang_mm': {'min': 1.0000002, 'max': 1.0000001}}, 'positive minimum'),
+                ({'ref': 'J1', 'edge': 'west', 'overhang_mm': {'min': 1e-7}}, 'positive minimum')):
             with self.subTest(declared=declared), self.assertRaisesRegex(job.JobRefusal, message):
-                problem_builder.evaluate(description, edges=[declared])
-        # A reversed interval converts as declared; the engine owns the value rule and refuses it.
-        reversed_ = problem_builder.evaluate(description, fixed_poses=bundle()['intent']['fixed_poses'],
-                                             edges=[{'ref': 'J1', 'edge': 'west', 'overhang_mm': {'min': 2, 'max': 1}}])
-        row = next(r for r in reversed_['footprints'] if r['native_ref'] == 'J1')
-        self.assertEqual(row['edge']['overhang_nm'], {'min': 2 * MM, 'max': MM})
+                problem_builder.evaluate(description, fixed_poses=fixed, edges=[declared])
+        accepted = problem_builder.evaluate(description, fixed_poses=fixed, edges=[
+            {'ref': 'J1', 'edge': 'west', 'overhang_mm': {'min': 0}}])
+        self.assertEqual(next(r for r in accepted['footprints'] if r['native_ref'] == 'J1')['edge']['overhang_nm'],
+                         {'min': 0, 'max': None})
 
 
 class OutputCheckTests(unittest.TestCase):
@@ -189,6 +197,24 @@ class OutputCheckTests(unittest.TestCase):
                 self.assertEqual(json.loads(child.call_args.kwargs['input_bytes']), expected)
 
 
+class DirectMetricsEdgeTests(unittest.TestCase):
+    """Review regression: board_metrics(edges=...) reaches the builder without intent normalization."""
+
+    def test_rounding_cannot_hide_a_reversed_overhang_on_the_direct_metrics_path(self):
+        import shutil
+        import tempfile
+        from toolchain import require_toolchain
+        from test_placement_job import build_board
+        require_toolchain(native=True)
+        directory = Path(tempfile.mkdtemp(prefix='ee538-edges-'))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        path = build_board(directory / 'board.kicad_pcb')
+        reversed_ = [{'ref': 'R1', 'edge': 'west', 'overhang_mm': {'min': 1.0000002, 'max': 1.0000001}}]
+        with patch.object(job, '_run_child', side_effect=AssertionError('engine reached')):
+            with self.assertRaisesRegex(job.JobRefusal, r'R1: edges\[0\]\.overhang_mm: positive minimum'):
+                job.board_metrics(path, edges=reversed_)
+
+
 class EngineOwnsTheValueRulesTests(unittest.TestCase):
     """The engine reads the built document and is the one owner of the edge value rules."""
 
@@ -205,8 +231,11 @@ class EngineOwnsTheValueRulesTests(unittest.TestCase):
         code, output = self.run_engine(evaluated(bundle()))
         self.assertEqual((code, output['status']), (0, 'evaluated'), output)
         problem_builder.check_output(output, evaluated(bundle()))
-        reversed_ = problem_builder.evaluate(board(), fixed_poses=bundle()['intent']['fixed_poses'],
-                                             edges=[{'ref': 'J1', 'edge': 'west', 'overhang_mm': {'min': 2, 'max': 1}}])
+        # The engine checks the converted values it receives, independently of the authored check.
+        reversed_ = copy.deepcopy(evaluated(bundle()))
+        row = next(r for r in reversed_['footprints'] if r['native_ref'] == 'J1')
+        row['edge']['overhang_nm'] = {'min': 2 * MM, 'max': MM}
+        reversed_['problem_sha256'] = problem_builder.identity(reversed_)
         code, output = self.run_engine(reversed_)
         self.assertEqual(code, 1)
         self.assertIn('malformed overhang interval', output['error'])

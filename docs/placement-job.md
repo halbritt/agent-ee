@@ -108,8 +108,13 @@ report. The earlier evaluator fixed them, so S1 never listed them.
 Declared `pad_edge` proximity reaches the measurement as declared, so an
 unresolved claim is reported, not refused.
 
-The engine is the only checker of the contour limits, occupancy rung names,
-escape-space label and numeric edge rules; capture emits those values once.
+The engine is the only checker of the contour limits, occupancy rung names
+and escape-space label; capture emits those values once. Declared edge
+connectors are checked once, on their authored millimetre values, by the
+intent validator, for intent documents and for the direct `board_metrics`
+edges alike. Rounding to nanometres could otherwise hide a reversed, negative
+or open-ended interval. The engine then validates the converted values it
+receives.
 
 Rich KRT `floorplan-intent` documents (`schema: 1`, `min_reader`, `assembly`,
 `blocks`, `keepouts`, `envelope`, `defaults`, `legality_budget`, `must_lock`,

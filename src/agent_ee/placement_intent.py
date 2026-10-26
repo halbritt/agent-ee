@@ -105,6 +105,40 @@ def _locality_fields(document, path):
                     'owner', 'commit', 'repository', 'manufacturer', 'capture', 'fact'))
 
 
+def validate_edge_connector(row, path):
+    """The one check of a declared edge connector, on its authored values.
+
+    Engine units are rounded nanometres, which can hide a reversed, negative or
+    open-ended interval, so these rules are checked here before any conversion.
+    The engine separately validates the converted values it receives.
+    """
+    _object(row, path, ('ref', 'edge'), ('max_setback_mm', 'overhang_mm', 'class',
+                                     'context', 'note', 'source'))
+    _text(row['ref'], path + '.ref')
+    if row['edge'] not in ('west', 'east', 'north', 'south'):
+        raise ValueError(path + '.edge: expected west, east, north or south')
+    if row.get('max_setback_mm') is not None:
+        _number(row['max_setback_mm'], path + '.max_setback_mm', nonnegative=True)
+    if 'overhang_mm' in row:
+        interval = row['overhang_mm']
+        subpath = path + '.overhang_mm'
+        _object(interval, subpath, optional=('min', 'max'))
+        if not interval:
+            raise ValueError(subpath + ': expected a nonempty interval')
+        for key, value in interval.items():
+            _number(value, subpath + '.' + key, nonnegative=True)
+        if ('max' in interval and interval['max'] < interval.get('min', 0)
+                or 'max' not in interval and interval.get('min', 0) > 0):
+            raise ValueError(subpath + ': positive minimum needs a finite maximum at least as large')
+    if 'class' in row and row['class'] not in ('edge_receptacle', 'connector_affinity'):
+        raise ValueError(path + '.class: unsupported edge seat class')
+    if 'context' in row:
+        _object(row['context'], path + '.context', optional=('mount_mode',))
+        if row['context'].get('mount_mode') not in ('edge_mount', 'top_mount'):
+            raise ValueError(path + '.context.mount_mode: unsupported mount mode')
+    _notes(row, path)
+
+
 def validate(intent, groups):
     """Validate declarations in place, without filtering or changing captured bytes."""
     if isinstance(intent, dict):
@@ -129,31 +163,7 @@ def validate(intent, groups):
             raise ValueError(path + '.side: expected F or B; side changes are unsupported')
         _notes(row, path)
     for path, row in _rows(intent.get('edge_connectors', []), 'intent.edge_connectors'):
-        _object(row, path, ('ref', 'edge'), ('max_setback_mm', 'overhang_mm', 'class',
-                                         'context', 'note', 'source'))
-        _text(row['ref'], path + '.ref')
-        if row['edge'] not in ('west', 'east', 'north', 'south'):
-            raise ValueError(path + '.edge: expected west, east, north or south')
-        if row.get('max_setback_mm') is not None:
-            _number(row['max_setback_mm'], path + '.max_setback_mm', nonnegative=True)
-        if 'overhang_mm' in row:
-            interval = row['overhang_mm']
-            subpath = path + '.overhang_mm'
-            _object(interval, subpath, optional=('min', 'max'))
-            if not interval:
-                raise ValueError(subpath + ': expected a nonempty interval')
-            for key, value in interval.items():
-                _number(value, subpath + '.' + key, nonnegative=True)
-            if ('max' in interval and interval['max'] < interval.get('min', 0)
-                    or 'max' not in interval and interval.get('min', 0) > 0):
-                raise ValueError(subpath + ': positive minimum needs a finite maximum at least as large')
-        if 'class' in row and row['class'] not in ('edge_receptacle', 'connector_affinity'):
-            raise ValueError(path + '.class: unsupported edge seat class')
-        if 'context' in row:
-            _object(row['context'], path + '.context', optional=('mount_mode',))
-            if row['context'].get('mount_mode') not in ('edge_mount', 'top_mount'):
-                raise ValueError(path + '.context.mount_mode: unsupported mount mode')
-        _notes(row, path)
+        validate_edge_connector(row, path)
     for path, row in _rows(intent.get('proximity', []), 'intent.proximity'):
         _object(row, path, ('ref', 'near', 'max_mm', 'pads'), ('basis', 'context'))
         if row.get('basis') == 'pad_edge' and not isinstance(row.get('context'), dict) or (
