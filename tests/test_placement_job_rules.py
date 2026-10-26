@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from build_stage_fixture import requirements as retained_requirements
+
 from agent_ee import net_constraints, placement_job as job, routing_rules
 from agent_ee.storage import digest, read_json, write_json
 from tests.toolchain import require_kicad_route, require_toolchain
@@ -217,22 +219,16 @@ class NativeRuleJobTests(unittest.TestCase):
                     self.assertNotIn('route', report)
 
     def test_build_placement_stage_captures_native_rules_automatically(self):
-        from agent_ee import build_workflow
         out = self.root / 'build-stage'
         inputs = out / 'inputs'
         config = prepare(inputs, self.config['router']['checkout'])
-        requirements = out / 'requirements'
-        requirements.mkdir()
-        write_json(requirements / 'scope.json', dict(board='interconnect.kicad_pcb', checks=[]))
-        write_json(requirements / 'accounting.json', dict(requirements=[]))
-        stage = out / 'placement-routing'
-        stage.mkdir()
+        attempt = retained_requirements(out, inputs, dict(board='interconnect.kicad_pcb', checks=[]), dict(requirements=[]))
+        stage = attempt.directory
         plan = dict(placement=dict(budget_s=config['budget_s'], search=config['search'],
             router=config['router'], intent='intent.json', groups='groups.json'))
         # A stage-boundary test, explicitly diagnostic: this software article
         # has no schematic or manufacturing requirement map.
-        candidate = build_workflow._execute('placement-routing', plan, inputs, stage,
-            [dict(stage='requirements', directory='requirements')], out, diagnostic=True)
+        candidate = attempt.execute(plan, inputs, diagnostic=True)
         captured = read_json(stage / 'placement-config.json')['inputs']['rules']
         self.assertEqual(captured['sha256'], config['inputs']['rules']['sha256'])
         self.assertEqual(digest(candidate / 'interconnect.kicad_dru'), captured['sha256'])

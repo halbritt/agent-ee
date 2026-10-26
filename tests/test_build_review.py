@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from agent_ee import build_workflow as build
+from agent_ee import build_workflow as build, retained_run
 from agent_ee.stage_receipts import tree_identity
 from agent_ee.storage import digest, identity, write_json
 
@@ -49,7 +49,8 @@ class BuildReviewCustodyTests(unittest.TestCase):
         unfinished.mkdir(parents=True)
         (unfinished / 'native.txt').write_text('UNFINISHED')
         before = tree_identity(self.run)
-        candidate, scope, selection = build._review_source(self.run)
+        selected = retained_run.review_source(self.run)
+        candidate, scope, selection = selected.candidate, selected.scope, selected.selection
         self.assertEqual(candidate, self.run / self.report['candidate'])
         self.assertEqual((candidate / 'native.txt').read_text(), 'schematic')
         self.assertEqual(scope['limitations'], ['Unqualified.'])

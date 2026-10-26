@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from build_stage_fixture import requirements as retained_requirements
+
 from agent_ee import placement_job as job
 from agent_ee.storage import digest, read_json, write_json
 from tests.test_placement_job_rules import prepare, public_job
@@ -117,20 +119,14 @@ class MatchingJobTests(unittest.TestCase):
         self.assertFalse(out.exists())
 
     def test_build_stage_carries_matching_controls_to_real_placement(self):
-        from agent_ee import build_workflow
         out = self.root / 'build-stage'
         inputs = out / 'inputs'
         config = asymmetric(inputs, self.config['router']['checkout'])
-        requirements = out / 'requirements'
-        requirements.mkdir()
-        write_json(requirements / 'scope.json', dict(board='interconnect.kicad_pcb', checks=[]))
-        write_json(requirements / 'accounting.json', dict(requirements=[]))
-        stage = out / 'placement-routing'
-        stage.mkdir()
+        attempt = retained_requirements(out, inputs, dict(board='interconnect.kicad_pcb', checks=[]), dict(requirements=[]))
+        stage = attempt.directory
         plan = dict(placement=dict(budget_s=config['budget_s'], search=config['search'],
             router=config['router'], intent='intent.json', groups='groups.json'))
-        candidate = build_workflow._execute('placement-routing', plan, inputs, stage,
-            [dict(stage='requirements', directory='requirements')], out, diagnostic=True)
+        candidate = attempt.execute(plan, inputs, diagnostic=True)
         captured = read_json(stage / 'placement-config.json')
         self.assertEqual(captured['router']['intra_pair_match'], config['router']['intra_pair_match'])
         report = read_json(stage / 'placement/job-report.json')

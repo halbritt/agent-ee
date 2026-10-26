@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from agent_ee import build_workflow as build, qualification
+from agent_ee import build_workflow as build, qualification, retained_run
 from agent_ee.stage_receipts import tree_identity
 from agent_ee.storage import digest, identity, read_json, write_json
 
@@ -229,6 +229,27 @@ class BuildQualificationTests(unittest.TestCase):
         self.assertEqual(result['status'], 'checkpoint')
         self.assertFalse(read_json(self.out / 'qualification.json')['accepted'])
         self.assertEqual(frozen, tree_identity(self.out / 'stages'))
+
+    def test_cancelled_build_resumes_on_the_existing_retained_directory(self):
+        _, _, plan_raw, plan, source, files = build.preflight_build(self.plan_path, self.out)
+        self.out.mkdir()
+        pin = dict(plan_sha256=hashlib.sha256(plan_raw).hexdigest(), source=files, runtime=build._runtime())
+        retained_run.initialize(self.out, pin)
+        (self.out / 'build-plan.json').write_bytes(plan_raw)
+        retained_run.capture_source(self.out, source, plan, files)
+        directory_inode = self.out.stat().st_ino
+        (self.out / 'CANCEL').touch()
+        cancelled = build.run(self.plan_path, self.out, through='requirements', resume=True)
+        self.assertEqual(cancelled['status'], 'interrupted', cancelled)
+        self.assertEqual(cancelled['completed'], [])
+        self.assertFalse((self.out / 'stages').exists())
+        (self.out / 'CANCEL').unlink()
+        resumed = build.run(self.plan_path, self.out, through='requirements', resume=True)
+        self.assertEqual(resumed['status'], 'checkpoint', resumed)
+        self.assertEqual([row.name for row in retained_run.completed(self.out)], ['requirements'])
+        self.assertTrue(retained_run.accounting(self.out)['requirements'])
+        self.assertEqual(self.out.stat().st_ino, directory_inode)
+        self.assertFalse(resumed['accepted'])
 
     def typed(self):
         declaration = read_json(self.source / 'requirement-map.json')

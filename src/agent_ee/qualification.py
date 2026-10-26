@@ -8,50 +8,32 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import re
 import shutil
-import uuid
 
-from . import build_plan, requirement_map
+from . import build_plan, requirement_map, retained_run
+from .retained_run import QualificationError, retained_path as _retained_path
 from .catalog import strict_json
-from .stage_receipts import _relative, tree_identity
-from .storage import digest, identity, read_json, write_json
+from .stage_receipts import _relative
+from .storage import digest, read_json, write_json
 
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
-REPORT_SCHEMA = 'agent-ee.build-report/1'
+REPORT_SCHEMA = retained_run.REPORT_SCHEMA
 QUALIFICATION_SCHEMA = 'agent-ee.qualification/1'
 CLAIM = ('software file obligations only; delivery, judgment, supplier and physical '
          'obligations are listed under coverage with their own status')
 DIMENSIONS = ('checks', 'file_release', 'operational', 'engineering_review', 'judgments', 'supplier', 'physical')
 WITNESS_CHECKS = ('source_citations_resolved', 'applicability_recomputed', 'conclusion_consistent_with_bound_checks')
-STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'artwork', 'package')
+STAGES = retained_run.STAGES
 MANDATORY = {'erc', 'drc', 'netlist', 'geometry', 'parts_subset', 'placement',
              'board_envelope', 'fab_profile', 'assembly_readiness', 'fab_package'}
 _inventory = requirement_map.input_inventory
 
 
-class QualificationError(ValueError):
-    """A current claim cannot be reconstructed from the retained evidence."""
-    def __init__(self, message, *, integrity=False):
-        self.integrity = integrity
-        super().__init__(message)
 
 
 
 def _keys(value, required, optional=()):
     if not isinstance(value, dict) or set(required) - value.keys() or value.keys() - set(required) - set(optional):
         raise ValueError('build declaration fields differ from ' + ', '.join(required))
-
-
-
-def _retained_path(root, relative):
-    path = root / _relative(relative, 'retained build path')
-    if path == root or not path.resolve().is_relative_to(root):
-        raise ValueError('retained build path escapes its run')
-    for component in [path, *path.parents]:
-        if component == root:
-            break
-        if component.is_symlink():
-            raise ValueError('retained build path contains a link')
-    return path
 
 
 
@@ -118,19 +100,8 @@ def _record(mode, dimensions, *, claims_withheld=True, coverage=None, methods=No
 
 def summary(out, record):
     """Project a persisted qualification record into the build or review report."""
-    return dict(path='qualification.json', sha256=digest(Path(out) / 'qualification.json'),
+    return dict(path='qualification.json', sha256=retained_run.qualification_digest(Path(out)),
         mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
-
-
-def _publish(root, record):
-    target = _retained_path(root, 'qualification.json')
-    temporary = root / ('.qualification-' + uuid.uuid4().hex)
-    try:
-        write_json(temporary, record)
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return record
 
 
 def _dimension(status='not_assessed', *, binding=None, evidence=(), reason=None):
@@ -139,55 +110,6 @@ def _dimension(status='not_assessed', *, binding=None, evidence=(), reason=None)
     if reason:
         row['reason'] = reason
     return row
-
-
-def _snapshot(root):
-    report = strict_json(_retained_path(root, 'build-report.json').read_bytes())
-    if report.get('schema') != REPORT_SCHEMA or report.get('identity') != identity(report['inputs']):
-        raise QualificationError('build identity differs from captured inputs', integrity=True)
-    if _inventory(_retained_path(root, 'source')) != report['inputs']['source']:
-        raise QualificationError('retained build source identity changed', integrity=True)
-    completed = report['completed']
-    if len(completed) > len(STAGES):
-        raise QualificationError('completed stage inventory is invalid')
-    for index, row in enumerate(completed):
-        directory = _retained_path(root, row['directory'])
-        candidate = _retained_path(root, row['candidate'])
-        if (row['stage'] != STAGES[index] or candidate == directory or not candidate.is_relative_to(directory)
-                or tree_identity(directory) != row['tree']):
-            raise QualificationError('completed stage identity changed: ' + row['stage'], integrity=True)
-    if completed and report.get('candidate') != completed[-1]['candidate']:
-        raise QualificationError('candidate differs from the last completed stage')
-    return report
-
-
-def _plan(root, report):
-    path = _retained_path(root, 'build-plan.json')
-    if not path.exists():
-        return None
-    if digest(path) != report['inputs']['plan_sha256']:
-        raise QualificationError('captured build plan identity changed', integrity=True)
-    return build_plan.validate_plan(strict_json(path.read_bytes()))
-
-
-def verify_retained(out):
-    """Verify retained custody independently of a proposed resume invocation."""
-    root = Path(out)
-    try:
-        report = _snapshot(root)
-        plan = _plan(root, report)
-        if plan is None and 'qualification' in report:
-            raise ValueError('captured build plan is missing from a qualified run')
-        if report.get('accepted') and len(report['completed']) != len(STAGES):
-            raise ValueError('accepted build has no complete stage inventory')
-        if 'judgment_inventory' in report:
-            frozen = report['judgment_inventory']
-            path = _retained_path(root, frozen['path'])
-            if digest(path) != frozen['sha256'] or _inventory(path.parent / 'judgments') != read_json(path):
-                raise ValueError('retained judgment inventory changed after freeze')
-        return plan
-    except (ValueError, OSError, KeyError, TypeError) as exc:
-        raise QualificationError(str(exc), integrity=True) from exc
 
 
 def judgment_inventory(source, plan):
@@ -255,43 +177,10 @@ def _operational(report):
     return _dimension('pending', reason='No failed/interrupted stage followed by completion under this identity')
 
 
-def _checked_review(root, report):
-    from .cli import verify
-    candidates = list(reversed(report['completed']))
-    if len(report['completed']) == len(STAGES) - 1:
-        for attempt in reversed(report['attempts']):
-            if (attempt['stage'] == 'package' and attempt['status'] in ('failed', 'interrupted')
-                    and attempt.get('identity') == report['identity']):
-                candidates.insert(0, dict(stage='package', directory=attempt['directory'],
-                                         candidate=attempt['directory'] + '/candidate'))
-                break
-    for stage in candidates:
-        directory = _retained_path(root, stage['directory'])
-        review = directory / 'review'
-        if not (review / 'result.json').exists():
-            continue
-        result_sha256 = digest(review / 'result.json')
-        result = verify(review)
-        if digest(review / 'result.json') != result_sha256:
-            raise QualificationError('Ordinary review changed during verification', integrity=True)
-        manifest = read_json(review / 'candidate.json')
-        scope = manifest['scope']
-        candidate = _retained_path(root, stage['candidate'])
-        board_hash = manifest['files'].get(scope.get('board'))
-        if scope.get('board') and board_hash != digest(_retained_path(candidate, scope['board'])):
-            raise QualificationError('review board differs from its sealed stage candidate')
-        scaffold_row = next((row for row in report['completed'] if row['stage'] == 'scaffold'), None)
-        scope_path = (_retained_path(root, scaffold_row['directory']) / 'product/scope.json'
-                      if scaffold_row else directory / 'scope.json')
-        binding = dict(board_sha256=board_hash, scope_sha256=digest(scope_path), stage=stage['stage'])
-        return directory, result, scope, binding, result_sha256
-    return None
-
-
 def checks_dimension(root, review):
     if review is None:
         return _dimension()
-    directory, result, scope, binding = review[:4]
+    directory, result, scope, binding = review.directory, review.result, review.scope, review.binding
     rows = result['checks']
     status = 'pass' if rows else 'not_assessed'
     if any(row['execution'] != 'ok' or row['outcome'] not in ('pass', 'info') for row in rows):
@@ -303,7 +192,7 @@ def checks_dimension(root, review):
 def _review_dimension(root, review):
     if review is None:
         return _dimension()
-    directory, result, scope, binding = review[:4]
+    directory, result, scope, binding = review.directory, review.result, review.scope, review.binding
     if (len(result.get('reviews', [])) < 2 or len(result.get('review_executions', [])) < 2 or not result.get('adjudicated')
             or not all(row['execution'] == 'ok' for row in result.get('review_executions', []))):
         return _dimension(reason='No complete full engineering review is referenced')
@@ -317,7 +206,7 @@ def rules_register(root, review):
     from .design_rule_provenance import advisory_numeric, require_evaluated_limits
     if review is None:
         return []
-    directory, result, scope, binding = review[:4]
+    directory, result, scope, binding = review.directory, review.result, review.scope, review.binding
     records = []
     for row in result['checks']:
         if row['kind'] not in ('erc', 'drc'):
@@ -360,7 +249,7 @@ def decision_record(root, plan, candidate, review, judgments):
     if previous.exists():
         record['supersedes'].append(dict(path='manufacturing-decision.json', sha256=digest(previous),
             reason='Current captured envelope and saved stackup evidence supersede this diagnostic decision'))
-    rows = review[1]['checks'] if review else []
+    rows = review.result['checks'] if review else []
     stacks = [row for row in rows if row['kind'] == 'board_envelope'
               and row['details'].get('criterion') == 'stackup/1']
     if len(stacks) != 1:
@@ -375,7 +264,7 @@ def decision_record(root, plan, candidate, review, judgments):
         same = False
     record['status'] = ('pass' if same and row['execution'] == 'ok' and row['outcome'] == 'pass'
         and details.get('envelope', {}).get('sha256') == facts['envelope_sha256']
-        and details.get('board_sha256') == review[3]['board_sha256'] else 'failed')
+        and details.get('board_sha256') == review.binding['board_sha256'] else 'failed')
     if record['status'] != 'pass':
         record['reason'] = 'Captured nominal thickness or envelope differs from native stackup evidence'
     return record
@@ -526,16 +415,6 @@ def _clause_status(spans):
     return 'recorded' if all(value == 'recorded' for value in values) else 'pass'
 
 
-def _receipt(root, report, typed):
-    scaffold_row = next((row for row in report['completed'] if row['stage'] == 'scaffold'), None)
-    if scaffold_row:
-        return read_json(_retained_path(root, scaffold_row['directory']) / 'requirements.json')
-    requirements = next((row for row in report['completed'] if row['stage'] == 'requirements'), None)
-    rows = read_json(_retained_path(root, requirements['directory']) / 'accounting.json')['requirements'] if requirements else []
-    return dict(schema='agent-ee.requirement-map-receipt/' + ('2' if typed else '1'), requirements=rows,
-                **({'method_binding': 'typed'} if typed else {}))
-
-
 def _bind_receipt(root, receipt, plan, *, provisional, accounting):
     expected = {}
     for name, field in (('map', 'map_sha256'), ('record', 'spec_record_sha256'),
@@ -570,28 +449,27 @@ def _methods(root, review):
     if review is None:
         return []
     return [dict(id=row['id'], kind=row['kind'], **{'class': requirement_map.method_class(row['kind'])},
-                 evidence=_evidence(root, review[0] / 'review/checks' / (row['id'] + '.json')))
-            for row in review[1]['checks']]
+                 evidence=_evidence(root, review.directory / 'review/checks' / (row['id'] + '.json')))
+            for row in review.result['checks']]
 
 
 def _assess(out):
     root = Path(out).resolve()
     try:
-        report = _snapshot(root)
+        report = retained_run.snapshot(root)
     except (ValueError, OSError, KeyError, TypeError) as exc:
         raise QualificationError(str(exc), integrity=True) from exc
-    plan = _plan(root, report)
+    plan = retained_run.read_plan(root, report)
     typed = plan is not None and plan['schema'] == TYPED_SCHEMA
-    receipt = _receipt(root, report, typed)
+    receipt = retained_run.requirements(root, report, typed)
     if (receipt['schema'] == 'agent-ee.requirement-map-receipt/2') != typed:
         raise QualificationError('Requirement receipt method binding differs from the captured build plan')
     if typed:
-        first = next((row for row in report['completed'] if row['stage'] == 'requirements'), None)
-        accounting = read_json(_retained_path(root, first['directory']) / 'accounting.json')['requirements'] if first else []
+        accounting = retained_run.accounting(root, report)['requirements']
         _bind_receipt(root, receipt, plan, provisional=not any(row['stage'] == 'scaffold' for row in report['completed']),
                       accounting=accounting)
-    review = _checked_review(root, report)
-    rows = review[1]['checks'] if review else []
+    review = retained_run.checked_review(root, report)
+    rows = review.result['checks'] if review else []
     package = next((row for row in report['completed'] if row['stage'] == 'package'), None)
     dimensions = {name: _dimension() for name in DIMENSIONS}
     for name in ('supplier', 'physical'):
@@ -622,19 +500,19 @@ def _assess(out):
                 or marker.get('supplier_preview_performed') is not False):
             blockers.append('Package contains unsupported claims')
             demonstrated_failure = True
-        elif review is None or review[0] != directory:
+        elif review is None or review.directory != directory:
             blockers.append('Package has no matching verified checks-only file gate')
         else:
             try:
                 gate_plan = plan
                 if gate_plan is None:
-                    memberships = {row['params']['manifest'] for row in review[2]['checks'] if row['kind'] == 'parts_subset'}
-                    if len(memberships) != 1 or 'envelope' not in review[2]:
+                    memberships = {row['params']['manifest'] for row in review.scope['checks'] if row['kind'] == 'parts_subset'}
+                    if len(memberships) != 1 or 'envelope' not in review.scope:
                         raise QualificationError('Legacy package has no unambiguous manufacturing envelope/parts binding')
-                    gate_plan = dict(envelope=review[2]['envelope']['path'],
+                    gate_plan = dict(envelope=review.scope['envelope']['path'],
                         parts=dict(manifest=memberships.pop()), placement={})
-                manufacturing_coverage(gate_plan, review[2], receipt['requirements'])
-                artifacts = package_artifacts(review[1], review[2], candidate)
+                manufacturing_coverage(gate_plan, review.scope, receipt['requirements'])
+                artifacts = package_artifacts(review.result, review.scope, candidate)
                 native = {name: pin for name, pin in _inventory(candidate).items()
                           if name.endswith(('.kicad_sch', '.kicad_pcb', '.kicad_pro', '.kicad_dru'))}
                 if marker['artifacts'] != artifacts or marker['native_files'] != native:
@@ -647,7 +525,7 @@ def _assess(out):
             if marker.get('judgment_inventory_sha256') != digest(directory / 'judgment-inventory.json'):
                 raise QualificationError('package judgment inventory binding differs')
             judgments = _judgments(root, directory, dict(receipt, candidate=package['candidate']),
-                                   review[3] if review else {}, plan)
+                                   review.binding if review else {}, plan)
             state = 'failed' if any(row['status'] == 'failed' for row in judgments) else (
                 'pending' if any(row['status'] != 'recorded' or row['witness'] != 'concur' for row in judgments) else 'pass')
             dimensions['judgments'] = _dimension(state, evidence=[_evidence(root, directory / 'judgment-inventory.json')])
@@ -698,7 +576,7 @@ def _assess(out):
             for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation')))
     if package is not None:
         dimensions['file_release'] = _dimension('failed' if demonstrated_failure else 'pending' if blockers else 'pass',
-            binding=review[3] if review else None, evidence=[_evidence(root, marker_path)],
+            binding=review.binding if review else None, evidence=[_evidence(root, marker_path)],
             reason='; '.join(blockers) if blockers else None)
     elif report['status'] == 'failed' and report.get('attempts') and report['attempts'][-1]['stage'] == 'package':
         dimensions['file_release'] = _dimension('failed', reason=report.get('reason'))
@@ -707,13 +585,11 @@ def _assess(out):
         package_records=package_records, summary=dict(pending_required=sorted(
             rid for rid, clause in coverage.items() if clause['status'] not in ('pass', 'recorded', 'not_applicable')),
             file_release_blockers=blockers))
-    if _snapshot(root) != report:
+    if retained_run.snapshot(root) != report:
         raise QualificationError('Build evidence changed during qualification assessment', integrity=True)
     if review is not None:
-        from .cli import verify
-        if verify(review[0] / 'review') != review[1] or digest(review[0] / 'review/result.json') != review[4]:
-            raise QualificationError('Ordinary review evidence changed during assessment', integrity=True)
-    return _publish(root, record)
+        retained_run.verify_review(review)
+    return retained_run.write_qualification(root, record)
 
 
 def assess(out):
@@ -734,18 +610,15 @@ def failed_assessment(out, report, reason, *, typed, integrity=False):
         dimensions['operational'] = _dimension('failed', reason=reason)
     for name in ('supplier', 'physical'):
         dimensions[name] = _dimension('pending')
-    return _publish(Path(out), _record('typed' if typed else 'legacy', dimensions,
+    return retained_run.write_qualification(Path(out), _record('typed' if typed else 'legacy', dimensions,
         summary=dict(pending_required=[], assessment_error=reason)))
 
 
 def assess_review(out, result, selection):
     """A diagnostic checks-only review cannot grant a build or package claim."""
     root = Path(out)
-    manifest = read_json(root / 'review/candidate.json')
-    binding = dict(board_sha256=manifest['files'].get(manifest['scope'].get('board')),
-        scope_sha256=selection['scope_sha256'], stage=selection['selected']['stage'])
     dimensions = {name: _dimension() for name in DIMENSIONS}
-    review = (root, result, manifest['scope'], binding)
+    review = retained_run.diagnostic_review(root, result, selection)
     dimensions['checks'] = checks_dimension(root, review)
-    return _publish(root, _record(selection.get('qualification_mode', 'legacy'), dimensions,
+    return retained_run.write_qualification(root, _record(selection.get('qualification_mode', 'legacy'), dimensions,
         methods=_methods(root, review), rules=rules_register(root, review)))
