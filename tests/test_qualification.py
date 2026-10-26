@@ -10,11 +10,10 @@ import sys
 import tempfile
 import unittest
 
-from agent_ee import build_workflow as build
+from agent_ee import build_workflow as build, qualification
 from agent_ee.stage_receipts import tree_identity
 from agent_ee.storage import digest, identity, read_json, write_json
 
-qualification = build
 
 
 class QualificationTests(unittest.TestCase):
