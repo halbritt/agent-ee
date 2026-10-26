@@ -1,7 +1,6 @@
 # Telemetry pod delivery plan
 
-Revision 12 — 2026-10-23. Chief coordinator: agent-531 (replaced agent-529 at 15:59Z). Dispatcher and sole
-agent-ee/FOME integrator: agent-530 (replaced agent-449 at ~15:56Z). All programme communications: agent-542 (replaced agent-532 at ~00:29Z on 2026-10-24; 532 replaced agent-519 at ~16:15Z).
+Revision 12 — 2026-10-23. Role assignments were removed from this plan on 2026-10-26; the campaign is held.
 
 **CURRENT DIRECTION (2026-10-24 ~03:32Z): TOOLING ONLY, NO POD ATTEMPTS.** Owner, relayed verbatim via agent-538 and chief 531 (fd230a3d@1; chief plan revision 69d407ee@2): "At this point I'm expecting the focus to be on the tooling and no attempts on the pod." Earlier owner directions, relayed by the chief: "stay focused on each incremental step, and avoid churn on non-productive areas" and "stick to the plan and achieve success on each step before proceeding". This supersedes the pod-attempt scheduling below and in [placement-routing-plan.md](placement-routing-plan.md). Both programme outcomes remain INCOMPLETE.
 - Tooling milestone = AGENTEE-515 AND AGENTEE-516 accepted on simple reproducible boards. That needs correctness, native qualification, matched quality/time evidence against stock KRT v0.23.7, routing-feedback repair, bounded lifecycle, and independent review. It is not the same as pod readiness.
@@ -32,14 +31,7 @@ acceptance case. A one-off layout correction does not complete the tool outcome;
 passing tool fixtures do not complete the PCB outcome.
 
 The full [direct owner change request](functional-block-placement-request.md)
-defines required block behavior and placement acceptance. The [org chart](org-chart.md)
-and [campaign process](campaign-process.md) define delegation and integration.
-Chief agent-531 (replaced 529) retains consequential decisions and acceptance;
-integrator agent-530 (replaced 449) dispatches, verifies and lands; detailed
-investigations, implementation, native runs and independent reviews stay with the
-agents it dispatches. Agent-532 (replaced 519) is the relay and owner-decision
-contact: it forwards owner decisions verbatim and holds no owner authority (owner,
-2026-10-23: "you're not deciding on my behalf, you're forwarding my decisions").
+defines required block behavior and placement acceptance. The [campaign process](campaign-process.md) records the historical process.
 No current agent is owner delegate or holds owner-reserved authority.
 
 Owner power ruling, 2026-10-23 (about 22:32-22:38Z), verbatim via 532: "250ma continuous
@@ -113,7 +105,7 @@ programme goal after that work is accepted.
 
 Steps 1 and 2 may proceed independently with existing capacity. They do not
 restart old broad review/research queues. Reuse relevant prior evidence and
-existing lanes; the integrator (agent-530, replaced 449) reconciles ownership before dispatching. Each subsequent
+existing lanes; the integrator reconciles ownership before dispatching. Each subsequent
 implementation/run gets a bounded work item based on the actual dependency,
 with one holder, selected subscription model, admitted host, immutable inputs,
 acceptance evidence, independent verifier where needed, budget and stop condition.
@@ -122,7 +114,7 @@ for repeated owner permission.
 
 ### First bounded assignments
 
-The integrator (agent-530, replaced 449) selects the existing holders and records valid Plane assignees and
+The integrator selects the existing holders and records valid Plane assignees and
 session/model/host identities. The initial request is Cairn
 `65ab387e-22c8-4612-b72d-23ea75442c96@1`, sent by 529 through 519. Sending does not
 prove dispatch or handling; the exact receipt and result must be recorded.
@@ -263,7 +255,7 @@ No component purchase, fabrication order or new project upload is authorized.
 
 The current private gallery remains a labelled historical/incomplete view until a
 new consistent candidate is available. Update candidate-bound views as artifacts
-change; the integrator (agent-530, replaced 449) owns the existing render schedule. Preserve findings and failed
+change; the integrator owns the existing render schedule. Preserve findings and failed
 candidates; do not relabel partial placement, incomplete routing or unknown
 mechanical evidence as success.
 
@@ -271,4 +263,4 @@ Completion requires both full-goal outcomes. Inspect the actual final board,
 independent review evidence, fabrication outputs and reproducible tool/regression
 results against every requirement before declaring manufacturing readiness.
 This plan is the current execution record; Cairn handoffs point here rather than
-creating a second competing plan. The integrator (agent-530, replaced 449) integrates reviewed updates.
+creating a second competing plan. The integrator integrates reviewed updates.

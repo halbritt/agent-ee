@@ -12,8 +12,7 @@ This file is the repository copy of the chief's recorded plan. Source:
 `879d9e1512b14c60…`, chief agent-531, Cairn 8c45262a@1), written at the owner's
 request (2026-10-24, verbatim via the chief): "make a plan, record it, share it
 with the others, plane work items and all that, make it happen". Plane items
-AGENTEE-512 (programme) and AGENTEE-513..518. The chief decides; agent-530
-dispatches and integrates; all traffic goes through relay agent-532. The two
+AGENTEE-512 (programme) and AGENTEE-513..518. The two
 programme outcomes in [telemetry-pod-delivery-plan.md](telemetry-pod-delivery-plan.md)
 remain required. Dependent items are backlog until their dependencies are
 accepted (the dispatcher enforces the dependencies).
@@ -98,7 +97,7 @@ Deliver BOTH the manufacturing-ready telemetry pod and reusable agent-ee. Stop u
 
 Blocked by: None; ready for scoped dispatch
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
 ## AGENTEE-513 — Freeze esp_prog baseline and record stock KRT placement-to-route result
 
@@ -112,7 +111,7 @@ Use KRT tag83646c8b. First candidate:21-footprint two-layer esp_prog. Unplaced f
 
 Blocked by: None; ready for scoped dispatch
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
 ## AGENTEE-514 — Mine KRT mechanisms and decide one placement-routing architecture
 
@@ -126,7 +125,7 @@ Inspect tagged source and report reusable group/template representation, increme
 
 Blocked by: None; ready for scoped dispatch
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
 Decision (2026-10-24): chief 531 accepted the 514 recommendation WITH binding amendments C1-C6 (Cairn `b4a5857a@1`); see docs/placement-architecture.md, "Chief decision, 2026-10-24". AGENTEE-515 dispatch waits for the AGENTEE-513 review and a concrete, finite implementation brief.
 
@@ -142,7 +141,7 @@ Implement the chosen narrow vertical path: native input+intent -> prepared probl
 
 Blocked by: AGENTEE-513, AGENTEE-514
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
 ## AGENTEE-516 — Demonstrate routing-guided placement repair on a small complete board
 
@@ -156,7 +155,7 @@ Use an explicit challenging variant of the same baseline to demonstrate routing 
 
 Blocked by: AGENTEE-515
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
 ## AGENTEE-517 — Qualify pod-required capabilities on representative complete test cases
 
@@ -170,7 +169,7 @@ Cover the actual pod feature set using a small case matrix: ADC/AFE functional g
 
 Blocked by: AGENTEE-515, AGENTEE-516
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
 
 ## AGENTEE-518 — Produce and verify the complete pod with qualified placement-routing software
 
@@ -184,4 +183,4 @@ Run the complete pod using the qualified fixed software release and accepted boa
 
 Blocked by: AGENTEE-517
 
-Type: AFK. Chief531 decides;530 dispatches/integrates;all traffic532. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.
+Type: AFK. Dependent items are backlog, not launch authority. Native dependency edges unavailable in installed API; dispatcher enforces these explicit dependencies.

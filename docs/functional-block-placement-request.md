@@ -55,16 +55,3 @@ Also determine whether eligible components can actually change sides during opti
 - Add a regression covering a congested board with available underside space, verifying that block relationships survive global placement and legalization.
 
 Acceptance requires evidence that the intended functional grouping survives into the final board. Routing completion and a clean DRC result are additional checks; neither establishes that the grouping requirement was met.
-
-## Coordinator and communications (direct owner instructions)
-
-> You are the chief coordinator.  Communicate through agent-519.  Agent-449 is handling dispatch.  If you need a task completed, you can create a plan work item and hand it to agent-519.  I want to preserve your context window as much as possible to focus on meaningful decisions to prevent trainwrecks such as this.
-
-Later direct correction, same date:
-
-> update the repository as you see fit, agent-521 was fired
-
-Agent-529 owns direction, priorities, sequencing and acceptance. Agent-449
-dispatches and integrates; agent-519 carries programme communications. See the
-[org chart](org-chart.md). Prior coordinator-only restrictions do not override
-this request; owner-sourced and manufacturer constraints still need preservation.

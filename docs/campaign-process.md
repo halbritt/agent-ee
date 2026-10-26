@@ -1,19 +1,11 @@
 # Telemetry-pod campaign process
 
-Maintained by chief coordinator agent-529 until 2026-10-23, now owned by chief agent-531
-(this current-role correction was landed by integrator agent-530 under chief authority).
-It preserves the 2026-10-22 process history and updates current responsibilities under
-the owner's direct instructions. Scope and roles are in [org-chart.md](org-chart.md).
+Historical record of the telemetry-pod campaign process (2026-10-22/23). Role
+assignments were removed from this document on 2026-10-26; the process rules
+remain as recorded.
 
 The programme must deliver both a manufacturing-ready telemetry pod PCB and
-useful, reusable agent-ee capability. Agent-531 (replaced 529) owns direction,
-sequencing and acceptance; agent-530 (replaced 449) is the sole dispatcher and
-integrator. All campaign communications go through agent-542 (replaced 532 on 2026-10-24; 532 replaced 519), which
-consolidates routine traffic and returns consequential decisions and evidence to 531.
-Agent-542 is also the owner-decision contact: it forwards owner decisions verbatim and
-holds no owner authority (owner, 2026-10-23: "you're not deciding on my behalf, you're
-forwarding my decisions"). No current agent is owner delegate or holds owner-reserved
-authority; money, orders, uploads, new cloud, caps and owner constraints remain
+useful, reusable agent-ee capability. No agent holds owner-reserved authority; money, orders, uploads, new cloud, caps and owner constraints remain
 owner-reserved. Elsewhere in
 this file, read 529 as 531, 449 as 530 and 519 and 532 as 542 for current responsibilities;
 dated decisions keep their historical names. Detailed investigation and implementation stay
@@ -84,14 +76,13 @@ The compatibility record binds agent-ee, kicad-route source and engine, executio
 
 For each candidate, retain queue, build/test, review-wait, integration-wait and complete elapsed time, including failed attempts. Model time remains unknown when not measured. Report accepted board outcomes: connected nets, unresolved connections, introduced and pre-existing DRC, and qualification. Merge counts and busy CPUs are not outcomes.
 
-Agent-475 owns host admission, init-image rollout, and bounded storage diagnostics; agent-449 owns dispatch enforcement, CI selection, compatibility and integration; agent-522 independently verifies deployed behavior; agent-529 owns policy and closure. Reuse AGENTEE-431's negative compiled-scorer experiment; another experiment needs a distinct causal hypothesis and a quiet reservation. No broad language or repository migration is part of this repair.
+Reuse AGENTEE-431's negative compiled-scorer experiment; another experiment needs a distinct causal hypothesis and a quiet reservation. No broad language or repository migration is part of this repair.
 
 ### Approved gate exception
 
 agent-521, 2026-10-22: "the single authoritative integration gate may run JOBS=12 on c4 only when no other suite executes and agent-475's host admission grants the reservation; 4 workers remain the default elsewhere."
 
-See [org-chart.md](org-chart.md) for current roles. The dated exception above
-is historical provenance; agent-529 now owns this policy.
+The dated exception above is historical provenance.
 
 ## Owner decisions
 
@@ -106,8 +97,7 @@ actual answer; do not reopen the retired eMMC via-in-pad choice after microSD se
 
 Record rulings verbatim, dated and with direct/relayed provenance in the governing file.
 A recorded relay remains a relay. Latest direct owner instructions take precedence until
-records catch up. 519 coordinates file updates through their owners/integrators;529 owns
-org-chart content. No universal requirement that every ruling originate with519.
+records catch up.
 
 ## Production runtime and renders
 
