@@ -150,23 +150,14 @@ def build_viewer(source: Path, out: Path, *, timeout=300) -> Path:
         write_json(out / "export.json", export)
         with (out / "export.stdout.log").open("wb") as stdout, (out / "export.stderr.log").open("wb") as stderr:
             try:
-                try:
-                    execution = native_run.run(
-                        native_run.Intent(
-                            'stage', command, timeout=timeout, isolation='host', cwd=staged.parent
-                        ),
-                        work=None,
-                    )
-                except BaseException as exc:
-                    partial = getattr(exc, 'native_execution', None)
-                    if partial is not None:
-                        stdout.write(partial.stdout)
-                        stderr.write(partial.stderr)
-                    raise
+                execution = native_run.run(
+                    native_run.Intent('stage', command, timeout=timeout, isolation='host', cwd=staged.parent),
+                    work=None,
+                    sink=stdout,
+                    stderr_sink=stderr,
+                )
                 if execution['execution'] == 'unavailable':
                     raise FileNotFoundError(execution.stdout.decode())
-                stdout.write(execution.stdout)
-                stderr.write(execution.stderr)
                 if execution['execution'] == 'timeout':
                     raise subprocess.TimeoutExpired(command, timeout, output=None, stderr=None)
                 result = subprocess.CompletedProcess(command, execution.returncode, None, None)

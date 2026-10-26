@@ -107,27 +107,20 @@ def _plot(board, root, name, layers):
                '--mode-single', '--exclude-drawing-sheet', '--page-size-mode', '2',
                '--define-var', 'KIPRJMOD=' + str(board.parent), '--output', str(path), str(board)]
     with (work / 'stdout.log').open('wb') as stdout, (work / 'stderr.log').open('wb') as stderr:
-        try:
-            execution = native_run.run(
-                native_run.Intent(
-                    'stage',
-                    command,
-                    timeout=150,
-                    isolation='host',
-                    env=dict(os.environ, KICAD_CONFIG_HOME=str(work / 'config')),
-                ),
-                work=None,
-            )
-        except BaseException as exc:
-            partial = getattr(exc, 'native_execution', None)
-            if partial is not None:
-                stdout.write(partial.stdout)
-                stderr.write(partial.stderr)
-            raise
+        execution = native_run.run(
+            native_run.Intent(
+                'stage',
+                command,
+                timeout=150,
+                isolation='host',
+                env=dict(os.environ, KICAD_CONFIG_HOME=str(work / 'config')),
+            ),
+            work=None,
+            sink=stdout,
+            stderr_sink=stderr,
+        )
         if execution['execution'] == 'unavailable':
             raise FileNotFoundError(execution.stdout.decode())
-        stdout.write(execution.stdout)
-        stderr.write(execution.stderr)
         if execution['execution'] == 'timeout':
             raise subprocess.TimeoutExpired(command, 150, output=None, stderr=None)
         completed = subprocess.CompletedProcess(command, execution.returncode, None, None)

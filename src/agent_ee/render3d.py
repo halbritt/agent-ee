@@ -226,25 +226,18 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
                 def launched(pid):
                     record["pid"] = pid
 
-                try:
-                    execution = native_run.run(
-                        native_run.Intent(
-                            'render3d', command, timeout=timeout, isolation='host', cwd=working, env=env
-                        ),
-                        work=None,
-                        cancel=cancel,
-                        on_launch=launched,
-                    )
-                except BaseException as exc:
-                    partial = getattr(exc, 'native_execution', None)
-                    if partial is not None:
-                        stdout.write(partial.stdout)
-                        stderr.write(partial.stderr)
-                    raise
+                execution = native_run.run(
+                    native_run.Intent(
+                        'render3d', command, timeout=timeout, isolation='host', cwd=working, env=env
+                    ),
+                    work=None,
+                    cancel=cancel,
+                    on_launch=launched,
+                    sink=stdout,
+                    stderr_sink=stderr,
+                )
                 if execution['execution'] == 'unavailable':
                     raise FileNotFoundError(execution.stdout.decode())
-                stdout.write(execution.stdout)
-                stderr.write(execution.stderr)
                 if execution.returncode is not None:
                     record["returncode"] = execution.returncode
                 if execution['execution'] == 'timeout':
