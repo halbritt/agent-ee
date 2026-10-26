@@ -78,7 +78,7 @@ class MaskGraphicCaptureTests(Fixture):
                     path, board, fp = self.mask_graphic(f'local-{margin}-{side}',
                                                        local_margin=margin, side=side)
                     captured = next(f for f in extract(path)['footprints'] if f['ref'] == 'R1')
-                    actual = job.classify_footprint(fp, None, captured)
+                    actual = job.classify_footprint(fp, captured)
                     self.assertEqual(actual['mask'][-1], expected)
                     self.assertEqual(len(actual['mask']), 3)
 

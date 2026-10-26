@@ -20,7 +20,7 @@ inside one footprint that the unchanged input already has (esp_prog's U2
 artwork) stay FAILED physical checks: such an incumbent is never "clean".
 """
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 import hashlib
 import json
 import math
@@ -33,18 +33,20 @@ import subprocess
 import sys
 import time
 
+from . import placement_problem
+from .placement_problem import (INPUT_SCHEMA, OUTPUT_SCHEMA, JobRefusal, escape_hints,  # noqa: F401
+                                quarter_turns as _quarter_turns, rule_mm as _rule_mm)
 from .storage import canonical, digest, read_json, write_json
 from .run_record import policy_files
 
 JOB_SCHEMA = 'agent-ee.placement-job/1'
 CONFIG_SCHEMA = 'agent-ee.placement-job-config/1'
-INPUT_SCHEMA = 'agent-ee.placement-job-input/2'
+# INPUT_SCHEMA (agent-ee.placement-job-input/2) is built by placement_problem.
 # Historical AGENTEE-515 prepared jobs. The engine still reads them under the visible
 # `legacy_pad_centre/1` proximity contract (pad-centre Chebyshev, no group links); a fresh
 # capture always emits INPUT_SCHEMA with pad half extents and the engine refuses a /2 record
 # whose pad_edge rows lack them. See docs/intent-dialect.md "Capture contract".
 LEGACY_INPUT_SCHEMA = 'agent-ee.placement-job-input/1'
-OUTPUT_SCHEMA = 'agent-ee.placement-job-output/1'
 CHECKPOINT_SCHEMA = 'agent-ee.placement-job-checkpoint/1'
 PHASES = ('setup', 'import', 'prepare', 'search', 'judge', 'export', 'final_validation')
 SILK = ('F.Silkscreen', 'B.Silkscreen')
@@ -52,42 +54,12 @@ FAB = {'F': 'F.Fab', 'B': 'B.Fab'}
 SILK_OF = {'F': 'F.Silkscreen', 'B': 'B.Silkscreen'}
 COPPER = ('F.Cu', 'B.Cu')
 NM = 1_000_000
-# Mirrored from job.rs; the boundary tests pin both sides.
-MAX_CONTOUR_VERTICES = 2048
-MAX_ITEM_CONTOURS = 16
-MAX_PROBLEM_CONTOUR_VERTICES = 16384
-
-
-class JobRefusal(ValueError):
-    """The job input cannot be prepared honestly (fail closed)."""
 
 
 class JobStopped(Exception):
     def __init__(self, status):
         self.status = status
         super().__init__(status)
-
-
-def _geometry_complexity(row, total=0):
-    """Refuse raw native contours before they leave capture, without changing geometry."""
-    for key in ('copper_local_nm', 'holes_local_nm'):
-        for item in row.get(key, []):
-            if 'geometry' not in item:
-                continue
-            geometry = item['geometry']
-            contours = geometry['polygons']
-            owner = f'{row["native_ref"]} ({row["uuid"]}) pad {geometry.get("pad_uuid")}'
-            if len(contours) > MAX_ITEM_CONTOURS:
-                raise JobRefusal(f'{owner}: item contour count {len(contours)} exceeds {MAX_ITEM_CONTOURS}')
-            for index, contour in enumerate(contours):
-                count = len(contour)
-                if count > MAX_CONTOUR_VERTICES:
-                    raise JobRefusal(f'{owner}: contour {index} vertex count {count} exceeds {MAX_CONTOUR_VERTICES}')
-                total += count
-                if total > MAX_PROBLEM_CONTOUR_VERTICES:
-                    raise JobRefusal(f'{owner}: contour {index} prepared contour vertex total {total} '
-                                     f'exceeds {MAX_PROBLEM_CONTOUR_VERTICES} (contour count {count})')
-    return total
 
 
 def _check_stop(clock, cancel_dir):
@@ -170,18 +142,6 @@ def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def _mm(value):
-    return int(round(float(value) * NM))
-
-
-def _rule_mm(value, what):
-    from .routing_rules import number
-    try:
-        return _mm(number(value, what))
-    except (ValueError, OverflowError) as exc:
-        raise JobRefusal(f'{what}: {exc}') from exc
-
-
 def verified_input(entry, label):
     """Read one external input by declared SHA-256; fixture bytes never enter the repository."""
     path = Path(entry['path'])
@@ -192,13 +152,6 @@ def verified_input(entry, label):
 
 
 # ---------------------------------------------------------------- capture
-
-def _quarter_turns(degrees, what):
-    q = degrees / 90.0
-    if abs(q - round(q)) > 1e-9:
-        raise JobRefusal(f'{what}: orientation {degrees} is not a quarter turn')
-    return int(round(q)) % 4
-
 
 def _unrotate(x, y, q):
     # Inverse of job.rs rotate(): native (x, y) at q turns -> local frame.
@@ -324,47 +277,6 @@ def _pad_hole(pad, origin, q, clearance):
                          'note': 'native drill ERROR_OUTSIDE; independent hole-rule reservation'}}
 
 
-def _edge_rules(intent, footprints):
-    edges = {}
-    for row in intent.get('edge_connectors', []):
-        ref = row['ref']
-        if ref in edges or sum(f['ref'] == ref for f in footprints) != 1:
-            raise JobRefusal(f'{ref}: edge connector must identify one native footprint')
-        if row.get('edge') not in ('west', 'east', 'north', 'south'):
-            raise JobRefusal(f'{ref}: unsupported declared edge')
-        rule = {'edge': row['edge'], 'max_setback_nm': None}
-        if row.get('max_setback_mm') is not None:
-            rule['max_setback_nm'] = _rule_mm(row['max_setback_mm'], f'{ref}: malformed edge setback')
-        if 'overhang_mm' in row:
-            interval = row['overhang_mm']
-            if not isinstance(interval, dict) or not interval or set(interval) - {'min', 'max'}:
-                raise JobRefusal(f'{ref}: malformed overhang interval')
-            lo = _rule_mm(interval.get('min', 0), f'{ref}: malformed overhang interval')
-            hi = _rule_mm(interval['max'], f'{ref}: malformed overhang interval') if 'max' in interval else None
-            if hi is not None and (hi < lo or interval['max'] < interval.get('min', 0)):
-                raise JobRefusal(f'{ref}: malformed overhang interval')
-            if hi is None and lo > 0:
-                raise JobRefusal(f'{ref}: positive overhang minimum needs a finite maximum')
-            rule['overhang_nm'] = {'min': lo, 'max': hi}
-        edges[ref] = rule
-    return edges
-
-
-def _edge_seat(fp, declaration, occupancy):
-    """Native seat geometry, distinct from the packing reservation around it."""
-    import pcbnew
-    if declaration.get('class') == 'edge_receptacle' or declaration.get('context', {}).get('mount_mode') == 'edge_mount':
-        side = 'B' if fp.IsFlipped() else 'F'
-        for layer, basis in ((FAB[side], 'body:fab'), (SILK_OF[side], 'body:silk')):
-            shapes = [g for g in fp.GraphicalItems()
-                      if g.GetClass() == 'PCB_SHAPE' and pcbnew.LayerName(g.GetLayer()) == layer]
-            if shapes:
-                return _union([_bbox(g) for g in shapes]), basis
-    if 'box' not in occupancy:
-        raise JobRefusal(f'{fp.GetReference()}: declared edge has no seat geometry')
-    return occupancy['box'], occupancy.get('rung', occupancy['status'])
-
-
 def check_edge_intent(path, normalized, *, clock=None, cancel_dir=None):
     """Grade the saved board in a bounded fresh process, including saved settings."""
     checked = _native_read(path, '_check_edges', {'intent': _bundle(normalized)['intent']},
@@ -398,94 +310,43 @@ def _locality_grade(facts, document):
     return result
 
 
-def _evaluate_board_native(path, *, intent=None, groups=None, edges=None, rails=None, proximity=None,
+def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=None, proximity=None,
                            board=None, before=None):
-    """Evaluate saved native geometry through the Rust placement engine (read-only)."""
-    import pcbnew
+    """Evaluate saved native geometry through the Rust placement engine (read-only).
+
+    The document comes from the same builder as capture, so the role rule, the
+    weights and the engine output check are the solver's.
+    """
     from .placement_probe import extract
     if before is None:
         before = Path(path).read_bytes()
     if board is None:
+        import pcbnew
         board = pcbnew.LoadBoard(str(path))
-    facts = extract(path, board=board, before=before)
-    by_uuid = {f['uuid']: f for f in facts['footprints']}
-    if len(by_uuid) != len(facts['footprints']):
-        raise JobRefusal('duplicate native footprint UUID')
-    if intent and intent.get('edge_connectors'):
-        edge_declarations = list(intent['edge_connectors'])
-    elif edges:
-        edge_declarations = ([{'ref': r, 'edge': e} for r, e in edges.items()]
-                             if isinstance(edges, dict) else list(edges))
-    else:
-        edge_declarations = []
-    edge_rules = _edge_rules({'edge_connectors': edge_declarations}, facts['footprints'])
-    edge_by_ref = {row['ref']: (order, row) for order, row in enumerate(edge_declarations)}
-    group_rows = list(groups['groups'] if isinstance(groups, dict) else (groups or []))
-    group_refs = {r for g in group_rows for r in g['refs']}
-    ref_counts = Counter(f['ref'] for f in facts['footprints'])
-    settings = board.GetDesignSettings()
-    rows = []
-    for fp in board.GetFootprints():
-        uuid = fp.m_Uuid.AsString()
-        captured = by_uuid[uuid]
-        q = _quarter_turns(captured['rotation_deg'], uuid)
-        origin = captured['position_nm']
-        ref = captured['ref']
-        fixed_pose = {'ref': ref} if (ref_counts[ref] > 1 or captured['locked']
-                                      or (group_rows and ref not in group_refs)
-                                      or (not group_rows and ref not in edge_by_ref)) else None
-        info = classify_footprint(fp, fixed_pose, captured)
-        if info['role'] == 'movable' and (captured['locked'] or (group_rows and ref not in group_refs)):
-            info['role'] = 'fixed_body'
-        row = {'uuid': uuid, 'native_ref': ref, 'role': info['role'],
-               'pose': {'x_nm': origin[0], 'y_nm': origin[1], 'quarter_turns': q},
-               'occupancy': ({k: v for k, v in info['occupancy'].items() if k in ('status', 'label', 'rung')}
-                             | ({'local_rect_nm': _local_rect(info['occupancy']['box'], origin, q)}
-                                if 'box' in info['occupancy'] else {})),
-               'copper_local_nm': [],
-               'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
-                         'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
-                                                    int(p.GetPosition().y) - origin[1], q)),
-                         'half_nm': _pad_half(p, origin, q)}
-                        for p in fp.Pads()],
-               'rotations': [q]}
-        if ref in edge_by_ref:
-            order, declaration = edge_by_ref[ref]
-            seat, basis = _edge_seat(fp, declaration, info['occupancy'])
-            row['edge'] = dict(edge_rules[ref], seat_local_nm=_local_rect(seat, origin, q),
-                               seat_basis=basis, order=order)
-        rows.append(row)
-    rails_payload = ({'shared': {}, 'scoped': {}} if rails is None else
-                     {'shared': dict(rails.get('shared', rails.get('shared_rails', {}))),
-                      'scoped': dict(rails.get('scoped', {})), 'bindings': rails.get('bindings')})
-    raw_prox = proximity if proximity is not None else (intent.get('proximity') if intent else ())
-    prox_rows = [dict(c) for c in (raw_prox or []) if c.get('basis') == 'pad_edge']
-    payload = {'schema': INPUT_SCHEMA,
-               'outline': {'kind': 'rectangle', 'rect_nm': _rectangle(facts['outline'])},
-               'rules': {'copper_clearance_nm': _clearance(settings),
-                         'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
-                         'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
-                         'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
-               'footprints': sorted(rows, key=lambda r: r['uuid']),
-               'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in group_rows],
-               'rails': rails_payload, 'proximity': prox_rows,
-               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20},
-               'evaluate': [{}]}
-    payload['problem_sha256'] = sha256_bytes(canonical({k: v for k, v in payload.items() if k != 'evaluate'}))
+    payload = placement_problem.evaluate(_describe_board(board, extract(path, board=board, before=before)),
+                                         fixed_poses=fixed_poses, edges=edges, groups=groups, rails=rails,
+                                         proximity=proximity)
     done = _run_child([str(rust_executable())], clock=Clock(60), input_bytes=json.dumps(payload).encode())
-    if done.returncode != 0:
-        err = (done.stdout + done.stderr).decode(errors='replace')[-2000:]
-        raise JobRefusal(f'placement engine evaluation failed (exit {done.returncode}): {err}')
+    try:
+        output = json.loads(done.stdout)
+    except ValueError:
+        output = None
+    placement_problem.check_output(output, payload, code=done.returncode,
+                                   detail=(done.stdout + done.stderr).decode(errors='replace')[-2000:])
     if Path(path).read_bytes() != before:
         raise JobRefusal('board changed during final edge-intent checks')
-    return json.loads(done.stdout)['evaluations'][0]
+    evaluations = output.get('evaluations')
+    if output.get('status') != 'evaluated' or not isinstance(evaluations, list) or len(evaluations) != 1:
+        raise JobRefusal('placement engine returned no evaluation of the saved board')
+    return evaluations[0]
 
 
 def _check_edge_intent_native(path, intent):
     """Reload native geometry and grade declared edges independently of solver output."""
     if not intent.get('edge_connectors'):
         return {'status': 'pass', 'connectors': [], 'violations': [], 'coverage': ['edge_identity']}
-    return _evaluate_board_native(path, intent=intent)['edge_intent']
+    return _evaluate_board_native(path, fixed_poses=intent.get('fixed_poses', []),
+                                  edges=intent['edge_connectors'])['edge_intent']
 
 
 def _on_mask(pad):
@@ -511,12 +372,16 @@ def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
-def classify_footprint(fp, fixed_pose, captured):
-    """Role, occupancy (with provenance rung) and copper for one native footprint.
+def classify_footprint(fp, captured):
+    """Native facts about one footprint that the role rule and its body occupancy need.
 
     Only demonstrably silk-only, padless, zone-free graphics are excluded from
-    packing. Fixed footprints whose pads are all unnetted and that draw no body
-    (fab, silk or courtyard) are fixed copper marks: copper obstacles, never bodies."""
+    packing. A footprint whose pads are all unnetted and that draws no body
+    (fab, silk or courtyard) is mark-eligible: if intent fixes it, it is a fixed
+    copper mark, a copper obstacle and never a body. Every other footprint gets
+    an occupancy with its provenance rung; a malformed courtyard or missing
+    geometry is returned as ``refusal``, raised only if its role needs a body.
+    """
     import pcbnew
     uuid = fp.m_Uuid.AsString()
     side = captured['side']
@@ -526,81 +391,98 @@ def classify_footprint(fp, fixed_pose, captured):
     layers = Counter(pcbnew.LayerName(g.GetLayer()) for g in graphics)
     pads = list(fp.Pads())
     zones = list(fp.Zones())
-    diagnostics = []
     classified = {'User.Drawings': 'documentation drawing; not treated as a package outline'} \
         if layers.get('User.Drawings') else {}
-    copper_graphics = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) in COPPER]
-    copper = [(_bbox(p), _pad_clearance(p)) for p in pads] + [(_bbox(g), 0) for g in copper_graphics]
     mask = [_grow(_bbox(p), _mask_expansion(p)) for p in pads if _on_mask(p)] + [
         _mask_graphic_bbox(g) for g in graphics if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')]
-    courtyards = captured['courtyards']
+    fab = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == FAB[side] and g.GetClass() == 'PCB_SHAPE']
+    silk = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == SILK_OF[side] and g.GetClass() == 'PCB_SHAPE']
+    facts = {'silk_only': False, 'mark_eligible': False, 'occupancy': None, 'refusal': None, 'diagnostics': [],
+             'mask': mask, 'classified_layers': classified,
+             'seats': {'body:fab': _union([_bbox(g) for g in fab]) if fab else None,
+                       'body:silk': _union([_bbox(g) for g in silk]) if silk else None}}
     if not pads and not zones and graphics and set(layers) <= set(SILK):
-        return {'role': 'silk_only', 'occupancy': {'status': 'none', 'reason': 'silk-only non-electrical graphic'},
-                'copper': [], 'mask': [], 'classified_layers': classified, 'diagnostics': diagnostics}
+        return dict(facts, silk_only=True, mask=[])
     if zones:
         raise JobRefusal(f'{uuid}: footprint rule areas/zones are not supported by the job model')
-    if fixed_pose is not None:
-        body_layers = {FAB[side], SILK_OF[side], f'{side}.CrtYd'} & set(layers)
-        if pads and not body_layers and all(not p.GetNetname() for p in pads):
-            return {'role': 'fixed_copper_mark', 'copper': copper, 'mask': mask, 'classified_layers': classified,
-                    'occupancy': {'status': 'none', 'reason': 'fixed copper mark: copper obstacle, not a body'},
-                    'diagnostics': diagnostics}
+    body_layers = {FAB[side], SILK_OF[side], f'{side}.CrtYd'} & set(layers)
+    facts['mark_eligible'] = bool(pads) and not body_layers and all(not p.GetNetname() for p in pads)
+    courtyards = captured['courtyards']
     for court_side, record in courtyards.items():
         if record.get('status') != 'proven':
-            raise JobRefusal(f'{uuid} ({fp.GetReference()!r}): malformed courtyard on {court_side}.CrtYd: '
-                             f'{record.get("status")} {record.get("reason", "")}'.strip())
+            return dict(facts, refusal=f'{uuid} ({fp.GetReference()!r}): malformed courtyard on {court_side}.CrtYd: '
+                                       f'{record.get("status")} {record.get("reason", "")}'.strip())
     if side in courtyards:
         boxes = [[min(p[0] for p in poly), min(p[1] for p in poly), max(p[0] for p in poly), max(p[1] for p in poly)]
                  for poly in courtyards[side]['polygons']]
-        occupancy = {'status': 'courtyard', 'rung': 'courtyard', 'box': _union(boxes), 'sources': ['courtyard']}
+        return dict(facts, occupancy={'status': 'courtyard', 'rung': 'courtyard', 'box': _union(boxes),
+                                      'sources': ['courtyard']})
+    pad_boxes = [_bbox(p) for p in pads]
+    diagnostics = [f'{g.m_Uuid.AsString()}: empty drawing bounds' for g in fab + silk
+                   if (b := _bbox(g))[0] > b[2] or b[1] > b[3]]
+    if fab:
+        rung, source = 'fab+pads', fab
+    elif silk:
+        rung, source = 'silk+pads', silk
+    elif pad_boxes:
+        rung, source = 'pads', []
     else:
-        pad_boxes = [_bbox(p) for p in pads]
-        fab = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == FAB[side]
-               and g.GetClass() == 'PCB_SHAPE']
-        silk = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == SILK_OF[side]
-                and g.GetClass() == 'PCB_SHAPE']
-        for g in fab + silk:
-            b = _bbox(g)
-            if b[0] > b[2] or b[1] > b[3]:
-                diagnostics.append(f'{g.m_Uuid.AsString()}: empty drawing bounds')
-        if fab:
-            rung, source = 'fab+pads', fab
-        elif silk:
-            rung, source = 'silk+pads', silk
-        elif pad_boxes:
-            rung, source = 'pads', []
-        else:
-            raise JobRefusal(f'{uuid}: no courtyard, fab, silk or pad geometry for derived occupancy')
-        boxes = [_bbox(g) for g in source] + pad_boxes
-        occupancy = {'status': 'derived', 'label': 'derived_occupancy', 'rung': rung, 'box': _union(boxes),
-                     'sources': sorted(g.m_Uuid.AsString() for g in source) + ['pads'],
-                     'note': 'derived envelope; separation is not proof of package body separation'}
-        diagnostics.append(f'courtyard missing (metadata gap): derived_occupancy rung {rung}')
-    return {'role': 'fixed_body' if fixed_pose is not None else 'movable', 'occupancy': occupancy,
-            'copper': copper, 'mask': mask, 'classified_layers': classified, 'diagnostics': diagnostics}
+        return dict(facts, refusal=f'{uuid}: no courtyard, fab, silk or pad geometry for derived occupancy')
+    boxes = [_bbox(g) for g in source] + pad_boxes
+    diagnostics.append(f'courtyard missing (metadata gap): derived_occupancy rung {rung}')
+    return dict(facts, diagnostics=diagnostics,
+                occupancy={'status': 'derived', 'label': 'derived_occupancy', 'rung': rung, 'box': _union(boxes),
+                           'sources': sorted(g.m_Uuid.AsString() for g in source) + ['pads'],
+                           'note': 'derived envelope; separation is not proof of package body separation'})
 
 
-def _fixed_pose_owner(fixed_poses, captured):
-    """Resolve intent fixed poses to native UUIDs by reference base and exact pose."""
-    owners = {}
-    for index, row in enumerate(fixed_poses):
-        base = row['ref'].split('~')[0]
-        target = (_mm(row['x']), _mm(row['y']))
-        matches = [f for f in captured if f['ref'] == base and tuple(f['position_nm']) == target]
-        if 'side' in row and matches and not any(f['side'] == row['side'] for f in matches):
-            raise JobRefusal(f'intent.fixed_poses[{index}].side: differs from the fixed native side; '
-                             'side changes are unsupported')
-        matches = [f for f in matches if f['side'] == row.get('side', f['side'])]
-        if len(matches) != 1:
-            raise JobRefusal(f'intent.fixed_poses[{index}]: fixed pose {row["ref"]} '
-                             f'matches {len(matches)} native footprints')
-        if 'rot' in row and _quarter_turns(row['rot'], row['ref']) != _quarter_turns(
-                matches[0]['rotation_deg'], row['ref']):
-            raise JobRefusal(f'intent.fixed_poses[{index}].rot: differs from the fixed native rotation')
-        if matches[0]['uuid'] in owners:
-            raise JobRefusal(f'intent.fixed_poses[{index}].ref: duplicates a fixed native footprint')
-        owners[matches[0]['uuid']] = row
-    return owners
+def _describe_board(board, facts):
+    """Read a loaded native board into the description ``placement_problem`` builds from (no intent)."""
+    import pcbnew
+    by_uuid = {f['uuid']: f for f in facts['footprints']}
+    if len(by_uuid) != len(facts['footprints']):
+        raise JobRefusal('duplicate native footprint UUID')
+    settings = board.GetDesignSettings()
+    native_class = settings.m_NetSettings.GetDefaultNetclass()
+    clearance = _clearance(settings)
+    footprints = []
+    for fp in board.GetFootprints():
+        uuid = fp.m_Uuid.AsString()
+        captured = by_uuid[uuid]
+        q = _quarter_turns(captured['rotation_deg'], uuid)
+        origin = captured['position_nm']
+        native = classify_footprint(fp, captured)
+        box = (native['occupancy'] or {}).get('box')
+        footprints.append({
+            'uuid': uuid, 'ref': captured['ref'], 'side': captured['side'], 'locked': captured['locked'],
+            'position_nm': origin, 'rotation_deg': captured['rotation_deg'], 'quarter_turns': q,
+            'silk_only': native['silk_only'], 'mark_eligible': native['mark_eligible'],
+            'occupancy': native['occupancy'], 'occupancy_refusal': native['refusal'],
+            'occupancy_diagnostics': native['diagnostics'],
+            'occupancy_local_nm': _local_rect(box, origin, q) if box else None,
+            'classified_layers': native['classified_layers'],
+            'copper_local_nm': [c for p in fp.Pads() if (c := _pad_copper(p, origin, q)) is not None]
+                + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
+                   for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
+            'mask_local_nm': [_local_rect(b, origin, q) for b in native['mask']],
+            'holes_local_nm': [h for p in fp.Pads()
+                               if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
+            'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
+                      'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
+                                                 int(p.GetPosition().y) - origin[1], q)),
+                      'half_nm': _pad_half(p, origin, q)}
+                     for p in fp.Pads()],
+            'seats_local_nm': {basis: _local_rect(rect, origin, q) if rect else None
+                               for basis, rect in native['seats'].items()}})
+    return {'outline_rect_nm': _rectangle(facts['outline']),
+            'rules': {'copper_clearance_nm': clearance,
+                      'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
+                      'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
+                      'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
+            'pair': {'width_nm': int(native_class.GetDiffPairWidth()) if native_class.HasDiffPairWidth() else None,
+                     'gap_nm': int(native_class.GetDiffPairGap()) if native_class.HasDiffPairGap() else None,
+                     'clearance_nm': clearance},
+            'footprints': footprints}
 
 
 def _rectangle(outline):
@@ -776,63 +658,9 @@ def _check_dialect_native(board, facts, record):
     return checks
 
 
-def escape_hints(row, *, width, gap, clearance):
-    """Infer local outward rectangles from captured pads and native pair sizes.
-
-    One P and one N pad must share a row/column off the occupancy centre. The
-    preference extends two pair pitches past the pad edge and allows a track
-    half-width plus native clearance to either side. These dimensions are an
-    agent-selected search heuristic, not an impedance or routability proof.
-    Ambiguous, diagonal and multi-pad terminals get no inferred preference.
-    """
-    if width is None or gap is None or width <= 0 or gap <= 0:
-        return []
-    body = row['occupancy'].get('local_rect_nm')
-    if body is None:
-        return []
-    nets = defaultdict(list)
-    for pad in row['pads']:
-        nets[pad['net']].append(pad)
-    boxes = {c.get('geometry', {}).get('pad_uuid'): c['rect_nm']
-             for c in row['copper_local_nm']}
-    result = []
-    for name in sorted(nets):
-        suffix = next((s for s in ('_P', '+', 'P') if name.endswith(s)), None)
-        if suffix is None:
-            continue
-        mate = name[:-len(suffix)] + {'_P': '_N', '+': '-', 'P': 'N'}[suffix]
-        if len(nets[name]) != 1 or len(nets.get(mate, [])) != 1:
-            continue
-        p, n = nets[name][0], nets[mate][0]
-        a, b = p['local_nm'], n['local_nm']
-        normal = 0 if a[0] == b[0] and a[1] != b[1] else (
-            1 if a[1] == b[1] and a[0] != b[0] else None)
-        if normal is None or a[normal] * 2 == body[normal] + body[normal + 2]:
-            continue
-        if p['uuid'] not in boxes or n['uuid'] not in boxes:
-            continue
-        pa, pb = boxes[p['uuid']], boxes[n['uuid']]
-        rect = [min(pa[0], pb[0]), min(pa[1], pb[1]), max(pa[2], pb[2]), max(pa[3], pb[3])]
-        tangent = 1 - normal
-        margin = clearance + (width + 1) // 2
-        rect[tangent] -= margin
-        rect[tangent + 2] += margin
-        depth = 2 * (width + gap)
-        if a[normal] * 2 > body[normal] + body[normal + 2]:
-            rect[normal] = rect[normal + 2]
-            rect[normal + 2] += depth
-        else:
-            rect[normal + 2] = rect[normal]
-            rect[normal] -= depth
-        result.append({'authority': 'agent-heuristic/1', 'kind': 'differential-terminal-space',
-                       'nets': [name, mate], 'pads': [p['uuid'], n['uuid']], 'rect_nm': rect,
-                       'width_nm': width, 'gap_nm': gap, 'clearance_nm': clearance})
-    return result
-
-
 def _capture_native(board_path, normalized):
     """Native capture once; returns (problem without search section, capture record)."""
-    intent, groups, dialect = (_bundle(normalized)[k] for k in ('intent', 'groups', 'compatibility'))
+    intent, dialect = (_bundle(normalized)[k] for k in ('intent', 'compatibility'))
     import pcbnew
     from .placement_probe import extract
     before = Path(board_path).read_bytes()
@@ -849,111 +677,18 @@ def _capture_native(board_path, normalized):
                 or zone.GetPlacementAreaEnabled()):
             raise JobRefusal('board-level zones with pours or placement constraints are unsupported; '
                              'routing-only rule areas must allow footprints and pads')
-    by_uuid = {f['uuid']: f for f in facts['footprints']}
-    if len(by_uuid) != len(facts['footprints']):
-        raise JobRefusal('duplicate native footprint UUID')
-    owners = _fixed_pose_owner(intent.get('fixed_poses', []), facts['footprints'])
-    edges = _edge_rules(intent, facts['footprints'])
-    settings = board.GetDesignSettings()
-    native_class = settings.m_NetSettings.GetDefaultNetclass()
-    pair_width = int(native_class.GetDiffPairWidth()) if native_class.HasDiffPairWidth() else None
-    pair_gap = int(native_class.GetDiffPairGap()) if native_class.HasDiffPairGap() else None
-    rows, record = [], []
-    contour_vertices = 0
-    native = {}
-    for fp in board.GetFootprints():
-        uuid = fp.m_Uuid.AsString()
-        captured = by_uuid[uuid]
-        q = _quarter_turns(captured['rotation_deg'], uuid)
-        origin = captured['position_nm']
-        info = classify_footprint(fp, owners.get(uuid), captured)
-        ref = captured['ref']
-        if info['role'] == 'movable' and captured['locked']:
-            info['role'] = 'fixed_body'
-        row = {'uuid': uuid, 'native_ref': ref, 'role': info['role'],
-               'pose': {'x_nm': origin[0], 'y_nm': origin[1], 'quarter_turns': q},
-               'occupancy': ({k: v for k, v in info['occupancy'].items() if k in ('status', 'label', 'rung')}
-                             | ({'local_rect_nm': _local_rect(info['occupancy']['box'], origin, q)}
-                                if 'box' in info['occupancy'] else {})),
-               'copper_local_nm': [c for p in fp.Pads() if (c := _pad_copper(p, origin, q)) is not None]
-                   + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
-                      for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
-               'mask_local_nm': [_local_rect(b, origin, q) for b in info['mask']],
-               'holes_local_nm': [h for p in fp.Pads()
-                                  if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
-               'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
-                         'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
-                                                    int(p.GetPosition().y) - origin[1], q)),
-                         'half_nm': _pad_half(p, origin, q)}
-                        for p in fp.Pads()]}
-        if ref in edges:
-            declaration = next(e for e in intent['edge_connectors'] if e['ref'] == ref)
-            seat, basis = _edge_seat(fp, declaration, info['occupancy'])
-            row['edge'] = dict(edges[ref], seat_local_nm=_local_rect(seat, origin, q), seat_basis=basis)
-            # Mating-face direction is not captured, so an edge connector keeps its native orientation.
-            row['rotations'] = [q]
-        elif info['role'] == 'movable':
-            row['rotations'] = [0, 1, 2, 3]
-        else:
-            row['rotations'] = [q]
-        row['escape_local_nm'] = escape_hints(row, width=pair_width, gap=pair_gap,
-                                             clearance=_clearance(settings))
-        contour_vertices = _geometry_complexity(row, contour_vertices)
-        rows.append(row)
-        native[uuid] = {'ref': ref, 'side': captured['side'], 'locked': captured['locked']}
-        record.append({'uuid': uuid, 'native_ref': ref, 'role': info['role'],
-                       'occupancy': info['occupancy'], 'classified_layers': info['classified_layers'],
-                       'diagnostics': info['diagnostics'], 'fixed_pose': owners.get(uuid),
-                       'routing_preferences': row['escape_local_nm']})
+    description = _describe_board(board, facts)
     if Path(board_path).read_bytes() != before:
         raise JobRefusal('input board changed during capture')
-    settings = board.GetDesignSettings()
-    clearance = _clearance(settings)
-    by_ref = {r['native_ref']: r for r in rows if r['role'] == 'movable'}
-    proximity = []
-    for index, row in enumerate(intent.get('proximity', [])):
-        pads = row['pads']
-        for key in ('ref', 'near'):
-            ref = row[key]
-            if sum(r['native_ref'] == ref and r['role'] == 'movable' for r in rows) != 1:
-                raise JobRefusal(f'intent.proximity[{index}].{key}: must identify one movable footprint')
-            if ref in pads and set(pads[ref]) - {p['number'] for p in by_ref[ref]['pads']}:
-                raise JobRefusal(f'intent.proximity[{index}].pads.{ref}: selected pad is missing')
-        a, b = by_ref[row['ref']], by_ref[row['near']]
-        # Upstream declaration modes (contract 3.1): a declared side selects exactly the named pads;
-        # an undeclared side means all non-aperture pads, and an undeclared subject gives one
-        # minimum leg over all pairs without net narrowing. The flags travel to the engine and the report.
-        pick = lambda fp_row, numbers: [p['uuid'] for p in fp_row['pads'] if p['number'] in numbers]
-        non_aperture = lambda fp_row: [p['uuid'] for p in fp_row['pads'] if p.get('half_nm') != [0, 0]]
-        subject_declared, partner_declared = row['ref'] in pads, row['near'] in pads
-        proximity.append({'ref': row['ref'], 'near': row['near'], 'max_nm': _mm(row['max_mm']),
-                          'ref_pads': pick(a, pads[row['ref']]) if subject_declared else non_aperture(a),
-                          'near_pads': pick(b, pads[row['near']]) if partner_declared else non_aperture(b),
-                          'subject_declared': subject_declared, 'partner_declared': partner_declared,
-                          'basis': row.get('basis'), 'limit': row.get('context', {}).get('limit')})
-    problem = {'schema': INPUT_SCHEMA,
-               'outline': {'kind': 'rectangle', 'rect_nm': _rectangle(facts['outline'])},
-               'rules': {'copper_clearance_nm': clearance,
-                         'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
-                         'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
-                         'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
-               'footprints': sorted(rows, key=lambda r: r['uuid']),
-               'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups['groups']],
-               'rails': normalized['rails'],
-               'proximity': proximity,
-               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}}
-    if dialect:
-        problem['compatibility'] = {'schema': dialect['schema'], 'dialect': dialect['dialect'],
-                                    'unresolved_claims': dialect['unresolved_claims'], 'withheld': dialect['withheld'],
-                                    'native_checks': dialect_checks,
-                                    'dispositions': dialect['dispositions']}
     if 'electrical_locality' in intent:
-        document = intent['electrical_locality']
-        _locality_grade(facts, document)
-        problem['locality'] = {'document': document, 'footprints': facts['footprints']}
-    problem['problem_sha256'] = sha256_bytes(canonical(problem))
+        _locality_grade(facts, intent['electrical_locality'])
+    problem, records = placement_problem.capture(
+        description, normalized, dialect_checks=dialect_checks,
+        locality_footprints=facts['footprints'] if 'electrical_locality' in intent else None)
     return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before),
-                     'pcbnew_version': facts['pcbnew_version'], 'footprints': record, 'native': native,
+                     'pcbnew_version': facts['pcbnew_version'], 'footprints': records,
+                     'native': {f['uuid']: {'ref': f['ref'], 'side': f['side'], 'locked': f['locked']}
+                                for f in description['footprints']},
                      'facts_sha256': sha256_bytes(canonical(facts))}
 
 
@@ -1032,10 +767,7 @@ def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None
                 'seeds': events, 'shortlist': [], 'prng': None}, {
                     'executable': str(executable), 'executable_sha256': digest(executable),
                     'input_sha256': sha256_bytes(encoded), 'exit_code': None, 'interruption': exc.status}
-    if code != 0 or final is None or final.get('schema') != OUTPUT_SCHEMA:
-        raise JobRefusal(f'placement engine failed (exit {code}): {(final or {}).get("error") or stderr[-2000:]}')
-    if final['problem_sha256'] != problem['problem_sha256']:
-        raise JobRefusal('placement engine answered a different problem')
+    placement_problem.check_output(final, problem, code=code, detail=stderr[-2000:])
     return final, {'executable': str(executable), 'executable_sha256': digest(executable),
                    'input_sha256': sha256_bytes(encoded), 'exit_code': code}
 
@@ -1204,7 +936,7 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
                      rotation_deg=r['rotation_deg'])
                 for u, r in before.items()]
     protected = {u for u, row in before.items() if row['locked']} | set(
-        _fixed_pose_owner(fixed_poses, captured))
+        placement_problem.fixed_pose_owners(fixed_poses, captured))
     target = {row['uuid']: row for row in poses}
     if set(target) != set(before) or len(target) != len(poses):
         raise JobRefusal('candidate pose vector does not cover the native footprint UUIDs exactly')
@@ -1330,12 +1062,14 @@ def load_checkpoint(job_dir, identity):
 
 # ---------------------------------------------------------------- metrics
 
-def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None):
+def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None, fixed_poses=()):
     """Measured route length, vias and geometric via-in-pad on a saved board (read-only).
 
     With ``groups`` the AGENTEE-479 group-link report (signed pad-edge gaps) is
     included; with ``proximity`` rows of basis ``pad_edge`` their per-leg
     measurements are included. Both are measurements and diagnostics only.
+    ``fixed_poses`` are the intent's declared fixed poses: the evaluated problem
+    uses capture's role rule, so a footprint is fixed only if declared or locked.
     """
     import pcbnew
     data = Path(path).read_bytes()
@@ -1363,8 +1097,10 @@ def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None):
         anchor = centres[g['anchor']]
         spread = max(math.dist(anchor, centres[r]) for r in g['refs']) / NM
         grouping.append({'group': g['name'], 'anchor': g['anchor'], 'max_member_anchor_mm': round(spread, 3)})
-    evaluated = (_evaluate_board_native(path, groups=groups, edges=edges, rails=rails, proximity=proximity,
-                                        board=board, before=data)
+    declared_edges = ([{'ref': r, 'edge': e} for r, e in edges.items()] if isinstance(edges, dict)
+                      else list(edges or ()))
+    evaluated = (_evaluate_board_native(path, fixed_poses=fixed_poses, edges=declared_edges, groups=groups or (),
+                                        rails=rails, proximity=proximity, board=board, before=data)
                  if (groups or edges or proximity) else None)
     if Path(path).read_bytes() != data:
         raise JobRefusal('board changed during metrics extraction')
@@ -2152,7 +1888,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
-    metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'))
+    metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'),
+                            fixed_poses=intent.get('fixed_poses', []))
     metrics['edges'] = edge_intent['connectors']
     metrics['refinement'] = refinement
     # Supplemental annotated views of this same saved board (AGENTEE-479 part 2 evidence). Missing or
@@ -2248,7 +1985,8 @@ def execute(args, parser):
     groups_document = read_json(args.groups) if args.groups else {'groups': []}
     normalized = normalize_intent(read_json(args.intent), groups_document) if args.intent else None
     metrics = board_metrics(args.board, (normalized['groups'] if normalized else groups_document)['groups'],
-                            proximity=normalized['intent'].get('proximity') if normalized else None)
+                            proximity=normalized['intent'].get('proximity') if normalized else None,
+                            fixed_poses=normalized['intent'].get('fixed_poses', []) if normalized else ())
     if normalized:
         metrics['edge_intent'] = check_edge_intent(args.board, normalized)
         metrics['edges'] = metrics['edge_intent']['connectors']

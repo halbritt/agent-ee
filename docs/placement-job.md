@@ -86,6 +86,31 @@ intent document. For an original-dialect intent they therefore all see the
 native projection; the connector `side` and `context` fields it removes stay
 operative only through the compatibility record that capture checks natively.
 
+One builder, `placement_problem`, turns an in-memory board description plus
+the normalized intent into the engine input (AGENTEE-538). The job reads the
+native board into that description. Capture builds the problem the engine
+solves. Final-board evaluation, used by `metrics` and the edge checks, builds
+the same problem for the saved board with one evaluation row. It checks the
+engine output's schema and `problem_sha256` as the solver path does. Both
+builds share one weights table and one role rule:
+
+- A declared fixed pose or a native lock fixes a footprint.
+- A declared fixed footprint that draws no body and has only unnetted pads is
+  a fixed copper mark.
+- Every other footprint is movable.
+
+Because evaluation needs the intent's fixed poses, `metrics` without
+`--intent` refuses a board whose duplicated references intent does not
+declare, such as esp_prog's two `Ref*` fiducials. The solver would refuse that
+board the same way. Ungrouped movable parts now appear in the S1 partition
+report. The earlier evaluator fixed them, so S1 never listed them.
+
+Declared `pad_edge` proximity reaches the measurement as declared, so an
+unresolved claim is reported, not refused.
+
+The engine is the only checker of the contour limits, occupancy rung names,
+escape-space label and numeric edge rules; capture emits those values once.
+
 Rich KRT `floorplan-intent` documents (`schema: 1`, `min_reader`, `assembly`,
 `blocks`, `keepouts`, `envelope`, `defaults`, `legality_budget`, `must_lock`,
 `decaps`, etc.) are not this contract, even if a collection is empty. The raw

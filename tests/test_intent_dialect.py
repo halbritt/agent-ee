@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agent_ee import placement_intent, placement_job as job
+from agent_ee import placement_intent, placement_job as job, placement_problem
 
 ROOT = Path(__file__).resolve().parents[1]
 ESP = Path(os.environ.get('AGENT_EE_ESP_PROG_INPUTS', ROOT / 'build/agent545/inputs'))
@@ -262,7 +262,7 @@ def _evaluate_problem(footprints, *, groups=(), rails=None, proximity=()):
                'rules': {'copper_clearance_nm': 200_000, 'copper_edge_clearance_nm': 300_000, 'mask_min_web_nm': 100_000},
                'footprints': rows, 'groups': list(groups),
                'rails': rails or {'shared': {}, 'scoped': {}}, 'proximity': list(proximity),
-               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20},
+               'weights': dict(placement_problem.WEIGHTS),
                'evaluate': [{}]}
     done = subprocess.run([str(job.rust_executable())], input=json.dumps(payload).encode(), capture_output=True, timeout=60)
     if done.returncode != 0:
@@ -407,7 +407,9 @@ class RetainedEspProgTests(unittest.TestCase):
         board_path = ESP / 'board.kicad_pcb'
         self.assertEqual(hashlib.sha256(board_path.read_bytes()).hexdigest(), ESP_BOARD_SHA)
         intent = json.loads((ESP / 'intent.json').read_bytes())
-        rows = job.board_metrics(board_path, proximity=intent['proximity'])['pad_edge_legs']
+        # The evaluated problem uses capture's role rule: the duplicated Ref* marks are fixed only as declared.
+        rows = job.board_metrics(board_path, proximity=intent['proximity'],
+                                 fixed_poses=intent['fixed_poses'])['pad_edge_legs']
         expected = {(0, '1', '9'): 2.9704, (0, '2', '10'): 3.3268, (1, '1', '2'): 0.658, (2, '1', '1'): -0.075}
         seen = {}
         for index, result in enumerate(rows):
@@ -494,7 +496,8 @@ ESP_FINAL = Path(os.environ.get('AGENT_EE_ESP_PROG_FINAL', ROOT / 'build/agent54
 ESP_FINAL_SHA = 'dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1'
 
 
-@unittest.skipUnless((ESP_FINAL / 'board.kicad_pcb').exists() and (ESP / 'groups.json').exists(),
+@unittest.skipUnless((ESP_FINAL / 'board.kicad_pcb').exists() and (ESP / 'groups.json').exists()
+                     and (ESP / 'intent.json').exists(),
                      'retained esp_prog final-a1 board is not present on this host')
 class RetainedGroupReplayTests(unittest.TestCase):
     def test_group_links_replay_the_contract_measurements(self):
@@ -507,7 +510,9 @@ class RetainedGroupReplayTests(unittest.TestCase):
         groups = json.loads((ESP / 'groups.json').read_bytes())
         rails = {'shared_rails': {'GND': 'ground return', '/+3.3V': 'groups.json power.why', 'Net-(C1-Pad1)': 'groups.json power.why'},
                  'scoped': {'Net-(C1-Pad1)': {'intra_group': 'power', 'near_pairs': [['usb_in', 'power'], ['power', 'usb_in']]}}}
-        report = job.board_metrics(board_path, groups['groups'], rails=rails)['group_links']
+        # The run's declared fixed poses: the evaluated problem fixes the duplicated Ref* marks only as declared.
+        fixed_poses = json.loads((ESP / 'intent.json').read_bytes())['fixed_poses']
+        report = job.board_metrics(board_path, groups['groups'], rails=rails, fixed_poses=fixed_poses)['group_links']
         power = report['groups']['power']
         self.assertEqual([(l['ref_a'], l['pad_a'], l['ref_b'], l['pad_b'], l['gap_mm']) for l in power['R2_intra_group_signal_links']],
                          [('C1', '1', 'U2', '2', 4.592)])
@@ -730,7 +735,7 @@ class EngineParityTests(unittest.TestCase):
                 'groups': [{'name': 'g', 'anchor': 'R1', 'refs': ['R1', 'R2'], 'near': ['h']},
                            {'name': 'h', 'anchor': 'R3', 'refs': ['R3', 'R4']}],
                 'rails': {'shared': {'GND': 'ground return'}, 'scoped': {}},
-                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20},
+                'weights': dict(placement_problem.WEIGHTS),
                 'evaluate': [{}]}
 
     def test_links_agree_between_python_report_and_rust_engine(self):

@@ -1,4 +1,9 @@
-"""Captured-geometry complexity contract, exact regions and bounded preparation."""
+"""Captured-geometry complexity contract, exact regions and bounded preparation.
+
+The Rust engine owns the contour limits (AGENTEE-538): capture emits native
+contours unchanged and the engine refuses an over-limit problem with the owning
+footprint and pad. The limits below are read from job.rs, their only copy.
+"""
 import copy
 import hashlib
 import json
@@ -12,6 +17,11 @@ import time
 import unittest
 
 from agent_ee import placement_job as job
+
+_ENGINE_SOURCE = (Path(__file__).resolve().parents[1] / 'crates/placement-engine/src/job.rs').read_text()
+MAX_CONTOUR_VERTICES, MAX_ITEM_CONTOURS, MAX_PROBLEM_CONTOUR_VERTICES = (
+    int(re.search(r'pub const ' + name + r': usize = (\d+);', _ENGINE_SOURCE)[1])
+    for name in ('MAX_CONTOUR_VERTICES', 'MAX_ITEM_CONTOURS', 'MAX_PROBLEM_CONTOUR_VERTICES'))
 
 
 def contour(n):
@@ -45,60 +55,46 @@ def engine(payload, timeout=60):
 
 
 class ComplexityTests(unittest.TestCase):
-    def test_capture_and_rust_contract_constants_are_identical(self):
-        source = (Path(__file__).resolve().parents[1] / 'crates/placement-engine/src/job.rs').read_text()
-        for name in ('MAX_CONTOUR_VERTICES', 'MAX_ITEM_CONTOURS', 'MAX_PROBLEM_CONTOUR_VERTICES'):
-            match = re.search(r'pub const ' + name + r': usize = (\d+);', source)
-            self.assertIsNotNone(match, name)
-            self.assertEqual(getattr(job, name), int(match[1]), name)
-
-    def check_both(self, p, message=None):
-        total = 0
-        if message:
-            with self.assertRaisesRegex(job.JobRefusal, re.escape(message)) as raised:
-                for row in p['footprints']:
-                    total = job._geometry_complexity(row, total)
-            self.assertIn('R1 (00000000-0000-0000-0000-000000000001) pad pad-1', str(raised.exception))
-        else:
-            for row in p['footprints']:
-                total = job._geometry_complexity(row, total)
+    def check_engine(self, p, message=None):
         code, response = engine(p)
         self.assertEqual(code, int(message is not None), response)
         if message:
             self.assertIn(message, response['error'])
+            # The engine names the owning footprint and pad; capture adds nothing to its check.
+            self.assertIn('"R1" ("00000000-0000-0000-0000-000000000001") pad "pad-1"', response['error'])
         else:
             self.assertEqual(response['status'], 'evaluated')
         return response
 
     def test_1118_and_per_contour_boundary_preserve_capture_bytes(self):
-        for n in (1118, job.MAX_CONTOUR_VERTICES):
+        for n in (1118, MAX_CONTOUR_VERTICES):
             with self.subTest(vertices=n):
                 p = problem([contour(n)])
                 before = copy.deepcopy(p)
-                self.check_both(p)
+                self.check_engine(p)
                 self.assertEqual(p, before)
-        n = job.MAX_CONTOUR_VERTICES + 1
-        self.check_both(problem([contour(n)]), f'contour 0 vertex count {n} exceeds {n - 1}')
+        n = MAX_CONTOUR_VERTICES + 1
+        self.check_engine(problem([contour(n)]), f'contour 0 vertex count {n} exceeds {n - 1}')
 
     def test_per_item_contour_boundary(self):
         triangle = [[0, 0], [100, 0], [0, 100]]
-        self.check_both(problem([triangle] * job.MAX_ITEM_CONTOURS))
-        self.check_both(problem([triangle] * (job.MAX_ITEM_CONTOURS + 1)),
-                        f'item contour count {job.MAX_ITEM_CONTOURS + 1} exceeds {job.MAX_ITEM_CONTOURS}')
+        self.check_engine(problem([triangle] * MAX_ITEM_CONTOURS))
+        self.check_engine(problem([triangle] * (MAX_ITEM_CONTOURS + 1)),
+                        f'item contour count {MAX_ITEM_CONTOURS + 1} exceeds {MAX_ITEM_CONTOURS}')
 
     def test_total_vertices_boundary(self):
-        p = problem([contour(job.MAX_CONTOUR_VERTICES)] *
-                    (job.MAX_PROBLEM_CONTOUR_VERTICES // job.MAX_CONTOUR_VERTICES))
-        self.check_both(p)
+        p = problem([contour(MAX_CONTOUR_VERTICES)] *
+                    (MAX_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES))
+        self.check_engine(p)
         # Keep each contour within its own bound while crossing only the problem bound.
-        p['footprints'][0]['copper_local_nm'][0]['geometry']['polygons'][-1] = contour(job.MAX_CONTOUR_VERTICES - 2)
+        p['footprints'][0]['copper_local_nm'][0]['geometry']['polygons'][-1] = contour(MAX_CONTOUR_VERTICES - 2)
         p['footprints'][0]['copper_local_nm'].append(item([[[0, 0], [100, 0], [0, 100]]]))
-        self.check_both(p, f'prepared contour vertex total {job.MAX_PROBLEM_CONTOUR_VERTICES + 1} '
-                        f'exceeds {job.MAX_PROBLEM_CONTOUR_VERTICES}')
+        self.check_engine(p, f'prepared contour vertex total {MAX_PROBLEM_CONTOUR_VERTICES + 1} '
+                        f'exceeds {MAX_PROBLEM_CONTOUR_VERTICES}')
 
     def test_limit_scale_prepare_is_killed_by_controller_deadline(self):
-        p = problem([contour(job.MAX_CONTOUR_VERTICES)] *
-                    (job.MAX_PROBLEM_CONTOUR_VERTICES // job.MAX_CONTOUR_VERTICES))
+        p = problem([contour(MAX_CONTOUR_VERTICES)] *
+                    (MAX_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES))
         p.pop('evaluate')
         with tempfile.TemporaryDirectory() as tmp:
             started = time.monotonic()
