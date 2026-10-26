@@ -449,6 +449,21 @@ class HostTest(unittest.TestCase):
             os.kill(child, signal.SIGKILL)
             self.fail('the pipe-holding descendant survived the failed checkpoint')
 
+    def test_reaped_returncode_survives_timeout_and_cancel(self):
+        record = native_run.run(self.host('import time; time.sleep(60)', timeout=1), work=self.root / 'w')
+        self.assertEqual((record['execution'], record['exit_code'], record.returncode), ('timeout', None, -signal.SIGKILL))
+        self.assertNotIn('returncode', json.loads((self.root / 'w/execution.json').read_text()))
+        code = 'import signal, sys, time; signal.signal(signal.SIGTERM, lambda *_: sys.exit(3)); time.sleep(60)'
+        cancel = executor.Cancellation()
+        import threading
+        threading.Timer(1, cancel.cancel).start()
+        record = native_run.run(self.host(code, timeout=30, stop_grace_s=5), work=None, cancel=cancel)
+        self.assertEqual((record['execution'], record['exit_code'], record.returncode), ('interrupted', None, 3))
+        done = native_run.run(self.host('import sys; sys.exit(4)'), work=None)
+        self.assertEqual((done['exit_code'], done.returncode), (4, 4))
+        missing = native_run.run(Intent('probe', ['/nonexistent/tool'], isolation='host'), work=None)
+        self.assertIsNone(missing.returncode)
+
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
             native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])

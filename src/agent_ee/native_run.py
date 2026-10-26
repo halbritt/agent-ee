@@ -85,12 +85,15 @@ class Intent:
 class Execution(dict):
     """The execution record (exactly what execution.json holds) plus the captured output.
 
-    stdout and stderr are attributes, not keys, so the record serializes unchanged."""
+    stdout and stderr are attributes, not keys, so the record serializes unchanged. returncode is
+    the reaped process status of a host or docker run, also after a timeout, cancel or failing
+    callback, where the record's exit_code stays None as the executor's does (None for sandbox runs)."""
 
-    def __init__(self, record, stdout=b"", stderr=b""):
+    def __init__(self, record, stdout=b"", stderr=b"", returncode=None):
         super().__init__(record)
         self.stdout = stdout
         self.stderr = stderr
+        self.returncode = returncode
 
 
 # --- argv builders: each native command is spelled in one place ---------------------------------
@@ -233,7 +236,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     that never reads stdin or never closes stdout cannot outlive its deadline. Timeout and
     cancel kill the whole group and then keep what it already wrote. on_stop (a container
     client's cleanup) runs after the kill on every exit except the tool's own completion.
-    timeout None means no limit of its own. on_launch gets the child's pid. stop_grace sends
+    fields["returncode"] is the reaped status on every path that launched the child (adapters move it
+    to Execution.returncode). timeout None means no limit of its own. on_launch gets the child's pid. stop_grace sends
     SIGTERM to the group and waits that long before SIGKILL on an early stop. on_tick runs before
     every poll of the loop. When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
     is re-raised with (fields, stdout, stderr) attached as native_execution.
@@ -326,6 +330,7 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
         # Reap the owned group even when its leader exited and a descendant holds a pipe.
         _kill_group(proc)
         proc.wait()
+        fields["returncode"] = proc.returncode
         if failure is not None:
             fields["exit_code"] = proc.returncode
         for stream in (proc.stdout, proc.stderr):
@@ -363,14 +368,20 @@ def _stop_group(proc, grace):
 def _supervised(finish, argv, **options):
     """supervise() and turn its fields into an Execution with finish; a failing callback's
     exception propagates with that Execution as native_execution."""
+    def complete(fields, output, stderr):
+        returncode = fields.pop("returncode", None)
+        execution = finish(fields, output, stderr)
+        execution.returncode = returncode
+        return execution
+
     try:
         fields, output, stderr = supervise(argv, **options)
     except BaseException as exc:
         partial = getattr(exc, "native_execution", None)
         if isinstance(partial, tuple):
-            exc.native_execution = finish(*partial)
+            exc.native_execution = complete(*partial)
         raise
-    return finish(fields, output, stderr)
+    return complete(fields, output, stderr)
 
 
 def _kill_group(proc):
@@ -573,7 +584,8 @@ class Recorded:
                 on_line(line)
         if execution == "interrupted":
             raise KeyboardInterrupt
-        return Execution(record, outcome.stdout, outcome.stderr)
+        return Execution(record, outcome.stdout, outcome.stderr,
+                         returncode=None if intent.isolation == "sandbox" else outcome.exit_code)
 
 
 DEFAULT_ADAPTERS = {"sandbox": Sandbox(), "host": Host()}
