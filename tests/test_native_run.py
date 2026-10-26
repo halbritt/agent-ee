@@ -135,7 +135,10 @@ class BuilderTest(unittest.TestCase):
         self.assertEqual((intent.tool, intent.timeout, intent.isolation), ('pcbnew_script', 60, 'sandbox'))
 
     def test_intents_validate(self):
-        for label, kwargs in (('empty argv', dict(tool='x', argv=())), ('string argv', dict(tool='x', argv='ls')),
+        for label, kwargs in (('untimed sandbox', dict(tool='x', argv=['ls'], timeout=None)),
+                              ('sandbox grace', dict(tool='x', argv=['ls'], stop_grace_s=1)),
+                              ('negative grace', dict(tool='x', argv=['ls'], isolation='host', stop_grace_s=-1)),
+                              ('empty argv', dict(tool='x', argv=())), ('string argv', dict(tool='x', argv='ls')),
                               ('isolation', dict(tool='x', argv=['ls'], isolation='vm')),
                               ('sandbox env', dict(tool='x', argv=['ls'], env={'A': '1'}))):
             with self.subTest(label), self.assertRaises(ValueError):
@@ -229,6 +232,12 @@ class RecordedTest(unittest.TestCase):
         moved = record['displaced_records']['console.log']
         self.assertEqual((work / moved['moved_to']).read_bytes(), b'x')
         self.assertEqual((work / 'console.log').read_bytes(), b'')
+
+    def test_launch_observer_gets_the_canned_pid(self):
+        pids = []
+        native_run.run(Intent('probe', ['true'], isolation='host'), work=None, on_launch=pids.append,
+                       adapter=native_run.Recorded(lambda call: Outcome(pid=4321)))
+        self.assertEqual(pids, [4321])
 
     def test_exceptions_and_cancellation(self):
         adapter = native_run.Recorded(lambda call: OSError('boom'))
@@ -353,6 +362,58 @@ class HostTest(unittest.TestCase):
         self.assertEqual(moved['kind'], 'file')
         self.assertEqual((work / moved['moved_to']).read_text(), 'planted')
         self.assertEqual(json.loads((work / 'execution.json').read_text()), dict(record))
+
+    def test_launch_observer_gets_the_child_pid(self):
+        pids = []
+        record = native_run.run(self.host('import os; print(os.getpid())'), work=None, on_launch=pids.append)
+        self.assertEqual(pids, [int(record.stdout)])
+
+    def test_untimed_host_runs_and_the_deadline_still_clamps(self):
+        record = native_run.run(self.host('print(1)', timeout=None), work=self.root / 'w')
+        self.assertEqual((record['execution'], record['timeout_s']), ('ok', None))
+        self.assertIsNone(json.loads((self.root / 'w/execution.json').read_text())['timeout_s'])
+        intent = self.host('import time; time.sleep(60)', timeout=None)
+        record = native_run.run(intent, work=None, deadline=time.monotonic() + 2)
+        self.assertEqual(record['execution'], 'timeout')
+        self.assertTrue(native_run.cut_by_deadline(record, intent))
+
+    def test_stop_grace_sends_sigterm_first(self):
+        marker = self.root / 'term'
+        code = ('import signal, sys, time\n'
+                f'def term(*_): open({str(marker)!r}, "w").close(); sys.exit(7)\n'
+                'signal.signal(signal.SIGTERM, term)\nprint("ready", flush=True)\ntime.sleep(60)')
+        record = native_run.run(self.host(code, timeout=1.5, stop_grace_s=5), work=None)
+        self.assertEqual(record['execution'], 'timeout')
+        self.assertTrue(marker.exists())
+        marker2 = self.root / 'term2'
+        code2 = code.replace(str(marker), str(marker2))
+        native_run.run(self.host(code2, timeout=1.5), work=None)
+        self.assertFalse(marker2.exists())
+
+    def test_callback_failure_keeps_the_stopped_run(self):
+        code = ('import signal, sys, time\n'
+                'signal.signal(signal.SIGTERM, lambda *_: sys.exit(5))\n'
+                'sys.stderr.write("diagnostic\\n"); sys.stderr.flush()\n'
+                'print("one", flush=True); print("two", flush=True); time.sleep(60)')
+
+        def on_line(line):
+            if line == b'two':
+                raise ValueError('protocol')
+
+        with self.assertRaises(ValueError) as caught:
+            native_run.run(self.host(code, timeout=None, stop_grace_s=5), work=self.root / 'w', on_line=on_line)
+        execution = caught.exception.native_execution
+        self.assertEqual((execution['execution'], execution['exit_code']), ('callback_failed', 5))
+        self.assertEqual(execution.stderr, b'diagnostic\n')
+        self.assertEqual(execution.stdout, b'one\ntwo\n')
+        self.assertEqual(json.loads((self.root / 'w/execution.json').read_text()), dict(execution))
+
+        def bad_launch(pid):
+            raise RuntimeError('observer')
+
+        with self.assertRaises(RuntimeError) as caught:
+            native_run.run(self.host('import time; time.sleep(60)'), work=None, on_launch=bad_launch)
+        self.assertEqual(caught.exception.native_execution['execution'], 'callback_failed')
 
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):

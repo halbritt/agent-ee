@@ -49,18 +49,22 @@ class Intent:
 
     tool names the native intent (drc, netlist, pcbnew_script, router, render3d, probe, …)
     for adapters and tests; it never changes the argv. timeout is the tool's own limit,
-    which run() clamps to the caller's deadline. env and cwd apply to host runs only; the
-    sandbox clears its environment and starts in /work.
+    which run() clamps to the caller's deadline; a host or docker intent may pass None when
+    the tool has no limit of its own (the deadline, if any, still applies). env and cwd apply
+    to host runs only; the sandbox clears its environment and starts in /work. stop_grace_s
+    asks for SIGTERM to the group and that many seconds before SIGKILL when a host or docker
+    run is stopped early (timeout, cancel, a failing callback); None kills at once.
     """
     tool: str
     argv: tuple
-    timeout: float = 120
+    timeout: Optional[float] = 120
     stdin: Optional[str] = None
     network: bool = False
     skip_visuals: Optional[bool] = None
     isolation: str = "sandbox"
     env: Optional[Mapping[str, str]] = None
     cwd: Optional[str] = None
+    stop_grace_s: Optional[float] = None
 
     def __post_init__(self):
         if not self.tool or not isinstance(self.tool, str):
@@ -72,6 +76,10 @@ class Intent:
             raise ValueError(f"unknown native isolation {self.isolation!r}")
         if self.isolation == "sandbox" and (self.env is not None or self.cwd is not None):
             raise ValueError("a sandboxed run takes no host environment or working directory")
+        if self.timeout is None and self.isolation == "sandbox":
+            raise ValueError("a sandboxed run needs a timeout")
+        if self.stop_grace_s is not None and (self.isolation == "sandbox" or self.stop_grace_s < 0):
+            raise ValueError("stop_grace_s is a non-negative grace for host or docker runs")
 
 
 class Execution(dict):
@@ -136,12 +144,14 @@ def clamp(intent, deadline):
     remaining = deadline - time.monotonic()
     if remaining <= LAUNCH_FLOOR_S:
         raise DeadlineExhausted(f"deadline exhausted before {intent.tool} could run")
-    return min(intent.timeout, remaining)
+    return remaining if intent.timeout is None else min(intent.timeout, remaining)
 
 
 def cut_by_deadline(record, intent):
     """True when the tool timed out only because the deadline clamped its own limit."""
-    return record.get("execution") == "timeout" and record.get("timeout_s", intent.timeout) < intent.timeout
+    if record.get("execution") != "timeout":
+        return False
+    return intent.timeout is None or record.get("timeout_s", intent.timeout) < intent.timeout
 
 
 def baseline_mounts(baseline):
@@ -153,13 +163,16 @@ def baseline_mounts(baseline):
 
 
 def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, cancel=None, adapter=None,
-        on_line=None):
+        on_line=None, on_launch=None):
     """Run intent and return its Execution.
 
     inputs is the read-only candidate (sandbox runs). deadline is an absolute monotonic time;
     the tool's timeout is clamped to it and a nearly spent deadline raises DeadlineExhausted.
     baseline names the run's baseline.json; when it exists it is mounted before mounts.
-    cancel is an executor.Cancellation. on_line receives each stdout line (host and docker).
+    cancel is an executor.Cancellation. on_line receives each stdout line and on_launch the
+    child's pid once it starts (host and docker). When a callback raises, the run is stopped and
+    reaped and the callback's exception propagates unchanged, carrying the stopped run's
+    Execution as its native_execution attribute (execution "callback_failed").
     """
     if not isinstance(intent, Intent):
         raise TypeError("native run needs an Intent")
@@ -167,7 +180,7 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     mounts = (*baseline_mounts(baseline), *mounts)
     chosen = adapter or _active.get() or DEFAULT_ADAPTERS[intent.isolation]
     return chosen.run(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts,
-                      cancel=cancel, on_line=on_line)
+                      cancel=cancel, on_line=on_line, on_launch=on_launch)
 
 
 @contextlib.contextmanager
@@ -187,13 +200,13 @@ class Sandbox:
 
     name = "sandbox"
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
         if intent.isolation != "sandbox":
             raise ValueError(f"the sandbox adapter cannot run a {intent.isolation} intent")
         if inputs is None:
             raise ValueError("a sandboxed run needs its read-only inputs")
-        if on_line is not None:
-            raise ValueError("the sandbox adapter returns output with the record, not by line")
+        if on_line is not None or on_launch is not None:
+            raise ValueError("the sandbox adapter returns output with the record, not by callback")
         record = executor.execute(inputs, work, list(intent.argv), timeout=timeout, stdin=intent.stdin,
                                   network=intent.network, extra_ro=tuple(mounts), cancellation=cancel,
                                   skip_visuals=intent.skip_visuals)
@@ -210,13 +223,18 @@ def _read_logs(work):
     return out
 
 
-def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_line=None, on_stop=None):
+def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_line=None, on_stop=None,
+              on_launch=None, stop_grace=None):
     """Run argv as a host process group under one deadline and cancel handle.
 
     Returns (record fields, stdout, stderr). Output is drained without blocking, so a child
     that never reads stdin or never closes stdout cannot outlive its deadline. Timeout and
     cancel kill the whole group and then keep what it already wrote. on_stop (a container
     client's cleanup) runs after the kill on every exit except the tool's own completion.
+    timeout None means no limit of its own. on_launch gets the child's pid. stop_grace sends
+    SIGTERM to the group and waits that long before SIGKILL on an early stop. When on_line or
+    on_launch raises, the run stops like a timeout (execution "callback_failed") and the exception
+    is re-raised with (fields, stdout, stderr) attached as native_execution.
     """
     cancel = cancel or Cancellation()
     fields = {"execution": "not_run", "exit_code": None}
@@ -241,7 +259,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
         if interrupt:
             raise KeyboardInterrupt
         return fields, b"", b""
-    stopped, completed = None, False
+    stopped, completed, failure = None, False, None
+    limit_at = float("inf") if timeout is None else start + timeout
     try:
         with selectors.DefaultSelector() as selector:
             for stream in (proc.stdout, proc.stderr):
@@ -264,35 +283,47 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                                 pending[:] = rest
                                 on_line(bytes(line))
 
-            while selector.get_map() or proc.poll() is None:
-                if cancel.cancelled.is_set() or interrupt:
-                    stopped = "interrupted"
-                    break
-                remaining = timeout - (time.monotonic() - start)
-                if remaining <= 0:
-                    stopped = "timeout"
-                    break
-                read(min(.05, remaining), True)
+            try:
+                if on_launch is not None:
+                    on_launch(proc.pid)
+                while selector.get_map() or proc.poll() is None:
+                    if cancel.cancelled.is_set() or interrupt:
+                        stopped = "interrupted"
+                        break
+                    remaining = limit_at - time.monotonic()
+                    if remaining <= 0:
+                        stopped = "timeout"
+                        break
+                    read(min(.05, remaining), True)
+            except BaseException as exc:
+                failure, stopped = exc, "callback_failed"
             if stopped is not None:
-                # Kill first, then keep what the group already wrote, bounded as the executor's drain is.
-                _kill_group(proc)
+                # Stop first, then keep what the group already wrote, bounded as the executor's drain is.
+                _stop_group(proc, stop_grace)
                 limit = time.monotonic() + 1
                 while selector.get_map() and time.monotonic() < limit:
                     read(max(0.0, limit - time.monotonic()), False)
                 if selector.get_map():
                     fields["cleanup_error"] = "process group killed but output drain exceeded one second"
         if stopped is None:
-            if pending and on_line is not None:
-                on_line(bytes(pending))
-            fields["exit_code"] = proc.wait()
-            fields["execution"] = "ok" if fields["exit_code"] == 0 else "failed"
-            completed = True
-        else:
+            try:
+                if pending and on_line is not None:
+                    on_line(bytes(pending))
+            except BaseException as exc:
+                failure, stopped = exc, "callback_failed"
+                _stop_group(proc, stop_grace)
+            else:
+                fields["exit_code"] = proc.wait()
+                fields["execution"] = "ok" if fields["exit_code"] == 0 else "failed"
+                completed = True
+        if stopped is not None:
             fields["execution"] = stopped
     finally:
         # Reap the owned group even when its leader exited and a descendant holds a pipe.
         _kill_group(proc)
         proc.wait()
+        if failure is not None:
+            fields["exit_code"] = proc.returncode
         for stream in (proc.stdout, proc.stderr):
             stream.close()
         # Any exit short of the tool's own completion (timeout, cancel, an interrupt or a failing
@@ -303,9 +334,39 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
             except Exception as exc:
                 fields["cleanup_error"] = f"stop cleanup failed: {exc}"
     fields["duration_s"] = round(time.monotonic() - start, 3)
+    if failure is not None:
+        failure.native_execution = (fields, bytes(output), bytes(errors))
+        raise failure
     if stopped == "interrupted" and interrupt:
         raise KeyboardInterrupt
     return fields, bytes(output), bytes(errors)
+
+
+def _stop_group(proc, grace):
+    """SIGTERM the group and allow grace seconds before SIGKILL; kill at once without a grace."""
+    if grace:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            pass
+    _kill_group(proc)
+
+
+def _supervised(finish, argv, **options):
+    """supervise() and turn its fields into an Execution with finish; a failing callback's
+    exception propagates with that Execution as native_execution."""
+    try:
+        fields, output, stderr = supervise(argv, **options)
+    except BaseException as exc:
+        partial = getattr(exc, "native_execution", None)
+        if isinstance(partial, tuple):
+            exc.native_execution = finish(*partial)
+        raise
+    return finish(fields, output, stderr)
 
 
 def _kill_group(proc):
@@ -354,7 +415,7 @@ class Host:
 
     name = "host"
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
         if intent.isolation != "host":
             raise ValueError(f"the host adapter cannot run a {intent.isolation} intent")
         if mounts:
@@ -362,15 +423,18 @@ class Host:
         forget_scope()
         try:
             with _records(work) as opened:
-                fields, output, stderr = supervise(intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
-                                                   env=intent.env, cwd=intent.cwd, on_line=on_line)
-                record = {"argv": list(intent.argv), "isolation": "host", "timeout_s": timeout, **fields}
-                record.setdefault("duration_s", 0.0)
-                _digests(record, output, stderr)
-                _write_records(opened, record, output, stderr)
+                def finish(fields, output, stderr):
+                    record = {"argv": list(intent.argv), "isolation": "host", "timeout_s": timeout, **fields}
+                    record.setdefault("duration_s", 0.0)
+                    _digests(record, output, stderr)
+                    _write_records(opened, record, output, stderr)
+                    return Execution(record, output, stderr)
+
+                return _supervised(finish, intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
+                                   env=intent.env, cwd=intent.cwd, on_line=on_line, on_launch=on_launch,
+                                   stop_grace=intent.stop_grace_s)
         finally:
             forget_scope()
-        return Execution(record, output, stderr)
 
 
 # The documented outer confinement for a pinned image (benchmark_run.container_command).
@@ -409,7 +473,7 @@ class Docker:
             command += ["--entrypoint", self.entrypoint]
         return command + [self.image, *intent.argv]
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
         if intent.isolation != "docker":
             raise ValueError(f"the docker adapter cannot run a {intent.isolation} intent")
         if mounts:
@@ -421,14 +485,17 @@ class Docker:
                            stderr=subprocess.DEVNULL, timeout=30, check=False)
 
         with _records(work) as opened:
-            fields, output, stderr = supervise(command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
-                                               on_line=on_line, on_stop=kill_container)
-            record = {"argv": list(intent.argv), "isolation": "docker", "docker_argv": command,
-                      "image": self.image, "timeout_s": timeout, **fields}
-            record.setdefault("duration_s", 0.0)
-            _digests(record, output, stderr)
-            _write_records(opened, record, output, stderr)
-        return Execution(record, output, stderr)
+            def finish(fields, output, stderr):
+                record = {"argv": list(intent.argv), "isolation": "docker", "docker_argv": command,
+                          "image": self.image, "timeout_s": timeout, **fields}
+                record.setdefault("duration_s", 0.0)
+                _digests(record, output, stderr)
+                _write_records(opened, record, output, stderr)
+                return Execution(record, output, stderr)
+
+            return _supervised(finish, command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
+                               on_line=on_line, on_stop=kill_container, on_launch=on_launch,
+                               stop_grace=intent.stop_grace_s)
 
 
 @dataclass
@@ -439,6 +506,7 @@ class Outcome:
     stderr: bytes = b""
     files: Mapping[str, bytes] = field(default_factory=dict)   # written into work before the records
     execution: Optional[str] = None                            # default: ok / failed from exit_code
+    pid: int = 0                                               # what on_launch receives
 
 
 @dataclass(frozen=True)
@@ -462,7 +530,7 @@ class Recorded:
         self.responder = responder or (lambda call: Outcome())
         self.calls = []
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
         call = Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
                     timeout, tuple(mounts))
         self.calls.append(call)
@@ -474,6 +542,8 @@ class Recorded:
         if cancel is not None and cancel.cancelled.is_set():
             outcome = Outcome(exit_code=None, execution="interrupted")
         execution = outcome.execution or ("ok" if outcome.exit_code == 0 else "failed")
+        if on_launch is not None:
+            on_launch(outcome.pid)
         record = {"argv": list(intent.argv)}
         if intent.isolation == "sandbox":
             record["sandbox_argv"] = executor.sandbox_argv(inputs, work, list(intent.argv), network=intent.network,
