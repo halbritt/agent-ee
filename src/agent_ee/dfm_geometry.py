@@ -14,6 +14,8 @@ The additional owned DFM-013 rule measures SMD-pad to via copper clearance.
 Out of scope: copper width (copper-width/1) and clearance (DRC), etch
 compensation, thermal relief, paste, panel and board-edge rules.
 """
+
+from .check_registry import register as _register_check
 import math
 import re
 from fractions import Fraction
@@ -728,3 +730,13 @@ def check_dfm_geometry(ctx):
         outcome=('defect' if findings else 'pass') if complete else 'unknown',
         summary=(f'{len(findings)} DFM finding(s) over {len(rules)} rule(s)' if complete else
                  f'DFM rule(s) not evaluated: {", ".join(unsupported)}; {len(findings)} finding(s) recorded'))
+
+
+def describe_dfm_geometry(ctx):
+    ctx.captured(ctx.scope.get('board'))
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('dfm_geometry', describe_dfm_geometry, check_dfm_geometry)

@@ -14,6 +14,8 @@ record; every member must equal its sealed staged file and every sealed drill fi
 its member. `details.compared` retains those digests. In both modes the expected
 geometry is the independent sealed pcbnew `geometry` probe of the captured board.
 """
+
+from .check_registry import register as _register_check
 import hashlib
 import io
 import math
@@ -981,3 +983,11 @@ def check_fab_roundtrip(ctx):
                           summary=f'fab roundtrip conserved {len(plots)} layers, PTH/NPTH drill histograms, '
                                   'pad/via flashes and pad extents, track/arc draws, zone regions and '
                                   'outline bounds within 1 um')
+
+
+def describe_fab_roundtrip(ctx):
+    ctx.result['predicates'] = capability(ctx.params, ctx.scope, ctx.prerequisite, ctx.captured)
+
+
+if __name__ != '__main__':
+    _register_check('fab_roundtrip', describe_fab_roundtrip, check_fab_roundtrip)

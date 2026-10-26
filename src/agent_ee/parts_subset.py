@@ -1,4 +1,6 @@
 """One offline predicate: declared native part membership and bounded multiplicity."""
+
+from .check_registry import register as _register_check
 import argparse
 import copy
 from xml.etree.ElementTree import ParseError
@@ -228,3 +230,13 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def describe_parts_subset(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs, ctx.scope, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('parts_subset', describe_parts_subset, check_parts_subset)

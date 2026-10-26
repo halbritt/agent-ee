@@ -1,5 +1,7 @@
 """Textual citation support and an explicitly scoped native symbol pin consumer."""
 
+from .check_registry import register as _register_check
+
 import copy
 import json
 import os
@@ -546,3 +548,55 @@ def check_pin_map(ctx):
         'compared. Citation verification does not prove row/conditions selection or physical wiring.')
     ctx.result.update(execution='ok', outcome='defect' if mismatches else 'pass',
         summary=f'{len(mismatches)} native symbol pin mismatch(es) in {len(comparisons)} comparisons')
+
+
+def describe_datasheet_facts(ctx):
+    from .capabilities import text
+    if ctx.inputs is None:
+        raise ValueError('datasheet capability requires captured inputs')
+    source = ctx.spec if ctx.kind == 'datasheet_facts' else ctx.prerequisite(
+        ctx.params.get('facts_check'), ('datasheet_facts',))
+    source_params = source['params']
+    ctx.captured(source_params['facts'], immutable=True)
+    validate_extractor(source_params['extractor'])
+    facts = load_facts(ctx.inputs, source_params['facts'])
+    obligations = load_obligations(ctx.inputs, source_params['facts'])
+    if obligations is not None:
+        ctx.result['acquisitions'] = obligations['acquired']
+        for path in obligations['dependencies']:
+            ctx.captured(path, immutable=True)
+    for fact in facts:
+        ctx.captured(fact['source']['path'], immutable=True)
+    if ctx.kind == 'pin_map':
+        ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+        symbols = ctx.params.get('symbols')
+        if not isinstance(symbols, list) or not symbols:
+            raise ValueError('pin_map requires explicit symbol applicability')
+        by_id = {f['id']: f for f in facts}
+        refs = set()
+        for symbol in symbols:
+            if not isinstance(symbol, dict) or set(symbol) != {'reference', 'part_number', 'facts'}:
+                raise ValueError('symbol needs reference, part_number and facts')
+            ref = text(symbol['reference'], 'reference')
+            part = text(symbol['part_number'], 'part_number')
+            if ref in refs:
+                raise ValueError('duplicate symbol applicability')
+            refs.add(ref)
+            selected = symbol['facts']
+            if not isinstance(selected, list) or not selected:
+                raise ValueError('symbol requires pin facts')
+            pins = set()
+            for fid in selected:
+                fact = by_id[text(fid, 'fact id')]
+                if fact['kind'] != 'pin_function' or fact['part_number'] != part:
+                    raise ValueError('pin fact is inapplicable')
+                if fact['pin'] in pins:
+                    raise ValueError('duplicate pin fact')
+                pins.add(fact['pin'])
+                ctx.result['predicates'].append(f"pin-map:{ref}:{fact['pin']}")
+
+
+if __name__ != '__main__':
+    _register_check('datasheet_facts', describe_datasheet_facts, check_datasheet_facts)
+if __name__ != '__main__':
+    _register_check('pin_map', describe_datasheet_facts, check_pin_map)

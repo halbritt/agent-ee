@@ -1,4 +1,6 @@
 """Read-only native verification of declared net classes in a saved candidate."""
+
+from .check_registry import register as _register_check
 import argparse
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
@@ -181,3 +183,13 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def describe_net_class_assignment(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+    ctx.captured(ctx.scope.get('board'))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('net_class_assignment', describe_net_class_assignment, check_net_class_assignment)

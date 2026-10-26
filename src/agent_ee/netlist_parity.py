@@ -1,4 +1,6 @@
 """Exact, bounded schematic graph comparison over independently captured inputs."""
+
+from .check_registry import register as _register_check
 import json
 from collections import Counter
 from pathlib import Path
@@ -576,3 +578,13 @@ def check_netlist_parity(ctx):
         raise CheckError('failed', str(exc)) from exc
     except (ValueError, KeyError, TypeError, ParseError) as exc:
         raise CheckError('malformed', str(exc)) from exc
+
+
+def describe_netlist_parity(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('netlist_parity', describe_netlist_parity, check_netlist_parity)

@@ -16,6 +16,8 @@ Manhattan MST; capacity is declared track pitch over unblocked cell area; a
 cell fails when Poisson demand exceeds its integer capacity. This estimate is
 not calibrated against routed outcomes.
 """
+
+from .check_registry import register as _register_check
 import argparse
 from fractions import Fraction
 import json
@@ -1011,3 +1013,13 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_placement_congestion(ctx):
+    from .placement_congestion import capability as congestion_capability
+    ctx.captured(ctx.scope.get('board'))
+    ctx.result['predicates'] = congestion_capability(ctx.params)
+
+
+if __name__ != '__main__':
+    _register_check('placement_congestion', describe_placement_congestion, check_placement_congestion)

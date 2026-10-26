@@ -22,6 +22,8 @@ footprint or edge declaration is unknown, never pass. Housing pocket, nearby
 metal, mechanical support and installed RF performance stay physical/bench
 obligations outside this gate.
 """
+
+from .check_registry import register as _register_check
 import argparse
 from decimal import Decimal
 import hashlib
@@ -704,3 +706,13 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_antenna_placement(ctx):
+    ctx.captured(ctx.scope.get('board'))
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('antenna_placement', describe_antenna_placement, check_antenna_placement)

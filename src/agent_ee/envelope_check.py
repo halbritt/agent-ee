@@ -4,6 +4,8 @@ Saved structural facts complement a read-only pcbnew load, never replace it.
 Nominal copper ounces require a separately qualified manufacturing authority;
 no thickness-to-weight conversion is inferred here.
 """
+
+from .check_registry import register as _register_check
 from decimal import Decimal
 from fractions import Fraction
 import re
@@ -480,3 +482,51 @@ def check_board_envelope(ctx):
     label = criterion + (' ' + ctx.params['id'] if 'id' in ctx.params else '')
     ctx.result.update(execution='ok', outcome=result['status'],
                       summary=f"{label}: {len(result['defects'])} exact envelope mismatch(es)")
+
+
+def describe_board_envelope(ctx):
+    from pathlib import Path
+    ctx.captured(ctx.scope.get('board'))
+    for path in parameters(ctx.params):
+        ctx.captured(path, immutable=True)
+    if ctx.params['criterion'] == 'component-height/1':
+        if 'facts_check' in ctx.params:
+            ctx.prerequisite(ctx.params['facts_check'], ('datasheet_facts',))
+        if ctx.inputs is not None:
+            record, _ = captured_record(ctx.scope, ctx.params, ctx.files, Path(ctx.inputs))
+            if 'max_component_height_mm' not in record:
+                raise ValueError('component-height/1 needs max_component_height_mm in the envelope')
+            from .component_height import model_input_paths
+            for path in model_input_paths(ctx.files):
+                ctx.captured(path, immutable=True)
+            if 'digikey_heights' in ctx.params:
+                # Retained DigiKey responses are acceptance evidence, never repairable.
+                from .digikey_record import evidence_inputs
+                for path in evidence_inputs(ctx.params['digikey_heights'], ctx.inputs):
+                    ctx.captured(path, immutable=True)
+    if ctx.params['criterion'] == 'tht-thickness-fit/1' and ctx.inputs is not None:
+        # A malformed or uncited declaration is refused at capture, not graded.
+        from .tht_thickness_fit import declarations
+        declarations((Path(ctx.inputs) / ctx.params['thickness_fit']).read_bytes())
+    if ctx.params['criterion'] == 'stackup/1':
+        if ctx.inputs is None:
+            raise ValueError('stackup copper_weight_oz needs captured source-verified profile inputs')
+        record, dependencies = captured_record(ctx.scope, ctx.params, ctx.files, Path(ctx.inputs))
+        from .board_envelope import stackup_authority_reason
+        reason = stackup_authority_reason(record)
+        if reason:
+            raise ValueError(reason)
+        for path in dependencies:
+            ctx.captured(path, immutable=True)
+    if ctx.params['criterion'] in ('mounting-holes/1', 'keepouts/1'):
+        if ctx.inputs is None:
+            raise ValueError('selected envelope items need captured envelope inputs')
+        record, _ = captured_record(ctx.scope, ctx.params, ctx.files, Path(ctx.inputs))
+        item = selected_item(record, ctx.params)
+        if 'antenna' in item:
+            ctx.prerequisite(item['antenna']['facts_check'], ('datasheet_facts',))
+    ctx.result['predicates'] = predicate_names(ctx.params)
+
+
+if __name__ != '__main__':
+    _register_check('board_envelope', describe_board_envelope, check_board_envelope, accepts_criterion=True)

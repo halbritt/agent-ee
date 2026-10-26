@@ -32,6 +32,8 @@ unlisted geometry; one that still appears as a CPL row refuses the staging. Stat
 physically validates a JLCPCB placement model.
 """
 
+from .check_registry import register as _register_check
+
 import hashlib
 import json
 import re
@@ -879,3 +881,15 @@ def check_cpl_rotation(ctx):
     if (execution, outcome) == ('ok', 'pass'):
         from .fab_stage import grade_cpl
         grade_cpl(ctx)
+
+
+def describe_cpl_rotation(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs)
+    ctx.prerequisite(ctx.params['export_check'], ('fab_export',))
+    ctx.prerequisite(ctx.params['geometry_check'], ('geometry',))
+    ctx.captured(ctx.scope.get('board'))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('cpl_rotation', describe_cpl_rotation, check_cpl_rotation)

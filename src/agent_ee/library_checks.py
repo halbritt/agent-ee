@@ -1,4 +1,6 @@
 """Coordinator adapter for captured library checks; offline helpers stay pure."""
+
+from .check_registry import register as _register_check
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -135,3 +137,15 @@ def _check_native(ctx):
     ctx.result.update(execution='ok', outcome=report['outcome'],
                       summary=f"native-bound footprint assignment: {report['outcome']}")
     ctx.result['details']['evaluated_predicates'] = [NATIVE_PREDICATE]
+
+
+def describe_footprint_assignment(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs, ctx.scope, ctx.spec['id'])
+    ctx.captured(ctx.params['declaration'])
+    if 'netlist_check' in ctx.params:
+        ctx.prerequisite(ctx.params['netlist_check'], ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('footprint_assignment', describe_footprint_assignment, check_footprint_assignment)

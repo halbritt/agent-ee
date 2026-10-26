@@ -22,6 +22,8 @@ A model resolves when the receipt pins the file to an upstream revision and the
 captured member's bytes match the receipt hash; anything else stays unknown.
 """
 
+from .check_registry import register as _register_check
+
 import csv
 import io
 import json
@@ -969,3 +971,11 @@ def _gate(ctx, eid, export_spec, export_result, stage):
                       summary=f'fab package consistent: {len(found)} hash-bound files, {len(plots)} plots for '
                               f'{len(enabled)} fab layers, PTH+NPTH drill, {len(assembled_refs)} assembled '
                               f'designators in BOM/CPL/board parity, {len(models)} 3D model path(s) resolved')
+
+
+def describe_fab_consistency(ctx):
+    ctx.result['predicates'] = capability(ctx.params, ctx.scope, ctx.prerequisite, ctx.captured)
+
+
+if __name__ != '__main__':
+    _register_check('fab_consistency', describe_fab_consistency, check_fab_consistency)

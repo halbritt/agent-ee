@@ -4,6 +4,8 @@ Footprint and LCSC fields come from the shared strict native XML reader, package
 and category from the pinned catalog read inside the networkless sandbox, and
 their relation only from a captured explicit table. Unmapped names are unknown.
 """
+
+from .check_registry import register as _register_check
 import re
 import sys
 from pathlib import Path
@@ -288,3 +290,13 @@ if __name__ == '__main__':
     except Exception as exc:  # The coordinator records the nonzero exit as missing coverage.
         print(f'package catalog lookup failed: {type(exc).__name__}: {exc}', file=sys.stderr)
         raise SystemExit(1)
+
+
+def describe_package_consistency(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('package_consistency', describe_package_consistency, check_package_consistency)

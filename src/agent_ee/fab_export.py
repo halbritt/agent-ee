@@ -41,6 +41,8 @@ a native nonzero exit is execution `failed`. Neither leaves a `fab/` package:
 the partial staging is renamed `fab.incomplete/` and no manifest is written.
 """
 
+from .check_registry import register as _register_check
+
 import csv
 import hashlib
 import io
@@ -1724,3 +1726,29 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                              f"board {board_sha[:12]}")
     from .fab_stage import grade_native
     grade_native(ctx)
+
+
+def describe_fab_export(ctx):
+    from pathlib import PurePosixPath
+    descriptor = capability(ctx.params)
+    from .probe_features import immutable_inputs
+    for path in immutable_inputs(ctx.params, ctx.files, ctx.inputs, ctx.scope):
+        ctx.captured(path, immutable=True)
+    if 'probe_manifest' in ctx.params:
+        from .probe_features import membership_check
+        ctx.prerequisite(membership_check(ctx.params, ctx.scope), ('parts_subset',))
+    from .copper_features import fab_parts_manifests
+    for record in fab_parts_manifests(ctx.params, ctx.scope, ctx.files, ctx.inputs):
+        ctx.captured(record['path'], immutable=True)
+        ctx.prerequisite(record['check_id'], ('parts_subset',))
+    ctx.prerequisite(ctx.params['netlist_check'], ('netlist',))
+    ctx.captured(ctx.scope.get('board'))
+    ctx.captured(ctx.scope.get('schematic'))
+    project = str(PurePosixPath(ctx.scope['board']).with_suffix('.kicad_pro'))
+    if project in ctx.files:
+        ctx.captured(project, immutable=True)
+    ctx.result['predicates'] = descriptor['predicates']
+
+
+if __name__ != '__main__':
+    _register_check('fab_export', describe_fab_export, check_fab_export)

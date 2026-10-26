@@ -1,4 +1,6 @@
 """Instantiate captured blocks before capture; grade adaptations as ordinary checks."""
+
+from .check_registry import register as _register_check
 import argparse
 import copy
 import json
@@ -502,3 +504,13 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_block_provenance(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('block_provenance', describe_block_provenance, check_block_provenance)

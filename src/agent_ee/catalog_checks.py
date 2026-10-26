@@ -1,4 +1,6 @@
 """Captured catalog adapters; preparation never authenticates upstream claims."""
+
+from .check_registry import register as _register_check
 import argparse
 import re
 from pathlib import Path
@@ -83,3 +85,14 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def describe_catalog(ctx):
+    descriptor = capability(ctx.kind, ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('catalog', describe_catalog, check_catalog)
+if __name__ != '__main__':
+    _register_check('part_selection', describe_catalog, check_catalog)

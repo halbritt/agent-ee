@@ -13,6 +13,8 @@ outer enclosure inside the target. A defect requires an attained parameter
 corner outside the target. Anything else, including an unbounded operand or a
 division by an interval containing zero, is unknown and never a pass.
 """
+
+from .check_registry import register as _register_check
 import argparse
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, localcontext
 from fractions import Fraction
@@ -737,3 +739,12 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
+
+def describe_interval_assertions(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('interval_assertions', describe_interval_assertions, check_interval_assertions)

@@ -42,6 +42,8 @@ sealed report and CPL (`preview_obligations`). The operator confirms each in the
 JLCPCB placement preview before ordering. The status itself is never upgraded.
 """
 
+from .check_registry import register as _register_check
+
 import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -570,3 +572,27 @@ def orientation_assessment(profile, profile_sha256, rotation, report, native_cpl
             'rows': rows, 'software_assessment': 'complete' if not unassessed else 'incomplete',
             'unassessed_rows': unassessed, 'supplier_confirmation': SUPPLIER_CONFIRMATION,
             'preview_obligation_count': len(obligations.get('designators') or [])}
+
+
+def describe_fab_package(ctx):
+    from pathlib import PurePosixPath
+    ctx.result['predicates'] = capability(ctx.params, ctx.scope, ctx.spec, ctx.prerequisite, ctx.captured)
+    from .probe_features import immutable_inputs
+    for path in immutable_inputs(ctx.params, ctx.files, ctx.inputs, ctx.scope):
+        ctx.captured(path, immutable=True)
+    if 'probe_manifest' in ctx.params:
+        from .probe_features import membership_check
+        ctx.prerequisite(membership_check(ctx.params, ctx.scope), ('parts_subset',))
+    from .copper_features import fab_parts_manifests
+    for record in fab_parts_manifests(ctx.params, ctx.scope, ctx.files, ctx.inputs):
+        ctx.captured(record['path'], immutable=True)
+        ctx.prerequisite(record['check_id'], ('parts_subset',))
+    ctx.captured(ctx.scope.get('board'))
+    ctx.captured(ctx.scope.get('schematic'))
+    project = str(PurePosixPath(ctx.scope['board']).with_suffix('.kicad_pro'))
+    if project in ctx.files:
+        ctx.captured(project, immutable=True)
+
+
+if __name__ != '__main__':
+    _register_check('fab_package', describe_fab_package, check_fab_package)

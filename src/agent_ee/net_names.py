@@ -5,6 +5,8 @@ baseline requirement; the generator's name-level annotation is mutable
 candidate input. The check never renames anything: suggested collisions get a
 deterministic disambiguation proposal reported as information only.
 """
+
+from .check_registry import register as _register_check
 import re
 from collections import defaultdict
 from itertools import combinations
@@ -225,3 +227,14 @@ def check_net_names(ctx):
     ctx.result['limitations'].append('Names are compared by native basename; anchors are exported '
         'reference/pin terminals. No label geometry, ERC or renaming. Suggested-collision proposals are '
         'information only; only _P/_N pair suffixes are recognized.')
+
+
+def describe_net_names(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.captured(ctx.params['levels'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('net_names', describe_net_names, check_net_names)

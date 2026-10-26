@@ -1,5 +1,7 @@
 """Bounded first-order RC endpoint qualification, never physical calibration."""
 
+from .check_registry import register as _register_check
+
 import copy
 import itertools
 import math
@@ -229,3 +231,14 @@ def check_passive_corners(ctx):
         ctx.result['limitations'].append('ideal independent R/C tolerances only; no physical validation, loading, temperature or empirical transfer')
     except (ValueError, KeyError, TypeError, OSError, OverflowError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
+
+
+def describe_passive_corners(ctx):
+    from .checks import _rc_transient
+    validate_contract(ctx.params)
+    ctx.captured(ctx.params['qualification'], immutable=True)
+    ctx.result['predicates'] = _rc_transient(ctx.params, ctx.prerequisite)
+
+
+if __name__ != '__main__':
+    _register_check('passive_corners', describe_passive_corners, check_passive_corners)

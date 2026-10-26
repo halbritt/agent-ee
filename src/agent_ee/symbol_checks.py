@@ -1,4 +1,6 @@
 """Coordinator pin-reference check over explicit captured selected-symbol queries."""
+
+from .check_registry import register as _register_check
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -57,3 +59,13 @@ def check_symbol_pins(ctx):
     ctx.result['limitations'].append('Explicit selected-symbol references only; no automatic schematic '
         'instance binding, datasheet function verification or package choice. Bounding-box coverage is '
         'independent of pin-existence coverage.')
+
+
+def describe_symbol_pins(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs)
+    ctx.captured(ctx.params['declaration'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('symbol_pins', describe_symbol_pins, check_symbol_pins)

@@ -1,4 +1,6 @@
 """Compare saved routed copper primitives, independently of serialization order."""
+
+from .check_registry import register as _register_check
 import argparse
 from collections import Counter
 import hashlib
@@ -103,3 +105,13 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_routing_equivalence(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.captured(ctx.scope.get('board'))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('routing_equivalence', describe_routing_equivalence, check_routing_equivalence)

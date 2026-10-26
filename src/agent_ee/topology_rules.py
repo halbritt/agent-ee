@@ -15,6 +15,8 @@ matcher is a clean-room bounded backtracking search: roles are assigned to
 references most-constrained first, net roles stay a bijection with native
 nets, and only two-terminal passives may be matched with swapped terminals.
 """
+
+from .check_registry import register as _register_check
 import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation
@@ -660,3 +662,13 @@ def check_topology_rules(ctx):
     ctx.result['limitations'].append('Exported-net structure only, against owner-declared classes and rules. '
         'DNP parts are excluded from population-based rules. No prose parsing, electrical adequacy, '
         'tolerance, proximity, routing or geometry; values are compared only for declared equality.')
+
+
+def describe_topology_rules(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('topology_rules', describe_topology_rules, check_topology_rules)

@@ -3,6 +3,8 @@
 The captured projection is a reviewed declaration, not natural-language part
 selection. Its source rows, exclusions and normalization reasons remain visible.
 """
+
+from .check_registry import register as _register_check
 import argparse
 import re
 from pathlib import Path
@@ -286,3 +288,15 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_part_decisions(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    if ctx.params.get('deviations') is not None:
+        ctx.captured(ctx.params['deviations'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('part_decisions', describe_part_decisions, check_part_decisions)

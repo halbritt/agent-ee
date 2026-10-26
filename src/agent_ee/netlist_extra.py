@@ -1,4 +1,6 @@
 """Declared direct-net topology checks using the shared strict native XML reader."""
+
+from .check_registry import register as _register_check
 from collections import defaultdict
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
@@ -228,3 +230,13 @@ def check_netlist_extra(ctx):
     ctx.result['limitations'].append('Only declared two-terminal classes and anchored direct-net equivalence. '
         'DNP requires explicit exemption. Native membership witnesses are not geometric wire/label paths. '
         'Same-basename hierarchical island warnings are advisory; no physical, copper or impedance analysis.')
+
+
+def describe_netlist_extra(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('netlist_extra', describe_netlist_extra, check_netlist_extra)

@@ -1,4 +1,6 @@
 """Owner-declared severity policy over four pinned offline analyzer reports."""
+
+from .check_registry import register as _register_check
 import re
 from collections import Counter
 import shutil
@@ -132,3 +134,14 @@ def check_severity_gate(ctx):
             'Recorded dispositions do not waive errors or central adjudication.')
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise CheckError('malformed', str(exc)) from exc
+
+
+def describe_kicad_happy_severity_gate(ctx):
+    ctx.captured(ctx.scope.get('schematic'))
+    ctx.captured(ctx.scope.get('board'))
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('kicad_happy_severity_gate', describe_kicad_happy_severity_gate, check_severity_gate)

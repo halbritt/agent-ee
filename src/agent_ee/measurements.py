@@ -1,6 +1,9 @@
 """Tool-produced scalar measurements and explicit cross-domain margin checks."""
 
+from .check_registry import register as _register_check
+
 import math
+import re
 from pathlib import Path
 
 from .baseline import load_baseline
@@ -185,3 +188,89 @@ def check_coupled_margins(ctx):
         ctx.result["details"]["domains"] = sorted(domains)
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise CheckError("malformed", str(exc)) from exc
+
+
+def describe_measurements(ctx):
+    ctx.result['predicates'] = _measurements(ctx.params, ctx.captured)
+
+
+if __name__ != '__main__':
+    _register_check('measurements', describe_measurements, check_measurements)
+
+
+def describe_coupled_margins(ctx):
+    ctx.result['predicates'] = _coupled_margins(ctx.params, ctx.prerequisite, ctx.files, ctx.inputs)
+
+
+if __name__ != '__main__':
+    _register_check('coupled_margins', describe_coupled_margins, check_coupled_margins)
+
+
+def _measurements(params, captured):
+    from pathlib import PurePosixPath
+    from .capabilities import DOMAINS, bounds
+    predicates = []
+    captured(params['adapter'], immutable=True)
+    tool = params['tool']
+    argv = tool['argv']
+    if not isinstance(argv, list) or not argv or any(not isinstance(a, str) or not a for a in argv):
+        raise ValueError('tool requires explicit argv')
+    executable = PurePosixPath(argv[0])
+    if not executable.is_absolute() or '..' in executable.parts or not executable.is_relative_to('/usr'):
+        raise ValueError('tool executable must reside under /usr')
+    if not isinstance(tool['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', tool['sha256']):
+        raise ValueError('tool needs pinned sha256')
+    if tool['domain'] not in DOMAINS:
+        raise ValueError('unsupported tool domain')
+    inputs = tool.get('inputs', [])
+    if not isinstance(inputs, list):
+        raise ValueError('tool inputs must be a list')
+    for path in inputs:
+        captured(path, immutable=True)
+    # Candidate program arguments must be owned immutable dependencies.
+    for arg in argv:
+        if arg.startswith('/candidate/') and arg[len('/candidate/'):] not in inputs:
+            raise ValueError('candidate tool argument missing from immutable inputs')
+    predicates = bounds(params['limits'])
+    return predicates
+
+
+def _coupled_margins(params, prerequisite, files, inputs):
+    from .capabilities import bounds, text
+    members = params['members']
+    if not isinstance(members, list) or len(members) < 2:
+        raise ValueError('coupling requires at least two members')
+    condition = text(params['condition'], 'coupling condition')
+    domains, names = set(), set()
+    for member in members:
+        source = prerequisite(member['check'], ('measurements', 'rc_transient', 'passive_corners', 'dc_path'))
+        source_params = source.get('params', {})
+        if source['kind'] == 'dc_path':
+            from .dc_path import load_inputs, limits
+            contract, _ = load_inputs(source_params, files, inputs)
+            metric = limits(contract)[member['metric']]
+            domain = 'electrical'
+        elif source['kind'] == 'measurements':
+            metric = source_params['limits'][member['metric']]
+            domain = source_params['tool']['domain']
+        else:
+            m = next(m for m in source_params['measurements'] if m['name'].lower() == member['metric'])
+            from .passive_corners import condition as corner_condition
+            metric = {'unit': 'V', 'condition': (corner_condition(source_params, m)
+                if source['kind'] == 'passive_corners' else
+                f"ideal-unloaded-{source_params.get('step_v', 1.0)}V-step-at-{float(m['at_ms'])}ms")}
+            domain = 'electrical'
+        if metric['condition'] != condition:
+            raise ValueError('coupled source condition mismatch')
+        name = text(member['name'], 'member name')
+        if name in names:
+            raise ValueError('duplicate coupling name')
+        names.add(name)
+        domains.add(domain)
+        target = params['limits'][name]
+        if target['unit'] != metric['unit'] or target['condition'] != condition:
+            raise ValueError('coupled limit identity mismatch')
+    if len(domains) < 2 or names != set(params['limits']):
+        raise ValueError('coupling needs distinct domains and complete limits')
+    predicates = bounds(params['limits'])
+    return predicates

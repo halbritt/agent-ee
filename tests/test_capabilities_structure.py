@@ -1,60 +1,100 @@
-"""Structural audit of capabilities.describe_check.
+"""Registry completeness and capability projection behavior."""
 
-Every ``elif kind == '...'`` branch that builds a descriptor through a
-``capability(...)`` call must publish ``result['predicates']`` inside that same
-branch. A merge on 2026-10-18 (b3a6eb5) inserted a new branch between another
-branch's ``capability`` call and its closing statements, which silently left the
-``block_provenance`` kind without predicates; this test fails on that shape.
-"""
 import ast
+import subprocess
+import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from agent_ee.capabilities import KINDS, describe_check
+from agent_ee.check_registry import Registry, registry
+from agent_ee.checks import CHECK_FUNCS
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src' / 'agent_ee' / 'capabilities.py'
 
 
-def _branches(node):
-    """Yield (kind, body) for each `kind == '<name>'` test in an if/elif chain."""
-    while isinstance(node, ast.If):
-        test = node.test
-        if (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name) and test.left.id == 'kind'
-                and len(test.comparators) == 1 and isinstance(test.comparators[0], ast.Constant)):
-            yield test.comparators[0].value, node.body
-        node = node.orelse[0] if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If) else None
-
-
-def _calls_capability(body):
-    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == 'capability'
-               for stmt in body for n in ast.walk(stmt))
-
-
-def _assigns_predicates(body):
-    for stmt in body:
-        for n in ast.walk(stmt):
-            if isinstance(n, ast.Assign):
-                for target in n.targets:
-                    if (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
-                            and target.value.id == 'result' and isinstance(target.slice, ast.Constant)
-                            and target.slice.value == 'predicates'):
-                        return True
-    return False
-
-
 class DescribeCheckStructureTest(unittest.TestCase):
-    def test_every_capability_branch_publishes_predicates(self):
+    def test_every_kind_has_one_capability_and_check_in_its_module(self):
+        self.assertEqual(KINDS, CHECK_FUNCS.keys())
+        self.assertTrue(KINDS)
+        for kind, record in registry.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(record.kind, kind)
+                self.assertTrue(callable(record.capability))
+                self.assertTrue(callable(record.check))
+                self.assertEqual(record.capability.__module__, record.check.__module__)
+
+    def test_duplicate_registration_is_rejected_without_replacing_the_first(self):
+        isolated = Registry()
+        capability, check = lambda ctx: None, lambda ctx: None
+        first = isolated.register('example', capability, check)
+        with self.assertRaisesRegex(ValueError, 'already registered: example'):
+            isolated.register('example', lambda ctx: None, lambda ctx: None)
+        self.assertIs(isolated['example'], first)
+        for cap, handler in ((None, check), (capability, None)):
+            with self.assertRaises(TypeError):
+                isolated.register('invalid', cap, handler)
+
+    def test_describer_has_no_kind_specific_branches(self):
         tree = ast.parse(SOURCE.read_text())
-        describe = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'describe_check')
-        chains = [n for n in ast.walk(describe) if isinstance(n, ast.If)]
-        seen, missing = set(), []
-        for chain in chains:
-            for kind, body in _branches(chain):
-                if kind in seen:
-                    continue
-                seen.add(kind)
-                if _calls_capability(body) and not _assigns_predicates(body):
-                    missing.append(kind)
-        self.assertTrue(seen, 'describe_check has no kind branches')
-        self.assertEqual(missing, [], 'kind branches that call capability() without publishing predicates')
+        describe = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'describe_check')
+        # A kind lookup/membership check is generic; comparisons to particular
+        # string literals or tuples of kinds would recreate the old dispatch.
+        for node in ast.walk(describe):
+            if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name) and node.left.id == 'kind':
+                self.assertFalse(any(isinstance(other, (ast.Constant, ast.Tuple, ast.List))
+                                     for other in node.comparators), ast.unparse(node))
+
+    def test_check_function_patches_restore_without_losing_capabilities(self):
+        original = registry['geometry']
+        replacement = lambda ctx: None
+        with patch.dict(CHECK_FUNCS, {'geometry': replacement}):
+            self.assertIs(CHECK_FUNCS['geometry'], replacement)
+            self.assertIs(registry['geometry'].check, replacement)
+            self.assertIs(registry['geometry'].capability, original.capability)
+            spec = {'id': 'width', 'kind': 'geometry', 'params': {'min_track_width_mm': .2}}
+            record = describe_check(spec, check_specs=[spec], scope={'board': 'board.kicad_pcb'},
+                                    files={'board.kicad_pcb': 'hash'})
+            self.assertEqual(record['predicates'], ['geometry:straight-width/1'])
+        self.assertEqual(registry['geometry'], original)
+        self.assertEqual(KINDS, CHECK_FUNCS.keys())
+
+    def test_new_kind_appears_in_both_views_and_the_generic_describer(self):
+        script = """
+from agent_ee.capabilities import KINDS, describe_check
+from agent_ee.check_registry import register
+from agent_ee.checks import CHECK_FUNCS
+
+def capability(ctx):
+    ctx.apply({'immutable_inputs': ['policy.json'], 'predicates': ['example:bound/1']})
+
+def check(ctx):
+    ctx.result.update(execution='ok', outcome='pass')
+
+register('example', capability, check)
+assert 'example' in KINDS
+assert CHECK_FUNCS['example'] is check
+spec = {'id': 'new', 'kind': 'example'}
+record = describe_check(spec, check_specs=[spec], scope={}, files={'policy.json': 'hash'})
+assert record['status'] == 'supported'
+assert record['can_evaluate_bound']
+assert record['predicates'] == ['example:bound/1']
+assert record['immutable_inputs'] == ['policy.json']
+"""
+        result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_registry_loads_for_each_existing_import_entry_point(self):
+        for entry in ('capabilities', 'candidate', 'measurements', 'checks', 'datasheet_facts'):
+            with self.subTest(entry=entry):
+                result = subprocess.run([sys.executable, '-c',
+                    f'import agent_ee.{entry}; '
+                    'from agent_ee.capabilities import KINDS; '
+                    'from agent_ee.checks import CHECK_FUNCS; '
+                    'assert KINDS == CHECK_FUNCS.keys(); assert KINDS'],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

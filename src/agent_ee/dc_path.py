@@ -1,4 +1,6 @@
 """Qualified ideal one-dimensional DC conduction on endpoint-only planar copper."""
+
+from .check_registry import register as _register_check
 import math
 from fractions import Fraction
 from pathlib import Path
@@ -497,3 +499,20 @@ def check_dc_path(ctx):
         raise CheckError('unsupported', str(exc)) from exc
     finally:
         ctx.evidence('geometry.json', 'stdout.log', 'stderr.log')
+
+
+def describe_dc_path(ctx):
+    from .capabilities import bounds
+    ctx.captured(ctx.scope.get('board'))
+    contract, dependencies = load_inputs(ctx.params, ctx.files, ctx.inputs)
+    if contract['schema'] == 'agent-ee.dc-path/2':
+        source = ctx.prerequisite(contract['drc_check'], ('drc',))
+        if source.get('params', {}).get('projection'):
+            raise ValueError('whole-net DC requires full DRC, not a projection')
+    for path in dependencies:
+        ctx.captured(path, immutable=True)
+    ctx.result['predicates'] = bounds(limits(contract))
+
+
+if __name__ != '__main__':
+    _register_check('dc_path', describe_dc_path, check_dc_path)

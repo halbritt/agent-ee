@@ -8,6 +8,8 @@ delegated to ``land_geometry`` (exact rational polygons with certified curve
 bounds). Registration, thresholds, tolerances and the reference list are
 immutable criteria; no rotation, scale or alias search is performed.
 """
+
+from .check_registry import register as _register_check
 import argparse
 from fractions import Fraction
 import hashlib
@@ -772,3 +774,12 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_land_pattern(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('land_pattern', describe_land_pattern, check_land_pattern)

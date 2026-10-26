@@ -34,6 +34,8 @@ per-joint and per-extended-part fees, layer and area base prices) follows
 atopile's MIT-licensed cost_estimation domain; no code or prices are copied.
 """
 
+from .check_registry import register as _register_check
+
 import hashlib
 import json
 import math
@@ -709,3 +711,14 @@ def check_jlc_cost_estimate(ctx):
 
 def digest_bytes(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def describe_jlc_cost_estimate(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs)
+    ctx.prerequisite(ctx.params['export_check'], ('fab_export',))
+    ctx.captured(ctx.scope.get('board'))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('jlc_cost_estimate', describe_jlc_cost_estimate, check_jlc_cost_estimate)

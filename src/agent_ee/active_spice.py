@@ -1,4 +1,6 @@
 """Bounded captured-subcircuit simulation; model data cannot supply control code."""
+
+from .check_registry import register as _register_check
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -809,3 +811,16 @@ def check_active_spice(ctx):
                           summary='template measurements unsupported: ' + ', '.join(unsupported))
     elif unsupported:
         ctx.result['summary'] += '; template measurements unsupported: ' + ', '.join(unsupported)
+
+
+def describe_active_spice(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs, ctx.scope)
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    for path in descriptor['immutable_inputs']:
+        ctx.captured(path, immutable=True)
+    ctx.result['capability_version'] = descriptor['contract']
+    ctx.result['predicates'] = [f'active-spice:{name}' for name in descriptor['bounded_metrics']]
+
+
+if __name__ != '__main__':
+    _register_check('active_spice', describe_active_spice, check_active_spice)

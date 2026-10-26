@@ -56,6 +56,8 @@ design violations is execution `ok`, outcome `defect`; incomplete coverage or
 unreadable output is never a clean result.
 """
 
+from .check_registry import register as _register_check
+
 import json
 import math
 import os
@@ -1141,22 +1143,9 @@ from .block_adaptation import check_block_provenance
 from .part_decisions import check_part_decisions
 from .schematic_render import check_schematic_render
 
-CHECK_FUNCS = {
-    "schematic_render": check_schematic_render,
-    "part_decisions": check_part_decisions,
-    'jlc_dfm': check_jlc_dfm, "design_rules": check_design_rules, 'jlc_cost_estimate': check_jlc_cost_estimate, "regeneration_determinism": check_regeneration_determinism, "interval_assertions": check_interval_assertions, "routing_equivalence": check_routing_equivalence, "net_names": check_net_names, "topology_rules": check_topology_rules, 'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "net_class_assignment": check_net_class_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "kicad_happy_severity_gate": check_severity_gate, "hardware_interface": check_hardware_interface,
-               "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map, "pin_contracts": check_pin_contracts,
-               "active_spice": check_active_spice, "measurements": check_measurements,
-               "coupled_margins": check_coupled_margins, "erc": check_erc,
-               "drc": check_drc, "netlist": check_netlist,
+from .check_registry import CheckFunctions
 
-               "geometry": check_geometry, "rc_transient": check_rc_transient,
-               "passive_corners": check_passive_corners, "dc_path": check_dc_path,
-               "placement": check_placement, "placement_congestion": check_placement_congestion,
-               "board_envelope": check_board_envelope,
-               "assembly_readiness": check_assembly_readiness, "dfa_dft": check_dfa_dft,
-               "dfm_geometry": check_dfm_geometry, "rf_geometry": check_rf_geometry,
-               "antenna_placement": check_antenna_placement}
+CHECK_FUNCS = CheckFunctions()
 
 
 # ------------------------------------------------------------------ entry point
@@ -1209,3 +1198,118 @@ def run_checks(run_dir, deadline, *, fab_context=None, stock_context=None):
         write_json(run_dir / "checks" / f"{cid}.json", ctx.result)
         results.append(ctx.result)
     return results
+
+
+def describe_native(ctx):
+    from pathlib import PurePosixPath
+    ctx.captured(ctx.scope.get('schematic'))
+    if ctx.kind == 'drc':
+        ctx.captured(ctx.scope.get('board'))
+        from .final_planes import binding_inputs
+        for path in binding_inputs(ctx.params):
+            ctx.captured(path, immutable=True)
+    if ctx.kind != 'netlist':
+        from .violation_waivers import input_path
+        waiver = input_path(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+        if waiver:
+            ctx.captured(waiver, immutable=True)
+        native_files = [ctx.scope['schematic']] + ([ctx.scope['board']] if ctx.kind == 'drc' else [])
+        for native in native_files:
+            for suffix in ('.kicad_pro', '.kicad_dru'):
+                dependency = str(PurePosixPath(native).with_suffix(suffix))
+                if dependency in ctx.files:
+                    ctx.captured(dependency, immutable=True)
+        ctx.result['predicates'] = [f'native:{ctx.kind}:violations']
+    if 'projection' in ctx.params:
+        if ctx.kind != 'drc' or drc_projection(ctx.params) is None:
+            raise ValueError('only drc supports a declared projection')
+        require_later_full_drc(ctx.check_specs, ctx.spec)
+        ctx.result['predicates'] = [f"native:drc:{ctx.params['projection']}"]
+
+
+if __name__ != '__main__':
+    _register_check('erc', describe_native, check_erc)
+if __name__ != '__main__':
+    _register_check('drc', describe_native, check_drc)
+if __name__ != '__main__':
+    _register_check('netlist', describe_native, check_netlist)
+
+
+def describe_geometry(ctx):
+    from pathlib import Path
+    from pathlib import PurePosixPath
+    ctx.captured(ctx.scope.get('board'))
+    ctx.result['predicates'] = _geometry(ctx.params)
+    if 'net_constraints' in ctx.params:
+        # The record and the netclasses it binds are acceptance policy, never repairable.
+        ctx.captured(ctx.params['net_constraints'], immutable=True)
+        project = str(PurePosixPath(ctx.scope['board']).with_suffix('.kicad_pro'))
+        ctx.captured(project, immutable=True)
+        if ctx.inputs is not None:
+            from .net_constraints import net_minimums
+            net_minimums(Path(ctx.inputs) / ctx.params['net_constraints'], Path(ctx.inputs) / project)
+
+
+if __name__ != '__main__':
+    _register_check('geometry', describe_geometry, check_geometry, accepts_criterion=True)
+
+
+def describe_rc_transient(ctx):
+    ctx.result['predicates'] = _rc_transient(ctx.params, ctx.prerequisite)
+
+
+if __name__ != '__main__':
+    _register_check('rc_transient', describe_rc_transient, check_rc_transient)
+
+
+def _geometry(params):
+    from .capabilities import finite
+    predicates = []
+    if 'criterion' in params or 'covered_primitives' in params:
+        if params.get('criterion') != 'copper-width/1':
+            raise ValueError('unknown geometry criterion')
+        classes = params.get('covered_primitives')
+        if not isinstance(classes, list) or sorted(classes) != ['PCB_ARC', 'PCB_TRACK']:
+            raise ValueError('copper-width/1 requires exact track/arc coverage')
+        if 'exclude_nets' not in params:
+            raise ValueError('copper-width/1 requires explicit exclude_nets')
+        if 'min_track_width_mm' not in params:
+            raise ValueError('missing width limit')
+    elif 'net_constraints' in params:
+        raise ValueError('net_constraints requires copper-width/1')
+    excluded = params.get('exclude_nets', [])
+    if not isinstance(excluded, list) or any(not isinstance(n, str) for n in excluded):
+        raise ValueError('exclude_nets must be a list of net names')
+    if 'min_track_width_mm' in params:
+        if finite(params['min_track_width_mm'], 'width limit') <= 0:
+            raise ValueError('width limit must be positive')
+        predicates = ['geometry:' + params.get('criterion', 'straight-width/1')]
+    return predicates
+
+
+def _rc_transient(params, prerequisite):
+    from .capabilities import bounds, text
+    predicates = []
+    prerequisite(params.get('netlist_check'), ('netlist',))
+    for key in ('input_net', 'output_net', 'ground_net'):
+        text(params.get(key), key)
+    step, stop = params.get('step_v', 1.0), params.get('stop_ms', 5.0)
+    for label, value in (('step_v', step), ('stop_ms', stop)):
+        if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
+            raise ValueError(f'{label} must be finite positive')
+    measurements = params.get('measurements', [])
+    if not isinstance(measurements, list):
+        raise ValueError('measurements must be a list')
+    names = set()
+    for measurement in measurements:
+        name = text(measurement.get('name'), 'measurement name').lower()
+        if not re.fullmatch('[a-z][a-z0-9_]{0,31}', name) or name in names:
+            raise ValueError('invalid/duplicate measurement name')
+        names.add(name)
+        at = measurement['at_ms']
+        if isinstance(at, bool) or not 0 < float(at) <= float(stop):
+            raise ValueError('measurement time outside simulation interval')
+        limit = {key: measurement[key] for key in ('min', 'max') if measurement.get(key) is not None}
+        if limit:
+            predicates.extend(bounds({name: {**limit, 'unit': 'V', 'condition': 'step'}}))
+    return predicates

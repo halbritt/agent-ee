@@ -1,5 +1,7 @@
 """Part-binding properties embedded in native KiCad symbols and footprints, with validator."""
 
+from .check_registry import register as _register_check
+
 from decimal import Decimal, DecimalException
 import json
 import posixpath
@@ -1412,3 +1414,22 @@ def check_part_binding(ctx):
         "Static property and parameter schema/parity validation over captured KiCad S-expressions; "
         "does not verify live vendor stock or electrical suitability against circuit operating points."
     )
+
+
+def describe_part_binding(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+    if 'probe_manifest' in ctx.params:
+        ctx.prerequisite(ctx.params['netlist_check'], ('netlist',))
+        from .probe_features import membership_check
+        ctx.prerequisite(membership_check(ctx.params, ctx.scope), ('parts_subset',))
+    sch = ctx.params.get('schematic', ctx.scope.get('schematic'))
+    pcb = ctx.params.get('board', ctx.scope.get('board'))
+    if sch is not None:
+        ctx.captured(sch)
+    if pcb is not None:
+        ctx.captured(pcb)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('part_binding', describe_part_binding, check_part_binding)

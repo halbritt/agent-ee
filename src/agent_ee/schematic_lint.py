@@ -9,6 +9,8 @@ definition, transform, body graphics or native identity cannot be established
 is listed as missing coverage for the rules that need it, never as a pass.
 See docs/schematic-lint.md.
 """
+
+from .check_registry import register as _register_check
 import hashlib
 import math
 import os
@@ -902,3 +904,14 @@ def check_schematic_lint(ctx):
         'Presentation lint over embedded lib_symbols and native net membership; style findings never '
         'establish an electrical defect unless the profile raises a rule to defect. Text extents, arcs, '
         'property positions and rendered fonts are not measured. Repeated sheet files are linted per instance.')
+
+
+def describe_schematic_lint(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.captured(ctx.scope.get('schematic'))
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.result['predicates'] = descriptor['predicates']
+
+
+if __name__ != '__main__':
+    _register_check('schematic_lint', describe_schematic_lint, check_schematic_lint)

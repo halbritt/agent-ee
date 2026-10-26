@@ -10,6 +10,8 @@ earlier ``netlist`` check, owner role bindings to exported ``{reference, pin}``
 terminals and verified datasheet facts. Card text is never matched against the
 design.
 """
+
+from .check_registry import register as _register_check
 import re
 from decimal import Decimal
 from pathlib import Path
@@ -712,3 +714,19 @@ def writer_context(manifest, inputs):
         packs.append({'check_id':spec['id'], 'pack':pack['id'], 'version':pack['version'],
                       'pack_sha256':digest(Path(inputs) / rel), 'cards':cards})
     return packs
+
+
+def describe_design_rules(ctx):
+    from .capabilities import KINDS
+    from .design_rules import capability as rule_capability
+    descriptor = rule_capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    if 'facts_check' in ctx.params:
+        ctx.prerequisite(ctx.params['facts_check'], ('datasheet_facts',))
+    for delegation in ctx.params.get('delegated', {}).values():
+        ctx.prerequisite(delegation['check'], KINDS)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('design_rules', describe_design_rules, check_design_rules)

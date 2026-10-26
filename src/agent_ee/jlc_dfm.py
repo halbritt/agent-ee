@@ -1,4 +1,6 @@
 """Offline binding of an owner-saved JLCPCB DFM report to sealed fabrication bytes."""
+
+from .check_registry import register as _register_check
 import argparse
 import hashlib
 import re
@@ -231,3 +233,13 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def describe_jlc_dfm(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.spec, ctx.files, ctx.inputs)
+    ctx.prerequisite(ctx.params['fab_check'], ('fab_package',))
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('jlc_dfm', describe_jlc_dfm, check_jlc_dfm)

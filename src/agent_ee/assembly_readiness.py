@@ -5,6 +5,8 @@ of the captured schematic hierarchy, the same source the JLC BOM in
 ``fab_export`` is built from; the catalog is a captured offline snapshot.
 """
 
+from .check_registry import register as _register_check
+
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import hashlib
@@ -2760,3 +2762,13 @@ def check_assembly_readiness(ctx):
     ctx.result["execution"] = report["execution"]
     ctx.result["outcome"] = report["outcome"]
     ctx.result["summary"] = report["summary"]
+
+
+def describe_assembly_readiness(ctx):
+    ctx.captured(ctx.scope.get('schematic'))
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('assembly_readiness', describe_assembly_readiness, check_assembly_readiness)

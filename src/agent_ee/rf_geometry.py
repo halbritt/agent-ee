@@ -39,6 +39,8 @@ zones, missing RF copper or an unrouted terminal never passes. None of this is R
 qualification: no field solver, TDR, VNA or installed measurement is used, and a
 declared guard width is graded only as the geometric guard it declares.
 """
+
+from .check_registry import register as _register_check
 import argparse
 from decimal import Decimal
 from fractions import Fraction
@@ -1606,3 +1608,13 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
+
+def describe_rf_geometry(ctx):
+    ctx.captured(ctx.scope.get('board'))
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs)
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('rf_geometry', describe_rf_geometry, check_rf_geometry)

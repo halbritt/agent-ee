@@ -4,6 +4,8 @@ No solver or design inference: names and physical units are explicit. Each
 constraint gets its own DRC invocation so KiCad's last-rule precedence cannot
 silently discard overlapping acceptance bounds.
 """
+
+from .check_registry import register as _register_check
 import copy
 import hashlib
 import json
@@ -237,3 +239,12 @@ def check_routing_rules(ctx):
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
     run_compiled(ctx, descriptor['compiled'], source)
+
+
+def describe_routing_rules(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('routing_rules', describe_routing_rules, check_routing_rules)

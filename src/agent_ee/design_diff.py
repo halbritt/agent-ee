@@ -9,6 +9,8 @@ byte differences are recorded and never graded (docs/decisions.md, "Routing
 determinism is geometric equivalence"). Nothing here judges whether a
 difference is electrically acceptable.
 """
+
+from .check_registry import register as _register_check
 import argparse
 import hashlib
 import json
@@ -605,3 +607,19 @@ def main(argv=None):
 
 if __name__ == '__main__':
     sys.exit(main())
+
+
+def describe_regeneration_determinism(ctx):
+    from .capabilities import KINDS
+    descriptor = capability(ctx.params, ctx.scope, ctx.files)
+    for path in descriptor['mutable_inputs']:
+        ctx.captured(path)
+    for path in descriptor['immutable_inputs']:
+        ctx.captured(path, immutable=True)
+    for cid in descriptor['producers']:
+        ctx.prerequisite(cid, KINDS)
+    ctx.result['predicates'] = descriptor['predicates']
+
+
+if __name__ != '__main__':
+    _register_check('regeneration_determinism', describe_regeneration_determinism, check_regeneration_determinism)

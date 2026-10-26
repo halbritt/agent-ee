@@ -1,4 +1,6 @@
 """Qualified installed kicad-happy output, with explicit evaluation coverage."""
+
+from .check_registry import register as _register_check
 import math
 from pathlib import Path
 
@@ -287,3 +289,22 @@ def ambient_temperature(params):
             or not math.isfinite(ambient) or not -55 <= ambient <= 150):
         raise ValueError('ambient_c requires finite temperature in [-55,150] C')
     return ambient
+
+
+def describe_kicad_happy(ctx):
+    ctx.captured(ctx.scope.get('schematic'))
+    ctx.captured(ctx.scope.get('board'))
+    descriptor = describe_capability(ctx.params, ctx.files)
+    if descriptor['status'] != 'supported':
+        raise ValueError('; '.join(descriptor['unsupported_reasons']))
+    for dependency in descriptor['immutable_inputs']:
+        path = dependency['path']
+        if path not in ctx.scope.get('requirements', []):
+            raise ValueError('adapter assumptions source must be a captured immutable requirement')
+        ctx.captured(path, immutable=True)
+    ctx.result['capability_version'] = descriptor['capability_version']
+    ctx.result['predicates'] = descriptor['predicates']
+
+
+if __name__ != '__main__':
+    _register_check('kicad_happy', describe_kicad_happy, check_kicad_happy)

@@ -1,4 +1,6 @@
 """Captured owner declarations over direct native schematic conductors."""
+
+from .check_registry import register as _register_check
 import hashlib
 import json
 import re
@@ -1159,3 +1161,16 @@ def check_hardware_interface(ctx):
     ctx.result.update(execution='ok' if complete else 'unsupported',
         outcome=('defect' if violations else 'pass') if complete else 'unknown',
         summary=f'{len(violations)} interface violation(s); complete={complete}')
+
+
+def describe_hardware_interface(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.apply(descriptor)
+    authority, history = descriptor['requirement_authority'], descriptor['requirement_history']
+    if authority['sourced'] or authority['unqualified-carryover'] or history['qualification_bound']:
+        ctx.result['requirement_qualification'] = {**authority, **history}
+
+
+if __name__ != '__main__':
+    _register_check('hardware_interface', describe_hardware_interface, check_hardware_interface)

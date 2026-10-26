@@ -1,5 +1,7 @@
 """Optional source-bound schematic images; visual drift never produces a verdict."""
 
+from .check_registry import register as _register_check
+
 import argparse
 import re
 import shutil
@@ -326,3 +328,13 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def describe_schematic_render(ctx):
+    ctx.captured(ctx.scope.get('schematic'))
+    for path in parameters(ctx.params, ctx.files):
+        ctx.captured(path, immutable=True)
+
+
+if __name__ != '__main__':
+    _register_check('schematic_render', describe_schematic_render, check_schematic_render)

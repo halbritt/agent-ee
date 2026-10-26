@@ -6,6 +6,8 @@ evaluates exactly one criterion. Native DRC comes from an earlier `drc` check
 of the same candidate and is never re-run here: the only tool execution is the
 read-only saved-board probe.
 """
+
+from .check_registry import register as _register_check
 import json
 from pathlib import PurePosixPath
 
@@ -357,3 +359,29 @@ def connector_fix(defect, violation):
     if violation.get('kind') == 'side':
         return {'op': 'flip', 'params': {'side': violation['declared']}}
     return None
+
+
+def describe_placement(ctx):
+    from pathlib import Path
+    ctx.captured(ctx.scope.get('board'))
+    for path in parameters(ctx.params):
+        ctx.captured(path, immutable=True)
+    ctx.prerequisite(ctx.params.get('drc_check'), ('drc',))
+    if ctx.params['criterion'] == 'connector-edge/1':
+        try:
+            from .board_envelope import validate
+        except ImportError:
+            raise ValueError('connector-edge/1 needs the AGENTEE-85 envelope validator') from None
+        if ctx.inputs is not None:
+            connector_declarations(validate((Path(ctx.inputs) / ctx.params['envelope']).read_bytes(), captured=(ctx.files, Path(ctx.inputs))), ctx.params)
+    if ctx.params['criterion'] == 'imu-axes/1':
+        ctx.prerequisite(ctx.params['facts_check'], ('datasheet_facts',))
+        if ctx.inputs is not None:
+            from .board_envelope import validate
+            from .imu_axes import envelope_declaration
+            envelope_declaration(validate((Path(ctx.inputs) / ctx.params['envelope']).read_bytes(), captured=(ctx.files, Path(ctx.inputs))), ctx.params)
+    ctx.result['predicates'] = predicate_names(ctx.params)
+
+
+if __name__ != '__main__':
+    _register_check('placement', describe_placement, check_placement, accepts_criterion=True)

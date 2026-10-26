@@ -9,6 +9,8 @@ measurements carry the exact `agent-ee.bench/1` sample identity of an executed
 prediction of the same candidate. Values the scope does not declare stay
 unknown; there are no default current limits or tolerances.
 """
+
+from .check_registry import register as _register_check
 from fractions import Fraction
 import math
 import re
@@ -651,3 +653,13 @@ def check_dfa_dft(ctx):
         raise CheckError('unsupported', f'{criterion} coverage incomplete: {len(result["unknown"])} unknown item(s)')
     ctx.result.update(execution='ok', outcome='defect' if status == 'defect' else 'pass',
                       summary=f"{criterion}: {len(result['defects'])} proved violation(s)")
+
+
+def describe_dfa_dft(ctx):
+    from .dfa_dft import capability as dfa_dft_capability
+    ctx.captured(ctx.scope.get('board'))
+    ctx.result['predicates'] = dfa_dft_capability(ctx.params, ctx.scope, ctx.spec, ctx.prerequisite)
+
+
+if __name__ != '__main__':
+    _register_check('dfa_dft', describe_dfa_dft, check_dfa_dft, accepts_criterion=True)

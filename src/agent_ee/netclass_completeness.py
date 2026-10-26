@@ -1,4 +1,6 @@
 """Presence-only Default netclass qualification over captured project bytes."""
+
+from .check_registry import register as _register_check
 import json
 from pathlib import Path
 
@@ -95,3 +97,13 @@ def check_netclass_completeness(ctx):
     ctx.result.update(execution='unsupported' if missing is None else 'ok',
         outcome='unknown' if missing is None else ('defect' if missing else 'pass'),
         summary='Unsupported net_settings schema' if missing is None else f'{len(missing)} incomplete Default class(es)')
+
+
+def describe_netclass_completeness(ctx):
+    descriptor = capability(ctx.params, ctx.files, ctx.inputs)
+    ctx.captured(ctx.params['project'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('netclass_completeness', describe_netclass_completeness, check_netclass_completeness)

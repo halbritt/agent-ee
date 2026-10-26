@@ -5,6 +5,8 @@ engineering applicability; only silk minima also bind a recorded supplier proces
 material and layer scope and a captured order selection. No built-in fabricator
 values or pricing are supplied.
 """
+
+from .check_registry import register as _register_check
 import copy
 import datetime
 import re
@@ -1060,3 +1062,12 @@ def check_fab_profile(ctx):
         raise CheckError('unsupported', str(exc)) from exc
     records = run_compiled(ctx, descriptor['compiled'], source)
     ctx.result['details']['extra_charges'] = [r for r in records if r['status'] == 'extra_charge']
+
+
+def describe_fab_profile(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.apply(descriptor)
+
+
+if __name__ != '__main__':
+    _register_check('fab_profile', describe_fab_profile, check_fab_profile)

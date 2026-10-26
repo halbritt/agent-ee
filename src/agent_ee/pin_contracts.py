@@ -1,4 +1,6 @@
 """Authored, page-cited physical-pin obligations over retained native connectivity."""
+
+from .check_registry import register as _register_check
 import argparse
 import re
 from collections import Counter
@@ -416,3 +418,16 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def describe_pin_contracts(ctx):
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
+    ctx.prerequisite(ctx.params.get('facts_check'), ('datasheet_facts',))
+    ctx.apply(descriptor)
+    if 'acquisitions' in descriptor:
+        ctx.result['acquisitions'] = descriptor['acquisitions']
+
+
+if __name__ != '__main__':
+    _register_check('pin_contracts', describe_pin_contracts, check_pin_contracts)
