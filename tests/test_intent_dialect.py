@@ -765,7 +765,39 @@ class EngineParityTests(unittest.TestCase):
         self.assertEqual(int(evaluation['terms']['link_gap_nm']), unweighted_nm)
         self.assertEqual(evaluation['link_weight'], 1)
         self.assertAlmostEqual(unweighted_nm / 1e6, group_links.objective(report), places=3)
+        report['objective_mm'] = group_links.objective(report)
+        self.assertEqual(evaluation['group_links'], report)
         return evaluation
+
+    def test_evaluate_emits_pad_edge_legs_and_edge_intent_reports(self):
+        import subprocess
+        problem = self.problem()
+        problem['footprints'][0]['edge'] = {
+            'edge': 'west', 'seat_local_nm': [-1_000_000, -500_000, 1_000_000, 500_000],
+            'seat_basis': 'body:fab', 'max_setback_nm': 3_000_000}
+        problem['proximity'] = [
+            {'ref': 'R2', 'near': 'R1', 'max_mm': 7.0, 'basis': 'pad_edge',
+             'context': {'limit': 'derived_default'}, 'pads': {'R2': ['1'], 'R1': ['1', '2']}},
+            {'ref': 'R2', 'near': 'ZZ', 'max_mm': 2.0, 'basis': 'pad_edge', 'pads': {'R2': ['9']}},
+        ]
+        done = subprocess.run([str(self.engine())], input=json.dumps(problem).encode(), capture_output=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr.decode(errors='replace')[-800:])
+        evaluation = json.loads(done.stdout)['evaluations'][0]
+        legs = evaluation['pad_edge_legs']
+        self.assertEqual(len(legs), 2)
+        self.assertEqual((legs[0]['status'], legs[0]['authority'], legs[0]['pads_basis']),
+                         ('measured', 'advisory_objective', 'declared'))
+        self.assertEqual((legs[0]['legs'][0]['subject_pad'], legs[0]['legs'][0]['partner_pad'],
+                          legs[0]['legs'][0]['paired_by'], legs[0]['legs'][0]['within_max_mm']),
+                         ('1', '1', 'net', True))
+        self.assertEqual(legs[1]['status'], 'unresolved')
+        self.assertEqual(legs[1]['missing'], [{'ref': 'R2', 'pad': '9'}, {'ref': 'ZZ', 'pad': None}])
+        edge_intent = evaluation['edge_intent']
+        self.assertEqual(edge_intent['status'], 'pass')
+        self.assertEqual(edge_intent['connectors'][0]['ref'], 'R1')
+        self.assertEqual(edge_intent['connectors'][0]['basis'], 'body:fab')
+        self.assertEqual(edge_intent['connectors'][0]['nearest'], 'west')
+        self.assertEqual(edge_intent['connectors'][0]['setback_mm']['west'], 2.0)
 
 
 class CaptureContractTests(EngineParityTests):
