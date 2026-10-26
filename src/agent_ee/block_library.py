@@ -33,7 +33,7 @@ from pathlib import Path
 
 from . import blocks, placer
 from .catalog import strict_json
-from .footprint_library import digest
+from .storage import identity as value_digest
 from .native_netlist import read_native_inventory, read_sheet_names
 from .placement import judge
 from .symbol_library import LibraryError, children, nanometres, parse_sexpr
@@ -126,7 +126,7 @@ def _quarter(rotation, label):
 
 def pin_functions_sha256(component, pads):
     """Identity of a member's pin names and electrical types, without storing their text."""
-    return digest([[pad, component['pin_metadata'].get(pad)] for pad in pads])
+    return value_digest([[pad, component['pin_metadata'].get(pad)] for pad in pads])
 
 
 def _role_partition(rows):
@@ -257,7 +257,7 @@ def payload_sha256(entry):
     """
     body = copy.deepcopy(entry)
     body['receipt'].pop('authority_sha256', None)
-    return digest(body)
+    return value_digest(body)
 
 
 def validate_authority(record):
@@ -791,7 +791,7 @@ def _entry(block_id, version, part, provenance, built, copper, receipt):
                 'pose': r['pose'], 'pad_geometry_sha256': r['pad_geometry_sha256'],
                 'courtyard_sha256': r['courtyard_sha256'], 'pin_functions_sha256': functions[r['reference']],
                 'pins': roles[r['reference']]} for r in candidate['members']]
-    receipt['candidate_sha256'] = digest(candidate)
+    receipt['candidate_sha256'] = value_digest(candidate)
     entry = {'schema': ENTRY, 'id': block_id, 'version': version, 'part': part, 'provenance': provenance,
              'layout': {'anchor': candidate['frame']['anchor'], 'members': members}, 'copper': copper,
              'receipt': receipt}
@@ -809,7 +809,7 @@ def _import(capture, inventory, sheet_names, inventory_sha256, policy, block_id,
                                                         [p['pad'] for p in row['pins']])
                  for row in candidate['members']}
     inputs = {'board_sha256': capture['board_sha256'], 'inventory_sha256': inventory_sha256,
-              'policy_sha256': digest(source_policy)}
+              'policy_sha256': value_digest(source_policy)}
     return (candidate, functions), inputs
 
 
@@ -829,7 +829,7 @@ def reproduce(entry, source_raw, capture, inventory, sheet_names, inventory_sha2
     receipt, source = entry['receipt'], entry['receipt']['source']
     source_policy = _import_policy(policy, {r['reference'] for r in entry['layout']['members']})
     actual = {'board_sha256': capture['board_sha256'], 'inventory_sha256': inventory_sha256,
-              'policy_sha256': digest(source_policy)}
+              'policy_sha256': value_digest(source_policy)}
     problems = [{'kind': 'source_mismatch', 'input': k, 'expected': receipt['inputs'][k], 'actual': actual[k]}
                 for k in INPUT_KEYS if receipt['inputs'][k] != actual[k]]
     if hashlib.sha256(source_raw).hexdigest() != source['sha256']:

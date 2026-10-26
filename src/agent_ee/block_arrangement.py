@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import advisory_regions, blocks, block_variants, block_contract, electrical_locality, placement_groups, placement_trace, placer
 from .catalog import strict_json
-from .footprint_library import digest
+from .storage import identity as value_digest
 from .native_netlist import read_native_inventory, read_sheet_names
 from .placement import convex, cross, edges, intersection_area, overhang_bands, qualified_polygons, simple_polygon
 from .placement_predicates import point_segment2
@@ -276,7 +276,7 @@ def admit_entry(entry, capture, inventory, derivation, policy):
     poses = {mapping[r['reference']]: r['pose'] for r in document['members']}
     return {'block': block['id'], 'anchor': mapping[document['frame']['anchor']], 'poses': poses,
             'mapping': mapping, 'mapped': 'mapping' in entry, 'binding': binding['roles'],
-            'candidate_sha256': digest(document), 'provenance': document['provenance'], 'deferred': deferred}, []
+            'candidate_sha256': value_digest(document), 'provenance': document['provenance'], 'deferred': deferred}, []
 
 
 
@@ -301,7 +301,7 @@ def _admit_set(entry, capture, inventory, derivation, policy, eligibility):
     if problems or not variants:
         return None, problems or [{'kind': 'no_packed_native_variant'}]
     result = dict(next(iter(variants.values())))
-    result.update(variants=variants, candidate_set_sha256=digest(document))
+    result.update(variants=variants, candidate_set_sha256=value_digest(document))
     return result, []
 
 
@@ -1158,7 +1158,7 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
     arrangement = validate_policy(arrangement, block_ids, refs)
     margin_nm = placer._edge_margin_nm(effective)
     record = {'schema': POLICY, 'strategy': STRATEGY, 'arrangement': arrangement,
-              'derivation_sha256': digest(derivation), 'policy_sha256': digest(policy)}
+              'derivation_sha256': value_digest(derivation), 'policy_sha256': value_digest(policy)}
 
     def failure(status, reason, steps=0, **extra):
         return {**placer._failure(capture, effective, status, 'unknown', steps, reason, margin_nm),
@@ -1366,7 +1366,7 @@ def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, he
         residual_policy['fixed_refs'] = sorted(set(effective['fixed_refs']) | members, key=blocks._natural)
         if has_sets:
             residual_policy['step_budget'] = effective['step_budget'] - residual_used
-        record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
+        record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': value_digest(residual_policy),
                               'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
         # Block members are re-posed, so only parts unchanged from the capture stay seed facts.
         # Members at exactly their admitted poses passed the arrangement copper gate (ruling 371d).
@@ -1600,7 +1600,7 @@ def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256, res
         document['reserved_area'] = reserved_area
     if 'member_refinement' in record:
         document['member_refinement'] = copy.deepcopy(record['member_refinement'])
-        document['member_refinement_sha256'] = digest(document['member_refinement'])
+        document['member_refinement_sha256'] = value_digest(document['member_refinement'])
     return check_roster(document, plan)
 
 
@@ -1615,7 +1615,7 @@ def check_roster(document, plan):
     witness = plan['block_arrangement'].get('member_refinement')
     if document.get('member_refinement') != witness:
         raise ValueError('block provenance member refinement differs from the placement plan')
-    if witness is not None and witness['policy_sha256'] != digest(plan['policy']):
+    if witness is not None and witness['policy_sha256'] != value_digest(plan['policy']):
         raise ValueError('member refinement policy differs from the placement plan')
     for key, value in (('source_sha256', plan['board_sha256']),
                        ('derivation_sha256', plan['block_arrangement']['derivation_sha256']),
@@ -1677,7 +1677,7 @@ def _validate_refinement(document):
         raise ValueError('member refinement needs its full witness and canonical hash')
     witness = document['member_refinement']
     _sha256(document['member_refinement_sha256'], 'member refinement hash')
-    if digest(witness) != document['member_refinement_sha256']:
+    if value_digest(witness) != document['member_refinement_sha256']:
         raise ValueError('member refinement canonical hash mismatch')
     blocks._keys(witness, {'schema', 'capture_digest_basis', 'source_capture_sha256', 'final_capture_sha256', 'policy_sha256',
                           'contract_sha256', 'step_budget', 'steps_used', 'moves', 'rejected', 'skipped',

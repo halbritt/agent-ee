@@ -3,8 +3,8 @@
 Inheritance and electrical inventory are owned by symbol_library. This module
 consumes its resolved source chain to present properties and graphic bounds.
 """
-from .footprint_library import (_symbol_inventory, _object, _seal, _text, canonical,
-                                digest, FootprintError, read_captures)
+from .footprint_library import (_symbol_inventory, _object, _seal, _text, FootprintError, read_captures)
+from .storage import canonical, identity as value_digest
 
 
 BBOX_DEFINITION = ('Local body graphic centreline bounds plus complete pin segments, per unit/body 1; '
@@ -130,7 +130,7 @@ def build_context(libraries, captured_files, selection, *, _library_cache=None):
     from .symbol_library import LibraryError, ParsedLibraries
     cache = _library_cache if _library_cache is not None else ParsedLibraries()
     result = dict(schema='agent-ee.symbol-context/1', execution='ok', outcome='info',
-                  selection=selection, query_sha256=digest(selection), sources=[], pins=[],
+                  selection=selection, query_sha256=value_digest(selection), sources=[], pins=[],
                   properties={}, description='', selected_body_style=1, bbox_definition=BBOX_DEFINITION, bbox_by_unit={})
     try:
         pins, sources, power = _symbol_inventory(selection, libraries, captured_files, _library_cache=cache)
@@ -174,7 +174,7 @@ def validate_pin_reference(ref):
 def check_pin_references(libraries, captured_files, references):
     """Declared selectors, independent of connectivity's full net-accounting rules."""
     result = dict(schema='agent-ee.pin-reference-result/1', execution='ok', outcome='pass',
-                  references_sha256=digest(references), references=[], contexts=[])
+                  references_sha256=value_digest(references), references=[], contexts=[])
     contexts = {}
     try:
         if not isinstance(references, list) or not references:

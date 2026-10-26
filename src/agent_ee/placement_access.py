@@ -50,7 +50,7 @@ import sys
 import tempfile
 
 from .catalog import strict_json
-from .footprint_library import digest
+from .storage import identity as value_digest
 from .placer import rotate
 
 SCHEMA = 'agent-ee.placement-access/1'
@@ -562,7 +562,7 @@ class AccessIndex:
             terminals.append(self.terminal(component, components))
         summary = Counter(t['status'] for t in terminals)
         return {'schema': SCHEMA, 'search': SEARCH, 'board_sha256': self.geometry['board_sha256'],
-                'geometry_sha256': digest(self.geometry), 'policy': self.policy, 'limits': self.limits,
+                'geometry_sha256': value_digest(self.geometry), 'policy': self.policy, 'limits': self.limits,
                 'poses': {ref: pose for ref, pose in sorted(self.pose.items())
                           if pose != {'position_nm': self.footprints[ref]['position_nm'],
                                       'rotation_deg': self.footprints[ref]['rotation_deg']}},
@@ -1157,9 +1157,9 @@ def _native_evidence(board, geometry, capture):
     fresh_geometry, fresh_capture, hashes = _native_capture(board)
     if hashes['.kicad_pcb'] != geometry['board_sha256']:
         raise ValueError('native board differs from the routing geometry board')
-    if digest(fresh_geometry) != digest(geometry):
+    if value_digest(fresh_geometry) != value_digest(geometry):
         raise ValueError('routing geometry differs from the native capture of the board')
-    if digest(fresh_capture) != digest(capture):
+    if value_digest(fresh_capture) != value_digest(capture):
         raise ValueError('placement capture differs from the native capture of the board')
     return hashes
 
@@ -1241,9 +1241,9 @@ def block_access(candidate, geometry, routing_policy, limits=None, *, capture, b
             terminal['witnesses'] = kept
     summary = Counter(t['status'] for t in report['terminals'])
     return {'schema': SIDECAR, 'mode': 'diagnostic', 'block_id': candidate['block_id'],
-            'candidate_sha256': digest(candidate), 'candidate_status': candidate['status'],
+            'candidate_sha256': value_digest(candidate), 'candidate_status': candidate['status'],
             'frame': candidate['frame'], 'board_sha256': report['board_sha256'],
-            'geometry_sha256': digest(geometry), 'capture_sha256': digest(capture),
+            'geometry_sha256': value_digest(geometry), 'capture_sha256': value_digest(capture),
             'contour_authority': 'native board' if board is not None else 'placement capture',
             'rule_authority': rule_authority,
             'pad_geometry_sha256': {row['reference']: row['pad_geometry_sha256'] for row in candidate['members']},
@@ -1312,14 +1312,14 @@ def validate_sidecar(candidate, sidecar, *, geometry, capture, board=None):
     ``ValueError``.
     """
     summary = _validate_structure(candidate, sidecar)
-    if digest(geometry) != sidecar['geometry_sha256'] or digest(capture) != sidecar['capture_sha256']:
+    if value_digest(geometry) != sidecar['geometry_sha256'] or value_digest(capture) != sidecar['capture_sha256']:
         raise ValueError('access sidecar is bound to another routing geometry or placement capture')
     native = sidecar['contour_authority'] == 'native board'
     if native and board is None:
         raise ValueError('access sidecar with native contour authority needs its saved board')
     derived = block_access(candidate, geometry, sidecar['policy'], sidecar['limits'], capture=capture,
                            board=board if native else None)
-    if digest(derived) != digest(sidecar):
+    if value_digest(derived) != value_digest(sidecar):
         raise ValueError('access sidecar differs from the evidence it binds')
     return summary
 
@@ -1348,7 +1348,7 @@ def _validate_structure(candidate, sidecar):
     _exact(sidecar, SIDECAR_KEYS, 'record')
     if sidecar['schema'] != SIDECAR or sidecar['mode'] != 'diagnostic':
         raise ValueError(f'access sidecar must be a diagnostic {SIDECAR}')
-    if sidecar['candidate_sha256'] != digest(candidate):
+    if sidecar['candidate_sha256'] != value_digest(candidate):
         raise ValueError('access sidecar is bound to another candidate')
     rows = candidate['members']
     if (sidecar['block_id'] != candidate['block_id'] or sidecar['candidate_status'] != candidate['status']
@@ -1474,7 +1474,7 @@ def access_status(candidate, sidecar=None, *, geometry=None, capture=None, board
         return {'status': 'unknown', 'reason': 'no block-access sidecar'}
     if not isinstance(sidecar, dict) or sidecar.get('schema') != SIDECAR:
         raise ValueError(f'access sidecar must be {SIDECAR}')
-    if sidecar.get('candidate_sha256') != digest(candidate):
+    if sidecar.get('candidate_sha256') != value_digest(candidate):
         raise ValueError('access sidecar is bound to another candidate')
     if geometry is None or capture is None:
         raise ValueError('access status needs the routing geometry and placement capture the sidecar binds')

@@ -8,8 +8,11 @@ from fractions import Fraction
 import math
 
 from . import block_contract, electrical_locality, placement_groups, placer
-from .footprint_library import digest
+from .storage import identity as value_digest
 from .placement import box, courtyard_bounds, judge
+
+# Compatibility for callers of this module's original value-hash alias.
+digest = value_digest
 
 SCHEMA = 'agent-ee.block-member-refinement/1'
 CAPTURE_DIGEST_BASIS = 'public-capture-integral-angles/1'
@@ -31,7 +34,7 @@ def capture_digest(capture):
             if (type(angle) is float and math.isfinite(angle) and angle.is_integer()
                     and angle % 90 == 0 and -(2**63) <= angle < 2**63):
                 item['rotation_deg'] = int(angle)
-    return digest(public)
+    return value_digest(public)
 
 
 def _bbox(fp):
@@ -176,7 +179,7 @@ def refine(capture, policy, contract, block_records, *, step_budget):
     fixed = placer._fixed_refs(capture, policy)
     grounds = set(policy['ground_nets'])
     witness = {'schema': SCHEMA, 'capture_digest_basis': CAPTURE_DIGEST_BASIS, 'source_capture_sha256': capture_digest(capture),
-               'policy_sha256': digest(policy), 'contract_sha256': digest(contract),
+               'policy_sha256': value_digest(policy), 'contract_sha256': value_digest(contract),
                'step_budget': step_budget, 'steps_used': 0, 'moves': [], 'rejected': {}, 'skipped': []}
     exhausted = False
     for block in sorted(block_records['blocks'], key=lambda b: blocks_key(b['block'])):
@@ -247,9 +250,9 @@ def verify_saved(saved_capture, policy, contract, block_records, entries):
         raise ValueError('saved refinement verification needs the complete witness')
     if witness.get('capture_digest_basis') != CAPTURE_DIGEST_BASIS:
         raise ValueError('saved refinement verification needs the explicit public capture digest basis')
-    if witness.get('policy_sha256') != digest(policy):
+    if witness.get('policy_sha256') != value_digest(policy):
         raise ValueError('refinement witness differs from actual effective policy')
-    if witness.get('contract_sha256') != digest(contract):
+    if witness.get('contract_sha256') != value_digest(contract):
         raise ValueError('refinement witness differs from requested block contract')
     identity_capture = {**saved_capture, 'board_sha256': contract['allocation']['board_sha256']}
     membership = block_contract.membership(identity_capture, contract['allocation'])
@@ -323,7 +326,7 @@ def verify_saved(saved_capture, policy, contract, block_records, entries):
                     continue
                 face = arranged[bid].get('selected_face')
                 variant = candidate.get('variants', {}).get(face)
-                if (row.get('selected_face') != face or digest(candidate) != row.get('candidate_set_sha256')
+                if (row.get('selected_face') != face or value_digest(candidate) != row.get('candidate_set_sha256')
                         or not isinstance(variant, dict) or variant.get('status') != 'packed'):
                     raise ValueError('refinement selected native candidate set differs from request')
                 candidate, mapping = variant['candidate'], {}
@@ -331,7 +334,7 @@ def verify_saved(saved_capture, policy, contract, block_records, entries):
                 mapping = entry.get('mapping', {})
             if not isinstance(mapping, dict):
                 raise ValueError('refinement candidate mapping must be an object')
-            if digest(candidate) != row['candidate_sha256']:
+            if value_digest(candidate) != row['candidate_sha256']:
                 continue
             members = candidate.get('members')
             if not isinstance(members, list):
@@ -394,11 +397,11 @@ def verify_saved(saved_capture, policy, contract, block_records, entries):
     return {'schema': 'agent-ee.block-member-refinement-verification/1', 'status': 'pass',
             'measurement_source': 'saved native capture with exact translation replay',
             'capture_digest_basis': CAPTURE_DIGEST_BASIS,
-            'board_sha256': saved_capture['board_sha256'], 'saved_capture_sha256': digest(saved_capture),
+            'board_sha256': saved_capture['board_sha256'], 'saved_capture_sha256': value_digest(saved_capture),
             'saved_public_capture_sha256': capture_digest(saved_capture),
             'reconstructed_start_capture_sha256': reconstructed_sha256,
-            'policy_sha256': digest(policy), 'contract_sha256': digest(contract),
-            'witness_sha256': digest(witness), 'moves_verified': len(verified), 'moves': verified,
+            'policy_sha256': value_digest(policy), 'contract_sha256': value_digest(contract),
+            'witness_sha256': value_digest(witness), 'moves_verified': len(verified), 'moves': verified,
             'starting_layout_binding': 'selected request /2 member poses transformed by recorded macro pose',
             'limitations': ['Macro placement is checked against the plan, not independently selected again.',
                             'Planner capture hashes and saved-native replay hashes identify distinct records.']}

@@ -20,11 +20,14 @@ from pathlib import Path
 
 from . import electrical_locality, locality_provenance, placement_groups, placer
 from .catalog import strict_json
-from .footprint_library import canonical, digest
+from .storage import canonical, identity as value_digest
 from .native_netlist import read_native_inventory, read_sheet_names
 from .placement import courtyard_bounds, edges, intersection_area, qualified_polygons, validate_capture
 from .placement_predicates import segment_distance2
 from .topology_rules import quantity
+
+# Compatibility for callers of this module's original value-hash alias.
+digest = value_digest
 
 ALLOCATION = 'agent-ee.block-allocation/1'
 DERIVATION = 'agent-ee.block-derivation/1'
@@ -259,11 +262,11 @@ def frame_member(fp, position, rotation):
 
 def pad_geometry_sha256(fp):
     """Hash of the land pattern: every pad's local geometry, without UUIDs or nets."""
-    return digest(_local(fp)[0])
+    return value_digest(_local(fp)[0])
 
 
 def courtyard_sha256(fp):
-    return digest(_local(fp)[1])
+    return value_digest(_local(fp)[1])
 
 
 def _pad_nets(fp):
@@ -748,7 +751,7 @@ def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub,
         rows.append({'reference': ref, 'fpid': board[ref]['fpid'], 'side': board[ref]['side'],
                      'value': {'text': component['value'], 'rule': 'exact'},
                      'pose': {'position_nm': position, 'rotation_deg': rotation},
-                     'pad_geometry_sha256': digest(pads), 'courtyard_sha256': digest(courtyard),
+                     'pad_geometry_sha256': value_digest(pads), 'courtyard_sha256': value_digest(courtyard),
                      'courtyard': courtyard['courtyards'], 'pins': roles[ref]})
     outline, grade, witness = _evidence(capture, framed, sub)
     status = ('refused' if witness['status'] != 'pass' or any(g and not _grade_usable(k, g) for k, g in grade.items())
@@ -764,8 +767,8 @@ def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub,
                       | {'steps_used': plan['steps_used'], 'step_budget': plan['step_budget']},
             'block_policy': sub,
             'sources': {'board_sha256': capture['board_sha256'], 'inventory_sha256': derivation['inventory_sha256'],
-                        'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': digest(derivation),
-                        'policy_sha256': digest(policy)}}
+                        'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': value_digest(derivation),
+                        'policy_sha256': value_digest(policy)}}
 
 
 def _hex(value, label):
@@ -807,7 +810,7 @@ def _squared(record, label):
 
 def _framed(row):
     """A member's own courtyard record at its frame pose; the record is bound by its hash."""
-    if digest({'side': row['side'], 'courtyards': row['courtyard']}) != row['courtyard_sha256']:
+    if value_digest({'side': row['side'], 'courtyards': row['courtyard']}) != row['courtyard_sha256']:
         raise ValueError(f"{row['reference']}: courtyard record differs from its courtyard_sha256")
     if not isinstance(row['courtyard'], dict) or row['side'] not in row['courtyard'] or set(row['courtyard']) - {'F', 'B'}:
         raise ValueError(f"{row['reference']}: courtyard record needs its mounting side")
@@ -1201,8 +1204,8 @@ def admit(document, capture, inventory, derivation, policy):
     if derivation['board_sha256'] != capture['board_sha256']:
         raise ValueError('derivation belongs to another board capture')
     expected = {'board_sha256': capture['board_sha256'], 'inventory_sha256': derivation['inventory_sha256'],
-                'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': digest(derivation),
-                'policy_sha256': digest(policy)}
+                'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': value_digest(derivation),
+                'policy_sha256': value_digest(policy)}
     problems = [{'kind': 'source_mismatch', 'source': key, 'expected': expected[key], 'actual': document['sources'][key]}
                 for key in SOURCE_KEYS if document['sources'][key] != expected[key]]
     found = [b for b in derivation['blocks'] if b['id'] == document['block_id']]

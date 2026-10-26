@@ -21,6 +21,17 @@ SOT3 = '''(footprint "SOT3" (version 20240108) (generator "owned")
 (pad "3" smd rect (at 0 2) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask")))'''
 
 
+class CanonicalIdentityTests(unittest.TestCase):
+    def test_non_ascii_value_has_one_encoding_and_identity(self):
+        from agent_ee import footprint_library, storage
+        value = {'label': '温度', 'parts': ['10 μF', 'é']}
+        self.assertEqual(footprint_library.canonical(value), storage.canonical(value))
+        self.assertEqual(footprint_library.digest(value), storage.identity(value))
+        self.assertIs(footprint_library.canonical, storage.canonical)
+        self.assertIs(footprint_library.digest, storage.identity)
+        self.assertIsNot(footprint_library.digest, storage.digest)
+
+
 class FootprintTests(unittest.TestCase):
     def test_complete_index_preserves_native_inventory_and_hash(self):
         manifest, files = capture(SOT3)

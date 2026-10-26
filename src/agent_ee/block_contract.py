@@ -10,7 +10,7 @@ import math
 import json
 
 from . import electrical_locality, locality_provenance, source_authority
-from .footprint_library import digest
+from .storage import identity as value_digest
 from .placement import box, courtyard_bounds, edges, validate_capture
 from .placement_predicates import point_segment2
 
@@ -100,7 +100,7 @@ def membership(capture, allocation):
             if ref is not None and roles.get(ref, {}).get('role') != 'fixed':
                 raise ValueError(f"block {block['id']} names non-fixed interface {ref}")
     return {'schema': 'agent-ee.block-membership/1', 'board_sha256': capture['board_sha256'],
-            'allocation_sha256': digest(allocation), 'blocks': sorted(normalized, key=lambda b: b['id']),
+            'allocation_sha256': value_digest(allocation), 'blocks': sorted(normalized, key=lambda b: b['id']),
             'roles': dict(sorted(roles.items())),
             'anchors': {b['id']: b['anchor'] for b in sorted(normalized, key=lambda b: b['id'])}}
 
@@ -211,10 +211,10 @@ def validate(capture, section, effective_policy):
             raise ValueError('candidate sets require block contract')
         return None
     members, _, _ = _contract(capture, contract)
-    if digest(section.get('side_eligibility')) != digest(contract['eligibility']):
+    if value_digest(section.get('side_eligibility')) != value_digest(contract['eligibility']):
         raise ValueError('contract eligibility differs from section side_eligibility')
     empty = {'schema': electrical_locality.SCHEMA, 'obligations': []}
-    if digest(effective_policy.get('electrical_locality', empty)) != digest(contract['relationships']):
+    if value_digest(effective_policy.get('electrical_locality', empty)) != value_digest(contract['relationships']):
         raise ValueError('contract relationships differ from effective policy electrical_locality')
     raw = section.get('allocation_text')
     if not isinstance(raw, str):
@@ -353,7 +353,7 @@ def _pose_constraints(original, saved, plan, report):
     report['pose_authority_inputs'] = {
         'native_locked': 'original native capture',
         'explicit_fixed_refs': 'captured plan policy' if declared is not None else 'not supplied',
-        'policy_sha256': digest(policy) if policy is not None else None}
+        'policy_sha256': value_digest(policy) if policy is not None else None}
     report['pose_constraints'] = []
     if declared is None:
         declared = []
@@ -398,9 +398,9 @@ def judge(saved_capture, contract, *, original_capture, plan=None):
     contract = deepcopy(contract)
     members, document, templates = _contract(original_capture, contract)
     report = {'schema': REPORT, 'original_board_sha256': original_capture['board_sha256'],
-              'board_sha256': saved_capture.get('board_sha256'), 'contract_sha256': digest(contract),
-              'membership': members, 'eligibility_sha256': digest(contract['eligibility']),
-              'plan_sha256': digest(plan) if plan is not None else None,
+              'board_sha256': saved_capture.get('board_sha256'), 'contract_sha256': value_digest(contract),
+              'membership': members, 'eligibility_sha256': value_digest(contract['eligibility']),
+              'plan_sha256': value_digest(plan) if plan is not None else None,
               'measurement_source': 'saved native capture', 'blocks': [], 'relationships': [],
               'roles': [], 'defects': [], 'unknown': [], 'advisories': [],
               'routing_obligations': routing_obligations(contract, original_capture)}
@@ -597,7 +597,7 @@ def check_complete(capture, contract):
         'relationship_requirement_missing', 'block_pin_relationships_missing'))
     return {'schema': 'agent-ee.block-contract-check/1',
             'status': 'defect' if defects else 'unknown' if unknown else 'pass',
-            'contract_sha256': digest(contract), 'board_sha256': capture['board_sha256'],
+            'contract_sha256': value_digest(contract), 'board_sha256': capture['board_sha256'],
             'routing_obligations': report['routing_obligations'],
             'defects': defects, 'unknown': unknown, 'relationships': rows,
             'advisories': [{'kind': 'engineering_target', 'relationship': row['relationship'],

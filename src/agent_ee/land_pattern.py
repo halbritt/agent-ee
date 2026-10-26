@@ -15,8 +15,8 @@ import re
 from pathlib import Path, PurePosixPath
 
 from .easyeda_footprint import FORMAT, SupplierError, decimal, parse_package, text
-from .footprint_library import (FootprintError, _members, _object, canonical, digest, load_document,
-                                read_captures)
+from .footprint_library import (FootprintError, _members, _object, load_document, read_captures)
+from .storage import canonical, identity as value_digest
 
 
 SCHEMA = 'agent-ee.land-pattern-criteria/1'
@@ -421,7 +421,7 @@ def library_footprint(manifest, captures, lib_id):
         _refuse('unsupported_layer', f'{lib_id}: only front-side library footprints are qualified')
     result = extract_footprint(node, side='F.Cu', frame_angle=Fraction(0), label=lib_id)
     result['source'] = dict(kind='library', lib_id=lib_id, path=member['path'], sha256=member['sha256'],
-                            manifest_sha256=digest(manifest))
+                            manifest_sha256=value_digest(manifest))
     return result
 
 
@@ -568,7 +568,7 @@ def compare(native, supplier, item, criteria):
 def evaluate(criteria, captures, board_path=None):
     """Return the sealed report. ``captures`` maps candidate-relative paths to bytes."""
     report = dict(schema=REPORT, adapter=VERSION, execution='ok', outcome='pass', coverage='complete',
-                  criteria_sha256=digest(criteria), references=[],
+                  criteria_sha256=value_digest(criteria), references=[],
                   counts=dict(eligible=0, evaluated=0, passed=0, defect=0, unknown=0, unsupported=0, malformed=0,
                               failed=0))
     try:
@@ -664,11 +664,11 @@ def _witness(record, criteria):
               dict(path=record['supplier']['raw_path'], sha256=record['supplier']['raw_sha256']),
               dict(path=record['native']['path'], sha256=record['native']['sha256'])]
     body = {k: record[k] for k in ('reference', 'lcsc', 'modes', 'copper', 'holes', 'pins')}
-    return dict(criteria_sha256=digest(criteria), inputs=inputs, result_sha256=digest(body))
+    return dict(criteria_sha256=value_digest(criteria), inputs=inputs, result_sha256=value_digest(body))
 
 
 def _seal(report):
-    report['canonical_sha256'] = digest(report)
+    report['canonical_sha256'] = value_digest(report)
     return report
 
 
@@ -677,7 +677,7 @@ def replay(report, criteria, captures, board_path=None):
     if not isinstance(report, dict) or report.get('schema') != REPORT:
         return False
     body = {k: v for k, v in report.items() if k != 'canonical_sha256'}
-    if digest(body) != report.get('canonical_sha256'):
+    if value_digest(body) != report.get('canonical_sha256'):
         return False
     return evaluate(criteria, captures, board_path)['canonical_sha256'] == report['canonical_sha256']
 

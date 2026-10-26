@@ -10,7 +10,7 @@ import shutil
 import tempfile
 
 from . import blocks
-from .footprint_library import canonical, digest
+from .storage import canonical, identity as value_digest
 from .placement import validate_capture
 from .storage import digest as file_digest
 
@@ -69,8 +69,8 @@ def _eligibility_binding(record, capture):
 
 def _sources(capture, derivation, policy):
     return {'board_sha256': capture['board_sha256'], 'inventory_sha256': derivation['inventory_sha256'],
-            'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': digest(derivation),
-            'policy_sha256': digest(policy)}
+            'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': value_digest(derivation),
+            'policy_sha256': value_digest(policy)}
 
 
 def _members(capture, derivation, block_id):
@@ -122,7 +122,7 @@ def _native_variant(source, destination, members, sides):
             changed = True
         rows.append({'ref': member['ref'], 'uuid': member['uuid'], 'source_side': member['side'],
                      'side': side, 'flipped': flipped,
-                     'pad_inventory_sha256': digest(_footprint_pad_inventory(fp))})
+                     'pad_inventory_sha256': value_digest(_footprint_pad_inventory(fp))})
     destination.parent.mkdir(parents=True, exist_ok=False)
     for suffix in ('.kicad_pro', '.kicad_dru'):
         companion = source.with_suffix(suffix)
@@ -138,7 +138,7 @@ def _native_variant(source, destination, members, sides):
     for row in rows:
         fp = saved_by_uuid[row['uuid']]
         if (_side(fp) != row['side']
-                or digest(_footprint_pad_inventory(fp)) != row['pad_inventory_sha256']):
+                or value_digest(_footprint_pad_inventory(fp)) != row['pad_inventory_sha256']):
             raise ValueError(f"native save changed the declared transform for {row['ref']}")
     return capture, rows
 
@@ -149,13 +149,13 @@ def produce(source, capture, inventory, derivation, block_id, policy, eligibilit
 
     ``member_sides`` maps face keys to explicit per-member face overrides. The
     anchor must stay on the face key; other members require their own eligibility.
-    All digests of JSON records are canonical ``footprint_library.digest`` hashes.
+    All digests of JSON records are canonical ``storage.identity`` hashes.
     """
     from .placement_probe import extract
     source, output = Path(source), Path(output_directory)
     validate_capture(capture)
     original_hash = file_digest(source)
-    if original_hash != capture['board_sha256'] or digest(extract(source)) != digest(capture):
+    if original_hash != capture['board_sha256'] or value_digest(extract(source)) != value_digest(capture):
         raise ValueError('Stage-A capture is not the exact native source capture')
     if derivation['board_sha256'] != original_hash:
         raise ValueError('derivation belongs to another board capture')
@@ -172,7 +172,7 @@ def produce(source, capture, inventory, derivation, block_id, policy, eligibilit
         raise ValueError('variant face must be the actual anchor side')
     output.mkdir(parents=True, exist_ok=False)
     result = {'schema': SCHEMA, 'block_id': block_id, 'sources': _sources(capture, derivation, policy),
-              'eligibility': {'record': copy.deepcopy(eligibility), 'record_sha256': digest(eligibility),
+              'eligibility': {'record': copy.deepcopy(eligibility), 'record_sha256': value_digest(eligibility),
                               'eligible_faces': faces},
               'captured_members': _capture_members(members), 'variants': {}}
     for face in faces:
@@ -189,7 +189,7 @@ def produce(source, capture, inventory, derivation, block_id, policy, eligibilit
             native_derivation = {**copy.deepcopy(derivation), 'board_sha256': native_capture['board_sha256']}
             packed = blocks._plain(blocks.pack_block(native_capture, inventory, native_derivation, block_id, policy,
                                                      heartbeat=heartbeat, compact=compact))
-            variant.update(status=packed['status'], capture=native_capture, capture_sha256=digest(native_capture),
+            variant.update(status=packed['status'], capture=native_capture, capture_sha256=value_digest(native_capture),
                            board_sha256=native_capture['board_sha256'], derivation=native_derivation, members=rows,
                            candidate=packed['candidate'] if packed['status'] == 'packed' else None,
                            failure=None if packed['status'] == 'packed' else packed)
@@ -218,9 +218,9 @@ def _structure(document, capture, eligibility=None):
             blocks._hex(value, 'candidate-set ' + key)
     bundle = document['eligibility']
     blocks._keys(bundle, {'record', 'record_sha256', 'eligible_faces'}, label='candidate-set eligibility')
-    if digest(bundle['record']) != bundle['record_sha256']:
+    if value_digest(bundle['record']) != bundle['record_sha256']:
         raise ValueError('eligibility record canonical hash mismatch')
-    if eligibility is not None and digest(eligibility) != bundle['record_sha256']:
+    if eligibility is not None and value_digest(eligibility) != bundle['record_sha256']:
         raise ValueError('candidate set belongs to another eligibility record')
     _eligibility_binding(bundle['record'], capture if capture is not None else document['sources'])
     faces = eligible_faces(bundle['record'], document['block_id'])
@@ -263,14 +263,14 @@ def _structure(document, capture, eligibility=None):
                 raise ValueError('native flip refusal carries inconsistent evidence')
             continue
         validate_capture(variant['capture'])
-        if (digest(variant['capture']) != variant['capture_sha256']
+        if (value_digest(variant['capture']) != variant['capture_sha256']
                 or variant['capture']['board_sha256'] != variant['board_sha256']):
             raise ValueError('variant capture hash mismatch')
         derivation = variant['derivation']
         if not isinstance(derivation, dict) or derivation.get('board_sha256') != variant['board_sha256']:
             raise ValueError('variant derivation board binding mismatch')
         original_derivation = {**derivation, 'board_sha256': document['sources']['board_sha256']}
-        if digest(original_derivation) != document['sources']['derivation_sha256']:
+        if value_digest(original_derivation) != document['sources']['derivation_sha256']:
             raise ValueError('variant derivation differs beyond the native board binding')
         for member in members:
             blocks._hex(member['pad_inventory_sha256'], 'native member pad inventory')
@@ -280,7 +280,7 @@ def _structure(document, capture, eligibility=None):
             candidate = variant['candidate']
             blocks.validate_candidate(candidate)
             expected_sources = {**document['sources'], 'board_sha256': variant['board_sha256'],
-                                'derivation_sha256': digest(derivation)}
+                                'derivation_sha256': value_digest(derivation)}
             if candidate['sources'] != expected_sources:
                 raise ValueError('variant candidate sources differ from its native evidence')
             if candidate['block_id'] != document['block_id']:
@@ -329,7 +329,7 @@ def verify_native(source, document, capture=None):
     source = Path(source)
     actual = extract(source)
     capture = actual if capture is None else capture
-    if digest(actual) != digest(capture) or document['sources']['board_sha256'] != actual['board_sha256']:
+    if value_digest(actual) != value_digest(capture) or document['sources']['board_sha256'] != actual['board_sha256']:
         raise ValueError('candidate-set original capture differs from native source')
     rows = _structure(document, capture)
     members = [{'ref': row['ref'], 'uuid': row['uuid'], 'side': row['side']} for row in rows]
@@ -342,7 +342,7 @@ def verify_native(source, document, capture=None):
                 if variant['status'] != 'native_flip_refused' or variant['failure']['reason'] != str(exc):
                     raise ValueError('declared native failure does not match the source') from exc
             else:
-                if (variant['status'] == 'native_flip_refused' or digest(fresh) != variant['capture_sha256']
+                if (variant['status'] == 'native_flip_refused' or value_digest(fresh) != variant['capture_sha256']
                         or canonical(fresh) != canonical(variant['capture']) or native_rows != variant['members']):
                     raise ValueError('supplied variant differs from the reproduced native capture')
     if file_digest(source) != actual['board_sha256']:
@@ -409,8 +409,8 @@ def authorization(source, capture, documents, plan, eligibility):
         if variant is None or variant['status'] != 'packed':
             raise ValueError('selected block face is not an eligible packed variant')
         if (recorded[bid].get('selected_face') != face
-                or recorded[bid].get('candidate_set_sha256') != digest(document)
-                or recorded[bid]['candidate_sha256'] != digest(variant['candidate'])):
+                or recorded[bid].get('candidate_set_sha256') != value_digest(document)
+                or recorded[bid]['candidate_sha256'] != value_digest(variant['candidate'])):
             raise ValueError('selected block variant identity differs from native evidence')
         for member in variant['members']:
             uuid = member['uuid']

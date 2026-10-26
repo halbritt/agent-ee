@@ -7,6 +7,11 @@ import hashlib
 import json
 from pathlib import PurePosixPath
 
+from .storage import canonical, identity
+
+# Compatibility for the value-hash API; storage.digest continues to hash file paths.
+digest = identity
+
 
 class FootprintError(ValueError):
     pass
@@ -25,17 +30,8 @@ def load_document(path):
                       parse_constant=lambda value: (_ for _ in ()).throw(FootprintError('non-finite JSON')))
 
 
-def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
-                      allow_nan=False).encode('utf-8')
-
-
-def digest(value):
-    return hashlib.sha256(canonical(value)).hexdigest()
-
-
 def _seal(result):
-    result['canonical_sha256'] = digest(result)
+    result['canonical_sha256'] = identity(result)
     return result
 
 
@@ -609,11 +605,11 @@ def index_footprints(manifest, captured_files, declarations=None):
     result = dict(schema='agent-ee.footprint-index/1', execution='ok', outcome='info',
                   coverage='complete', footprints=[], findings=[], manifest_sha256=None)
     if declarations is not None:
-        result['declarations_sha256'] = digest(declarations)
+        result['declarations_sha256'] = identity(declarations)
     code = 'manifest'
     try:
         entries = _members(manifest)
-        result['manifest_sha256'] = digest(manifest)
+        result['manifest_sha256'] = identity(manifest)
         code = 'declaration'
         declared = validate_declarations(declarations)[0] if declarations is not None else {}
     except (FootprintError, TypeError, ValueError) as exc:
@@ -766,9 +762,9 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
                   coverage=index['coverage'], index=index, index_sha256=index['canonical_sha256'],
                   declaration_sha256=None, assignments=[], findings=list(index['findings']))
     if declarations is not None:
-        result['declarations_sha256'] = digest(declarations)
+        result['declarations_sha256'] = identity(declarations)
     try:
-        result['declaration_sha256'] = digest(declaration)
+        result['declaration_sha256'] = identity(declaration)
         validate_declaration(declaration)
         pinless = validate_declarations(declarations)[1] if declarations is not None else {}
     except (ValueError, TypeError) as exc:
@@ -1092,7 +1088,7 @@ def capture_esp32_s3_wroom_1(out_dir=None, *, stock_root='/usr/share/kicad', ref
 def resolve_package(table, family, package, manifest, captured_files):
     """Exact captured alias rows; ambiguity never chooses the first row."""
     result = dict(schema='agent-ee.package-resolution/1', execution='failed', outcome='unknown',
-                  table_sha256=digest(table), footprint=None, source=None)
+                  table_sha256=identity(table), footprint=None, source=None)
     try:
         _object(table, ('schema', 'convention', 'rows'))
         if table['schema'] != 'agent-ee.package-aliases/1' or table['convention'] != 'explicit-imperial-to-metric':

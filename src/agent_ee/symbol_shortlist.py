@@ -14,8 +14,8 @@ import json
 from pathlib import Path
 import re
 
-from .footprint_library import (FootprintError, _seal, canonical, captured_symbol_libraries, digest,
-                                load_document, read_captures)
+from .footprint_library import (FootprintError, _seal, captured_symbol_libraries, load_document, read_captures)
+from .storage import canonical, identity as value_digest
 
 REQUEST_SCHEMA = 'agent-ee.symbol-shortlist-request/1'
 INDEX_SCHEMA = 'agent-ee.symbol-library-index/1'
@@ -183,7 +183,7 @@ def plan_chunks(index, selected, budget):
     if chunked != expected:
         raise ShortlistError('chunk plan lost or reordered index entries')
     coverage = dict(selected_entries=len(expected), chunked_entries=len(chunked),
-                    selected_entries_sha256=digest(expected), chunked_entries_sha256=digest(chunked),
+                    selected_entries_sha256=value_digest(expected), chunked_entries_sha256=value_digest(chunked),
                     complete=True)
     return chunks, coverage
 
@@ -277,8 +277,8 @@ def assemble(request, index, library_pick, symbol_picks):
     decisions, dropped_libraries = gate_libraries(index, request, library_pick)
     selected = [d['name'] for d in decisions]
     chunks, coverage = plan_chunks(index, selected, request['chunk_budget_chars']) if selected else ([], dict(
-        selected_entries=0, chunked_entries=0, selected_entries_sha256=digest([]),
-        chunked_entries_sha256=digest([]), complete=True))
+        selected_entries=0, chunked_entries=0, selected_entries_sha256=value_digest([]),
+        chunked_entries_sha256=value_digest([]), complete=True))
     if symbol_picks is not None and len(symbol_picks) != len(chunks):
         raise ShortlistError('symbol responses do not match the chunk plan')
     libraries = {lib['name']: lib for lib in index['libraries']}
@@ -299,7 +299,7 @@ def assemble(request, index, library_pick, symbol_picks):
     return dict(libraries=decisions, dropped_libraries=dropped_libraries,
                 chunks=[dict(chunk=number, entries=len(chunk), chars=len(chunk_listing(chunk)),
                              first=chunk[0][0], last=chunk[-1][0],
-                             lib_ids_sha256=digest([lib_id for lib_id, _ in chunk]),
+                             lib_ids_sha256=value_digest([lib_id for lib_id, _ in chunk]),
                              listing_sha256=hashlib.sha256(chunk_listing(chunk).encode()).hexdigest())
                         for number, chunk in enumerate(chunks)],
                 coverage=coverage, symbols=[entries[key] for key in sorted(entries)], dropped=dropped), chunks
@@ -363,7 +363,7 @@ def select(request, captured_files, definition, out):
     _write_new(out / 'inputs/request.json', request)
     _write_new(out / 'inputs/index.json', index)
     ids = [r['id'] for r in request['requirements']]
-    result = dict(schema=SHORTLIST_SCHEMA, execution='ok', outcome='unknown', request_sha256=digest(request),
+    result = dict(schema=SHORTLIST_SCHEMA, execution='ok', outcome='unknown', request_sha256=value_digest(request),
                   index_sha256=index['canonical_sha256'], definition=definition,
                   chunk_budget_chars=request['chunk_budget_chars'], calls=[], libraries=[],
                   dropped_libraries=[], chunks=[], coverage=None, symbols=[], dropped=[])
@@ -427,12 +427,12 @@ def verify(out, captured_files):
     if not isinstance(shortlist, dict) or shortlist.get('schema') != SHORTLIST_SCHEMA:
         raise ShortlistError('expected ' + SHORTLIST_SCHEMA)
     sealed = {k: v for k, v in shortlist.items() if k != 'canonical_sha256'}
-    if shortlist.get('canonical_sha256') != digest(sealed):
+    if shortlist.get('canonical_sha256') != value_digest(sealed):
         raise ShortlistError('shortlist hash does not match its content')
     index = build_index(request['libraries'], captured_files)
     if _read(out / 'inputs/index.json') != index or shortlist['index_sha256'] != index['canonical_sha256']:
         raise ShortlistError('captured library index differs from the retained index')
-    if shortlist['request_sha256'] != digest(request):
+    if shortlist['request_sha256'] != value_digest(request):
         raise ShortlistError('retained request differs from the shortlist binding')
     ids = [r['id'] for r in request['requirements']]
     calls = shortlist['calls']

@@ -2,8 +2,8 @@
 from pathlib import Path
 
 from .candidate import safe_relative
-from .footprint_library import (_members, _object, canonical, load_document, validate_declaration,
-                                validate_declarations)
+from .footprint_library import (_members, _object, load_document, validate_declaration, validate_declarations)
+from .storage import canonical
 from .native_binding import PREDICATE as NATIVE_PREDICATE
 
 

@@ -1,6 +1,6 @@
 """Small literal offline tool surface over captured symbol and footprint facts."""
-from .footprint_library import (_object, _seal, _members, canonical, digest,
-                                index_footprints, read_captures, load_document)
+from .footprint_library import (_object, _seal, _members, index_footprints, read_captures, load_document)
+from .storage import canonical, identity as value_digest
 from .symbol_context import build_context
 
 
@@ -21,7 +21,7 @@ def dispatch_tool(name, request, captures):
     else:
         raise ValueError('unknown offline library tool')
     return _seal(dict(schema='agent-ee.library-tool-result/1', tool=name,
-                      request_sha256=digest(request), result=result))
+                      request_sha256=value_digest(request), result=result))
 
 
 def main(argv=None):

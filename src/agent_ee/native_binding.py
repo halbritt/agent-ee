@@ -8,8 +8,8 @@ docs/native-binding.md for the exporter semantics these rules depend on.
 import hashlib
 import posixpath
 
-from .footprint_library import (FootprintError, _seal, _symbol_inventory, check_assignments, digest,
-                                validate_declaration)
+from .footprint_library import (FootprintError, _seal, _symbol_inventory, check_assignments, validate_declaration)
+from .storage import identity as value_digest
 
 SCHEMA = 'agent-ee.footprint-native-assignments/1'
 PREDICATE = 'footprint:native-assignment-parity/1'
@@ -180,11 +180,11 @@ def bind_native_assignments(manifest, captured_files, declaration, graph, virtua
     """
     result = dict(schema=SCHEMA, predicate=PREDICATE, execution='ok', outcome='unknown',
                   coverage='complete', native_xml_sha256=native_xml_sha256, declaration_sha256=None,
-                  native_inventory_sha256=digest(_projection(graph)), exporter=graph['exporter'],
+                  native_inventory_sha256=value_digest(_projection(graph)), exporter=graph['exporter'],
                   native_sheets=list(graph['sheets']), bindings=[], exclusions=[],
                   virtual_symbols=virtual, assignments=None, findings=[])
     try:
-        result['declaration_sha256'] = digest(declaration)
+        result['declaration_sha256'] = value_digest(declaration)
         validate_declaration(declaration)
     except (ValueError, TypeError) as exc:
         result.update(execution='malformed', coverage='missing')
@@ -295,7 +295,8 @@ def main(argv=None):
     import argparse
     from pathlib import Path
     from xml.etree.ElementTree import ParseError
-    from .footprint_library import _members, canonical, load_document, read_captures
+    from .footprint_library import (_members, load_document, read_captures)
+    from .storage import canonical
     from .native_netlist import read_native_inventory
     from .netlist_parity import Unsupported
     parser = argparse.ArgumentParser(description=__doc__)
