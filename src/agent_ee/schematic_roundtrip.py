@@ -169,8 +169,7 @@ def roundtrip(source, libraries, captures, layout, out, *, timeout=120, cancella
         report['tool']['version'] = _read(version_work / 'stdout.log', 65536).decode('utf-8').strip()
         for label, filename in (('source', 'source.kicad_sch'), ('emitted', layout['project'] + '.kicad_sch')):
             work = out / (label + '-export')
-            record = run(out / label, work, ['kicad-cli', 'sch', 'export', 'netlist',
-                '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/' + filename])
+            record = run(out / label, work, native_run.netlist_argv('/candidate/' + filename, '/work/design.xml'))
             if record['execution'] != 'ok' or record['exit_code'] != 0 or record.get('displaced_records'):
                 report.update(execution='failed', findings=[dict(code='native_export', stage=label,
                                                                execution=record['execution'], exit_code=record['exit_code'])])

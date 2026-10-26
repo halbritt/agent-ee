@@ -346,10 +346,8 @@ def scaffold_load_checks(rundir, scaffold):
     commands = {
         'erc': ['kicad-cli', 'sch', 'erc', '--format', 'json', '--severity-all', '--units', 'mm',
                 '-o', '/work/report.json', f'/candidate/project/{NAME}.kicad_sch'],
-        'netlist': ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                    '-o', '/work/report.xml', f'/candidate/project/{NAME}.kicad_sch'],
-        'drc': ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--schematic-parity',
-                '--units', 'mm', '-o', '/work/report.json', f'/candidate/project/{NAME}.kicad_pcb'],
+        'netlist': native_run.netlist_argv(f'/candidate/project/{NAME}.kicad_sch', '/work/report.xml'),
+        'drc': native_run.drc_argv(f'/candidate/project/{NAME}.kicad_pcb', '/work/report.json', parity=True, units='mm'),
     }
     for label, argv in commands.items():
         work = base / label

@@ -961,8 +961,7 @@ def schematic_checks(stage, project, name, intent, strict=True):
     stage.output(work / 'erc.json', 'native ERC report')
     work = stage.dir / 'netlist'
     seed_kicad_config(work, candidate)
-    stage.sandboxed(candidate, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                                      '-o', '/work/design.xml', sch], timeout=600, label='netlist')
+    stage.sandboxed(candidate, work, native_run.netlist_argv(sch, '/work/design.xml'), timeout=600, label='netlist')
     netlist = work / 'design.xml'
     if not netlist.is_file() or not netlist.stat().st_size:
         raise StageFailure('kicad-cli wrote no XML netlist')
