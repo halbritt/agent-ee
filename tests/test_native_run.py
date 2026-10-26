@@ -562,6 +562,16 @@ class HostTest(unittest.TestCase):
         console.update(b'tail')
         self.assertEqual((record.stderr, record['console_sha256']), (b'tail', console.hexdigest()))
 
+    def test_log_ceiling_counts_streamed_bytes(self):
+        # Review finding (e1ccf595): twenty 50-byte chunks to a sink with log_bytes=100 must stop at the ceiling.
+        code = 'import sys, time\nfor _ in range(20):\n    sys.stdout.write("x" * 50); sys.stdout.flush(); time.sleep(.02)'
+        with io.BytesIO() as sink:
+            fields, out, err = native_run.supervise(['/usr/bin/python3', '-c', code], timeout=30, log_bytes=100,
+                                                    sink=sink)
+            self.assertEqual((fields['execution'], fields['logs_truncated']), ('output_limit', True))
+            self.assertEqual(len(sink.getvalue()), 100)
+        self.assertEqual(out, b'')
+
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
             native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])

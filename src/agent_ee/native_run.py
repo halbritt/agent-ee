@@ -312,6 +312,7 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     # With a sink the stream is not kept: memory stays flat however long the run, and its digests
     # are computed incrementally over the full stream.
     stdout_hash = hashlib.sha256()
+    kept = 0   # stdout+stderr bytes taken from the pipes (streamed or kept), for the log ceiling
     start = time.monotonic()
     proc = None
     with tempfile.TemporaryFile() as input_stream:
@@ -348,6 +349,7 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
 
             def read(wait, deliver):
                 """Read what is ready; True when the retained-log ceiling was passed."""
+                nonlocal kept
                 for key, _ in selector.select(timeout=wait):
                     chunk = os.read(key.fileobj.fileno(), 65536)
                     if not chunk:
@@ -355,11 +357,12 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                         continue
                     overflow = False
                     if log_bytes is not None:
-                        available = log_bytes - len(output) - len(errors)
+                        available = log_bytes - kept
                         overflow = len(chunk) > available
                         chunk = chunk[:max(0, available)]
                         if overflow:
                             fields["logs_truncated"] = True
+                    kept += len(chunk)
                     if key.fileobj is proc.stderr:
                         errors.extend(chunk)
                     else:
