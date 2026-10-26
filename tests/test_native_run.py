@@ -572,6 +572,20 @@ class HostTest(unittest.TestCase):
             self.assertEqual(len(sink.getvalue()), 100)
         self.assertEqual(out, b'')
 
+    def test_both_streams_live_in_separate_sinks(self):
+        # render3d/viewer/candidate_visuals keep separate live stdout/stderr logs.
+        out_log, err_log = self.root / 'stdout.log', self.root / 'stderr.log'
+        code = ('import sys, time; sys.stdout.write("o1"); sys.stdout.flush(); sys.stderr.write("e1"); sys.stderr.flush(); '
+                f'time.sleep(.3); seen = open({str(err_log)!r}).read(); sys.stdout.write("|" + seen)')
+        with out_log.open('wb') as out, err_log.open('wb') as err:
+            record = native_run.run(self.host(code), work=None, sink=out, stderr_sink=err)
+        self.assertEqual(out_log.read_bytes(), b'o1|e1')   # stderr was on disk while the child ran
+        self.assertEqual(err_log.read_bytes(), b'e1')
+        self.assertEqual((record.stdout, record.stderr), (b'', b'e1'))
+        self.assertEqual(record['console_sha256'], hashlib.sha256(b'o1|e1e1').hexdigest())
+        with self.assertRaises(ValueError), io.BytesIO() as err:
+            native_run.run(self.host('1'), work=self.root / 'w', stderr_sink=err)
+
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
             native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])

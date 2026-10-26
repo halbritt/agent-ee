@@ -179,7 +179,7 @@ def baseline_mounts(baseline):
 
 
 def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, cancel=None, adapter=None,
-        on_line=None, on_launch=None, on_tick=None, sink=None):
+        on_line=None, on_launch=None, on_tick=None, sink=None, stderr_sink=None):
     """Run intent and return its Execution.
 
     inputs is the read-only candidate (sandbox runs). deadline is an absolute monotonic time;
@@ -195,6 +195,8 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     stopped run's Execution (execution "interrupted") for host, docker and bounded sandbox runs.
     sink, a binary file (host and docker), receives stdout as it arrives instead of it being kept in
     memory (Execution.stdout is then empty; the record's digests cover the full stream); work must be None.
+    stderr_sink, likewise, receives stderr as it arrives; stderr is still kept (it feeds the console
+    digest), and work must be None.
     """
     if not isinstance(intent, Intent):
         raise TypeError("native run needs an Intent")
@@ -203,7 +205,8 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     chosen = adapter or _active.get() or DEFAULT_ADAPTERS[intent.isolation]
     return chosen.run(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts,
                       cancel=cancel, on_line=on_line, on_launch=on_launch, on_tick=on_tick,
-                      **({} if sink is None else {"sink": sink}))
+                      **({} if sink is None else {"sink": sink}),
+                      **({} if stderr_sink is None else {"stderr_sink": stderr_sink}))
 
 
 @contextlib.contextmanager
@@ -288,7 +291,8 @@ def _read_logs(work):
 
 
 def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_line=None, on_stop=None,
-              on_launch=None, stop_grace=None, on_tick=None, log_bytes=None, sink=None, merge_stderr=False):
+              on_launch=None, stop_grace=None, on_tick=None, log_bytes=None, sink=None, merge_stderr=False,
+              stderr_sink=None):
     """Run argv as a host process group under one deadline and cancel handle.
 
     Returns (record fields, stdout, stderr). Output is drained without blocking, so a child
@@ -302,7 +306,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     stops the run as output_limit (logs_truncated), and the post-stop drain stays within the cap.
     sink gets each stdout chunk as it arrives (flushed) and the stream is then not kept (the returned
     stdout is empty); its digests, computed over the full stream, are in the fields. merge_stderr
-    sends stderr into stdout.
+    sends stderr into stdout. stderr_sink gets each stderr chunk as it arrives (flushed); stderr is
+    still kept for the console digest.
     When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
     is re-raised with (fields, stdout, stderr) attached as native_execution.
     """
@@ -365,6 +370,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                     kept += len(chunk)
                     if key.fileobj is proc.stderr:
                         errors.extend(chunk)
+                        if stderr_sink is not None:
+                            stderr_sink.write(chunk)
+                            stderr_sink.flush()
                     else:
                         stdout_hash.update(chunk)
                         if sink is None:
@@ -540,12 +548,12 @@ class Host:
     name = "host"
 
     def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
-            sink=None):
+            sink=None, stderr_sink=None):
         if intent.isolation != "host":
             raise ValueError(f"the host adapter cannot run a {intent.isolation} intent")
         if mounts:
             raise ValueError("a host run has no mount namespace; pass host paths in argv")
-        if sink is not None and work is not None:
+        if (sink is not None or stderr_sink is not None) and work is not None:
             raise ValueError("a sink run keeps its stream in the sink; it writes no record files (work=None)")
         forget_scope()
         try:
@@ -559,7 +567,7 @@ class Host:
 
                 return _supervised(finish, intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
                                    env=intent.env, cwd=intent.cwd, on_line=on_line, on_launch=on_launch,
-                                   on_tick=on_tick, stop_grace=intent.stop_grace_s, sink=sink,
+                                   on_tick=on_tick, stop_grace=intent.stop_grace_s, sink=sink, stderr_sink=stderr_sink,
                                    merge_stderr=intent.merge_stderr)
         finally:
             forget_scope()
@@ -602,12 +610,12 @@ class Docker:
         return command + [self.image, *intent.argv]
 
     def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
-            sink=None):
+            sink=None, stderr_sink=None):
         if intent.isolation != "docker":
             raise ValueError(f"the docker adapter cannot run a {intent.isolation} intent")
         if mounts:
             raise ValueError("docker runs declare their volumes on the adapter")
-        if sink is not None and work is not None:
+        if (sink is not None or stderr_sink is not None) and work is not None:
             raise ValueError("a sink run keeps its stream in the sink; it writes no record files (work=None)")
         command = self.argv(intent)
 
@@ -626,7 +634,7 @@ class Docker:
 
             return _supervised(finish, command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
                                on_line=on_line, on_stop=kill_container, on_launch=on_launch,
-                               on_tick=on_tick, stop_grace=intent.stop_grace_s, sink=sink,
+                               on_tick=on_tick, stop_grace=intent.stop_grace_s, sink=sink, stderr_sink=stderr_sink,
                                merge_stderr=intent.merge_stderr)
 
 
@@ -663,7 +671,7 @@ class Recorded:
         self.calls = []
 
     def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
-            sink=None):
+            sink=None, stderr_sink=None):
         call = Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
                     timeout, tuple(mounts))
         self.calls.append(call)
@@ -699,6 +707,8 @@ class Recorded:
             _write_records(opened, record, outcome.stdout, outcome.stderr)
         if sink is not None:
             sink.write(outcome.stdout)
+        if stderr_sink is not None:
+            stderr_sink.write(outcome.stderr)
         if on_line is not None:
             for line in outcome.stdout.splitlines():
                 on_line(line)
