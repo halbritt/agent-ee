@@ -1,5 +1,5 @@
 {
-  "dispatcher_sha256": "ef975b4e83b804c62e2ecf9d84ca2585a5bdbecdb78bc7c7de7082d20d12d6d5",
+  "dispatcher_sha256": "15bf2c7b8a29c34d02bdc1a5d3f7b3de754cae7cd9ea06c646c6ba96391a8097",
   "model_sha256": "beb72cc3ac34602cc59014c77eae6d71e55e74303ed0953401581fe15ec5bf88",
   "pcbnew_version": "10.0.7",
   "physics": "sum rho*L/A; full-height circular barrels; ideal pad/junction contacts",
