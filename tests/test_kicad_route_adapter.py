@@ -21,7 +21,7 @@ from unittest.mock import patch
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee.executor import execute
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
 from tests.toolchain import require_toolchain
 
 REQUEST = ['--project', 'project', '--board', 'rc.kicad_pcb', '--schematic', 'rc.kicad_sch',
@@ -147,6 +147,79 @@ class AdapterPolicyTest(unittest.TestCase):
         # Only the raw router OUT still holds the sentinel board.
         for path in files_under(case.work / 'routing', skip=('out',)):
             self.assertNotIn(b'EXIT3-SENTINEL', path.read_bytes(), path)
+
+    def test_one_result_classification_for_every_route(self):
+        # AGENTEE-539: the sandbox semantics and the board route grade result bytes by one rule.
+        outcomes = {}
+        for scenario in ('complete', 'incomplete', 'backend_failure', 'validation_failed'):
+            case = self.case(scenario).run()
+            data = (case.work / 'routing/attempt/result.json').read_bytes()
+            outcomes[scenario] = attempt.classify(data, case.exit)[0]
+        self.assertEqual(outcomes, {'complete': 'accepted', 'incomplete': 'policy_failed',
+                                    'backend_failure': 'policy_failed', 'validation_failed': 'policy_failed'})
+        case = self.case('complete').run()
+        result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+        self.assertEqual(attempt.classify(json.dumps(result).encode(), 0), ('accepted', []))
+        # The checks the schematic-less board route lacked: schema, key set and the observed exit.
+        for changed, reason in (({**result, 'schema': 'kicad-route/route/9'}, 'unknown result schema version'),
+                                ({k: v for k, v in result.items() if k != 'settings'},
+                                 'result.json shape differs from the pinned tool')):
+            self.assertEqual(attempt.classify(json.dumps(changed).encode(), 0), ('refused', [reason]))
+        self.assertEqual(attempt.classify(json.dumps(result).encode(), 2)[0], 'refused')
+        self.assertEqual(attempt.classify(b'{not json', 0)[0], 'refused')
+        # The board route records the classification and never binds a refused result's board.
+        out = Path(self.tmp.name) / 'board-route/out/runs/x'
+        out.mkdir(parents=True)
+        (out / 'result.json').write_text(json.dumps({**result, 'schema': 'kicad-route/route/9'}))
+        record = routing_adapter.bind_board_attempt(out.parents[2], ['kicad-route', 'run'], 0)
+        self.assertEqual((record['status'], record['classification']),
+                         ('refused_result', {'outcome': 'refused', 'reasons': ['unknown result schema version']}))
+        self.assertNotIn('router_accepted', record)
+
+    def test_sandbox_and_board_routes_share_one_verdict(self):
+        # AGENTEE-539: the sandbox's finer class is a projection of classify's outcome, never a second
+        # decision. COMPLETE with anything unconnected is policy_failed on both routes.
+        projection = {'complete': 'accepted', 'incomplete': 'policy_failed', 'backend_failure': 'policy_failed',
+                      'validation_failed': 'policy_failed', 'policy_failed': 'policy_failed',
+                      'contradiction': 'refused'}
+        seen = {}
+        for scenario in ('complete', 'incomplete', 'backend_failure', 'validation_failed', 'complete_unconnected',
+                         'exit0_incomplete', 'result_exit_mismatch', 'unknown_result_version', 'unknown_key'):
+            with self.subTest(scenario=scenario):
+                case = self.case(scenario).run()
+                semantics = case.report['semantics']
+                data = (case.work / 'routing/attempt/result.json').read_bytes()
+                outcome, reasons = attempt.classify(data, semantics['exit_code'])
+                self.assertEqual(projection[semantics['classification']], outcome, (semantics, reasons))
+                if outcome != 'accepted':
+                    self.assertEqual(semantics['reasons'], reasons)
+                seen[scenario] = (semantics['classification'], outcome)
+        self.assertEqual(seen['complete_unconnected'], ('policy_failed', 'policy_failed'))
+        self.assertEqual(seen['complete'], ('complete', 'accepted'))
+        self.assertEqual(seen['unknown_key'], ('contradiction', 'refused'))
+
+    def test_complete_with_unconnected_is_a_verified_rejection_with_and_without_a_layer_policy(self):
+        # The board the router validated is bound and rejected like a failed layer policy: diagnostics
+        # only, never delivered, and the production verifier re-derives it from the retained reports.
+        for argv in (REQUEST, policy_argv()):
+            with self.subTest(policy='--layer-policy' in argv):
+                case = self.case('complete_unconnected').run(argv)
+                semantics = case.report['semantics']
+                self.assertEqual((case.exit, semantics['classification'], semantics['proposal']),
+                                 (attempt.EXIT_POLICY, 'policy_failed', 'none'))
+                result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+                self.assertEqual(case.report['rejected_candidate_sha256'], result['validation']['validated_board_sha256'])
+                self.assertEqual((case.report['candidate'], case.report['candidate_files']), (None, {}))
+                self.assertFalse((case.work / 'routing/candidate').exists())
+                self.assertEqual(case.verify()['proposal'], 'none')
+
+    def test_malformed_result_fields_are_refused_or_graded_never_raised(self):
+        case = self.case('backend_failure').run()
+        result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+        for reasons in (1, 'text', None, {}):
+            with self.subTest(reasons=reasons):
+                changed = {**result, 'process': {**result['process'], 'reasons': reasons}}
+                self.assertEqual(attempt.classify(json.dumps(changed).encode(), 1), ('policy_failed', ['process FAIL']))
 
     def test_exit_four_refusal_has_no_run_directory_and_no_proposal(self):
         case = self.case('refused').run()
@@ -456,18 +529,20 @@ class AdapterPolicyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'not the pinned'):
             routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
                                  name='rc', label='step-1', checkout=case.checkout)
-        with patch.object(attempt, 'PIN', FAKE_PIN), patch.object(attempt, 'PINNED_CODE', case.code):
-            spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                        name='rc', label='step-1', checkout=case.checkout, budget=60)
-            with self.assertRaises(ValueError):
-                routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                     name='rc', label='bad label', checkout=case.checkout)
+        layout = make_layout(case.checkout.parent / 'pin', case.code)
+        spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
+                                    name='rc', label='step-1', checkout=case.checkout, budget=60, layout=layout)
+        with self.assertRaises(ValueError):
+            routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
+                                 name='rc', label='bad label', checkout=case.checkout, layout=layout)
         self.assertEqual(spec['argv'][:4], ['/usr/bin/python3', '-I', '-B', routing_adapter.ADAPTER_AT])
         self.assertEqual(attempt.parse_request(spec['argv'][4:])['state'], 'checkout')
+        # The pin data file is mounted beside the script, where the sandbox reads it.
         self.assertEqual(spec['mounts'], [
             {'source': str(routing_adapter.ADAPTER_SOURCE), 'at': routing_adapter.ADAPTER_AT},
             {'source': str(case.checkout.resolve()), 'at': '/opt/kicad-route'},
-            *routing_adapter.BINDING_MOUNTS])
+            *routing_adapter.BINDING_MOUNTS, {'source': layout['pin_file'], 'at': attempt.PIN_AT}])
+        self.assertEqual(attempt.PIN_AT, str(Path(routing_adapter.ADAPTER_AT).parent / 'data/kicad-route-pin.json'))
         self.assertEqual(spec['writes'], {'project/rc.kicad_pcb': 'routing/candidate/project/rc.kicad_pcb'})
         self.assertEqual(spec['adoptable_exits'], [0, 2])
         self.assertNotIn('version_argv', spec)
@@ -1152,18 +1227,17 @@ class SandboxedAdapterTest(unittest.TestCase):
         candidate = make_candidate(root / 'candidate')
         driver = root / 'driver'
         driver.mkdir()
-        (driver / 'layout.json').write_text(json.dumps({'pin': FAKE_PIN, 'code': code}))
+        # The production script reads the fixture pin from its mounted pin data file.
         (driver / 'run.py').write_text(
-            'import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
+            'import sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
             'import kicad_route_attempt as a\n'
-            'cfg = json.load(open("/opt/driver/layout.json"))\n'
-            'layout = a.default_layout(a.parse_request(sys.argv[1:]))\n'
-            'layout.update(pin=cfg["pin"], code=cfg["code"])\n'
-            'sys.exit(a.main(sys.argv[1:], layout))\n')
+            'sys.exit(a.main(sys.argv[1:]))\n')
+        pin_file = make_layout(root / 'pin', code)['pin_file']
         before = attempt.tree(checkout)
         work = root / 'work'
         record = execute(candidate, work, ['/usr/bin/python3', '-I', '-B', '/opt/driver/run.py', *REQUEST],
                          timeout=60, extra_ro=[(routing_adapter.ADAPTER_SOURCE, routing_adapter.ADAPTER_AT),
+                                               (pin_file, attempt.PIN_AT),
                                                (checkout, '/opt/kicad-route'), (driver, '/opt/driver')])
         self.assertEqual(attempt.tree(checkout), before, 'host checkout/state changed')
         report = json.loads((work / 'routing/adapter-report.json').read_text())

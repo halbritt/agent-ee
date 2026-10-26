@@ -11,10 +11,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee import campaign, kicad_route_attempt as attempt, routing_adapter as routing, run_record, stage_receipts
+from agent_ee import campaign, routing_adapter as routing, run_record, stage_receipts
 from agent_ee.run_record import policy_files, runtime_files
 from agent_ee.storage import digest, identity, read_json, write_json
-from tests.kicad_route_fixture import FAKE_PIN, make_checkout
+from tests.kicad_route_fixture import make_checkout, make_layout
 from tests import test_kicad_route_native as native_fixture
 from tests import test_stage_receipts as campaign_fixture
 from tests.toolchain import require_kicad_route, require_toolchain
@@ -60,20 +60,8 @@ class RoutingCampaignTests(unittest.TestCase):
             state.mkdir()
             for rel in ('.venv-krt', 'vendor'):
                 shutil.move(checkout / rel, state / rel)
-        # The same stdlib adapter with test-only pin constants, mounted at the production path.
-        source = Path(attempt.__file__).read_text()
-        source = source.replace('PIN = ' + repr(attempt.PIN), 'PIN = ' + repr(FAKE_PIN), 1)
-        start, end = source.index('PINNED_CODE = '), source.index('RESULT_SCHEMA = ')
-        driver = self.root / 'fixture-attempt.py'
-        driver.write_text(source[:start] + f'PINNED_CODE = {code!r}\n' + source[end:])
-        self.enterContext(patch.object(attempt, 'PIN', FAKE_PIN))
-        self.enterContext(patch.object(attempt, 'PINNED_CODE', code))
-        self.enterContext(patch.object(routing, 'ADAPTER_SOURCE', driver))
-        policies = policy_files()
-        policies['kicad_route_attempt.py'] = digest(driver)
-        # This process runs the fixture adapter bytes, so they are its loaded and observed policy.
-        self.host['policy_files'] = policies
-        self.enterContext(patch.object(run_record, 'LOADED_POLICY_FILES', policies))
+        # The production adapter, qualified against the fixture checkout's pin file.
+        self.enterContext(routing.qualified_layout(make_layout(self.root / 'pin', code)))
         return {'schema': 'agent-ee.routing-adapter/1', 'project': 'design', 'board': 'rc.kicad_pcb',
                 'schematic': 'rc.kicad_sch', 'name': 'rc', 'label': 'campaign', 'checkout': str(checkout),
                 'state': str(state) if state else None, 'budget': 5, 'timeout': 30}
@@ -355,7 +343,10 @@ class RoutingCampaignTests(unittest.TestCase):
 
     def test_crashed_adapter_without_a_report_is_recorded_but_never_adopted(self):
         spec = self.spec()
-        routing.ADAPTER_SOURCE.write_text('raise SystemExit(70)\n')
+        # A different adapter script at the production mount: it crashes before any report.
+        crashing = self.root / 'crashing-attempt.py'
+        crashing.write_text('raise SystemExit(70)\n')
+        self.enterContext(patch.object(routing, 'ADAPTER_SOURCE', crashing))
         policies = policy_files()
         policies['kicad_route_attempt.py'] = digest(routing.ADAPTER_SOURCE)
         self.host['policy_files'] = policies

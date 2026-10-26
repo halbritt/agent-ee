@@ -1,25 +1,31 @@
 """Routing feedback must not weaken copper custody or native acceptance."""
 from unittest.mock import patch
 
-from agent_ee import placement_job as job, routing_adapter
+from agent_ee import placement_job as job
 from agent_ee.storage import read_json, write_json
+from tests.kicad_route_fixture import make_checkout, make_layout
 from tests.test_placement_job import Fixture
 
 
 class RoutingFeedbackTests(Fixture):
+    def router(self):
+        """The fixture checkout and its qualified layout: the board route's real preflight passes."""
+        checkout, code = make_checkout(self.dir / 'router', 'complete')
+        return checkout, make_layout(self.dir / 'pin', code)
+
     def test_scoped_cleanup_cannot_drop_required_length_group_members(self):
         record = {'status': 'routed', 'router_accepted': False, 'board': str(self.board)}
         feedback = {'kind': 'dangling_net', 'nets': ['A']}
         controls = [dict(length_match=dict(groups=[['A', 'B']], tolerance_mm=.1, amplitude_mm=1, spacing_widths=2)),
                     dict(ac_match=dict(chains=[['C1', 'C2']], tolerance_mm=.1, amplitude_mm=1))]
+        checkout, layout = self.router()
         for index, matching in enumerate(controls):
             with self.subTest(matching=matching), \
-                    patch.object(routing_adapter, 'preflight', return_value={'problems': []}), \
                     patch.object(job, '_produce_planes', return_value={}), \
                     patch.object(job, '_route_attempt', return_value=record) as run, \
                     patch.object(job, '_route_feedback', return_value=feedback):
-                result = job.route(self.dir, self.dir / f'route-{index}', self.dir, budget_s=10, timeout_s=10,
-                    home=self.dir / 'home', planes=b'{}', **matching)
+                result = job.route(self.dir, self.dir / f'route-{index}', checkout, budget_s=10, timeout_s=10,
+                    home=self.dir / 'home', planes=b'{}', layout=layout, **matching)
             self.assertEqual(run.call_count, 1)
             self.assertEqual(result['attempts'][0]['feedback']['recovery'], 'not_applied')
             self.assertFalse(result['router_accepted'])
@@ -36,12 +42,12 @@ class RoutingFeedbackTests(Fixture):
         pcbnew.SaveBoard(str(self.board), board)
         # Plane production does not own or remove authored tracks. A refused
         # route must stay refused, even when a feedback strategy is available.
-        with patch.object(routing_adapter, 'preflight', return_value={'problems': []}), \
-                patch.object(job, '_produce_planes', return_value={}), \
+        checkout, layout = self.router()
+        with patch.object(job, '_produce_planes', return_value={}), \
                 patch.object(job, '_route_attempt', return_value={'status': 'no_candidate'}) as run, \
                 patch.object(job, '_route_feedback', side_effect=AssertionError('authored copper repair')):
-            result = job.route(self.dir, self.dir / 'route', self.dir, budget_s=10, timeout_s=10,
-                               home=self.dir / 'home', planes=b'{}')
+            result = job.route(self.dir, self.dir / 'route', checkout, budget_s=10, timeout_s=10,
+                               home=self.dir / 'home', planes=b'{}', layout=layout)
         argv = run.call_args.kwargs['argv']
         self.assertEqual(argv[argv.index('--protect') + 1], 'existing')
         self.assertEqual(result['status'], 'no_candidate')

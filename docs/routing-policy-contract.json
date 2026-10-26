@@ -4,14 +4,11 @@
   "sources": {
     "agent_ee": "81e387ee (AGENTEE-450 re-pin base; contract first written at f06b30bc)",
     "fome_mc": "8c42f2ee3e7c5c77c51e21632a8900bfbef23726",
-    "kicad_route_pin": "c4af095ed07593b63d7886c139fcb7e5c2e774f4"
+    "kicad_route_pin_file": "src/agent_ee/data/kicad-route-pin.json"
   },
   "adapter": {
-    "pin": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
-    "pinned_code_files": 315,
-    "pinned_code_sha256": "348b13fe8a287e7fa87701bead6f1a10530eeecbb7348a5bce525eb0cd561bd0",
-    "pinned_code_digest_rule": "sha256 of kicad_route_attempt.canonical_json(PINNED_CODE)",
-    "pinned_campaign_py_sha256": "c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9",
+    "pin_file": "src/agent_ee/data/kicad-route-pin.json",
+    "pin_file_rule": "agent-ee.kicad-route-pin/1: the qualified kicad-route commit and the SHA-256 of every tracked bin/ and src/ blob at it, campaign.py and the owned engine included; mounted read-only beside the sandbox script and hashed with its mounts",
     "command": "run",
     "consumes": {
       "result": ["kicad-route/route/1", "kicad-route/route/2"],

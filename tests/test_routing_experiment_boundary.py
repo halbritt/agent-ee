@@ -32,7 +32,7 @@ from unittest.mock import patch
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee import stage_receipts
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
 from tests.toolchain import require_toolchain
 
 # HOOK (AGENTEE-442), REAL NATIVE REPLAY. agent-507's final frozen K91 producer
@@ -92,10 +92,9 @@ class ExperimentBoundaryTest(unittest.TestCase):
         driver.mkdir()
         (driver / 'layout.json').write_text(json.dumps(self.pin))
         (driver / 'run.py').write_text(DRIVER)
-        with patch.object(attempt, 'PIN', FAKE_PIN), patch.object(attempt, 'PINNED_CODE', code):
-            spec = routing_adapter.step(project=project, board=board, schematic=schematic,
-                                        name=name, label='step-1', checkout=checkout, budget=5, timeout=30,
-                                        experiment_policy=experiment_policy)
+        spec = routing_adapter.step(project=project, board=board, schematic=schematic,
+                                    name=name, label='step-1', checkout=checkout, budget=5, timeout=30,
+                                    experiment_policy=experiment_policy, layout=make_layout(root / 'pin', code))
         spec['argv'][3] = '/opt/driver/run.py'
         spec['mounts'].append({'source': str(driver), 'at': '/opt/driver'})
         return spec

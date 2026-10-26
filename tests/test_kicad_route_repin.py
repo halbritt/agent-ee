@@ -73,6 +73,15 @@ class RepinPolicyTest(unittest.TestCase):
                     'src/kicad_route/router/rust_router/Cargo.lock'):
             self.assertIn(rel, attempt.PINNED_CODE)
 
+    def test_pin_is_data_not_logic(self):
+        # AGENTEE-539: a re-pin rewrites the pin data file and this identity test, no adapter line.
+        self.assertEqual(attempt.load_pin(), {'schema': attempt.PIN_SCHEMA, 'pin': attempt.PIN,
+                                              'code': attempt.PINNED_CODE})
+        for module in (attempt, routing_adapter):
+            source = Path(module.__file__).read_text()
+            self.assertNotIn(attempt.PIN, source)
+            self.assertFalse(any(sha in source for sha in attempt.PINNED_CODE.values()))
+
     def test_emitted_backend_name_is_canonical(self):
         self.assertEqual(attempt.parse_request(REQUEST)['backend'], 'builtin')
         layout = {'work': '/w', 'candidate': '/c', 'checkout': '/k'}

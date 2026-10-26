@@ -22,8 +22,9 @@ The [routing adapter](routing-adapter.md) remains the authority for the protocol
 This page adds no check, threshold or schema that code reads. It adopts no pod
 value: adoption stays with the pod lane.
 
-Current pin: `c4af095ed07593b63d7886c139fcb7e5c2e774f4` (2026-10-25),
-with 315 files in the exact tracked `bin/` and `src/` hash map.
+Current pin: the commit and exact tracked `bin/` and `src/` hash map in
+`src/agent_ee/data/kicad-route-pin.json` (AGENTEE-539; since 2026-10-25 the
+commit is `c4af095e`).
 Optional targeted thermal reservation, pair matching and permitted pair layers
 are used by the placement job; the stage adapter's default request and result
 shapes are unchanged. The source
@@ -288,10 +289,9 @@ receipts before a re-pin, so integration activation stays gated.
 That producer is not pinned or qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
 still apply when agent-ee re-pins.
 
-The code pin is still byte-exact over every tracked `bin/` and `src/` file:
-309 files, including `src/kicad_route/campaign.py`
-(`c70e888fa40f7e0605fc14b8656ccd34a5e977a295f71c348876ed9dd40e75a9`). A
-campaign-only change therefore stops every agent-ee routing step:
+The code pin is still byte-exact over every tracked `bin/` and `src/` file,
+including `src/kicad_route/campaign.py`. A campaign-only change therefore stops
+every agent-ee routing step:
 
 - a changed file is refused as `tool file differs from pin`;
 - a new module, such as a sidecar producer, is refused as `unpinned file in tool code`.
@@ -300,11 +300,12 @@ The refusal happens before the router runs. Nothing upgrades automatically.
 
 When agent-ee re-pins onto a commit with that work:
 
-1. **Hash list.** Set `kicad_route_attempt.PIN`. Regenerate `PINNED_CODE` from
-   every tracked `bin/` and `src/` blob at the new commit, including
-   `campaign.py`, the engine under `src/kicad_route/router/` and any new module.
-   Update `routing-policy-contract.json` (`pin`, `pinned_code_files`,
-   `pinned_code_sha256`, `pinned_campaign_py_sha256`).
+1. **Pin data file.** Rewrite `src/agent_ee/data/kicad-route-pin.json`: the new
+   `pin` commit and the `code` map regenerated from every tracked `bin/` and
+   `src/` blob at it, including `campaign.py`, the engine under
+   `src/kicad_route/router/` and any new module. Update the pin identity test
+   (`tests.test_kicad_route_repin`). No adapter line changes: the host preflight,
+   the sandbox attempt and the step mount all read this one file.
 2. **Installed state.** Rebuild the engine and state for the new pin. Point
    `docker/kicad-route/install.sh` `KICAD_ROUTE_COMMIT` and the host
    `build/kicad-route-pin-<sha>` checkout at it. Since `b577449` the state manifest

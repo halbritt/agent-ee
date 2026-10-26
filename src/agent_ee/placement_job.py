@@ -1200,15 +1200,16 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
-          bus=None, length_match=None, ac_match=None):
+          bus=None, length_match=None, ac_match=None, layout=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
-    the pinned CLI is invoked with the adapter's own argv shape and identity checks."""
+    the pinned CLI is invoked with the adapter's own argv shape and identity checks.
+    layout (routing_adapter.pinned_layout) overrides the qualified pin."""
     from . import routing_adapter
     clock = clock or Clock(timeout_s)
     _check_stop(clock, cancel_dir)
-    check = routing_adapter.preflight(checkout)
+    check = routing_adapter.preflight(checkout, layout=layout)
     if check['problems']:
         raise JobRefusal('router preflight: ' + '; '.join(check['problems']))
     route_dir = Path(route_dir)

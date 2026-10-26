@@ -194,8 +194,8 @@ if process_ok:
     (run / 'work').mkdir()
     (run / 'work/krt.log').write_text('fixture backend log\n')
     shutil.copy2(cand / board, run / 'work' / board)
-routing = {'COMPLETE': {'status': 'COMPLETE', 'unconnected_in_scope': 0}, 'INCOMPLETE':
-           {'status': 'INCOMPLETE', 'unconnected_in_scope': 2, 'unrouted_nets': ['/IN']},
+routing = {'COMPLETE': {'status': 'COMPLETE', 'unconnected_in_scope': 0, 'unconnected_total': 0}, 'INCOMPLETE':
+           {'status': 'INCOMPLETE', 'unconnected_in_scope': 2, 'unconnected_total': 2, 'unrouted_nets': ['/IN']},
            'NOT_RUN': {'status': 'NOT_RUN', 'reasons': ['backend produced no candidate']}}
 routing_status = {'incomplete': 'INCOMPLETE', 'exit0_incomplete': 'INCOMPLETE', 'exit2_not_run': 'NOT_RUN',
                   'backend_failure': 'NOT_RUN'}.get(name, 'COMPLETE')
@@ -307,6 +307,8 @@ if name == 'missing_result_version':
     del result['schema']
 if name == 'unknown_key':
     result['schema_version'] = 1
+if name == 'complete_unconnected':
+    result['routing'] = {**result['routing'], 'unconnected_total': 1}
 if name == 'env':
     write(run / 'validate/env.json', {'environ': dict(os.environ), 'cwd': os.getcwd(),
                                       'dont_write_bytecode': sys.flags.dont_write_bytecode,
@@ -608,6 +610,17 @@ def make_checkout(root, scenario):
     code = {rel: hashlib.sha256((root / rel).read_bytes()).hexdigest()
             for rel in ('bin/kicad-route', 'src/kicad_route/__init__.py')}
     return root, code
+
+
+def make_layout(root, code, pin=FAKE_PIN):
+    """The fixture checkout's qualified layout: its pin record written as the pin data file
+    the sandbox script reads from its mount, as routing_adapter.pinned_layout returns it."""
+    from agent_ee import routing_adapter
+    from agent_ee.kicad_route_attempt import PIN_SCHEMA
+    path = Path(root) / 'kicad-route-pin.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({'schema': PIN_SCHEMA, 'pin': pin, 'code': code}, indent=1, sort_keys=True) + '\n')
+    return routing_adapter.pinned_layout(path)
 
 
 def make_candidate(root, project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch'):

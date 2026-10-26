@@ -8,12 +8,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee import stage_receipts
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
 from tests.toolchain import require_toolchain
 
 DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
@@ -39,9 +38,9 @@ class StageReceiptRoutingTest(unittest.TestCase):
         driver.mkdir()
         (driver / 'layout.json').write_text(json.dumps({'pin': FAKE_PIN, 'code': code}))
         (driver / 'run.py').write_text(DRIVER)
-        with patch.object(attempt, 'PIN', FAKE_PIN), patch.object(attempt, 'PINNED_CODE', code):
-            spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                        name='rc', label='step-1', checkout=checkout, budget=5, timeout=30)
+        spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
+                                    name='rc', label='step-1', checkout=checkout, budget=5, timeout=30,
+                                    layout=make_layout(root / 'pin', code))
         spec['argv'][3] = '/opt/driver/run.py'
         spec['mounts'].append({'source': str(driver), 'at': '/opt/driver'})
         receipt_dir = root / 'receipts/1-kicad-route-builtin'

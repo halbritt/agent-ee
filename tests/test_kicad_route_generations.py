@@ -27,7 +27,7 @@ from pathlib import Path
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee.executor import execute
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
 from tests.test_kicad_route_adapter import REQUEST, Case
 from tests.toolchain import require_kicad_route, require_toolchain
 
@@ -342,17 +342,16 @@ class SandboxedGenerationTest(unittest.TestCase):
         candidate = make_candidate(root / 'candidate')
         driver = root / 'driver'
         driver.mkdir()
-        (driver / 'layout.json').write_text(json.dumps({'pin': FAKE_PIN, 'code': code}))
+        # The production script reads the fixture pin from its mounted pin data file.
         (driver / 'run.py').write_text(
-            'import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
+            'import sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
             'import kicad_route_attempt as a\n'
-            'cfg = json.load(open("/opt/driver/layout.json"))\n'
-            'layout = a.default_layout(a.parse_request(sys.argv[1:]))\n'
-            'layout.update(pin=cfg["pin"], code=cfg["code"])\n'
-            'sys.exit(a.main(sys.argv[1:], layout))\n')
+            'sys.exit(a.main(sys.argv[1:]))\n')
+        pin_file = make_layout(root / 'pin', code)['pin_file']
         work = root / 'work'
         record = execute(candidate, work, ['/usr/bin/python3', '-I', '-B', '/opt/driver/run.py', *REQUEST],
                          timeout=60, extra_ro=[(routing_adapter.ADAPTER_SOURCE, routing_adapter.ADAPTER_AT),
+                                               (pin_file, attempt.PIN_AT),
                                                (checkout, '/opt/kicad-route'), (driver, '/opt/driver')])
         report = json.loads((work / 'routing/adapter-report.json').read_text())
         self.assertEqual(record['exit_code'], 0, report['semantics'])

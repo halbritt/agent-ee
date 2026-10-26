@@ -44,8 +44,9 @@ REPORT_DEPTH = 64
 TREE_DEPTH = 128
 # Every lookup below a run root opens one component at a time and never follows a link.
 NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
-# routing_adapter._step mounts these standalone helpers individually.
-QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
+# routing_adapter._step mounts these standalone helpers, and the pin data file, individually.
+QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py',
+                                    'data/kicad-route-pin.json'})
 VERSION_TIMEOUT_S = 30
 # Linux CLOCK_REALTIME_COARSE, the clock that stamps file status changes; not exported by time.
 CLOCK_REALTIME_COARSE = 5
@@ -252,7 +253,7 @@ def _validated_mount_source(source, at, *, source_identity=None):
     package_source = Path(__file__).resolve(strict=True).parents[1]
     package = package_source / 'agent_ee'
     # Only the canonical, individually mounted routing helpers are qualified.
-    if resolved.parent == package and resolved.name in QUALIFIED_LIVE_HELPERS:
+    if resolved.is_relative_to(package) and resolved.relative_to(package).as_posix() in QUALIFIED_LIVE_HELPERS:
         observed = resolved.stat()
         if (stat.S_ISREG(observed.st_mode) and
                 (source_identity is None or (observed.st_dev, observed.st_ino) == source_identity)):

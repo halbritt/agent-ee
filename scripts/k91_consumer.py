@@ -24,11 +24,10 @@ computes, so the receipt's own sandbox command, binding and mounts are checked
 by verify_campaign_receipt exactly as on a live run. Verification, adoption
 and their order are never replaced.
 
-pinned() is the isolated proposed pin in the production shape: a copy of the
-real adapter source whose PIN and PINNED_CODE name the proposed commit, used
-as ADAPTER_SOURCE (mounted at the production path, the same command), with
-the in-process constants patched to match (the test_routing_campaign
-precedent). The production pin and defaults on disk are unchanged.
+pinned() is the isolated proposed pin in the production shape: the real
+adapter source with a pin data file naming the proposed commit and code,
+qualified as the layout (mounted at the production pin path, the same command;
+AGENTEE-539). The production pin and defaults on disk are unchanged.
 """
 import contextlib
 import hashlib
@@ -92,15 +91,13 @@ def tree_sha256(root):
 @contextlib.contextmanager
 def pinned(out, pin, code):
     """The production adapter, pinned to the proposed commit, in its production shape."""
-    source = Path(attempt.__file__).read_text()
-    source = source.replace('PIN = ' + repr(attempt.PIN), 'PIN = ' + repr(pin), 1)
-    start, end = source.index('PINNED_CODE = '), source.index('RESULT_SCHEMA = ')
-    copy = Path(out) / 'pinned-adapter/kicad_route_attempt.py'
-    copy.parent.mkdir(parents=True, exist_ok=True)
-    copy.write_text(source[:start] + f'PINNED_CODE = {code!r}\n' + source[end:])
-    with patch.object(attempt, 'PIN', pin), patch.object(attempt, 'PINNED_CODE', code), \
-            patch.object(routing_adapter, 'ADAPTER_SOURCE', copy):
-        yield {'path': str(copy), 'sha256': digest(copy)}
+    pin_file = Path(out) / 'pinned-adapter/kicad-route-pin.json'
+    pin_file.parent.mkdir(parents=True, exist_ok=True)
+    pin_file.write_text(json.dumps({'schema': attempt.PIN_SCHEMA, 'pin': pin, 'code': code},
+                                   indent=1, sort_keys=True) + '\n')
+    with routing_adapter.qualified_layout(routing_adapter.pinned_layout(pin_file)):
+        yield {'path': str(routing_adapter.ADAPTER_SOURCE), 'sha256': digest(routing_adapter.ADAPTER_SOURCE),
+               'pin_file': str(pin_file.resolve()), 'pin_file_sha256': digest(pin_file)}
 
 
 def declaration(checkout, *, project, board, schematic, name, budget, timeout, policy):
@@ -114,7 +111,7 @@ def binding(decl):
     validation (validate_declaration, declaration_spec, validate_campaign_step with preflight)."""
     spec = routing_adapter.validate_campaign_step(
         routing_adapter.declaration_spec(routing_adapter.validate_declaration(decl)))
-    return {'spec': spec, 'tool': stage_receipts.observe_tool(spec), 'pin': attempt.PIN,
+    return {'spec': spec, 'tool': stage_receipts.observe_tool(spec), 'pin': routing_adapter.current_layout()['pin'],
             'adapter_sha256': digest(routing_adapter.ADAPTER_SOURCE)}
 
 

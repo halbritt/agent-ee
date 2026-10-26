@@ -12,6 +12,8 @@ unconnected items, copper-width/1, compiled routing rules) before anything is
 accepted.
 """
 
+import contextlib
+import contextvars
 import json
 import os
 import re
@@ -48,44 +50,64 @@ ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routi
              'routing/attempt/work', 'routing/' + attempt.ORIGINAL_STAGE)
 
 
-def preflight(checkout, state=None, backend='builtin'):
+def pinned_layout(pin_file=None):
+    """The host layout of a pinned router run: the pin record and the file it is read from.
+
+    The production pin is the package's data file; a test passes its fake checkout's
+    pin file instead of changing module globals. The file is mounted beside the
+    sandbox script, which reads the same bytes."""
+    path = Path(pin_file).resolve() if pin_file is not None else attempt.PIN_FILE.resolve()
+    record = attempt.load_pin(path)
+    return {'pin': record['pin'], 'code': record['code'], 'pin_file': str(path)}
+
+
+# A layout a caller qualifies for the runs it starts in this context (see qualified_layout).
+_LAYOUT = contextvars.ContextVar('agent_ee_router_layout', default=None)
+
+
+@contextlib.contextmanager
+def qualified_layout(layout):
+    """Qualify layout (pinned_layout of a fake checkout's pin file) for every pinned router run,
+    preflight, step and binding started in this context, instead of the package pin."""
+    token = _LAYOUT.set(layout)
+    try:
+        yield layout
+    finally:
+        _LAYOUT.reset(token)
+
+
+def current_layout():
+    """The qualified layout: a context's qualified_layout, else the package pin."""
+    return _LAYOUT.get() or pinned_layout()
+
+
+def preflight(checkout, state=None, backend='builtin', *, layout=None):
     """Host-side identity without running git, routing or installation.
 
     Running `git status` could rewrite the checkout's index, so HEAD is read
-    from the git files and code is compared with the pinned blob hashes."""
+    from the git files and code is compared with the pinned blob hashes, by the
+    same attempt.preflight the sandbox runs."""
+    layout = layout or current_layout()
     checkout = Path(checkout).resolve()
     state = Path(state).resolve() if state is not None else checkout
-    problems = []
-    try:
-        commit = attempt.checkout_commit(checkout)
-    except OSError as exc:
-        commit, problems = None, [f'cannot read the checkout HEAD: {exc}']
-    if commit != attempt.PIN:
-        problems.append(f'checkout HEAD {commit} is not the pinned {attempt.PIN}; no automatic update')
-    code_problems = attempt.verify_code(checkout)
-    problems += code_problems
-    if not code_problems:
-        problems += attempt.verify_state(checkout, state, backend, mounted_at=attempt.SANDBOX[
-            'checkout' if state == checkout else 'state'])
-    generation, selection = attempt.state_generation(state)
-    problems += selection
-    for rel in attempt.state_required(backend, generation):
-        if not os.path.lexists(state / rel):
-            problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
-    return {'checkout': str(checkout), 'state': str(state), 'commit': commit, 'pin': attempt.PIN,
+    commit, _, problems = attempt.preflight(checkout, state, backend, layout, mounted_at=attempt.SANDBOX[
+        'checkout' if state == checkout else 'state'])
+    return {'checkout': str(checkout), 'state': str(state), 'commit': commit, 'pin': layout['pin'],
             'executable_sha256': digest(checkout / 'bin/kicad-route') if (checkout / 'bin/kicad-route').is_file() else None,
             'adapter_sha256': digest(ADAPTER_SOURCE), 'problems': problems}
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='builtin', diff_pairs=None, layer_policy=None, experiment_policy=None):
+         backend='builtin', diff_pairs=None, layer_policy=None, experiment_policy=None, layout=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
 
     layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
     layer costs, pour area-loss bound and optional RF reference plane.
     experiment_policy (AGENTEE-442) is a five-field routability-policy/1 declaration the
-    router receives as --experiment-policy; its experiment evidence is retained or refused."""
-    check = preflight(checkout, state, backend)
+    router receives as --experiment-policy; its experiment evidence is retained or refused.
+    layout (pinned_layout) is the qualified pin; its pin file is mounted beside the script."""
+    layout = layout or current_layout()
+    check = preflight(checkout, state, backend, layout=layout)
     if check['problems']:
         raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
     timeout = timeout if timeout is not None else 2 * budget + 300
@@ -100,13 +122,15 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
     if experiment_policy is not None:
         args += ['--experiment-policy', attempt.canonical_json(experiment_policy)]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
-    return _step(request, check['checkout'], check['state'] if separate else None)
+    return _step(request, check['checkout'], check['state'] if separate else None, layout)
 
 
-def _step(request, checkout, state):
+def _step(request, checkout, state, layout=None):
     """Pure declaration construction, also used for retained campaign replay."""
+    layout = layout or current_layout()
     mounts = [{'source': str(ADAPTER_SOURCE), 'at': ADAPTER_AT},
-              {'source': checkout, 'at': attempt.SANDBOX['checkout']}, *BINDING_MOUNTS]
+              {'source': checkout, 'at': attempt.SANDBOX['checkout']}, *BINDING_MOUNTS,
+              {'source': layout['pin_file'], 'at': attempt.PIN_AT}]
     if state is not None:
         mounts.append({'source': state, 'at': attempt.SANDBOX['state']})
     target = f'{request["project"]}/{request["board"]}'
@@ -181,17 +205,18 @@ def campaign_binding(declaration, manifest, mutable):
     from .stage_receipts import observe_tool
     spec = campaign_spec(declaration, manifest, mutable)
     validate_campaign_step(spec)
-    return {'spec': spec, 'tool': observe_tool(spec), 'pin': attempt.PIN,
+    return {'spec': spec, 'tool': observe_tool(spec), 'pin': current_layout()['pin'],
             'adapter_sha256': digest(ADAPTER_SOURCE)}
 
 
 def validate_binding(binding, declaration, manifest, mutable, policy_files):
+    pin = current_layout()['pin']
     if (isinstance(binding, dict) and isinstance(binding.get('pin'), str) and
-            re.fullmatch(r'[0-9a-f]{40}', binding['pin']) and binding['pin'] != attempt.PIN):
-        raise StaleRoutingEvidence(binding['pin'], attempt.PIN, 'campaign routing binding')
+            re.fullmatch(r'[0-9a-f]{40}', binding['pin']) and binding['pin'] != pin):
+        raise StaleRoutingEvidence(binding['pin'], pin, 'campaign routing binding')
     expected = campaign_spec(declaration, manifest, mutable)
     if (not isinstance(binding, dict) or set(binding) != {'spec', 'tool', 'pin', 'adapter_sha256'} or
-            binding['spec'] != expected or binding['pin'] != attempt.PIN or
+            binding['spec'] != expected or binding['pin'] != pin or
             binding['adapter_sha256'] != policy_files['kicad_route_attempt.py']):
         raise ValueError('campaign routing binding differs from its declaration or captured policy')
     return expected
@@ -214,7 +239,7 @@ def validate_campaign_step(spec, *, host=True):
     checkout = mounts.get(attempt.SANDBOX['checkout'])
     separate = request['state'] == 'separate'
     state = mounts.get(attempt.SANDBOX['state']) if separate else None
-    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], *(m['at'] for m in BINDING_MOUNTS)}
+    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], attempt.PIN_AT, *(m['at'] for m in BINDING_MOUNTS)}
     if separate:
         expected_mounts.add(attempt.SANDBOX['state'])
     if (set(mounts) != expected_mounts or spec['argv'][:4] != [attempt.PYTHON, '-I', '-B', ADAPTER_AT] or
@@ -223,7 +248,10 @@ def validate_campaign_step(spec, *, host=True):
     if host:
         if any(mounts[m['at']] != m['source'] for m in BINDING_MOUNTS):
             raise ValueError('routing binding helper mounts differ from captured policy')
-        check = preflight(checkout, state, request['backend'])
+        layout = current_layout()
+        if mounts[attempt.PIN_AT] != layout['pin_file']:
+            raise ValueError('routing pin mount differs from the qualified pin file')
+        check = preflight(checkout, state, request['backend'], layout=layout)
         if check['problems']:
             raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
         if checkout != check['checkout'] or (state is not None and state != check['state']):
@@ -329,7 +357,7 @@ def verify(run, inputs=None, *, receipt=None, layout=None):
 
 def _verify(run, report, inputs, receipt, layout):
     routing = run / 'routing'
-    expected_pin = (layout or {}).get('pin', attempt.PIN)
+    expected_pin = (layout or {}).get('pin', current_layout()['pin'])
     claimed = COMPATIBILITY.match(report['adapter'].get('compatibility') or '') if isinstance(
         report['adapter'], dict) else None
     if claimed and claimed.group(1) != expected_pin:
@@ -338,7 +366,9 @@ def _verify(run, report, inputs, receipt, layout):
     request = attempt.parse_request(_request_argv(report['request']))
     if request != report['request']:
         raise ValueError('routing adapter request is not a valid adapter request')
-    expected = {**attempt.default_layout(request), **(layout or {})}
+    qualified = current_layout()
+    expected = {**attempt.default_layout(request), 'pin': qualified['pin'], 'code': qualified['code'],
+                **(layout or {})}
     if receipt is not None:
         _receipt_step(receipt, request)
         if inputs is not None and inputs != receipt['inputs']:
@@ -868,15 +898,20 @@ def spokes_argv(checkout, run_dir):
 
 def bind_board_attempt(route_dir, argv, exit_code):
     """Bind one board-level kicad-route attempt output directory and verify its candidate digest."""
-    from .storage import read_json
     route_dir = Path(route_dir)
     record = {'argv': argv, 'exit_code': exit_code}
     results = sorted((route_dir / 'out').rglob('result.json'))
     if len(results) != 1:
         return {**record, 'status': 'missing_output'}
-    result = read_json(results[0])
+    data = results[0].read_bytes()
+    # The same result rule as the sandboxed route: schema, keys and statuses first.
+    outcome, reasons = attempt.classify(data, exit_code, paired='--diff-pairs' in argv)
     record.update(result_path=str(results[0]), result_sha256=digest(results[0]),
-                  router_exit=result.get('exit_code'), router_status=result.get('status') or result.get('outcome'))
+                  classification={'outcome': outcome, 'reasons': reasons})
+    if outcome == 'refused':
+        return {**record, 'status': 'refused_result'}
+    result = json.loads(data)
+    record.update(router_exit=result.get('exit_code'), router_status=result.get('status') or result.get('outcome'))
     candidate = result.get('candidate')
     if not candidate:
         return {**record, 'status': 'no_candidate'}
@@ -884,13 +919,8 @@ def bind_board_attempt(route_dir, argv, exit_code):
     sha = digest(board)
     if sha != result.get('validation', {}).get('candidate_board_sha256'):
         return {**record, 'status': 'stale_candidate'}
-    accepted = (exit_code == result.get('exit_code') == 0
-                and result.get('process', {}).get('status') == 'PASS'
-                and result.get('routing', {}).get('status') == 'COMPLETE'
-                and result.get('routing', {}).get('unconnected_total') == 0
-                and result.get('validation', {}).get('status') == 'PASS')
     return {**record, 'status': 'routed', 'board': str(board), 'board_sha256': sha,
-            'router_accepted': accepted,
+            'router_accepted': outcome == 'accepted',
             **({'impedance_plan': result['settings']['pair_impedance']}
                if 'pair_impedance' in result.get('settings', {}) else {})}
 

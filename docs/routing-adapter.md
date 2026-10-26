@@ -51,6 +51,23 @@ The adapter checks the tool as well as its reports:
 - Any mismatch stops the step before the router runs. Nothing updates or
   repairs the external checkout.
 
+One module owns the pinned router run (AGENTEE-539). The pin and its code map
+are data: `src/agent_ee/data/kicad-route-pin.json` (`agent-ee.kicad-route-pin/1`).
+`kicad_route_attempt.preflight` is the one precondition sequence (HEAD equals the
+pin, code byte-exact, state verified only when the code is clean, generation
+selection, required state entries). The host `routing_adapter.preflight`, the
+sandbox attempt and the placement job's board route all call it.
+`kicad_route_attempt.classify(result bytes, exit)` is the one rule over a router
+`result.json`: `refused` when it is not the pin's result for that exit (schema,
+key set, copper-ownership and runtime shapes, statuses), `accepted` for a passing
+process, COMPLETE routing with nothing unconnected and passing validation, and
+`policy_failed` otherwise. The sandbox's `semantics` applies the same structural
+checks before binding the result to the request; the board route records the
+classification and refuses a `refused` result. Tests pass a layout
+(`routing_adapter.pinned_layout` of a fixture pin file, or
+`routing_adapter.qualified_layout` for a whole campaign) instead of changing
+module globals.
+
 The reported tool version is recorded as `unknown`: the pin has no version
 flag, and `doctor` is not used because it looks up upstream releases. The
 backend identity (`result.json` `backend`: KRT version, build, commit, Rust
@@ -61,12 +78,12 @@ does not.
 
 `routing_adapter.step(project=, board=, schematic=, name=, label=, checkout=,
 state=None, budget=300, timeout=None, backend='builtin', diff_pairs=None,
-layer_policy=None)` returns:
+layer_policy=None, experiment_policy=None, layout=None)` returns:
 
 | Field | Value |
 | --- | --- |
 | `argv` | `/usr/bin/python3 -I -B /opt/agent-ee-routing/kicad_route_attempt.py --project P --board B --schematic S --name N --label L --budget T --timeout U --backend builtin --state checkout` |
-| `mounts` | adapter file at `/opt/agent-ee-routing/kicad_route_attempt.py`; checkout at `/opt/kicad-route`; a separate state directory, when there is one, at `/opt/kicad-route-state` |
+| `mounts` | adapter file at `/opt/agent-ee-routing/kicad_route_attempt.py`; its `net_binding.py` and `symbol_library.py` helpers beside it; the pin data file at `/opt/agent-ee-routing/data/kicad-route-pin.json`; checkout at `/opt/kicad-route`; a separate state directory, when there is one, at `/opt/kicad-route-state`. Every mount is hashed before and after the step |
 | `source` | `/opt/kicad-route/src` |
 | `writes` | `{"P/B": "routing/candidate/P/B"}`: the board is the only file the step can change |
 | `artifacts` | `routing/adapter-report.json`, the router's stdout/stderr, and `routing/attempt/{result.json, attempt.json, RESULT.md, snapshot.json, validate, facts, work}`, and the staged input tree `routing/agent-ee-original` |

@@ -3,7 +3,6 @@
 docs/routing-policy-contract.json is documentation. These checks make a re-pin
 or a protocol change fail here until the contract page and summary are updated.
 """
-import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -31,14 +30,14 @@ class ContractSummaryTests(unittest.TestCase):
         self.contract = load()
         self.adapter = self.contract['adapter']
 
-    def test_pin_and_pinned_code_digest(self):
-        self.assertEqual(self.adapter['pin'], attempt.PIN)
-        self.assertEqual(self.contract['sources']['kicad_route_pin'], attempt.PIN)
-        self.assertEqual(self.adapter['pinned_code_files'], len(attempt.PINNED_CODE))
-        digest = hashlib.sha256(attempt.canonical_json(attempt.PINNED_CODE).encode()).hexdigest()
-        self.assertEqual(self.adapter['pinned_code_sha256'], digest)
+    def test_pin_is_the_pin_data_file(self):
+        # The summary names the one pin data file; a re-pin never edits this page.
+        self.assertEqual(self.adapter['pin_file'], attempt.PIN_FILE.relative_to(ROOT).as_posix())
+        self.assertEqual(self.contract['sources']['kicad_route_pin_file'], self.adapter['pin_file'])
+        self.assertEqual(attempt.load_pin(ROOT / self.adapter['pin_file']),
+                         {'schema': attempt.PIN_SCHEMA, 'pin': attempt.PIN, 'code': attempt.PINNED_CODE})
         # campaign.py is pinned although agent-ee never runs the campaign command.
-        self.assertEqual(self.adapter['pinned_campaign_py_sha256'], attempt.PINNED_CODE['src/kicad_route/campaign.py'])
+        self.assertIn('src/kicad_route/campaign.py', attempt.PINNED_CODE)
 
     def test_consumed_schema_versions(self):
         consumes = self.adapter['consumes']
@@ -166,9 +165,7 @@ class ContractSummaryTests(unittest.TestCase):
     def test_documentation_references_the_summary(self):
         page = (ROOT / 'docs/routing-policy-contract.md').read_text()
         self.assertIn('routing-policy-contract.json', page)
-        self.assertIn(attempt.PIN, page)
-        self.assertIn(self.adapter['pinned_campaign_py_sha256'], page)
-        self.assertIn(f'{len(attempt.PINNED_CODE)} files', page)
+        self.assertIn(self.adapter['pin_file'], page)
 
 
 class PinnedCheckoutContractTests(unittest.TestCase):
@@ -180,7 +177,7 @@ class PinnedCheckoutContractTests(unittest.TestCase):
 
     def test_campaign_bytes_and_refusal_schema(self):
         self.assertEqual(attempt.digest(self.checkout / 'src/kicad_route/campaign.py'),
-                         load()['adapter']['pinned_campaign_py_sha256'])
+                         attempt.PINNED_CODE['src/kicad_route/campaign.py'])
         schema = json.loads((self.checkout / 'schemas/refusal-1.json').read_text())
         self.assertEqual(schema['properties']['reason_class']['enum'], load()['adapter']['refusal_reason_classes'])
         # The pin's campaign record is a different kind that agent-ee never reads.
