@@ -633,48 +633,20 @@ def _attempt_dir(found, request):
 
 def _bind(routing, retained, report, request, layout, result, record):
     """Re-check every binding of an eligible candidate the retained evidence supports."""
-    sha = report['candidate']['sha256']
     if report['missing_artifacts']:
         raise ValueError(f'eligible attempt lacks {", ".join(report["missing_artifacts"])}')
-    validation = result['validation']
-    if not attempt.validated_candidate(validation, sha):
-        raise ValueError('routed candidate is not the board the router validated')
-    if validation.get('restored_project_files') != []:
-        raise ValueError('the router restored project files of an eligible attempt')
-    terminal = attempt.terminal_problems(result)
-    if terminal:
-        raise ValueError(terminal[0])
-    custody = result.get('copper_ownership')
-    if isinstance(custody, dict) and custody.get('status') == 'bound':
-        key = 'attempt/' + attempt.COPPER_OWNERSHIP_RECORD
-        records = (result.get('evidence') or {}).get('records') if isinstance(result.get('evidence'), dict) else None
-        if (retained.get(key) != custody['sha256'] or not isinstance(records, dict) or
-                records.get(attempt.COPPER_OWNERSHIP_RECORD) != custody['sha256']):
-            raise ValueError('copper ownership record differs from the retained routing evidence')
     # The adapter's sandbox origin, not the host path: report paths are resolved lexically.
     origin = Path(layout['work']) / 'routing'
     run_dir = origin / report['discovery']['attempt_dir']
     cand_dir = run_dir / record['candidate_dir']
-    if (attempt.resolve_reported(result['run_dir'], origin, origin) != run_dir or
-            attempt.resolve_reported(result['candidate']['dir'], origin, origin) != cand_dir or
-            attempt.resolve_reported(result['candidate']['board'], origin, origin) != cand_dir / request['board']):
-        raise ValueError('result paths are not inside the discovered attempt')
-    found, snapshot = _retained_json(routing, 'snapshot.json', retained)
+    _, snapshot = _retained_json(routing, 'snapshot.json', retained)
     files = snapshot.get('files') if isinstance(snapshot, dict) else None
-    if (not isinstance(files, dict) or any(not isinstance(v, str) for v in files.values()) or
-            request['board'] not in files or request['schematic'] not in files):
-        raise ValueError('routing reference snapshot lacks the board or schematic')
-    prefix = request['project'] + '/'
-    if any(report['inputs']['files'].get(prefix + rel) != sha_ for rel, sha_ in files.items()):
-        raise ValueError('routing reference snapshot differs from the attempt inputs')
-    if attempt.fingerprint(files) != result['input']['fingerprint']:
-        raise ValueError('routing input fingerprint is not the retained snapshot fingerprint')
-    inventory, editor = report['candidate_files'], report['candidate_editor_state']
-    state = PurePosixPath(request['board']).stem + '.kicad_prl'
-    if not (editor == {} or (list(editor) == [state] and state not in files)):
-        raise ValueError('candidate editor state is not the board editor-state file')
-    if inventory != {**files, **editor, request['board']: sha}:
-        raise ValueError('candidate inventory is not the snapshot with only the board routed')
+    problems = attempt.candidate_binding_problems(
+        request, origin, run_dir, cand_dir, result, report['inputs']['files'], files,
+        report['candidate_files'], report['candidate_editor_state'], report['candidate']['sha256'],
+        retained.get('attempt/' + attempt.COPPER_OWNERSHIP_RECORD), retained=True)
+    if problems:
+        raise ValueError(problems[0])
 
 
 def _receipt_step(receipt, request):
@@ -744,4 +716,213 @@ def _request_argv(request):
         except (TypeError, ValueError):
             raise ValueError(f'routing adapter {key.replace("_", " ")} is not JSON') from None
         argv += [flag, value]
+    return argv
+
+
+def validate_router_options(router_config):
+    """Validate and normalize board-level kicad-route options."""
+    import math
+    ac_match = router_config.get('ac_match')
+    if 'ac_match' in router_config:
+        if not isinstance(ac_match, dict) or set(ac_match) != {'chains', 'tolerance_mm', 'amplitude_mm'}:
+            raise ValueError('router.ac_match requires chains, tolerance_mm and amplitude_mm')
+        chains = ac_match['chains']
+        if (not isinstance(chains, list) or not chains
+                or any(not isinstance(refs, list) or len(refs) < 2
+                       or not all(isinstance(ref, str) and ref for ref in refs) for refs in chains)):
+            raise ValueError('router.ac_match needs explicit series-part reference chains')
+        refs = [ref for chain in chains for ref in chain]
+        if len(set(refs)) != len(refs):
+            raise ValueError('router.ac_match series-part references must not repeat')
+        if any(type(value) not in (int, float) or not math.isfinite(value) or value < .000001
+               for key, value in ac_match.items() if key != 'chains'):
+            raise ValueError('router.ac_match controls must be finite and positive')
+    length_match = router_config.get('length_match')
+    if 'length_match' in router_config:
+        unit = 'ps' if isinstance(length_match, dict) and 'tolerance_ps' in length_match else 'mm'
+        required = {'groups', 'tolerance_' + unit, 'amplitude_mm'}
+        if (not isinstance(length_match, dict) or not required <= set(length_match)
+                or set(length_match) - required - {'spacing_widths'}):
+            raise ValueError('router.length_match requires groups, exactly one of tolerance_mm or tolerance_ps, and amplitude_mm; spacing_widths is optional')
+        length_match = {'spacing_widths': 2, **length_match}
+        members = length_match['groups']
+        if (not isinstance(members, list) or not members
+                or any(not isinstance(group, list) or len(group) < 2
+                       or not all(isinstance(name, str) and name for name in group)
+                       or len(set(group)) != len(group) for group in members)):
+            raise ValueError('router.length_match groups need at least two distinct exact net names')
+        if any(type(value) not in (int, float) or not math.isfinite(value) or value < .000001
+               for key, value in length_match.items() if key != 'groups'):
+            raise ValueError('router.length_match controls must be finite and positive')
+        if length_match['spacing_widths'] < 1:
+            raise ValueError('router.length_match spacing must be at least one track width')
+    bus = router_config.get('bus')
+    if 'bus' in router_config:
+        fields = {'detection_radius_mm', 'attraction_radius_mm', 'attraction_bonus', 'min_nets'}
+        if not isinstance(bus, dict) or set(bus) - fields:
+            raise ValueError('router.bus accepts detection_radius_mm, attraction_radius_mm, attraction_bonus and min_nets only')
+        for key, value in bus.items():
+            if key.endswith('_mm'):
+                if type(value) not in (int, float) or not math.isfinite(value) or value < 0.000001:
+                    raise ValueError('bus radii must be finite and at least 0.000001 mm')
+            elif type(value) is not int or value < (2 if key == 'min_nets' else 0):
+                raise ValueError('bus minimum nets must be an integer at least two and attraction bonus a nonnegative integer')
+    pair_layers = router_config.get('pair_layers')
+    if 'pair_layers' in router_config:
+        if (not isinstance(pair_layers, list) or not pair_layers
+                or any(not isinstance(layer, str) or not layer for layer in pair_layers)
+                or len(set(pair_layers)) != len(pair_layers)):
+            raise ValueError('router.pair_layers requires a nonempty list of distinct copper layer names')
+    impedance = router_config.get('pair_impedance')
+    if 'pair_impedance' in router_config:
+        fields = {'target_ohm', 'tolerance_percent', 'reference_net', 'max_uncoupled_mm'}
+        if not isinstance(impedance, dict) or set(impedance) != fields:
+            raise ValueError('router.pair_impedance requires target_ohm, tolerance_percent, reference_net and max_uncoupled_mm')
+        if (not isinstance(impedance['reference_net'], str) or not impedance['reference_net'].strip()
+                or any(type(impedance[key]) not in (int, float) or not math.isfinite(impedance[key])
+                       or impedance[key] <= 0 for key in fields - {'reference_net'})
+                or impedance['tolerance_percent'] >= 100):
+            raise ValueError('pair impedance needs positive finite numbers, tolerance below 100 percent and a reference net')
+        if not pair_layers or len(pair_layers) != 1:
+            raise ValueError('qualified pair impedance requires exactly one explicit pair layer')
+    matching = router_config.get('intra_pair_match')
+    if 'intra_pair_match' in router_config:
+        if not isinstance(matching, dict) or set(matching) != {'tolerance_mm', 'amplitude_mm'}:
+            raise ValueError('router.intra_pair_match requires tolerance_mm and amplitude_mm only')
+        if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0.000001
+               for value in matching.values()):
+            raise ValueError('intra-pair matching values must be finite and at least 0.000001 mm')
+    return {'ac_match': ac_match, 'length_match': length_match, 'bus': bus,
+            'pair_layers': pair_layers, 'pair_impedance': impedance, 'intra_pair_match': matching}
+
+
+def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
+                     grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
+                     bus=None, length_match=None, ac_match=None):
+    """Build the pinned kicad-route CLI command for board-only / schematic-optional invocations."""
+    argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(out_dir),
+            '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
+            '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
+            '--label', 'placement-job', '--protect', 'locked' if owned_copper else 'existing',
+            '--budget', str(int(budget_s)), '--diff-pairs', 'auto']
+    if grid_step_mm is not None:
+        argv += ['--grid-step', str(grid_step_mm)]
+    if pair_layers is not None:
+        argv += ['--pair-layers', *pair_layers]
+    if pair_impedance is not None:
+        argv += ['--pair-impedance', str(pair_impedance['target_ohm']),
+                 '--impedance-tolerance', str(pair_impedance['tolerance_percent']),
+                 '--impedance-reference', pair_impedance['reference_net'],
+                 '--impedance-uncoupled', str(pair_impedance['max_uncoupled_mm'])]
+    if intra_pair_match is not None:
+        argv += ['--diff-pair-intra-match', '--length-match-tolerance', str(intra_pair_match['tolerance_mm']),
+                 '--meander-amplitude', str(intra_pair_match['amplitude_mm'])]
+    if bus is not None:
+        argv += ['--bus']
+        for key, value in bus.items():
+            argv += ['--bus-' + key.removesuffix('_mm').replace('_', '-'), str(value)]
+    if length_match is not None:
+        for group in length_match['groups']:
+            argv += ['--length-match-group-json', json.dumps(group)]
+        unit = 'ps' if 'tolerance_ps' in length_match else 'mm'
+        flag = '--group-delay-tolerance' if unit == 'ps' else '--group-match-tolerance'
+        argv += [flag, str(length_match['tolerance_' + unit]),
+                 '--group-meander-amplitude', str(length_match['amplitude_mm']),
+                 '--group-meander-spacing', str(length_match['spacing_widths'])]
+    if ac_match is not None:
+        for refs in ac_match['chains']:
+            argv += ['--ac-couple-chain-json', json.dumps(refs)]
+        argv += ['--ac-match-tolerance', str(ac_match['tolerance_mm']),
+                 '--ac-meander-amplitude', str(ac_match['amplitude_mm'])]
+    return argv
+
+
+def board_route_env(checkout, home):
+    """Build the isolated subprocess environment for a board-level kicad-route run."""
+    Path(home).mkdir(parents=True, exist_ok=True)
+    return {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
+            'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
+            'KICAD_ROUTE_STATE': str(checkout), 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
+            'GIT_OPTIONAL_LOCKS': '0'}
+
+
+def board_retry_argv(argv, retry_dir, budget_s, feedback, pads, board_path):
+    """Build the bounded repair retry CLI command for a board-level kicad-route run."""
+    retry = list(argv)
+    retry[retry.index('--out') + 1] = str(Path(retry_dir) / 'out')
+    retry[retry.index('--budget') + 1] = str(int(budget_s))
+    if feedback['kind'] == 'thermal_corridors':
+        pads = feedback['pads']
+    else:
+        retry[retry.index('--dir') + 1] = str(Path(board_path).parent)
+        del retry[retry.index('--diff-pairs'):retry.index('--diff-pairs') + 2]
+        retry += ['--nets', *feedback['nets'], '--backend-arg=--force-reroute']
+    for pad in pads:
+        retry += ['--reserve-spoke-pad', pad]
+    return retry, pads
+
+
+def spokes_argv(checkout, run_dir):
+    """Build the pinned kicad-route spokes diagnostic command."""
+    return [attempt.PYTHON, '-B', str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(run_dir)]
+
+
+def bind_board_attempt(route_dir, argv, exit_code):
+    """Bind one board-level kicad-route attempt output directory and verify its candidate digest."""
+    from .storage import read_json
+    route_dir = Path(route_dir)
+    record = {'argv': argv, 'exit_code': exit_code}
+    results = sorted((route_dir / 'out').rglob('result.json'))
+    if len(results) != 1:
+        return {**record, 'status': 'missing_output'}
+    result = read_json(results[0])
+    record.update(result_path=str(results[0]), result_sha256=digest(results[0]),
+                  router_exit=result.get('exit_code'), router_status=result.get('status') or result.get('outcome'))
+    candidate = result.get('candidate')
+    if not candidate:
+        return {**record, 'status': 'no_candidate'}
+    board = route_dir / candidate['board']
+    sha = digest(board)
+    if sha != result.get('validation', {}).get('candidate_board_sha256'):
+        return {**record, 'status': 'stale_candidate'}
+    accepted = (exit_code == result.get('exit_code') == 0
+                and result.get('process', {}).get('status') == 'PASS'
+                and result.get('routing', {}).get('status') == 'COMPLETE'
+                and result.get('routing', {}).get('unconnected_total') == 0
+                and result.get('validation', {}).get('status') == 'PASS')
+    return {**record, 'status': 'routed', 'board': str(board), 'board_sha256': sha,
+            'router_accepted': accepted,
+            **({'impedance_plan': result['settings']['pair_impedance']}
+               if 'pair_impedance' in result.get('settings', {}) else {})}
+
+
+def preflight_stackup_argv(checkout, board_path, layer, *, python=None):
+    """Build the kicad-route pair-impedance stackup preflight command."""
+    import sys
+    return [python or sys.executable, '-B', '-c',
+            'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); '
+            'from kicad_route.pair_impedance import model; model(Path(sys.argv[2]), sys.argv[3])',
+            str(Path(checkout) / 'src'), str(board_path), layer]
+
+
+def preflight_delay_argv(checkout, board_path, nets, *, python=None):
+    """Build the kicad-route native delay model preflight command."""
+    import sys
+    return [python or sys.executable, '-B', '-c',
+            'import json,sys; sys.path.insert(0, sys.argv[1]); '
+            'from native_delay import profiles; '
+            'profiles(sys.argv[2], json.loads(sys.argv[3]), required=True)',
+            str(Path(checkout) / 'src/kicad_route/router/py_router'),
+            str(board_path), json.dumps(sorted(nets))]
+
+
+def post_route_checker_argv(checkout, kind, board_path, request_path, result_path, *, python=None):
+    """Build the kicad-route post-route checker command (pair_impedance, length_groups, ac_matching)."""
+    import sys
+    scripts = {'pair_impedance': 'pair_impedance.py', 'length_groups': 'length_groups.py',
+               'ac_matching': 'ac_matching.py'}
+    checker = Path(checkout) / 'src/kicad_route' / scripts[kind]
+    argv = [python or sys.executable, '-B', str(checker), str(board_path), str(request_path), str(result_path)]
+    if kind == 'pair_impedance':
+        argv.append('--check')
     return argv

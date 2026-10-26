@@ -2601,6 +2601,44 @@ def _project_with_sibling_links(root, project, siblings, candidate_root):
     return set(entries)
 
 
+def candidate_binding_problems(request, origin, run_dir, cand_dir, result, inputs, files,
+                               inventory, editor, sha, copper_sha, *, retained=False):
+    """Shared candidate-to-attempt binding checks for live and retained verification."""
+    problems = []
+    if (resolve_reported(result['run_dir'], origin, origin) != run_dir or
+            resolve_reported(result['candidate']['dir'], origin, origin) != cand_dir or
+            resolve_reported(result['candidate']['board'], origin, origin) != cand_dir / request['board']):
+        problems.append('result paths are not inside the discovered attempt')
+    validation = result['validation']
+    if sha is None or not validated_candidate(validation, sha):
+        problems.append('routed candidate is not the board the router validated')
+    if validation.get('restored_project_files') != []:
+        problems.append('the router restored project files of an eligible attempt')
+    problems += terminal_problems(result)
+    custody = result.get('copper_ownership')
+    if isinstance(custody, dict) and custody.get('status') == 'bound':
+        records = (result.get('evidence') or {}).get('records') if isinstance(result.get('evidence'), dict) else None
+        if (copper_sha != custody['sha256'] or not isinstance(records, dict) or
+                records.get(COPPER_OWNERSHIP_RECORD) != custody['sha256']):
+            problems.append('copper ownership record differs from the retained routing evidence'
+                            if retained else 'copper ownership record differs from its result pointer')
+    if (not isinstance(files, dict) or any(not isinstance(v, str) for v in files.values()) or
+            request['board'] not in files or request['schematic'] not in files):
+        problems.append('routing reference snapshot lacks the board or schematic')
+        return problems
+    prefix = request['project'] + '/'
+    if any(inputs.get(prefix + rel) != sha_ for rel, sha_ in files.items()):
+        problems.append('routing reference snapshot differs from the attempt inputs')
+    if fingerprint(files) != result['input'].get('fingerprint'):
+        problems.append('routing input fingerprint is not the retained snapshot fingerprint')
+    state = PurePosixPath(request['board']).stem + '.kicad_prl'
+    if not (editor == {} or (list(editor) == [state] and state not in files)):
+        problems.append('candidate editor state is not the board editor-state file')
+    if inventory != {**files, **editor, request['board']: sha}:
+        problems.append('candidate inventory is not the snapshot with only the board routed')
+    return problems
+
+
 def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     """Problems binding the eligible candidate to this attempt and these inputs, the
     candidate board's sha256, the undelivered editor-state files and the whole
@@ -2647,35 +2685,15 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
         report_state = {editor_state: cand_files.pop(editor_state)}
     else:
         report_state = {}
-    if set(cand_files) != set(ref_files):
-        problems.append('candidate file set differs from the reference snapshot')
-    for rel in sorted(set(cand_files) & set(ref_files)):
-        if rel != request['board'] and cand_files[rel] != ref_files[rel]:
-            problems.append(f'candidate changed a non-board project file: {rel}')
-    prefix = request['project'] + '/'
-    for rel, sha in ref_files.items():
-        if inputs.get(prefix + rel) != sha:
-            problems.append(f'reference snapshot file differs from the captured input: {rel}')
-    for name in (request['board'], request['schematic']):
-        if name not in ref_files:
-            problems.append(f'reference snapshot lacks {name}')
     snapshot = load_json(run_dir / 'snapshot.json', problems, 'snapshot.json')
     if not isinstance(snapshot, dict) or snapshot.get('files') != ref_files:
         problems.append('snapshot.json files differ from the reference snapshot')
-    if fingerprint(ref_files) != result['input'].get('fingerprint'):
-        problems.append('input fingerprint differs from the reference snapshot')
     sha = cand_files.get(request['board'])
-    validation = result['validation']
-    if sha is None or not validated_candidate(validation, sha) or validation.get('restored_project_files') != []:
-        problems.append('candidate board is not the board the router validated')
-    problems += terminal_problems(result)
-    custody = result.get('copper_ownership')
-    if isinstance(custody, dict) and custody.get('status') == 'bound':
-        record = run_dir / COPPER_OWNERSHIP_RECORD
-        records = result['evidence'].get('records') if isinstance(result.get('evidence'), dict) else None
-        if (record.is_symlink() or not record.is_file() or digest(record) != custody['sha256'] or
-                not isinstance(records, dict) or records.get(COPPER_OWNERSHIP_RECORD) != custody['sha256']):
-            problems.append('copper ownership record differs from its result pointer')
+    record = run_dir / COPPER_OWNERSHIP_RECORD
+    copper_sha = digest(record) if not record.is_symlink() and record.is_file() else None
+    problems += candidate_binding_problems(
+        request, routing, run_dir, cand_dir, result, inputs, ref_files,
+        inventory, report_state, sha, copper_sha)
     return problems, sha, report_state, inventory
 
 
