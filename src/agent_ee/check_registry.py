@@ -62,6 +62,8 @@ class CheckFunctions(MutableMapping):
 
     def __setitem__(self, kind, check):
         record = registry[kind]
+        if not callable(check):
+            raise TypeError('check function must be callable')
         registry._registrations[kind] = replace(record, check=check)
 
     def __delitem__(self, kind):

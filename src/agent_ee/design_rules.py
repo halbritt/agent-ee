@@ -718,8 +718,7 @@ def writer_context(manifest, inputs):
 
 def describe_design_rules(ctx):
     from .capabilities import KINDS
-    from .design_rules import capability as rule_capability
-    descriptor = rule_capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
+    descriptor = capability(ctx.params, ctx.scope, ctx.files, ctx.inputs, ctx.spec['id'])
     ctx.prerequisite(ctx.params.get('netlist_check'), ('netlist',))
     if 'facts_check' in ctx.params:
         ctx.prerequisite(ctx.params['facts_check'], ('datasheet_facts',))

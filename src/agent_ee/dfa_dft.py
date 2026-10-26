@@ -656,9 +656,8 @@ def check_dfa_dft(ctx):
 
 
 def describe_dfa_dft(ctx):
-    from .dfa_dft import capability as dfa_dft_capability
     ctx.captured(ctx.scope.get('board'))
-    ctx.result['predicates'] = dfa_dft_capability(ctx.params, ctx.scope, ctx.spec, ctx.prerequisite)
+    ctx.result['predicates'] = capability(ctx.params, ctx.scope, ctx.spec, ctx.prerequisite)
 
 
 if __name__ != '__main__':

@@ -46,6 +46,18 @@ class DescribeCheckStructureTest(unittest.TestCase):
                 self.assertFalse(any(isinstance(other, (ast.Constant, ast.Tuple, ast.List))
                                      for other in node.comparators), ast.unparse(node))
 
+    def test_invalid_check_function_replacements_preserve_both_views(self):
+        original = registry['geometry']
+        for invalid in (None, False, 1, 'not callable'):
+            with self.subTest(invalid=invalid):
+                try:
+                    with self.assertRaisesRegex(TypeError, 'callable'):
+                        CHECK_FUNCS['geometry'] = invalid
+                    self.assertEqual(registry['geometry'], original)
+                    self.assertEqual(KINDS, CHECK_FUNCS.keys())
+                finally:
+                    CHECK_FUNCS['geometry'] = original.check
+
     def test_check_function_patches_restore_without_losing_capabilities(self):
         original = registry['geometry']
         replacement = lambda ctx: None

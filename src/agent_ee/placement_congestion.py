@@ -1016,9 +1016,8 @@ if __name__ == '__main__':
 
 
 def describe_placement_congestion(ctx):
-    from .placement_congestion import capability as congestion_capability
     ctx.captured(ctx.scope.get('board'))
-    ctx.result['predicates'] = congestion_capability(ctx.params)
+    ctx.result['predicates'] = capability(ctx.params)
 
 
 if __name__ != '__main__':
