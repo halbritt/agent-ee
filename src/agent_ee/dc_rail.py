@@ -26,7 +26,7 @@ def qualification():
     return {'schema': 'agent-ee.dc-qualification/2', 'policy': POLICY,
             'pcbnew_version': '10.0.7', 'tools': TOOLS,
             'model_sha256': digest(__file__),
-            'probe_sha256': digest(Path(__file__).with_name('dc_rail_probe.py')),
+            'probe_sha256': digest(Path(__file__).with_name('dc_geometry_probe.py')),
             'dispatcher_sha256': digest(Path(__file__).with_name('dc_path.py')),
             'rounding_relative': ROUNDING_ALLOWANCE,
             'physics': 'sum rho*L/A; full-height circular barrels; ideal pad/junction contacts',
@@ -215,7 +215,7 @@ def check(ctx, c, receipt):
     if any(item.get('key') not in NONCONDUCTIVE_IGNORES for item in report['ignored_checks']):
         raise ValueError('whole-net DC bound requires all conductive checks enabled')
     receipt['ignored_nonconductive_checks'] = report['ignored_checks']
-    ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.dc_rail_probe',
+    ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.dc_geometry_probe', '--rail',
                  ctx.candidate_path(ctx.scope['board']), '--out', '/work/geometry.json'], timeout=60)
     for path, sha in TOOLS.items():
         if digest(path) != sha:

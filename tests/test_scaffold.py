@@ -714,8 +714,8 @@ for fp in b.GetFootprints():
         for ref,(at,angle,layer) in expected.items():
             self.assertEqual((fixed[ref]['position_nm'],fixed[ref]['orientation_deg']%360,fixed[ref]['layer']),
                              (at,angle,layer))
-        record = execute(inputs,self.root / 'probe',['/usr/bin/python3','-B','-m','agent_ee.envelope_probe',
-            '/candidate/project/design.kicad_pcb','--out','/work/native.json'])
+        record = execute(inputs,self.root / 'probe',['/usr/bin/python3','-B','-m','agent_ee.placement_probe',
+            '--envelope','/candidate/project/design.kicad_pcb','--out','/work/native.json'])
         self.assertEqual(record['execution'],'ok',record)
         native = read_json(self.root / 'probe/native.json')
         declaration = validate((inputs / 'envelope.json').read_bytes())

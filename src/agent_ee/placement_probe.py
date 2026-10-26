@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 
 from . import courtyard_curves as curves
-from .geometry_probe import pad_attribute, box_nm
+from .geometry_probe import box_nm, pad_attribute, pad_vec
 from .placement import area2, cross, intersection_area, qualified_polygons
 
 
@@ -386,11 +386,13 @@ def copper_land_offset(pad):
     return [c - p for c, p in zip(vector_nm(pad.ShapePos(layer)), vector_nm(pad.GetPosition()))]
 
 
-def extract(board_path):
+def extract(board_path, *, board=None, before=None):
     import pcbnew
     path = Path(board_path)
-    before = path.read_bytes()
-    board = pcbnew.LoadBoard(str(path))
+    if before is None:
+        before = path.read_bytes()
+    if board is None:
+        board = pcbnew.LoadBoard(str(path))
     project = path.with_suffix('.kicad_pro')
     from .design_rule_provenance import PROJECT_KEY, finding_sources, packing_clearances
     from .catalog import strict_json
@@ -610,16 +612,56 @@ def routing_geometry(board_path):
             'zones': sorted(zones, key=lambda z: z['uuid'])}
 
 
+def envelope_extract(path):
+    """Read-only native load corroboration for exact saved envelope facts in one LoadBoard pass."""
+    import pcbnew
+    path = Path(path)
+    before = path.read_bytes()
+    board = pcbnew.LoadBoard(str(path))
+    placement = extract(path, board=board, before=before)
+    footprints = list(board.GetFootprints())
+    if len({fp.m_Uuid.AsString() for fp in footprints}) != len(footprints):
+        raise ValueError('duplicate native footprint UUID makes rule-area ownership ambiguous')
+    drills = {}
+    for fp in footprints:
+        for pad in fp.Pads():
+            uid = pad.m_Uuid.AsString()
+            if uid in drills:
+                raise ValueError('duplicate native pad UUID makes drill inventory ambiguous')
+            drills[uid] = {'drill_nm': vector_nm(pad_vec(pad, pad.GetDrillSize)),
+                           'offset_nm': vector_nm(pad_vec(pad, pad.GetOffset))}
+    for fp in placement['footprints']:
+        for pad in fp['pads']:
+            pad.update(drills[pad['uuid']])
+    copper = [{'id': int(layer), 'name': board.GetLayerName(layer)}
+              for layer in board.GetEnabledLayers().CuStack()]
+    if path.read_bytes() != before or placement['board_sha256'] != hashlib.sha256(before).hexdigest():
+        raise ValueError('board changed during native envelope probe')
+    return {'schema': 'agent-ee.envelope-probe/1', 'board_sha256': placement['board_sha256'],
+            'pcbnew_version': pcbnew.Version(), 'copper': copper,
+            'has_stackup': bool(board.GetDesignSettings().m_HasStackup),
+            'thickness_nm': int(board.GetDesignSettings().GetBoardThickness()),
+            'outline': placement['outline'], 'footprints': placement['footprints'],
+            'rule_areas': placement['rule_areas']}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('board')
     parser.add_argument('--out', required=True)
     parser.add_argument('--routing-geometry', action='store_true',
                         help='write the opt-in agent-ee.routing-geometry/1 capture instead (AGENTEE-386)')
+    parser.add_argument('--envelope', action='store_true',
+                        help='write the agent-ee.envelope-probe/1 capture in one native load')
     args = parser.parse_args(argv)
     if Path(args.out).resolve() == Path(args.board).resolve():
         raise ValueError('placement probe cannot overwrite its source board')
-    report = routing_geometry(args.board) if args.routing_geometry else extract(args.board)
+    if args.routing_geometry:
+        report = routing_geometry(args.board)
+    elif args.envelope:
+        report = envelope_extract(args.board)
+    else:
+        report = extract(args.board)
     Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
     return 0
 

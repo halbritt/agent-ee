@@ -396,13 +396,16 @@ def _locality_grade(facts, document):
     return result
 
 
-def _evaluate_board_native(path, *, intent=None, groups=None, edges=None, rails=None, proximity=None):
+def _evaluate_board_native(path, *, intent=None, groups=None, edges=None, rails=None, proximity=None,
+                           board=None, before=None):
     """Evaluate saved native geometry through the Rust placement engine (read-only)."""
     import pcbnew
     from .placement_probe import extract
-    before = Path(path).read_bytes()
-    facts = extract(path)
-    board = pcbnew.LoadBoard(str(path))
+    if before is None:
+        before = Path(path).read_bytes()
+    if board is None:
+        board = pcbnew.LoadBoard(str(path))
+    facts = extract(path, board=board, before=before)
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
@@ -833,8 +836,8 @@ def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
     before = Path(board_path).read_bytes()
     project = _project_rules(board_path)
     _validate_project_rules(project)
-    facts = extract(board_path)
     board = pcbnew.LoadBoard(str(board_path))
+    facts = extract(board_path, board=board, before=before)
     dialect_checks = _check_dialect_native(board, facts, dialect) if dialect else []
     for zone in board.Zones():
         if (not zone.GetIsRuleArea() or zone.GetDoNotAllowFootprints() or zone.GetDoNotAllowPads()
@@ -1354,8 +1357,11 @@ def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None):
         anchor = centres[g['anchor']]
         spread = max(math.dist(anchor, centres[r]) for r in g['refs']) / NM
         grouping.append({'group': g['name'], 'anchor': g['anchor'], 'max_member_anchor_mm': round(spread, 3)})
-    evaluated = (_evaluate_board_native(path, groups=groups, edges=edges, rails=rails, proximity=proximity)
+    evaluated = (_evaluate_board_native(path, groups=groups, edges=edges, rails=rails, proximity=proximity,
+                                        board=board, before=data)
                  if (groups or edges or proximity) else None)
+    if Path(path).read_bytes() != data:
+        raise JobRefusal('board changed during metrics extraction')
     edge_rows = evaluated['edge_intent']['connectors'] if edges else []
     group_links = evaluated['group_links'] if groups else None
     pad_edge_legs = evaluated['pad_edge_legs'] if proximity else None

@@ -396,7 +396,7 @@ def check_board_envelope(ctx):
         facts = saved_structure(raw)
     except (ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'envelope/native input refused: {exc}') from exc
-    ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.envelope_probe',
+    ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', '--envelope',
                  ctx.candidate_path(ctx.scope['board']), '--out', '/work/envelope-probe.json'], timeout=600)
     ctx.evidence('envelope-probe.json')
     native = ctx.load_json('envelope-probe.json', 'native envelope probe')

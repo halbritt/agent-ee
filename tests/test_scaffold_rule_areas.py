@@ -317,14 +317,14 @@ class CapturedAntennaFixture(EnvelopeScaffoldFixture):
 
 class CapturedRuleAreaContentTests(CapturedAntennaFixture, unittest.TestCase):
     def test_full_native_writer_preserves_outside_zone_and_unknown(self):
-        from agent_ee import envelope_probe
+        from agent_ee import placement_probe
         from agent_ee.envelope_check import keepout_verdict
         from agent_ee.board_envelope import validate
         first = self.produce('first')
         second = self.produce('second')
         board = first/'project/design.kicad_pcb'
         self.assertEqual(board.read_bytes(),(second/'project/design.kicad_pcb').read_bytes())
-        native = envelope_probe.extract(board)
+        native = placement_probe.envelope_extract(board)
         self.assertEqual(len(native['footprints']),8)
         fp = next(f for f in native['footprints'] if f['ref']=='U2')
         self.assertEqual(fp['position_nm'],[62500000,6500000])
@@ -360,7 +360,7 @@ class CapturedRuleAreaContentTests(CapturedAntennaFixture, unittest.TestCase):
         applied = fa.apply(plan,board,xml,manifest,first,annotated,self.root/'annotation-apply',
                            backup_dir=self.root/'backups')
         self.assertEqual(applied['execution'],'ok',applied)
-        self.assertEqual(envelope_probe.extract(annotated)['rule_areas'],native['rule_areas'])
+        self.assertEqual(placement_probe.envelope_extract(annotated)['rule_areas'],native['rule_areas'])
 
     def test_failed_retention_never_publishes_a_changed_board(self):
         from agent_ee.scaffold import write_envelope_content

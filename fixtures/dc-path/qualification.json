@@ -8,7 +8,7 @@
   "pcbnew_version": "10.0.7",
   "physics": "ideal rho*L/A; endpoint contacts; external temperature; fixed topology",
   "policy": "endpoint-planar-dc/2",
-  "probe_sha256": "6b0d572cec51872a2e3afea6bd9b0d5c5f74510b65147c54c252bb5e93185bf6",
+  "probe_sha256": "757f65989f18bdf797ed79f96fe152c58f3d2ccaf6f879b52f6df1358485753e",
   "residual_relative": 1e-09,
   "resistance_ratio_max": 1000000.0,
   "schema": "agent-ee.dc-qualification/1",

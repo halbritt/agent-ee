@@ -1,11 +1,11 @@
 {
   "dispatcher_sha256": "ef975b4e83b804c62e2ecf9d84ca2585a5bdbecdb78bc7c7de7082d20d12d6d5",
-  "model_sha256": "eaccbd5ed639414eb9c0ab2309edadca4a09d434002d49791f4fa842df5eea7b",
+  "model_sha256": "beb72cc3ac34602cc59014c77eae6d71e55e74303ed0953401581fe15ec5bf88",
   "pcbnew_version": "10.0.7",
   "physics": "sum rho*L/A; full-height circular barrels; ideal pad/junction contacts",
   "policy": "whole-net-ideal-copper-bound/1",
   "prerequisite": "same-candidate full native DRC, no findings or ignored conductive checks",
-  "probe_sha256": "5a50c6e569f99516cd2be890ad466395645a72ab19796bf916ba110643349df3",
+  "probe_sha256": "757f65989f18bdf797ed79f96fe152c58f3d2ccaf6f879b52f6df1358485753e",
   "rounding_relative": 1e-12,
   "schema": "agent-ee.dc-qualification/2",
   "tools": {

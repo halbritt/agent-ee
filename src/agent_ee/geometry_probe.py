@@ -15,7 +15,24 @@ board thickness and per-layer united copper area. The base report is unchanged.
 
 import argparse
 import json
+from pathlib import Path
 import sys
+
+
+def load_readonly_board(board_path):
+    """Read board bytes and load a pcbnew board once for read-only inspection."""
+    import pcbnew
+    path = Path(board_path)
+    before = path.read_bytes()
+    board = pcbnew.LoadBoard(str(path))
+    if board is None:
+        raise ValueError('native board load failed')
+    return board, before
+
+
+def verify_unchanged(board_path, before, label='geometry probe'):
+    if Path(board_path).read_bytes() != before:
+        raise ValueError(f'saved board changed during {label}')
 
 
 def mm(value):
@@ -50,10 +67,12 @@ def box_nm(box):
     return [int(box.GetX()), int(box.GetY()), int(box.GetRight()), int(box.GetBottom())]
 
 
-def extract(board_path):
+def extract(board_path, *, board=None):
     import pcbnew
     from .placement_probe import primitive, prove_contours
-    board = pcbnew.LoadBoard(board_path)
+    before = None
+    if board is None:
+        board, before = load_readonly_board(board_path)
     report = {"pcbnew_version": pcbnew.Version(), "board": board_path}
     copper = list(board.GetEnabledLayers().CuStack())
     report['copper_layers'] = [board.GetLayerName(layer) for layer in copper]
@@ -168,6 +187,8 @@ def extract(board_path):
     except Exception as exc:
         report["unconnected_items"] = None
         report["unconnected_items_error"] = str(exc)
+    if before is not None:
+        verify_unchanged(board_path, before)
     return report
 
 
@@ -344,7 +365,7 @@ def dfm_facts(board, board_path):
     return facts
 
 
-def routing_facts(board_path):
+def routing_facts(board_path, *, board=None):
     """Exact saved track/via/zone inventory for routing equivalence (no refill)."""
     import pcbnew
     from .routing_equivalence import canonical_ring
@@ -359,9 +380,9 @@ def routing_facts(board_path):
                                     for h in range(poly.HoleCount(i)))))
                       for i in range(poly.OutlineCount()))
 
-    board = pcbnew.LoadBoard(board_path)
+    before = None
     if board is None:
-        raise ValueError('native board load failed')
+        board, before = load_readonly_board(board_path)
     copper = list(board.GetEnabledLayers().CuStack())
     records = []
     for track in board.GetTracks():
@@ -397,6 +418,8 @@ def routing_facts(board_path):
                         'outline_nm': polygons(zone.Outline()), 'filled': bool(zone.IsFilled()),
                         'filled_polygons_nm': {board.GetLayerName(l): polygons(zone.GetFilledPolysList(l))
                                                if zone.HasFilledPolysForLayer(l) else [] for l in layers}})
+    if before is not None:
+        verify_unchanged(board_path, before, 'routing geometry probe')
     return records
 
 
@@ -411,10 +434,11 @@ def main(argv=None):
     except ImportError as exc:
         print(f"pcbnew bindings unavailable: {exc}", file=sys.stderr)
         return 3
-    report = extract(args.board)
+    board, before = load_readonly_board(args.board)
+    report = extract(args.board, board=board)
     if args.dfm:
-        import pcbnew
-        report["dfm"] = dfm_facts(pcbnew.LoadBoard(args.board), args.board)
+        report["dfm"] = dfm_facts(board, args.board)
+    verify_unchanged(args.board, before)
     with open(args.out, "w") as stream:
         json.dump(report, stream, indent=2, sort_keys=True)
         stream.write("\n")
