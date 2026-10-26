@@ -271,10 +271,8 @@ class PreflightTests(unittest.TestCase):
     def test_claude_override_checked_path_is_the_mounted_path(self):
         import json
         import os
-        from tests.toolchain import require_toolchain
         from agent_ee.storage import identity
         from agent_ee.harnesses import executable_for
-        require_toolchain()
         self.definition = {**self.definition, 'harness': 'claude'}
         self.expected['definitions'] = [self.definition]
         self.expected['identity'] = identity({k: v for k, v in self.expected.items() if k != 'identity'})
@@ -283,6 +281,8 @@ class PreflightTests(unittest.TestCase):
         (home / '.claude/.credentials.json').write_text('scripted credential; no network')
         from agent_ee import native_run
         def provider(call):
+            if call.intent.argv == ('/usr/bin/true',):
+                return native_run.Outcome()
             self.assertEqual(call.mounts[0], (str(self.binary), '/reviewer'))
             return native_run.Outcome(stdout=json.dumps({'subtype': 'success', 'structured_output': {}}).encode())
         calls = native_run.Recorded(provider)
@@ -295,7 +295,7 @@ class PreflightTests(unittest.TestCase):
             self.expected['identity'] = identity({k: v for k, v in self.expected.items() if k != 'identity'})
             record, _ = self.call()
         self.assertEqual(record['execution'], 'ok')
-        self.assertEqual(len(calls.calls), 1)
+        self.assertEqual(len([call for call in calls.calls if call.intent.argv[0] == '/reviewer']), 1)
 
     def test_foreign_baseline_receipt_is_rejected_even_with_updated_link_hash(self):
         from tests.toolchain import require_toolchain

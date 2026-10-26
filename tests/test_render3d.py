@@ -93,6 +93,25 @@ Path(sys.argv[sys.argv.index('--output')+1]).write_bytes(image)
                 self.render(views=views)
             self.assertFalse(self.out.exists())
 
+    def test_native_child_observes_both_log_files_before_it_finishes(self):
+        checkpoint = '''sys.stderr.write('live diagnostic\\n'); sys.stderr.flush()
+live = Path(os.environ['AGENT_EE_TEST_LIVE_LOG_DIR'])
+end = time.monotonic() + 3
+while time.monotonic() < end:
+    if ((live / 'top.stdout.log').read_bytes()
+            and b'live diagnostic\\n' in (live / 'top.stderr.log').read_bytes()):
+        break
+    time.sleep(.01)
+else:
+    raise SystemExit('stdout/stderr log files were not live')
+'''
+        self.cli.write_text(self.cli.read_text().replace(
+            "mode = os.environ.get('RENDER_TEST_MODE')", checkpoint + "\nmode = os.environ.get('RENDER_TEST_MODE')"))
+        with patch.dict(os.environ, {'AGENT_EE_TEST_LIVE_LOG_DIR': str(self.out)}):
+            manifest = json.loads(self.render(views=('top',), jobs=1).read_text())
+        self.assertEqual(manifest['status'], 'completed')
+        self.assertEqual((self.out / 'top.stderr.log').read_text(), 'live diagnostic\n')
+
     def test_three_native_views_preserve_inputs_and_record_actual_pngs(self):
         before = {p.name: digest(p) for p in self.source.iterdir()}
         progress = []
