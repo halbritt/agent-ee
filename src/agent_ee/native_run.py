@@ -215,7 +215,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
 
     Returns (record fields, stdout, stderr). Output is drained without blocking, so a child
     that never reads stdin or never closes stdout cannot outlive its deadline. Timeout and
-    cancel kill the whole group; on_stop runs after that kill (a container client's cleanup).
+    cancel kill the whole group and then keep what it already wrote. on_stop (a container
+    client's cleanup) runs after the kill on every exit except the tool's own completion.
     """
     cancel = cancel or Cancellation()
     fields = {"execution": "not_run", "exit_code": None}
@@ -240,12 +241,29 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
         if interrupt:
             raise KeyboardInterrupt
         return fields, b"", b""
-    stopped = None
+    stopped, completed = None, False
     try:
         with selectors.DefaultSelector() as selector:
             for stream in (proc.stdout, proc.stderr):
                 os.set_blocking(stream.fileno(), False)
                 selector.register(stream, selectors.EVENT_READ)
+
+            def read(wait, deliver):
+                for key, _ in selector.select(timeout=wait):
+                    chunk = os.read(key.fileobj.fileno(), 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                    elif key.fileobj is proc.stderr:
+                        errors.extend(chunk)
+                    else:
+                        output.extend(chunk)
+                        if deliver and on_line is not None:
+                            pending.extend(chunk)
+                            while b"\n" in pending:
+                                line, _, rest = pending.partition(b"\n")
+                                pending[:] = rest
+                                on_line(bytes(line))
+
             while selector.get_map() or proc.poll() is None:
                 if cancel.cancelled.is_set() or interrupt:
                     stopped = "interrupted"
@@ -254,57 +272,74 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                 if remaining <= 0:
                     stopped = "timeout"
                     break
-                for key, _ in selector.select(timeout=min(.05, remaining)):
-                    chunk = os.read(key.fileobj.fileno(), 65536)
-                    if not chunk:
-                        selector.unregister(key.fileobj)
-                    elif key.fileobj is proc.stderr:
-                        errors.extend(chunk)
-                    else:
-                        output.extend(chunk)
-                        if on_line is not None:
-                            pending.extend(chunk)
-                            while b"\n" in pending:
-                                line, _, rest = pending.partition(b"\n")
-                                pending[:] = rest
-                                on_line(bytes(line))
+                read(min(.05, remaining), True)
+            if stopped is not None:
+                # Kill first, then keep what the group already wrote, bounded as the executor's drain is.
+                _kill_group(proc)
+                limit = time.monotonic() + 1
+                while selector.get_map() and time.monotonic() < limit:
+                    read(max(0.0, limit - time.monotonic()), False)
+                if selector.get_map():
+                    fields["cleanup_error"] = "process group killed but output drain exceeded one second"
         if stopped is None:
             if pending and on_line is not None:
                 on_line(bytes(pending))
             fields["exit_code"] = proc.wait()
             fields["execution"] = "ok" if fields["exit_code"] == 0 else "failed"
+            completed = True
         else:
             fields["execution"] = stopped
     finally:
         # Reap the owned group even when its leader exited and a descendant holds a pipe.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _kill_group(proc)
         proc.wait()
         for stream in (proc.stdout, proc.stderr):
             stream.close()
-        if stopped is not None and on_stop is not None:
-            on_stop()
+        # Any exit short of the tool's own completion (timeout, cancel, an interrupt or a failing
+        # on_line) runs the stop cleanup; a killed container client leaves its container running.
+        if not completed and on_stop is not None:
+            try:
+                on_stop()
+            except Exception as exc:
+                fields["cleanup_error"] = f"stop cleanup failed: {exc}"
     fields["duration_s"] = round(time.monotonic() - start, 3)
     if stopped == "interrupted" and interrupt:
         raise KeyboardInterrupt
     return fields, bytes(output), bytes(errors)
 
 
-def _write_records(work, record, output, stderr):
-    """The executor's record files, written the executor's way (exclusive temp + rename)."""
-    work, directory = executor._open_work(work)
+def _kill_group(proc):
     try:
-        before = {name: executor._entry(directory, name) for name in executor.RECORDS}
-        displaced = executor._displace(directory, before)
-        if displaced:
-            record["displaced_records"] = displaced
-        for name, data in (("stdout.log", output), ("stderr.log", stderr), ("console.log", output + stderr)):
-            publish(directory, name, data, sync=False)
-        publish(directory, "execution.json", json_bytes(record))
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+@contextlib.contextmanager
+def _records(work):
+    """Open work and snapshot the record names before the tool runs, as executor.execute does,
+    so a record the tool plants is displaced (docs/security.md) instead of overwritten."""
+    if work is None:
+        yield None
+        return
+    _, directory = executor._open_work(work)
+    try:
+        yield directory, {name: executor._entry(directory, name) for name in executor.RECORDS}
     finally:
         os.close(directory)
+
+
+def _write_records(opened, record, output, stderr):
+    """The executor's record files, written the executor's way (exclusive temp + rename)."""
+    if opened is None:
+        return
+    directory, before = opened
+    displaced = executor._displace(directory, before)
+    if displaced:
+        record["displaced_records"] = displaced
+    for name, data in (("stdout.log", output), ("stderr.log", stderr), ("console.log", output + stderr)):
+        publish(directory, name, data, sync=False)
+    publish(directory, "execution.json", json_bytes(record))
 
 
 def _digests(record, output, stderr):
@@ -326,15 +361,15 @@ class Host:
             raise ValueError("a host run has no mount namespace; pass host paths in argv")
         forget_scope()
         try:
-            fields, output, stderr = supervise(intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
-                                               env=intent.env, cwd=intent.cwd, on_line=on_line)
+            with _records(work) as opened:
+                fields, output, stderr = supervise(intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
+                                                   env=intent.env, cwd=intent.cwd, on_line=on_line)
+                record = {"argv": list(intent.argv), "isolation": "host", "timeout_s": timeout, **fields}
+                record.setdefault("duration_s", 0.0)
+                _digests(record, output, stderr)
+                _write_records(opened, record, output, stderr)
         finally:
             forget_scope()
-        record = {"argv": list(intent.argv), "isolation": "host", "timeout_s": timeout, **fields}
-        record.setdefault("duration_s", 0.0)
-        _digests(record, output, stderr)
-        if work is not None:
-            _write_records(work, record, output, stderr)
         return Execution(record, output, stderr)
 
 
@@ -385,14 +420,14 @@ class Docker:
             subprocess.run(["docker", "kill", self.name], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=30, check=False)
 
-        fields, output, stderr = supervise(command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
-                                           on_line=on_line, on_stop=kill_container)
-        record = {"argv": list(intent.argv), "isolation": "docker", "docker_argv": command,
-                  "image": self.image, "timeout_s": timeout, **fields}
-        record.setdefault("duration_s", 0.0)
-        _digests(record, output, stderr)
-        if work is not None:
-            _write_records(work, record, output, stderr)
+        with _records(work) as opened:
+            fields, output, stderr = supervise(command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
+                                               on_line=on_line, on_stop=kill_container)
+            record = {"argv": list(intent.argv), "isolation": "docker", "docker_argv": command,
+                      "image": self.image, "timeout_s": timeout, **fields}
+            record.setdefault("duration_s", 0.0)
+            _digests(record, output, stderr)
+            _write_records(opened, record, output, stderr)
         return Execution(record, output, stderr)
 
 
@@ -450,13 +485,13 @@ class Recorded:
             record["mount_guard"] = True
         record["duration_s"] = 0.0
         _digests(record, outcome.stdout, outcome.stderr)
-        if work is not None:
-            Path(work).mkdir(parents=True, exist_ok=True)
-            for name, data in outcome.files.items():
+        with _records(work) as opened:
+            # The canned files are the tool's output, written after the record snapshot.
+            for name, data in (outcome.files.items() if opened is not None else ()):
                 target = Path(work) / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
-            _write_records(work, record, outcome.stdout, outcome.stderr)
+            _write_records(opened, record, outcome.stdout, outcome.stderr)
         if on_line is not None:
             for line in outcome.stdout.splitlines():
                 on_line(line)

@@ -222,6 +222,14 @@ class RecordedTest(unittest.TestCase):
         self.assertEqual(native_run.profile(record).tool_argv, tuple(record['argv']))
         self.assertEqual(adapter.calls[0].intent.tool, 'drc')
 
+    def test_canned_record_files_are_displaced(self):
+        work = self.root / 'w'
+        record = native_run.run(Intent('probe', ['true']), inputs=self.root / 'inputs', work=work,
+                                adapter=native_run.Recorded(lambda call: Outcome(files={'console.log': b'x'})))
+        moved = record['displaced_records']['console.log']
+        self.assertEqual((work / moved['moved_to']).read_bytes(), b'x')
+        self.assertEqual((work / 'console.log').read_bytes(), b'')
+
     def test_exceptions_and_cancellation(self):
         adapter = native_run.Recorded(lambda call: OSError('boom'))
         with self.assertRaises(OSError):
@@ -291,6 +299,61 @@ class HostTest(unittest.TestCase):
         missing = native_run.run(Intent('probe', ['/nonexistent/tool'], isolation='host'), work=None)
         self.assertEqual(missing['execution'], 'unavailable')
 
+    def test_cancel_keeps_output_already_written(self):
+        # on_line holds the read loop while the child writes its stderr tail and the run is
+        # cancelled, so the tail is still in the pipe when the cancel is observed.
+        go, wrote = self.root / 'go', self.root / 'wrote'
+        code = ('import os, sys, time; print("ready", flush=True); '
+                f'exec("while not os.path.exists({str(go)!r}): time.sleep(.01)"); '
+                f'sys.stderr.write("tail\\n"); sys.stderr.flush(); open({str(wrote)!r}, "w").close(); '
+                'time.sleep(60)')
+        cancel = executor.Cancellation()
+
+        def on_line(line):
+            go.touch()
+            while not wrote.exists():
+                time.sleep(.01)
+            cancel.cancel()
+
+        record = native_run.run(self.host(code, timeout=30), work=self.root / 'w', cancel=cancel, on_line=on_line)
+        self.assertEqual(record['execution'], 'interrupted')
+        self.assertEqual((record.stdout, record.stderr), (b'ready\n', b'tail\n'))
+        self.assertEqual((self.root / 'w/console.log').read_bytes(), b'ready\ntail\n')
+
+    def test_stop_cleanup_runs_on_every_abnormal_exit(self):
+        code = 'import time; print("line", flush=True); time.sleep(60)'
+        for label, failure in (('error', RuntimeError('on_line failed')), ('interrupt', KeyboardInterrupt())):
+            stops = []
+
+            def on_line(line):
+                raise failure
+
+            with self.subTest(label), self.assertRaises(type(failure)):
+                native_run.supervise(['/usr/bin/python3', '-c', code], timeout=30, on_line=on_line,
+                                     on_stop=lambda: stops.append(1))
+            self.assertEqual(stops, [1], label)
+        stops = []
+        fields, _, _ = native_run.supervise(['/usr/bin/python3', '-c', code], timeout=1,
+                                            on_stop=lambda: stops.append(1))
+        self.assertEqual((fields['execution'], stops), ('timeout', [1]))
+        fields, _, _ = native_run.supervise(['/usr/bin/true'], timeout=30, on_stop=lambda: stops.append(2))
+        self.assertEqual((fields['execution'], stops), ('ok', [1]))
+
+        def broken():
+            raise OSError('docker missing')
+
+        fields, _, _ = native_run.supervise(['/usr/bin/python3', '-c', code], timeout=1, on_stop=broken)
+        self.assertEqual(fields['cleanup_error'], 'stop cleanup failed: docker missing')
+
+    def test_planted_records_are_displaced_not_overwritten(self):
+        work = self.root / 'w'
+        record = native_run.run(self.host('open("execution.json", "w").write("planted")', cwd=str(work)),
+                                work=work)
+        moved = record['displaced_records']['execution.json']
+        self.assertEqual(moved['kind'], 'file')
+        self.assertEqual((work / moved['moved_to']).read_text(), 'planted')
+        self.assertEqual(json.loads((work / 'execution.json').read_text()), dict(record))
+
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
             native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])
@@ -315,9 +378,15 @@ class DockerTest(unittest.TestCase):
             native_run.run(Intent('x', ['true']), inputs='/tmp', work=None, adapter=adapter)
 
 
-@unittest.skipIf(prerequisite_problem(), prerequisite_problem())
 class SandboxTest(unittest.TestCase):
     """The sandbox adapter's record is the executor's record, byte for byte."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Probed here, not at import, so the adapter tests that need no bwrap still run without it.
+        problem = prerequisite_problem()
+        if problem:
+            raise unittest.SkipTest(problem)
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
