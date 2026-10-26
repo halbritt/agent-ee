@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from agent_ee import placement_job as job
+from agent_ee import placement_intent, placement_job as job
 from agent_ee.storage import digest, read_json, write_json
 from tests.test_placement_job import Fixture, groups, intent
 
@@ -20,6 +20,11 @@ class PlacementIntentTests(unittest.TestCase):
         with self.assertRaisesRegex(job.JobRefusal,
                 r'intent.electrical_locality.obligations\[0\].leg.from.side'):
             job.validate_intent({'electrical_locality': locality}, {'groups': []})
+
+    def test_source_admission_preserves_unsupported_intent_message(self):
+        with self.assertRaises(ValueError) as error:
+            placement_intent.admit_source({'assembly': {'sides': 'B'}}, {'groups': []})
+        self.assertEqual(str(error.exception), 'intent.assembly.sides: side selection is unsupported')
 
     def test_build_rejects_unsupported_intent_before_creating_a_run(self):
         from agent_ee import build_workflow as build

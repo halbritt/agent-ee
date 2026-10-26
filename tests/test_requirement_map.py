@@ -12,6 +12,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from agent_ee import requirement_map
 from agent_ee.baseline import compile_baseline
 from agent_ee.capabilities import KINDS, compile_coverage
 from agent_ee.candidate import capture
@@ -769,6 +770,25 @@ class NativeMapTests(unittest.TestCase):
                 self.assertIn(limitation, render_index(index))
             self.assertFalse(index['acceptance'])
             self.assertEqual([row['status'] for row in index['criteria'][7:]], ['not_met', 'not_met'])
+
+
+class BuildAdmissionTests(unittest.TestCase):
+    def test_build_and_map_schema_must_agree(self):
+        for typed, schema in ((True, 'agent-ee.requirement-map/1'),
+                              (False, 'agent-ee.requirement-map/2')):
+            with self.subTest(typed=typed), self.assertRaises(ValueError) as error:
+                requirement_map.admit_source(json.dumps({'schema': schema}).encode(),
+                                             typed=typed, source_files={})
+            self.assertEqual(str(error.exception),
+                'typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')
+
+    def test_source_must_not_occupy_generated_namespaces(self):
+        for namespace in ('build-generated', 'requirements-map'):
+            for path in (namespace, namespace + '/input.json'):
+                with self.subTest(path=path), self.assertRaises(ValueError) as error:
+                    requirement_map.admit_source(b'{"schema":"agent-ee.requirement-map/1"}',
+                                                 typed=False, source_files={path: 'hash'})
+                self.assertEqual(str(error.exception), 'build source occupies generated namespace: ' + namespace)
 
 
 if __name__ == '__main__':

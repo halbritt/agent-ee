@@ -58,6 +58,16 @@ def decode(raw):
     return json.loads(exact_canonical(load_json(raw)))
 
 
+def admit_source(raw, *, typed, source_files):
+    """Admit a build's map binding and its reserved capture namespaces."""
+    from .catalog import strict_json
+    if (strict_json(raw).get('schema') == SCHEMA_2) != typed:
+        raise ValueError('typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')
+    for reserved in ('build-generated', PROVENANCE):
+        if any(path == reserved or path.startswith(reserved + '/') for path in source_files):
+            raise ValueError('build source occupies generated namespace: ' + reserved)
+
+
 def map_declaration(raw):
     declaration = decode(raw)
     exact_keys(declaration, 'schema spec_record_sha256 scope requirements prose')

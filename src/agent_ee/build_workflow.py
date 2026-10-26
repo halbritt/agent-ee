@@ -13,18 +13,17 @@ import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import subprocess
 import sys
 import uuid
 
-from . import parts_stage, requirement_map, scaffold, schematic_stage, spec_record
+from . import build_plan, parts_stage, placement_intent, requirement_map, scaffold, schematic_stage, spec_record
 from .catalog import strict_json
 from .stage_receipts import _relative, adopt, run_step, tree_identity
-from .storage import digest, digest_fd, identity, publish, read_json, write_json
+from .storage import digest, identity, publish, read_json, write_json
 
-SCHEMA = 'agent-ee.build-plan/1'
-TYPED_SCHEMA = 'agent-ee.build-plan/2'
+SCHEMA = build_plan.SCHEMA
+TYPED_SCHEMA = build_plan.TYPED_SCHEMA
 REPORT_SCHEMA = 'agent-ee.build-report/1'
 QUALIFICATION_SCHEMA = 'agent-ee.qualification/1'
 CLAIM = ('software file obligations only; delivery, judgment, supplier and physical '
@@ -52,74 +51,8 @@ def _keys(value, required, optional=()):
         raise ValueError('build declaration fields differ from ' + ', '.join(required))
 
 
-def validate_plan(plan):
-    _keys(plan, ('schema', 'source', 'requirements', 'parts', 'envelope', 'placement'),
-          ('verification_timeout_s', 'judgments'))
-    if plan['schema'] not in (SCHEMA, TYPED_SCHEMA) or not isinstance(plan['source'], str) or not plan['source']:
-        raise ValueError('expected agent-ee.build-plan/1 or /2 with a source directory')
-    typed = plan['schema'] == TYPED_SCHEMA
-    _keys(plan['requirements'], ('map', 'record', 'spec', *(['obligations'] if typed else [])))
-    if 'judgments' in plan:
-        if not typed:
-            raise ValueError('judgments require a typed build-plan/2')
-        _relative(plan['judgments'], 'judgments directory')
-        if plan['judgments'] == '.' or any(
-                plan['judgments'] == reserved or plan['judgments'].startswith(reserved + '/')
-                or reserved.startswith(plan['judgments'] + '/') for reserved in ('build-generated', requirement_map.PROVENANCE)):
-            raise ValueError('judgments directory overlaps the source root or generated namespace')
-    _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
-    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes',))
-    paths = [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
-             plan['placement']['intent'], plan['placement']['groups']]
-    if 'planes' in plan['placement']:
-        paths.append(plan['placement']['planes'])
-    for path in paths:
-        _relative(path, 'build input')
-        if 'judgments' in plan and (path == plan['judgments'] or path.startswith(plan['judgments'] + '/')):
-            raise ValueError('pre-package build input occupies the judgments directory')
-    timeout = plan.get('verification_timeout_s', 3600)
-    if type(timeout) is not int or not 1 <= timeout <= 86400:
-        raise ValueError('verification_timeout_s must be an integer from 1 to 86400')
-    return plan
-
-
+validate_plan = build_plan.validate_plan
 _inventory = requirement_map.input_inventory
-
-
-def _source_inventory(root, plan):
-    prefix = plan.get('judgments')
-    if prefix is None:
-        return _inventory(root)
-    root = Path(root)
-    files = {}
-    def walk_error(exc):
-        raise exc
-    # Prune before opening any late-bound file. Hashing and then filtering would
-    # still read editable testimony during pre-package stages.
-    for current, directories, names, descriptor in os.fwalk(root, follow_symlinks=False, onerror=walk_error):
-        relative = Path(current).relative_to(root)
-        if len(relative.parts) > 128:
-            raise ValueError('build input directory nesting exceeds 128 levels')
-        for name in list(directories):
-            mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
-            if not stat.S_ISDIR(mode):
-                raise ValueError('build inputs contain links or special files')
-            if str(relative / name) == prefix:
-                directories.remove(name)
-        for name in names:
-            path = str(relative / name)
-            if path == prefix:
-                raise ValueError('judgments directory must be a directory')
-            if not stat.S_ISREG(os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode):
-                raise ValueError('build inputs contain links or special files')
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
-            try:
-                if not stat.S_ISREG(os.fstat(fd).st_mode):
-                    raise ValueError('build inputs contain links or special files')
-                files[path] = digest_fd(os.dup(fd))
-            finally:
-                os.close(fd)
-    return dict(sorted(files.items()))
 
 
 def _capture_source(source, capturing, plan):
@@ -531,24 +464,13 @@ def review_build(run, out, *, max_seconds=900):
 
 def preflight_build(plan_path, out):
     """Validate plan schema, pruned source inventory, placement intent, and map binding before any stage runs."""
-    plan_path, out = Path(plan_path).resolve(), Path(out).resolve()
-    plan_raw = plan_path.read_bytes()
-    plan = validate_plan(strict_json(plan_raw))
-    source = (plan_path.parent / plan['source']).resolve()
-    if out == source or source in out.parents:
-        raise ValueError('build output must be outside the source bundle')
-    source_files = _source_inventory(source, plan)
-    # Preserve intent preflight before map-schema validation and output creation.
-    # The source inventory above has already read the source files.
-    from .placement_job import normalize_intent
-    normalize_intent(strict_json((source / plan['placement']['intent']).read_bytes()),
-                     strict_json((source / plan['placement']['groups']).read_bytes()))
-    map_schema = strict_json((source / plan['requirements']['map']).read_bytes()).get('schema')
-    if (map_schema == requirement_map.SCHEMA_2) != (plan['schema'] == TYPED_SCHEMA):
-        raise ValueError('typed build-plan/2 requires map/2 and obligations; legacy map/1 cannot mix')
-    for reserved in ('build-generated', requirement_map.PROVENANCE):
-        if any(path == reserved or path.startswith(reserved + '/') for path in source_files):
-            raise ValueError('build source occupies generated namespace: ' + reserved)
+    plan_path, out, plan_raw, plan, source, source_files = build_plan.admit_source(plan_path, out)
+    placement_intent.admit_source(
+        strict_json((source / plan['placement']['intent']).read_bytes()),
+        strict_json((source / plan['placement']['groups']).read_bytes()))
+    requirement_map.admit_source(
+        (source / plan['requirements']['map']).read_bytes(),
+        typed=plan['schema'] == TYPED_SCHEMA, source_files=source_files)
     return plan_path, out, plan_raw, plan, source, source_files
 
 
@@ -642,7 +564,7 @@ def run(plan_path, out, *, resume=False, through='package'):
                     write_json(out / 'build-report.json', report)
                 candidate = _execute(stage, plan, previous, directory, report['completed'], out,
                                      diagnostic=through != 'package')
-                if (tree_identity(previous) != before or _source_inventory(source, plan) != source_files
+                if (tree_identity(previous) != before or build_plan.source_inventory(source, plan) != source_files
                         or digest(plan_path) != pin['plan_sha256'] or _runtime() != pin['runtime']):
                     raise ValueError('build input or runtime changed during stage execution')
                 if stage == 'package' and plan['schema'] == TYPED_SCHEMA:

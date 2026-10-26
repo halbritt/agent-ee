@@ -559,6 +559,11 @@ def canonical_rails(document):
             'bindings': dict(document['bindings'])}
 
 
+def admit_source(intent, groups, **options):
+    """Admit source declarations through the supported placement intent contract."""
+    return normalize_intent(intent, groups, **options)
+
+
 def normalize_intent(intent, groups, *, rails=None, locality=None, board_sha256=None, groups_sha256=None,
                      nets=None, net_groups=None, net_parts=None, source=None, supported=DIALECT_SUPPORTED):
     """Validate and normalize placement intent, groups, rails, and locality in one pass without mutating inputs."""

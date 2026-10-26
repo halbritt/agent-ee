@@ -957,7 +957,7 @@ def normalize_intent(intent, groups, *, rails=None, locality=None, board_sha256=
     """Validate and normalize intent, groups, rails, and locality in one pass."""
     from . import placement_intent
     try:
-        return placement_intent.normalize_intent(
+        return placement_intent.admit_source(
             intent, groups, rails=rails, locality=locality,
             board_sha256=board_sha256, groups_sha256=groups_sha256,
             nets=nets, net_groups=net_groups, net_parts=net_parts,
