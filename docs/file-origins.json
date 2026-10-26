@@ -623,6 +623,7 @@
     {
       "paths": [
         "AGENTS.md",
+        "GLOSSARY.md",
         "README.md",
         "docs/",
         "evidence/README.md"
@@ -4215,7 +4216,6 @@
     },
     {
       "paths": [
-        "src/agent_ee/placement_edges.py",
         "src/agent_ee/placement_job.py"
       ],
       "kind": "adapted-source",
