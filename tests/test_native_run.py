@@ -1,0 +1,365 @@
+import json
+import os
+import signal
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+from toolchain import prerequisite_problem
+
+from agent_ee import benchmark_run, executor, native_run, stage_receipts
+from agent_ee.native_run import Intent, Outcome
+
+
+def _argv_variants(root):
+    inputs, work = root / 'inputs', root / 'work'
+    inputs.mkdir(exist_ok=True)
+    work.mkdir(exist_ok=True)
+    extra = root / 'extra'
+    extra.mkdir(exist_ok=True)
+    baseline = root / 'baseline.json'
+    baseline.write_text('{}')
+    yield 'plain', executor.sandbox_argv(inputs, work, ['/usr/bin/true'])
+    yield 'network', executor.sandbox_argv(inputs, work, ['/usr/bin/true'], network=True)
+    yield 'visuals', executor.sandbox_argv(inputs, work, ['kicad-cli', 'version'], skip_visuals=True)
+    yield 'mounts', executor.sandbox_argv(inputs, work, ['/usr/bin/true'],
+                                          extra_ro=[(baseline, '/evidence/baseline.json'), (extra, '/tool')])
+    replay = executor.sandbox_argv(inputs, work, ['/usr/bin/python3', '-I'], extra_ro=((extra, '/bundle'),))
+    boundary = replay.index('--')
+    replay[boundary:boundary] = [arg for path in ('/work', '/tmp', '/dev', '/proc', '/')
+                                 for arg in ('--remount-ro', path)]
+    yield 'replay', replay
+
+
+class ProfileTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_normalized_profile_matches_the_stage_receipt_form(self):
+        for label, argv in _argv_variants(self.root):
+            with self.subTest(label):
+                self.assertEqual(native_run.parse_profile(argv).normalized(), stage_receipts.sandbox_profile(argv))
+
+    def test_path_sources_match_the_benchmark_operand_parser(self):
+        for label, argv in _argv_variants(self.root):
+            if label == 'replay':
+                continue   # the benchmark parser never saw replay's --remount-ro options
+            with self.subTest(label):
+                self.assertEqual(native_run.parse_profile(argv).path_source_indexes(),
+                                 benchmark_run.sandbox_path_operands(argv))
+
+    def test_binds_network_and_tool_argv(self):
+        argv = executor.sandbox_argv(self.root / 'inputs', self.root / 'work', ['kicad-cli', 'version'])
+        parsed = native_run.parse_profile(argv)
+        self.assertFalse(parsed.network)
+        self.assertEqual(parsed.bound('/candidate'), [str((self.root / 'inputs').resolve())])
+        self.assertEqual(parsed.bound('/work'), [str((self.root / 'work').resolve())])
+        self.assertEqual([bind.dest for bind in parsed.binds if bind.writable], ['/work'])
+        self.assertEqual(parsed.tool_argv, ('kicad-cli', 'version'))
+        self.assertFalse(parsed.guarded)
+        self.assertTrue(native_run.parse_profile(
+            executor.sandbox_argv(self.root / 'inputs', self.root / 'work', ['true'], network=True)).network)
+
+    def test_fd_mounts_expose_the_guard_identities(self):
+        (self.root / 'inputs').mkdir()
+        (self.root / 'work').mkdir()
+        source = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, source)
+        argv = executor.sandbox_argv(self.root / 'inputs', self.root / 'work', ['kicad-cli', 'version'],
+                                     extra_ro=[(source, '/tool')])
+        parsed = native_run.parse_profile(argv)
+        observed = os.fstat(source)
+        self.assertEqual(parsed.mount_identities, {'/tool': (observed.st_dev, observed.st_ino)})
+        self.assertEqual(parsed.tool_argv, ('kicad-cli', 'version'))
+        self.assertEqual([(b.option, b.source, b.dest) for b in parsed.binds if b.option == '--ro-bind-fd'],
+                         [('--ro-bind-fd', str(source), '/tool')])
+        self.assertEqual(parsed.normalized(), stage_receipts.sandbox_profile(argv))
+        self.assertEqual(executor.sandbox_invocation(argv), (list(parsed.tool_argv), parsed.mount_identities))
+
+    def test_unknown_layouts_are_refused(self):
+        argv = executor.sandbox_argv(self.root / 'inputs', self.root / 'work', ['true'])
+        for label, bad in (('option', argv[:1] + ['--cap-add', 'ALL'] + argv[1:]),
+                           ('operands', ['bwrap', '--bind', '/x', '--', 'true']),
+                           ('not bwrap', ['docker', '--', 'true']),
+                           ('no delimiter', argv[:argv.index('--')])):
+            with self.subTest(label), self.assertRaises(ValueError):
+                native_run.parse_profile(bad)
+        with self.assertRaises(ValueError):
+            native_run.profile({'argv': ['true']})
+
+
+class BuilderTest(unittest.TestCase):
+    """Each existing site's literal argv, reproduced by the one builder."""
+
+    def test_drc_sites(self):
+        build = native_run.drc_argv
+        cases = {
+            'add_planes': (build('/candidate/b.kicad_pcb', '/work/report.json', executable='/usr/bin/kicad-cli'),
+                           ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '-o',
+                            '/work/report.json', '/candidate/b.kicad_pcb']),
+            'checks': (build('/candidate/b', '/work/drc.json', parity=True, units='mm'),
+                       ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--schematic-parity',
+                        '--units', 'mm', '-o', '/work/drc.json', '/candidate/b']),
+            'placement_job': (build('b', 'r', refill=True, output_flag='--output'),
+                              ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--refill-zones',
+                               '--output', 'r', 'b']),
+            'placement_defects': (build('/candidate/b', '/work/native-drc.json', output_flag='--output'),
+                                  ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--output',
+                                   '/work/native-drc.json', '/candidate/b']),
+            'placement_access': (build('/candidate/b', '/work/report.json', refill=True,
+                                       executable='/usr/bin/kicad-cli'),
+                                 ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+                                  '--refill-zones', '-o', '/work/report.json', '/candidate/b']),
+            'sublayout': (build('/candidate/s', '/work/drc.json', units='mm'),
+                          ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--units', 'mm',
+                           '-o', '/work/drc.json', '/candidate/s']),
+        }
+        for label, (built, literal) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(built, literal)
+        with self.assertRaises(ValueError):
+            build('b', 'r', output_flag='--out')
+
+    def test_netlist_and_module_sites(self):
+        self.assertEqual(native_run.netlist_argv('/candidate/a.kicad_sch', '/work/design.xml'),
+                         ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', '/work/design.xml',
+                          '/candidate/a.kicad_sch'])
+        self.assertEqual(native_run.python_module_argv('agent_ee.placement_probe', 'b', 3),
+                         ['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', 'b', '3'])
+        self.assertEqual(native_run.python_module_argv('agent_ee.pin_contracts', no_bytecode=False),
+                         ['/usr/bin/python3', '-m', 'agent_ee.pin_contracts'])
+        intent = native_run.pcbnew_script('agent_ee.rf_geometry', 'b', timeout=60)
+        self.assertEqual((intent.tool, intent.timeout, intent.isolation), ('pcbnew_script', 60, 'sandbox'))
+
+    def test_intents_validate(self):
+        for label, kwargs in (('empty argv', dict(tool='x', argv=())), ('string argv', dict(tool='x', argv='ls')),
+                              ('isolation', dict(tool='x', argv=['ls'], isolation='vm')),
+                              ('sandbox env', dict(tool='x', argv=['ls'], env={'A': '1'}))):
+            with self.subTest(label), self.assertRaises(ValueError):
+                Intent(**kwargs)
+
+
+class RunRulesTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        (self.root / 'inputs').mkdir()
+
+    def test_deadline_clamps_and_refuses(self):
+        adapter = native_run.Recorded()
+        intent = Intent('probe', ['true'], timeout=600)
+        record = native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'w',
+                                deadline=time.monotonic() + 30, adapter=adapter)
+        self.assertLess(record['timeout_s'], 31)
+        self.assertLess(adapter.calls[0].timeout, 31)
+        with self.assertRaises(native_run.DeadlineExhausted):
+            native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'w',
+                           deadline=time.monotonic() + 0.5, adapter=adapter)
+        self.assertEqual(len(adapter.calls), 1)
+        unclamped = native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'w', adapter=adapter)
+        self.assertEqual(unclamped['timeout_s'], 600)
+
+    def test_cut_by_deadline(self):
+        intent = Intent('probe', ['true'], timeout=600)
+        self.assertTrue(native_run.cut_by_deadline({'execution': 'timeout', 'timeout_s': 30.0}, intent))
+        self.assertFalse(native_run.cut_by_deadline({'execution': 'timeout', 'timeout_s': 600}, intent))
+        self.assertFalse(native_run.cut_by_deadline({'execution': 'ok', 'timeout_s': 30.0}, intent))
+
+    def test_baseline_is_mounted_first_only_when_present(self):
+        adapter = native_run.Recorded()
+        baseline = self.root / 'baseline.json'
+        extra = (self.root / 'x', '/x')
+        intent = Intent('drc', ['true'])
+        native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'a', baseline=baseline,
+                       mounts=[extra], adapter=adapter)
+        baseline.write_text('{}')
+        native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'b', baseline=baseline,
+                       mounts=[extra], adapter=adapter)
+        self.assertEqual(adapter.calls[0].mounts, (extra,))
+        self.assertEqual(adapter.calls[1].mounts, ((baseline, '/evidence/baseline.json'), extra))
+
+    def test_using_routes_and_restores(self):
+        adapter = native_run.Recorded(lambda call: Outcome(stdout=b'hello\n'))
+        with native_run.using(adapter):
+            record = native_run.run(Intent('probe', ['anything']), inputs=self.root / 'inputs', work=self.root / 'w')
+        self.assertEqual(record.stdout, b'hello\n')
+        self.assertEqual(len(adapter.calls), 1)
+        with self.assertRaises(ValueError):   # the default sandbox adapter is back and checks its inputs
+            native_run.run(Intent('probe', ['true']), work=self.root / 'w')
+
+    def test_docker_intent_needs_an_adapter(self):
+        with self.assertRaises(ValueError):
+            native_run.run(Intent('bench', ['x'], isolation='docker'), work=None)
+        with self.assertRaises(TypeError):
+            native_run.run(['true'], work=None)
+
+
+class RecordedTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        (self.root / 'inputs').mkdir()
+
+    def test_writes_the_executor_record_shape(self):
+        def respond(call):
+            return Outcome(exit_code=2, stdout=b'out', stderr=b'err', files={'report.json': b'{}'})
+        adapter = native_run.Recorded(respond)
+        work = self.root / 'w'
+        record = native_run.run(native_run.drc('/candidate/b', '/work/report.json', timeout=60),
+                                inputs=self.root / 'inputs', work=work, adapter=adapter)
+        self.assertEqual(record['execution'], 'failed')
+        self.assertEqual(record['exit_code'], 2)
+        self.assertEqual(json.loads((work / 'execution.json').read_text()), dict(record))
+        self.assertEqual((work / 'console.log').read_bytes(), b'outerr')
+        self.assertEqual((work / 'report.json').read_bytes(), b'{}')
+        self.assertEqual(record['sandbox_argv'], executor.sandbox_argv(self.root / 'inputs', work,
+                                                                       list(record['argv'])))
+        self.assertEqual(native_run.profile(record).tool_argv, tuple(record['argv']))
+        self.assertEqual(adapter.calls[0].intent.tool, 'drc')
+
+    def test_exceptions_and_cancellation(self):
+        adapter = native_run.Recorded(lambda call: OSError('boom'))
+        with self.assertRaises(OSError):
+            native_run.run(Intent('probe', ['true']), inputs=self.root / 'inputs', work=self.root / 'w',
+                           adapter=adapter)
+        cancel = executor.Cancellation()
+        cancel.cancel()
+        with self.assertRaises(KeyboardInterrupt):
+            native_run.run(Intent('probe', ['true']), inputs=self.root / 'inputs', work=self.root / 'c',
+                           cancel=cancel, adapter=native_run.Recorded())
+        self.assertEqual(json.loads((self.root / 'c/execution.json').read_text())['execution'], 'interrupted')
+
+
+class HostTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def host(self, code, **intent):
+        return Intent('probe', ['/usr/bin/python3', '-c', code], isolation='host', **intent)
+
+    def test_output_exit_stdin_and_records(self):
+        lines = []
+        record = native_run.run(self.host('import sys; d=sys.stdin.read(); print(d); print("e", file=sys.stderr);'
+                                          ' sys.exit(3)', stdin='in'),
+                                work=self.root / 'w', on_line=lines.append)
+        self.assertEqual((record['execution'], record['exit_code'], record['isolation']), ('failed', 3, 'host'))
+        self.assertEqual(record.stdout, b'in\n')
+        self.assertEqual(record.stderr, b'e\n')
+        self.assertEqual(lines, [b'in'])
+        self.assertEqual(json.loads((self.root / 'w/execution.json').read_text()), dict(record))
+        self.assertNotIn('sandbox_argv', record)
+
+    def test_env_and_cwd(self):
+        record = native_run.run(self.host('import os; print(os.environ["X"], os.getcwd())',
+                                          env={'X': 'y', 'PATH': '/usr/bin'}, cwd=str(self.root)),
+                                work=None)
+        self.assertEqual(record.stdout.decode().split(), ['y', str(self.root.resolve())])
+
+    def test_timeout_kills_the_whole_group(self):
+        pidfile = self.root / 'child.pid'
+        code = ('import subprocess, sys, time; '
+                f'p = subprocess.Popen(["sleep", "60"]); open({str(pidfile)!r}, "w").write(str(p.pid)); '
+                'time.sleep(60)')
+        start = time.monotonic()
+        record = native_run.run(self.host(code, timeout=2), work=None)
+        self.assertEqual(record['execution'], 'timeout')
+        self.assertLess(time.monotonic() - start, 10)
+        child = int(pidfile.read_text())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(.05)
+        else:
+            os.kill(child, signal.SIGKILL)
+            self.fail('descendant outlived the timed-out group')
+
+    def test_cancel_before_launch_and_missing_tool(self):
+        cancel = executor.Cancellation()
+        cancel.cancel()
+        record = native_run.run(self.host('print(1)'), work=None, cancel=cancel)
+        self.assertEqual(record['execution'], 'interrupted')
+        missing = native_run.run(Intent('probe', ['/nonexistent/tool'], isolation='host'), work=None)
+        self.assertEqual(missing['execution'], 'unavailable')
+
+    def test_host_refuses_mounts(self):
+        with self.assertRaises(ValueError):
+            native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])
+
+
+class DockerTest(unittest.TestCase):
+    def test_argv_matches_the_benchmark_container_command(self):
+        source, prepared, output = '/s/impl', '/c/prepared', '/o/run'
+        args = ['_execute', prepared, output + '/runs']
+        adapter = native_run.Docker(
+            image='sha256:' + 'a' * 64, name='agent-ee-21-run', env=('HOME=/tmp', 'AGENT_EE_REQUIRE_TOOLCHAIN=1'),
+            volumes=((source, '/opt/agent-ee', True), (prepared, prepared, True), (output, output, False)),
+            workdir='/opt/agent-ee', entrypoint='/usr/bin/python3')
+        intent = Intent('benchmark', ['/opt/agent-ee/scripts/seeded_benchmark.py', *args], isolation='docker')
+        self.assertEqual(adapter.argv(intent),
+                         benchmark_run.container_command('agent-ee-21-run', 'sha256:' + 'a' * 64, source,
+                                                         [(prepared, True), (output, False)], args))
+
+    def test_docker_refuses_other_intents(self):
+        adapter = native_run.Docker(image='i', name='n')
+        with self.assertRaises(ValueError):
+            native_run.run(Intent('x', ['true']), inputs='/tmp', work=None, adapter=adapter)
+
+
+@unittest.skipIf(prerequisite_problem(), prerequisite_problem())
+class SandboxTest(unittest.TestCase):
+    """The sandbox adapter's record is the executor's record, byte for byte."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        (self.root / 'inputs').mkdir()
+        (self.root / 'inputs/data.txt').write_text('candidate\n')
+
+    @staticmethod
+    def stable(path):
+        record = json.loads((path / 'execution.json').read_text())
+        record.pop('duration_s')
+        return record
+
+    def test_records_are_byte_identical_to_executor(self):
+        argv = ['/bin/sh', '-c', 'cat /candidate/data.txt; read line; echo "$line" >&2; exit 4']
+        direct = executor.execute(self.root / 'inputs', self.root / 'direct', argv, timeout=30, stdin='x\n')
+        intent = Intent('probe', argv, timeout=30, stdin='x\n')
+        seam = native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'direct')
+        self.assertEqual({k: v for k, v in seam.items() if k != 'duration_s'},
+                         {k: v for k, v in direct.items() if k != 'duration_s'})
+        self.assertEqual((seam['execution'], seam['exit_code']), ('failed', 4))
+        self.assertEqual(seam.stdout, b'candidate\n')
+        self.assertEqual(seam.stderr, b'x\n')
+        self.assertEqual((self.root / 'direct/console.log').read_bytes(), b'candidate\nx\n')
+
+    def test_baseline_mount_reaches_the_tool(self):
+        baseline = self.root / 'baseline.json'
+        baseline.write_text('{"baseline": 1}')
+        record = native_run.run(Intent('probe', ['cat', '/evidence/baseline.json'], timeout=30),
+                                inputs=self.root / 'inputs', work=self.root / 'w', baseline=baseline)
+        self.assertEqual(record['execution'], 'ok')
+        self.assertEqual(record.stdout, b'{"baseline": 1}')
+        self.assertEqual(native_run.profile(record).bound('/evidence/baseline.json'), [str(baseline.resolve())])
+
+    def test_sandbox_refuses_without_inputs_or_with_host_intents(self):
+        with self.assertRaises(ValueError):
+            native_run.run(Intent('probe', ['true']), work=self.root / 'w')
+        with self.assertRaises(ValueError):
+            native_run.run(Intent('probe', ['true'], isolation='host'), inputs=self.root / 'inputs',
+                           work=self.root / 'w', adapter=native_run.Sandbox())
+
+
+if __name__ == '__main__':
+    unittest.main()
