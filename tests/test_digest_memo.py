@@ -281,11 +281,11 @@ class FingerprintScopeTests(Counted):
     def test_only_runtime_fingerprints_take_a_scope(self):
         # Verification paths take no scope: every candidate and record digest is a fresh read.
         import inspect
-        from agent_ee import campaign, cli
-        for function in (cli.verify, cli.verify_records, cli.artifacts, campaign.verify_campaign_records):
+        from agent_ee import campaign, run_record
+        for function in (run_record.verify, run_record.verify_records, run_record.artifacts, campaign.verify_campaign_records):
             self.assertNotIn('digest_scope', inspect.getsource(function), function.__name__)
-        self.assertIn('digest_scope', inspect.getsource(cli.runtime_files))
-        self.assertIn('runtime_digest', inspect.getsource(cli._runtime_files))
+        self.assertIn('digest_scope', inspect.getsource(run_record.runtime_files))
+        self.assertIn('runtime_digest', inspect.getsource(run_record._runtime_files))
 
 
 if __name__ == '__main__':

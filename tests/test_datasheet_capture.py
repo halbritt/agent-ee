@@ -272,7 +272,7 @@ class DatasheetCaptureTests(unittest.TestCase):
         import contextlib
         import io
         import subprocess
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.storage import digest, write_json
         from toolchain import require_toolchain
         require_toolchain(native=True, tools=('pdftotext',))

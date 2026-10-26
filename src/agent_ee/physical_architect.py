@@ -29,6 +29,7 @@ from .physical_intent import (DIAGNOSTIC_KINDS, DIAGNOSTIC_STATUSES, LOCALITY_ME
                               publish, verify_receipt)
 from .profiles import validate_definition
 from .storage import digest, identity, read_json, rename_noreplace, write_json
+from .run_record import pinned, policy_files, runtime_files
 
 MODES = ('manual', 'architect', 'disabled')
 RECEIPT_SCHEMA = 'agent-ee.physical-architect-receipt/1'
@@ -305,7 +306,7 @@ def _stage(run, stage):
 
 
 def propose(run, out, *, definition, deadline, stage, reference=None, cancellation=None, launch_environment=None,
-            reserve_s=RESERVE_S):
+            reserve_s=RESERVE_S, host=None):
     """One architect proposal plus at most one correction; publish only an accepted, fully bound package.
 
     ``stage`` is the architect's own directory: a read-only evidence copy for the call, every launch
@@ -313,9 +314,9 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
     ``cancellation`` its stop; both bound the whole stage. Calls launch only before ``deadline -
     reserve_s``; validation, comparison, verification and publication must finish before
     ``deadline`` itself, or the stage stops and publishes nothing. ``reference`` is a captured
-    manual intent to compare against.
+    manual intent to compare against. ``host`` holds caller-supplied policy and runtime
+    fingerprints (run_record.pinned) for the launch expectation and guard.
     """
-    from .cli import policy_files, runtime_files
     from .preflight import capture_expectation
     from .review_run import structured_call, verify_role_call
     from .reviewers import reviewer_call
@@ -342,7 +343,8 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
     prompt = INSTRUCTIONS + json.dumps({'captured_evidence': evidence}, sort_keys=True)
     (stage / 'architect-prompt.txt').write_text(prompt, encoding='utf-8')
     environment = launch_environment or {'run_id': f'physical-architect-{uuid.uuid4()}',
-                                         'policy_files': policy_files(), 'runtime_files': runtime_files()}
+                                         'policy_files': pinned(host, 'policy_files', policy_files),
+                                         'runtime_files': pinned(host, 'runtime_files', runtime_files)}
     expected = capture_expectation(environment, manifest, [definition], inputs=stage / 'inputs')
     write_json(stage / 'launch-expectation.json', expected)
 
@@ -370,7 +372,8 @@ def propose(run, out, *, definition, deadline, stage, reference=None, cancellati
         stage, ROLE, prompt, PROPOSAL_SCHEMA,
         lambda supplied: reviewer_call(stage, ROLE, definition, supplied, PROPOSAL_SCHEMA,
             min(definition['timeout_s'], max(.001, launch_deadline - time.monotonic())), cancellation=cancellation,
-            launch_context={'expected': expected, 'boundary': ROLE, 'deadline': launch_deadline}),
+            launch_context={'expected': expected, 'boundary': ROLE, 'deadline': launch_deadline,
+                            **({'host': host} if host is not None else {})}),
         validate, limit=CORRECTIONS, execution_path=stage / 'architect-execution.json')
     model_s = time.monotonic() - started
     verify_role_call(stage, record, expected, ROLE, ROLE, limit=CORRECTIONS)

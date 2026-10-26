@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_ee.campaign import run_campaign, verify_campaign, campaign_feedback, check_proposal
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.empirical import bench_review
 from agent_ee.storage import digest, read_json, write_json
 
@@ -200,8 +200,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.addCleanup(patch.stopall)
         patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
         # Avoid platform fingerprint probes; sandbox tool execution is real.
-        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}).start()
+        self.host = {'runtime_files': {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}}
 
     def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         run = Path(run)
@@ -231,8 +231,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 value['decisions'][0]['evidence'].append({'path': 'baseline.json', 'locator': 'requirements/R1', 'pointer': '/requirements/0'})
             return record, value
         with patch('agent_ee.reviewers.dispatch', side_effect=answer), contextlib.redirect_stdout(io.StringIO()):
-            run_review(self.root / 'scope.json', self.root / 'run', 30)
-        result = verify(self.root / 'run')
+            run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host)
+        result = verify(self.root / 'run', host=self.host)
         self.assertTrue(result['adjudicated'])
         self.assertEqual(result['findings'][0]['status'], 'accepted')
         execution = read_json(self.root / 'run/adjudicator-execution.json')
@@ -241,7 +241,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     @toolchain_test
     def test_single_writer_repair_then_fresh_independent_reviews(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / "campaign.json", self.root / "campaign")
+            status = run_campaign(self.root / "campaign.json", self.root / "campaign", host=self.host)
         state = read_json(self.root / "campaign/state.json")
         self.assertEqual(status, 0, state)
         self.assertEqual(state["state"], "criteria_satisfied")
@@ -252,14 +252,14 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(len(state["history"]), 2)
         self.assertNotEqual(state["history"][0]["candidate_id"], state["history"][1]["candidate_id"])
         self.assertEqual(read_json(self.root / "source/design.json")["value"], 15)
-        self.assertEqual(verify(self.root / "campaign/runs/2")["outcome"], "criteria_satisfied")
-        self.assertEqual(verify_campaign(self.root / "campaign")["state"], "criteria_satisfied")
+        self.assertEqual(verify(self.root / "campaign/runs/2", host=self.host)["outcome"], "criteria_satisfied")
+        self.assertEqual(verify_campaign(self.root / "campaign", host=self.host)["state"], "criteria_satisfied")
         path = self.root / "campaign/runs/1/result.json"
         altered = read_json(path)
         altered["annotation"] = "changed after campaign consumed this run"
         write_json(path, altered)
         with self.assertRaisesRegex(ValueError, "history result link"):
-            verify_campaign(self.root / "campaign")
+            verify_campaign(self.root / "campaign", host=self.host)
 
     @toolchain_test
     @mapped_stores
@@ -269,10 +269,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         import mmap
         import os
         import time
-        from agent_ee import cli, storage
+        from agent_ee import run_record, storage
         from agent_ee.cli import main
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign", host=self.host), 0)
         time.sleep(2.2)
         counts, observations = {}, {}
         original = storage._hash_stream
@@ -296,15 +296,17 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             counts.clear()
             observations.clear()
             with patch('agent_ee.storage._hash_stream', side_effect=counted), \
-                    patch('agent_ee.cli.runtime_files', side_effect=observing('runtime', cli.runtime_files)), \
-                    patch('agent_ee.cli.policy_files', side_effect=observing('policy', cli.policy_files)):
+                    patch('agent_ee.run_record.runtime_files',
+                          side_effect=observing('runtime', lambda **_: self.host['runtime_files'])), \
+                    patch('agent_ee.run_record.policy_files', side_effect=observing('policy', run_record.policy_files)):
                 action()
             return dict(counts), dict(observations)
         root = self.root / "campaign"
         self.assertEqual(len(read_json(root / "state.json")["history"]), 2)
         key = lambda p: (os.stat(p).st_dev, os.stat(p).st_ino)
         inputs = {key(p): p.name for p in root.glob('runs/*/inputs/**/*') if p.is_file()}
-        policy = {key(p) for p in Path(cli.__file__).parent.glob('*.py')}
+        policy = {key(p) for p in Path(run_record.__file__).parent.glob('*.py')}
+        # No host is supplied here: the call observes (the counted, fixture-stubbed observer) once.
         once, observed = hashes(lambda: verify_campaign(root))
         # Both retained runs are checked against one observation of the host files.
         self.assertEqual(observed, {'runtime': 1, 'policy': 1})
@@ -327,30 +329,30 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
             mapped[0] = mapped[0]
             time.sleep(2.2)
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
             before = os.stat(target)
             mapped[0] = ord('B')
             self.assertEqual(storage._status(os.stat(target)), storage._status(before))
             with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
-                verify_campaign(root)
+                verify_campaign(root, host=self.host)
             mapped[0] = ord('b')
         # The same holds for a rewrite whose timestamps are restored.
         before = os.stat(target)
-        verify_campaign(root)
+        verify_campaign(root, host=self.host)
         target.write_text("BOARD")
         os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
         with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     def _changed_within_call(self, rel, hook, offset, value):
         """Change run/rel[offset] through a shared mapping, size, mtime and ctime unchanged,
-        right after cli.<hook> first returns inside one verify() call; return its error."""
+        right after run_record.<hook> first returns inside one verify(host=self.host) call; return its error."""
         import mmap
         import os
         import time
-        from agent_ee import cli, storage
+        from agent_ee import run_record, storage
         target = self.root / 'run' / rel
-        original, seen = getattr(cli, hook), {}
+        original, seen = getattr(run_record, hook), {}
 
         def then_change(*args, **kwargs):
             outcome = original(*args, **kwargs)
@@ -362,9 +364,9 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
             mapped[offset] = mapped[offset]  # map the page writable; on tmpfs later stores are silent
             time.sleep(2.2)
-            with patch('agent_ee.cli.' + hook, side_effect=then_change), \
+            with patch('agent_ee.run_record.' + hook, side_effect=then_change), \
                     self.assertRaises(ValueError) as caught:
-                verify(self.root / 'run', current_source=False)
+                verify(self.root / 'run', current_source=False, host=self.host)
         self.assertEqual(seen['before'], seen['after'])
         return str(caught.exception)
 
@@ -376,8 +378,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         # same call must read the new bytes and refuse. A status-validated in-call memo
         # (35a8738) accepted the first two cases.
         with contextlib.redirect_stdout(io.StringIO()):
-            run_review(self.root / 'scope.json', self.root / 'run', 30)
-        self.assertEqual(verify(self.root / 'run', current_source=False)['state'], 'complete')
+            run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host)
+        self.assertEqual(verify(self.root / 'run', current_source=False, host=self.host)['state'], 'complete')
         board = (self.root / 'run/inputs/design/board').read_bytes()
         self.assertEqual(self._changed_within_call('inputs/design/board', 'verify_snapshot', 0, ord('B')),
                          'execution/review evidence changed; prior acceptance is stale')
@@ -404,7 +406,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                     write_json(self.root / 'scope.json', self.scope)
                     out = self.root / f'refused-{schema[-1]}-{limit}'
                     with self.assertRaisesRegex(ValueError, 'finding_retry_limit'):
-                        run_campaign(self.root / 'campaign.json', out)
+                        run_campaign(self.root / 'campaign.json', out, host=self.host)
                     self.assertFalse(out.exists())
                     self.assertEqual(self.calls, [])
 
@@ -417,8 +419,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         write_json(self.root / 'scope.json', self.scope)
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
-        first = verify_campaign(self.root / "campaign")
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign", host=self.host), 0)
+        first = verify_campaign(self.root / "campaign", host=self.host)
         sample = {"check_id": "response", "metric": "output", "value": 12,
                   "uncertainty": 1, "unit": "V", "condition": "load"}
         write_json(self.root / "instrument.json", {"samples": [sample, {**sample, "metric": "aux"}]})
@@ -437,11 +439,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with patch('agent_ee.reviewers.dispatch', side_effect=calibrated_repair):
             with contextlib.redirect_stdout(io.StringIO()):
                 status = campaign_feedback(self.root / "campaign", self.root / "bench.json",
-                                           self.root / "feedback", 60)
-        state = verify_campaign(self.root / "campaign")
+                                           self.root / "feedback", 60, host=self.host)
+        state = verify_campaign(self.root / "campaign", host=self.host)
         self.assertEqual(status, 1, state)
         self.assertEqual(state['state'], 'incomplete')
-        stale = verify(self.root / 'campaign/runs/3')
+        stale = verify(self.root / 'campaign/runs/3', host=self.host)
         self.assertEqual(stale['checks'][0]['execution'], 'unavailable')
         self.assertEqual(stale['checks'][0]['outcome'], 'unknown')
         self.assertEqual(stale['checks'][0]['details']['metrics']['output']['value'], 1)
@@ -455,32 +457,32 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         write_json(self.root / 'bench.json', report)
         from agent_ee.empirical import ingest
         with self.assertRaisesRegex(ValueError, 'omits required correction obligations'):
-            ingest(self.root / 'campaign/runs/3', self.root / 'bench.json', self.root / 'omitted-epoch')
-        self.assertNotIn('empirical_feedback', verify(self.root / 'campaign/runs/3'))
+            ingest(self.root / 'campaign/runs/3', self.root / 'bench.json', self.root / 'omitted-epoch', host=self.host)
+        self.assertNotIn('empirical_feedback', verify(self.root / 'campaign/runs/3', host=self.host))
         write_json(self.root / 'instrument.json', {'samples': [sample, {**sample, 'metric': 'aux'}]})
         report['artifacts'][0]['sha256'] = digest(self.root / 'instrument.json')
         report['observations'].append({**sample, 'metric': 'aux', 'artifact': 'instrument.json', 'locator': '1'})
         write_json(self.root / 'bench.json', report)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(campaign_feedback(self.root / 'campaign', self.root / 'bench.json',
-                                               self.root / 'fresh-feedback', 60), 0)
-        state = verify_campaign(self.root / 'campaign')
+                                               self.root / 'fresh-feedback', 60, host=self.host), 0)
+        state = verify_campaign(self.root / 'campaign', host=self.host)
         self.assertEqual(state['state'], 'criteria_satisfied')
         self.assertEqual([h['epoch'] for h in state['history']], [0, 1, 1, 2])
         self.assertEqual(state['history'][0], first['history'][0])
         self.assertEqual(state['history'][1]['failed'], ['response'])
-        fresh = verify(self.root / 'campaign/runs/4')
+        fresh = verify(self.root / 'campaign/runs/4', host=self.host)
         self.assertEqual(fresh['max_schema_resubmissions'], 1)
-        self.assertEqual(verify(self.root / 'campaign/runs/3')['max_schema_resubmissions'], 1)
+        self.assertEqual(verify(self.root / 'campaign/runs/3', host=self.host)['max_schema_resubmissions'], 1)
         metric = fresh['checks'][0]['details']['metrics']['output']
         self.assertEqual((metric['nominal'], metric['lower'], metric['upper']), (1, 2, 2))
         self.assertEqual(len(read_json(self.root / 'fresh-feedback/empirical/calibration.json')['observations']), 4)
-        self.assertEqual(verify(self.root / 'campaign/runs/1')['outcome'], 'incomplete')
-        self.assertEqual(verify(self.root / 'campaign/runs/3')['outcome'], 'incomplete')
+        self.assertEqual(verify(self.root / 'campaign/runs/1', host=self.host)['outcome'], 'incomplete')
+        self.assertEqual(verify(self.root / 'campaign/runs/3', host=self.host)['outcome'], 'incomplete')
         state["history"][2]["epoch"] = 2
         write_json(self.root / "campaign/state.json", state)
         with self.assertRaisesRegex(ValueError, "epoch lacks"):
-            verify_campaign(self.root / "campaign")
+            verify_campaign(self.root / "campaign", host=self.host)
 
     @toolchain_test
     def test_implementation_cannot_change_verification_inputs_or_add_files(self):
@@ -495,7 +497,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                     return reply
                 with patch('agent_ee.reviewers.dispatch', side_effect=attacking_agent):
                     with contextlib.redirect_stdout(io.StringIO()):
-                        status = run_campaign(self.root / "campaign.json", self.root / attack)
+                        status = run_campaign(self.root / "campaign.json", self.root / attack, host=self.host)
                 state = read_json(self.root / attack / "state.json")
                 self.assertEqual(status, 1)
                 self.assertEqual(state["state"], "incomplete")
@@ -506,13 +508,13 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def test_retained_write_authority_cannot_be_broadened(self):
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign", host=self.host), 0)
         path = self.root / "campaign/state.json"
         state = read_json(path)
         state["mutable_inputs"].append("design/model")
         write_json(path, state)
         with self.assertRaisesRegex(ValueError, "captured write authority"):
-            verify_campaign(self.root / "campaign")
+            verify_campaign(self.root / "campaign", host=self.host)
 
     def test_legacy_missing_measurement_tool_has_handled_verification_refusal(self):
         from agent_ee.cli import main
@@ -520,10 +522,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         del self.scope["checks"][0]["params"]["tool"]
         write_json(self.root / "scope.json", self.scope)
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / "scope.json", self.root / "legacy", 60, checks_only=True), 1)
+            self.assertEqual(run_review(self.root / "scope.json", self.root / "legacy", 60, checks_only=True, host=self.host), 1)
         error = io.StringIO()
         with contextlib.redirect_stderr(error):
-            self.assertEqual(main(["verify", str(self.root / "legacy")]), 2)
+            self.assertEqual(main(["verify", str(self.root / "legacy")], host=self.host), 2)
         self.assertIn("lacks a pinned tool declaration", error.getvalue())
         self.assertNotIn("Traceback", error.getvalue())
 
@@ -531,7 +533,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def test_bench_discrepancy_reenters_checks_and_adjudication(self):
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / "scope.json", self.root / "initial", 60), 0)
+            self.assertEqual(run_review(self.root / "scope.json", self.root / "initial", 60, host=self.host), 0)
         original = read_json(self.root / "initial/result.json")
         sample = {"check_id": "response", "metric": "output", "value": 12,
                   "uncertainty": 1, "unit": "V", "condition": "load"}
@@ -543,9 +545,9 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "observations": [{**sample, "artifact": "instrument.json", "locator": "0"}]}
         write_json(self.root / "bench.json", report)
         with contextlib.redirect_stdout(io.StringIO()):
-            status = bench_review(self.root / "initial", self.root / "bench.json", self.root / "feedback", 60)
+            status = bench_review(self.root / "initial", self.root / "bench.json", self.root / "feedback", 60, host=self.host)
         self.assertEqual(status, 1)
-        result = verify(self.root / "feedback/review")
+        result = verify(self.root / "feedback/review", host=self.host)
         self.assertEqual(result["outcome"], "defects_or_unresolved")
         self.assertEqual(result["checks"][0]["details"]["margins"]["output"]["max"], -3)
         self.assertEqual(result["findings"][0]["status"], "accepted")
@@ -555,7 +557,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             self.assertNotIn("reviews", facts)
             self.assertNotIn("findings", facts)
         self.assertNotEqual(result["candidate_id"], original["candidate_id"])
-        self.assertEqual(verify(self.root / "initial")["outcome"], "incomplete")
+        self.assertEqual(verify(self.root / "initial", host=self.host)["outcome"], "incomplete")
         self.assertTrue(read_json(self.root / "initial/result.json")["empirical_feedback"])
 
         # A later near-nominal sample cannot erase the earlier larger bias.
@@ -567,8 +569,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         write_json(self.root / "bench.json", report)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(bench_review(self.root / "feedback/review", self.root / "bench.json",
-                                         self.root / "feedback2", 60), 1)
-        second = verify(self.root / "feedback2/review")
+                                         self.root / "feedback2", 60, host=self.host), 1)
+        second = verify(self.root / "feedback2/review", host=self.host)
         metric = second["checks"][0]["details"]["metrics"]["output"]
         self.assertEqual((metric["nominal"], metric["lower"], metric["upper"]), (5, 6, 13))
         self.assertEqual(len(second["checks"][0]["details"]["empirical_cases"]), 2)
@@ -577,11 +579,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def test_arbitrary_incomplete_campaign_cannot_use_bench_recovery(self):
         (self.root / 'source/adapter.py').write_text("raise RuntimeError('parser failure')")
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
         with self.assertRaisesRegex(ValueError, 'bench continuation requires'):
             campaign_feedback(self.root / 'campaign', self.root / 'absent-report.json',
-                              self.root / 'refused-feedback', 60)
+                              self.root / 'refused-feedback', 60, host=self.host)
         self.assertFalse((self.root / 'refused-feedback').exists())
 
     @toolchain_test
@@ -592,8 +594,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.scope['inputs'].append({'path': str(self.root / 'unclassified'), 'at': 'empirical'})
         write_json(self.root / 'scope.json', self.scope)
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 60), 0)
-        original = verify(self.root / 'initial')
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 60, host=self.host), 0)
+        original = verify(self.root / 'initial', host=self.host)
         sample = {'check_id': 'response', 'metric': 'output', 'value': 5,
                   'uncertainty': 0, 'unit': 'V', 'condition': 'load'}
         write_json(self.root / 'raw.json', {'samples': [sample]})
@@ -605,15 +607,15 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         write_json(self.root / 'bench.json', report)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(bench_review(self.root / 'initial', self.root / 'bench.json',
-                                         self.root / 'feedback', 60), 0)
+                                         self.root / 'feedback', 60, host=self.host), 0)
         captured = self.root / 'feedback/review/inputs/empirical/stackup.txt'
         self.assertEqual(captured.read_text(), 'captured material dependency')
-        fresh = verify(self.root / 'feedback/review')
+        fresh = verify(self.root / 'feedback/review', host=self.host)
         report['candidate_id'] = fresh['candidate_id']
         write_json(self.root / 'bench.json', report)
-        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
-            bench_review(self.root / 'feedback/review', self.root / 'bench.json', self.root / 'interrupted', 60)
-        self.assertEqual(verify(self.root / 'feedback/review')['outcome'], 'incomplete')
+        with patch('agent_ee.empirical.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            bench_review(self.root / 'feedback/review', self.root / 'bench.json', self.root / 'interrupted', 60, host=self.host)
+        self.assertEqual(verify(self.root / 'feedback/review', host=self.host)['outcome'], 'incomplete')
         self.assertTrue((self.root / 'interrupted/empirical/calibration.json').is_file())
         self.assertEqual(len(read_json(self.root / 'interrupted/empirical/calibration.json')['observations']), 2)
 
@@ -626,7 +628,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         retained = digest(self.root / 'interrupted/empirical/calibration.json')
         for attempt in ('retry', 'retry-again'):
             with self.assertRaisesRegex(ValueError, 'superseded.*recovery'):
-                bench_review(run, self.root / 'bench.json', self.root / attempt, 60)
+                bench_review(run, self.root / 'bench.json', self.root / attempt, 60, host=self.host)
             self.assertFalse((self.root / attempt / 'empirical/calibration.json').exists())
             self.assertFalse((self.root / attempt / 'review').exists())
             self.assertEqual(read_json(run / 'result.json'), before)
@@ -638,7 +640,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         from agent_ee.empirical import ingest
         self.test_reentry_preserves_unclassified_empirical_files_and_supersession_on_interrupt()
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'new-source', 60), 0)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'new-source', 60, host=self.host), 0)
         run = self.root / 'new-source'
         before = read_json(run / 'result.json')
         report = read_json(self.root / 'bench.json')
@@ -646,7 +648,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         report['observations'] *= 2
         write_json(self.root / 'duplicate-bench.json', report)
         with self.assertRaisesRegex(ValueError, 'duplicate correction identity'):
-            ingest(run, self.root / 'duplicate-bench.json', self.root / 'invalid-epoch')
+            ingest(run, self.root / 'duplicate-bench.json', self.root / 'invalid-epoch', host=self.host)
         self.assertFalse((self.root / 'invalid-epoch/calibration.json').exists())
         self.assertEqual(read_json(run / 'result.json'), before)
 
@@ -680,13 +682,16 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     @toolchain_test
     def test_implementation_drift_refuses_writer_with_original_scratch_context(self):
         from agent_ee.campaign import implement as real_implement
-        from agent_ee.cli import runtime_files
-        original_runtime = runtime_files()
-        def drift(root, previous, definition, state, deadline):
-            with patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}}):
-                return real_implement(root, previous, definition, state, deadline)
+        original_runtime = self.host['runtime_files']
+        def drift(*args, **kwargs):
+            # The host changes while the writer is admitted, then is restored.
+            self.host['runtime_files'] = {**original_runtime, 'drift': {}}
+            try:
+                return real_implement(*args, **kwargs)
+            finally:
+                self.host['runtime_files'] = original_runtime
         with patch('agent_ee.campaign.implement', side_effect=drift), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         self.assertNotIn('implementation', self.calls)
         work = self.root / 'campaign/implementations/1'
         record = read_json(work / 'implementation-execution.json')
@@ -697,20 +702,22 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertFalse((work / 'result.json').exists())
         self.assertEqual(read_json(work / 'review-work/implementation/design/design/design.json'), {'value': 15})
         self.assertEqual(read_json(self.root / 'campaign/state.json')['state'], 'incomplete')
-        verify_campaign(self.root / 'campaign')
+        verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_adjudication_drift_has_zero_adjudicator_dispatches(self):
         from agent_ee.reviewers import adjudicator_call as real_adjudicator
-        from agent_ee.cli import runtime_files
-        original_runtime = runtime_files()
+        original_runtime = self.host['runtime_files']
         def drift(*args, **kwargs):
-            with patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}}):
+            self.host['runtime_files'] = {**original_runtime, 'drift': {}}
+            try:
                 return real_adjudicator(*args, **kwargs)
+            finally:
+                self.host['runtime_files'] = original_runtime
         with patch('agent_ee.reviewers.adjudicator_call', side_effect=drift), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host), 1)
         self.assertCountEqual(self.calls, ['circuit', 'physical'])
-        result = verify(self.root / 'run')
+        result = verify(self.root / 'run', host=self.host)
         self.assertEqual(result['outcome'], 'incomplete')
         self.assertFalse(result['adjudicated'])
         record = read_json(self.root / 'run/adjudicator-execution.json')
@@ -719,17 +726,14 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     @toolchain_test
     def test_drift_after_checks_prevents_all_initial_dispatches(self):
         from agent_ee.checks import run_checks as real_checks
-        from agent_ee.cli import runtime_files
-        original_runtime = runtime_files()
+        original_runtime = self.host['runtime_files']
         # The deterministic check completes normally; subsequent observation sees drift.
-        runtime_patch = patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}})
         def checks(*args, **kwargs):
             result = real_checks(*args, **kwargs)
-            runtime_patch.start()
-            self.addCleanup(runtime_patch.stop)
+            self.host['runtime_files'] = {**original_runtime, 'drift': {}}
             return result
         with patch('agent_ee.checks.run_checks', side_effect=checks), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host), 1)
         self.assertEqual(self.calls, [])
         result = read_json(self.root / 'run/result.json')
         self.assertEqual(result['checks'][0]['execution'], 'ok')
@@ -745,14 +749,13 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def review_with_update_after_checks(self, name):
         from agent_ee.checks import run_checks as real_checks
         base, updated = self.harness_runtime(name)
-        current = {'runtime': base}
-        patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: current['runtime']).start()
+        self.host['runtime_files'] = base
         def checks(*args, **kwargs):
             result = real_checks(*args, **kwargs)
-            current['runtime'] = updated
+            self.host['runtime_files'] = updated
             return result
         with patch('agent_ee.checks.run_checks', side_effect=checks), contextlib.redirect_stdout(io.StringIO()):
-            run_review(self.root / 'scope.json', self.root / 'run', 30)
+            run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host)
         return base, updated, read_json(self.root / 'run/result.json')
 
     @toolchain_test
@@ -772,11 +775,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             self.assertEqual([c['name'] for c in receipt['unused_runtime_changes']], ['agy'])
         self.assertIn('unused harness `agy`', (self.root / 'run/REPORT.md').read_text())
         observations = []
-        self.assertEqual(verify(self.root / 'run', observations=observations), result)
+        self.assertEqual(verify(self.root / 'run', observations=observations, host=self.host), result)
         self.assertEqual([c['name'] for c in observations], ['agy'])
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            self.assertEqual(main(['verify', str(self.root / 'run')]), 0)
+            self.assertEqual(main(['verify', str(self.root / 'run')], host=self.host), 0)
         self.assertIn('observation: unused harness runtime agy changed', out.getvalue())
 
     @toolchain_test
@@ -787,38 +790,38 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertIn('implementation or tool runtime changed during review; rerun required', result['error'])
         self.assertTrue(all('runtime_drift' in r.get('error', '') for r in result['review_executions']))
         with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify(self.root / 'run')
+            verify(self.root / 'run', host=self.host)
 
     @toolchain_test
     def test_retained_campaign_observes_unused_harness_update_and_refuses_used(self):
         from agent_ee.campaign import implement as real_implement
         from agent_ee.cli import main
         base, updated = self.harness_runtime('agy')
-        current = {'runtime': base}
-        patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: current['runtime']).start()
+        self.host['runtime_files'] = base
         def update(*args, **kwargs):
             # The writer's pinned environment is the campaign start, before this update.
-            current['runtime'] = updated
+            self.host['runtime_files'] = updated
             return real_implement(*args, **kwargs)
         root = self.root / 'campaign'
         with patch('agent_ee.campaign.implement', side_effect=update), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', root), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', root, host=self.host), 0)
         self.assertIn('implementation', self.calls)
         receipt = read_json(root / 'implementations/1/review-work/implementation/preflight/receipt.json')
         self.assertEqual(receipt['result'], 'ok')
         self.assertEqual([c['name'] for c in receipt['unused_runtime_changes']], ['agy'])
         observations = []
-        self.assertEqual(verify_campaign(root, observations=observations)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, observations=observations, host=self.host)['state'], 'criteria_satisfied')
         self.assertEqual([c['name'] for c in observations], ['agy'])
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            self.assertEqual(main(['verify-campaign', str(root)]), 0)
+            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 0)
         self.assertIn('observation: unused harness runtime agy changed', out.getvalue())
-        current['runtime'] = {**updated, 'codex': {'path': '/usr/bin/true', 'sha256': 'replaced-by-host-update'}}
+        self.host['runtime_files'] = {
+            **updated, 'codex': {'path': '/usr/bin/true', 'sha256': 'replaced-by-host-update'}}
         with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(main(['verify-campaign', str(root)]), 2)
+            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 2)
 
     @toolchain_test
     def test_retained_mixed_harness_campaign_gates_on_writer_harness(self):
@@ -826,11 +829,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         config = read_json(self.root / 'campaign.json')
         write_json(self.root / 'campaign.json', {**config, 'implementation': {**config['implementation'], 'harness': 'claude'}})
         base, writer_updated = self.harness_runtime('claude')
-        current = {'runtime': base}
-        patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: current['runtime']).start()
+        self.host['runtime_files'] = base
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', root), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', root, host=self.host), 0)
         self.assertIn('implementation', self.calls)
         receipt = read_json(root / 'implementations/1/review-work/implementation/preflight/receipt.json')
         self.assertEqual(receipt['runtime_classification']['claude'], 'used')
@@ -838,24 +840,24 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(state['state'], 'criteria_satisfied')
         self.assertGreater(len(state['history']), 1)
         # The writer produced the candidate, so its binary changing is integrity drift.
-        current['runtime'] = writer_updated
+        self.host['runtime_files'] = writer_updated
         with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(main(['verify-campaign', str(root)]), 2)
+            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 2)
         # A single review run never invoked the writer; its own verify only observes it.
         observations = []
-        verify(root / 'runs/1', current_source=False, observations=observations)
+        verify(root / 'runs/1', current_source=False, observations=observations, host=self.host)
         self.assertEqual([c['name'] for c in observations], ['claude'])
         # A harness neither the profile nor the writer invoked is one observation for the campaign.
         _, unused_updated = self.harness_runtime('agy')
-        current['runtime'] = unused_updated
+        self.host['runtime_files'] = unused_updated
         observations = []
-        self.assertEqual(verify_campaign(root, observations=observations)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, observations=observations, host=self.host)['state'], 'criteria_satisfied')
         self.assertEqual([c['name'] for c in observations], ['agy'])
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            self.assertEqual(main(['verify-campaign', str(root)]), 0)
+            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 0)
         self.assertEqual(out.getvalue().count('observation: unused harness runtime agy changed'), 1)
 
     @toolchain_test
@@ -864,7 +866,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.scope["baseline"]["requirements"][0]["id"] = "R-envelope-undeclared"
         write_json(self.root / "scope.json", self.scope)
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 1)
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign", host=self.host), 1)
         root = self.root / "campaign"
         state, result = read_json(root / "state.json"), read_json(root / "runs/1/result.json")
         self.assertFalse((root / "runs/1/candidate.json").exists())
@@ -874,18 +876,18 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                          ("incomplete", f"ValueError: run 1 captured no candidate: {result['error']}"))
         self.assertNotIn("candidate.json", state["error"])
         self.assertEqual((state["history"], self.calls), ([], []))
-        self.assertEqual(verify_campaign(root)["state"], "incomplete")
+        self.assertEqual(verify_campaign(root, host=self.host)["state"], "incomplete")
 
     @toolchain_test
     def test_campaign_verification_requires_separate_implementation_receipt(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         root = self.root / 'campaign'
-        verify_campaign(root)
+        verify_campaign(root, host=self.host)
         receipt = root / 'implementations/1/review-work/implementation/preflight/receipt.json'
         receipt.unlink()
         with self.assertRaises((ValueError, OSError)):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     @toolchain_test
     def test_tampered_initial_receipt_prevents_adjudication_and_completion(self):
@@ -899,7 +901,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 write_json(path, receipt)
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=tamper), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host), 1)
         self.assertNotIn('adjudicator', self.calls)
         result = read_json(self.root / 'run/result.json')
         self.assertEqual(result['outcome'], 'incomplete')
@@ -951,13 +953,13 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def test_witness_resubmission_completes_campaign_with_retained_refusal(self):
         """AGENTEE-115: the rung-1 witness refusal must not discard the campaign."""
         with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent()), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         root = self.root / 'campaign'
-        state = verify_campaign(root)
+        state = verify_campaign(root, host=self.host)
         self.assertEqual(state['state'], 'criteria_satisfied')
         self.assertEqual(read_json(root / 'config.json')['max_schema_resubmissions'], 1)
         run = root / 'runs/1'
-        result = verify(run)
+        result = verify(run, host=self.host)
         record = next(r for r in result['review_executions'] if r['role'] == 'physical')
         self.assertEqual(record['execution'], 'ok')
         self.assertEqual(record['resubmissions_used'], 1)
@@ -990,16 +992,16 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(len(state['history']), 2)
         (first / 'response.json').write_text('{}')
         with self.assertRaisesRegex(ValueError, 'evidence changed'):
-            verify(run)
+            verify(run, host=self.host)
 
     @toolchain_test
     def test_second_invalid_witness_is_terminal_and_unrepaired(self):
         with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent(twice_invalid=True)), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         root = self.root / 'campaign'
-        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'incomplete')
         run = root / 'runs/1'
-        result = verify(run)
+        result = verify(run, host=self.host)
         self.assertEqual(result['state'], 'incomplete')
         self.assertNotIn('adjudicator', self.calls)
         self.assertNotIn('implementation', self.calls)
@@ -1018,12 +1020,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         config['max_schema_resubmissions'] = 0
         write_json(self.root / 'campaign.json', config)
         with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent()), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         record = read_json(self.root / 'campaign/runs/1/review-executions/physical.json')
         self.assertEqual(record['execution'], 'malformed')
         self.assertEqual(record['resubmissions_used'], 0)
         self.assertEqual(self.calls.count('physical'), 1)
-        verify_campaign(self.root / 'campaign')
+        verify_campaign(self.root / 'campaign', host=self.host)
 
     def test_invalid_resubmission_limits_refuse_before_campaign_creation(self):
         config = read_json(self.root / 'campaign.json')
@@ -1032,18 +1034,18 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 config['max_schema_resubmissions'] = value
                 write_json(self.root / 'campaign.json', config)
                 with self.assertRaisesRegex(ValueError, 'max_schema_resubmissions'):
-                    run_campaign(self.root / 'campaign.json', self.root / 'invalid')
+                    run_campaign(self.root / 'campaign.json', self.root / 'invalid', host=self.host)
                 self.assertFalse((self.root / 'invalid').exists())
 
     @toolchain_test
     def test_resubmission_cannot_drop_the_invalid_finding(self):
         with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent(drop_finding=True)), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         record = read_json(self.root / 'campaign/runs/1/review-executions/physical.json')
         self.assertEqual(record['execution'], 'refused')
         self.assertEqual(record['error'], 'resubmission changed finding set')
         self.assertNotIn('adjudicator', self.calls)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     @toolchain_test
     def test_adjudicator_resubmission_reuses_exact_finding_set(self):
@@ -1053,7 +1055,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 response['decisions'][0]['evidence'][0]['path'] = 'outside.json'
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         run = self.root / 'campaign/runs/1'
         record = read_json(run / 'adjudicator-execution.json')
         self.assertEqual(record['resubmissions_used'], 1)
@@ -1062,7 +1064,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertIn('citation path must name', read_json(first / 'execution.json')['error'])
         self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
         self.assertEqual(read_json(first / 'response.json')['decisions'][0]['evidence'][0]['path'], 'outside.json')
-        verify_campaign(self.root / 'campaign')
+        verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_writer_resubmission_reissues_summary_without_another_design(self):
@@ -1072,23 +1074,23 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 response = {'summary': []}
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         root = self.root / 'campaign'
         work = root / 'implementations/1'
         record = read_json(work / 'implementation-execution.json')
         self.assertEqual(record['resubmissions_used'], 1)
         self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
         self.assertEqual(self.calls.count('implementation'), 2)
-        verify_campaign(root)
+        verify_campaign(root, host=self.host)
         altered = {k: v for k, v in record.items() if k != 'attempts'}
         write_json(work / 'implementation-execution.json', altered)
         with self.assertRaisesRegex(ValueError, 'implementation execution record changed'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         write_json(work / 'implementation-execution.json', record)
         archive = work / record['attempts'][0]['path']
         (archive / 'prompt.txt').write_text('changed refused-call provenance')
         with self.assertRaisesRegex(ValueError, 'resubmission record changed'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     @toolchain_test
     def test_writer_resubmission_cannot_change_delivered_design(self):
@@ -1101,29 +1103,26 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                     write_json(Path(args[0]) / 'review-work/implementation/design/design/design.json', {'value': 6})
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         work = self.root / 'campaign/implementations/1'
         record = read_json(work / 'implementation-execution.json')
         self.assertEqual(record['execution'], 'refused')
         self.assertEqual(record['error'], 'resubmission changed implementation design')
         self.assertFalse((work / 'proposal.scope.json').exists())
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     @toolchain_test
     def test_runtime_drift_between_refusal_and_resubmission_never_dispatches_again(self):
-        from agent_ee.cli import runtime_files
-        observed = runtime_files()
+        # The supplied fingerprint is shared by every reviewer thread; changing it is a host update.
+        observed = self.host['runtime_files'] = dict(self.host['runtime_files'])
         scripted = self.witness_agent()
         def call(*args, **kwargs):
             record, response = scripted(*args, **kwargs)
             if args[1] == 'physical' and response is not None:
-                drift = patch('agent_ee.cli.runtime_files', return_value={
-                    **observed, 'codex': {**observed['codex'], 'sha256': '0' * 64}})
-                drift.start()
-                self.addCleanup(drift.stop)
+                observed['codex'] = {**observed['codex'], 'sha256': '0' * 64}
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=call), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         run = self.root / 'campaign/runs/1'
         record = read_json(run / 'review-executions/physical.json')
         self.assertEqual(self.calls.count('physical'), 1)
@@ -1140,9 +1139,9 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 raise KeyboardInterrupt
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30, host=self.host), 1)
         run = self.root / 'run'
-        result = verify(run)
+        result = verify(run, host=self.host)
         self.assertEqual(result['state'], 'interrupted')
         record = next(r for r in result['review_executions'] if r['role'] == 'physical')
         self.assertEqual(record['execution'], 'interrupted')
@@ -1155,10 +1154,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         solver.write_text(solver.read_text() +
             '\nwith Path("check-invocations.log").open("a") as marker:\n    marker.write("executed\\n")\n')
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         run = self.root / 'campaign/runs/1'
         self.assertEqual((run / 'work/response/tool/check-invocations.log').read_text().splitlines(), ['executed'])
-        result = verify(run)
+        result = verify(run, host=self.host)
         self.assertEqual(result['checks'][0]['outcome'], 'unknown')
         self.assertNotEqual(result['checks'][0]['execution'], 'ok')
         self.assertEqual(len(result['checks']), 1)
@@ -1174,12 +1173,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 response = {'summary': []}
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 1)
         root = self.root / 'campaign'
-        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'incomplete')
         shutil.rmtree(root / 'implementations/1')
         with self.assertRaisesRegex(ValueError, 'implementation execution record changed'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
 
 class MutableIntentSchematicCampaignTests(unittest.TestCase):
@@ -1195,10 +1194,8 @@ class MutableIntentSchematicCampaignTests(unittest.TestCase):
         self.fixture = CampaignStageReceiptTests
         self.fixture.setUp(self)
         require_toolchain(native=True)
-        from agent_ee.cli import runtime_files
-        runtime = runtime_files()
-        runtime['kicad-cli'] = {'path': '/usr/bin/kicad-cli', 'sha256': digest('/usr/bin/kicad-cli')}
-        patch('agent_ee.cli.runtime_files', return_value=runtime).start()
+        self.host['runtime_files'] = {**self.host['runtime_files'],
+                                      'kicad-cli': {'path': '/usr/bin/kicad-cli', 'sha256': digest('/usr/bin/kicad-cli')}}
         self.intent, self.sch, self.board = INTENT, SCH, BOARD
         source = self.root / 'source'
         self.stage = prepare(source)
@@ -1257,7 +1254,7 @@ Path('raw.json').write_text(json.dumps({'value': 5 if name=='VOUT_FIXED' else 15
         declared = json.loads(prompt.split('\nDeclared implementation steps:\n', 1)[1])
         self.assertIn(self.intent, declared['implementation_steps'][0]['inputs'])
         self.assertIn('VOUT_FIXED', (root / 'runs/2/inputs' / self.board).read_text())
-        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
 
     @toolchain_test
     def test_writer_schematic_edit_refused(self):
@@ -1285,4 +1282,4 @@ Path('raw.json').write_text(json.dumps({'value': 5 if name=='VOUT_FIXED' else 15
         self.assertEqual((status, state['state']), (1, 'incomplete'))
         self.assertIn('stage_step_unreceipted: schematic/emit-schematic', state['error'])
         self.assertEqual(state['history'][-1]['outcome'], 'criteria_satisfied')
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')

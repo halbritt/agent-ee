@@ -11,6 +11,7 @@ from . import build_plan, requirement_map
 from .catalog import strict_json
 from .stage_receipts import _relative, tree_identity
 from .storage import digest, identity, publish, read_json, write_json
+from .run_record import run_review, verify
 
 REPORT_SCHEMA = 'agent-ee.build-report/1'
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
@@ -124,7 +125,6 @@ def checked_review(root, report):
 
 def review_candidate(scope, directory, timeout):
     """Use the generated acceptance scope against this actual native candidate."""
-    from .cli import run_review
     path = scope_path(directory)
     write_scope(directory, scope)
     run_review(path, directory / 'review', timeout, checks_only=True, output_stream=sys.stderr)
@@ -133,7 +133,6 @@ def review_candidate(scope, directory, timeout):
 
 
 def verify_stage_review(directory):
-    from .cli import verify
     return verify(directory / 'review')
 
 

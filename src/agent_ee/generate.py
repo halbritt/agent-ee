@@ -25,6 +25,7 @@ import traceback
 
 from . import executor
 from .storage import canonical, digest, write_json
+from .run_record import pcbnew_extension
 
 # Experimental, unqualified record names: the qualified contracts are owned elsewhere
 # (stage receipts AGENTEE-95, envelope AGENTEE-85) and supersede these at integration.
@@ -196,7 +197,6 @@ def tool_identity(name):
     record = {'path': None, 'sha256': None, 'version': None}
     try:
         if name == 'pcbnew':
-            from .cli import pcbnew_extension
             path, diagnostic = pcbnew_extension()
             record['path'] = path
             probe = subprocess.run(['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],

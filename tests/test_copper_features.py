@@ -221,7 +221,7 @@ class CopperTests(unittest.TestCase):
 
     def test_native_sandboxed_pipeline_and_embedded_source_tamper(self):
         import re
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.storage import read_json
         from tests.test_parts_subset import NativePartsPipelineTests, subset_generator
         from tests.toolchain import require_toolchain
@@ -269,7 +269,7 @@ class CopperTests(unittest.TestCase):
         with self.assertRaises(CheckError):
             cf.fab_membership(ctx, params)
         membership.write_bytes(original)
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         scope = read_json(self.root / 'scope.json')
         scope['schema'] = 'agent-ee.scope/2'
         for requirement in scope['baseline']['requirements']:

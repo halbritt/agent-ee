@@ -12,6 +12,7 @@ import urllib.request
 from .benchmark import checked_read, mutate, safe_path, sha
 from .findings import CHECK_EXECUTIONS, CHECK_OUTCOMES, safe_id
 from .storage import canonical, digest, identity, read_json, write_json
+from .run_record import artifacts, run_review, runtime_files, verify
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
@@ -600,7 +601,6 @@ def canonical_check(check, run=None):
 def observations(run):
     run = Path(run)
     result = read_json(run/'result.json')
-    from .cli import artifacts
     from .candidate import verify_snapshot
     from .baseline import verify_evidence
     if artifacts(run)!=result['artifact_hashes']:
@@ -749,7 +749,6 @@ def native_rerun(first, output, repeats=2):
                 'font_substitutions':{k:v for k,v in fonts.items() if v['retained']!=v['rerun']},
                 **compare_records(original,records,board)})
         cases.append(row)
-    from .cli import runtime_files
     retained = read_json(first/'runs'/index['records'][0]['id']/'result.json')['runtime_files']
     host = runtime_files()
     native = ('kicad-cli','bwrap','/usr/bin/python3','pcbnew')
@@ -1521,7 +1520,6 @@ def finding_count(record):
 
 
 def review_case(scope, run):
-    from .cli import run_review, verify
     exit_code = run_review(scope,run,1800,checks_only=True)
     verified = verify(run)
     if exit_code != (0 if verified['outcome']=='criteria_satisfied' else 1):

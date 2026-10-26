@@ -488,9 +488,9 @@ class CampaignPromptTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
         kicad = shutil.which('kicad-cli')
-        patch('agent_ee.cli.runtime_files', return_value={**{name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+        self.host = {'runtime_files': {**{name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
             for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')},
-            'kicad-cli': {'path': kicad, 'sha256': digest(kicad)}}).start()
+            'kicad-cli': {'path': kicad, 'sha256': digest(kicad)}}}
 
     def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         run = Path(run)
@@ -515,7 +515,7 @@ class CampaignPromptTests(unittest.TestCase):
         from agent_ee.campaign import run_campaign
         from agent_ee.review_run import RESUBMISSION_NOTICE
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+            status = run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
         state = read_json(self.root / 'campaign/state.json')
         self.assertEqual(status, 0, state)
         self.assertEqual(len(self.writer_prompts), 1)

@@ -31,7 +31,7 @@ from agent_ee import forward_annotation as fa
 from agent_ee import placement_adapter as pa
 from agent_ee import sublayout
 from agent_ee.campaign import run_campaign, verify_campaign
-from agent_ee.cli import verify
+from agent_ee.run_record import verify
 from agent_ee.schematic_emitter import emit_schematic
 from agent_ee.storage import digest, identity, read_json, write_json
 from test_placement_campaign import STRIP, pcbnew, prompt_context
@@ -485,8 +485,8 @@ class SublayoutCampaignTest(unittest.TestCase):
         self.writes, self.prompts, self.reuse_records = {}, {}, []
         self.addCleanup(patch.stopall)
         patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
-        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}).start()
+        self.host = {'runtime_files': {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}}
 
     def scope(self):
         requirements = [{'id': f"R-{c['id']}", 'statement': f"Owned requirement for {c['id']}",
@@ -517,7 +517,7 @@ class SublayoutCampaignTest(unittest.TestCase):
             'placement_adapter': adapter or declaration(sub)})
         self.out = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', self.out)
+            status = run_campaign(self.root / 'campaign.json', self.out, host=self.host)
         return status, read_json(self.out / 'state.json')
 
     def reuse(self, design, **edit):
@@ -554,7 +554,7 @@ class SublayoutCampaignTest(unittest.TestCase):
             'coverage': ['placement protocol'], 'limitations': ['scripted test response'], 'findings': []}
 
     def outcomes(self, number):
-        return {c['id']: c['outcome'] for c in verify(self.out / 'runs' / str(number))['checks']}
+        return {c['id']: c['outcome'] for c in verify(self.out / 'runs' / str(number), host=self.host)['checks']}
 
     def test_reused_group_with_its_copper_is_captured_and_passes_fresh_drc(self):
         self.writes = {1: self.reuse}
@@ -590,7 +590,7 @@ class SublayoutCampaignTest(unittest.TestCase):
         self.assertEqual([finding['local_id'] for finding in
                           prompt_context(self.prompts[1])['placement']['findings']],
                          ['drc-placement', 'outline'])
-        self.assertEqual(verify_campaign(self.out)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'criteria_satisfied')
         # The captured source tree is never written.
         self.assertEqual(inventory(self.source), inventory(self.base))
 
@@ -608,7 +608,7 @@ class SublayoutCampaignTest(unittest.TestCase):
         self.assertEqual((record['status'], record['writer_scope']['copper']['groups'][0]['status']),
                          ('refused', 'reused'))
         # Public verification recomputes the refused scope proof, copper section included.
-        self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'incomplete')
 
     def test_a_helper_beside_a_sub_layout_refuses_the_campaign_before_any_writer(self):
         self.writes = {1: self.reuse}
@@ -647,7 +647,7 @@ class SublayoutCampaignTest(unittest.TestCase):
         self.assertNotIn('sublayout', state['placement_binding'])
         self.assertNotIn('group-local copper', self.prompts[1])
         self.assertFalse((self.out / 'runs/2').exists())
-        self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'incomplete')
 
 
 if __name__ == '__main__':

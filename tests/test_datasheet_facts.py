@@ -10,7 +10,7 @@ from pathlib import Path
 
 from agent_ee.baseline import freeze_evidence, load_baseline, verify_evidence
 from agent_ee.candidate import capture
-from agent_ee.cli import verify, run_review
+from agent_ee.run_record import verify, run_review
 from agent_ee.checks import run_checks
 from agent_ee.storage import digest, read_json, write_json
 from toolchain import require_toolchain

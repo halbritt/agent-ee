@@ -257,7 +257,7 @@ class PurposeFollowupTests(unittest.TestCase):
                                                'run_id': self.run_id, 'decisions': decisions}, self.run_dir)
 
     def test_deferred_purpose_concern_is_recorded_advisory_and_cannot_hold_outcome(self):
-        from agent_ee.cli import outcome, render
+        from agent_ee.run_record import outcome, render
         check = [{'finding_id': 'check/rc_transient', 'disposition': 'accepted', 'reason': 'Failing criterion',
                   'evidence': [{'path': 'checks/rc_transient.json', 'locator': 'failed response',
                                 'pointer': '/details/v_1ms'}]}]
@@ -352,7 +352,7 @@ class PurposeDowngradeTests(unittest.TestCase):
     validated = PurposeFollowupTests.validated
 
     def test_two_validation_downgrade_cannot_acquire_purpose_status(self):
-        from agent_ee.cli import outcome
+        from agent_ee.run_record import outcome
         raw = self.purpose_finding(assessment='defect', evidence=[], title='Connector enclosure clearance unknown',
                                    mechanism='Mating connector collides with enclosure; functional fit is uncertain')
         raw.pop('dimension')
@@ -384,7 +384,7 @@ class PurposeDowngradeTests(unittest.TestCase):
                                  'defects_or_unresolved')
 
     def test_generated_history_markers_each_keep_the_downgrade(self):
-        from agent_ee.cli import outcome
+        from agent_ee.run_record import outcome
         from agent_ee.findings import DOWNGRADE_NOTE, downgrade_limitation
         raw = self.purpose_finding(assessment='defect', evidence=[], title='Connector enclosure correctness',
                                    mechanism='Mating connector collides with enclosure')
@@ -432,7 +432,7 @@ class PurposeDowngradeTests(unittest.TestCase):
 
 
 class PurposeIntegrityRunTests(unittest.TestCase):
-    """AGENTEE-385 H1/H3: verify() re-derives purpose status and coverage from retained records."""
+    """AGENTEE-385 H1/H3: verify(host=self.reviews.host) re-derives purpose status and coverage from retained records."""
 
     @classmethod
     def setUpClass(cls):
@@ -452,7 +452,7 @@ class PurposeIntegrityRunTests(unittest.TestCase):
 
     def full_run(self, name, *, correctness):
         from test_concurrent_reviews import HARNESS
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         purpose = {'id': 'edge-move', 'title': 'Edge alternative', 'location': 'J1', 'condition': 'Placement',
                    'mechanism': 'Edge pose could free the inboard reserve', 'severity': 'info',
                    'assessment': 'concern', 'evidence': [], 'dimension': 'purpose_review',
@@ -480,7 +480,7 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                                          'run_id': packet['run_id'], 'decisions': decisions}
 
         with patch('agent_ee.reviewers.dispatch', side_effect=dispatch):
-            run_review(self.reviews.root / 'scope.json', run, 600, output_stream=io.StringIO())
+            run_review(self.reviews.root / 'scope.json', run, 600, output_stream=io.StringIO(), host=self.reviews.host)
         result = read_json(run / 'result.json')
         self.assertNotIn('error', result)
         self.assertEqual(result['state'], 'complete', (result['review_executions'], result['limitations']))
@@ -488,23 +488,23 @@ class PurposeIntegrityRunTests(unittest.TestCase):
 
     def refused(self, run, original, mutate, message):
         import copy
-        from agent_ee.cli import outcome, verify
+        from agent_ee.run_record import outcome, verify
         tampered = copy.deepcopy(original)
         mutate(tampered)
         tampered['outcome'] = outcome(tampered)
         write_json(run / 'result.json', tampered)
         try:
             with self.assertRaisesRegex(ValueError, message):
-                verify(run)
+                verify(run, host=self.reviews.host)
         finally:
             write_json(run / 'result.json', original)
         return tampered['outcome']
 
     @toolchain_test
     def test_tampered_purpose_projection_and_coverage_are_refused(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         run, result = self.full_run('advisory', correctness=False)
-        verified = verify(run)
+        verified = verify(run, host=self.reviews.host)
         by_id = {f['id']: f for f in verified['findings']}
         self.assertEqual(by_id['physical/edge-move']['purpose_status'], 'advisory')
         self.assertEqual(verified['outcome'], 'criteria_satisfied')
@@ -561,7 +561,7 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                  'purpose coverage differs')):
             with self.subTest(label):
                 self.refused(run, result, mutate, message)
-        self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
+        self.assertEqual(verify(run, host=self.reviews.host)['outcome'], 'criteria_satisfied')
 
         def drop_coverage(value):
             value['purpose_coverage'] = []
@@ -584,17 +584,17 @@ class PurposeIntegrityRunTests(unittest.TestCase):
             with self.subTest(label):
                 self.refused(run, result, mutate, message)
         # The restored result still verifies.
-        self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
+        self.assertEqual(verify(run, host=self.reviews.host)['outcome'], 'criteria_satisfied')
 
         # A successive central adjudication replays in record order and keeps verifying.
-        from agent_ee.cli import apply_decisions
+        from agent_ee.run_record import apply_decisions
         decisions = self.reviews.root / 'second-decisions.json'
         write_json(decisions, {'schema': 'agent-ee.decisions/2', 'candidate_id': result['candidate_id'],
                                'run_id': result['run_id'], 'decisions': [
                                    {'finding_id': 'physical/edge-move', 'disposition': 'deferred',
                                     'reason': 'Enclosure drawing still unavailable', 'evidence': []}]})
-        apply_decisions(run, decisions)
-        second = verify(run)
+        apply_decisions(run, decisions, host=self.reviews.host)
+        second = verify(run, host=self.reviews.host)
         moved = second['findings'][index(second, 'physical/edge-move')]
         self.assertEqual([(e['seq'], e['reason']) for e in moved['events']],
                          [(1, 'Saving needs enclosure measurement'), (2, 'Enclosure drawing still unavailable')])
@@ -607,11 +607,11 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                                                                    decision={**f['events'][1], 'seq': 1})))):
             with self.subTest(label):
                 self.refused(run, second, mutate, differs)
-        self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
+        self.assertEqual(verify(run, host=self.reviews.host)['outcome'], 'criteria_satisfied')
 
         # A correctness deferral holds the outcome; no projection edit can grant it purpose status.
         run2, held = self.full_run('held', correctness=True)
-        self.assertEqual(verify(run2)['outcome'], 'defects_or_unresolved')
+        self.assertEqual(verify(run2, host=self.reviews.host)['outcome'], 'defects_or_unresolved')
 
         def correctness(**fields):
             def mutate(value):
@@ -633,4 +633,4 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                 ('forged correctness event', forge_event, not_granted)):
             with self.subTest(label):
                 self.refused(run2, held, mutate, message)
-        self.assertEqual(verify(run2)['outcome'], 'defects_or_unresolved')
+        self.assertEqual(verify(run2, host=self.reviews.host)['outcome'], 'defects_or_unresolved')

@@ -203,7 +203,7 @@ class NamedPartsPipelineTests(unittest.TestCase):
         return text
 
     def test_parts_subset_named(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         run, check = self.run_case()
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
         verify(run)

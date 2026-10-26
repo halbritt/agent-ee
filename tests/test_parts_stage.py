@@ -493,7 +493,7 @@ class PartsProducerTests(unittest.TestCase):
         assembly_check = next(c for c in scope['checks'] if c['kind'] == 'assembly_readiness')
         self.assertIn('rating_provenance', assembly_check['params'])
         provenance = assembly_check['params']['rating_provenance']
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         diagnostic = self.root / 'assembly-diagnostic'
         before_review = digest(out / 'build-report.json')
         result = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'build', 'review',

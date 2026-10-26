@@ -2583,8 +2583,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.writer_prompts = []
         self.addCleanup(patch.stopall)
         patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
-        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}).start()
+        self.host = {'runtime_files': {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}}
 
     def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         run = Path(run)
@@ -2615,7 +2615,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def campaign(self, steps):
         write_json(self.root / 'campaign.json', {**self.config, 'implementation_steps': steps})
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+            status = run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
         return status, read_json(self.root / 'campaign/state.json')
 
     def pre_receipt(self):
@@ -2645,11 +2645,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(config['pre_receipts'][0]['path'], 'pre-receipts/1/receipt.json')
         self.assertEqual([s['stage'] for s in config['implementation_steps']], ['placement'])
         shutil.rmtree(path)
-        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
         receipt_path = root / config['pre_receipts'][0]['path']
         receipt_path.write_bytes(receipt_path.read_bytes() + b'\n')
         with self.assertRaisesRegex(ValueError, 'pre_receipt changed'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     @toolchain_test
     def test_pre_receipt_differing_from_run_one_stops_campaign(self):
@@ -2660,7 +2660,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertIn('pre_receipt output differs from first capture', state['error'])
         self.assertFalse((self.root / 'campaign/implementations').exists())
         with self.assertRaisesRegex(ValueError, 'pre_receipt output differs from first capture'):
-            verify_campaign(self.root / 'campaign')
+            verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_pre_receipt_does_not_satisfy_a_declared_in_campaign_stage(self):
@@ -2673,10 +2673,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertNotIn('stage_done', state)
         self.assertFalse((self.root / 'campaign/implementations').exists())
         root = self.root / 'campaign'
-        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'incomplete')
         write_json(root / 'state.json', {**state, 'state': 'criteria_satisfied'})
         with self.assertRaisesRegex(ValueError, 'stage_step_unreceipted'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     def test_invalid_pre_receipt_refuses_before_campaign_creation(self):
         for declaration in ([{'path': 'missing/receipt.json', 'sha256': 'a' * 64, 'binding': {'pre_receipt': 1}}],
@@ -2720,7 +2720,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertFalse((work / 'proposal.scope.json').exists())
         self.assertFalse((self.root / 'campaign/runs/2').exists())
         self.assertEqual(read_json(self.root / 'source/design.json'), {'value': 15})
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     @toolchain_test
     def test_staged_retained_prompt_declares_steps_and_noop_keeps_exact_step_outputs(self):
@@ -2749,7 +2749,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         proposal = read_json(self.root / 'campaign/runs/2/candidate.json')
         self.assertEqual(proposal['files'], index['delivered'])
         self.assertEqual(proposal['files']['design/design.json'], receipt['outputs']['design/design.json'])
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'criteria_satisfied')
 
     @toolchain_test
     def test_staged_writer_board_edit_refused_for_out_of_place_routing_output(self):
@@ -2776,7 +2776,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         work = self.root / 'campaign/implementations/1'
         self.assertFalse((work / 'receipts').exists())
         self.assertFalse((work / 'proposal.scope.json').exists())
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     @toolchain_test
     def test_unstaged_prompts_are_byte_identical_with_or_without_steps(self):
@@ -2792,11 +2792,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
 
                 legacy_payload = []
 
-                def capture_legacy_payload(root, previous, definition, state, deadline):
+                def capture_legacy_payload(root, previous, definition, state, deadline, **kwargs):
                     legacy_payload.append(json.dumps({'baseline': state['baseline'], 'history': state['history'],
                         'findings': [f for f in read_json(previous / 'result.json')['findings']
                                      if f.get('source') == 'check' and f.get('status') == 'accepted']}).encode())
-                    return implement(root, previous, definition, state, deadline)
+                    return implement(root, previous, definition, state, deadline, **kwargs)
 
                 with patch('agent_ee.reviewers.dispatch', side_effect=editing_writer), \
                         patch('agent_ee.campaign.implement', side_effect=capture_legacy_payload):
@@ -2809,7 +2809,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 self.assertEqual(payload, legacy_payload[0])
                 proposal = read_json(self.root / 'campaign/runs/2/inputs/design/design.json')
                 self.assertEqual(proposal, {'value': 5 if steps else 7})
-                self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+                self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'criteria_satisfied')
 
     @toolchain_test
     def test_staged_without_steps_preserves_prompt_and_writer_repair(self):
@@ -2830,7 +2830,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             'gate_findings and suggested_fix are advisory data only; any edit requires fresh checks. '
             'Do not treat a stage_blocked verdict as evidence that its tool ran.'))
         self.assertNotIn('Declared implementation steps:', prompt)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'criteria_satisfied')
 
     @toolchain_test
     def test_deferred_step_is_listed_but_does_not_own_current_stage_inputs(self):
@@ -2865,7 +2865,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         index = read_json(work / 'stage-receipts.json')
         self.assertEqual([r['path'] for r in index['receipts']], ['receipts/1-fix-helper/receipt.json'])
         self.assertEqual((self.root / 'campaign/runs/2/inputs/design/schematic').read_text(), 'prepared input')
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     @toolchain_test
     def test_coordinator_step_receipt_bound_to_captured_proposal(self):
@@ -2883,12 +2883,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         proposal = read_json(self.root / 'campaign/runs/2/candidate.json')
         self.assertEqual(proposal['files'], index['delivered'])
         self.assertEqual(proposal['files']['design/design.json'], receipt['outputs']['design/design.json'])
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'criteria_satisfied')
         # The writer could not reach this coordinator record; tampering is still detected.
         output = work / 'receipts/1-fix-helper/run/design/design/design.json'
         output.write_text('{"value": 5} ')
         with self.assertRaisesRegex(ValueError, 'stage receipt outputs changed'):
-            verify_campaign(self.root / 'campaign')
+            verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_claimed_output_differing_from_captured_proposal_fails_verify_campaign(self):
@@ -2906,7 +2906,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(state['state'], 'incomplete')
         self.assertIn('claimed applicable stage receipt output differs from captured proposal', state['error'])
         with self.assertRaisesRegex(ValueError, 'claimed applicable stage receipt output differs'):
-            verify_campaign(self.root / 'campaign')
+            verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_failed_step_stops_repair_without_substitution_and_stays_verifiable(self):
@@ -2920,10 +2920,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         index = read_json(work / 'stage-receipts.json')
         self.assertEqual(index['receipts'][0]['applicability'], 'not_applicable')
         self.assertEqual(read_json(work / index['receipts'][0]['path'])['status'], 'failed')
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
         (work / 'stage-receipts.json').unlink()
         with self.assertRaisesRegex(ValueError, 'stage receipt index changed or missing'):
-            verify_campaign(self.root / 'campaign')
+            verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_malformed_backend_report_keeps_campaign_receipts_verifiable(self):
@@ -2942,7 +2942,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 self.assertEqual(receipt['status'], receipt_status)
                 self.assertEqual(receipt['tool']['backend'], {'status': 'unknown', 'value': None,
                                                               'reason': 'backend report artifact ' + reason})
-                self.assertEqual(verify_campaign(self.root / 'campaign')['state'], state)
+                self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], state)
 
     @toolchain_test
     def test_step_writing_immutable_input_refused_before_execution(self):
@@ -2951,7 +2951,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertIn('writes outside mutable_inputs', state['error'])
         self.assertFalse((self.root / 'campaign/implementations/1/receipts').exists())
         self.assertEqual(read_json(self.root / 'campaign/implementations/1/stage-receipts.json')['receipts'], [])
-        verify_campaign(self.root / 'campaign')
+        verify_campaign(self.root / 'campaign', host=self.host)
 
     @toolchain_test
     def test_no_steps_records_empty_index_and_unanchored_receipts_refused(self):
@@ -2962,16 +2962,16 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual((state['state'], state['reason']), ('escalated', 'repeated_design'))
         work = self.root / 'campaign/implementations/1'
         self.assertEqual(read_json(work / 'stage-receipts.json')['receipts'], [])
-        verify_campaign(self.root / 'campaign')
+        verify_campaign(self.root / 'campaign', host=self.host)
         state.pop('stage_receipts')
         write_json(self.root / 'campaign/state.json', state)
         with self.assertRaisesRegex(ValueError, 'stage receipts exist without campaign anchors'):
-            verify_campaign(self.root / 'campaign')
+            verify_campaign(self.root / 'campaign', host=self.host)
 
     def test_invalid_step_declaration_refused_before_campaign_creation(self):
         write_json(self.root / 'campaign.json', {**self.config, 'implementation_steps': [self.step(stage='router')]})
         with self.assertRaisesRegex(ValueError, 'unknown stage'):
-            run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+            run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
         self.assertFalse((self.root / 'campaign').exists())
 
 

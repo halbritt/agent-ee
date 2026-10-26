@@ -14,7 +14,7 @@ router, check or model. It is not acceptance evidence and does not adopt the pod
 
 | Input | Existing API | Outcome |
 |---|---|---|
-| Planning and native-v5 scope | `cli.validate_scope`, `stages.declaration`, `compile_baseline` | accepted |
+| Planning and native-v5 scope | `run_record.validate_scope`, `stages.declaration`, `compile_baseline` | accepted |
 | Spec and capture | `spec_record.verify` | accepted |
 | Binding | `binding_fill.configuration(intent='intent.unbound.json', output='intent.json', captures='.')` | accepted; dependency closure from the captured report, all 278 captured |
 | Emit and annotate | `schematic_stage.configuration` | accepted |

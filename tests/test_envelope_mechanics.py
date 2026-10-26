@@ -890,12 +890,12 @@ class EnvelopeMechanicsTests(unittest.TestCase):
     def test_final_guard_holds_the_review_outcome(self):
         """cli: the captured staged baseline yields incomplete with the open IDs, never a defect or a pass."""
         import io
-        from agent_ee import cli
+        from agent_ee import run_record
         coverage = self.stage()
         self.build()
         write_json(self.root / 'scope.json', self.scope())
         out = self.root / 'review'
-        cli.run_review(self.root / 'scope.json', out, 600, checks_only=True, output_stream=io.StringIO())
+        run_record.run_review(self.root / 'scope.json', out, 600, checks_only=True, output_stream=io.StringIO())
         result = read_json(out / 'result.json')
         baseline = read_json(out / 'baseline.json')
         self.assertEqual(result['final_qualification'], dict(schema='agent-ee.final-qualification/1',
@@ -904,17 +904,17 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         self.assertEqual(len(held), 1)
         for oid, item in coverage.items():
             self.assertIn(f'obligation-{oid} staged (' + ', '.join(e['id'] for e in item['open']) + ')', held[0])
-        self.assertEqual(cli.verify(out)['final_qualification'], result['final_qualification'])
+        self.assertEqual(run_record.verify(out)['final_qualification'], result['final_qualification'])
         # Only a would-be pass changes: checks and reviews alone no longer satisfy the criteria.
         satisfied = dict(state='complete', checks=[dict(id='c', execution='ok', outcome='pass')],
                          reviews=[dict(role='circuit'), dict(role='physical')], adjudicated=True,
                          review_executions=[dict(role='circuit', execution='ok')], findings=[])
-        self.assertEqual(cli.outcome(satisfied), 'criteria_satisfied')
+        self.assertEqual(run_record.outcome(satisfied), 'criteria_satisfied')
         guarded = dict(satisfied, final_qualification=result['final_qualification'])
-        self.assertEqual(cli.outcome(guarded), 'incomplete')
-        self.assertEqual(cli.outcome(dict(guarded, checks=[dict(id='c', execution='ok', outcome='defect')])),
+        self.assertEqual(run_record.outcome(guarded), 'incomplete')
+        self.assertEqual(run_record.outcome(dict(guarded, checks=[dict(id='c', execution='ok', outcome='defect')])),
                          'defects_or_unresolved')
-        self.assertEqual(cli.outcome(dict(satisfied, final_qualification=dict(result['final_qualification'],
+        self.assertEqual(run_record.outcome(dict(satisfied, final_qualification=dict(result['final_qualification'],
                                                                              blocking=[]))), 'criteria_satisfied')
         # A removed, emptied or stale guard record in a retained result is refused on verify.
         original = (out / 'result.json').read_bytes()
@@ -929,9 +929,9 @@ class EnvelopeMechanicsTests(unittest.TestCase):
                     forged['final_qualification']['baseline_id'] = '0' * 64
                 write_json(out / 'result.json', forged)
                 with self.assertRaisesRegex(ValueError, 'stored final qualification differs'):
-                    cli.verify(out)
+                    run_record.verify(out)
         (out / 'result.json').write_bytes(original)
-        cli.verify(out)
+        run_record.verify(out)
         # The guard reads the immutable baseline, not the run's mutable envelope bytes.
         envelope = out / 'inputs/envelope.json'
         changed = json.loads(envelope.read_bytes())
@@ -939,7 +939,7 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             del item['coverage']
         envelope.write_bytes(json.dumps(changed).encode())
         with self.assertRaises(ValueError):
-            cli.verify(out)
+            run_record.verify(out)
 
     def test_final_guard_holds_campaign_acceptance_and_replay(self):
         """campaign: an acceptance computed from checks and reviews alone cannot publish or replay as done."""

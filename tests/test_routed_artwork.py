@@ -440,7 +440,7 @@ class RoutedArtworkTest(unittest.TestCase):
                     self.root = prior
 
     def test_native_receipt_is_bound_to_source_and_saved_geometry(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         source = self.board(graphic=True)
         design = self.root / 'design'
         design.mkdir()
@@ -676,7 +676,7 @@ class RoutedArtworkTest(unittest.TestCase):
                 art.produce(source, self.root / targets[0][0] / targets[0][1], targets=targets)
 
     def test_native_targeted_receipt_binds_canonical_target_argv(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         source = self.pod_board()
         design = self.root / 'design'
         design.mkdir()
@@ -814,7 +814,7 @@ class RoutedArtworkTest(unittest.TestCase):
         self.assertEqual(art.decode_field_poses(canonical), art.normalize_field_poses(request))
 
     def test_explicit_null_field_pose_receipt_refuses_without_edits(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         source = self.pod_board(graphic=True)
         design = self.root / 'design'
         design.mkdir()
@@ -847,7 +847,7 @@ class RoutedArtworkTest(unittest.TestCase):
             art.qualify_receipt(receipt_dir, forged, 'board.kicad_pcb', policy_files())
 
     def test_native_field_pose_producer_writes_exact_rotation_and_receipts_it(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         import pcbnew as k
         source = self.pod_board()
         before = source.read_bytes()
@@ -1038,7 +1038,7 @@ class RealPodArtworkTest(unittest.TestCase):
         self.assertNotEqual(before, output)
 
     def test_real_pod_targeted_receipt_replays(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         spec = art.step(self.root / 'tool', 'board.kicad_pcb', targets=POD_TARGETS)
         self.assertEqual(spec['argv'][5:], [v for t in POD_TARGETS for v in ('--target', *t)])
         receipt_dir = self.root / 'receipt'

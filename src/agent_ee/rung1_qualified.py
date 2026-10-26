@@ -37,6 +37,7 @@ from . import executor
 from . import generate as g
 from . import rung1_campaign as rc
 from .storage import canonical, digest, read_json, write_json
+from .run_record import validate_scope
 
 QUALIFICATION = 'experimental-unqualified'
 RECORD_SCHEMA = 'agent-ee.rung1-qualified-record/0-experimental'
@@ -576,7 +577,6 @@ def validate_scope_file(scope_path, inputs_dir):
     """The real loaders, as capture runs them: inputs copied, then scope fields, stage declaration
     and baseline compilation with those inputs (parity and envelope capabilities read them)."""
     from .baseline import compile_baseline
-    from .cli import validate_scope
     from .stages import declaration
     from .storage import identity
     scope_path, inputs_dir = Path(scope_path), Path(inputs_dir)

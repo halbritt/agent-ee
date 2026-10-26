@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from agent_ee.baseline import load_baseline
-from agent_ee.cli import verify
+from agent_ee.run_record import verify
 from agent_ee.packet_index import build_index, page
 from agent_ee.storage import canonical, identity, read_json
 

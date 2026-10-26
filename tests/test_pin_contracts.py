@@ -325,7 +325,7 @@ class NativePinContractsTests(unittest.TestCase):
         return scope
 
     def run_case(self, schema='agent-ee.scope/3'):
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         self.prepare(schema)
         self.index += 1
         run = self.root / f'run{self.index}'
@@ -454,7 +454,7 @@ class NativePinContractsTests(unittest.TestCase):
         boot = next(r for r in check['details']['records'] if r['kind'] == 'capacitor_to_pin')
         self.assertEqual((boot['reference'], boot['pin'], boot['status']), ('U3', '1', 'defect'))
         self.assertEqual((boot['sources'][0]['page'], boot['sources'][0]['quote']), (1, 'pin 1 true'))
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         verify(run)
 
     def test_native_decoupling_missing_wrong_ground_and_boot_cap_present(self):
@@ -483,7 +483,7 @@ class NativePinContractsTests(unittest.TestCase):
         self.assertEqual([r['status'] for r in rows], ['defect'] * 4)
 
     def test_native_positive_scope3_registration_preflight_baseline_and_public_verify(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         run, check = self.run_case()
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
         self.assertEqual([(r['reference'], r['status']) for r in check['details']['records']
@@ -506,7 +506,7 @@ class NativePinContractsTests(unittest.TestCase):
         verify(run)
 
     def test_native_voltage_defect_sealed_witness_and_tamper_refusal(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.baseline import validate_witnesses
         self.params['rails']['/VDD'] = '1.8'
         run, check = self.run_case()
@@ -524,7 +524,7 @@ class NativePinContractsTests(unittest.TestCase):
             path.write_bytes(original)
 
     def test_actual_pdftotext_rejection_leaves_affected_obligations_unknown(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.baseline import validate_witnesses
         self.facts[0]['source']['quote'] = 'Invented requires_voltage 3.3 V'
         run, check = self.run_case()

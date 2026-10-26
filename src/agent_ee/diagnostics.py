@@ -6,6 +6,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .storage import read_json
+from .run_record import verify
 
 
 @contextmanager
@@ -44,8 +45,7 @@ def _record(path, unavailable):
         return {}
 
 
-def _diagnose(root, campaign, coherence, current_source):
-    from .cli import verify
+def _diagnose(root, campaign, coherence, current_source, *, host=None):
     from .campaign import verify_campaign_records
 
     report = {'schema': 'agent-ee.diagnosis/1', 'path': str(root),
@@ -65,7 +65,8 @@ def _diagnose(root, campaign, coherence, current_source):
     report['identities']['baseline_id'] = baseline.get('baseline_id') if isinstance(baseline, dict) else None
     report['recorded_state'] = record.get('state')
     try:
-        verified = verify_campaign_records(root) if campaign else verify(root, current_source=current_source)
+        verified = (verify_campaign_records(root, host=host) if campaign else
+                    verify(root, current_source=current_source, host=host))
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, subprocess.SubprocessError) as exc:
         error = {'type': type(exc).__name__, 'message': str(exc)}
         report['verification'] = {'status': 'failed' if record else 'unavailable', 'error': error}
@@ -98,7 +99,7 @@ def _diagnose(root, campaign, coherence, current_source):
             'candidates': ['active writer', 'interrupted transition', 'uncommitted or unrelated temporary data'],
             'reason': 'retained artifacts do not establish a unique phase or safe retry'})
     if campaign:
-        report['runs'] = [diagnose(p, current_source=False) for p in sorted((root / 'runs').glob('*')) if p.is_dir()]
+        report['runs'] = [diagnose(p, current_source=False, host=host) for p in sorted((root / 'runs').glob('*')) if p.is_dir()]
     if coherence['status'] == 'busy':
         report['operator_actions'].append({'action': 'diagnose again after the writer exits',
                                           'preconditions': ['writer has released its lease']})
@@ -108,13 +109,13 @@ def _diagnose(root, campaign, coherence, current_source):
     return report
 
 
-def diagnose(path, *, current_source=True):
+def diagnose(path, *, current_source=True, host=None):
     root = Path(path).resolve()
     campaign = (root / '.campaign-root').is_file() or (root / 'state.json').exists()
     with _snapshot_lease(root) as coherence:
         if campaign and not (root / '.campaign-root').is_file() and coherence['status'] == 'coherent':
             coherence = {'status': 'unverified', 'reason': 'campaign ancestor lease marker missing'}
-        return _diagnose(root, campaign, coherence, current_source)
+        return _diagnose(root, campaign, coherence, current_source, host=host)
 
 
 def render_diagnosis(report):

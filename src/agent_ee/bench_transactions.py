@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .locking import writer_lock
 from .storage import digest, identity, json_digest, read_json, write_json
+from .run_record import artifacts, outcome, render, run_review, verify, verify_records
 
 SCHEMA = 'agent-ee.bench-transaction/1'
 PHASES = ('prepared', 'supersession_committed', 'review_started', 'completed')
@@ -159,8 +160,7 @@ def verify_publications(run, result):
             raise TransactionError('conflict', 'published bench bundle changed', out=marker['out'])
 
 
-def publish(out, request, records):
-    from .cli import artifacts, outcome, render, verify_records
+def publish(out, request, records, *, host=None):
 
     run = Path(request['run'])
     original = validate_prepared(out, request, records)
@@ -177,7 +177,7 @@ def publish(out, request, records):
     # any new artifact. The sole permitted inventory delta is the exact event.
     checked = copy.deepcopy(original)
     checked['artifact_hashes'] = artifacts(run)
-    verify_records(run, checked, current_source=False)
+    verify_records(run, checked, current_source=False, host=host)
     projection = copy.deepcopy(original)
     projection.setdefault('empirical_feedback', []).append(event)
     projection['outcome'] = outcome(projection)
@@ -199,22 +199,20 @@ def publish(out, request, records):
     fsync_directory(run)
     receipt(out, 'supersession_committed', {'publication_sha256': digest(publication_path(run, request['operation_id'])),
                                           'report_sha256': digest(run / 'REPORT.md')})
-    from .cli import verify
-    verify(run, current_source=False)
+    verify(run, current_source=False, host=host)
 
 
-def prepare(run, report, out, request):
+def prepare(run, report, out, request, *, host=None):
     from .empirical import ingest, calibration_for
-    from .cli import verify
 
-    original = verify(run, current_source=False)
+    original = verify(run, current_source=False, host=host)
     out.mkdir(parents=True, exist_ok=True)
     write_json(out / 'request.json', request)
     prepared = out / 'prepared'
     prepared.mkdir()
     write_json(prepared / 'source-result.json', original)
     shutil.copyfile(report, prepared / 'report-original.json')
-    ingest(run, report, prepared / 'empirical')
+    ingest(run, report, prepared / 'empirical', host=host)
     if (digest(prepared / 'report-original.json') != request['report_sha256'] or
             digest(report) != request['report_sha256'] or
             any(digest(report.parent / rel) != sha for rel, sha in request['raw'].items())):
@@ -276,20 +274,19 @@ def status_value(out, request, records, disposition=None):
             'review': records.get('completed', {}).get('review')}
 
 
-def settle(out, request, records):
+def settle(out, request, records, *, host=None):
     """Reconcile known local writes and adopt only fully verified terminal evidence."""
-    from .cli import verify
     validate_prepared(out, request, records)
     if 'completed' in records:
-        verify(request['run'], current_source=False)
-        current = verify_terminal(out, records['completed']['review'])
+        verify(request['run'], current_source=False, host=host)
+        current = verify_terminal(out, records['completed']['review'], host=host)
         if request.get('campaign'):
             from .campaign import verify_campaign
-            verify_campaign(request['campaign']['root'])
+            verify_campaign(request['campaign']['root'], host=host)
         value = status_value(out, request, records)
         value['current_review'] = current_review(current)
         return value
-    publish(out, request, records)
+    publish(out, request, records, host=host)
     request, records = load(out)
     if 'review_started' not in records:
         return status_value(out, request, records, 'ready_for_explicit_review')
@@ -298,7 +295,7 @@ def settle(out, request, records):
     if not (target / 'result.json').is_file():
         return status_value(out, request, records, 'uncertain_execution')
     try:
-        result = verify(target, current_source=False)
+        result = verify(target, current_source=False, host=host)
         manifest = read_json(target / 'candidate.json')
         expected = read_json(out / 'prepared/scope.json')
         if (manifest['scope'] != expected or
@@ -316,28 +313,27 @@ def settle(out, request, records):
                 'state': result['state'], 'outcome': result['outcome']}
     put(out / 'terminal-result.json', result)
     sync_tree(target)
-    finish_campaign(out, request, terminal)
+    finish_campaign(out, request, terminal, host=host)
     receipt(out, 'completed', {'review': terminal})
     value = status_value(out, request, load(out)[1])
     value['current_review'] = current_review(result)
     return value
 
 
-def launch(out, request, records):
-    from .cli import run_review
+def launch(out, request, records, *, host=None):
     if 'review_started' in records:
-        return settle(out, request, records)
+        return settle(out, request, records, host=host)
     target = Path(request['review_out'])
     if target.exists():
         raise TransactionError('ambiguous', 'review target already exists', out=out)
     receipt(out, 'review_started', {'attempt': {'id': request['operation_id'] + '-1', 'out': str(target)}})
     run_review(out / 'prepared/scope.json', target, request['max_seconds'],
                previous=request['run'], output_stream=sys.stderr,
-               max_schema_resubmissions=read_json(out / 'prepared/source-result.json').get('max_schema_resubmissions', 0))
-    return settle(out, request, load(out)[1])
+               max_schema_resubmissions=read_json(out / 'prepared/source-result.json').get('max_schema_resubmissions', 0), host=host)
+    return settle(out, request, load(out)[1], host=host)
 
 
-def transact(run, report, out, max_seconds, *, operation_id, review_out=None):
+def transact(run, report, out, max_seconds, *, operation_id, review_out=None, host=None):
     run, report, out = Path(run).resolve(), Path(report).resolve(), Path(out).resolve()
     review_out = Path(review_out).resolve() if review_out else out / 'review'
     if (out.is_relative_to(run) or run.is_relative_to(out) or review_out.is_relative_to(run) or
@@ -366,7 +362,7 @@ def transact(run, report, out, max_seconds, *, operation_id, review_out=None):
                 retained = load(out)[1]
                 if 'review_started' in retained and latest_attempt(out, retained)['out'] != str(prior_target):
                     raise TransactionError('conflict', 'attempt changed while acquiring leases; retry diagnosis', out=out)
-                return settle(out, request, retained)
+                return settle(out, request, retained, host=host)
             if equivalent and not (Path(existing['out']) / 'prepared.json').is_file():
                 # Only prepare() writes this receipt, under the source lease held
                 # here. Without it the reservation can never publish; retain it
@@ -375,8 +371,7 @@ def transact(run, report, out, max_seconds, *, operation_id, review_out=None):
             if equivalent:
                 return {'schema': 'agent-ee.bench-recovery/1', 'disposition': 'existing_operation',
                         'operation_id': existing['operation_id'], 'transaction': existing['out']}
-        from .cli import verify
-        original = verify(run, current_source=False)
+        original = verify(run, current_source=False, host=host)
         if original.get('empirical_feedback'):
             raise TransactionError('conflict', 'source is superseded; recover its existing transaction', out=out)
         lease_file = review_out.parent / ('.' + review_out.name + '.writer.lock')
@@ -384,17 +379,17 @@ def transact(run, report, out, max_seconds, *, operation_id, review_out=None):
             raise TransactionError('conflict', 'transaction or review target already exists', out=out)
         request['source_result_id'] = identity(original)
         request['source_result_sha256'] = digest(run / 'result.json')
-        campaign = campaign_context(run, review_out)
+        campaign = campaign_context(run, review_out, host=host)
         if campaign is not None:
             request['campaign'] = campaign
         put(reservations / (operation_id + '.json'), request)
-        prepare(run, report, out, request)
+        prepare(run, report, out, request, host=host)
         records = load(out)[1]
-        publish(out, request, records)
-        return launch(out, request, load(out)[1])
+        publish(out, request, records, host=host)
+        return launch(out, request, load(out)[1], host=host)
 
 
-def recover(out, *, launch_review=False):
+def recover(out, *, launch_review=False, host=None):
     out = Path(out).resolve()
     try:
         request, records = load(out)
@@ -406,9 +401,9 @@ def recover(out, *, launch_review=False):
         request, records = load(out)
         if 'review_started' in records and latest_attempt(out, records)['out'] != prior_target:
             raise TransactionError('conflict', 'attempt changed while acquiring leases; retry diagnosis', out=out)
-        value = settle(out, request, records)
+        value = settle(out, request, records, host=host)
         if launch_review and value['disposition'] == 'ready_for_explicit_review':
-            return launch(out, request, load(out)[1])
+            return launch(out, request, load(out)[1], host=host)
         return value
 
 
@@ -433,7 +428,7 @@ def latest_attempt(out, records):
     return review_attempts(out, records)[-1]
 
 
-def new_attempt(out, attempt_id, target):
+def new_attempt(out, attempt_id, target, *, host=None):
     """Explicit operator inference authorization; retain every uncertain attempt."""
     out, target = Path(out).resolve(), Path(target).resolve()
     # Validate the complete retained history while supported writers are excluded.
@@ -456,7 +451,7 @@ def new_attempt(out, attempt_id, target):
         with writer_lock(request['run'], request['review_out'], retained[-1]['out'], target):
             if target.exists():
                 raise TransactionError('conflict', 'new attempt requires a fresh run directory', out=out)
-            value = settle(out, request, records)
+            value = settle(out, request, records, host=host)
             if value['disposition'] != 'uncertain_execution':
                 raise TransactionError('conflict', 'prior attempt already completed', out=out)
             attempts = sorted((out / 'attempts').glob('*.json'))
@@ -464,24 +459,23 @@ def new_attempt(out, attempt_id, target):
             put(out / 'attempts' / f'{len(attempts) + 2:06}.json', {
                 'schema': SCHEMA, 'sequence': len(attempts) + 2, 'previous': digest(previous),
                 'attempt': {'id': attempt_id, 'out': str(target)}})
-            from .cli import run_review
             run_review(out / 'prepared/scope.json', target, request['max_seconds'],
                        previous=request['run'], output_stream=sys.stderr,
-                       max_schema_resubmissions=read_json(out / 'prepared/source-result.json').get('max_schema_resubmissions', 0))
-            return settle(out, request, load(out)[1])
+                       max_schema_resubmissions=read_json(out / 'prepared/source-result.json').get('max_schema_resubmissions', 0), host=host)
+            return settle(out, request, load(out)[1], host=host)
 
 
-def campaign_context(run, target):
+def campaign_context(run, target, *, host=None):
     root = next((p for p in run.parents if (p / '.campaign-root').is_file()), None)
     if root is None:
         return None
     from .campaign import verify_campaign
     state = read_json(root / 'state.json')
-    checked = verify_campaign(root)
+    checked = verify_campaign(root, host=host)
     from .applicability import pending_recalibration
     if (not state['history'] or state['history'][-1]['run'] != str(run) or
             (checked['state'] not in ('criteria_satisfied', 'empirical_superseded') and
-             not (checked['state'] == 'incomplete' and pending_recalibration(run)))):
+             not (checked['state'] == 'incomplete' and pending_recalibration(run, host=host)))):
         raise TransactionError('conflict', 'campaign source is not eligible for bench feedback', out=root)
     if target != root / 'runs' / str(len(state['history']) + 1):
         raise TransactionError('conflict', 'campaign feedback requires its declared next run', out=root)
@@ -492,7 +486,7 @@ def campaign_context(run, target):
             'profile_sha256': digest(root / 'profile.json')}
 
 
-def finish_campaign(out, request, terminal):
+def finish_campaign(out, request, terminal, *, host=None):
     context = request.get('campaign')
     if context is None:
         return
@@ -506,7 +500,7 @@ def finish_campaign(out, request, terminal):
     from .rating_lineage import sealed_baseline
     if sealed_baseline(target, read_json(root / 'config.json')) != state['baseline']:
         raise TransactionError('conflict', 'feedback review changed immutable campaign baseline', out=out)
-    verify_campaign(root)
+    verify_campaign(root, host=host)
     config = read_json(root / 'config.json')
     result, manifest = read_json(target / 'result.json'), read_json(target / 'candidate.json')
     epoch = state.get('epoch', 0) + 1
@@ -532,10 +526,10 @@ def finish_campaign(out, request, terminal):
         write_json(root / 'tradeoff.json', diagnostic)
     write_json(root / 'state.json', state)
     fsync_directory(root)
-    verify_campaign(root)
+    verify_campaign(root, host=host)
 
 
-def status(out):
+def status(out, *, host=None):
     """Read-only coherent diagnosis, including legacy/partial transaction refusal."""
     from .locking import reader_lock
     out = Path(out).resolve()
@@ -549,18 +543,17 @@ def status(out):
             validate_prepared(out, request, records)
             value = status_value(out, request, records)
             value['coherence'] = 'coherent'
-            from .cli import verify
             try:
-                verify(request['run'], current_source=False)
+                verify(request['run'], current_source=False, host=host)
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 value['disposition'] = 'pending_or_invalid_publication'
                 value['failed_checks'] = [str(exc)]
             if 'completed' in records:
-                current = verify_terminal(out, records['completed']['review'])
+                current = verify_terminal(out, records['completed']['review'], host=host)
                 value['current_review'] = current_review(current)
                 if request.get('campaign'):
                     from .campaign import verify_campaign_records
-                    verify_campaign_records(Path(request['campaign']['root']))
+                    verify_campaign_records(Path(request['campaign']['root']), host=host)
             if 'review_started' in records and 'completed' not in records:
                 value['disposition'] = 'uncertain_execution'
             return value
@@ -572,7 +565,7 @@ def status(out):
                 'operator_actions': ['preserve retained files; no automatic legacy conversion']}
 
 
-def campaign_transaction(root, report, out, max_seconds, *, operation_id):
+def campaign_transaction(root, report, out, max_seconds, *, operation_id, host=None):
     root, out = Path(root).resolve(), Path(out).resolve()
     # Read identity to declare the complete ordered lease set, then revalidate
     # under that lease. An advanced campaign cannot redirect an existing ID.
@@ -584,7 +577,7 @@ def campaign_transaction(root, report, out, max_seconds, *, operation_id):
         raise TransactionError('conflict', 'campaign has no feedback source candidate', out=out)
     run = Path(read_json(existing)['run']) if existing.is_file() else Path(state['history'][-1]['run'])
     target = Path(read_json(existing)['review_out']) if existing.is_file() else root / 'runs' / str(len(state['history']) + 1)
-    return transact(run, report, out, max_seconds, operation_id=operation_id, review_out=target)
+    return transact(run, report, out, max_seconds, operation_id=operation_id, review_out=target, host=host)
 
 
 def verify_campaign_attempt(root, stored, previous):
@@ -600,8 +593,7 @@ def verify_campaign_attempt(root, stored, previous):
     return request['review_out']
 
 
-def verify_terminal(out, terminal):
-    from .cli import verify
+def verify_terminal(out, terminal, *, host=None):
     snapshot_path = out / 'terminal-result.json'
     if digest(snapshot_path) != terminal['result_sha256']:
         raise TransactionError('conflict', 'terminal review snapshot changed', out=out)
@@ -611,7 +603,7 @@ def verify_terminal(out, terminal):
     if (terminal['attempt_id'] != attempt['id'] or terminal['out'] != attempt['out'] or
             any(terminal[key] != snapshot.get(key) for key in ('run_id', 'candidate_id', 'state', 'outcome'))):
         raise TransactionError('conflict', 'terminal receipt contradicts retained review', out=out)
-    current = verify(terminal['out'], current_source=False)
+    current = verify(terminal['out'], current_source=False, host=host)
     if current != snapshot:
         allowed = {'empirical_feedback', 'artifact_hashes', 'outcome'}
         if (not current.get('empirical_feedback') or

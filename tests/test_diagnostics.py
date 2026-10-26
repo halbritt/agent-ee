@@ -94,7 +94,7 @@ class DiagnosisTests(unittest.TestCase):
 
     def test_run_verification_differential_intact_and_tampered(self):
         from agent_ee.candidate import capture
-        from agent_ee.cli import policy_files, runtime_files, save_result, verify
+        from agent_ee.run_record import policy_files, runtime_files, save_result, verify
         from agent_ee.locking import writer_lock
         from agent_ee.storage import write_json
         with tempfile.TemporaryDirectory() as tmp:
@@ -203,10 +203,10 @@ class InterruptedNativeDiagnosisTests(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee import cli, checks, reviewers
-        targets = [('capture', cli, 'capture'), ('checks', checks, 'run_checks'),
+        from agent_ee import checks, reviewers, run_record
+        targets = [('capture', run_record, 'capture'), ('checks', checks, 'run_checks'),
                    ('review', reviewers, 'initial_reviews'),
-                   ('adjudication', cli, 'write_json')]
+                   ('adjudication', run_record, 'write_json')]
         for boundary, module, name in targets:
             with self.subTest(boundary=boundary):
                 original = getattr(module, name)
@@ -221,16 +221,16 @@ class InterruptedNativeDiagnosisTests(unittest.TestCase):
                 with patch.object(module, name, side_effect=interrupt):
                     with contextlib.redirect_stdout(io.StringIO()):
                         with self.assertRaisesRegex(SystemExit, 'injected process stop'):
-                            cli.run_review(self.root / 'scope.json', run, 60)
+                            run_record.run_review(self.root / 'scope.json', run, 60, host=self.host)
                 before = inventory(self.root)
-                report = diagnose(run)
+                report = diagnose(run, host=self.host)
                 self.assertEqual(report['coherence']['status'], 'coherent')
                 self.assertEqual(report['recorded_state'], 'running')
                 self.assertTrue(report['ambiguous_transitions'])
                 self.assertIn(boundary, [item['boundary'] for item in report['timeline']])
                 self.assertEqual(inventory(self.root), before)
                 try:
-                    cli.verify(run)
+                    run_record.verify(run, host=self.host)
                 except (ValueError, OSError, KeyError, TypeError) as exc:
                     self.assertEqual(report['verification']['error']['message'], str(exc))
                 else:
@@ -241,13 +241,13 @@ class InterruptedNativeDiagnosisTests(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         from agent_ee import empirical
         from agent_ee.storage import read_json, write_json
         write_json(self.root / 'source/design.json', {'value': 5})
         run = self.root / 'initial'
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', run, 60), 0)
+            self.assertEqual(run_review(self.root / 'scope.json', run, 60, host=self.host), 0)
         result = read_json(run / 'result.json')
         sample = {'check_id': 'response', 'metric': 'output', 'value': 12,
                   'uncertainty': 1, 'unit': 'V', 'condition': 'load'}
@@ -267,9 +267,9 @@ class InterruptedNativeDiagnosisTests(unittest.TestCase):
 
         with patch.object(empirical, 'write_json', side_effect=interrupt):
             with self.assertRaisesRegex(SystemExit, 'injected empirical stop'):
-                empirical.bench_review(run, self.root / 'bench.json', self.root / 'feedback', 60)
+                empirical.bench_review(run, self.root / 'bench.json', self.root / 'feedback', 60, host=self.host)
         before = inventory(self.root)
-        report = diagnose(run)
+        report = diagnose(run, host=self.host)
         self.assertEqual(report['verification']['status'], 'failed')
         self.assertIn('empirical', [item['boundary'] for item in report['timeline']])
         self.assertEqual(inventory(self.root), before)

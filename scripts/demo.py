@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from agent_ee.cli import link_correction, run_review, verify
+from agent_ee.run_record import link_correction, run_review, verify
 from agent_ee.storage import digest, read_json, write_json
 
 
@@ -74,8 +74,9 @@ def demonstrate(out, seconds, profile):
     native_checks = [c["id"] for c in repaired["checks"] if c["kind"] in ("erc", "drc", "rc_transient")]
     if repaired["outcome"] == "criteria_satisfied":
         for finding in seed_findings:
-            link_correction(out / "seed", out / "repair", finding["id"], native_checks,
-                "Disposable saved schematic and board restored to 10k; new native/ERC/DRC and response evidence meet original limits.")
+            print(json.dumps(link_correction(out / "seed", out / "repair", finding["id"], native_checks,
+                "Disposable saved schematic and board restored to 10k; new native/ERC/DRC and response evidence meet original limits."),
+                indent=2))
     for name in ("control", "seed", "repair"):
         verify(out / name)
     observed = {"control_outcome": control["outcome"], "control_concerns": control["findings"],

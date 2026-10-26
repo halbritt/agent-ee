@@ -262,7 +262,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
                          details={} if c['stage']=='schematic' else {'reason':'stage_blocked'})
                     for c in self.scope['checks']]
             write_json(out/'dry-run/result.json',{'checks':checks})
-            with mock.patch('agent_ee.cli.run_review',return_value=1):
+            with mock.patch('agent_ee.pod_driver.run_review',return_value=1):
                 record=pod.run_dry(out)
             self.assertEqual(record['earliest_failing_stage'],'schematic')
             self.assertEqual(record['stages'][0]['status'],expected)

@@ -118,7 +118,7 @@ class NativeDatasheetCoverageTests(unittest.TestCase):
                         self.assertEqual(by_id[cid]['outcome'], 'pass', by_id[cid])
                     freeze_evidence(run, checks)
                     verify_evidence(run, checks, required=True)
-                    from agent_ee.cli import run_review, verify
+                    from agent_ee.run_record import run_review, verify
                     reviewed = root / (name + '-review')
                     self.assertEqual(run_review(root / 'scope.json', reviewed, 90, checks_only=True), 1)
                     result = verify(reviewed)
@@ -405,7 +405,7 @@ class EnvelopeCapabilityTests(unittest.TestCase):
     def test_positive_seed_witness_candidate_seal_and_mutation_boundaries(self):
         import shutil
         from agent_ee.baseline import load_baseline, validate_witnesses
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         scope, closure = self.prepare()
         project = self.root / 'project'
         shutil.copytree(ROOT / 'fixtures/datasheet-pins/control', project)

@@ -17,6 +17,7 @@ from .findings import safe_id
 from .hardware_interface import exact_keys, strings, text
 from .requirement_map import Refused
 from .storage import digest, json_bytes
+from .run_record import validate_scope
 
 RECORD_SCHEMA = 'agent-ee.requirement-record/1'
 RECEIPT_SCHEMA = 'agent-ee.requirement-compile-receipt/1'
@@ -258,7 +259,6 @@ def compile_record(record_raw, spec_raw):
                      'reference_architectures': [f'requirements/{SPEC_NAME}']},
     }
     from .capabilities import describe_check
-    from .cli import validate_scope
     validate_scope(scope)
     # The baseline binds only requirement sources and criteria, so its identity is
     # known before the scaffold project exists and is reproduced at capture.

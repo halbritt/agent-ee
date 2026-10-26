@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from agent_ee.baseline import load_baseline, validate_witnesses
 from agent_ee.capabilities import convert_scope
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.storage import digest, read_json, write_json
 from tests.toolchain import require_toolchain
 
@@ -39,13 +39,11 @@ class NativeCapabilityPipelineTests(unittest.TestCase):
         self.calls = []
         # The completion image intentionally has no subscription harness. Supply
         # only the scripted transport's admission identity; retain native hashes.
-        from agent_ee.cli import runtime_files
+        from agent_ee.run_record import runtime_files
         runtime = runtime_files()
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-        admission = patch('agent_ee.cli.runtime_files', return_value=runtime)
-        admission.start()
-        self.addCleanup(admission.stop)
+        self.host = {'runtime_files': runtime}
 
     def prepare(self, name):
         root = self.root / name
@@ -135,8 +133,8 @@ pcbnew.SaveBoard(p, b)
                 root = self.prepare(name)
                 with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
                      contextlib.redirect_stdout(io.StringIO()):
-                    status = run_review(root / 'scope.json', root / 'run', 180)
-                result = verify(root / 'run')
+                    status = run_review(root / 'scope.json', root / 'run', 180, host=self.host)
+                result = verify(root / 'run', host=self.host)
                 self.assertEqual(status, 0 if expected['outcome'] == 'criteria_satisfied' else 1, result)
                 self.assertEqual(result['outcome'], expected['outcome'], result)
                 self.assertTrue(result['adjudicated'], result)
@@ -188,8 +186,8 @@ pcbnew.SaveBoard(p, b)
         write_json(root / 'scope.json', scope)
         with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
              contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(root / 'scope.json', root / 'source', 180), 0)
-            original = verify(root / 'source')
+            self.assertEqual(run_review(root / 'scope.json', root / 'source', 180, host=self.host), 0)
+            original = verify(root / 'source', host=self.host)
             metric = next(c for c in original['checks'] if c['id'] == 'rc-step')['details']['metrics']['vout_1ms']
             sample = {'check_id': 'rc-step', 'metric': 'vout_1ms', 'value': metric['value'],
                       'uncertainty': 0, 'unit': metric['unit'], 'condition': metric['condition']}
@@ -200,8 +198,8 @@ pcbnew.SaveBoard(p, b)
                 'procedure': 'coordinator replay test, not bench validation', 'observed_utc': '2026-10-17',
                 'artifacts': [{'path': 'raw.json', 'sha256': digest(root / 'raw.json')}],
                 'observations': [{**sample, 'artifact': 'raw.json', 'locator': '0'}]})
-            self.assertEqual(bench_review(root / 'source', root / 'bench.json', root / 'calibrated', 180), 0)
-            calibrated = verify(root / 'calibrated/review')
+            self.assertEqual(bench_review(root / 'source', root / 'bench.json', root / 'calibrated', 180, host=self.host), 0)
+            calibrated = verify(root / 'calibrated/review', host=self.host)
             replay = next(c for c in calibrated['checks'] if c['id'] == 'rc-step')['details']['metrics']['vout_1ms']
             self.assertEqual((replay['lower'], replay['upper']), (metric['value'], metric['value']))
             changed_scope = read_json(root / 'calibrated/scope.json')
@@ -209,8 +207,8 @@ pcbnew.SaveBoard(p, b)
             self.assertIn('"10k"', schematic.read_text())
             schematic.write_text(schematic.read_text().replace('"10k"', '"100k"'))
             write_json(root / 'changed.scope.json', changed_scope)
-            self.assertEqual(run_review(root / 'changed.scope.json', root / 'changed', 180), 1)
-            changed = verify(root / 'changed')
+            self.assertEqual(run_review(root / 'changed.scope.json', root / 'changed', 180, host=self.host), 1)
+            changed = verify(root / 'changed', host=self.host)
         check = next(c for c in changed['checks'] if c['id'] == 'rc-step')
         self.assertEqual((check['execution'], check['outcome']), ('unavailable', 'unknown'))
         self.assertAlmostEqual(check['details']['metrics']['vout_1ms']['value'],

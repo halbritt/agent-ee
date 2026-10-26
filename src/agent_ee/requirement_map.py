@@ -13,6 +13,7 @@ from .findings import safe_id
 from .hardware_interface import exact_keys, text
 from .spec_record import sha256, verify
 from .storage import digest, json_bytes
+from .run_record import validate_scope
 
 SCHEMA = 'agent-ee.requirement-map/1'
 SCHEMA_2 = 'agent-ee.requirement-map/2'
@@ -528,7 +529,6 @@ def compile_map(map_raw, record_raw, spec_raw, *, files, inputs=None, obligation
         path = f'{PROVENANCE}/{name}'
         files[path] = sha256(raw)
     from .capabilities import compile_coverage
-    from .cli import validate_scope
     with compilation_inputs(inputs, files, provenance) as captured:
         scope, receipts = account_requirements(declaration, record, spec_raw, files=files, inputs=captured,
                                                obligations=obligations)

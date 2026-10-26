@@ -16,7 +16,7 @@ from agent_ee import requirement_map
 from agent_ee.baseline import compile_baseline
 from agent_ee.capabilities import KINDS, compile_coverage
 from agent_ee.candidate import capture
-from agent_ee.cli import run_review, validate_scope
+from agent_ee.run_record import run_review, validate_scope
 from agent_ee.requirement_map import (KIND_CLASS, OBLIGATIONS_SCHEMA, PROVENANCE, RECEIPT_SCHEMA,
                                       RECEIPT_SCHEMA_2, SCHEMA_2, compile_map, compile_map_file,
                                       coverage_view, decode, method_class, write_map_outputs)

@@ -14,6 +14,7 @@ import traceback
 from .storage import canonical, digest, write_json
 from .symbol_library import children, field, parse_sexpr
 from .parts_manifest import PREDICATE, validate_manifest
+from .run_record import verify
 
 
 def _object(value, required, optional=()):
@@ -505,7 +506,7 @@ def _parts_coverage(run, manifest, ref, record, checks):
     return covered
 
 
-def validate_block(directory, run_locations=None, *, repository_locations=None):
+def validate_block(directory, run_locations=None, *, repository_locations=None, host=None):
     """Refuse inconsistent records; return unverified for missing passing coverage."""
     root = Path(directory)
     if root.is_symlink():
@@ -529,12 +530,11 @@ def validate_block(directory, run_locations=None, *, repository_locations=None):
             continue
         # Public verification retains the coordinator seal, policy and native
         # execution authority; this module does not replay or replace those rules.
-        from .cli import verify
         from .baseline import load_baseline, verify_evidence
         from .locking import reader_lock
         run = Path(locations[rid]).resolve()
         with reader_lock(run):
-            result = verify(run, current_source=False)
+            result = verify(run, current_source=False, host=host)
             baseline = load_baseline(run)
             manifest = _read(run / 'candidate.json')
             if (result['run_id'] != rid or result['candidate_id'] != ref['candidate_id'] or
@@ -707,7 +707,7 @@ def capture_block(request, repository, commit, destination, *, parts=None, suppl
     return validate_block(target)
 
 
-def main(argv=None):
+def main(argv=None, *, host=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     capture = commands.add_parser('capture')
@@ -724,6 +724,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == 'capture':
+            if host is not None:
+                # Capture verifies no run; a supplied host is refused, never silently dropped.
+                raise ValueError('capture does not take supplied host fingerprints')
             report = capture_block(_read(args.request), args.repo, args.commit, args.out, parts=args.parts)
         else:
             locations = {}
@@ -738,7 +741,7 @@ def main(argv=None):
                 if not sep or not key or not path or key in repositories:
                     raise ValueError('repository location must be unique ID=PATH')
                 repositories[key] = path
-            report = validate_block(args.directory, locations, repository_locations=repositories)
+            report = validate_block(args.directory, locations, repository_locations=repositories, host=host)
     except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
         print(json.dumps(dict(schema='agent-ee.block-report/1', status='refused', error=str(exc))))
         return 2

@@ -64,7 +64,7 @@ class IntentRetryTests(unittest.TestCase):
         self.assertEqual(self.starting_intents[1]['no_connects'][0]['pin']['number'], '999')
         self.assertEqual(self.starting_seeds[0], self.starting_seeds[1])
         self.assertNotEqual(self.starting_seeds[1], b'prepared')
-        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
         # Alter separately anchored custody surfaces; restore each before the next probe.
         for rel in ('intent-retries/1/1/receipts/2-emit-schematic/run/out/emission.json',
                     'intent-retries/1/1/receipts/2-emit-schematic/receipt.json',
@@ -80,15 +80,15 @@ class IntentRetryTests(unittest.TestCase):
                 if rel.endswith('intent-feedback.json'):
                     value = read_json(target); value['findings'] = []; write_json(target, value)
                 with self.assertRaises(ValueError):
-                    verify_campaign(root)
+                    verify_campaign(root, host=self.host)
                 target.write_bytes(before)
         state_path = root / 'state.json'
         before = state_path.read_bytes()
         changed = read_json(state_path); changed['intent_retries'] = {}; write_json(state_path, changed)
         with self.assertRaisesRegex(ValueError, 'intent retry archive inventory'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         state_path.write_bytes(before)
-        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
         # Re-pin the edited diagnostic, ordinary receipt, index and archive
         # anchor coherently. Pure emitter replay must still refuse the forgery.
         from agent_ee.storage import digest, identity
@@ -109,21 +109,21 @@ class IntentRetryTests(unittest.TestCase):
         state['intent_retries']['1'][0]['tree_sha256'] = identity(tree_hashes(failed))
         write_json(state_path, state)
         with self.assertRaisesRegex(ValueError, 'diagnostic differs from owned emitter replay'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     def test_repeated_failed_intent_stops_without_third_writer(self):
         self.mode = 'repeat'
         status, state = self.campaign(self.stage['implementation_steps'])
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 2))
         self.assertIn('no progress', state['error'])
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
         state_path = self.root / 'campaign/state.json'
         before = state_path.read_bytes()
         changed = read_json(state_path)
         changed['state'] = 'repair'
         write_json(state_path, changed)
         with self.assertRaisesRegex(ValueError, 'intent retry failure must be terminal incomplete'):
-            verify_campaign(self.root / 'campaign')
+            verify_campaign(self.root / 'campaign', host=self.host)
         state_path.write_bytes(before)
         from agent_ee.campaign import implement
         with patch('agent_ee.campaign._implement_once') as writer:
@@ -138,7 +138,7 @@ class IntentRetryTests(unittest.TestCase):
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 3))
         self.assertIn('finding_retry_limit exhausted', state['error'])
         self.assertEqual(len(state['intent_retries']['1']), 2)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     def test_retry_writer_cannot_edit_native_output(self):
         self.mode = 'unauthorized'
@@ -146,14 +146,14 @@ class IntentRetryTests(unittest.TestCase):
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 2))
         self.assertIn('writer_editable forbids', state['error'])
         self.assertFalse((self.root / 'campaign/implementations/1/receipts').exists())
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     def test_nonrecoverable_library_resolution_has_no_retry(self):
         self.mode = 'library'
         status, state = self.campaign(self.stage['implementation_steps'])
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 1))
         self.assertNotIn('intent_retries', state)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     def test_same_named_producer_with_different_command_has_no_retry(self):
         spec = self.stage['implementation_steps'][0]
@@ -162,7 +162,7 @@ class IntentRetryTests(unittest.TestCase):
         status, state = self.campaign(self.stage['implementation_steps'])
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 1))
         self.assertNotIn('intent_retries', state)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     def test_same_command_from_changed_source_has_no_retry(self):
         spec = self.stage['implementation_steps'][0]
@@ -175,14 +175,14 @@ class IntentRetryTests(unittest.TestCase):
         status, state = self.campaign(self.stage['implementation_steps'])
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 1))
         self.assertNotIn('intent_retries', state)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     def test_interrupted_retry_keeps_failed_attempt_replayable(self):
         with patch('agent_ee.intent_retry.seed', side_effect=KeyboardInterrupt):
             status, state = self.campaign(self.stage['implementation_steps'])
         self.assertEqual((status, state['state'], self.calls), (1, 'incomplete', 1))
         self.assertEqual(len(state['intent_retries']['1']), 1)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
 
 class LegacyIntentRetryBoundaryTests(unittest.TestCase):

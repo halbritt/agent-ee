@@ -31,6 +31,7 @@ from .schematic_decompile import _pin_position
 from .schematic_emit import Quoted, _mm, format_sexpr, parse_quoted
 from .storage import digest, identity, read_json, write_json
 from .symbol_library import LibraryError, children, nanometres, resolve_symbol
+from .run_record import pinned, policy_files, runtime_files
 
 PLAN_SCHEMA = 'agent-ee.fp-calibration/1'
 LEDGER_SCHEMA = 'agent-ee.fp-calibration-calls/1'
@@ -467,9 +468,11 @@ def _retain(path, name, value):
     return digest(path / name)
 
 
-def run(cal, profile, repeats, max_seconds, *, profile_path=None):
-    """Launch every planned call once; retain each settled record before the next admission."""
-    from .cli import policy_files, runtime_files
+def run(cal, profile, repeats, max_seconds, *, profile_path=None, host=None):
+    """Launch every planned call once; retain each settled record before the next admission.
+
+    host holds caller-supplied policy and runtime fingerprints (run_record.pinned) for the launch
+    expectation and every launch guard."""
     from .preflight import capture_expectation
     from .profiles import validate_profile
     from .reviewers import reviewer_call
@@ -485,8 +488,8 @@ def run(cal, profile, repeats, max_seconds, *, profile_path=None):
         raise CalibrationError('no variant was proven; nothing to present')
     definitions = [{**d, 'tool_mode': profile.get('tool_mode', 'investigate')} for d in profile['reviewers']]
     run_id = str(uuid.uuid4())
-    expected = capture_expectation({'run_id': run_id, 'policy_files': policy_files(),
-                                    'runtime_files': runtime_files()},
+    expected = capture_expectation({'run_id': run_id, 'policy_files': pinned(host, 'policy_files', policy_files),
+                                    'runtime_files': pinned(host, 'runtime_files', runtime_files)},
                                    {'scope': {'schema': 'agent-ee.scope/1', 'checks': [], 'review_profile': profile},
                                     'candidate_id': plan['identity'], 'files': {}}, definitions)
     write_json(cal / 'launch-expectation.json', expected)
@@ -521,7 +524,8 @@ def run(cal, profile, repeats, max_seconds, *, profile_path=None):
             try:
                 record, value = reviewer_call(path, role, definition, prompt, VERDICT_SCHEMA,
                     min(definition['timeout_s'], max(0, deadline - time.monotonic())),
-                    launch_context={'expected': expected, 'boundary': 'initial', 'deadline': deadline})
+                    launch_context={'expected': expected, 'boundary': 'initial', 'deadline': deadline,
+                                    **({'host': host} if host is not None else {})})
             except KeyboardInterrupt:
                 record, value = {'execution': 'interrupted', 'error': 'operator cancelled the calibration'}, None
                 _settle(cal, path, entry, record, value, call_id)

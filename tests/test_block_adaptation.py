@@ -326,7 +326,7 @@ class NativeAdaptationTests(unittest.TestCase):
             'baseline_id': baseline['baseline_id'],
             'files': {name: 'blocks/rc/' + name for name in block['files']}}]
         write_json(block_path, block)
-        with patch('agent_ee.cli.verify', side_effect=AssertionError('source evidence must not be read')):
+        with patch('agent_ee.reference_blocks.verify', side_effect=AssertionError('source evidence must not be read')):
             run, checks = self.run_candidate(lambda p: p.write_text(p.read_text().replace('"10k"', '"100k"')))
         self.assertEqual(old_checks['response']['outcome'], 'pass')
         self.assertEqual(checks['response']['outcome'], 'defect', checks)

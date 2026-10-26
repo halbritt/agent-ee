@@ -476,7 +476,7 @@ class JudgmentTests(unittest.TestCase):
 
 class NativeReviewQualificationTests(unittest.TestCase):
     def test_real_passing_export_checks_do_not_imply_review_or_file_release(self):
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         with tempfile.TemporaryDirectory() as tmp:

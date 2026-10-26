@@ -70,7 +70,7 @@ class CorrectionIdentityTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
-        from agent_ee.cli import link_correction
+        from agent_ee.run_record import link_correction
         from agent_ee.storage import write_json
         with tempfile.TemporaryDirectory() as temp:
             old, new = Path(temp)/'old', Path(temp)/'new'
@@ -80,6 +80,6 @@ class CorrectionIdentityTests(unittest.TestCase):
             before={'candidate_id':'old-profile','run_id':'old-run','findings':[{'id':'circuit/flaw','status':'accepted'}]}
             after={'candidate_id':'new-profile','run_id':'new-run','outcome':'criteria_satisfied','checks':[{'id':'native','execution':'ok','outcome':'pass'}]}
             write_json(new/'result.json',after)
-            with patch('agent_ee.cli.verify',side_effect=[before,after]), patch('agent_ee.cli.save_result'):
+            with patch('agent_ee.run_record.verify',side_effect=[before,after]), patch('agent_ee.run_record.save_result'):
                 with self.assertRaisesRegex(ValueError,'captured input'):
                     link_correction(old,new,'circuit/flaw',['native'], 'Different reviewer called it acceptable')

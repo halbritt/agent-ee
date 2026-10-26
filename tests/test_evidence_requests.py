@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from agent_ee.candidate import capture
-from agent_ee.cli import save_result, policy_files, runtime_files
+from agent_ee.run_record import save_result, policy_files, runtime_files
 from agent_ee.storage import digest, write_json, read_json
 from agent_ee.findings import collect_findings
 from agent_ee.evidence_requests import export_request, verify_operation
@@ -214,7 +214,7 @@ class RequestTests(unittest.TestCase):
         verify_operation(self.root / 'malformed-request')
 
     def test_invalid_request_cannot_write_inside_retained_evidence(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.replay import replay
         self.request('existing-operation')
         for corruption in ('malformed', 'missing-run', 'tampered-run', 'valid'):
@@ -377,7 +377,7 @@ class NativeWitnessTests(unittest.TestCase):
         import io
         from agent_ee.baseline import validate_witnesses
         from agent_ee.capabilities import convert_scope
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.evidence_requests import export_graduation
         from agent_ee.findings import adjudicate, validate_review
         from agent_ee.harnesses import evidence_mounts

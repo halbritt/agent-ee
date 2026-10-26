@@ -307,7 +307,7 @@ optional `writer_editable` declaration keep their prior behavior.
 ## Scaffold and validation
 
 The driver first runs the shared `scaffold.scaffold` preparation into a temporary
-directory. It invokes `cli.validate_scope`, `stages.declaration`,
+directory. It invokes `run_record.validate_scope`, `stages.declaration`,
 `compile_baseline`, the ordinary mutable-input guard and all declared step/route
 validators before publishing a run directory. It then captures the source tree
 and reruns that same scaffold producer through a networkless `run_step`.

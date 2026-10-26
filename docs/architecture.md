@@ -50,7 +50,8 @@ epistemic independence.
 | [convergence.py](../src/agent_ee/convergence.py) | Protected criteria, margin progress and bounded escalation |
 | [locking.py](../src/agent_ee/locking.py) | Process writer leases including enclosing campaigns |
 | [storage.py](../src/agent_ee/storage.py) | Canonical identities, digests and atomic JSON writes |
-| [cli.py](../src/agent_ee/cli.py) | Command parser, work lifecycle, result projections, freshness and operator mutations |
+| [run_record.py](../src/agent_ee/run_record.py) | Run record: work lifecycle, `result.json` shape, outcome and report projections, freshness verification, operator mutations, and the policy and runtime fingerprints it verifies against (a caller that holds them passes them in) |
+| [cli.py](../src/agent_ee/cli.py) | Command parser: parse arguments, call the owning module, print; no other module imports it |
 
 There is no database, daemon, queue service or hidden remote agent coordinator.
 The explicit campaign driver performs bounded automatic repairs; its

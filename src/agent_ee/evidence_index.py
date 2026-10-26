@@ -7,9 +7,9 @@ import sys
 
 from .baseline import evidence_seal, load_baseline
 from .candidate import safe_relative
-from .cli import verify
 from .locking import reader_lock
 from .storage import digest, read_json, write_json
+from .run_record import verify
 
 
 BENCH = {
@@ -46,14 +46,14 @@ def criteria_map(run, relative, baseline):
     return mapping, {'path': 'inputs/' + relative, 'sha256': baseline['files'][relative]}
 
 
-def campaign_receipts(run):
+def campaign_receipts(run, *, host=None):
     """Verified prior stage history, not a claim that a receipt satisfies a criterion."""
     from .campaign import verify_campaign_records
 
     root = next((p for p in run.parents if (p / '.campaign-root').is_file()), None)
     if root is None:
         return None, []
-    state = verify_campaign_records(root)
+    state = verify_campaign_records(root, host=host)
     positions = [i for i, item in enumerate(state['history']) if Path(item['run']).resolve() == run]
     if len(positions) != 1:
         raise ValueError('selected run must occur exactly once in its enclosing campaign history')
@@ -87,10 +87,10 @@ def input_references(value, files):
     return set()
 
 
-def build_index(run, criteria):
+def build_index(run, criteria, *, host=None):
     run = Path(run).resolve()
     with reader_lock(run):
-        result = verify(run, current_source=False)
+        result = verify(run, current_source=False, host=host)
         baseline = load_baseline(run)
         if baseline is None:
             raise ValueError('evidence index requires a sealed baseline')
@@ -103,7 +103,7 @@ def build_index(run, criteria):
         checks = {c['id']: c for c in result['checks']}
         specs = {c['id']: c for c in baseline['criteria']}
         requirements = {r['id']: r for r in baseline['requirements']}
-        campaign, receipts = campaign_receipts(run)
+        campaign, receipts = campaign_receipts(run, host=host)
         owner_obligations = []
         from .fab_package import artifact_record
         for check in checks.values():
@@ -199,7 +199,7 @@ def render_index(report):
     return '\n'.join(lines)
 
 
-def main(argv=None):
+def main(argv=None, *, host=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run', required=True, type=Path)
     parser.add_argument('--criteria', required=True, help='captured input-relative criteria mapping path')
@@ -211,7 +211,7 @@ def main(argv=None):
         out = (args.out or retained.with_name(retained.name + '-evidence-index')).resolve()
         if out.is_relative_to(retained):
             raise ValueError('index output must be outside retained run/campaign evidence')
-        report = build_index(run, args.criteria)
+        report = build_index(run, args.criteria, host=host)
         out.mkdir(parents=True, exist_ok=False)
         write_json(out / 'index.json', report)
         (out / 'index.md').write_text(render_index(report), encoding='utf-8')

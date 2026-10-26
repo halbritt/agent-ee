@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from .storage import canonical, digest, identity, read_json, write_json
+from .run_record import run_review
 
 CAP = 12
 LEDGER_SCHEMA = 'agent-ee.call-ledger/1'
@@ -273,7 +274,6 @@ def historical_packet(packet):
 
 def prepare(root, *, repository=Path('.')):
     """Checks-only capture of each fixture and both arm packets. No provider call."""
-    from .cli import run_review
     from .reviewers import build_packet
     root = Path(root).resolve()
     repository = Path(repository).resolve()

@@ -298,6 +298,20 @@ class ReferenceBlockTests(unittest.TestCase):
             self.assertFalse((root / 'capture').exists())
 
 
+class SuppliedHostRefusalTests(unittest.TestCase):
+    def test_capture_refuses_a_supplied_host(self):
+        # AGENTEE-545: capture verifies no run, so a supplied host is refused, never silently dropped.
+        import contextlib
+        import io
+        import json
+        from agent_ee.reference_blocks import main
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(['capture', 'request.json', '--repo', '.', '--commit', '0' * 40, '--out', 'unused'],
+                                  host={'runtime_files': {}}), 2)
+        self.assertEqual(json.loads(output.getvalue())['error'], 'capture does not take supplied host fingerprints')
+
+
 class NativeReferenceBlockTests(unittest.TestCase):
     def setUp(self):
         from tests.toolchain import require_toolchain
@@ -311,7 +325,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee.cli import run_review, runtime_files, verify
+        from agent_ee.run_record import run_review, runtime_files, verify
         from agent_ee.storage import read_json
         fixture = Path(__file__).resolve().parents[1] / 'fixtures/hardware-interface'
         from tests.test_parts_subset import captured_fixture, subset_generator
@@ -444,15 +458,13 @@ class NativeReferenceBlockTests(unittest.TestCase):
         runtime = runtime_files()
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = dict(path='/usr/bin/true', sha256=digest('/usr/bin/true'))
-        admission = patch('agent_ee.cli.runtime_files', return_value=runtime)
-        admission.start()
-        self.addCleanup(admission.stop)
+        self.host = {'runtime_files': runtime}
         run = self.root / 'run'
         output = io.StringIO()
         with patch('agent_ee.reviewers.dispatch', side_effect=dispatch), contextlib.redirect_stdout(output):
-            status = run_review(self.root / 'scope.json', run, 120, checks_only=checks_only)
+            status = run_review(self.root / 'scope.json', run, 120, checks_only=checks_only, host=self.host)
         self.assertTrue((run / 'candidate.json').exists(), output.getvalue() + (run / 'REPORT.md').read_text())
-        result = verify(run)
+        result = verify(run, host=self.host)
         self.assertEqual(status, 1 if checks_only else 0, result)
         self.assertEqual(result['checks'][0]['execution'], 'ok', result)
         self.assertEqual(result['checks'][1]['outcome'], 'pass', result)
@@ -472,7 +484,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         payload, record, run, result = self.prepare_run(shadow=True)
         self.assertEqual((result['state'], result['outcome']),
                          ('complete', 'criteria_satisfied'))
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['covered_requirements'], [])
         self.assertEqual(report['parts_membership']['status'], 'unverified')
@@ -489,23 +501,23 @@ class NativeReferenceBlockTests(unittest.TestCase):
 
     def test_enclosing_native_hierarchy_qualifies_actual_block_occurrence(self):
         payload, record, run, result = self.prepare_run(hierarchy=True)
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['status'], 'verified', report)
         self.assertEqual(report['covered_requirements'], ['interface'])
 
     def test_external_citation_needs_objects_even_with_passing_sealed_run(self):
         payload, record, run, result = self.prepare_run(external=True)
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['status'], 'verified', report)
         self.assertEqual(report['external_sources'][0]['status'], 'verified')
         (self.root / 'source-repo').rename(self.root / 'missing-source')
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['status'], 'unverified', report)
         self.assertEqual(report['external_sources'][0]['status'], 'unverified')
 
     def test_unchecked_optional_layout_remains_unverified(self):
         payload, record, run, result = self.prepare_run(layout=True)
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['status'], 'unverified', report)
         self.assertEqual(report['covered_requirements'], [])
 
@@ -513,7 +525,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         from agent_ee.storage import read_json
         payload, record, run, result = self.prepare_run()
         locations = {result['run_id']: run}
-        report = validate_block(payload, locations)
+        report = validate_block(payload, locations, host=self.host)
         self.assertEqual(report['status'], 'verified')
         self.assertEqual(report['parts_membership'], dict(status='verified', evidence=[dict(
             run_id=result['run_id'], check_id='parts', manifest_sha256=record['files']['parts.json'])]))
@@ -523,18 +535,18 @@ class NativeReferenceBlockTests(unittest.TestCase):
         value['candidate_id'] = '0' * 64
         write_json(seal, value)
         with self.assertRaises(ValueError):
-            validate_block(payload, locations)
+            validate_block(payload, locations, host=self.host)
         seal.write_bytes(original)
-        self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        self.assertEqual(validate_block(payload, locations, host=self.host)['status'], 'verified')
         membership_path = run / 'work/parts/parts-subset.json'
         original_membership = membership_path.read_bytes()
         value = read_json(membership_path)
         value['manifest_sha256'] = '0' * 64
         write_json(membership_path, value)
         with self.assertRaises(ValueError):
-            validate_block(payload, locations)
+            validate_block(payload, locations, host=self.host)
         membership_path.write_bytes(original_membership)
-        self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        self.assertEqual(validate_block(payload, locations, host=self.host)['status'], 'verified')
         # Sealed coordinator component witnesses cannot be rewritten to donate coverage.
         check_path = run / 'checks/interface.json'
         original_check = check_path.read_bytes()
@@ -542,9 +554,9 @@ class NativeReferenceBlockTests(unittest.TestCase):
         check['details']['invariants'][0]['actual']['components']['series']['sheet'] = '/foreign/'
         write_json(check_path, check)
         with self.assertRaises(ValueError):
-            validate_block(payload, locations)
+            validate_block(payload, locations, host=self.host)
         check_path.write_bytes(original_check)
-        self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        self.assertEqual(validate_block(payload, locations, host=self.host)['status'], 'verified')
         # A valid but changed parts manifest cannot borrow the old membership.
         original_parts = (payload / 'parts.json').read_bytes()
         parts = read_json(payload / 'parts.json')
@@ -553,7 +565,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         record['files']['parts.json'] = digest(payload / 'parts.json')
         write_json(payload / 'block.json', record)
         with self.assertRaisesRegex(ValueError, 'exact block bytes: parts.json'):
-            validate_block(payload, locations)
+            validate_block(payload, locations, host=self.host)
         (payload / 'parts.json').write_bytes(original_parts)
         record['files']['parts.json'] = digest(payload / 'parts.json')
         write_json(payload / 'block.json', record)
@@ -562,11 +574,11 @@ class NativeReferenceBlockTests(unittest.TestCase):
         record['files']['sheet.kicad_sch'] = digest(payload / 'sheet.kicad_sch')
         write_json(payload / 'block.json', record)
         with self.assertRaisesRegex(ValueError, 'exact block bytes'):
-            validate_block(payload, locations)
+            validate_block(payload, locations, host=self.host)
 
     def test_passing_interface_without_membership_remains_unverified(self):
         payload, record, run, result = self.prepare_run(membership=False)
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['covered_requirements'], ['interface'])
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['parts_membership'], dict(status='unverified', evidence=[]))
@@ -574,7 +586,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
     def test_membership_for_other_manifest_path_cannot_qualify_block(self):
         payload, record, run, result = self.prepare_run(foreign_parts=True)
         self.assertEqual(result['checks'][2]['outcome'], 'pass')
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['parts_membership']['evidence'], [])
 
@@ -593,17 +605,17 @@ class NativeReferenceBlockTests(unittest.TestCase):
                 write_json(run / 'result.json', stored)
             output = io.StringIO()
             with self.subTest(state=state), contextlib.redirect_stdout(output):
-                self.assertEqual(main(args), expected)
+                self.assertEqual(main(args, host=self.host), expected)
             self.assertEqual(json.loads(output.getvalue())['status'], 'verified' if expected == 0 else 'refused')
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            self.assertEqual(main(['validate', str(payload)]), 1)
+            self.assertEqual(main(['validate', str(payload)], host=self.host), 1)
         self.assertEqual(json.loads(output.getvalue())['status'], 'unverified')
 
     def test_checks_only_is_unverified_and_missing_run_is_unverified(self):
         payload, record, run, result = self.prepare_run(checks_only=True)
-        self.assertEqual(validate_block(payload, {result['run_id']: run})['status'], 'unverified')
-        self.assertEqual(validate_block(payload)['status'], 'unverified')
+        self.assertEqual(validate_block(payload, {result['run_id']: run}, host=self.host)['status'], 'unverified')
+        self.assertEqual(validate_block(payload, host=self.host)['status'], 'unverified')
 
     def test_foreign_candidate_baseline_mapping_and_requirement_refused(self):
         import copy
@@ -620,7 +632,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
             mutate(record)
             write_json(payload / 'block.json', record)
             with self.subTest(record=record), self.assertRaises(ValueError):
-                validate_block(payload, {record['runs'][0]['run_id']: run})
+                validate_block(payload, {record['runs'][0]['run_id']: run}, host=self.host)
 
     def test_changed_contract_with_refreshed_local_hash_is_not_run_coverage(self):
         payload, record, run, result = self.prepare_run()
@@ -629,7 +641,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         record['files']['block-contract.json'] = digest(payload / 'block-contract.json')
         write_json(payload / 'block.json', record)
         with self.assertRaisesRegex(ValueError, 'exact block bytes'):
-            validate_block(payload, {result['run_id']: run})
+            validate_block(payload, {result['run_id']: run}, host=self.host)
 
     def test_native_hierarchy_export_agrees_with_explicit_child_ports(self):
         import time
@@ -675,11 +687,11 @@ class NativeReferenceBlockTests(unittest.TestCase):
                          digest(self.root / 'child.kicad_sch'))
 
     def test_escalated_projection_does_not_inherit_passing_checks(self):
-        from agent_ee.cli import save_result
+        from agent_ee.run_record import save_result
         payload, record, run, result = self.prepare_run(checks_only=True)
         result['state'] = 'escalated'
         save_result(run, result)
-        report = validate_block(payload, {result['run_id']:run})
+        report = validate_block(payload, {result['run_id']:run}, host=self.host)
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['runs'][0]['status'], 'unverified')
 
@@ -690,17 +702,17 @@ class NativeReferenceBlockTests(unittest.TestCase):
         missing['run_id'] = 'unavailable-run'
         record['runs'].append(missing)
         write_json(payload / 'block.json', record)
-        self.assertEqual(validate_block(payload, {result['run_id']: run})['status'], 'unverified')
+        self.assertEqual(validate_block(payload, {result['run_id']: run}, host=self.host)['status'], 'unverified')
 
     def test_pending_requirement_keeps_passing_covered_block_unverified(self):
         payload, record, run, result = self.prepare_run(pending=True)
-        report = validate_block(payload, {result['run_id']: run})
+        report = validate_block(payload, {result['run_id']: run}, host=self.host)
         self.assertEqual(report['covered_requirements'], ['interface'])
         self.assertEqual(report['pending_requirements'], ['bench'])
         self.assertEqual(report['status'], 'unverified')
 
     def test_unknown_electrical_declarations_are_not_qualified_by_run(self):
         payload, record, run, result = self.prepare_run(undeclared=True)
-        report = validate_block(payload, {result['run_id']:run})
+        report = validate_block(payload, {result['run_id']:run}, host=self.host)
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['undeclared_ports'], ['IN'])

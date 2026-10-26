@@ -34,6 +34,7 @@ import sys
 import time
 
 from .storage import canonical, digest, read_json, write_json
+from .run_record import policy_files
 
 JOB_SCHEMA = 'agent-ee.placement-job/1'
 CONFIG_SCHEMA = 'agent-ee.placement-job-config/1'
@@ -2186,7 +2187,6 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     identities = {} if identities is None else identities
     identities.update(pcbnew_version=pcbnew.Version(), python=sys.version.split()[0])
     if 'planes' in config['inputs']:
-        from .cli import policy_files
         identities['plane_tools'] = sha256_bytes(canonical(policy_files()))
     engine = Path(executable or rust_executable())
     identities.update(engine=str(engine), engine_sha256=digest(engine))

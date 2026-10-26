@@ -17,6 +17,7 @@ from .retained_run import retained_path as _retained_path
 from .catalog import strict_json
 from .stage_receipts import tree_identity
 from .storage import digest, identity, write_json
+from .run_record import pcbnew_extension, policy_files
 
 SCHEMA = build_plan.SCHEMA
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
@@ -29,7 +30,6 @@ _inventory = requirement_map.input_inventory
 
 
 def _runtime():
-    from .cli import pcbnew_extension, policy_files
     import pcbnew
     cli = shutil.which('kicad-cli')
     if cli is None:

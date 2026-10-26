@@ -60,7 +60,7 @@ from unittest.mock import patch
 from agent_ee import checks
 from agent_ee.baseline import validate_witnesses
 from agent_ee.candidate import capture
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.storage import digest, read_json, write_json
 import test_capability_pipeline as pipeline
 from toolchain import require_toolchain
@@ -100,8 +100,8 @@ class NativeCornerTests(unittest.TestCase):
                 root = self.prepare(label, zero=label == 'corner-zero')
                 with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
                      contextlib.redirect_stdout(io.StringIO()):
-                    status = run_review(root / 'scope.json', root / 'run', 180)
-                result = verify(root / 'run')
+                    status = run_review(root / 'scope.json', root / 'run', 180, host=self.host)
+                result = verify(root / 'run', host=self.host)
                 expected = self.expected['expected_defect' if label == 'corner-defect' else 'expected_control']
                 self.assertEqual(result['outcome'], expected, result)
                 self.assertEqual(status, int(label == 'corner-defect'))

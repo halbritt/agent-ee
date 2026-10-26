@@ -283,7 +283,7 @@ class NativeRoutingPipelineTest(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee.cli import run_review, verify, runtime_files
+        from agent_ee.run_record import run_review, verify, runtime_files
         from agent_ee.baseline import load_baseline, validate_witnesses
         from agent_ee.storage import digest, read_json, write_json
         from tests.test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
@@ -291,77 +291,77 @@ class NativeRoutingPipelineTest(unittest.TestCase):
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
         self.calls = []
-        with patch('agent_ee.cli.runtime_files', return_value=runtime):
-            for name, lengths, unrouted, document, outcome in (
-                ('pass', (10, 10.1), False, contract(max_mm=0.15), 'criteria_satisfied'),
-                ('defect', (10, 10.3), False, contract(max_mm=0.15), 'defects_or_unresolved'),
-                ('missing', (10, 10.3), True, contract(max_mm=0.15), 'incomplete'),
-                ('partial', (10, 10.3), False, {'schema': 'agent-ee.routing-rules/1',
-                    'constraints': [contract(max_mm=0.15)['constraints'][0],
-                        {**contract('impedance', target_ohm=90)['constraints'][0], 'id': 'impedance'}]},
-                 'incomplete')):
-                with self.subTest(case=name):
-                    root = self.prepare(name, document, lengths=lengths, unrouted=unrouted)
-                    scope = read_json(root / 'scope.json')
-                    if name == 'defect':
-                        other = contract('length', max_mm=20)
-                        other['constraints'][0]['requirement'] = 'other-satisfied'
-                        write_json(root / 'other.json', other)
-                        scope['inputs'].append({'path': 'other.json', 'at': 'other.json'})
-                        scope['checks'].append({'id': 'other', 'kind': 'routing_rules',
-                                                'params': {'routing_rules': 'other.json'}})
-                        scope['baseline']['requirements'].append({
-                            **scope['baseline']['requirements'][0], 'id': 'other-satisfied', 'checks': ['other']})
-                    scope['review_profile'] = {'schema': 'agent-ee.profile/1', 'name': 'scripted-routing',
-                        'reviewers': [{**PROFILE_CALL, 'role': 'circuit'}, {**PROFILE_CALL, 'role': 'physical'}],
-                        'adjudicator': PROFILE_CALL}
-                    write_json(root / 'scope.json', scope)
-                    def agent(*args, **kwargs):
-                        return NativeCapabilityPipelineTests.agent(self, *args, **kwargs)
-                    with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
-                        status = run_review(root / 'scope.json', root / 'run', 120)
-                    result = verify(root / 'run')
-                    self.assertNotIn('error', result, result)
-                    self.assertEqual(status, 0 if name == 'pass' else 1, result)
-                    self.assertEqual(result['outcome'], outcome, result)
-                    self.assertTrue(result['adjudicated'], result)
-                    self.assertCountEqual([role for _, role in self.calls[-3:-1]], ['circuit', 'physical'])
-                    self.assertEqual(self.calls[-1][1], 'adjudicator')
-                    baseline = load_baseline(root / 'run')
-                    self.assertIn('rules.json', baseline['files'])
-                    self.assertEqual(baseline['coverage']['checks']['routing']['predicates'], ['routing:usb'])
-                    self.assertIn('kicad-cli', result['launch_expectation']['required_runtime'])
-                    self.assertIn('pcbnew', result['launch_expectation']['required_runtime'])
-                    accepted = [f for f in result['findings'] if f.get('status') == 'accepted']
-                    self.assertEqual([f['local_id'] for f in accepted], ['routing'] if name == 'defect' else [])
-                    witness = [{'requirement_id': 'usb-skew', 'check_id': 'routing'}]
-                    evidence = [{'path': 'checks/routing.json'}]
-                    if name == 'defect':
+        host = {'runtime_files': runtime}
+        for name, lengths, unrouted, document, outcome in (
+            ('pass', (10, 10.1), False, contract(max_mm=0.15), 'criteria_satisfied'),
+            ('defect', (10, 10.3), False, contract(max_mm=0.15), 'defects_or_unresolved'),
+            ('missing', (10, 10.3), True, contract(max_mm=0.15), 'incomplete'),
+            ('partial', (10, 10.3), False, {'schema': 'agent-ee.routing-rules/1',
+                'constraints': [contract(max_mm=0.15)['constraints'][0],
+                    {**contract('impedance', target_ohm=90)['constraints'][0], 'id': 'impedance'}]},
+             'incomplete')):
+            with self.subTest(case=name):
+                root = self.prepare(name, document, lengths=lengths, unrouted=unrouted)
+                scope = read_json(root / 'scope.json')
+                if name == 'defect':
+                    other = contract('length', max_mm=20)
+                    other['constraints'][0]['requirement'] = 'other-satisfied'
+                    write_json(root / 'other.json', other)
+                    scope['inputs'].append({'path': 'other.json', 'at': 'other.json'})
+                    scope['checks'].append({'id': 'other', 'kind': 'routing_rules',
+                                            'params': {'routing_rules': 'other.json'}})
+                    scope['baseline']['requirements'].append({
+                        **scope['baseline']['requirements'][0], 'id': 'other-satisfied', 'checks': ['other']})
+                scope['review_profile'] = {'schema': 'agent-ee.profile/1', 'name': 'scripted-routing',
+                    'reviewers': [{**PROFILE_CALL, 'role': 'circuit'}, {**PROFILE_CALL, 'role': 'physical'}],
+                    'adjudicator': PROFILE_CALL}
+                write_json(root / 'scope.json', scope)
+                def agent(*args, **kwargs):
+                    return NativeCapabilityPipelineTests.agent(self, *args, **kwargs)
+                with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+                    status = run_review(root / 'scope.json', root / 'run', 120, host=host)
+                result = verify(root / 'run', host=host)
+                self.assertNotIn('error', result, result)
+                self.assertEqual(status, 0 if name == 'pass' else 1, result)
+                self.assertEqual(result['outcome'], outcome, result)
+                self.assertTrue(result['adjudicated'], result)
+                self.assertCountEqual([role for _, role in self.calls[-3:-1]], ['circuit', 'physical'])
+                self.assertEqual(self.calls[-1][1], 'adjudicator')
+                baseline = load_baseline(root / 'run')
+                self.assertIn('rules.json', baseline['files'])
+                self.assertEqual(baseline['coverage']['checks']['routing']['predicates'], ['routing:usb'])
+                self.assertIn('kicad-cli', result['launch_expectation']['required_runtime'])
+                self.assertIn('pcbnew', result['launch_expectation']['required_runtime'])
+                accepted = [f for f in result['findings'] if f.get('status') == 'accepted']
+                self.assertEqual([f['local_id'] for f in accepted], ['routing'] if name == 'defect' else [])
+                witness = [{'requirement_id': 'usb-skew', 'check_id': 'routing'}]
+                evidence = [{'path': 'checks/routing.json'}]
+                if name == 'defect':
+                    validate_witnesses(root / 'run', witness, evidence)
+                    with self.assertRaisesRegex(ValueError, 'trace'):
+                        validate_witnesses(root / 'run', [{'requirement_id': 'other-satisfied',
+                            'check_id': 'routing'}], evidence)
+                    with self.assertRaisesRegex(ValueError, 'failed criterion'):
+                        validate_witnesses(root / 'run', [{'requirement_id': 'other-satisfied',
+                            'check_id': 'other'}], [{'path': 'checks/other.json'}])
+                    artifact = root / 'run/work/routing/native-rules/usb/board.kicad_dru'
+                    artifact.write_text(artifact.read_text() + '\n; tampered\n')
+                    with self.assertRaisesRegex(ValueError, 'changed|seal'):
+                        verify(root / 'run')
+                    with self.assertRaisesRegex(ValueError, 'changed'):
                         validate_witnesses(root / 'run', witness, evidence)
-                        with self.assertRaisesRegex(ValueError, 'trace'):
-                            validate_witnesses(root / 'run', [{'requirement_id': 'other-satisfied',
-                                'check_id': 'routing'}], evidence)
-                        with self.assertRaisesRegex(ValueError, 'failed criterion'):
-                            validate_witnesses(root / 'run', [{'requirement_id': 'other-satisfied',
-                                'check_id': 'other'}], [{'path': 'checks/other.json'}])
-                        artifact = root / 'run/work/routing/native-rules/usb/board.kicad_dru'
-                        artifact.write_text(artifact.read_text() + '\n; tampered\n')
-                        with self.assertRaisesRegex(ValueError, 'changed|seal'):
-                            verify(root / 'run')
-                        with self.assertRaisesRegex(ValueError, 'changed'):
-                            validate_witnesses(root / 'run', witness, evidence)
-                    else:
-                        with self.assertRaisesRegex(ValueError, 'failed criterion'):
-                            validate_witnesses(root / 'run', witness, evidence)
-                    if name == 'partial':
-                        records = result['checks'][0]['details']['constraints']
-                        self.assertEqual({r['id']: r['status'] for r in records},
-                                         {'impedance': 'not_evaluated', 'usb': 'violation'})
+                else:
+                    with self.assertRaisesRegex(ValueError, 'failed criterion'):
+                        validate_witnesses(root / 'run', witness, evidence)
+                if name == 'partial':
+                    records = result['checks'][0]['details']['constraints']
+                    self.assertEqual({r['id']: r['status'] for r in records},
+                                     {'impedance': 'not_evaluated', 'usb': 'violation'})
 
     def test_cli_checks_only_preserves_incomplete_status(self):
         import subprocess
         import sys
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.storage import read_json, digest
         root = self.prepare('cli', lengths=(10, 10.1))
         proc = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'review', str(root / 'scope.json'),
@@ -381,7 +381,7 @@ class NativeRoutingPipelineTest(unittest.TestCase):
     def test_native_staging_failure_is_retained_as_unknown(self):
         import contextlib
         import io
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.storage import read_json, write_json
         for suffix, content in (('pro', '{'), ('dru', '(version 1)\n(rule "agent_ee_usb" (constraint length (max 1mm)))')):
             with self.subTest(sidecar=suffix):
@@ -484,7 +484,7 @@ class RoutingContractIntegrationTest(unittest.TestCase):
         self.assertEqual(self.describe()['status'], 'unsupported')
 
     def test_policy_identity_covers_rule_compiler_and_native_runner(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         self.assertTrue({'routing_rules.py', 'routing_native.py'} <= policy_files().keys())
 
 

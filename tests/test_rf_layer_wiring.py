@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_ee import rf_review
-from agent_ee.cli import verify
+from agent_ee.run_record import verify
 from agent_ee.storage import digest, write_json
 from tests import test_per_net_layers as per_net
 from tests import test_rf_review as rf
@@ -49,9 +49,9 @@ class RfLayerWiringNativeTest(native.PlaneFixture, unittest.TestCase):
         self.save()
         self.calls, self.prompts, self.schemas, self.rf_reply = [], {}, {}, self.support_layer_topic
         self.addCleanup(patch.stopall)
-        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true',
+        self.host = {'runtime_files': {name: {'path': '/usr/bin/true',
               'sha256': digest('/usr/bin/true')} for name in ('codex', 'codex_tool_host', 'bwrap',
-                                                               '/usr/bin/python3')}).start()
+                                                               '/usr/bin/python3')}}
         self.reviews = 0
 
     def support_layer_topic(self, review):
@@ -125,15 +125,15 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertFalse(any("RF layer requirement" in m for m in result["rf_review"]["missing"]))
         self.assertIn(LAYER_TOPIC, [t["topic"] for r in result["reviews"] if r["role"] == "rf"
                                     for t in r["rf_assessment"]["topics"] if t["status"] == "supported"])
-        verify(run)
+        verify(run, host=self.host)
         # The retained facts are review evidence: an edited copy fails replay.
         facts = run / "work/rf-routing/native-facts.json"
         original = facts.read_bytes()
         facts.write_bytes(original.replace(b'"F.Cu"', b'"B.Cu"'))
         with self.assertRaisesRegex(ValueError, "evidence changed|RF review decision differs"):
-            verify(run)
+            verify(run, host=self.host)
         facts.write_bytes(original)
-        verify(run)
+        verify(run, host=self.host)
 
         # Stale: the same verified receipt is not evidence for another board (the unrouted input).
         result, requirement, _ = self.review(self.root / "candidate/project/pod.kicad_pcb", receipt)
@@ -164,7 +164,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertTrue(any("RF layer requirement F.Cu over In1.Cu" in m and "defect" in m
                             for m in result["rf_review"]["missing"]))
         self.assert_layer_topic_refused(result)
-        verify(run)
+        verify(run, host=self.host)
 
     def test_via_to_another_layer_is_a_defect(self):
         summary, work, receipt = self.routed(35, VIA, 'rf-via', 'layer_change')
@@ -177,7 +177,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertTrue(vias)
         self.assertEqual({tuple(v["disallowed_layers"]) for v in vias}, {("In1.Cu", "In2.Cu", "B.Cu")})
         self.assert_layer_topic_refused(result)
-        verify(run)
+        verify(run, host=self.host)
 
     def test_undeclared_reference_leaves_the_requirement_unknown(self):
         summary, work, receipt = self.routed(35, NO_REFERENCE, 'rf-noref')
@@ -188,7 +188,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(requirement["status"], "unknown")
         self.assertIn("declares no ground reference", requirement["reason"])
         self.assert_layer_topic_refused(result)
-        verify(run)
+        verify(run, host=self.host)
 
     def test_reference_void_under_the_route_is_never_satisfied(self):
         summary, work, receipt = self.routed(25, VOID, 'rf-void')
@@ -199,7 +199,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(result["rf_review"]["routing_adapter"]["status"], "stale")
         self.assertEqual(requirement["status"], "unknown")
         self.assert_layer_topic_refused(result)
-        verify(run)
+        verify(run, host=self.host)
 
 
 if __name__ == "__main__":

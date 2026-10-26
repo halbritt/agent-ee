@@ -2866,7 +2866,7 @@ class AssemblyReadinessTests(unittest.TestCase):
             parse_search_response(search(del_row), 'C25804')
 
     def test_as_of_from_receipt(self):
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.stage_receipts import run_step
         source = self.root / 'source'
         source.mkdir()

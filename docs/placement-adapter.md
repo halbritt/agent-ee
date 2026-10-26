@@ -155,7 +155,7 @@ the index comes from the step plan. The step's sandbox view is:
   constant launcher. Python runs with `-I`, so this hashed tree, rather than `/app`,
   supplies the helper code. The receipt records the tree as the step's source
   identity. The snapshot must equal the campaign's pin (the launch policy files,
-  `cli.policy_files`) before the step runs, and verification checks the
+  `run_record.policy_files`) before the step runs, and verification checks the
   retained snapshot against both the pin and the receipt. The pin covers the
   `agent_ee/*.py` sources and the package data under `agent_ee/data/`, such as
   the captured JLCPCB locality record that block admission reads (AGENTEE-439).

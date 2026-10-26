@@ -30,6 +30,7 @@ from . import rung1_campaign as rc
 from . import rung1_qualified as rq
 from .storage import canonical, digest, identity, read_json, write_json
 from .tool_source import snapshot
+from .run_record import verify
 
 QUALIFICATION = 'experimental-unqualified'
 RECORD_SCHEMA = 'agent-ee.rung1-stage-record/0-experimental'
@@ -212,7 +213,6 @@ def review(rundir, setup, label):
 
 def sealed(run):
     """Verify the review run as `agent-ee verify` does; the error text, or None."""
-    from .cli import verify
     try:
         verify(run)
     except Exception as exc:  # noqa: BLE001 - an unverifiable run is missing coverage, never a pass

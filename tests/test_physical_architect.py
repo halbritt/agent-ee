@@ -126,9 +126,7 @@ class PhysicalArchitectTests(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        runtime = patch('agent_ee.cli.runtime_files', return_value=RUNTIME)
-        runtime.start()
-        self.addCleanup(runtime.stop)
+        self.host = {'runtime_files': RUNTIME}
         self.slot = self.root / self.id().rsplit('.', 1)[-1]
         self.slot.mkdir()
 
@@ -140,7 +138,7 @@ class PhysicalArchitectTests(unittest.TestCase):
         stage, out = self.slot / f'stage-{name}', self.slot / f'package-{name}'
         with patch('agent_ee.reviewers.dispatch', side_effect=transport):
             receipt = propose(run, out, definition=dict(definition), deadline=transport.deadline, stage=stage,
-                              **kwargs)
+                              **kwargs, host=self.host)
         # The run is evidence: no net, pin, board or schematic byte changes in any outcome.
         self.assertEqual(input_identity(run), before)
         self.assertEqual(read_json(stage / 'architect-receipt.json'), receipt)

@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee.cli import main, runtime_files
+from agent_ee.cli import main
+from agent_ee.run_record import runtime_files
 from agent_ee.preflight import runtime_drift
 
 
@@ -95,7 +96,7 @@ class DoctorTests(unittest.TestCase):
     def runtime(self):
         with patch("agent_ee.cli.shutil.which", side_effect=self.which), \
                 patch("agent_ee.harnesses.executable_for", return_value=None), \
-                patch("agent_ee.cli.pcbnew_extension", return_value=(str(self.binaries["_pcbnew.so"]), "")):
+                patch("agent_ee.run_record.pcbnew_extension", return_value=(str(self.binaries["_pcbnew.so"]), "")):
             return runtime_files()
 
     def test_planner_override_is_required_even_with_checks_only(self):

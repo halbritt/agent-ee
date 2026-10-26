@@ -1982,11 +1982,11 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         fixture = OwnedCarryCampaign()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
-        from agent_ee import cli
         import _pcbnew
-        runtime = cli.runtime_files()
-        runtime['pcbnew'] = {'path': _pcbnew.__file__, 'sha256': digest(_pcbnew.__file__)}
-        self.enterContext(patch('agent_ee.cli.runtime_files', return_value=runtime))
+        # The campaign's supplied runtime, with the real native pcbnew identity the carry check reads.
+        fixture.host['runtime_files'] = {**fixture.host['runtime_files'],
+                                         'pcbnew': {'path': _pcbnew.__file__, 'sha256': digest(_pcbnew.__file__)}}
+        self.host = fixture.host
         owned = owned_design(fixture.root / 'owned')
         shutil.rmtree(fixture.source / 'project')
         shutil.copytree(owned / 'project', fixture.source / 'project')
@@ -2079,7 +2079,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'))
         self.assertEqual(check['details']['reason'], 'open_placement_defects')
         self.assertEqual(read_json(final / 'checks/routed.json')['outcome'], 'pass')
-        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], state['state'])
+        self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], state['state'])
 
         # The same native publication must also fail acceptance in a campaign
         # that declares no routing, verification or fab gate at all.
@@ -2089,7 +2089,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
                                         name='no-downstream')
         self.assertEqual((status, state['state'], state['reason']),
                          (1, 'escalated', 'open_placement_defects'))
-        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
+        self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], 'escalated')
 
     def test_placement_projection_carries_silk_to_routing_and_full_drc_refuses(self):
         from agent_ee import campaign
@@ -2141,7 +2141,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         for check_id in ('drc', 'verify'):
             check = read_json(final / f'checks/{check_id}.json')
             self.assertEqual((check['outcome'], check['details']['reason']), ('defect', 'open_placement_defects'))
-        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], state['state'])
+        self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], state['state'])
 
     def test_unclassified_routed_artwork_stays_anchored_and_the_carry_escalates(self):
         """AGENTEE-523: a campaign artwork step without a source-bound policy cannot move graphics.
@@ -2197,7 +2197,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         final = fixture.out / 'runs/4'
         self.assertTrue(placement_defects.open_defects(read_json(final / 'candidate.json'), final / 'inputs'))
         with patch('agent_ee.executor.execute', side_effect=AssertionError('replay launched a tool')):
-            self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
+            self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], 'escalated')
 
 class ClosureEscapeTests(unittest.TestCase):
     def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None,

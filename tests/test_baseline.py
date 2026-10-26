@@ -225,7 +225,7 @@ class AdvisoryDefectTests(unittest.TestCase):
                               for cid, disposition, cite, target in decisions]}
 
     def test_advisory_defect_is_accepted_without_a_requirement_witness(self):
-        from agent_ee.cli import outcome
+        from agent_ee.run_record import outcome
         self.assertEqual(load_baseline(self.run)["coverage"]["requirements"]["I1"]["acceptance_checks"], [])
         updated = {f["id"]: f for f in adjudicate(self.findings, self.decide(
             ("width", "accepted", "width", None), ("congestion", "accepted", "congestion", None)), self.run)}

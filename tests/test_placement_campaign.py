@@ -48,7 +48,7 @@ from agent_ee import forward_annotation as fa
 from agent_ee import placement_adapter as pa
 from agent_ee.board_envelope import derive_requirements, validate
 from agent_ee.campaign import run_campaign, verify_campaign
-from agent_ee.cli import verify
+from agent_ee.run_record import verify
 from agent_ee.storage import digest, read_json, write_json
 from toolchain import require_toolchain
 
@@ -239,8 +239,8 @@ class PlacementCampaignFixture(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
         # Avoid platform fingerprint probes for the scripted agent launch; sandbox tool execution is real.
-        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}).start()
+        self.host = {'runtime_files': {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}}
 
     def declaration(self, helper=True, fixed=None, timeout_s=300):
         return {'schema': pa.ADAPTER_SCHEMA, 'helper': 'agent-ee.placer/1' if helper else None,
@@ -293,7 +293,7 @@ class PlacementCampaignFixture(unittest.TestCase):
         write_json(self.root / 'campaign.json', config)
         self.out = self.root / name
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', self.out)
+            status = run_campaign(self.root / 'campaign.json', self.out, host=self.host)
         return status, read_json(self.out / 'state.json')
 
     def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
@@ -321,7 +321,7 @@ class PlacementCampaignFixture(unittest.TestCase):
             'coverage': ['placement protocol'], 'limitations': ['scripted test response'], 'findings': []}
 
     def outcomes(self, number):
-        result = verify(self.out / 'runs' / str(number))
+        result = verify(self.out / 'runs' / str(number), host=self.host)
         return {c['id']: c['outcome'] for c in result['checks']}
 
     def assertNoNextCandidate(self, state, error):
@@ -330,7 +330,7 @@ class PlacementCampaignFixture(unittest.TestCase):
         self.assertEqual(len(state['history']), 1)
         self.assertFalse((self.out / 'runs/2').exists())
         self.assertFalse((self.out / 'implementations/1/proposal.scope.json').exists())
-        self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'incomplete')
 
     def assertEnvelopeCaptureRefused(self, status, state):
         # Fail-closed until the AGENTEE-94 fab-profile seam qualifies copper weight: outline, layers
@@ -346,7 +346,7 @@ class PlacementCampaignFixture(unittest.TestCase):
         self.assertFalse((self.out / 'runs/1/candidate.json').exists())
         self.assertNotIn('implementation', self.calls)
         self.assertFalse((self.out / 'implementations').exists())
-        self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'incomplete')
 
 
 class HelperCampaignTest(PlacementCampaignFixture):
@@ -374,7 +374,7 @@ class HelperCampaignTest(PlacementCampaignFixture):
         result = read_json(self.out / 'implementations/1/receipts/1-agent-ee-placer/run/placement/placement-result.json')
         self.assertEqual((result['status'], result['plan']['mode']), ('placed', 'net_cluster_seed'))
         self.assertEqual(result['plan']['selection']['selected_index'], 1)
-        self.assertEqual(verify_campaign(self.out)['state'], state['state'])
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], state['state'])
         # The cluster output is a real input to the pinned router, not just a plan.
         from agent_ee import routing_adapter, stage_receipts
         from toolchain import require_kicad_route
@@ -401,7 +401,7 @@ class HelperCampaignTest(PlacementCampaignFixture):
         captured = self.out / 'runs/1/inputs' / plans_path
         captured.write_text('[]')
         with self.assertRaises(ValueError):
-            verify_campaign(self.out)
+            verify_campaign(self.out, host=self.host)
 
     def test_pinned_helper_repairs_placement_then_routing_turn_runs_no_helper(self):
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
@@ -444,7 +444,7 @@ class HelperCampaignTest(PlacementCampaignFixture):
         self.assertFalse((self.out / 'implementations/2/placement-adapter.json').exists())
         self.assertFalse((self.out / 'implementations/2/receipts').exists())
         self.assertEqual(read_json(self.out / 'implementations/2/stage-receipts.json')['receipts'], [])
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
         self.assertEqual((self.source / BOARD).read_bytes(),
                          (self.out / 'runs/1/inputs' / BOARD).read_bytes())
 
@@ -475,7 +475,7 @@ class WriterOnlyCampaignTest(PlacementCampaignFixture):
             self.assertEqual(record['writer_scope'], record['proposal_scope'])
         rotated = read_json(self.out / 'implementations/2/placement-adapter.json')['proposal_scope']['transforms']
         self.assertIn(('R1', 90), [(t['reference'], t['rotation_deg']) for t in rotated])
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
 
 class SideFlipCampaignTest(PlacementCampaignFixture):
@@ -491,7 +491,7 @@ class SideFlipCampaignTest(PlacementCampaignFixture):
                          ('R1', True, 'back', 180))
         facts = read_json(self.out / 'runs/2/work/courtyard/placement-probe.json')
         self.assertEqual(facts['board_sha256'], read_json(self.out / 'runs/2/candidate.json')['files'][BOARD])
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
 
 class ScaffoldCampaignTest(PlacementCampaignFixture):
@@ -564,7 +564,7 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         drc = read_json(self.out / 'runs/2/work/drc-placement/drc.json')
         self.assertEqual((drc['violations'], drc['schematic_parity']), ([], []))
         self.assertNotIn('placement iteration', self.prompts[2])
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
     def test_helper_edge_clearance_gap_is_graded_as_a_defect_and_never_accepted(self):
         # AGENTEE-331 ruling (b): the pinned via-only JLC profile has no edge limit.
@@ -585,7 +585,7 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         # Numeric advice supplies no acceptance: final connectivity still fails.
         self.assertTrue(drc['unconnected_items'])
         self.assertEqual(self.outcomes(2)['drc-final'], 'defect')
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
     def test_writer_only_scaffold_placement_is_captured_and_graded(self):
         self.writes = {1: {'move': {'J1': (100, 100), 'R1': (105, 100), 'C1': (110, 100)}}}
@@ -597,7 +597,7 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         record = read_json(self.out / 'implementations/1/placement-adapter.json')
         self.assertEqual((record['status'], record['helper']), ('proposed', None))
         self.assertEqual(sorted(t['reference'] for t in record['writer_scope']['transforms']), ['C1', 'J1', 'R1'])
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
 
 class RefusalCampaignTest(PlacementCampaignFixture):
@@ -806,10 +806,10 @@ class FailureCampaignTest(PlacementCampaignFixture):
                 write_json(path, {**record, **changes})
                 write_json(state_path, {**saved, 'placement_records': {'1': digest(path)}})
                 with self.assertRaisesRegex(ValueError, fragment):
-                    verify_campaign(self.out)
+                    verify_campaign(self.out, host=self.host)
         write_json(path, record)
         write_json(state_path, saved)
-        self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'incomplete')
 
     def test_helper_crash(self):
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
@@ -837,7 +837,7 @@ class FailureCampaignTest(PlacementCampaignFixture):
         self.assertEqual(drc['schematic_parity'], [])
         self.assertEqual(pad_facts(self.out / 'runs/2/inputs' / BOARD), pad_facts(self.original_pads))
         self.assertNotEqual(pad_facts(self.original_pads), pad_facts(self.base / BOARD))
-        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+        self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
     def test_helper_timeout(self):
         from agent_ee import stage_receipts
@@ -920,7 +920,7 @@ class TamperCampaignTest(PlacementCampaignFixture):
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
         status, state = self.campaign(self.declaration())
         self.assertEqual(state['state'], 'escalated', state)
-        verify_campaign(self.out)
+        verify_campaign(self.out, host=self.host)
         work = self.out / 'implementations/1'
         record_path, state_path = work / 'placement-adapter.json', self.out / 'state.json'
         record, saved_state = read_json(record_path), read_json(state_path)
@@ -979,14 +979,14 @@ class TamperCampaignTest(PlacementCampaignFixture):
             with self.subTest(name):
                 tamper()
                 with self.assertRaisesRegex(ValueError, fragment):
-                    verify_campaign(self.out)
+                    verify_campaign(self.out, host=self.host)
             shutil.rmtree(work)
             shutil.copytree(snapshot / 'work', work, symlinks=True)
             shutil.rmtree(self.out / 'implementations/2')
             shutil.copytree(snapshot / 'two', self.out / 'implementations/2', symlinks=True)
             config.write_bytes(config_bytes)
             write_json(state_path, saved_state)
-            self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+            self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
 
 class AdmissionTest(unittest.TestCase):
@@ -1072,9 +1072,9 @@ class StagedStepPlanTest(unittest.TestCase):
 
         with patch('agent_ee.reviewers.dispatch', side_effect=writer_leaves_step_outputs), \
                 contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
+            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign', host=fixture.host)
         root = fixture.root / 'campaign'
-        state = verify_campaign(root)
+        state = verify_campaign(root, host=fixture.host)
         # Every check passes, but the declared routing step never ran: not done (AGENTEE-144).
         self.assertEqual((status, state['state'], state['diagnostic']['state']),
                          (1, 'incomplete', 'criteria_satisfied'), state)
@@ -1085,7 +1085,7 @@ class StagedStepPlanTest(unittest.TestCase):
         stored = read_json(root / 'state.json')
         write_json(root / 'state.json', {k: v for k, v in stored.items() if k != 'step_plan'})
         with self.assertRaisesRegex(ValueError, 'stage receipt step differs from the campaign declaration'):
-            verify_campaign(root)
+            verify_campaign(root, host=fixture.host)
 
 
 if __name__ == '__main__':

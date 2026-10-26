@@ -250,7 +250,7 @@ class InstalledAnalyzerTest(unittest.TestCase):
         run, result = self.run_check(specification(copied))
         self.assertEqual(result['execution'], 'ok', result)
         verify_installations([result])
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         reviewed = self.root / 'reviewed'
         run_review(self.root / 'scope.json', reviewed, 600, checks_only=True)
         verify(reviewed)

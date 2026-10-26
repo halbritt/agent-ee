@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 
 from . import candidate_visuals
 from .storage import digest, identity, json_bytes, write_json
+from .run_record import pcbnew_extension
 
 SCHEMA = 'agent-ee.group-views/1'
 SVG = 'http://www.w3.org/2000/svg'
@@ -177,7 +178,6 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
     exact captured bytes or explicitly named canonical JSON identities.
     """
     import pcbnew
-    from .cli import pcbnew_extension
     board_path, out = Path(board_path).resolve(), Path(out)
     if out.exists() or out.is_symlink():
         raise FileExistsError(out)

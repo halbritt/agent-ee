@@ -23,6 +23,7 @@ import uuid
 from . import executor
 from . import generate as g
 from .storage import canonical, digest, identity, read_json, write_json
+from .run_record import validate_scope
 
 QUALIFICATION = 'experimental-unqualified'
 RECORD_SCHEMA = 'agent-ee.rung1-campaign-record/0-experimental'
@@ -440,7 +441,6 @@ def compile_staged_scope(params, scope_dir, scaffold):
 def validate_scope_file(scope_path):
     """The real loaders: capture selection, baseline compilation, stage declaration, scope fields."""
     from .baseline import compile_baseline
-    from .cli import validate_scope
     from .candidate import source_manifest
     from .stages import declaration
     scope_path = Path(scope_path)

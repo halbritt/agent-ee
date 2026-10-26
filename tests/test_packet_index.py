@@ -297,7 +297,7 @@ class NativePacketIndexTests(unittest.TestCase):
         import io
         import shutil
         import xml.etree.ElementTree as ET
-        from agent_ee.cli import run_review, verify, save_result
+        from agent_ee.run_record import run_review, verify, save_result
         from agent_ee.storage import read_json, digest
         from agent_ee.reviewers import build_packet
         from toolchain import require_toolchain

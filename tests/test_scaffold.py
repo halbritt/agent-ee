@@ -354,7 +354,7 @@ assert k.ExportSpecctraDSN(b,'/work/roles.dsn')
         proc = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'review', str(self.root / 'cli/scope.json'),
             '--out', str(self.root / 'native'), '--checks-only'], capture_output=True, text=True, timeout=300)
         self.assertEqual(proc.returncode, 1, proc.stderr)  # No independent review was requested.
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         result = verify(self.root / 'native')
         self.assertEqual([(c['id'], c['execution'], c['outcome']) for c in result['checks']],
                          [('erc', 'ok', 'pass'), ('drc', 'ok', 'pass')])
@@ -364,7 +364,7 @@ assert k.ExportSpecctraDSN(b,'/work/roles.dsn')
 
     def test_native_erc_loads_every_precreated_nested_sheet(self):
         import uuid
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         child = str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-nested-child'))
         leaf = str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-nested-leaf'))
         self.parts['parts'][1]['instances'][0]['sheet'] = '/' + child + '/' + leaf + '/'
@@ -443,7 +443,7 @@ assert k.ExportSpecctraDSN(b,'/work/roles.dsn')
 
     def test_campaign_reaches_first_repair_with_native_stage_witnesses(self):
         from agent_ee.campaign import run_campaign
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         self.staged()
         self.build()
         # Dispatch is scripted, so the codex executable is fingerprinted and

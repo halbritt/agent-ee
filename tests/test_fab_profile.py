@@ -502,7 +502,7 @@ class FabContractIntegrationTest(unittest.TestCase):
     def test_registered_execution_capability_and_policy_identity(self):
         from agent_ee.checks import CHECK_FUNCS
         from agent_ee.capabilities import KINDS
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         self.assertIn('fab_profile', CHECK_FUNCS)
         self.assertIn('fab_profile', KINDS)
         self.assertIn('fab_profile.py', policy_files())
@@ -670,7 +670,7 @@ class NativeFabPipelineTest(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee.cli import run_review, verify, runtime_files
+        from agent_ee.run_record import run_review, verify, runtime_files
         from agent_ee.baseline import load_baseline, validate_witnesses
         from agent_ee.storage import digest, read_json, write_json
         from tests.test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
@@ -680,63 +680,63 @@ class NativeFabPipelineTest(unittest.TestCase):
         self.calls = []
         trace = [('min_trace_mm', 0.1, 'mm', 'minimum'), ('min_trace_mm', 0.2, 'mm', 'preferred')]
         edge = [('min_edge_clearance_mm', 0.5, 'mm', 'minimum')]
-        with patch('agent_ee.cli.runtime_files', return_value=runtime):
-            for name, specs, options, outcome in (
-                    ('pass', trace, {'width': 0.2}, 'criteria_satisfied'),
-                    ('extra-charge', trace, {'width': 0.15}, 'criteria_satisfied'),
-                    ('defect', trace, {'width': 0.09}, 'defects_or_unresolved'),
-                    ('no-outline', edge, {'outline': None}, 'incomplete')):
-                with self.subTest(case=name):
-                    root = self.root / name
-                    root.mkdir()
-                    scope = make_fab_scope(root, specs, **options)
-                    scope['review_profile'] = {'schema': 'agent-ee.profile/1', 'name': 'scripted-fab',
-                        'reviewers': [{**PROFILE_CALL, 'role': 'circuit'}, {**PROFILE_CALL, 'role': 'physical'}],
-                        'adjudicator': PROFILE_CALL}
-                    write_json(root / 'scope.json', scope)
-                    def agent(*args, **kwargs):
-                        return NativeCapabilityPipelineTests.agent(self, *args, **kwargs)
-                    with patch('agent_ee.reviewers.dispatch', side_effect=agent), \
-                            contextlib.redirect_stdout(io.StringIO()):
-                        status = run_review(root / 'scope.json', root / 'run', 120)
-                    result = verify(root / 'run')
-                    self.assertNotIn('error', result, result)
-                    self.assertEqual(status, 0 if outcome == 'criteria_satisfied' else 1, result)
-                    self.assertEqual(result['outcome'], outcome, result)
-                    self.assertTrue(result['adjudicated'], result)
-                    baseline = load_baseline(root / 'run')
-                    self.assertTrue({'profile.json', 'owned-capabilities.txt'} <= baseline['files'].keys())
-                    self.assertEqual(baseline['coverage']['checks']['fab']['predicates'], ['fab:limit-0'])
-                    self.assertTrue({'kicad-cli', 'pcbnew'} <= set(result['launch_expectation']['required_runtime']))
-                    check = result['checks'][0]
-                    self.assertEqual(check['details']['source']['sha256'], digest(root / 'run/inputs/profile.json'))
-                    evaluation = read_json(root / 'run/work/fab/rules-evaluation.json')
-                    self.assertEqual(evaluation['source'], check['details']['source'])
-                    charges = check['details']['extra_charges']
-                    self.assertEqual(bool(charges), name == 'extra-charge', check)
-                    if charges:
-                        self.assertEqual(len(charges[0]['offender_ids']), 2, charges)
-                    accepted = [f['local_id'] for f in result['findings'] if f.get('status') == 'accepted']
-                    self.assertEqual(accepted, ['fab'] if name == 'defect' else [])
-                    witness = [{'requirement_id': 'fab', 'check_id': 'fab'}]
-                    evidence = [{'path': 'checks/fab.json'}]
-                    if name == 'defect':
+        host = {'runtime_files': runtime}
+        for name, specs, options, outcome in (
+                ('pass', trace, {'width': 0.2}, 'criteria_satisfied'),
+                ('extra-charge', trace, {'width': 0.15}, 'criteria_satisfied'),
+                ('defect', trace, {'width': 0.09}, 'defects_or_unresolved'),
+                ('no-outline', edge, {'outline': None}, 'incomplete')):
+            with self.subTest(case=name):
+                root = self.root / name
+                root.mkdir()
+                scope = make_fab_scope(root, specs, **options)
+                scope['review_profile'] = {'schema': 'agent-ee.profile/1', 'name': 'scripted-fab',
+                    'reviewers': [{**PROFILE_CALL, 'role': 'circuit'}, {**PROFILE_CALL, 'role': 'physical'}],
+                    'adjudicator': PROFILE_CALL}
+                write_json(root / 'scope.json', scope)
+                def agent(*args, **kwargs):
+                    return NativeCapabilityPipelineTests.agent(self, *args, **kwargs)
+                with patch('agent_ee.reviewers.dispatch', side_effect=agent), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    status = run_review(root / 'scope.json', root / 'run', 120, host=host)
+                result = verify(root / 'run', host=host)
+                self.assertNotIn('error', result, result)
+                self.assertEqual(status, 0 if outcome == 'criteria_satisfied' else 1, result)
+                self.assertEqual(result['outcome'], outcome, result)
+                self.assertTrue(result['adjudicated'], result)
+                baseline = load_baseline(root / 'run')
+                self.assertTrue({'profile.json', 'owned-capabilities.txt'} <= baseline['files'].keys())
+                self.assertEqual(baseline['coverage']['checks']['fab']['predicates'], ['fab:limit-0'])
+                self.assertTrue({'kicad-cli', 'pcbnew'} <= set(result['launch_expectation']['required_runtime']))
+                check = result['checks'][0]
+                self.assertEqual(check['details']['source']['sha256'], digest(root / 'run/inputs/profile.json'))
+                evaluation = read_json(root / 'run/work/fab/rules-evaluation.json')
+                self.assertEqual(evaluation['source'], check['details']['source'])
+                charges = check['details']['extra_charges']
+                self.assertEqual(bool(charges), name == 'extra-charge', check)
+                if charges:
+                    self.assertEqual(len(charges[0]['offender_ids']), 2, charges)
+                accepted = [f['local_id'] for f in result['findings'] if f.get('status') == 'accepted']
+                self.assertEqual(accepted, ['fab'] if name == 'defect' else [])
+                witness = [{'requirement_id': 'fab', 'check_id': 'fab'}]
+                evidence = [{'path': 'checks/fab.json'}]
+                if name == 'defect':
+                    validate_witnesses(root / 'run', witness, evidence)
+                    artifact = root / 'run/work/fab/native-rules/limit-0/board.kicad_dru'
+                    artifact.write_text(artifact.read_text() + '\n; tampered\n')
+                    with self.assertRaisesRegex(ValueError, 'changed|seal'):
+                        verify(root / 'run')
+                    with self.assertRaisesRegex(ValueError, 'changed'):
                         validate_witnesses(root / 'run', witness, evidence)
-                        artifact = root / 'run/work/fab/native-rules/limit-0/board.kicad_dru'
-                        artifact.write_text(artifact.read_text() + '\n; tampered\n')
-                        with self.assertRaisesRegex(ValueError, 'changed|seal'):
-                            verify(root / 'run')
-                        with self.assertRaisesRegex(ValueError, 'changed'):
-                            validate_witnesses(root / 'run', witness, evidence)
-                    else:
-                        with self.assertRaisesRegex(ValueError, 'failed criterion'):
-                            validate_witnesses(root / 'run', witness, evidence)
-                    if name == 'no-outline':
-                        record = check['details']['constraints'][0]
-                        self.assertEqual((check['execution'], record['status']), ('unsupported', 'not_evaluated'))
-                        self.assertIn('no Edge.Cuts outline', record['reason'])
-                    if name == 'pass':
-                        profile = root / 'run/inputs/profile.json'
-                        profile.write_bytes(profile.read_bytes() + b'\n')
-                        with self.assertRaisesRegex(ValueError, 'snapshot|changed'):
-                            verify(root / 'run')
+                else:
+                    with self.assertRaisesRegex(ValueError, 'failed criterion'):
+                        validate_witnesses(root / 'run', witness, evidence)
+                if name == 'no-outline':
+                    record = check['details']['constraints'][0]
+                    self.assertEqual((check['execution'], record['status']), ('unsupported', 'not_evaluated'))
+                    self.assertIn('no Edge.Cuts outline', record['reason'])
+                if name == 'pass':
+                    profile = root / 'run/inputs/profile.json'
+                    profile.write_bytes(profile.read_bytes() + b'\n')
+                    with self.assertRaisesRegex(ValueError, 'snapshot|changed'):
+                        verify(root / 'run')

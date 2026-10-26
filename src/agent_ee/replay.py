@@ -162,7 +162,7 @@ def parse_assertions(stdout):
     return value['assertions']
 
 
-def replay(request_dir, out, *, cancellation=None):
+def replay(request_dir, out, *, cancellation=None, host=None):
     request_dir = Path(request_dir).resolve()
     # Raw fields label diagnostic receipts only. fresh_directory independently
     # rejects retained-run/operation ancestry before any output is created.
@@ -191,7 +191,7 @@ def replay(request_dir, out, *, cancellation=None):
     try:
         if initial_error:
             raise ValueError(initial_error)
-        request = validate_request(request_dir)
+        request = validate_request(request_dir, host=host)
         if request['spec']['mode'] != 'experiment':
             raise UnsupportedReplay('this request is actionable but has no Python replay adapter')
         limits = supported_limits(request['spec'])
@@ -242,7 +242,7 @@ def replay(request_dir, out, *, cancellation=None):
             receipt.update(parsing='malformed', parsing_error=str(exc))
         # Check the original bindings after execution as well; a host mutation
         # invalidates even an otherwise successful experiment.
-        validate_request(request_dir)
+        validate_request(request_dir, host=host)
     except UnsupportedReplay as exc:
         receipt.update(execution='unsupported', error=str(exc))
     except (ValueError, OSError, KeyError, TypeError, RecursionError) as exc:

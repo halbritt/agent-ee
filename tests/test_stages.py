@@ -625,8 +625,8 @@ class ExistingCampaignStageTests(unittest.TestCase):
         from agent_ee.campaign import run_campaign, verify_campaign
         fixture = self.staged_fixture()
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
-        state = verify_campaign(fixture.root / 'campaign')
+            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign', host=fixture.host)
+        state = verify_campaign(fixture.root / 'campaign', host=fixture.host)
         self.assertEqual(status, 0, state)
         self.assertEqual(state['history'][0]['earliest_failing_stage'], 'schematic')
         self.assertEqual(state['history'][0]['blocked_checks'], ['route'])
@@ -661,8 +661,8 @@ class ExistingCampaignStageTests(unittest.TestCase):
         patch('agent_ee.reviewers.dispatch', side_effect=agent).start()
         with patch.dict('agent_ee.checks.CHECK_FUNCS', {'measurements': hinted}), \
                 contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
-        state = verify_campaign(fixture.root / 'campaign')
+            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign', host=fixture.host)
+        state = verify_campaign(fixture.root / 'campaign', host=fixture.host)
         self.assertEqual(status, 0, state)
         prompt, = prompts
         payload = json.loads(prompt[prompt.index('{'):prompt.index('\nImplement only')])
@@ -687,7 +687,6 @@ class ExistingCampaignStageTests(unittest.TestCase):
         import io
         import shutil
         from pathlib import Path
-        from unittest.mock import patch
         from agent_ee.assembly_readiness import verify_stock_context
         from agent_ee.campaign import record_iteration, run_campaign, verify_campaign
         from agent_ee.jlc_stock_capture import DEFAULT_ENDPOINT, capture_jlc_stock
@@ -696,10 +695,10 @@ class ExistingCampaignStageTests(unittest.TestCase):
         fixture = self.staged_fixture()
         # A native board in scope requires reviewers to see the pinned kicad-cli.
         kicad = shutil.which('kicad-cli')
-        patch('agent_ee.cli.runtime_files', return_value={
+        self.host = {'runtime_files': {
             **{name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
                for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')},
-            'kicad-cli': {'path': kicad, 'sha256': digest(kicad)}}).start()
+            'kicad-cli': {'path': kicad, 'sha256': digest(kicad)}}}
         source = fixture.root / 'source'
         server = JlcStub({'C25804': (200, search(row('C25804', 500)))})
         self.addCleanup(server.close)
@@ -719,8 +718,8 @@ class ExistingCampaignStageTests(unittest.TestCase):
         scope['stages']['subjects']['routing'] = {'path': 'design/design.kicad_pcb', 'kind': 'tracks', 'minimum': 1}
         write_json(fixture.root / 'scope.json', scope)
         with contextlib.redirect_stdout(io.StringIO()):
-            run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
-        state = verify_campaign(fixture.root / 'campaign')
+            run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign', host=self.host)
+        state = verify_campaign(fixture.root / 'campaign', host=self.host)
         self.assertNotIn('error', state)
         run = fixture.root / 'campaign/runs/1'
         checks = {c: read_json(run / 'checks' / (c + '.json')) for c in ('asm-place', 'asm')}
@@ -736,11 +735,11 @@ class ExistingCampaignStageTests(unittest.TestCase):
         del replay_state['baseline']
         config = read_json(replay / 'config.json')
         replay_run = replay / 'runs/1'
-        record_iteration(replay, copy.deepcopy(replay_state), replay_run, config)
+        record_iteration(replay, copy.deepcopy(replay_state), replay_run, config, host=self.host)
         # The evidence seal refuses first; verify_stock_context refuses the same artifact standalone.
         (replay_run / 'work/asm/stock-evaluation.json').write_text('{}')
         with self.assertRaisesRegex(ValueError, 'evidence changed'):
-            record_iteration(replay, copy.deepcopy(replay_state), replay_run, config)
+            record_iteration(replay, copy.deepcopy(replay_state), replay_run, config, host=self.host)
         with self.assertRaisesRegex(ValueError, 'retains stock evaluation artifacts'):
             verify_stock_context(replay_run, read_json(replay_run / 'result.json'), None)
         # Once its gate opens, the stock check really evaluates and the unanchored stock fails closed.

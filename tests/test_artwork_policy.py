@@ -172,7 +172,7 @@ class NativeArtworkPolicyTests(unittest.TestCase):
     def test_native_rigid_group_and_receipt_reject_independent_or_missing_member(self):
         import pcbnew as k
         from agent_ee import stage_receipts
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         from agent_ee.symbol_library import parse_sexpr, children
         source = self.fixture.board(graphic=True)
         board = k.LoadBoard(str(source))

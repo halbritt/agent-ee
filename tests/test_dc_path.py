@@ -76,7 +76,7 @@ from agent_ee import checks
 from agent_ee.baseline import compile_baseline, validate_witnesses
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.storage import digest, read_json, write_json
 import test_capability_pipeline as pipeline
 
@@ -156,8 +156,8 @@ class NativeDCPathTests(unittest.TestCase):
         for board in ('straight', 'narrow'):
             root = self.prepare('sealed-' + board, board)
             with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
-                status = run_review(root / 'scope.json', root / 'run', 180)
-            result = verify(root / 'run')
+                status = run_review(root / 'scope.json', root / 'run', 180, host=self.host)
+            result = verify(root / 'run', host=self.host)
             self.assertEqual(result['launch_expectation']['declared_tools'], dc_path.TOOLS)
             self.assertIn('pcbnew', result['launch_expectation']['required_runtime'])
             self.assertEqual(status, int(board == 'narrow'), result)
@@ -175,7 +175,7 @@ class NativeDCPathTests(unittest.TestCase):
                 path.write_bytes(original + b'\n')
                 with self.subTest(tamper=rel):
                     with self.assertRaises(ValueError):
-                        verify(root / 'run')
+                        verify(root / 'run', host=self.host)
                     with self.assertRaises(ValueError):
                         validate_witnesses(root / 'run', witnesses, evidence)
                 path.write_bytes(original)

@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 import test_campaign as fixture
 from toolchain import toolchain_test
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.storage import digest, read_json, write_json
 
 
@@ -17,7 +17,7 @@ class BenchTransactionTests(unittest.TestCase):
     def initial(self):
         write_json(self.root / 'source/design.json', {'value': 5})
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 60), 0)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 60, host=self.host), 0)
         sample = {'check_id': 'response', 'metric': 'output', 'value': 12,
                   'uncertainty': 1, 'unit': 'V', 'condition': 'load'}
         write_json(self.root / 'raw.json', {'samples': [sample]})
@@ -35,14 +35,14 @@ class BenchTransactionTests(unittest.TestCase):
         self.initial()
         with contextlib.redirect_stdout(io.StringIO()):
             first = transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                             60, operation_id='bench-1')
+                             60, operation_id='bench-1', host=self.host)
             again = transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                             60, operation_id='bench-1')
+                             60, operation_id='bench-1', host=self.host)
         self.assertEqual(first, again)
         self.assertEqual(first['phase'], 'completed')
         self.assertEqual(len(self.calls), 3)
-        self.assertEqual(recover(self.root / 'feedback')['phase'], 'completed')
-        source = verify(self.root / 'initial', current_source=False)
+        self.assertEqual(recover(self.root / 'feedback', host=self.host)['phase'], 'completed')
+        source = verify(self.root / 'initial', current_source=False, host=self.host)
         self.assertEqual(source['outcome'], 'incomplete')
         self.assertEqual(len(source['empirical_feedback']), 1)
 
@@ -58,15 +58,15 @@ class BenchTransactionTests(unittest.TestCase):
                 raise KeyboardInterrupt()
         with patch.object(tx, 'put', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                        60, operation_id='interrupted')
+                        60, operation_id='interrupted', host=self.host)
         with self.assertRaisesRegex(ValueError, 'explicit recovery'):
-            verify(self.root / 'initial', current_source=False)
-        recovered = tx.recover(self.root / 'feedback')
+            verify(self.root / 'initial', current_source=False, host=self.host)
+        recovered = tx.recover(self.root / 'feedback', host=self.host)
         self.assertEqual(recovered['disposition'], 'ready_for_explicit_review')
         self.assertEqual(self.calls, [])
-        self.assertEqual(verify(self.root / 'initial', current_source=False)['outcome'], 'incomplete')
+        self.assertEqual(verify(self.root / 'initial', current_source=False, host=self.host)['outcome'], 'incomplete')
         with contextlib.redirect_stdout(io.StringIO()):
-            complete = tx.recover(self.root / 'feedback', launch_review=True)
+            complete = tx.recover(self.root / 'feedback', launch_review=True, host=self.host)
         self.assertEqual(complete['phase'], 'completed')
         self.assertEqual(len(self.calls), 3)
 
@@ -75,22 +75,22 @@ class BenchTransactionTests(unittest.TestCase):
         from unittest.mock import patch
         from agent_ee import bench_transactions as tx
         self.initial()
-        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                        60, operation_id='uncertain')
+                        60, operation_id='uncertain', host=self.host)
         before = tx.inventory(self.root / 'feedback')
-        diagnosis = tx.status(self.root / 'feedback')
+        diagnosis = tx.status(self.root / 'feedback', host=self.host)
         self.assertEqual(diagnosis['disposition'], 'uncertain_execution')
         self.assertEqual(before, tx.inventory(self.root / 'feedback'))
         for _ in range(2):
-            self.assertEqual(tx.recover(self.root / 'feedback', launch_review=True)['disposition'], 'uncertain_execution')
+            self.assertEqual(tx.recover(self.root / 'feedback', launch_review=True, host=self.host)['disposition'], 'uncertain_execution')
         self.assertEqual(self.calls, [])
         with contextlib.redirect_stdout(io.StringIO()):
-            value = tx.new_attempt(self.root / 'feedback', 'operator-2', self.root / 'fresh-review')
+            value = tx.new_attempt(self.root / 'feedback', 'operator-2', self.root / 'fresh-review', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(value['review']['attempt_id'], 'operator-2')
         self.assertEqual(len(self.calls), 3)
-        self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
+        self.assertEqual(len(verify(self.root / 'initial', current_source=False, host=self.host)['empirical_feedback']), 1)
 
     @toolchain_test
     def test_replacement_attempts_preserve_all_retained_trees_on_overlap_refusal(self):
@@ -107,14 +107,14 @@ class BenchTransactionTests(unittest.TestCase):
             (target / 'checks/raw.bin').write_bytes(b'\x00retained evidence\xff')
             raise KeyboardInterrupt()
 
-        with patch('agent_ee.cli.run_review', side_effect=interrupted_review):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=interrupted_review):
             with self.assertRaises(KeyboardInterrupt):
                 tx.transact(self.root / 'initial', self.root / 'bench.json', out,
-                            60, operation_id='overlap', review_out=older)
+                            60, operation_id='overlap', review_out=older, host=self.host)
             with self.assertRaises(KeyboardInterrupt):
-                tx.new_attempt(out, 'second', middle)
+                tx.new_attempt(out, 'second', middle, host=self.host)
             with self.assertRaises(KeyboardInterrupt):
-                tx.new_attempt(out, 'third', latest)
+                tx.new_attempt(out, 'third', latest, host=self.host)
 
         def snapshot():
             return {p.relative_to(self.root).as_posix(): p.read_bytes() if p.is_file() else None
@@ -124,19 +124,19 @@ class BenchTransactionTests(unittest.TestCase):
         foreign.mkdir()
         (foreign / 'owner-data').write_bytes(b'foreign output')
         before = snapshot()
-        with patch('agent_ee.cli.run_review', side_effect=AssertionError('refusal launched inference')):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=AssertionError('refusal launched inference')):
             for retained in (older, middle, latest, self.root / 'initial', out):
                 for target in (retained, retained.parent, retained / 'checks/new-review',
                                retained / 'absent-parent/new-review'):
                     with self.subTest(retained=retained, target=target):
                         with self.assertRaisesRegex(tx.TransactionError, 'overlaps retained evidence'):
-                            tx.new_attempt(out, 'forbidden', target)
+                            tx.new_attempt(out, 'forbidden', target, host=self.host)
                         self.assertEqual(snapshot(), before)
             with self.assertRaisesRegex(tx.TransactionError, 'fresh run directory'):
-                tx.new_attempt(out, 'foreign', foreign)
+                tx.new_attempt(out, 'foreign', foreign, host=self.host)
             self.assertEqual(snapshot(), before)
         with contextlib.redirect_stdout(io.StringIO()):
-            value = tx.new_attempt(out, 'fresh-sibling', self.root / 'fresh-review')
+            value = tx.new_attempt(out, 'fresh-sibling', self.root / 'fresh-review', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(value['review']['attempt_id'], 'fresh-sibling')
         self.assertEqual(len(self.calls), 3)
@@ -144,7 +144,7 @@ class BenchTransactionTests(unittest.TestCase):
             prefix = retained.relative_to(self.root).as_posix() + '/'
             self.assertEqual({k: v for k, v in snapshot().items() if k.startswith(prefix)},
                              {k: v for k, v in before.items() if k.startswith(prefix)})
-        self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
+        self.assertEqual(len(verify(self.root / 'initial', current_source=False, host=self.host)['empirical_feedback']), 1)
 
     @toolchain_test
     def test_busy_transaction_refuses_new_attempt_before_creating_target_lease(self):
@@ -155,9 +155,9 @@ class BenchTransactionTests(unittest.TestCase):
         from agent_ee.locking import writer_lock
         self.initial()
         out = self.root / 'feedback'
-        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(self.root / 'initial', self.root / 'bench.json', out,
-                        60, operation_id='busy-attempt', review_out=self.root / 'external-review')
+                        60, operation_id='busy-attempt', review_out=self.root / 'external-review', host=self.host)
         entered, release = threading.Event(), threading.Event()
 
         def competing_writer():
@@ -175,14 +175,14 @@ class BenchTransactionTests(unittest.TestCase):
                 before = {p.relative_to(self.root).as_posix(): p.read_bytes() if p.is_file() else None
                           for p in self.root.rglob('*')}
                 with self.assertRaisesRegex(ValueError, 'another writer'):
-                    tx.new_attempt(out, 'contender', target)
+                    tx.new_attempt(out, 'contender', target, host=self.host)
                 after = {p.relative_to(self.root).as_posix(): p.read_bytes() if p.is_file() else None
                          for p in self.root.rglob('*')}
                 self.assertEqual(after, before)
             finally:
                 release.set()
             future.result(timeout=15)
-        self.assertEqual(tx.recover(out)['disposition'], 'uncertain_execution')
+        self.assertEqual(tx.recover(out, host=self.host)['disposition'], 'uncertain_execution')
         self.assertEqual(self.calls, [])
 
     @toolchain_test
@@ -190,11 +190,11 @@ class BenchTransactionTests(unittest.TestCase):
         from unittest.mock import patch
         from agent_ee import bench_transactions as tx
         self.initial()
-        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                        60, operation_id='same')
+                        60, operation_id='same', host=self.host)
         same = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'other',
-                           60, operation_id='equivalent')
+                           60, operation_id='equivalent', host=self.host)
         self.assertEqual(same['disposition'], 'existing_operation')
         self.assertEqual(same['operation_id'], 'same')
         before = tx.inventory(self.root / 'initial'), tx.inventory(self.root / 'feedback')
@@ -209,7 +209,7 @@ class BenchTransactionTests(unittest.TestCase):
                 report = read_json(args[field]); report['procedure'] = 'different'
                 write_json(self.root / 'changed.json', report); args[field] = self.root / 'changed.json'
             with self.subTest(field=field), self.assertRaises(tx.TransactionError):
-                tx.transact(**args)
+                tx.transact(**args, host=self.host)
         self.assertEqual(before, (tx.inventory(self.root / 'initial'), tx.inventory(self.root / 'feedback')))
         self.assertEqual(self.calls, [])
 
@@ -226,9 +226,9 @@ class BenchTransactionTests(unittest.TestCase):
         with patch.object(tx, 'receipt', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
             with contextlib.redirect_stdout(io.StringIO()):
                 tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                            60, operation_id='adopt')
+                            60, operation_id='adopt', host=self.host)
         self.assertEqual(len(self.calls), 3)
-        value = tx.recover(self.root / 'feedback')
+        value = tx.recover(self.root / 'feedback', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(len(self.calls), 3)
 
@@ -239,7 +239,7 @@ class BenchTransactionTests(unittest.TestCase):
         from agent_ee.campaign import run_campaign, verify_campaign
         self.initial()
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         source = self.root / 'campaign/runs/1'
         report = read_json(self.root / 'bench.json')
         report['candidate_id'] = read_json(source / 'candidate.json')['candidate_id']
@@ -253,17 +253,17 @@ class BenchTransactionTests(unittest.TestCase):
         with patch.object(tx, 'receipt', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
             with contextlib.redirect_stdout(io.StringIO()):
                 tx.campaign_transaction(self.root / 'campaign', self.root / 'bench.json',
-                                        self.root / 'feedback', 60, operation_id='campaign-feedback')
+                                        self.root / 'feedback', 60, operation_id='campaign-feedback', host=self.host)
         count = len(self.calls)
-        value = tx.recover(self.root / 'feedback')
+        value = tx.recover(self.root / 'feedback', host=self.host)
         self.assertEqual(value['phase'], 'completed')
-        state = verify_campaign(self.root / 'campaign')
+        state = verify_campaign(self.root / 'campaign', host=self.host)
         self.assertEqual(state['epoch'], 1)
-        self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False)['max_schema_resubmissions'], 1)
+        self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False, host=self.host)['max_schema_resubmissions'], 1)
         self.assertEqual(len(state['history']), 2)
         self.assertEqual(len(self.calls), count)
         self.assertEqual(digest(self.root / 'campaign/history/1.json'), original_snapshot)
-        self.assertEqual(tx.recover(self.root / 'feedback')['phase'], 'completed')
+        self.assertEqual(tx.recover(self.root / 'feedback', host=self.host)['phase'], 'completed')
 
     @toolchain_test
     def test_prepared_corruption_and_foreign_event_fail_closed(self):
@@ -272,12 +272,12 @@ class BenchTransactionTests(unittest.TestCase):
         self.initial()
         with patch.object(tx, 'publish', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                        60, operation_id='prepared')
-        self.assertEqual(verify(self.root / 'initial', current_source=False)['outcome'], 'criteria_satisfied')
+                        60, operation_id='prepared', host=self.host)
+        self.assertEqual(verify(self.root / 'initial', current_source=False, host=self.host)['outcome'], 'criteria_satisfied')
         bundle = self.root / 'feedback/prepared/empirical/calibration.json'
         bundle.write_text('{}')
         with self.assertRaisesRegex(tx.TransactionError, 'prepared evidence changed'):
-            tx.recover(self.root / 'feedback')
+            tx.recover(self.root / 'feedback', host=self.host)
         self.assertEqual(self.calls, [])
         self.assertFalse((self.root / 'initial/bench-publications').exists())
 
@@ -291,16 +291,16 @@ class BenchTransactionTests(unittest.TestCase):
         entered, release = context.Event(), context.Event()
         result = context.Queue()
         real_prepare = tx.prepare
-        def paused(*args):
+        def paused(*args, **kwargs):
             entered.set()
             if not release.wait(15):
                 raise RuntimeError('test barrier timed out')
-            return real_prepare(*args)
+            return real_prepare(*args, **kwargs)
         def worker():
             try:
-                with patch.object(tx, 'prepare', side_effect=paused), patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt):
+                with patch.object(tx, 'prepare', side_effect=paused), patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt):
                     tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                                60, operation_id='writer', review_out=self.root / 'external-review')
+                                60, operation_id='writer', review_out=self.root / 'external-review', host=self.host)
             except KeyboardInterrupt:
                 result.put('started')
             except Exception as exc:
@@ -311,9 +311,9 @@ class BenchTransactionTests(unittest.TestCase):
             self.assertTrue(entered.wait(15))
             with self.assertRaisesRegex(ValueError, 'another writer'):
                 tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'other',
-                            60, operation_id='writer-2')
+                            60, operation_id='writer-2', host=self.host)
             with self.assertRaisesRegex(ValueError, 'coherent read unavailable'):
-                verify(self.root / 'initial', current_source=False)
+                verify(self.root / 'initial', current_source=False, host=self.host)
             from agent_ee.locking import writer_lock
             with self.assertRaisesRegex(ValueError, 'another writer'):
                 with writer_lock(self.root / 'external-review'):
@@ -325,8 +325,8 @@ class BenchTransactionTests(unittest.TestCase):
                 process.kill(); process.join()
         self.assertEqual(process.exitcode, 0)
         self.assertEqual(result.get(timeout=2), 'started')
-        self.assertEqual(tx.recover(self.root / 'feedback')['disposition'], 'uncertain_execution')
-        self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
+        self.assertEqual(tx.recover(self.root / 'feedback', host=self.host)['disposition'], 'uncertain_execution')
+        self.assertEqual(len(verify(self.root / 'initial', current_source=False, host=self.host)['empirical_feedback']), 1)
 
     def contend(self, count, action):
         """Start `count` processes together; the first launch holds its lease
@@ -343,7 +343,7 @@ class BenchTransactionTests(unittest.TestCase):
                 raise RuntimeError('test barrier timed out')
             raise KeyboardInterrupt()
         def contender(index):
-            with patch('agent_ee.cli.run_review', side_effect=launched):
+            with patch('agent_ee.bench_transactions.run_review', side_effect=launched):
                 barrier.wait(15)
                 try:
                     value = action(index)
@@ -381,7 +381,7 @@ class BenchTransactionTests(unittest.TestCase):
             write_json(self.root / f'bench-{index}.json', report)
         outcomes, launches = self.contend(count, lambda index: tx.transact(
             self.root / 'initial', self.root / f'bench-{index}.json', self.root / f'feedback-{index}',
-            60, operation_id=f'contender-{index}'))
+            60, operation_id=f'contender-{index}', host=self.host))
         self.assertEqual(outcomes.count('started'), 1, outcomes)
         self.assertEqual(sum('another writer' in o for o in outcomes), count - 1, outcomes)
         self.assertEqual(len(launches), 1)
@@ -389,9 +389,9 @@ class BenchTransactionTests(unittest.TestCase):
         self.assertEqual(len(list((source / 'bench-publications').glob('*.json'))), 1)
         self.assertEqual(len(list((source / 'bench-operations').glob('*.json'))), 1)
         self.assertEqual(len(list(self.root.glob('feedback-*/review_started.json'))), 1)
-        self.assertEqual(len(verify(source, current_source=False)['empirical_feedback']), 1)
+        self.assertEqual(len(verify(source, current_source=False, host=self.host)['empirical_feedback']), 1)
         winner = next(self.root.glob('feedback-*/review_started.json')).parent
-        self.assertEqual(tx.recover(winner)['disposition'], 'uncertain_execution')
+        self.assertEqual(tx.recover(winner, host=self.host)['disposition'], 'uncertain_execution')
         self.assertEqual(self.calls, [])
 
     @toolchain_test
@@ -406,24 +406,24 @@ class BenchTransactionTests(unittest.TestCase):
             if Path(path).parent.name == 'bench-publications':
                 raise KeyboardInterrupt()
         with patch.object(tx, 'put', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
-            tx.transact(self.root / 'initial', self.root / 'bench.json', out, 60, operation_id='launch-race')
-        self.assertEqual(tx.recover(out)['disposition'], 'ready_for_explicit_review')
+            tx.transact(self.root / 'initial', self.root / 'bench.json', out, 60, operation_id='launch-race', host=self.host)
+        self.assertEqual(tx.recover(out, host=self.host)['disposition'], 'ready_for_explicit_review')
         count = 3
-        outcomes, launches = self.contend(count, lambda index: tx.recover(out, launch_review=True))
+        outcomes, launches = self.contend(count, lambda index: tx.recover(out, launch_review=True, host=self.host))
         self.assertEqual(outcomes.count('started'), 1, outcomes)
         self.assertEqual(sum('another writer' in o for o in outcomes), count - 1, outcomes)
         self.assertEqual(launches, [str(out / 'review')])
         self.assertTrue((out / 'review_started.json').is_file())
         self.assertFalse((out / 'attempts').exists())
         outcomes, launches = self.contend(count, lambda index: tx.new_attempt(
-            out, f'operator-{index}', self.root / f'attempt-{index}'))
+            out, f'operator-{index}', self.root / f'attempt-{index}', host=self.host))
         self.assertEqual(outcomes.count('started'), 1, outcomes)
         self.assertEqual(sum('another writer' in o for o in outcomes), count - 1, outcomes)
         self.assertEqual(len(launches), 1)
         self.assertEqual(len(list((out / 'attempts').glob('*.json'))), 1)
         self.assertEqual(tx.latest_attempt(out, tx.load(out)[1])['out'], launches[0])
-        self.assertEqual(tx.recover(out)['disposition'], 'uncertain_execution')
-        self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
+        self.assertEqual(tx.recover(out, host=self.host)['disposition'], 'uncertain_execution')
+        self.assertEqual(len(verify(self.root / 'initial', current_source=False, host=self.host)['empirical_feedback']), 1)
         self.assertEqual(self.calls, [])
 
     @toolchain_test
@@ -438,22 +438,22 @@ class BenchTransactionTests(unittest.TestCase):
                 raise KeyboardInterrupt()
             return real_receipt(out, phase, payload)
         with patch.object(tx, 'receipt', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
-            tx.transact(source, self.root / 'bench.json', abandoned, 60, operation_id='abandoned')
+            tx.transact(source, self.root / 'bench.json', abandoned, 60, operation_id='abandoned', host=self.host)
         before = tx.inventory(abandoned)
-        self.assertEqual(tx.status(abandoned)['disposition'], 'ambiguous')
+        self.assertEqual(tx.status(abandoned, host=self.host)['disposition'], 'ambiguous')
         with self.assertRaisesRegex(tx.TransactionError, 'no complete durable receipt'):
-            tx.transact(source, self.root / 'bench.json', abandoned, 60, operation_id='abandoned')
-        self.assertEqual(verify(source, current_source=False)['outcome'], 'criteria_satisfied')
+            tx.transact(source, self.root / 'bench.json', abandoned, 60, operation_id='abandoned', host=self.host)
+        self.assertEqual(verify(source, current_source=False, host=self.host)['outcome'], 'criteria_satisfied')
         with contextlib.redirect_stdout(io.StringIO()):
             value = tx.transact(source, self.root / 'bench.json', self.root / 'feedback',
-                                60, operation_id='separate')
+                                60, operation_id='separate', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(len(self.calls), 3)
-        self.assertEqual(len(verify(source, current_source=False)['empirical_feedback']), 1)
-        again = tx.transact(source, self.root / 'bench.json', self.root / 'third', 60, operation_id='third')
+        self.assertEqual(len(verify(source, current_source=False, host=self.host)['empirical_feedback']), 1)
+        again = tx.transact(source, self.root / 'bench.json', self.root / 'third', 60, operation_id='third', host=self.host)
         self.assertEqual((again['disposition'], again['operation_id']), ('existing_operation', 'separate'))
         self.assertEqual(tx.inventory(abandoned), before)
-        self.assertEqual(tx.status(abandoned)['disposition'], 'ambiguous')
+        self.assertEqual(tx.status(abandoned, host=self.host)['disposition'], 'ambiguous')
         self.assertEqual(len(self.calls), 3)
 
     @toolchain_test
@@ -468,24 +468,24 @@ class BenchTransactionTests(unittest.TestCase):
             if Path(path).parent.name == 'bench-publications':
                 raise KeyboardInterrupt()
         with patch.object(tx, 'put', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
-            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='no-reacquire')
+            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='no-reacquire', host=self.host)
         # Acquired observations are gone; only captured preparation remains.
         (self.root / 'bench.json').unlink()
         (self.root / 'raw.json').unlink()
-        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
-            tx.recover(out, launch_review=True)
-        self.assertEqual(tx.recover(out)['disposition'], 'uncertain_execution')
+        with patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            tx.recover(out, launch_review=True, host=self.host)
+        self.assertEqual(tx.recover(out, host=self.host)['disposition'], 'uncertain_execution')
         with contextlib.redirect_stdout(io.StringIO()):
-            value = tx.new_attempt(out, 'operator-2', self.root / 'fresh-review')
+            value = tx.new_attempt(out, 'operator-2', self.root / 'fresh-review', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(len(self.calls), 3)
         request = read_json(out / 'request.json')
         self.assertEqual(digest(out / 'prepared/report-original.json'), request['report_sha256'])
         self.assertEqual(digest(source / 'candidate.json'), request['manifest_sha256'])
-        events = verify(source, current_source=False)['empirical_feedback']
+        events = verify(source, current_source=False, host=self.host)['empirical_feedback']
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]['bundle'], str(out / 'prepared/empirical'))
-        self.assertEqual(tx.status(out)['disposition'], 'completed')
+        self.assertEqual(tx.status(out, host=self.host)['disposition'], 'completed')
         self.assertFalse((self.root / 'bench.json').exists())
 
     @toolchain_test
@@ -508,8 +508,8 @@ class BenchTransactionTests(unittest.TestCase):
             trace.append(('rename', str(target)))
             return real_replace(path, target)
         with patch('os.fsync', side_effect=observed_fsync), patch.object(Path, 'replace', observed_replace), \
-                patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
-            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='fault-matrix')
+                patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='fault-matrix', host=self.host)
         self.assertGreater(len(trace), 20)
         print(f'Prelaunch crash boundaries: {len(trace)}; process-death cases: {2 * len(trace)}', flush=True)
         context = multiprocessing.get_context('fork')
@@ -535,8 +535,8 @@ class BenchTransactionTests(unittest.TestCase):
                         def replace(path, target):
                             return checkpoint(real_replace, path, target)
                         with patch('os.fsync', side_effect=fsync), patch.object(Path, 'replace', replace), \
-                                patch('agent_ee.cli.run_review', side_effect=AssertionError('unexpected provider boundary')):
-                            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='fault-matrix')
+                                patch('agent_ee.bench_transactions.run_review', side_effect=AssertionError('unexpected provider boundary')):
+                            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='fault-matrix', host=self.host)
                         os._exit(99)
                     worker = context.Process(target=crash_worker)
                     worker.start(); worker.join(15)
@@ -547,14 +547,14 @@ class BenchTransactionTests(unittest.TestCase):
                         shutil.rmtree(fresh)
                     parent, child = context.Pipe(False)
                     def recovery_worker():
-                        with patch('agent_ee.cli.run_review', side_effect=AssertionError('recovery repeated inference')):
+                        with patch('agent_ee.bench_transactions.run_review', side_effect=AssertionError('recovery repeated inference')):
                             try:
-                                result = tx.recover(out)
+                                result = tx.recover(out, host=self.host)
                             except (ValueError, OSError, KeyError) as exc:
                                 result = {'disposition': 'refused', 'reason': str(exc),
                                           'refusal': getattr(exc, 'diagnostic', {}).get('disposition')}
                             try:
-                                original = verify(source, current_source=False)
+                                original = verify(source, current_source=False, host=self.host)
                                 result['source_outcome'] = original['outcome']
                             except (ValueError, OSError, KeyError) as exc:
                                 result['source_outcome'] = 'unverified'
@@ -562,14 +562,14 @@ class BenchTransactionTests(unittest.TestCase):
                         result['published'] = (source / 'bench-publications').exists()
                         if result['disposition'] == 'refused':
                             # The advised operator action must be able to proceed.
-                            with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt):
+                            with patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt):
                                 try:
                                     tx.transact(source, self.root / 'bench.json', fresh, 60,
-                                                operation_id='fault-matrix-fresh')
+                                                operation_id='fault-matrix-fresh', host=self.host)
                                 except KeyboardInterrupt:
                                     pass
-                            result['fresh'] = tx.status(fresh)['disposition']
-                            result['fresh_events'] = len(verify(source, current_source=False)['empirical_feedback'])
+                            result['fresh'] = tx.status(fresh, host=self.host)['disposition']
+                            result['fresh_events'] = len(verify(source, current_source=False, host=self.host)['empirical_feedback'])
                         child.send(result)
                     recovery = context.Process(target=recovery_worker)
                     recovery.start(); recovery.join(15)
@@ -597,7 +597,7 @@ class BenchTransactionTests(unittest.TestCase):
         self.initial()
         with contextlib.redirect_stdout(io.StringIO()):
             first = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'first',
-                                60, operation_id='first-epoch')
+                                60, operation_id='first-epoch', host=self.host)
         source = Path(first['review']['out'])
         report = read_json(self.root / 'bench.json')
         report['candidate_id'] = first['review']['candidate_id']
@@ -609,22 +609,22 @@ class BenchTransactionTests(unittest.TestCase):
             if Path(path).parent.name == 'bench-publications':
                 raise KeyboardInterrupt()
         with patch.object(tx, 'put', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
-            tx.transact(source, self.root / 'bench2.json', self.root / 'second', 60, operation_id='second-epoch')
+            tx.transact(source, self.root / 'bench2.json', self.root / 'second', 60, operation_id='second-epoch', host=self.host)
         bundle_path = self.root / 'second/prepared/empirical/calibration.json'
         bundle_hash = digest(bundle_path)
         count = len(self.calls)
         for _ in range(2):
-            tx.recover(self.root / 'second')
+            tx.recover(self.root / 'second', host=self.host)
         self.assertEqual(digest(bundle_path), bundle_hash)
         self.assertEqual(len(self.calls), count)
         bundle = read_json(bundle_path)
         self.assertIsNotNone(bundle['parent'])
         self.assertEqual(len(bundle['observations']), 2)
-        self.assertEqual(len(verify(source, current_source=False)['empirical_feedback']), 1)
-        self.assertEqual(tx.recover(self.root / 'first')['phase'], 'completed')
+        self.assertEqual(len(verify(source, current_source=False, host=self.host)['empirical_feedback']), 1)
+        self.assertEqual(tx.recover(self.root / 'first', host=self.host)['phase'], 'completed')
         with self.assertRaisesRegex(ValueError, 'superseded'):
             from agent_ee.empirical import ingest
-            ingest(source, self.root / 'bench2.json', self.root / 'unsafe-retry')
+            ingest(source, self.root / 'bench2.json', self.root / 'unsafe-retry', host=self.host)
         self.assertFalse((self.root / 'unsafe-retry').exists())
 
     @toolchain_test
@@ -634,7 +634,7 @@ class BenchTransactionTests(unittest.TestCase):
         from agent_ee.campaign import run_campaign, verify_campaign
         self.initial()
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         source = self.root / 'campaign/runs/1'
         report = read_json(self.root / 'bench.json')
         report['candidate_id'] = read_json(source / 'candidate.json')['candidate_id']
@@ -643,16 +643,16 @@ class BenchTransactionTests(unittest.TestCase):
             Path(target).mkdir()
             (Path(target) / 'partial-provider-output').write_text('retained uncertain evidence')
             raise KeyboardInterrupt()
-        with patch('agent_ee.cli.run_review', side_effect=uncertain), self.assertRaises(KeyboardInterrupt):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=uncertain), self.assertRaises(KeyboardInterrupt):
             tx.campaign_transaction(self.root / 'campaign', self.root / 'bench.json', self.root / 'feedback',
-                                    60, operation_id='uncertain-campaign')
+                                    60, operation_id='uncertain-campaign', host=self.host)
         with contextlib.redirect_stdout(io.StringIO()):
-            value = tx.new_attempt(self.root / 'feedback', 'replacement', self.root / 'campaign/attempts/replacement')
+            value = tx.new_attempt(self.root / 'feedback', 'replacement', self.root / 'campaign/attempts/replacement', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertTrue((self.root / 'campaign/runs/2/partial-provider-output').is_file())
-        state = verify_campaign(self.root / 'campaign')
+        state = verify_campaign(self.root / 'campaign', host=self.host)
         self.assertEqual(state['epoch'], 1)
-        self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False)['max_schema_resubmissions'], 1)
+        self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False, host=self.host)['max_schema_resubmissions'], 1)
         self.assertEqual(len(state['history']), 2)
         self.assertEqual(state['history'][-1]['bench_attempt_id'], 'replacement')
 
@@ -666,14 +666,14 @@ class BenchTransactionTests(unittest.TestCase):
         from agent_ee.campaign import run_campaign, verify_campaign
         self.initial()
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host), 0)
         source = self.root / 'campaign/runs/1'
         report = read_json(self.root / 'bench.json')
         report['candidate_id'] = read_json(source / 'candidate.json')['candidate_id']
         write_json(self.root / 'bench.json', report)
         with patch.object(tx, 'finish_campaign', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.campaign_transaction(self.root / 'campaign', self.root / 'bench.json', self.root / 'feedback',
-                                    60, operation_id='history-crash')
+                                    60, operation_id='history-crash', host=self.host)
         saved_campaign, saved_feedback = self.root / 'saved-campaign', self.root / 'saved-feedback'
         shutil.copytree(self.root / 'campaign', saved_campaign)
         shutil.copytree(self.root / 'feedback', saved_feedback)
@@ -695,7 +695,7 @@ class BenchTransactionTests(unittest.TestCase):
                 trace.append('rename')
             return real_replace(path, target)
         with patch('os.fsync', side_effect=observed_fsync), patch.object(Path, 'replace', observed_replace):
-            self.assertEqual(tx.recover(self.root / 'feedback')['phase'], 'completed')
+            self.assertEqual(tx.recover(self.root / 'feedback', host=self.host)['phase'], 'completed')
         self.assertGreaterEqual(len(trace), 8)
         self.assertEqual(trace.count('rename'), 4)
         print(f'Completion/history crash boundaries: {len(trace)}; process-death cases: {2 * len(trace)}', flush=True)
@@ -724,20 +724,20 @@ class BenchTransactionTests(unittest.TestCase):
                         def replace(path, target):
                             return checkpoint(real_replace, selected_file(target), path, target)
                         with patch('os.fsync', side_effect=fsync), patch.object(Path, 'replace', replace), \
-                                patch('agent_ee.cli.run_review', side_effect=AssertionError('recovery spent inference')):
-                            tx.recover(self.root / 'feedback')
+                                patch('agent_ee.bench_transactions.run_review', side_effect=AssertionError('recovery spent inference')):
+                            tx.recover(self.root / 'feedback', host=self.host)
                         os._exit(99)
                     worker = context.Process(target=crash_worker)
                     worker.start(); worker.join(15)
                     if worker.is_alive():
                         worker.kill(); worker.join()
                     self.assertEqual(worker.exitcode, 77)
-                    with patch('agent_ee.cli.run_review', side_effect=AssertionError('recovery spent inference')):
-                        self.assertEqual(tx.recover(self.root / 'feedback')['phase'], 'completed')
-                    state = verify_campaign(self.root / 'campaign')
+                    with patch('agent_ee.bench_transactions.run_review', side_effect=AssertionError('recovery spent inference')):
+                        self.assertEqual(tx.recover(self.root / 'feedback', host=self.host)['phase'], 'completed')
+                    state = verify_campaign(self.root / 'campaign', host=self.host)
                     self.assertEqual(len(state['history']), 2)
                     self.assertEqual(state['epoch'], 1)
-                    self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False)['max_schema_resubmissions'], 1)
+                    self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False, host=self.host)['max_schema_resubmissions'], 1)
                     self.assertEqual(digest(self.root / 'campaign/history/1.json'), original_hash)
         self.assertEqual(len(self.calls), count)
 
@@ -753,15 +753,15 @@ class BenchTransactionTests(unittest.TestCase):
         report['artifacts'][0]['sha256'] = digest(self.root / 'raw.json')
         write_json(self.root / 'bench.json', report)
         value = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                            60, operation_id='passing-review')
+                            60, operation_id='passing-review', host=self.host)
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(value['review']['outcome'], 'criteria_satisfied')
-        reviewed = verify(value['review']['out'])
+        reviewed = verify(value['review']['out'], host=self.host)
         self.assertEqual(len(reviewed['reviews']), 2)
         self.assertTrue(reviewed['adjudicated'])
         self.assertEqual(reviewed['checks'][0]['execution'], 'ok')
         self.assertEqual(reviewed['checks'][0]['outcome'], 'pass')
-        self.assertEqual(verify(self.root / 'initial', current_source=False)['outcome'], 'incomplete')
+        self.assertEqual(verify(self.root / 'initial', current_source=False, host=self.host)['outcome'], 'incomplete')
 
     @toolchain_test
     def test_failed_provider_settles_incomplete_and_recovery_cannot_retry_it(self):
@@ -770,14 +770,14 @@ class BenchTransactionTests(unittest.TestCase):
         self.initial()
         with patch('agent_ee.reviewers.dispatch', side_effect=lambda *args, **kwargs: ({'execution': 'error', 'error': 'scripted subscription failure'}, None)) as dispatch:
             value = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                                60, operation_id='provider-failure')
+                                60, operation_id='provider-failure', host=self.host)
             self.assertEqual(value['phase'], 'completed')
             self.assertEqual(value['review']['outcome'], 'incomplete')
             count = dispatch.call_count
             self.assertEqual(count, 2)
-            self.assertEqual(tx.recover(self.root / 'feedback')['phase'], 'completed')
+            self.assertEqual(tx.recover(self.root / 'feedback', host=self.host)['phase'], 'completed')
             self.assertEqual(dispatch.call_count, count)
-        self.assertEqual(verify(self.root / 'initial', current_source=False)['outcome'], 'incomplete')
+        self.assertEqual(verify(self.root / 'initial', current_source=False, host=self.host)['outcome'], 'incomplete')
 
     @toolchain_test
     def test_actual_sigint_during_scripted_provider_preserves_supersession_and_cleans_children(self):
@@ -803,7 +803,7 @@ class BenchTransactionTests(unittest.TestCase):
                                timeout=timeout, **kwargs), None
             with patch('agent_ee.reviewers.dispatch', side_effect=sleeping):
                 value = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                                    60, operation_id='signal')
+                                    60, operation_id='signal', host=self.host)
             completion.send(value)
             completion.close()
         process = context.Process(target=worker)
@@ -850,8 +850,8 @@ class BenchTransactionTests(unittest.TestCase):
         for pid in children:
             stat = Path(f'/proc/{pid}/stat')
             self.assertTrue(not stat.exists() or stat.read_text().split()[2] == 'Z', f'child {pid} survived')
-        self.assertEqual(verify(self.root / 'initial', current_source=False)['outcome'], 'incomplete')
-        self.assertEqual(tx.recover(self.root / 'feedback')['phase'], 'completed')
+        self.assertEqual(verify(self.root / 'initial', current_source=False, host=self.host)['outcome'], 'incomplete')
+        self.assertEqual(tx.recover(self.root / 'feedback', host=self.host)['phase'], 'completed')
         self.assertEqual(self.calls, [])
 
     @toolchain_test
@@ -863,7 +863,7 @@ class BenchTransactionTests(unittest.TestCase):
         self.initial()
         with patch.object(tx, 'publish', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                        60, operation_id='foreign-event')
+                        60, operation_id='foreign-event', host=self.host)
         request = read_json(self.root / 'feedback/request.json')
         event = tx.event_for(self.root / 'feedback', request)
         path = self.root / 'initial/events' / ('bench-' + identity({'operation_id': 'foreign-event'}) + '.json')
@@ -871,7 +871,7 @@ class BenchTransactionTests(unittest.TestCase):
         path.write_text(json.dumps(event) + '\n')
         original = digest(self.root / 'initial/result.json')
         with self.assertRaisesRegex(tx.TransactionError, 'conflict|foreign'):
-            tx.recover(self.root / 'feedback')
+            tx.recover(self.root / 'feedback', host=self.host)
         self.assertEqual(digest(self.root / 'initial/result.json'), original)
         self.assertFalse((self.root / 'initial/bench-publications').exists())
         self.assertEqual(self.calls, [])
@@ -881,16 +881,16 @@ class BenchTransactionTests(unittest.TestCase):
         from agent_ee import bench_transactions as tx
         self.initial()
         value = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
-                            60, operation_id='receipt-validation')
+                            60, operation_id='receipt-validation', host=self.host)
         self.assertEqual(value['review']['outcome'], 'defects_or_unresolved')
         path = self.root / 'feedback/completed.json'
         receipt = read_json(path)
         receipt['review']['outcome'] = 'criteria_satisfied'
         write_json(path, receipt)
         with self.assertRaisesRegex(tx.TransactionError, 'contradicts retained review'):
-            tx.recover(self.root / 'feedback')
-        self.assertEqual(tx.status(self.root / 'feedback')['disposition'], 'conflict')
-        self.assertEqual(verify(self.root / 'feedback/review')['outcome'], 'defects_or_unresolved')
+            tx.recover(self.root / 'feedback', host=self.host)
+        self.assertEqual(tx.status(self.root / 'feedback', host=self.host)['disposition'], 'conflict')
+        self.assertEqual(verify(self.root / 'feedback/review', host=self.host)['outcome'], 'defects_or_unresolved')
 
     def test_legacy_partial_diagnosis_is_read_only_and_cannot_convert_itself(self):
         from agent_ee import bench_transactions as tx
@@ -898,9 +898,9 @@ class BenchTransactionTests(unittest.TestCase):
         out.mkdir()
         (out / 'partial-output').write_text('legacy evidence')
         before = tx.inventory(out)
-        self.assertEqual(tx.status(out)['disposition'], 'unverified')
+        self.assertEqual(tx.status(out, host=self.host)['disposition'], 'unverified')
         with self.assertRaisesRegex(tx.TransactionError, 'no valid opt-in transaction'):
-            tx.recover(out)
+            tx.recover(out, host=self.host)
         self.assertEqual(tx.inventory(out), before)
 
     @toolchain_test
@@ -916,21 +916,21 @@ class BenchTransactionTests(unittest.TestCase):
         report['artifacts'][0]['sha256'] = digest(self.root / 'raw.json')
         write_json(self.root / 'bench.json', report)
         first = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'first',
-                            60, operation_id='historical-pass')
+                            60, operation_id='historical-pass', host=self.host)
         self.assertEqual(first['review']['outcome'], 'criteria_satisfied')
         self.assertEqual(first['current_review']['outcome'], 'criteria_satisfied')
         report['candidate_id'] = first['review']['candidate_id']
         report['observed_utc'] = '2026-10-18'
         write_json(self.root / 'second-report.json', report)
-        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+        with patch('agent_ee.bench_transactions.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             tx.transact(first['review']['out'], self.root / 'second-report.json', self.root / 'second',
-                        60, operation_id='later-feedback')
-        current = tx.recover(self.root / 'first')
+                        60, operation_id='later-feedback', host=self.host)
+        current = tx.recover(self.root / 'first', host=self.host)
         self.assertEqual(current['phase'], 'completed')
         self.assertEqual(current['review']['outcome'], 'criteria_satisfied')
         self.assertEqual(current['current_review']['outcome'], 'incomplete')
         self.assertTrue(current['current_review']['empirical_superseded'])
-        self.assertEqual(tx.status(self.root / 'first')['current_review']['outcome'], 'incomplete')
+        self.assertEqual(tx.status(self.root / 'first', host=self.host)['current_review']['outcome'], 'incomplete')
 
     def test_legacy_empty_output_is_refused_before_creating_internal_target_lease(self):
         from agent_ee import bench_transactions as tx
@@ -939,7 +939,7 @@ class BenchTransactionTests(unittest.TestCase):
         out.mkdir()
         before = tx.inventory(out)
         with self.assertRaisesRegex(ValueError, 'legacy partial directories require diagnosis'):
-            bench_review(self.root / 'absent-source', self.root / 'absent-report', out, 60)
+            bench_review(self.root / 'absent-source', self.root / 'absent-report', out, 60, host=self.host)
         self.assertEqual(tx.inventory(out), before)
 
     @toolchain_test
@@ -951,13 +951,13 @@ class BenchTransactionTests(unittest.TestCase):
         original_stdout = sys.stdout
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(run_review, self.root / 'scope.json', target, 60,
-                                   output_stream=stream) for target, stream in zip(targets, streams)]
+                                   output_stream=stream, host=self.host) for target, stream in zip(targets, streams)]
             self.assertEqual([future.result() for future in futures], [1, 1])
         self.assertIs(sys.stdout, original_stdout)
         for index, stream in enumerate(streams):
             self.assertIn(str(targets[index] / 'REPORT.md'), stream.getvalue())
             self.assertNotIn(str(targets[1-index] / 'REPORT.md'), stream.getvalue())
-            self.assertEqual(verify(targets[index])['outcome'], 'defects_or_unresolved')
+            self.assertEqual(verify(targets[index], host=self.host)['outcome'], 'defects_or_unresolved')
 
     @toolchain_test
     def test_transaction_cli_returns_one_json_document_and_routes_progress_to_stderr(self):
@@ -968,7 +968,7 @@ class BenchTransactionTests(unittest.TestCase):
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             code = main(['bench-review', str(self.root / 'initial'), str(self.root / 'bench.json'),
                          '--out', str(self.root / 'feedback'), '--operation-id', 'json-command',
-                         '--max-seconds', '60'])
+                         '--max-seconds', '60'], host=self.host)
         self.assertEqual(code, 1)
         value = json.loads(stdout.getvalue())
         self.assertEqual(value['phase'], 'completed')

@@ -203,7 +203,7 @@ routed outcomes, and the router remains the authority.
 - A corrupt board makes the probe fail, and the outcome is unknown.
 - Quarter-turn pad transforms match pcbnew, and the suggested `rotate R1 180°`
   restores the control pads.
-- A full `cli.run_review` with passing ERC as the only acceptance check, the
+- A full `run_record.run_review` with passing ERC as the only acceptance check, the
   overlap as the only defect and scripted agent transport completes. The
   adjudicated advisory finding fails the review (`defects_or_unresolved`) and
   is refused as a requirement witness.

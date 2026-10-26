@@ -286,7 +286,7 @@ class OfflineNativeIntegrationTests(unittest.TestCase):
     def review(self, scope, name):
         import contextlib
         import io
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.storage import read_json, write_json
         write_json(self.root / 'scope.json', scope)
         run = self.root / name
@@ -360,7 +360,7 @@ class OfflineNativeIntegrationTests(unittest.TestCase):
         with self.assertRaises((FileNotFoundError, ValueError)):
             capture(self.root / 'scope.json', self.root / 'missing-success')
         pdf.write_bytes(saved)
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         sealed = run / 'inputs/acquisition' / acquired['path']
         self.assertTrue(sealed.is_file())
         sealed.write_bytes(saved + b'changed')

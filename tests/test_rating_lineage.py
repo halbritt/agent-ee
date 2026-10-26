@@ -90,7 +90,7 @@ class RatingLineageCampaignTests(unittest.TestCase):
         runtime = {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
                    for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}
         runtime['kicad-cli'] = {'path': '/usr/bin/kicad-cli', 'sha256': digest('/usr/bin/kicad-cli')}
-        cls.stack.enter_context(patch('agent_ee.cli.runtime_files', return_value=runtime))
+        cls.host = {'runtime_files': runtime}
         cls.stack.enter_context(patch('agent_ee.reviewers.dispatch', side_effect=cls.agent))
         cls.status, cls.state = cls.campaign('bound', source)
         cls.campaign_root = cls.root / 'bound'
@@ -152,7 +152,7 @@ class RatingLineageCampaignTests(unittest.TestCase):
         cls.writer = writer
         try:
             with contextlib.redirect_stdout(io.StringIO()):
-                status = run_campaign(cls.root / f'{name}.json', cls.root / name)
+                status = run_campaign(cls.root / f'{name}.json', cls.root / name, host=cls.host)
         finally:
             cls.writer = None
         return status, read_json(cls.root / name / 'state.json')
@@ -200,7 +200,7 @@ class RatingLineageCampaignTests(unittest.TestCase):
     def refused(self, message):
         from agent_ee.campaign import verify_campaign
         with self.assertRaisesRegex(ValueError, message):
-            verify_campaign(self.campaign_root)
+            verify_campaign(self.campaign_root, host=self.host)
 
     def test_adopted_receipt_binds_derived_scope_and_assembly_passes(self):
         from agent_ee.campaign import verify_campaign
@@ -240,7 +240,7 @@ class RatingLineageCampaignTests(unittest.TestCase):
         baseline = read_json(root / 'runs/2/baseline.json')
         self.assertNotEqual(baseline['baseline_id'], self.state['baseline']['baseline_id'])
         self.assertTrue({RECEIPT, REPORT} <= set(baseline['files']))
-        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
 
     def test_tampered_receipt_is_refused(self):
         from agent_ee.rating_lineage import proposal_scope

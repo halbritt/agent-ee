@@ -259,7 +259,7 @@ class RungPartsTests(unittest.TestCase):
     def native_fab_evidence(self, run, prep, scaffold, scope):
         """Real emitter → native XML → annotation → sealed checks; no campaign claim."""
         from agent_ee import executor, forward_annotation
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.schematic_emitter import emit_schematic
         intent = q.qualified_intent(prep)
         emission, files = emit_schematic(intent, q.intent_captures(intent), q.layout())

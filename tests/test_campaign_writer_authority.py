@@ -49,7 +49,7 @@ class WriterAuthorityTests(unittest.TestCase):
         work = self.root/'campaign/implementations/1'
         self.assertFalse((work/'receipts').exists())
         self.assertFalse((work/'proposal.scope.json').exists())
-        self.assertEqual(campaign.verify_campaign(self.root/'campaign')['state'], 'incomplete')
+        self.assertEqual(campaign.verify_campaign(self.root/'campaign', host=self.lane.host)['state'], 'incomplete')
 
     def test_verification_writer_cannot_edit_native_with_no_scheduled_steps(self):
         self.stage('verification')
@@ -58,7 +58,7 @@ class WriterAuthorityTests(unittest.TestCase):
         self.assertEqual((status, state['state']), (1, 'incomplete'))
         self.assertIn('writer_editable', state['error'])
         self.assertFalse((self.root/'campaign/implementations/1/proposal.scope.json').exists())
-        self.assertEqual(campaign.verify_campaign(self.root/'campaign')['state'], 'incomplete')
+        self.assertEqual(campaign.verify_campaign(self.root/'campaign', host=self.lane.host)['state'], 'incomplete')
 
     def test_malformed_writer_output_does_not_retry_forbidden_edits(self):
         self.stage('verification')
@@ -76,7 +76,7 @@ class WriterAuthorityTests(unittest.TestCase):
         self.assertIn('writer_editable',state['error'])
         self.assertEqual(len(attempts),1)
         self.assertFalse((self.root/'campaign/implementations/1/proposal.scope.json').exists())
-        self.assertEqual(campaign.verify_campaign(self.root/'campaign')['state'],'incomplete')
+        self.assertEqual(campaign.verify_campaign(self.root/'campaign', host=self.lane.host)['state'],'incomplete')
 
     def test_allowed_intent_edit_and_coordinator_output_remain_adoptable(self):
         self.stage('placement')
@@ -88,7 +88,7 @@ class WriterAuthorityTests(unittest.TestCase):
         self.assertEqual(receipt['inputs']['design/intent.json'], digest(work/'receipts/1-fix-helper/inputs/design/intent.json'))
         self.assertEqual(read_json(Path(state['history'][1]['run'])/'inputs/design/design.json'), {'value':5})
         self.assertIn('writer_editable', self.lane.writer_prompts[0])
-        self.assertEqual(campaign.verify_campaign(self.root/'campaign')['state'], 'criteria_satisfied')
+        self.assertEqual(campaign.verify_campaign(self.root/'campaign', host=self.lane.host)['state'], 'criteria_satisfied')
 
     def test_replay_refuses_writer_edit_hidden_in_first_producer_input(self):
         self.stage('placement')
@@ -101,7 +101,7 @@ class WriterAuthorityTests(unittest.TestCase):
         work = self.root/'campaign/implementations/1'
         stage_receipts.validate_receipt(work/'receipts/1-fix-helper')
         with self.assertRaisesRegex(ValueError, 'writer_editable'):
-            campaign.verify_campaign(self.root/'campaign')
+            campaign.verify_campaign(self.root/'campaign', host=self.lane.host)
 
     def test_replay_refuses_no_step_writer_edit_and_missing_index(self):
         self.stage('verification')
@@ -111,7 +111,7 @@ class WriterAuthorityTests(unittest.TestCase):
         self.assertEqual((status, state['state']), (1, 'incomplete'))
         self.assertIn('writer_editable', state['error'])
         with self.assertRaisesRegex(ValueError, 'writer_editable'):
-            campaign.verify_campaign(self.root/'campaign')
+            campaign.verify_campaign(self.root/'campaign', host=self.lane.host)
         work = self.root/'campaign/implementations/1'
         (work/'stage-receipts.json').unlink()
         state['stage_receipts'] = {}

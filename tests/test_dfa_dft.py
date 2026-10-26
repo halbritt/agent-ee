@@ -460,7 +460,7 @@ class BenchRoundTripTests(unittest.TestCase):
 
     @toolchain_test
     def test_plan_measurement_round_trips_through_bench_ingestion(self):
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         from agent_ee.empirical import ingest
         require_toolchain(native=True)
         source = self.root / 'source'
@@ -476,7 +476,7 @@ class BenchRoundTripTests(unittest.TestCase):
                                                   'checks': ['dft']})
         write_json(self.root / 'scope.json', scope)
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 120), 0)
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 120, host=self.host), 0)
         run = self.root / 'initial'
         dft = read_json(run / 'checks/dft.json')
         self.assertEqual((dft['execution'], dft['outcome']), ('ok', 'pass'), dft)
@@ -490,13 +490,13 @@ class BenchRoundTripTests(unittest.TestCase):
                   'artifacts': [{'path': 'raw.json', 'sha256': digest(self.root / 'raw.json')}],
                   'observations': [{**sample, 'artifact': 'raw.json', 'locator': '0'}]}
         write_json(self.root / 'bench.json', report)
-        bundle = ingest(run, self.root / 'bench.json', self.root / 'bundle')
+        bundle = ingest(run, self.root / 'bench.json', self.root / 'bundle', host=self.host)
         observation, = bundle['observations']
         self.assertEqual(observation['candidate_id'], cid)
         self.assertEqual(plan_measurement(plan, observation['candidate_id'], observation), 'response:output')
         write_json(self.root / 'bench-other.json', {**report, 'candidate_id': '0' * 64})
         with self.assertRaisesRegex(ValueError, 'measured candidate'):
-            ingest(run, self.root / 'bench-other.json', self.root / 'bundle-other')
+            ingest(run, self.root / 'bench-other.json', self.root / 'bundle-other', host=self.host)
 
 
 if __name__ == '__main__':

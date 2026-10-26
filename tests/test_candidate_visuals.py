@@ -34,7 +34,7 @@ class CandidateVisualTests(unittest.TestCase):
     def test_native_four_layer_images_and_packet_hashes(self):
         import pcbnew
         from agent_ee.reviewers import build_packet
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         board = pcbnew.LoadBoard(str(self.board))
         board.SetCopperLayerCount(4)
         pcbnew.SaveBoard(str(self.board), board)
@@ -72,7 +72,7 @@ class CandidateVisualTests(unittest.TestCase):
 
     @native_board_render_test
     def test_imaging_preserves_twenty_second_drc_budget(self):
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         outcomes = []
         for skip in (True, False):
             with self.subTest(skip=skip):
@@ -99,7 +99,7 @@ class CandidateVisualTests(unittest.TestCase):
     def test_long_imaging_excluded_without_refreshing_expired_budget(self):
         import time
         from types import SimpleNamespace
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         for budget in (0, 20):
             with self.subTest(budget=budget):
                 scope = {'schema': 'agent-ee.scope/1', 'name': 'long-visual-budget',
@@ -123,7 +123,7 @@ class CandidateVisualTests(unittest.TestCase):
                     remaining.append(deadline - clock.monotonic())
                     return []
 
-                with patch('agent_ee.cli.time', clock), \
+                with patch('agent_ee.run_record.time', clock), \
                      patch('agent_ee.candidate_visuals.capture_visuals', side_effect=imaging), \
                      patch('agent_ee.checks.run_checks', side_effect=observe_deadline):
                     run_review(scope_path, self.root / f'long-budget-{budget}', budget, checks_only=True)
@@ -160,7 +160,7 @@ class CandidateVisualTests(unittest.TestCase):
     def test_declared_check_cannot_overwrite_coordinator_visual_manifest(self):
         import time
         from agent_ee.checks import Ctx
-        from agent_ee.cli import validate_scope
+        from agent_ee.run_record import validate_scope
         scope = {'schema': 'agent-ee.scope/1', 'name': 'visual-isolation', 'scope': 'inspection',
                  'inputs': [{'path': str(self.source), 'at': 'project'}],
                  'board': 'project/rc_filter.kicad_pcb', 'schematic': 'project/rc_filter.kicad_sch',

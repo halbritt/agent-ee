@@ -24,7 +24,7 @@ class PreflightTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.run = Path(self.tmp.name)
         (self.run / 'inputs').mkdir()
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         from agent_ee.preflight import capture_expectation
         from agent_ee.storage import digest
         self.binary = self.run / 'binary'
@@ -37,13 +37,15 @@ class PreflightTests(unittest.TestCase):
             'runtime_files': self.runtime}, {'candidate_id': 'candidate', 'scope': {'schema': 'agent-ee.scope/1'}},
             [self.definition])
         self.context = {'expected': self.expected, 'boundary': 'initial', 'deadline': time.monotonic() + 20}
-        self.runtime_patch = patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: self.runtime)
-        self.runtime_patch.start()
-        self.addCleanup(self.runtime_patch.stop)
 
-    def call(self, role='circuit', context=None):
-        return reviewer_call(self.run, role, self.definition, '', {}, 10,
-                             launch_context=self.context if context is None else context)
+    def call(self, role='circuit', context=None, *, policy=None):
+        # Each launch is given the runtime (and optionally policy) fingerprints this test holds.
+        context = dict(self.context if context is None else context)
+        host = {**({'runtime_files': self.runtime} if self.runtime is not None else {}),
+                **({'policy_files': policy} if policy is not None else {})}
+        if host:
+            context['host'] = host
+        return reviewer_call(self.run, role, self.definition, '', {}, 10, launch_context=context)
 
     def assert_refused(self, reason):
         with patch('agent_ee.reviewers.dispatch') as provider:
@@ -59,11 +61,26 @@ class PreflightTests(unittest.TestCase):
             self.runtime = {**self.runtime, 'changed': {}}
             self.assert_refused('runtime_drift')
             probe.assert_not_called()
-        with patch('agent_ee.cli.policy_files', return_value={'changed': 'hash'}), \
-             patch('agent_ee.reviewers.dispatch') as provider:
-            record, _ = self.call('physical')
+        with patch('agent_ee.reviewers.dispatch') as provider:
+            record, _ = self.call('physical', policy={'changed': 'hash'})
             self.assertIn('policy_drift', record['error'])
             provider.assert_not_called()
+
+    def test_supplied_policy_never_stands_for_the_loaded_code(self):
+        # A caller (or a replay) that supplies a foreign policy matching the expectation still
+        # meets this process's own loaded-code fingerprint, which nothing can supply (AGENTEE-545).
+        from agent_ee.preflight import capture_expectation
+        foreign = {'foreign.py': '0' * 64}
+        self.expected = capture_expectation({'run_id': 'run', 'policy_files': foreign,
+            'runtime_files': self.runtime}, {'candidate_id': 'candidate', 'scope': {'schema': 'agent-ee.scope/1'}},
+            [self.definition])
+        self.context['expected'] = self.expected
+        with patch('agent_ee.reviewers.dispatch') as provider, patch('agent_ee.preflight.execute') as probe:
+            record, value = self.call(policy=foreign)
+        self.assertIn('policy_drift', record['error'])
+        self.assertIsNone(value)
+        probe.assert_not_called()
+        provider.assert_not_called()
 
     def test_selected_missing_binary_is_specific_refusal(self):
         self.runtime = {**self.runtime, 'codex': {'path': None, 'sha256': None}}
@@ -85,7 +102,7 @@ class PreflightTests(unittest.TestCase):
 
     def optional_expectation(self, specs):
         from agent_ee.preflight import capture_expectation
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         self.expected = capture_expectation({'run_id': 'run', 'policy_files': policy_files(),
             'runtime_files': self.runtime}, {'candidate_id': 'candidate', 'scope': {
                 'schema': 'agent-ee.scope/1', 'checks': specs}}, [self.definition])
@@ -132,14 +149,12 @@ class PreflightTests(unittest.TestCase):
         # Probe identities independently of the test host's installed toolchain.
         def which(name):
             return '/shadow/ngspice' if name == 'ngspice' else name if name == '/usr/bin/ngspice' else None
-        self.runtime_patch.stop()
-        from agent_ee.cli import runtime_files
-        with patch('agent_ee.cli.shutil.which', side_effect=which), \
+        from agent_ee.run_record import runtime_files
+        with patch('agent_ee.run_record.shutil.which', side_effect=which), \
                 patch('agent_ee.harnesses.executable_for', return_value=None), \
-                patch('agent_ee.cli.pcbnew_extension', return_value=(None, '')), \
-                patch('agent_ee.cli.runtime_digest', side_effect=lambda path, **_: 'hash:' + path):
+                patch('agent_ee.run_record.pcbnew_extension', return_value=(None, '')), \
+                patch('agent_ee.run_record.runtime_digest', side_effect=lambda path, **_: 'hash:' + path):
             actual = runtime_files()
-        self.runtime_patch.start()
         self.assertEqual(actual['ngspice']['path'], '/shadow/ngspice')
         self.assertEqual(actual['/usr/bin/ngspice'], {
             'path': '/usr/bin/ngspice', 'sha256': 'hash:/usr/bin/ngspice'})
@@ -191,7 +206,8 @@ class PreflightTests(unittest.TestCase):
         from agent_ee.preflight import verify_receipt
         refusals = []
         self.context['refuse'] = refusals.append
-        with patch('agent_ee.cli.runtime_files', side_effect=subprocess.TimeoutExpired(['probe'], 1)):
+        self.runtime = None  # nothing supplied: the launch observes the host, and that probe times out
+        with patch('agent_ee.run_record._runtime_files', side_effect=subprocess.TimeoutExpired(['probe'], 1)):
             record = self.assert_refused('runtime_probe_timeout')
         self.assertEqual(refusals, ['runtime_probe_timeout'])
         verify_receipt(self.run, record, self.expected, 'circuit', 'initial')
@@ -235,7 +251,8 @@ class PreflightTests(unittest.TestCase):
             cancel = Cancellation()
             cancel.cancel()
             record, _ = reviewer_call(self.run, 'other', self.definition, '', {}, 10,
-                                      launch_context=self.context, cancellation=cancel)
+                                      launch_context={**self.context, 'host': {'runtime_files': self.runtime}},
+                                      cancellation=cancel)
             self.assertIn('cancelled', record['error'])
             provider.assert_not_called()
 
@@ -292,14 +309,13 @@ class PreflightTests(unittest.TestCase):
     def test_replaced_captured_binary_has_zero_provider_invocations(self):
         from agent_ee.storage import digest
         self.binary.write_bytes(b'\x7fELFreplaced after capture')
-        def current(**kwargs):
-            return {name: {**entry, 'sha256': digest(entry['path'])} for name, entry in self.runtime.items()}
-        with patch('agent_ee.cli.runtime_files', side_effect=current):
-            self.assert_refused('runtime_drift')
+        # The host now reports the replaced binary's bytes.
+        self.runtime = {name: {**entry, 'sha256': digest(entry['path'])} for name, entry in self.runtime.items()}
+        self.assert_refused('runtime_drift')
 
     def test_required_native_check_binary_missing_at_capture_refuses_inference(self):
         from agent_ee.preflight import capture_expectation
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         self.runtime = {**self.runtime, 'pcbnew': {'path': None, 'sha256': None}}
         self.expected = capture_expectation({'run_id': 'run', 'policy_files': policy_files(),
             'runtime_files': self.runtime}, {'candidate_id': 'candidate', 'scope': {
@@ -397,7 +413,7 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
         import os
         import signal
         import subprocess
-        from agent_ee.cli import pcbnew_extension
+        from agent_ee.run_record import pcbnew_extension
         with tempfile.TemporaryDirectory() as tmp:
             marker = Path(tmp) / 'child.pid'
             script = ('import subprocess,sys,pathlib; '
@@ -411,7 +427,7 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
                 if marker.exists() or time.monotonic() >= end:
                     raise ValueError('operation cancelled')
             try:
-                with patch('agent_ee.cli.subprocess.Popen', side_effect=launch), \
+                with patch('agent_ee.run_record.subprocess.Popen', side_effect=launch), \
                         self.assertRaisesRegex(ValueError, 'operation cancelled'):
                     pcbnew_extension(checkpoint=checkpoint)
                 self.assertTrue(marker.exists(), 'test probe did not start child')

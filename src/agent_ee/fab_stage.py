@@ -12,6 +12,7 @@ from .checks import run_checks
 from .fab_export import JLC_TEMPLATE_DIR, inventory, load_verified_manifest
 from .fab_package import ROTATION_STATUSES, preview_obligations
 from .storage import digest, read_json, write_json
+from .run_record import outcome
 
 CPL_ROOT = Path('generation/cpl')
 FAB_CHECKS = frozenset({'fab_export', 'cpl_rotation', 'fab_package'})
@@ -171,7 +172,6 @@ def pending_checks(result):
                and c['details'].get('fab_step', {}).get('receipt', 'absent') is None]
     if not pending:
         return []
-    from .cli import outcome
     # Evaluate readiness without the absent artifacts, never change their recorded unknown verdicts.
     ready = {**result, 'checks': [c for c in result['checks'] if c['id'] not in pending],
              'expected_check_ids': [c for c in result['expected_check_ids'] if c not in pending]}

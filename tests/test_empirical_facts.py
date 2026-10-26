@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 import test_campaign as campaign_fixture
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.empirical import bench_review
 from agent_ee.storage import digest, read_json, write_json
 from toolchain import require_toolchain
@@ -33,13 +33,13 @@ class EmpiricalFactsIntegrationTests(unittest.TestCase):
         write_json(root / 'combined.json', scope)
         # Only model dispatch/runtime admission is scripted; native checks and
         # Poppler extraction execute through the production sandbox.
-        from agent_ee.cli import runtime_files
-        runtime_files.return_value.update({name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-                                           for name in ('kicad-cli', 'pcbnew')})
+        self.host = {'runtime_files': {
+            **helper.host['runtime_files'], **{name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+                                               for name in ('kicad-cli', 'pcbnew')}}}
         original = root / 'original'
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(run_review(root / 'combined.json', original, 90), 0)
-        result = verify(original)
+            self.assertEqual(run_review(root / 'combined.json', original, 90, host=self.host), 0)
+        result = verify(original, host=self.host)
         self.assertEqual({c['id']: c['outcome'] for c in result['checks']}['pin-map'], 'pass')
         sample = {'check_id': 'response', 'metric': 'output', 'unit': 'V',
                   'condition': 'load', 'value': 6, 'uncertainty': 0}
@@ -51,8 +51,8 @@ class EmpiricalFactsIntegrationTests(unittest.TestCase):
             'artifacts': [{'path': 'instrument.json', 'sha256': digest(root / 'instrument.json')}],
             'observations': [{**sample, 'artifact': 'instrument.json', 'locator': '0'}]})
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(bench_review(original, root / 'bench.json', root / 'bench', 90), 0)
-        revised = verify(root / 'bench/review')
+            self.assertEqual(bench_review(original, root / 'bench.json', root / 'bench', 90, host=self.host), 0)
+        revised = verify(root / 'bench/review', host=self.host)
         by_id = {c['id']: c for c in revised['checks']}
         self.assertEqual(by_id['pin-map']['outcome'], 'pass')
         metric = by_id['response']['details']['metrics']['output']

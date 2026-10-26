@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee import campaign, kicad_route_attempt as attempt, routing_adapter as routing, stage_receipts
-from agent_ee.cli import policy_files, runtime_files
+from agent_ee import campaign, kicad_route_attempt as attempt, routing_adapter as routing, run_record, stage_receipts
+from agent_ee.run_record import policy_files, runtime_files
 from agent_ee.storage import digest, identity, read_json, write_json
 from tests.kicad_route_fixture import FAKE_PIN, make_checkout
 from tests import test_kicad_route_native as native_fixture
@@ -27,6 +27,7 @@ class RoutingCampaignTests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.root = self.fixture.root
+        self.host = dict(self.fixture.host)
         self.source = self.root / 'source'
         self.scope = read_json(self.root / 'scope.json')
         self.scope.update(board='design/rc.kicad_pcb', schematic='design/rc.kicad_sch',
@@ -70,8 +71,9 @@ class RoutingCampaignTests(unittest.TestCase):
         self.enterContext(patch.object(routing, 'ADAPTER_SOURCE', driver))
         policies = policy_files()
         policies['kicad_route_attempt.py'] = digest(driver)
-        self.enterContext(patch('agent_ee.cli.policy_files', return_value=policies))
-        self.enterContext(patch('agent_ee.cli.LOADED_POLICY_FILES', policies))
+        # This process runs the fixture adapter bytes, so they are its loaded and observed policy.
+        self.host['policy_files'] = policies
+        self.enterContext(patch.object(run_record, 'LOADED_POLICY_FILES', policies))
         return {'schema': 'agent-ee.routing-adapter/1', 'project': 'design', 'board': 'rc.kicad_pcb',
                 'schematic': 'rc.kicad_sch', 'name': 'rc', 'label': 'campaign', 'checkout': str(checkout),
                 'state': str(state) if state else None, 'budget': 5, 'timeout': 30}
@@ -80,8 +82,8 @@ class RoutingCampaignTests(unittest.TestCase):
         write_json(self.root / 'scope.json', self.scope)
         write_json(self.root / 'campaign.json', {**self.config, 'routing_adapter': spec})
         with contextlib.redirect_stdout(io.StringIO()):
-            status = campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign')
-        state = campaign.verify_campaign(self.root / 'campaign')
+            status = campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
+        state = campaign.verify_campaign(self.root / 'campaign', host=self.host)
         work = self.root / 'campaign/implementations/1'
         return status, state, work
 
@@ -158,7 +160,7 @@ class RoutingCampaignTests(unittest.TestCase):
                 write_json(self.root / 'campaign.json', {**self.config, 'routing_adapter':
                     {**declaration, 'argv': altered['argv']}})
                 with self.assertRaises(ValueError):
-                    campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+                    campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
                 self.assertFalse((self.root / 'campaign').exists())
 
     def test_pair_opt_in_survives_binding_receipt_and_campaign_replay(self):
@@ -204,7 +206,7 @@ class RoutingCampaignTests(unittest.TestCase):
             'implementation_steps': [routing.campaign_spec(declaration, {'scope': self.scope},
                                                           self.scope['mutable_inputs'])]})
         with self.assertRaisesRegex(ValueError, 'cannot be combined'):
-            campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+            campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
 
     def test_routing_writer_cannot_change_the_placed_source(self):
         declaration = self.spec()
@@ -240,7 +242,7 @@ class RoutingCampaignTests(unittest.TestCase):
         self.assertFalse((work / 'receipts').exists())
         shutil.rmtree(declaration['checkout'])
         shutil.rmtree(declaration['state'])
-        self.assertEqual(campaign.verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        self.assertEqual(campaign.verify_campaign(self.root / 'campaign', host=self.host)['state'], 'incomplete')
 
     def test_rehashed_tool_identity_is_refused_against_the_frozen_binding(self):
         _, state, work = self.run_campaign(self.spec(separate=True))
@@ -335,7 +337,7 @@ class RoutingCampaignTests(unittest.TestCase):
         self.assertTrue(any('routed by fixture' in board for board in seen[1:]))
         with patch.object(routing, 'verify_campaign_receipt', side_effect=ValueError('routing probe refused')):
             with self.assertRaisesRegex(ValueError, 'routing probe refused'):
-                campaign.verify_campaign(self.root / 'campaign')
+                campaign.verify_campaign(self.root / 'campaign', host=self.host)
 
     def test_failed_routing_verification_stops_before_any_proposal(self):
         spec = self.spec()
@@ -343,8 +345,8 @@ class RoutingCampaignTests(unittest.TestCase):
             write_json(self.root / 'scope.json', self.scope)
             write_json(self.root / 'campaign.json', {**self.config, 'routing_adapter': spec})
             with contextlib.redirect_stdout(io.StringIO()):
-                status = campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign')
-        state = campaign.verify_campaign(self.root / 'campaign')
+                status = campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
+        state = campaign.verify_campaign(self.root / 'campaign', host=self.host)
         self.assertEqual((status, state['state']), (1, 'incomplete'))
         work = self.root / 'campaign/implementations/1'
         self.assertFalse((work / 'proposal.scope.json').exists())
@@ -356,8 +358,8 @@ class RoutingCampaignTests(unittest.TestCase):
         routing.ADAPTER_SOURCE.write_text('raise SystemExit(70)\n')
         policies = policy_files()
         policies['kicad_route_attempt.py'] = digest(routing.ADAPTER_SOURCE)
-        self.enterContext(patch('agent_ee.cli.policy_files', return_value=policies))
-        self.enterContext(patch('agent_ee.cli.LOADED_POLICY_FILES', policies))
+        self.host['policy_files'] = policies
+        self.enterContext(patch.object(run_record, 'LOADED_POLICY_FILES', policies))
         status, state, work = self.run_campaign(spec)
         self.assertEqual((status, state['state']), (1, 'incomplete'))
         receipt_dir = work / 'receipts/1-kicad-route-builtin'
@@ -375,6 +377,7 @@ class RoutingPredecessorTests(unittest.TestCase):
         self.lane.setUp()
         self.addCleanup(self.lane.doCleanups)
         self.root = self.lane.root
+        self.host = self.lane.host
         script = self.root / 'add-planes.py'
         script.write_text('from pathlib import Path\n'
                           'p=Path("/candidate/design/rc.kicad_pcb")\n'
@@ -389,7 +392,7 @@ class RoutingPredecessorTests(unittest.TestCase):
         write_json(self.root / 'scope.json', self.lane.scope)
         write_json(self.root / 'campaign.json', {**self.lane.config,'routing_adapter':declaration})
         with contextlib.redirect_stdout(io.StringIO()):
-            return campaign.run_campaign(self.root / 'campaign.json',self.root / 'campaign')
+            return campaign.run_campaign(self.root / 'campaign.json',self.root / 'campaign', host=self.host)
 
     def test_plane_receipt_then_owned_router_forms_exact_replayable_chain(self):
         status,state,work=self.lane.run_campaign(self.lane.spec())
@@ -459,7 +462,7 @@ class RoutingPredecessorTests(unittest.TestCase):
                     f.write('; unreceipted edit\n')
         with patch.object(stage_receipts,'adopt',side_effect=altered):
             status=self.raw_run(declaration)
-        state=campaign.verify_campaign(self.root/'campaign')
+        state=campaign.verify_campaign(self.root/'campaign', host=self.host)
         self.assertEqual((status,state['state']),(1,'incomplete'))
         self.assertIn('preceding adopted receipt',state['error'])
         self.assertFalse((self.root/'campaign/implementations/1/receipts/2-kicad-route-builtin').exists())
@@ -478,7 +481,7 @@ class RoutingPredecessorTests(unittest.TestCase):
         for name in ('1-add-planes','2-kicad-route-builtin'):
             stage_receipts.validate_receipt(work/'receipts'/name)
         with self.assertRaisesRegex(ValueError,'routing receipt chain'):
-            campaign.verify_campaign(self.root/'campaign')
+            campaign.verify_campaign(self.root/'campaign', host=self.host)
         self.assertFalse((work/'proposal.scope.json').exists())
 
     def test_predecessor_does_not_run_before_routing_stage(self):
@@ -504,7 +507,7 @@ class NativeRoutingCampaignTests(unittest.TestCase):
         runtime = runtime_files()
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-        self.enterContext(patch('agent_ee.cli.runtime_files', return_value=runtime))
+        fixture.host['runtime_files'] = runtime
         native = native_fixture.NativeKicadRouteTest()
         native.checkout = checkout
         native.setUp()

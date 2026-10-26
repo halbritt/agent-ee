@@ -228,7 +228,7 @@ class PilotLane(layer_tests.Lane):
                                                  'routing_adapter': declaration or self.declaration,
                                                  'layer_policy_derivation': layer_policy_derivation})
         with contextlib.redirect_stdout(io.StringIO()):
-            status = campaign.run_campaign(self.root / 'campaign.json', self.root / out)
+            status = campaign.run_campaign(self.root / 'campaign.json', self.root / out, host=self.host)
         return status, read_json(self.root / out / 'state.json'), self.root / out
 
 
@@ -270,7 +270,7 @@ class PilotCampaignTests(unittest.TestCase):
                          ('derived', [3, 4, 4], 5))
         self.assertEqual(self.basis['board_sha256'], self.planed_sha)
         self.assertEqual((self.status, self.state['state']), (0, 'criteria_satisfied'), self.state.get('error'))
-        campaign.verify_campaign(self.campaign_root)
+        campaign.verify_campaign(self.campaign_root, host=self.lane.host)
         config = read_json(self.campaign_root / 'config.json')
         link = config['layer_policy_derivation']['via_budget']['pilot']
         self.assertEqual(link, {'path': 'via-budget-pilot/via-budget-basis.json', 'sha256': sha(self.basis_path)})
@@ -315,14 +315,14 @@ class PilotCampaignTests(unittest.TestCase):
         facts = imported / self.basis['attempts'][0]['reference_facts']['path']
         with edited(facts, json_edit(lambda v: v['vias'].clear())):
             with self.assertRaisesRegex(ValueError, 'differs from the re-derivation'):
-                campaign.verify_campaign(self.campaign_root)
+                campaign.verify_campaign(self.campaign_root, host=self.lane.host)
         stray = self.campaign_root / 'via-budget-pilot'
         with patch.object(lineage, 'pilot_link', return_value=None):
             with self.assertRaisesRegex(ValueError, 'retained without a declared pilot basis'):
                 lineage.verify_pilot(self.campaign_root, read_json(self.campaign_root / 'config.json'),
                                      imported=True)
         self.assertTrue(stray.is_dir())
-        campaign.verify_campaign(self.campaign_root)
+        campaign.verify_campaign(self.campaign_root, host=self.lane.host)
 
 
 if __name__ == '__main__':

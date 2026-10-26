@@ -31,6 +31,7 @@ from .silkscreen import prepare_footprint, overhang_orientation_mark
 from .storage import digest, identity, json_bytes
 from .tool_source import snapshot
 from .symbol_library import children, nanometres, parse_sexpr
+from .run_record import policy_files, validate_scope
 
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/scaffold/1')
 SCHEMA = 'agent-ee.scaffold-receipt/1'
@@ -869,7 +870,6 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
     those records do not state.
     """
     from .baseline import compile_baseline
-    from .cli import policy_files, validate_scope
     from .stages import declaration
 
     if (scope_path is None) == (plan_path is None):

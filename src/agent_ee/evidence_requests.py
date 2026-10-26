@@ -7,6 +7,7 @@ from pathlib import Path
 from .baseline import load_baseline
 from .candidate import verify_snapshot
 from .storage import digest, identity, read_json, write_json
+from .run_record import verify
 
 
 SPEC_KEYS = {'mode', 'requirement_id', 'check_id', 'condition', 'observable', 'unit',
@@ -82,10 +83,9 @@ def fresh_directory(out, *sources):
     return out
 
 
-def source_context(run, finding_id):
-    from .cli import verify
+def source_context(run, finding_id, *, host=None):
     run = Path(run).resolve()
-    result = verify(run, current_source=False)
+    result = verify(run, current_source=False, host=host)
     if result['state'] == 'running':
         raise ValueError('request export requires initial review scheduling to have settled')
     concern = next((f for f in result['findings'] if f['id'] == finding_id), None)
@@ -133,9 +133,9 @@ def validate_spec(spec, baseline, manifest):
         raise ValueError('interpreter must be a string or null')
 
 
-def export_request(run, finding_id, spec, out, *, script=None):
+def export_request(run, finding_id, spec, out, *, script=None, host=None):
     run = Path(run).resolve()
-    result, concern, baseline = source_context(run, finding_id)
+    result, concern, baseline = source_context(run, finding_id, host=host)
     manifest = verify_snapshot(run)
     validate_spec(spec, baseline, manifest)
     if spec['mode'] == 'experiment' and script is None:
@@ -171,7 +171,7 @@ def export_request(run, finding_id, spec, out, *, script=None):
     return request
 
 
-def validate_request(directory):
+def validate_request(directory, *, host=None):
     directory = Path(directory)
     operation = verify_operation(directory)
     if operation['kind'] != 'request':
@@ -193,7 +193,7 @@ def validate_request(directory):
     for name, sha in request['source_hashes'].items():
         if name not in ('result.json', 'candidate.json', 'baseline.json') or digest(run / name) != sha:
             raise ValueError('request source changed')
-    result, concern, baseline = source_context(run, request['concern']['id'])
+    result, concern, baseline = source_context(run, request['concern']['id'], host=host)
     manifest = verify_snapshot(run)
     if (request['run_id'] != result['run_id'] or request['candidate_id'] != manifest['candidate_id'] or
             request['baseline_id'] != (baseline['baseline_id'] if baseline else None) or concern != request['concern']):
@@ -204,8 +204,8 @@ def validate_request(directory):
     return request
 
 
-def export_graduation(request_dir, proposal, out, *, replay_dir=None):
-    request = validate_request(request_dir)
+def export_graduation(request_dir, proposal, out, *, replay_dir=None, host=None):
+    request = validate_request(request_dir, host=host)
     required = {'adapter_contract', 'supported_scope', 'unsupported_scope', 'requirement_mapping',
                 'numerical_criteria', 'expected_control', 'expected_seed', 'limitations'}
     if not isinstance(proposal, dict) or set(proposal) != required or any(not proposal[k] for k in required):

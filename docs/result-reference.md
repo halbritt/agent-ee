@@ -100,6 +100,16 @@ reviewers must inspect the actual file and resolve every supplied locator.
 | Diagnostics | `error` when present; `prior_errors` when a manual update completes a previously failed projection |
 | Runtime observations | `runtime_observations` after the final environment check: changes to unused harnesses ([preflight receipts](#used-and-unused-harnesses)) |
 
+[run_record.py](../src/agent_ee/run_record.py) owns this shape, its freshness
+verification and the outcome projection. The freshness fingerprints come from
+`run_record.policy_files()` and `run_record.runtime_files()`. A caller that already
+holds them (a test, a replay) passes them explicitly as a `host` argument
+(`{"policy_files": ..., "runtime_files": ...}`) to `run_review`, `verify`,
+`verify_records`, the campaign, bench and diagnosis entry points and `cli.main`;
+`run_review` hands it to each reviewer launch in the launch context. The loaded-code
+fingerprint (`LOADED_POLICY_FILES`) is never supplied: a run and every launch guard
+compare against this process's own.
+
 State is `running`, `complete`, `incomplete` or `interrupted`. State `complete`
 does not imply acceptable design or complete engineering coverage. Outcome is:
 
@@ -319,7 +329,7 @@ unchanged bytes for a file this user, a writer sandbox or an agent process can w
 shared writable mapping changes a file's bytes without changing its size, mtime or
 ctime. Root ownership is no exception on a host where this user has sudo. So
 `storage.digest()` and `storage.digest_fd()` read and hash the bytes on every call,
-inside a verification call too; no verification path (`cli.verify`, `cli.verify_records`,
+inside a verification call too; no verification path (`run_record.verify`, `run_record.verify_records`,
 `campaign.verify_campaign_records`) enters a digest scope.
 
 The mmap regressions in `tests.test_digest_memo` use real file bytes and shared
@@ -334,12 +344,12 @@ Two narrower savings remain, neither of which lets a hash vouch for bytes read l
 - One host observation per campaign verification. `verify_campaign_records` passes one
   `host` record to every retained run's `verify`, so the policy files (`src/agent_ee/*.py`)
   and `runtime_files()` are observed once per campaign verification instead of once per
-  retained run (`cli.observed`). Every retained run is still compared with that
+  retained run (`run_record.observed`). Every retained run is still compared with that
   observation; a standalone `verify` takes its own. Nothing in the call reads, parses or
   executes a policy or runtime file against that observation. A module first imported
   later in the call loads its own bytes, as before this change.
 - One fingerprint per file within one `runtime_files()` observation. Only
-  `storage.fingerprint()` consults a `digest_scope()`, and only `cli.runtime_files` opens
+  `storage.fingerprint()` consults a `digest_scope()`, and only `run_record.runtime_files` opens
   one: a binary reached under two names (`claude` through `PATH` and through
   `executable_for`, `ngspice` and `/usr/bin/ngspice`) is hashed once when its device,
   inode, size, mtime, ctime, owner and mode are unchanged. Nothing in that scope reads,
@@ -356,9 +366,9 @@ the same file in one call is caught by the later hash:
 
 | Path | Hashed | Read, parsed or re-hashed later in the same call |
 |---|---|---|
-| `candidate.verify_snapshot` | `inputs/**` | `cli.artifacts` re-hashes `inputs/**`. `baseline.load_baseline` → `compile_baseline` hashes each consumed baseline source against its pin, then reads it. |
-| `cli.artifacts` | `checks/*`, `reviews/*`, `review-executions/*`, `review-attempts/*`, `events/*.json`, `adjudicator-execution.json`, `work/**` | `baseline.verify_evidence`/`evidence_seal` re-hash check results and cited artifacts. `cli.verify_records` parses `checks/<id>.json` and `reviews/<role>.json` for projection equality. `preflight.verify_calls` parses `adjudicator-execution.json` and review executions. |
-| `cli.verify_records` | `candidate.json` (`manifest_sha256`), `packet.json` | `packet_index.verify_navigation` parses `packet.json`. `candidate.json` was parsed earlier by `verify_snapshot`. |
+| `candidate.verify_snapshot` | `inputs/**` | `run_record.artifacts` re-hashes `inputs/**`. `baseline.load_baseline` → `compile_baseline` hashes each consumed baseline source against its pin, then reads it. |
+| `run_record.artifacts` | `checks/*`, `reviews/*`, `review-executions/*`, `review-attempts/*`, `events/*.json`, `adjudicator-execution.json`, `work/**` | `baseline.verify_evidence`/`evidence_seal` re-hash check results and cited artifacts. `run_record.verify_records` parses `checks/<id>.json` and `reviews/<role>.json` for projection equality. `preflight.verify_calls` parses `adjudicator-execution.json` and review executions. |
+| `run_record.verify_records` | `candidate.json` (`manifest_sha256`), `packet.json` | `packet_index.verify_navigation` parses `packet.json`. `candidate.json` was parsed earlier by `verify_snapshot`. |
 | `campaign.verify_campaign_records` | `config.json`, `implementations/*/implementation-execution.json`, `history/<n>.json` | `config.json` is parsed before its hash. The execution record is parsed by `verify_role_call`, and the history snapshot by `read_json(snapshot)`, after their hashes. |
 
 `tests/test_campaign.py` covers this:

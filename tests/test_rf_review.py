@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_ee import rf_review
-from agent_ee.cli import outcome, run_review, verify
+from agent_ee.run_record import outcome, run_review, verify
 from agent_ee.profiles import validate_profile
 from agent_ee.reviewers import LENSES
 from agent_ee.storage import digest, read_json, write_json
@@ -594,8 +594,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.calls, self.prompts, self.schemas = [], {}, {}
         self.rf_reply = None
         self.addCleanup(patch.stopall)
-        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-              for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}).start()
+        self.host = {'runtime_files': {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+              for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}}
 
     def write_design(self, schematic, board, constraints=None):
         (self.source / "board.kicad_sch").write_text(schematic)
@@ -663,7 +663,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
 
     def run_case(self, profile, name, **kwargs):
         with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
-            run_review(self.scope(profile), self.root / name, 60, **kwargs)
+            run_review(self.scope(profile), self.root / name, 60, **kwargs, host=self.host)
         return read_json(self.root / name / "result.json")
 
     @toolchain_test
@@ -682,7 +682,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         packet = read_json(self.root / "run/packet.json")
         self.assertEqual(packet["rf_review"], result["rf_review"])
         self.assertIn("net_class_assignment", packet["rf_native_evidence"]["absent_kinds"])
-        verified = verify(self.root / "run")
+        verified = verify(self.root / "run", host=self.host)
         self.assertEqual(verified["reviews"][2]["rf_assessment"]["binding_sha256"], binding)
         self.assertIn("RF review required", (self.root / "run/REPORT.md").read_text())
         # A forged decision cannot waive the RF review after the fact.
@@ -690,11 +690,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         forged["rf_review"]["required"] = False
         write_json(self.root / "run/result.json", forged)
         with self.assertRaisesRegex(ValueError, "RF review decision differs"):
-            verify(self.root / "run")
+            verify(self.root / "run", host=self.host)
         del forged["rf_review"]
         write_json(self.root / "run/result.json", forged)
         with self.assertRaisesRegex(ValueError, "RF review decision differs"):
-            verify(self.root / "run")
+            verify(self.root / "run", host=self.host)
 
     @toolchain_test
     def test_bound_routing_evidence_reaches_packet_and_verify_detects_tamper(self):
@@ -720,11 +720,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(packet["rf_native_evidence"]["routing_adapter"]["record_sha256"], bound["record_sha256"])
         self.assertEqual(packet["rf_native_evidence"]["routing_adapter"]["adapter_report"], bound["adapter_report"])
         self.assertIn(bound["record_sha256"], self.prompts["rf"])
-        verify(run)
+        verify(run, host=self.host)
         # The retained copy is review evidence: the packet seal or the RF decision refuses its change.
         (run / "work/rf-routing/adapter-report.json").write_text("{}")
         with self.assertRaisesRegex(ValueError, "evidence changed|RF review decision differs"):
-            verify(run)
+            verify(run, host=self.host)
 
     @toolchain_test
     def test_missing_rf_role_blocks_completion_without_dispatch(self):
@@ -732,7 +732,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual((result["state"], result["outcome"]), ("incomplete", "incomplete"))
         self.assertEqual(self.calls, [])
         self.assertTrue(any("declares no rf reviewer" in l for l in result["limitations"]))
-        verify(self.root / "run")
+        verify(self.root / "run", host=self.host)
 
     @toolchain_test
     def test_failed_rf_review_blocks_completion_without_fallback(self):
@@ -779,7 +779,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(finding["role"], "rf")
         self.assertEqual(finding["disposition"], "deferred")
         self.assertEqual(result["outcome"], "defects_or_unresolved")
-        verify(self.root / "run")
+        verify(self.root / "run", host=self.host)
 
     @toolchain_test
     def test_non_rf_design_completes_with_explicit_not_applicable(self):
@@ -798,7 +798,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "review_profile": profile, "implementation": profile["adjudicator"], "max_iterations": 2,
             "max_seconds": 60})
         with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
-            run_campaign(self.root / "campaign.json", self.root / "campaign")
+            run_campaign(self.root / "campaign.json", self.root / "campaign", host=self.host)
         self.assertEqual(self.calls, [])
         first = read_json(self.root / "campaign/runs/1/result.json")
         self.assertEqual(first["outcome"], "incomplete")
@@ -813,7 +813,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(first["outcome"], "incomplete")
         self.assertEqual([r["role"] for r in first["reviews"]], ["rf"])
         self.assertIsNone(rf_review.gate(first))
-        verify(self.root / "first")
+        verify(self.root / "first", host=self.host)
         self.write_design(RF_SCHEMATIC, RF_BOARD.replace("(width 0.335)", "(width 0.3)"), CONSTRAINTS)
         self.calls.clear()
         second = self.run_case(rf_profile(), "second", previous=str(self.root / "first"))

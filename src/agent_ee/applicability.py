@@ -3,6 +3,7 @@ from pathlib import Path
 import shutil
 
 from .storage import digest, identity, read_json, write_json
+from .run_record import verify
 
 OBSERVATION_FIELDS = {'check_id', 'metric', 'unit', 'condition', 'value', 'uncertainty', 'artifact', 'locator'}
 
@@ -200,12 +201,11 @@ def unavailable(ctx, metrics, diagnostic):
     raise CheckError('unavailable', 'exact design applicability failed; fresh bench evidence required')
 
 
-def pending_recalibration(run):
+def pending_recalibration(run, *, host=None):
     """Admit only intact coordinator requests, never arbitrary incomplete work."""
-    from .cli import verify
     from .baseline import load_baseline
     from .empirical import calibration_for
-    result = verify(run, current_source=False)
+    result = verify(run, current_source=False, host=host)
     manifest = read_json(run / 'candidate.json')
     requests = [c for c in result['checks'] if c['execution'] != 'ok']
     if not requests or any(not source_prediction(c) for c in requests):

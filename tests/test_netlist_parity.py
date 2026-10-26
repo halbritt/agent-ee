@@ -781,7 +781,7 @@ class NativeParityTests(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee.cli import runtime_files, run_review, verify
+        from agent_ee.run_record import runtime_files, run_review, verify
         from agent_ee.storage import digest, read_json, write_json
         from test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
         self.calls = []
@@ -805,13 +805,11 @@ class NativeParityTests(unittest.TestCase):
                 def agent(*args, **kwargs):
                     return NativeCapabilityPipelineTests.agent(self, *args, **kwargs)
                 out = first.parent / 'review'
-                with patch('agent_ee.cli.runtime_files', return_value=runtime), \
-                     patch('agent_ee.reviewers.dispatch', side_effect=agent), \
+                with patch('agent_ee.reviewers.dispatch', side_effect=agent), \
                      contextlib.redirect_stdout(io.StringIO()):
-                    status = run_review(scope_path, out, 120)
+                    status = run_review(scope_path, out, 120, host={'runtime_files': runtime})
                 self.assertNotIn('error', read_json(out / 'result.json'))
-                with patch('agent_ee.cli.runtime_files', return_value=runtime):
-                    result = verify(out)
+                result = verify(out, host={'runtime_files': runtime})
                 self.assertEqual(result['outcome'], expected, result)
                 self.assertEqual(status, 0 if expected == 'criteria_satisfied' else 1, result)
                 self.assertCountEqual([role for _, role in self.calls[-3:-1]], ['circuit', 'physical'])

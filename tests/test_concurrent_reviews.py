@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 from toolchain import require_toolchain, toolchain_test
 
-from agent_ee.cli import outcome, run_review
+from agent_ee.run_record import outcome, run_review
 from agent_ee.candidate import capture
 from agent_ee.executor import execute
 from agent_ee.preflight import capture_expectation
@@ -74,9 +74,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.dispatch_intervals = {}
         runtime = {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
                    for name in ('codex', 'claude', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}
-        runtime_patch = patch('agent_ee.cli.runtime_files', return_value=runtime)
-        runtime_patch.start()
-        self.addCleanup(runtime_patch.stop)
+        self.host = {'runtime_files': runtime}
 
     def prepare(self):
         write_json(self.root / "scope.json", self.scope)
@@ -85,12 +83,13 @@ class ConcurrentReviewTests(unittest.TestCase):
         manifest = capture(self.root / "scope.json", run)
         packet = {"candidate_id": manifest["candidate_id"], "run_id": "scripted-run", "packet_sha256": "packet"}
         write_json(run / "packet.json", packet)
-        from agent_ee.cli import policy_files, runtime_files
+        from agent_ee.run_record import policy_files
         selected = manifest['scope']['review_profile']
         definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')} for d in
                        [*selected['reviewers'], selected['adjudicator']]]
         self.context = {'expected': capture_expectation({'run_id': packet['run_id'],
-            'policy_files': policy_files(), 'runtime_files': runtime_files()}, manifest, definitions)}
+            'policy_files': policy_files(), 'runtime_files': self.host['runtime_files']}, manifest, definitions),
+            'host': self.host}
         return run, packet
 
     def configure_coordinator_scope(self):
@@ -106,7 +105,7 @@ class ConcurrentReviewTests(unittest.TestCase):
     def measure_coordinator_timings(self):
         if ConcurrentReviewTests._coordinator_timings is not None:
             return dict(ConcurrentReviewTests._coordinator_timings)
-        from agent_ee.cli import policy_files, runtime_files
+        from agent_ee.run_record import policy_files
         saved_scope = copy.deepcopy(self.scope)
         saved_profile = copy.deepcopy(self.profile)
         saved_settings = copy.deepcopy(self.settings)
@@ -128,7 +127,7 @@ class ConcurrentReviewTests(unittest.TestCase):
             write_json(probe_scope, self.scope)
             export_start = time.monotonic()
             with contextlib.redirect_stdout(io.StringIO()):
-                run_review(probe_scope, probe_run, 180, checks_only=True)
+                run_review(probe_scope, probe_run, 180, checks_only=True, host=self.host)
             export_s = time.monotonic() - export_start
             probe_result = read_json(probe_run / "result.json")
             checks = probe_result.get("checks", [])
@@ -153,10 +152,12 @@ class ConcurrentReviewTests(unittest.TestCase):
             ]
             context = {
                 "expected": capture_expectation(
-                    {"run_id": packet["run_id"], "policy_files": policy_files(), "runtime_files": runtime_files()},
+                    {"run_id": packet["run_id"], "policy_files": policy_files(),
+                     "runtime_files": self.host["runtime_files"]},
                     manifest,
                     definitions,
-                )
+                ),
+                "host": self.host,
             }
             self.settings = {"circuit": {"sleep": 0.0, "fail": False}, "physical": {"sleep": 0.0, "fail": False}}
             harness_start = time.monotonic()
@@ -423,7 +424,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         run = self.root / "coordinator"
         start = time.monotonic()
         with patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(self.root / "scope.json", run, budget)
+            status = run_review(self.root / "scope.json", run, budget, host=self.host)
         elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
         self.assert_within_budget(elapsed, budget, timings, result=result, expect_adjudication=True)
@@ -467,7 +468,7 @@ class ConcurrentReviewTests(unittest.TestCase):
             return record, value
 
         with patch('agent_ee.reviewers.dispatch', side_effect=dispatch), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(self.root / 'scope.json', run, 120, **options)
+            status = run_review(self.root / 'scope.json', run, 120, **options, host=self.host)
         result = read_json(run / 'result.json')
         self.assertIsNone(result.get('error'))
         self.assertEqual(result['checks'][0]['execution'], 'ok')
@@ -488,8 +489,8 @@ class ConcurrentReviewTests(unittest.TestCase):
                 field = 'decisions' if payload['schema'] == 'agent-ee.decisions/2' else 'findings'
                 self.assertEqual(payload[field][0]['evidence'][0]['pointer'],
                                  '/execution' if number and repair else '/missing')
-        from agent_ee.cli import verify
-        self.assertEqual(verify(run)['outcome'], result['outcome'])
+        from agent_ee.run_record import verify
+        self.assertEqual(verify(run, host=self.host)['outcome'], result['outcome'])
         return status, result, records
 
     def test_standalone_default_repairs_reviewer_and_adjudicator_citations(self):
@@ -532,7 +533,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         run = self.root / "coordinator"
         start = time.monotonic()
         with patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(self.root / "scope.json", run, budget)
+            status = run_review(self.root / "scope.json", run, budget, host=self.host)
         elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
         self.assert_within_budget(elapsed, budget, timings, result=result)
@@ -558,7 +559,7 @@ class ConcurrentReviewTests(unittest.TestCase):
             "agent_ee.reviewers.ThreadPoolExecutor",
             side_effect=lambda max_workers=None, *a, **kw: real_executor(max_workers=1, *a, **kw),
         ), patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(self.root / "scope.json", run, budget)
+            status = run_review(self.root / "scope.json", run, budget, host=self.host)
         elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
         self.assert_within_budget(
@@ -614,7 +615,7 @@ class ConcurrentReviewTests(unittest.TestCase):
 from pathlib import Path
 from unittest.mock import patch
 from test_concurrent_reviews import ConcurrentReviewTests
-from agent_ee.cli import run_review
+from agent_ee.run_record import run_review
 from agent_ee.storage import write_json
 case = ConcurrentReviewTests()
 case.setUp()
@@ -665,7 +666,7 @@ with ExitStack() as stack:
         stack.enter_context(patch('agent_ee.executor.sandbox_argv', side_effect=slow_probe))
     if sys.argv[2] == 'launch':
         stack.enter_context(patch('agent_ee.executor.subprocess.Popen', side_effect=launching))
-    status = run_review(root / 'scope.json', root / 'run', int(sys.argv[3]))
+    status = run_review(root / 'scope.json', root / 'run', int(sys.argv[3]), host=case.host)
 sys.exit(0 if status == 1 else 2)
 '''
         process = subprocess.Popen([sys.executable, '-c', driver, str(self.root), phase, str(driver_budget)],
@@ -740,9 +741,8 @@ sys.exit(0 if status == 1 else 2)
     @toolchain_test
     def test_global_drift_preserves_admitted_peer_and_refuses_other_provider(self):
         from threading import Event, Lock
-        from agent_ee.cli import runtime_files
         run, packet = self.prepare()
-        runtime = runtime_files()
+        runtime = self.host['runtime_files']
         provider_started = Event()
         observed = Lock()
         count = 0
@@ -759,9 +759,13 @@ sys.exit(0 if status == 1 else 2)
         def provider(*args, **kwargs):
             provider_started.set()
             return self.harness(*args, **kwargs)
-        with patch('agent_ee.cli.runtime_files', side_effect=observe), \
-             patch('agent_ee.reviewers.dispatch', side_effect=provider):
-            reviews, records = initial_reviews(run, packet, time.monotonic() + 5, launch_context=self.context)
+        class ChangingHost(dict):
+            """The host as each launch observes it: it changes once the first role reaches its provider."""
+            def __getitem__(self, key):
+                return observe() if key == 'runtime_files' else super().__getitem__(key)
+        context = {**self.context, 'host': ChangingHost(runtime_files=runtime)}
+        with patch('agent_ee.reviewers.dispatch', side_effect=provider):
+            reviews, records = initial_reviews(run, packet, time.monotonic() + 5, launch_context=context)
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(len(reviews), 1)
         self.assertCountEqual([record['execution'] for record in records], ['ok', 'not_run'])

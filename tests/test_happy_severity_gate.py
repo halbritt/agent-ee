@@ -279,7 +279,7 @@ class NativeSeverityGateTests(unittest.TestCase):
                 self.assertEqual((result['execution'], result['outcome']), (status, 'unknown'), result)
 
     def test_public_verification_detects_installation_and_disposition_drift(self):
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         copied = self.root / 'installed'
         shutil.copytree(INSTALLED, copied, ignore=shutil.ignore_patterns('.git', '__pycache__'))
         _, result = self.run_check(installed=copied)

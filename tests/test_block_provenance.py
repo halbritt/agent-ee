@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from agent_ee import block_arrangement as arrangement, block_library as bl, blocks
 from agent_ee.candidate import capture
-from agent_ee.cli import validate_scope
+from agent_ee.run_record import validate_scope
 from agent_ee.reviewers import REVIEW_VERSION, build_packet, initial_reviews
 from test_block_arrangement import plan_policy
 from test_block_library import LibraryFixture

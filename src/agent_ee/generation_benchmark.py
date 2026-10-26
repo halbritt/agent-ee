@@ -14,6 +14,7 @@ from .design_diff import read_side, summarize
 from .executor import RECORDS, SANDBOX_PATH, execute
 from .findings import safe_id
 from .storage import digest, fingerprint, identity, json_bytes, write_json
+from .run_record import pcbnew_extension, policy_files
 
 
 class NonOrdinaryTree(ValueError):
@@ -165,7 +166,6 @@ def score_bounds(records):
 
 
 def evaluator_identity():
-    from .cli import pcbnew_extension, policy_files
     native = {}
     for name in ('kicad-cli', 'ngspice', 'bwrap', '/usr/bin/python3'):
         path = shutil.which(name, path=SANDBOX_PATH)

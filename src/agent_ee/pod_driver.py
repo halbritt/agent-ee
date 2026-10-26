@@ -14,10 +14,10 @@ import tempfile
 
 from . import candidate, scaffold, stage_receipts, stages
 from .baseline import compile_baseline
-from .cli import validate_scope
 from .profiles import validate_profile
 from .tool_source import snapshot
 from .storage import digest, identity, json_bytes, read_json, write_json
+from .run_record import run_review, validate_scope
 
 SCHEMA = 'agent-ee.pod-plan/1'
 ORDER = ['schematic', 'placement', 'routing', 'verification']
@@ -581,7 +581,6 @@ def build(plan_path, out, *, dry_run=False):
 
 def run_dry(out):
     """Native checks only; keep engine outcomes and identify unexecuted later stages."""
-    from .cli import run_review
     out = Path(out)
     stream = io.StringIO()
     code = run_review(out / 'scope.json', out / 'dry-run', 1200, checks_only=True, output_stream=stream)

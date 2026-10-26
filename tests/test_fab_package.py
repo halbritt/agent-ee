@@ -647,9 +647,9 @@ class GenerationCampaignFixture(unittest.TestCase):
         self.write_campaign(generation_scope(), ['design/fab.kicad_pcb'])
         self.addCleanup(mock.patch.stopall)
         mock.patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
-        mock.patch('agent_ee.cli.runtime_files', return_value={
+        self.host = {'runtime_files': {
             name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
-            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli', 'pcbnew')}).start()
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli', 'pcbnew')}}
 
     def write_campaign(self, scope, mutable):
         scope.update(review_profile=self.profile, mutable_inputs=mutable)
@@ -671,7 +671,7 @@ class GenerationCampaignFixture(unittest.TestCase):
     def verify_cli(self, root):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = cli.main(['verify-campaign', str(root)])
+            code = cli.main(['verify-campaign', str(root)], host=self.host)
         return code, out.getvalue()
 
 class GenerationCampaignTests(GenerationCampaignFixture):
@@ -685,7 +685,7 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         self.write_campaign(scope, ['design/fab.kicad_pcb'])
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', root)
+            status = run_campaign(self.root / 'campaign.json', root, host=self.host)
         state = read_json(root / 'state.json')
         self.assertNotEqual(status, 0)
         self.assertNotEqual(state['state'], 'criteria_satisfied')
@@ -694,12 +694,12 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         check = read_json(final / 'checks/fab.json')
         self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
         self.assertIn('silkscreen conflict', check['summary'])
-        self.assertNotIn('fab_artifacts', verify_campaign(root))
+        self.assertNotIn('fab_artifacts', verify_campaign(root, host=self.host))
 
     def test_final_state_lists_fab_hashes_that_verify_campaign_recomputes(self):
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', root)
+            status = run_campaign(self.root / 'campaign.json', root, host=self.host)
         state = read_json(root / 'state.json')
         self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state.get('error'))
         final = Path(state['history'][-1]['run'])
@@ -707,7 +707,7 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'))
         self.assertEqual(state['fab_artifacts'], check['details']['artifacts'])
         self.assertEqual(state['fab_artifacts'], fab_artifacts(final))
-        self.assertEqual(verify_campaign(root)['fab_artifacts'], state['fab_artifacts'])
+        self.assertEqual(verify_campaign(root, host=self.host)['fab_artifacts'], state['fab_artifacts'])
 
         code, stdout = self.verify_cli(root)
         self.assertEqual(code, 0)
@@ -752,19 +752,19 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         original = cpl.read_bytes()
         cpl.write_bytes(original + b'\n')
         with self.assertRaises(ValueError):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         cpl.write_bytes(original)
-        verify_campaign(root)
+        verify_campaign(root, host=self.host)
         forged = copy.deepcopy(state)
         forged['fab_artifacts']['files'][next(iter(forged['fab_artifacts']['files']))] = '0' * 64
         write_json(root / 'state.json', forged)
         with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         dropped = copy.deepcopy(state)
         del dropped['fab_artifacts']
         write_json(root / 'state.json', dropped)
         with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         record = record_for(dropped)
         self.assertEqual(record['verdict'], 'unverified:criteria_satisfied')
         self.assertFalse(record['fab_artifacts_verified'])
@@ -781,7 +781,7 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         self.write_campaign(rotation_scope(), ['design/cpl.kicad_pcb'])
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
-            status = run_campaign(self.root / 'campaign.json', root)
+            status = run_campaign(self.root / 'campaign.json', root, host=self.host)
         state = read_json(root / 'state.json')
         self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state.get('error'))
         final = Path(state['history'][-1]['run'])
@@ -834,25 +834,25 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         tampered['fab_artifacts']['rotation']['preview_obligations']['designators'].pop()
         write_json(root / 'state.json', tampered)
         with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         record = record_for(tampered)
         self.assertEqual((record['verdict'], record['done']), ('unverified:criteria_satisfied', False))
         self.assertIsNone(record['preview_obligations'])
         write_json(root / 'state.json', state)
-        verify_campaign(root)
+        verify_campaign(root, host=self.host)
 
         # The sealed corrected CPL is a done-gate artifact: changing it fails verify-campaign closed.
         corrected = final / 'work/cpl/cpl/cpl.csv'
         original = corrected.read_bytes()
         corrected.write_bytes(original + b'\n')
         with self.assertRaises(ValueError):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
         corrected.write_bytes(original)
         forged = copy.deepcopy(state)
         forged['fab_artifacts']['rotation']['status'] = 'ok'
         write_json(root / 'state.json', forged)
         with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
 
 
@@ -883,7 +883,7 @@ class DeclaredFabCampaignTests(GenerationCampaignFixture):
                 write_json(self.root / 'campaign.json', config)
                 root = self.root / shape
                 with contextlib.redirect_stdout(io.StringIO()):
-                    status = run_campaign(self.root / 'campaign.json', root)
+                    status = run_campaign(self.root / 'campaign.json', root, host=self.host)
                 state = read_json(root / 'state.json')
                 self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
                 self.assertEqual(len(state['history']), 2)
@@ -900,14 +900,14 @@ class DeclaredFabCampaignTests(GenerationCampaignFixture):
                 receipt_dir = root / 'implementations/1/receipts/1-export-fab'
                 self.assertEqual(validate_receipt(receipt_dir)['changed'], [])
                 self.assertEqual(state['fab_artifacts']['rotation']['status'], 'PREVIEW_REQUIRED')
-                self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+                self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
                 retained = final / 'work/fab/fab-step.json'
                 original = retained.read_bytes()
                 retained.write_bytes(original + b'\n')
                 with self.assertRaises(ValueError):
-                    verify_campaign(root)
+                    verify_campaign(root, host=self.host)
                 retained.write_bytes(original)
-                verify_campaign(root)
+                verify_campaign(root, host=self.host)
 
 
 if __name__ == '__main__':

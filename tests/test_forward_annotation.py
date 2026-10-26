@@ -530,7 +530,7 @@ class ForwardAnnotationTests(unittest.TestCase):
         self.assertEqual((result['counts']['add'], result['counts']['board_only']), (1, 1))
 
     def test_annotated_board_passes_public_review_and_verify_rejects_tampering(self):
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.storage import write_json
         def rename(i):
             next(n for n in i['nets'] if n['id'] == 'gnd')['name'] = 'AGND'

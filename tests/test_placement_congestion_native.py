@@ -19,7 +19,7 @@ from unittest.mock import patch
 from toolchain import require_toolchain
 
 from agent_ee import candidate, checks
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.storage import digest, read_json
 from agent_ee.placement_congestion import _turn
 from agent_ee.placement_probe import extract
@@ -143,15 +143,15 @@ class NativeCongestion(unittest.TestCase):
                                                    {**PROFILE_CALL, 'role': 'physical'}],
                                      'adjudicator': PROFILE_CALL})
         path.write_text(json.dumps(scope))
-        from agent_ee.cli import runtime_files
+        from agent_ee.run_record import runtime_files
         runtime = runtime_files()
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
         run = self.root / 'review'
-        with patch('agent_ee.cli.runtime_files', return_value=runtime), \
-             patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(path, run, 900)
-            result = verify(run)
+        host = {'runtime_files': runtime}
+        with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
+            status = run_review(path, run, 900, host=host)
+            result = verify(run, host=host)
         self.assertEqual(status, 1)
         self.assertNotIn('error', result)
         self.assertEqual({c['id']: (c['execution'], c['outcome']) for c in result['checks']},

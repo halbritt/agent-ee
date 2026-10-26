@@ -228,7 +228,7 @@ class NativeRailTests(unittest.TestCase):
         return root
 
     def review(self, root):
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         with contextlib.redirect_stdout(io.StringIO()):
             # Checks-only is deliberately incomplete overall, even with passing checks.
             code = run_review(root / 'scope.json', root / 'run', 180, checks_only=True)
@@ -238,7 +238,7 @@ class NativeRailTests(unittest.TestCase):
         return read_json(root / 'run/checks/dc.json')
 
     def test_native_multilayer_oracle_limits_and_seal(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         root = self.prepare('control')
         result = self.review(root)
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)

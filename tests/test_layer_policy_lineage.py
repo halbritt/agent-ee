@@ -88,6 +88,7 @@ class Lane:
             writes={'design/rc.kicad_pcb': 'board'}, adoptable_exits=[0], timeout_s=120)]
         self.fixture.config['max_seconds'] = 1800
         self.declaration = self.fixture.spec(scenario(counts))
+        self.host = self.fixture.host
 
     def pilot(self, board, out='pilot'):
         """Run the coordinator pilot on ``board`` in the scope tree; its agent-ee.via-budget/2 declaration."""
@@ -101,7 +102,7 @@ class Lane:
                                                  'routing_adapter': declaration or self.declaration,
                                                  'layer_policy_derivation': layer_policy_derivation})
         with contextlib.redirect_stdout(io.StringIO()):
-            status = campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+            status = campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign', host=self.host)
         return status, read_json(self.root / 'campaign/state.json'), self.root / 'campaign'
 
     def close(self):
@@ -135,7 +136,7 @@ class LayerPolicyCampaignTests(unittest.TestCase):
 
     def refused(self, message):
         with self.assertRaisesRegex(ValueError, message):
-            campaign.verify_campaign(self.campaign_root)
+            campaign.verify_campaign(self.campaign_root, host=self.lane.host)
 
     def turn_refused(self, message):
         """A re-anchored record: the next candidate's capture no longer matches (lineage), and the
@@ -174,7 +175,7 @@ class LayerPolicyCampaignTests(unittest.TestCase):
 
     def test_derived_policy_is_bound_before_routing_and_into_a_new_derived_scope(self):
         self.assertEqual((self.status, self.state['state']), (0, 'criteria_satisfied'), self.state.get('error'))
-        campaign.verify_campaign(self.campaign_root)
+        campaign.verify_campaign(self.campaign_root, host=self.lane.host)
         work = self.work()
         record = read_json(work / 'layer-policy/record.json')
         self.assertEqual(self.state['layer_policy_records'], {'1': sha(work / 'layer-policy/record.json')})
@@ -326,7 +327,8 @@ class LayerPolicyUnknownCampaignTests(unittest.TestCase):
         return lane
 
     def unknown(self, value, reason, lane=None):
-        status, state, root = (lane or self.lane()).run(value)
+        lane = lane or self.lane()
+        status, state, root = lane.run(value)
         self.assertEqual((status, state['state']), (1, 'incomplete'))
         self.assertIn('layer policy unknown at the pre-routing boundary', state['error'])
         self.assertIn(reason, state['error'])
@@ -338,7 +340,7 @@ class LayerPolicyUnknownCampaignTests(unittest.TestCase):
         self.assertFalse((work / 'receipts/2-kicad-route-builtin').exists())
         self.assertFalse((work / 'proposal.scope.json').exists())
         # The retained unknown record verifies; it is evidence, not acceptance.
-        campaign.verify_campaign(root)
+        campaign.verify_campaign(root, host=lane.host)
         return record
 
     def test_unknown_without_a_via_budget_basis(self):
@@ -375,7 +377,7 @@ class LayerPolicyUnknownCampaignTests(unittest.TestCase):
         record = read_json(root / 'implementations/1/layer-policy/record.json')
         self.assertEqual((record['status'], record['layer_policy']), ('unknown', None))
         self.assertFalse((root / 'implementations/1/receipts/2-kicad-route-builtin').exists())
-        campaign.verify_campaign(root)
+        campaign.verify_campaign(root, host=lane.host)
 
 
 class LiteralLayerPolicyCampaignTests(unittest.TestCase):
@@ -395,7 +397,7 @@ class LiteralLayerPolicyCampaignTests(unittest.TestCase):
         from agent_ee import routing_adapter
         with patch.object(routing_adapter, 'verify_campaign_receipt',
                           wraps=routing_adapter.verify_campaign_receipt) as verified:
-            campaign.verify_campaign(lane.root / 'campaign')
+            campaign.verify_campaign(lane.root / 'campaign', host=lane.host)
         self.assertEqual([c.kwargs['binding'] for c in verified.call_args_list], [state['routing_binding']])
         from agent_ee.rf_review import campaign_routing_context
         context = campaign_routing_context(lane.root / 'campaign', state)

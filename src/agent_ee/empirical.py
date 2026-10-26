@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .candidate import safe_relative
 from .storage import digest, identity, read_json, write_json
+from .run_record import run_review, save_result, verify
 
 
 def calibration_for(run, scope, files, *, provenance_only=False):
@@ -115,14 +116,13 @@ def calibrate(ctx, metrics):
     return calibrated
 
 
-def ingest(run, report_path, out):
+def ingest(run, report_path, out, *, host=None):
     """Produce an immutable-input bundle; no inference or external communication."""
-    from .cli import verify
     from .baseline import load_baseline
     from .measurements import finite
 
     run, report_path, out = Path(run).resolve(), Path(report_path).resolve(), Path(out).resolve()
-    result = verify(run, current_source=False)
+    result = verify(run, current_source=False, host=host)
     if result.get("empirical_feedback"):
         raise ValueError("bench source is superseded; explicit recovery of the retained epoch is required")
     baseline = load_baseline(run)
@@ -289,8 +289,7 @@ def merge_previous(run, manifest, result, baseline, out):
     return hashes, observations, models
 
 
-def bench_review(run, report, out, max_seconds, *, review_out=None):
-    from .cli import run_review, save_result, verify
+def bench_review(run, report, out, max_seconds, *, review_out=None, host=None):
     from .locking import writer_lock
 
     run, out = Path(run).resolve(), Path(out).resolve()
@@ -302,10 +301,10 @@ def bench_review(run, report, out, max_seconds, *, review_out=None):
         if out.exists() and any(p != lease_file for p in out.iterdir()):
             raise ValueError('bench output already exists')
         out.mkdir(parents=True, exist_ok=True)
-        ingest(run, report, out / "empirical")
+        ingest(run, report, out / "empirical", host=host)
         # A newly captured physical discrepancy invalidates current acceptance
         # even if re-verification is interrupted or the provider is unavailable.
-        original = verify(run, current_source=False)
+        original = verify(run, current_source=False, host=host)
         event = {"schema": "agent-ee.empirical-feedback/1", "bundle": str(out / "empirical"),
                  "bundle_sha256": digest(out / "empirical/calibration.json"), "review": str(review_out)}
         write_json(run / "events" / ("bench-" + event["bundle_sha256"] + ".json"), event)
@@ -332,4 +331,4 @@ def bench_review(run, report, out, max_seconds, *, review_out=None):
         scope["empirical"] = "empirical/calibration.json"
         write_json(out / "scope.json", scope)
         return run_review(out / "scope.json", review_out, max_seconds, previous=str(run),
-                          max_schema_resubmissions=original.get("max_schema_resubmissions", 0))
+                          max_schema_resubmissions=original.get("max_schema_resubmissions", 0), host=host)

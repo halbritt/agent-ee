@@ -8,7 +8,7 @@ import argparse
 import io
 from pathlib import Path
 
-from agent_ee.cli import run_review, verify
+from agent_ee.run_record import run_review, verify
 from agent_ee.catalog_checks import CATALOG_TIMEOUT
 from agent_ee.storage import digest, read_json, write_json
 

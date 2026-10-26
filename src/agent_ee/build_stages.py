@@ -6,6 +6,7 @@ import shutil
 from . import parts_stage, qualification, requirement_map, retained_run, scaffold, schematic_stage, spec_record
 from .stage_receipts import adopt, run_step, tree_identity
 from .storage import digest, read_json, write_json
+from .run_record import policy_files
 
 TYPED_SCHEMA = retained_run.TYPED_SCHEMA
 GENERATED = 'build-generated/connectivity-intent.json'
@@ -147,7 +148,6 @@ def _artwork(candidate, directory, board):
     """Finish visible field positions using the existing bounded native producer."""
     import pcbnew as k
     from . import routed_artwork
-    from .cli import policy_files
     from .silk_artwork import DECLARATION, movable_names
     native = k.LoadBoard(str(candidate / board))
     targets = []

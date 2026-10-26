@@ -7,6 +7,8 @@ from pathlib import Path
 
 from .executor import execute
 from .storage import digest, identity, read_json, write_json
+from . import run_record
+from .run_record import pinned, policy_files, runtime_files
 
 
 # Runtime entries each harness launch mounts; every other entry is the native tool set.
@@ -96,7 +98,6 @@ def validate_expectation(value):
 
 
 def guard(run, role, definition, context, cancellation=None):
-    from .cli import LOADED_POLICY_FILES, policy_files, runtime_files
     run = Path(run)
     work = run / 'review-work' / role / 'preflight'
     receipt_path = work / 'receipt.json'
@@ -124,15 +125,18 @@ def guard(run, role, definition, context, cancellation=None):
         if time.monotonic() >= context['deadline']:
             raise ValueError('deadline_exhausted')
         observed = receipt['observed']
-        observed['policy_files'] = policy_files()
-        if observed['policy_files'] != expected['policy_files'] or LOADED_POLICY_FILES != expected['policy_files']:
+        # The run's caller may supply the observed fingerprints (run_review host); the loaded code
+        # fingerprint is always this process's own.
+        host = context.get('host')
+        observed['policy_files'] = pinned(host, 'policy_files', policy_files)
+        if observed['policy_files'] != expected['policy_files'] or run_record.LOADED_POLICY_FILES != expected['policy_files']:
             raise ValueError('policy_drift')
         def checkpoint():
             if cancellation and cancellation.cancelled.is_set():
                 raise ValueError('cancelled')
             if time.monotonic() >= context['deadline']:
                 raise ValueError('deadline_exhausted')
-        observed['runtime_files'] = runtime_files(checkpoint=checkpoint)
+        observed['runtime_files'] = pinned(host, 'runtime_files', lambda: runtime_files(checkpoint=checkpoint))
         drift = runtime_drift(expected['runtime_files'], observed['runtime_files'], expected['definitions'])
         # Unused-harness changes are provenance; the launch still pins every used entry.
         receipt['runtime_classification'] = drift['harnesses']

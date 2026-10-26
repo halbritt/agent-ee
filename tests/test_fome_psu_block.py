@@ -229,7 +229,7 @@ class NativeReviewScopeTests(unittest.TestCase):
     def setUpClass(cls):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-106-review-')
         cls.run_dir = Path(cls.tmp.name) / 'run'
         cls.status = run_review(FIXTURE / 'review.scope.json', cls.run_dir, 600, checks_only=True,

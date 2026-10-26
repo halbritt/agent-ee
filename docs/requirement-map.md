@@ -5,7 +5,7 @@
 a typed `agent-ee.requirement-map/2` adds source-bound obligations (see
 below) and is compiled through the same `requirement_map` entry points.
 It compiles the declared checks into scope/3 using `capabilities.KINDS`,
-`cli.validate_scope`, `capabilities.compile_coverage` and
+`run_record.validate_scope`, `capabilities.compile_coverage` and
 `baseline.compile_baseline`. It adds no check kind and runs no tools or models.
 The older [rung-1 requirement-record/1](requirement-scope.md) path retains its
 scope/2 output.

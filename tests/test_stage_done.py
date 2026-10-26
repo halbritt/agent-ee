@@ -407,20 +407,20 @@ class StageDoneCampaignTests(unittest.TestCase):
             'stages': {'routing': {'stage': 'routing', 'step': 'route-helper', 'implementation': 1,
                                    'receipt_index': 1, 'receipt_sha256': digest(receipt)}}})
         self.assertEqual(final['files']['design/design.json'], done['paths']['design/design.json']['sha256'])
-        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
         # A forged or dropped binding is refused; the binding is recomputed, never trusted.
         for forged in ({**done, 'candidate_id': 'forged'}, None):
             write_json(root / 'state.json', {**state, 'stage_done': forged})
             with self.assertRaisesRegex(ValueError, 'stage-step done binding differs'):
-                verify_campaign(root)
+                verify_campaign(root, host=self.host)
         write_json(root / 'state.json', state)
-        verify_campaign(root)
+        verify_campaign(root, host=self.host)
         # A changed receipt output hash is refused before any done decision.
         data = read_json(receipt)
         data['outputs']['design/design.json'] = '0' * 64
         write_json(receipt, data)
         with self.assertRaisesRegex(ValueError, 'stage receipt'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     @toolchain_test
     def test_writer_hand_edit_of_routing_output_fails_done_although_checks_pass(self):
@@ -435,12 +435,12 @@ class StageDoneCampaignTests(unittest.TestCase):
         self.assertNotIn('stage_done', state)
         self.assertNotIn('fab_artifacts', state)
         root = self.root / 'campaign'
-        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'incomplete')
         # Relabelling the refusal as done is refused by verify-campaign.
         forged = {k: v for k, v in state.items() if k != 'error'}
         write_json(root / 'state.json', {**forged, 'state': 'criteria_satisfied'})
         with self.assertRaisesRegex(ValueError, 'writer_made_stage_content'):
-            verify_campaign(root)
+            verify_campaign(root, host=self.host)
 
     @toolchain_test
     def test_campaign_without_declared_steps_keeps_the_writer_as_producer(self):
@@ -454,7 +454,7 @@ class StageDoneCampaignTests(unittest.TestCase):
             status, state = self.campaign([])
         self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state.get('error'))
         self.assertNotIn('stage_done', state)
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.root / 'campaign', host=self.host)['state'], 'criteria_satisfied')
 
 
 if __name__ == '__main__':

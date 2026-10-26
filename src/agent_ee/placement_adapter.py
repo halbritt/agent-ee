@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 from .storage import digest, identity, read_json, write_json
 from .symbol_library import LibraryError, children, parse_sexpr
 from .placer import rotate
+from .run_record import policy_files
 
 ADAPTER_SCHEMA = 'agent-ee.placement-adapter/1'
 SCOPE_SCHEMA = 'agent-ee.placement-write-scope/2'
@@ -1613,9 +1614,8 @@ def helper_request(board, policy, protected_refs):
 def tool_snapshot(destination):
     """Copy the pinned agent_ee files into a coordinator-owned tree the step mounts read-only.
 
-    The files are exactly the campaign pin (cli.policy_files): the sources and the package
+    The files are exactly the campaign pin (run_record.policy_files): the sources and the package
     data they read, such as the captured JLCPCB locality record (AGENTEE-439)."""
-    from .cli import policy_files
     destination = Path(destination)
     package = destination / 'agent_ee'
     package.mkdir(parents=True)

@@ -438,7 +438,7 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         """A scope without block provenance that declares a captured reserve record."""
         import json
         from agent_ee.candidate import capture as capture_candidate
-        from agent_ee.cli import validate_scope
+        from agent_ee.run_record import validate_scope
         root = Path(tempfile.mkdtemp(prefix='agent-ee-reserve-review-', dir=self.dir))
         source = root / 'source'
         source.mkdir()
@@ -811,7 +811,7 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
     def test_uncaptured_scope_board_never_binds_a_reserve(self):
         import json
         from agent_ee.candidate import capture as capture_candidate
-        from agent_ee.cli import validate_scope
+        from agent_ee.run_record import validate_scope
         from agent_ee.reviewers import build_packet
         for record in ({'schema': reserve.SCHEMA, 'status': 'measured', 'sides': {}, 'findings': []},
                        reserve.unmeasured(None, 'offline_unsaved_plan', 'no saved board')):

@@ -189,7 +189,7 @@ class CheckProjectionBindingTests(unittest.TestCase):
     def setUpClass(cls):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         cls.tmp = tempfile.TemporaryDirectory()
         cls.root = Path(cls.tmp.name)
         fixtures = SCRIPT.parents[1] / "fixtures" / "rc"
@@ -207,7 +207,7 @@ class CheckProjectionBindingTests(unittest.TestCase):
         return target
 
     def judged(self, run):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         try:
             verify(run)
         except ValueError as exc:

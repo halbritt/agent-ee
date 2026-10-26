@@ -803,7 +803,7 @@ k.SaveBoard('/work/design.kicad_pcb', b)
         proc = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'review', str(self.root / 'cli/scope.json'),
             '--out', str(self.root / 'native'), '--checks-only'], capture_output=True, text=True, timeout=600)
         self.assertEqual(proc.returncode, 1, proc.stderr)  # No independent review was requested.
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         verified = verify(self.root / 'native')
         self.assertEqual(verified['candidate_id'], receipt['candidate_id'])
         # Every derived stage observes its absent declared content natively: a named

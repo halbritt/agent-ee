@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent_ee.baseline import freeze_evidence
 from agent_ee.candidate import capture
-from agent_ee.cli import policy_files, runtime_files, save_result, verify
+from agent_ee.run_record import policy_files, runtime_files, save_result, verify
 from agent_ee.evidence_index import CriteriaMapError, build_index, main, render_index
 from agent_ee.preflight import capture_expectation
 from agent_ee.storage import digest, read_json, write_json
@@ -292,8 +292,8 @@ class CampaignReceiptIndexTests(unittest.TestCase):
         fixture.pre_receipt()
         status, state = fixture.campaign([fixture.step()])
         self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
-        first = build_index(fixture.root / 'campaign/runs/1', 'design/pod-criteria.json')
-        final = build_index(Path(state['history'][-1]['run']), 'design/pod-criteria.json')
+        first = build_index(fixture.root / 'campaign/runs/1', 'design/pod-criteria.json', host=fixture.host)
+        final = build_index(Path(state['history'][-1]['run']), 'design/pod-criteria.json', host=fixture.host)
         result = read_json(Path(state['history'][-1]['run']) / 'result.json')
         self.assertEqual(result['outcome'], 'criteria_satisfied')
         self.assertEqual(result['limitations'][:len(limits)], limits)
@@ -309,7 +309,7 @@ class CampaignReceiptIndexTests(unittest.TestCase):
         self.assertEqual(final['receipts'][-1]['sha256'], digest(receipt))
         receipt.write_bytes(receipt.read_bytes() + b'\n')
         with self.assertRaises(ValueError):
-            build_index(Path(state['history'][-1]['run']), 'design/pod-criteria.json')
+            build_index(Path(state['history'][-1]['run']), 'design/pod-criteria.json', host=fixture.host)
 
 
 if __name__ == '__main__':

@@ -4,12 +4,14 @@ import copy
 import json
 import shutil
 import time
+from functools import partial
 from pathlib import Path
 
 from .convergence import advance
 from .locking import writer_lock
 from .profiles import validate_profile
 from .storage import digest, read_json, write_json
+from .run_record import pinned, policy_files, run_review, runtime_files, verify
 
 IMPLEMENTATION_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["summary"], "properties": {"summary": {"type": "string"}}}
@@ -144,12 +146,12 @@ def placement_binding(config, manifest, inputs, mutable):
     return binding(config["placement_adapter"], manifest, inputs, mutable)
 
 
-def implement(root, previous, definition, state, deadline):
+def implement(root, previous, definition, state, deadline, *, host=None):
     from .intent_retry import implement as repair_intent
-    return repair_intent(root, previous, definition, state, deadline, _implement_once)
+    return repair_intent(root, previous, definition, state, deadline, partial(_implement_once, host=host))
 
 
-def _implement_once(root, previous, definition, state, deadline, *, retry=None):
+def _implement_once(root, previous, definition, state, deadline, *, retry=None, host=None):
     from .reviewers import reviewer_call
 
     manifest = read_json(previous / "candidate.json")
@@ -243,11 +245,14 @@ def _implement_once(root, previous, definition, state, deadline, *, retry=None):
                 not isinstance(response['summary'], str)):
             raise ValueError('implementation response must contain only a string summary')
         return response
+    launch_context = {'expected': expected, 'boundary': 'implementation', 'deadline': deadline}
+    if host is not None:
+        launch_context['host'] = host
     try:
         record, response = structured_call(work, "implementation", prompt, IMPLEMENTATION_SCHEMA,
             lambda supplied: reviewer_call(work, "implementation", {**definition, "tool_mode": "investigate"},
                 supplied, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
-                launch_context={'expected': expected, 'boundary': 'implementation', 'deadline': deadline}),
+                launch_context=launch_context),
             validate, limit=config.get('max_schema_resubmissions', 1),
             invariant=lambda: check_writer_proposal(design, manifest, state, editable))
     finally:
@@ -455,8 +460,8 @@ def validate_iterations(value):
     return value
 
 
-def run_campaign(config_path, out):
-    from .cli import run_review, verify, policy_files, runtime_files
+def run_campaign(config_path, out, *, host=None):
+    """Run a bounded campaign; host, when given, holds the caller's policy and runtime fingerprints."""
     from .measurements import finite
 
     config_path = Path(config_path).resolve()
@@ -538,22 +543,22 @@ def run_campaign(config_path, out):
                  "config_sha256": digest(root / "config.json"), "stage_receipts": {}, "step_plan": STEP_PLAN,
                  "max_schema_resubmissions": config['max_schema_resubmissions'],
                  "implementation_records": {},
-                 "launch_environment": {"policy_files": policy_files(), "runtime_files": runtime_files()},
+                 "launch_environment": {"policy_files": pinned(host, "policy_files", policy_files),
+                                        "runtime_files": pinned(host, "runtime_files", runtime_files)},
                  "implementation_definition": {**config["implementation"], "tool_mode": "investigate"}}
         if 'pre_receipts' in config:
             state['pre_receipts'] = {link['path']: link['sha256'] for link in config['pre_receipts']}
         write_json(root / "state.json", state)
-        return continue_campaign(root, state, scope_path, time.monotonic() + seconds)
+        return continue_campaign(root, state, scope_path, time.monotonic() + seconds, host=host)
 
 
-def record_iteration(root, state, run, config):
-    from .cli import verify
+def record_iteration(root, state, run, config, *, host=None):
 
     if not (run / "candidate.json").exists():
         # A refused capture leaves no candidate; report the run's own typed refusal.
         error = read_json(run / "result.json").get("error") or "no recorded error"
         raise ValueError(f"run {run.name} captured no candidate: {error}")
-    result = verify(run)
+    result = verify(run, host=host)
     if ('max_schema_resubmissions' in state and
             result.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
         raise ValueError('review resubmission bound differs from campaign configuration')
@@ -644,8 +649,7 @@ def mutable_inputs(manifest, baseline):
     return mutable
 
 
-def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
-    from .cli import run_review, verify
+def continue_campaign(root, state, scope_path, deadline, *, initial_run=None, host=None):
 
     config = read_json(root / "config.json")
     try:
@@ -664,30 +668,30 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
                            expected_baseline=state.get("baseline"),
                            baseline_view=lambda captured: sealed_baseline(captured, config),
                            max_schema_resubmissions=config.get("max_schema_resubmissions", 1), fab_context=context,
-                           stock_context=stock_context, routing_context=campaign_routing_context(root, state))
+                           stock_context=stock_context, routing_context=campaign_routing_context(root, state),
+                           host=host)
             initial_run = None
-            record_iteration(root, state, run, config)
-            verify_campaign(root)
+            record_iteration(root, state, run, config, host=host)
+            verify_campaign(root, host=host)
             if state["state"] != "repair":
                 return 0 if state["state"] == "criteria_satisfied" else 1
             with writer_lock(run):
-                verify(run, invoked=[config["implementation"]])
-                scope_path = implement(root, run, config["implementation"], state, deadline)
+                verify(run, invoked=[config["implementation"]], host=host)
+                scope_path = implement(root, run, config["implementation"], state, deadline, host=host)
     except (ValueError, OSError, KeyError, TypeError, KeyboardInterrupt) as exc:
         state.update(state="incomplete", error=f"{type(exc).__name__}: {exc}")
         write_json(root / "state.json", state)
         return 1
 
 
-def verify_campaign(root, *, observations=None):
+def verify_campaign(root, *, observations=None, host=None):
     root = Path(root).resolve()
     with writer_lock(root):
-        return verify_campaign_records(root, observations=observations)
+        return verify_campaign_records(root, observations=observations, host=host)
 
 
-def verify_campaign_records(root, *, observations=None):
+def verify_campaign_records(root, *, observations=None, host=None):
     """Existing integrity decisions; caller establishes coherent reads if needed."""
-    from .cli import verify
 
     root = Path(root).resolve()
     state = read_json(root / "state.json")
@@ -731,7 +735,7 @@ def verify_campaign_records(root, *, observations=None):
     diagnostic = {"state": "running"}
     feedback_seen = False
     # One observation of the host's policy and runtime files serves every retained run (AGENTEE-250).
-    host = {}
+    host = {} if host is None else dict(host)
     for index, stored in enumerate(state["history"], 1):
         run = root / "runs" / str(index)
         if stored.get('bench_transaction'):
@@ -978,7 +982,7 @@ def verify_campaign_plans(root, state, config):
     return plans
 
 
-def campaign_feedback(root, report, out, max_seconds):
+def campaign_feedback(root, report, out, max_seconds, *, host=None):
     from .empirical import bench_review
     from .measurements import finite
 
@@ -987,10 +991,10 @@ def campaign_feedback(root, report, out, max_seconds):
     if not 1 <= seconds <= 86400:
         raise ValueError("feedback max_seconds must be between 1 and 86400")
     with writer_lock(root, out):
-        checked = verify_campaign(root)
+        checked = verify_campaign(root, host=host)
         state = read_json(root / "state.json")
         from .applicability import pending_recalibration
-        pending = bool(state['history']) and pending_recalibration(Path(state['history'][-1]['run']))
+        pending = bool(state['history']) and pending_recalibration(Path(state['history'][-1]['run']), host=host)
         if not state["history"] or (checked["state"] not in ("criteria_satisfied", "empirical_superseded")
                                     and not (checked['state'] == 'incomplete' and pending)):
             raise ValueError("bench continuation requires a completed accepted candidate or pending physical feedback")
@@ -998,12 +1002,12 @@ def campaign_feedback(root, report, out, max_seconds):
         next_run = root / "runs" / str(len(state["history"]) + 1)
         deadline = time.monotonic() + seconds
         try:
-            bench_review(run, report, out, seconds, review_out=next_run)
+            bench_review(run, report, out, seconds, review_out=next_run, host=host)
             state["epoch"] = state.get("epoch", 0) + 1
             state.pop("error", None)
             # A new physical observation changes model knowledge, not requirements.
             # Old epochs stay visible to implementation and forensic verification.
-            return continue_campaign(root, state, out / "scope.json", deadline, initial_run=next_run)
+            return continue_campaign(root, state, out / "scope.json", deadline, initial_run=next_run, host=host)
         except (ValueError, OSError, KeyError, TypeError, KeyboardInterrupt) as exc:
             state.update(state="incomplete", error=f"{type(exc).__name__}: {exc}")
             write_json(root / "state.json", state)

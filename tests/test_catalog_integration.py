@@ -41,7 +41,7 @@ class CatalogIntegrationTests(unittest.TestCase):
     def test_switching_receipts_through_sandbox_and_public_seal(self):
         from toolchain import require_toolchain
         require_toolchain()
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.storage import read_json
         for eligible in (True, False):
             with self.subTest(eligible=eligible):
@@ -88,7 +88,7 @@ class CatalogIntegrationTests(unittest.TestCase):
     def test_public_checks_only_verify_seal_and_witness_authority(self):
         from toolchain import require_toolchain
         require_toolchain()
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.baseline import validate_witnesses
         from agent_ee.storage import read_json
         scope = self.scope_document()
@@ -104,13 +104,12 @@ class CatalogIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'failed criterion'):
             validate_witnesses(run, [dict(requirement_id='parts', check_id='select')],
                 [dict(path='checks/select.json', locator='outcome')])
-        from unittest.mock import patch
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         changed = policy_files()
         normalizer = next(path for path in changed if path == 'catalog.py')
         changed[normalizer] = '0' * 64
-        with patch('agent_ee.cli.policy_files', return_value=changed), self.assertRaises(ValueError):
-            verify(run)
+        with self.assertRaises(ValueError):
+            verify(run, host={'policy_files': changed})
         report = run / 'work/select/catalog.json'
         report.write_text('{}')
         with self.assertRaises(ValueError):
@@ -213,7 +212,7 @@ class CatalogIntegrationTests(unittest.TestCase):
     def test_snapshot_requirements_and_normalization_policy_are_identity_bound(self):
         from agent_ee.candidate import capture, verify_snapshot, verify_source
         from agent_ee.baseline import load_baseline
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         from agent_ee.storage import read_json
         scope = self.scope_document()
         write_json(self.root / 'scope.json', scope)
@@ -256,7 +255,7 @@ class CatalogIntegrationTests(unittest.TestCase):
     def test_no_stock_is_unknown_and_cannot_witness_a_defect(self):
         from toolchain import require_toolchain
         require_toolchain()
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.storage import read_json
         from agent_ee.baseline import validate_witnesses
         requirements = read_json(self.root / 'parts.json')
@@ -277,7 +276,7 @@ class CatalogIntegrationTests(unittest.TestCase):
         import subprocess
         import sys
         from toolchain import require_toolchain
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.storage import read_json
         require_toolchain()
         # The probe's fixed workload is 1 kohm / 0603; this is original data.

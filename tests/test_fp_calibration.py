@@ -92,9 +92,7 @@ class CalibrationTests(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        runtime_patch = patch('agent_ee.cli.runtime_files', return_value=runtime())
-        runtime_patch.start()
-        self.addCleanup(runtime_patch.stop)
+        self.host = {'runtime_files': runtime()}
 
     def fresh(self, name):
         target = self.root / name
@@ -176,7 +174,7 @@ class CalibrationTests(unittest.TestCase):
 
     def run_calibration(self, cal, transport, **kwargs):
         with patch('agent_ee.reviewers.dispatch', side_effect=transport):
-            return fp.run(cal, profile(), kwargs.get('repeats', 2), kwargs.get('max_seconds', 600))
+            return fp.run(cal, profile(), kwargs.get('repeats', 2), kwargs.get('max_seconds', 600), host=self.host)
 
     def test_both_orders_repeats_failures_and_rates(self):
         cal = self.fresh('run')

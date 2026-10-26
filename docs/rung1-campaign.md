@@ -118,7 +118,7 @@ this is independent of the stage retry limit. See the
 `mutable_inputs` is exactly the schematic and the board. Everything under
 `generation/` and `requirements/` is immutable. The driver validates the
 scope with the capture selection, `baseline.compile_baseline`,
-`stages.declaration` and `cli.validate_scope` before it writes the
+`stages.declaration` and `run_record.validate_scope` before it writes the
 configuration.
 
 ### Implementation steps

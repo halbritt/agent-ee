@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from agent_ee.cli import run_review, save_result
+from agent_ee.run_record import run_review, save_result
 from agent_ee.findings import adjudicate
 from agent_ee.reviewers import build_packet, adjudicator_call
 from agent_ee.storage import read_json,write_json

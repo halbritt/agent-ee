@@ -366,7 +366,7 @@ class CapturedCapabilityTests(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import patch
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         from agent_ee.storage import read_json, write_json
         variants = []
         for kind in ('netlist', 'geometry', 'future'):
@@ -380,10 +380,9 @@ class CapturedCapabilityTests(unittest.TestCase):
             write_json(self.path, scope)
             with patch('agent_ee.checks.run_checks') as checks, \
                  patch('agent_ee.reviewers.reviewer_call') as inference, \
-                 patch('agent_ee.cli.runtime_files', return_value={}), \
                  contextlib.redirect_stdout(io.StringIO()):
                 run = self.root / f'refused-{index}'
-                self.assertEqual(run_review(self.path, run, 60), 1)
+                self.assertEqual(run_review(self.path, run, 60, host={'runtime_files': {}}), 1)
                 checks.assert_not_called()
                 inference.assert_not_called()
                 self.assertEqual(read_json(run / 'result.json')['outcome'], 'incomplete')

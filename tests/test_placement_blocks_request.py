@@ -347,7 +347,7 @@ class BlocksBindingTest(unittest.TestCase):
 
 class PinnedPackageDataTest(unittest.TestCase):
     def test_policy_pin_and_snapshot_include_package_data(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         pins = policy_files()
         root = Path(pa.__file__).resolve().parent
         data = sorted(p.relative_to(root).as_posix() for p in (root / 'data').rglob('*') if p.is_file())
@@ -361,7 +361,7 @@ class PinnedPackageDataTest(unittest.TestCase):
                              pins['data/jlcpcb-locality.json'])
 
     def test_snapshot_missing_or_changed_data_is_refused_and_cannot_admit_locality(self):
-        from agent_ee.cli import policy_files
+        from agent_ee.run_record import policy_files
         probe = ('import sys; sys.path.insert(0, sys.argv[1]); '
                  'from agent_ee.locality_provenance import manufacturing_record; manufacturing_record(); print("ok")')
         with tempfile.TemporaryDirectory() as tmp:

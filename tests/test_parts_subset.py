@@ -322,7 +322,7 @@ class NativePartsPipelineTests(unittest.TestCase):
         return subset_generator().trio() if variant == 'trio' else subset_generator().schematic(variant)
 
     def run_case(self, variant='control', document=None, schema='agent-ee.scope/3'):
-        from agent_ee.cli import run_review
+        from agent_ee.run_record import run_review
         from agent_ee.storage import write_json, read_json
         self.count += 1
         write_json(self.root / 'parts.json', document or self.document)
@@ -351,7 +351,7 @@ class NativePartsPipelineTests(unittest.TestCase):
         return run, read_json(run / 'checks/parts.json')
 
     def test_native_positive_and_footprint_defect_public_verify_and_witness(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.storage import read_json
         from agent_ee.baseline import validate_witnesses
         run, check = self.run_case()
@@ -383,7 +383,7 @@ class NativePartsPipelineTests(unittest.TestCase):
             path.write_bytes(original)
 
     def test_native_absent_required_instance_is_a_sealed_defect(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         self.document['parts'][0]['instances'][0]['reference'] = 'R99'
         run, check = self.run_case()
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'), check)
@@ -442,7 +442,7 @@ class NativePartsPipelineTests(unittest.TestCase):
             capability(params, manifest['files'], run / 'inputs', changed, 'parts')
 
     def test_manifest_change_changes_baseline_and_mutation_breaks_verification(self):
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         from agent_ee.storage import read_json
         run, check = self.run_case()
         self.assertEqual(check['outcome'], 'pass', check)
@@ -461,7 +461,7 @@ class NativePartsPipelineTests(unittest.TestCase):
         import shutil
         from agent_ee.baseline import compile_baseline
         from agent_ee.campaign import check_proposal, mutable_inputs
-        from agent_ee.cli import run_review, verify
+        from agent_ee.run_record import run_review, verify
         from agent_ee.parts_manifest import dependency_closure
         from agent_ee.storage import read_json, digest
         run, check = self.run_case(schema='agent-ee.scope/2')
@@ -511,7 +511,7 @@ class NativePartsPipelineTests(unittest.TestCase):
         run, check = self.run_case('trio')
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
         self.assertEqual([m['reference'] for m in check['details']['report']['matches']], ['C1', 'J1', 'R1'])
-        from agent_ee.cli import verify
+        from agent_ee.run_record import verify
         verify(run)
 
     def test_actual_child_instances_are_separate_capacity_obligations(self):

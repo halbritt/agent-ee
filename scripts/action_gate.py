@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from agent_ee.cli import bind_check_findings, bind_checks  # noqa: E402
+from agent_ee.run_record import bind_check_findings, bind_checks  # noqa: E402
 
 VERDICTS = ("checks_passed", "check_failed", "coverage_incomplete", "result_invalid")
 CHECK_OUTCOMES = ("pass", "info", "defect", "unknown")

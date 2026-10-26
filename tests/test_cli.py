@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee.cli import outcome, recover_records, run_review, verify
+from agent_ee.run_record import outcome, recover_records, run_review, verify
 from agent_ee.storage import write_json
 
 
@@ -63,6 +63,19 @@ class OutcomeTests(unittest.TestCase):
         self.assertEqual(outcome(value), "criteria_satisfied")
         value["findings"][0]["status"] = "deferred"
         self.assertEqual(outcome(value), "defects_or_unresolved")
+
+
+class SuppliedHostTests(unittest.TestCase):
+    def test_commands_that_cannot_honour_a_supplied_host_refuse_it(self):
+        # AGENTEE-545: a supplied host is used end to end or refused, never silently dropped.
+        from agent_ee import cli
+        stderr = io.StringIO()
+        with patch.object(cli, 'doctor', side_effect=AssertionError('doctor ran')), \
+                contextlib.redirect_stderr(stderr):
+            self.assertEqual(cli.main(['doctor'], host={'runtime_files': {}}), 2)
+        self.assertIn('does not take supplied host fingerprints', stderr.getvalue())
+        self.assertIn('verify', cli.HOST_COMMANDS)
+        self.assertIn('evidence-request', cli.HOST_COMMANDS)
 
 
 class RecoverRecordsTests(unittest.TestCase):
