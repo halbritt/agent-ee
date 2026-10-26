@@ -138,6 +138,9 @@ class BuilderTest(unittest.TestCase):
         for label, kwargs in (('untimed sandbox', dict(tool='x', argv=['ls'], timeout=None)),
                               ('sandbox grace', dict(tool='x', argv=['ls'], stop_grace_s=1)),
                               ('negative grace', dict(tool='x', argv=['ls'], isolation='host', stop_grace_s=-1)),
+                              ('remount on host', dict(tool='x', argv=['ls'], isolation='host', remount_ro=['/'])),
+                              ('zero log cap', dict(tool='x', argv=['ls'], log_bytes=0)),
+                              ('float log cap', dict(tool='x', argv=['ls'], log_bytes=1.5)),
                               ('empty argv', dict(tool='x', argv=())), ('string argv', dict(tool='x', argv='ls')),
                               ('isolation', dict(tool='x', argv=['ls'], isolation='vm')),
                               ('sandbox env', dict(tool='x', argv=['ls'], env={'A': '1'}))):
@@ -463,6 +466,17 @@ class HostTest(unittest.TestCase):
         self.assertEqual((done['exit_code'], done.returncode), (4, 4))
         missing = native_run.run(Intent('probe', ['/nonexistent/tool'], isolation='host'), work=None)
         self.assertIsNone(missing.returncode)
+    def test_log_ceiling_stops_and_truncates(self):
+        code = 'import sys; sys.stdout.write("x" * 6000); sys.stdout.flush(); sys.stderr.write("y" * 6000)'
+        fields, out, err = native_run.supervise(['/usr/bin/python3', '-c', code], timeout=30, log_bytes=100)
+        self.assertEqual((fields['execution'], fields['logs_truncated']), ('output_limit', True))
+        self.assertEqual(len(out) + len(err), 100)
+        self.assertNotIn('cleanup_error', fields)
+        fields, out, err = native_run.supervise(['/usr/bin/python3', '-c', 'print("short")'], timeout=30,
+                                                log_bytes=100)
+        self.assertEqual((fields['execution'], fields['logs_truncated'], out), ('ok', False, b'short\n'))
+        fields, _, _ = native_run.supervise(['/usr/bin/true'], timeout=30)
+        self.assertNotIn('logs_truncated', fields)
 
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
@@ -531,6 +545,33 @@ class SandboxTest(unittest.TestCase):
         self.assertEqual(record['execution'], 'ok')
         self.assertEqual(record.stdout, b'{"baseline": 1}')
         self.assertEqual(native_run.profile(record).bound('/evidence/baseline.json'), [str(baseline.resolve())])
+
+    def test_bounded_run_matches_the_replay_view(self):
+        bundle = self.root / 'bundle'
+        bundle.mkdir()
+        argv = ['/bin/sh', '-c', 'echo start; touch /work/x 2>/dev/null && echo writable; head -c 5000 /dev/zero']
+        intent = Intent('replay', argv, timeout=30, remount_ro=('/work', '/tmp', '/dev', '/proc', '/'), log_bytes=200)
+        record = native_run.run(intent, inputs=self.root / 'inputs', work=self.root / 'w',
+                                mounts=((bundle, '/bundle'),))
+        expected = executor.sandbox_argv(self.root / 'inputs', self.root / 'w', argv, extra_ro=((bundle, '/bundle'),))
+        boundary = expected.index('--')
+        expected[boundary:boundary] = [arg for path in ('/work', '/tmp', '/dev', '/proc', '/')
+                                       for arg in ('--remount-ro', path)]
+        self.assertEqual(record['sandbox_argv'], expected)
+        self.assertEqual((record['execution'], record['logs_truncated']), ('output_limit', True))
+        self.assertTrue(record.stdout.startswith(b'start\n'))
+        self.assertNotIn(b'writable', record.stdout)
+        self.assertEqual(len(record.stdout) + len(record.stderr), 200)
+        parsed = native_run.profile(record)
+        self.assertEqual(parsed.normalized(), stage_receipts.sandbox_profile(record['sandbox_argv']))
+        self.assertEqual(json.loads((self.root / 'w/execution.json').read_text()), dict(record))
+
+    def test_bounded_run_refuses_descriptor_mounts(self):
+        source = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, source)
+        with self.assertRaises(ValueError):
+            native_run.run(Intent('replay', ['true'], log_bytes=10), inputs=self.root / 'inputs',
+                           work=self.root / 'w', mounts=((source, '/tool'),))
 
     def test_sandbox_refuses_without_inputs_or_with_host_intents(self):
         with self.assertRaises(ValueError):

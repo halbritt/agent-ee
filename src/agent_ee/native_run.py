@@ -65,6 +65,10 @@ class Intent:
     env: Optional[Mapping[str, str]] = None
     cwd: Optional[str] = None
     stop_grace_s: Optional[float] = None
+    # Bounded sandbox runs (replay): paths remounted read-only inside the view, and a ceiling on
+    # the combined stdout+stderr bytes kept; past it the run stops as output_limit.
+    remount_ro: tuple = ()
+    log_bytes: Optional[int] = None
 
     def __post_init__(self):
         if not self.tool or not isinstance(self.tool, str):
@@ -80,6 +84,11 @@ class Intent:
             raise ValueError("a sandboxed run needs a timeout")
         if self.stop_grace_s is not None and (self.isolation == "sandbox" or self.stop_grace_s < 0):
             raise ValueError("stop_grace_s is a non-negative grace for host or docker runs")
+        object.__setattr__(self, "remount_ro", tuple(map(str, self.remount_ro)))
+        if self.remount_ro and self.isolation != "sandbox":
+            raise ValueError("only a sandboxed run has a view to remount")
+        if self.log_bytes is not None and (type(self.log_bytes) is not int or self.log_bytes <= 0):
+            raise ValueError("log_bytes must be a positive integer")
 
 
 class Execution(dict):
@@ -212,10 +221,43 @@ class Sandbox:
             raise ValueError("a sandboxed run needs its read-only inputs")
         if on_line is not None or on_launch is not None or on_tick is not None:
             raise ValueError("the sandbox adapter returns output with the record, not by callback")
+        if intent.remount_ro or intent.log_bytes is not None:
+            return self._bounded(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts, cancel=cancel)
         record = executor.execute(inputs, work, list(intent.argv), timeout=timeout, stdin=intent.stdin,
                                   network=intent.network, extra_ro=tuple(mounts), cancellation=cancel,
                                   skip_visuals=intent.skip_visuals)
         return Execution(record, *_read_logs(work))
+
+
+    def _bounded(self, intent, *, inputs, work, timeout, mounts, cancel):
+        """The same bwrap view plus read-only remounts and a retained-log ceiling, supervised here."""
+        if any(isinstance(source, int) for source, _ in mounts):
+            raise ValueError("a bounded sandbox run takes path mounts only")
+        forget_scope()
+        try:
+            with _records(work) as opened:
+                command = sandbox_command(intent, inputs, work, mounts)
+
+                def finish(fields, output, stderr):
+                    record = {"argv": list(intent.argv), "sandbox_argv": command, "timeout_s": timeout, **fields}
+                    record.setdefault("duration_s", 0.0)
+                    _digests(record, output, stderr)
+                    _write_records(opened, record, output, stderr)
+                    return Execution(record, output, stderr)
+
+                return _supervised(finish, command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
+                                   log_bytes=intent.log_bytes)
+        finally:
+            forget_scope()
+
+
+def sandbox_command(intent, inputs, work, mounts):
+    """The executor's bwrap argv for intent, with intent.remount_ro inserted before the tool argv."""
+    command = executor.sandbox_argv(inputs, work, list(intent.argv), network=intent.network,
+                                    extra_ro=tuple(mounts), skip_visuals=intent.skip_visuals)
+    boundary = command.index("--")
+    command[boundary:boundary] = [arg for path in intent.remount_ro for arg in ("--remount-ro", path)]
+    return command
 
 
 def _read_logs(work):
@@ -229,7 +271,7 @@ def _read_logs(work):
 
 
 def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_line=None, on_stop=None,
-              on_launch=None, stop_grace=None, on_tick=None):
+              on_launch=None, stop_grace=None, on_tick=None, log_bytes=None):
     """Run argv as a host process group under one deadline and cancel handle.
 
     Returns (record fields, stdout, stderr). Output is drained without blocking, so a child
@@ -239,7 +281,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     fields["returncode"] is the reaped status on every path that launched the child (adapters move it
     to Execution.returncode). timeout None means no limit of its own. on_launch gets the child's pid. stop_grace sends
     SIGTERM to the group and waits that long before SIGKILL on an early stop. on_tick runs before
-    every poll of the loop. When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
+    every poll of the loop. log_bytes caps the combined stdout+stderr kept; the first read past it
+    stops the run as output_limit (logs_truncated), and the post-stop drain stays within the cap.
+    When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
     is re-raised with (fields, stdout, stderr) attached as native_execution.
     """
     cancel = cancel or Cancellation()
@@ -266,6 +310,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
             raise KeyboardInterrupt
         return fields, b"", b""
     stopped, completed, failure = None, False, None
+    if log_bytes is not None:
+        fields["logs_truncated"] = False
     limit_at = float("inf") if timeout is None else start + timeout
     try:
         with selectors.DefaultSelector() as selector:
@@ -274,11 +320,20 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                 selector.register(stream, selectors.EVENT_READ)
 
             def read(wait, deliver):
+                """Read what is ready; True when the retained-log ceiling was passed."""
                 for key, _ in selector.select(timeout=wait):
                     chunk = os.read(key.fileobj.fileno(), 65536)
                     if not chunk:
                         selector.unregister(key.fileobj)
-                    elif key.fileobj is proc.stderr:
+                        continue
+                    overflow = False
+                    if log_bytes is not None:
+                        available = log_bytes - len(output) - len(errors)
+                        overflow = len(chunk) > available
+                        chunk = chunk[:max(0, available)]
+                        if overflow:
+                            fields["logs_truncated"] = True
+                    if key.fileobj is proc.stderr:
                         errors.extend(chunk)
                     else:
                         output.extend(chunk)
@@ -288,6 +343,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                                 line, _, rest = pending.partition(b"\n")
                                 pending[:] = rest
                                 on_line(bytes(line))
+                    if overflow:
+                        return True
+                return False
 
             try:
                 if on_launch is not None:
@@ -302,16 +360,19 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                     if remaining <= 0:
                         stopped = "timeout"
                         break
-                    read(min(.05, remaining), True)
+                    if read(min(.05, remaining), True):
+                        stopped = "output_limit"
+                        break
             except BaseException as exc:
                 failure, stopped = exc, "callback_failed"
             if stopped is not None:
                 # Stop first, then keep what the group already wrote, bounded as the executor's drain is.
                 _stop_group(proc, stop_grace)
                 limit = time.monotonic() + 1
-                while selector.get_map() and time.monotonic() < limit:
-                    read(max(0.0, limit - time.monotonic()), False)
-                if selector.get_map():
+                capped = False
+                while selector.get_map() and time.monotonic() < limit and not capped:
+                    capped = read(max(0.0, limit - time.monotonic()), False)
+                if selector.get_map() and not capped:
                     fields["cleanup_error"] = "process group killed but output drain exceeded one second"
         if stopped is None:
             try:
