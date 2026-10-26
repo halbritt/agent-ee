@@ -215,8 +215,8 @@ class DirectMetricsEdgeTests(unittest.TestCase):
                 job.board_metrics(path, edges=reversed_)
 
 
-class EngineOwnsTheValueRulesTests(unittest.TestCase):
-    """The engine reads the built document and is the one owner of the edge value rules."""
+class EngineValidatesItsInputTests(unittest.TestCase):
+    """The engine reads the built document and validates the converted edge values at its own input boundary."""
 
     def run_engine(self, document):
         try:

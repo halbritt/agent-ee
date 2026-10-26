@@ -110,9 +110,10 @@ unresolved claim is reported, not refused.
 
 The engine is the only checker of the contour limits, occupancy rung names
 and escape-space label; capture emits those values once. Declared edge
-connectors are checked once, on their authored millimetre values, by the
-intent validator, for intent documents and for the direct `board_metrics`
-edges alike. Rounding to nanometres could otherwise hide a reversed, negative
+connectors are checked on their authored millimetre values by one
+implementation, the intent validator's `validate_edge_connector`, which both
+intent normalization and the direct `board_metrics` edges call (an intent's
+edges may pass through it twice). Rounding to nanometres could otherwise hide a reversed, negative
 or open-ended interval. The engine then validates the converted values it
 receives.
 
