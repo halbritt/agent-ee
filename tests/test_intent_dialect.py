@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agent_ee import pad_edge, placement_intent
+from agent_ee import placement_intent, placement_job as job
 
 ROOT = Path(__file__).resolve().parents[1]
 ESP = Path(os.environ.get('AGENT_EE_ESP_PROG_INPUTS', ROOT / 'build/agent545/inputs'))
@@ -65,7 +65,7 @@ class DialectAdapterTests(unittest.TestCase):
         self.assertEqual(by_path['intent.edge_connectors[0].side']['disposition'], 'operative_pending_capture')
         self.assertEqual(by_path['intent.edge_connectors[0].context.cable_entry']['value'], 'in_plane')
         self.assertEqual(by_path['intent.proximity[0]']['authority'], 'advisory_objective')
-        self.assertEqual(by_path['intent.proximity[0]']['metric'], pad_edge.METRIC_ID)
+        self.assertEqual(by_path['intent.proximity[0]']['metric'], 'kicad_route_c4af095_pad_rect_signed_gap')
         self.assertEqual(by_path['groups.groups[0].near']['near'], ['usb'])
         self.assertEqual([c['id'] for c in record['unresolved_claims']], ['interfaces[J1].cable_envelope_mm'])
         self.assertEqual(record['unresolved_claims'][0]['status'], 'unresolved_unmeasured')
@@ -240,18 +240,60 @@ class DialectAdapterTests(unittest.TestCase):
         self.assertEqual(row['limit'], 'datasheet')
 
 
+def _evaluate_problem(footprints, *, groups=(), rails=None, proximity=()):
+    import subprocess
+    rows = []
+    for index, (ref, spec) in enumerate(sorted(footprints.items())):
+        ox, oy = int(round(spec.get('x', 0.0) * 1e6)), int(round(spec.get('y', 0.0) * 1e6))
+        pads = []
+        for p_idx, pad in enumerate(spec.get('pads', [])):
+            x0, y0, x1, y1 = pad['rect']
+            cx, cy = int(round((x0 + x1) / 2 * 1e6)), int(round((y0 + y1) / 2 * 1e6))
+            hx, hy = int(round((x1 - x0) / 2 * 1e6)), int(round((y1 - y0) / 2 * 1e6))
+            pads.append({'uuid': f'{ref}-pad-{p_idx}', 'number': pad['number'], 'net': pad.get('net') or '',
+                         'local_nm': [cx - ox, cy - oy], 'half_nm': [hx, hy]})
+        rows.append({'uuid': f'00000000-0000-0000-0000-{index + 1:012x}', 'native_ref': ref,
+                     'role': spec.get('role', 'movable'), 'pose': {'x_nm': ox, 'y_nm': oy, 'quarter_turns': 0},
+                     'rotations': [0], 'occupancy': {'status': 'derived', 'label': 'derived_occupancy', 'rung': 'pads',
+                                                     'local_rect_nm': [-500_000, -500_000, 500_000, 500_000]},
+                     'copper_local_nm': [], 'pads': pads})
+    payload = {'schema': job.INPUT_SCHEMA, 'problem_sha256': 'a' * 64,
+               'outline': {'kind': 'rectangle', 'rect_nm': [-10_000_000, -10_000_000, 100_000_000, 100_000_000]},
+               'rules': {'copper_clearance_nm': 200_000, 'copper_edge_clearance_nm': 300_000, 'mask_min_web_nm': 100_000},
+               'footprints': rows, 'groups': list(groups),
+               'rails': rails or {'shared': {}, 'scoped': {}}, 'proximity': list(proximity),
+               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20},
+               'evaluate': [{}]}
+    done = subprocess.run([str(job.rust_executable())], input=json.dumps(payload).encode(), capture_output=True, timeout=60)
+    if done.returncode != 0:
+        raise AssertionError(done.stderr.decode(errors='replace') + done.stdout.decode(errors='replace'))
+    return json.loads(done.stdout)['evaluations'][0]
+
+
 class PadEdgeMetricTests(unittest.TestCase):
+    def claim_legs(self, claim, pads=None):
+        pads = self.pads() if pads is None else pads
+        footprints = {ref: {'pads': rows} for ref, rows in pads.items()}
+        return _evaluate_problem(footprints, proximity=[dict(claim, basis='pad_edge')])['pad_edge_legs'][0]
+
     def test_c1_overlap_is_signed_never_clamped(self):
-        self.assertAlmostEqual(pad_edge.rect_gap((0.0, 0.0, 1.0, 1.0), (0.75, 0.0, 1.75, 1.0)), -0.25, places=9)
-        self.assertAlmostEqual(pad_edge.rect_gap((0.0, 0.0, 1.0, 1.0), (3.0, 4.0, 4.0, 5.0)), math.hypot(2.0, 3.0), places=9)
-        self.assertAlmostEqual(pad_edge.rect_gap((0.0, 0.0, 1.0, 1.0), (2.0, 0.5, 3.0, 1.5)), 1.0, places=9)
+        def gap(rect_a, rect_b):
+            pads = {'A': [{'number': '1', 'rect': rect_a, 'net': 'N'}],
+                    'B': [{'number': '1', 'rect': rect_b, 'net': 'N'}]}
+            return self.claim_legs({'ref': 'A', 'near': 'B', 'pads': {'A': ['1'], 'B': ['1']}}, pads)['legs'][0]['gap_mm']
+        self.assertAlmostEqual(gap((0.0, 0.0, 1.0, 1.0), (0.75, 0.0, 1.75, 1.0)), -0.25, places=4)
+        self.assertAlmostEqual(gap((0.0, 0.0, 1.0, 1.0), (3.0, 4.0, 4.0, 5.0)), round(math.hypot(2.0, 3.0), 4), places=4)
+        self.assertAlmostEqual(gap((0.0, 0.0, 1.0, 1.0), (2.0, 0.5, 3.0, 1.5)), 1.0, places=4)
 
     def test_c2_rotated_pad_uses_axis_aligned_half_extents(self):
-        rect = pad_edge.pad_rect(0.0, 0.0, 2.0, 0.6, 45.0)
+        theta = math.radians(45.0)
+        hx = (2.0 / 2) * abs(math.cos(theta)) + (0.6 / 2) * abs(math.sin(theta))
+        rect = (-hx, -hx, hx, hx)
         self.assertAlmostEqual(rect[2], 0.9192, places=4)
-        self.assertAlmostEqual(rect[3], 0.9192, places=4)
-        self.assertAlmostEqual(pad_edge.rect_gap(rect, (1.2, 1.2, 1.8, 1.8)), 0.3971, places=4)
-        self.assertEqual(pad_edge.pad_rect_from_bbox(0.0, 0.0, -1.5, -0.5, 1.0, 0.5), (-1.5, -0.5, 1.5, 0.5))
+        pads = {'A': [{'number': '1', 'rect': rect, 'net': 'N'}],
+                'B': [{'number': '1', 'rect': (1.2, 1.2, 1.8, 1.8), 'net': 'N'}]}
+        self.assertAlmostEqual(self.claim_legs({'ref': 'A', 'near': 'B', 'pads': {'A': ['1'], 'B': ['1']}}, pads)['legs'][0]['gap_mm'],
+                               0.3971, places=4)
 
     def pads(self):
         return {
@@ -265,7 +307,7 @@ class PadEdgeMetricTests(unittest.TestCase):
 
     def test_c3_one_leg_per_declared_subject_pad_with_net_narrowing(self):
         claim = {'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['1', '2'], 'U1': ['9', '10', '11']}}
-        result = pad_edge.claim_legs(claim, self.pads())
+        result = self.claim_legs(claim)
         self.assertEqual(result['status'], 'measured')
         self.assertEqual([(l['subject_pad'], l['partner_pad'], l['paired_by']) for l in result['legs']],
                          [('1', '9', 'net'), ('2', '10', 'net')])
@@ -275,36 +317,31 @@ class PadEdgeMetricTests(unittest.TestCase):
 
     def test_c4_missing_declared_pad_is_blind_not_partial(self):
         claim = {'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['1', '7'], 'U1': ['9', '10']}}
-        result = pad_edge.claim_legs(claim, self.pads())
+        result = self.claim_legs(claim)
         self.assertEqual(result['status'], 'unresolved')
         self.assertEqual(result['legs'], [])
         self.assertEqual(result['missing'], [{'ref': 'Y1', 'pad': '7'}])
-        self.assertEqual(pad_edge.claim_legs({'ref': 'Y1', 'near': 'ZZ', 'max_mm': 1}, self.pads())['status'],
-                         'unresolved')
+        self.assertEqual(self.claim_legs({'ref': 'Y1', 'near': 'ZZ', 'max_mm': 1})['status'], 'unresolved')
 
     def test_declaration_modes_match_the_upstream_contract(self):
-        pads = self.pads()
-        # Both declared: one leg per subject pad, net-narrowed (pad 2 pairs with 10 on net B, not nearer 11).
-        both = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['1', '2'], 'U1': ['9', '10', '11']}}, pads)
+        both = self.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['1', '2'], 'U1': ['9', '10', '11']}})
         self.assertEqual([(l['subject_pad'], l['partner_pad'], l['paired_by']) for l in both['legs']], [('1', '9', 'net'), ('2', '10', 'net')])
-        # Partner only: undeclared subject -> ONE minimum leg over all subject pads, no net narrowing.
-        partner_only = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'U1': ['9', '10', '11']}}, pads)
+        partner_only = self.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'U1': ['9', '10', '11']}})
         self.assertEqual(len(partner_only['legs']), 1)
         self.assertEqual(partner_only['pads_basis'], 'all_non_aperture')
         self.assertEqual((partner_only['legs'][0]['subject_pad'], partner_only['legs'][0]['partner_pad'], partner_only['legs'][0]['paired_by']),
-                         ('3', '11', 'any'))  # a duplicate-numbered pad 3 is nearest pad 11 despite the foreign net
+                         ('3', '11', 'any'))
         self.assertAlmostEqual(partner_only['legs'][0]['gap_mm'], 0.5)
-        # Neither declared: one minimum over all pads of both footprints.
-        neither = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0}, pads)
+        neither = self.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0})
         self.assertEqual(len(neither['legs']), 1)
         self.assertEqual(neither['legs'][0]['paired_by'], 'any')
 
     def test_duplicate_pad_numbers_all_select_and_undeclared_subject_emits_one_leg(self):
         claim = {'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0, 'pads': {'Y1': ['3'], 'U1': ['9']}}
-        result = pad_edge.claim_legs(claim, self.pads())
+        result = self.claim_legs(claim)
         self.assertEqual(len(result['legs']), 2)
         self.assertEqual({l['paired_by'] for l in result['legs']}, {'any'})
-        result = pad_edge.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0}, self.pads())
+        result = self.claim_legs({'ref': 'Y1', 'near': 'U1', 'max_mm': 6.0})
         self.assertEqual(len(result['legs']), 1)
         self.assertEqual(result['pads_basis'], 'all_non_aperture')
 
@@ -364,18 +401,16 @@ class RetainedEspProgTests(unittest.TestCase):
 
     def test_pad_edge_legs_replay_the_contract_measurements(self):
         try:
-            import pcbnew
+            import pcbnew  # noqa: F401
         except ImportError:
             self.skipTest('pcbnew is not importable in this interpreter')
         board_path = ESP / 'board.kicad_pcb'
         self.assertEqual(hashlib.sha256(board_path.read_bytes()).hexdigest(), ESP_BOARD_SHA)
-        board = pcbnew.LoadBoard(str(board_path))
         intent = json.loads((ESP / 'intent.json').read_bytes())
-        pads = {ref: pad_edge.pcbnew_pads(board, ref) for ref in ('Y1', 'U1', 'C2', 'C4')}
+        rows = job.board_metrics(board_path, proximity=intent['proximity'])['pad_edge_legs']
         expected = {(0, '1', '9'): 2.9704, (0, '2', '10'): 3.3268, (1, '1', '2'): 0.658, (2, '1', '1'): -0.075}
         seen = {}
-        for index, claim in enumerate(intent['proximity']):
-            result = pad_edge.claim_legs(claim, pads)
+        for index, result in enumerate(rows):
             self.assertEqual(result['status'], 'measured')
             for leg in result['legs']:
                 seen[(index, leg['subject_pad'], leg['partner_pad'])] = round(leg['gap_mm'], 4)
@@ -388,6 +423,9 @@ if __name__ == '__main__':
 
 
 class GroupLinkTests(unittest.TestCase):
+    def measure(self, groups, layout, rails):
+        return _evaluate_problem(layout, groups=groups['groups'], rails=rails)['group_links']
+
     def layout(self, c1_x=10.0):
         """Two groups: power {U2 anchor, C1}, core {U1 anchor}; rail GND shared, VBUS scoped."""
         def pad(number, x, y, net_id, net, w=1.0, h=1.0):
@@ -412,8 +450,7 @@ class GroupLinkTests(unittest.TestCase):
                 'scoped': {'VBUS': {'intra_group': 'power', 'near_pairs': []}}}
 
     def test_links_use_signed_pad_edge_and_scoped_rails(self):
-        from agent_ee import group_links
-        report = group_links.measure(self.groups(), self.layout(), self.rails())
+        report = self.measure(self.groups(), self.layout(), self.rails())
         self.assertTrue(report['S1_complete_partition']['complete'])
         self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], [])
         power = report['groups']['power']
@@ -432,25 +469,25 @@ class GroupLinkTests(unittest.TestCase):
         self.assertEqual(report['authority'], 'measurements and diagnostics only; no automatic group pass')
 
     def test_objective_strictly_improves_when_a_dispersed_member_moves_closer(self):
-        from agent_ee import group_links
-        far = group_links.objective(group_links.measure(self.groups(), self.layout(c1_x=10.0), self.rails()))
-        near = group_links.objective(group_links.measure(self.groups(), self.layout(c1_x=3.0), self.rails()))
+        far = self.measure(self.groups(), self.layout(c1_x=10.0), self.rails())['objective_mm']
+        near = self.measure(self.groups(), self.layout(c1_x=3.0), self.rails())['objective_mm']
         self.assertLess(near, far)
         self.assertAlmostEqual(far - near, 14.0)  # R2 signal 8.5->1.5 and anchor 7.5->0.5
 
     def test_partition_and_unknown_multi_group_nets_are_surfaced_not_classified(self):
-        from agent_ee import group_links
         layout = self.layout()
         layout['R9'] = {'x': 5.0, 'y': 5.0, 'side': 'F', 'pads': [{'number': '1', 'rect': (4.5, 4.5, 5.5, 5.5), 'net_id': 4, 'net': '/SIG'}]}
         groups = self.groups()
         groups['groups'][0]['refs'].append('R9')
-        report = group_links.measure(groups, layout, self.rails())
+        report = self.measure(groups, layout, self.rails())
         self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], ['/SIG'])
         groups['groups'][1]['refs'].append('R9')
-        s1 = group_links.partition(groups, layout)
+        s1 = self.measure(groups, layout, self.rails())['S1_complete_partition']
         self.assertEqual(s1['duplicate_refs'], ['R9'])
         self.assertFalse(s1['complete'])
-        self.assertEqual(group_links.partition(self.groups(), list(self.layout()) + ['Q7'])['ungrouped_refs'], ['Q7'])
+        layout_q7 = self.layout()
+        layout_q7['Q7'] = {'x': 8.0, 'y': 8.0, 'side': 'F', 'pads': [{'number': '1', 'rect': (7.5, 7.5, 8.5, 8.5), 'net_id': 1, 'net': 'GND'}]}
+        self.assertEqual(self.measure(self.groups(), layout_q7, self.rails())['S1_complete_partition']['ungrouped_refs'], ['Q7'])
 
 
 ESP_FINAL = Path(os.environ.get('AGENT_EE_ESP_PROG_FINAL', ROOT / 'build/agent545/board-run-portfolio/final-a1'))
@@ -462,19 +499,15 @@ ESP_FINAL_SHA = 'dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a
 class RetainedGroupReplayTests(unittest.TestCase):
     def test_group_links_replay_the_contract_measurements(self):
         try:
-            import pcbnew
+            import pcbnew  # noqa: F401
         except ImportError:
             self.skipTest('pcbnew is not importable in this interpreter')
-        from agent_ee import group_links
         board_path = ESP_FINAL / 'board.kicad_pcb'
         self.assertEqual(hashlib.sha256(board_path.read_bytes()).hexdigest(), ESP_FINAL_SHA)
         groups = json.loads((ESP / 'groups.json').read_bytes())
-        refs = [r for g in groups['groups'] for r in g['refs']]
-        board = pcbnew.LoadBoard(str(board_path))
-        footprints = group_links.pcbnew_footprints(board, refs)
         rails = {'shared_rails': {'GND': 'ground return', '/+3.3V': 'groups.json power.why', 'Net-(C1-Pad1)': 'groups.json power.why'},
                  'scoped': {'Net-(C1-Pad1)': {'intra_group': 'power', 'near_pairs': [['usb_in', 'power'], ['power', 'usb_in']]}}}
-        report = group_links.measure(groups, footprints, rails)
+        report = job.board_metrics(board_path, groups['groups'], rails=rails)['group_links']
         power = report['groups']['power']
         self.assertEqual([(l['ref_a'], l['pad_a'], l['ref_b'], l['pad_b'], l['gap_mm']) for l in power['R2_intra_group_signal_links']],
                          [('C1', '1', 'U2', '2', 4.592)])
@@ -541,13 +574,13 @@ class GroupRailsSidecarTests(unittest.TestCase):
 
 class NearFallbackTests(GroupLinkTests):
     def test_rail_only_near_groups_use_any_pad_fallback_and_follow_movement(self):
-        from agent_ee import group_links
         groups = {'groups': [{'name': 'power', 'anchor': 'U2', 'refs': ['U2', 'C1'], 'near': ['io']},
                              {'name': 'io', 'anchor': 'J1', 'refs': ['J1']}]}
         rails = {'shared': {'GND': 'return'}, 'scoped': {}}
         layout = self.layout()
         del layout['U1']
-        near = group_links.measure(groups, layout, rails)['groups']['power']['R1_declared_near_interfaces'][0]
+        near_report = self.measure(groups, layout, rails)
+        near = near_report['groups']['power']['R1_declared_near_interfaces'][0]
         self.assertEqual(near['paired_by'], 'any_pad_fallback')
         self.assertIsNone(near['net'])
         self.assertEqual(near['candidate_pairs'], 5 * 2)
@@ -556,10 +589,10 @@ class NearFallbackTests(GroupLinkTests):
         far_layout['J1'] = {'x': 60.0, 'y': 20.0, 'side': 'F',
                             'pads': [{'number': '1', 'rect': (59.5, 19.5, 60.5, 20.5), 'net_id': 4, 'net': '/SIG'},
                                      {'number': '2', 'rect': (60.5, 19.5, 61.5, 20.5), 'net_id': 1, 'net': 'GND'}]}
-        far = group_links.measure(groups, far_layout, rails)['groups']['power']['R1_declared_near_interfaces'][0]
+        far_report = self.measure(groups, far_layout, rails)
+        far = far_report['groups']['power']['R1_declared_near_interfaces'][0]
         self.assertGreater(far['gap_mm'], near['gap_mm'])
-        self.assertGreater(group_links.objective(group_links.measure(groups, far_layout, rails)),
-                           group_links.objective(group_links.measure(groups, layout, rails)))
+        self.assertGreater(far_report['objective_mm'], near_report['objective_mm'])
         self.assertEqual((near['from_ref'], near['from_pad'], near['to_ref'], near['to_pad']), ('C1', '2', 'J1', '1'))
 
 
@@ -622,9 +655,8 @@ class ChiefCounterexampleTests(unittest.TestCase):
         return groups, footprints
 
     def test_unknown_multi_group_net_is_visible_and_never_a_signal_candidate(self):
-        from agent_ee import group_links
         groups, footprints = self.inputs()
-        report = group_links.measure(groups, footprints, {'shared': {}, 'scoped': {}})
+        report = _evaluate_problem(footprints, groups=groups['groups'], rails={'shared': {}, 'scoped': {}})['group_links']
         self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], ['X'])
         a = report['groups']['A']
         self.assertEqual([l['net'] for l in a['R2_intra_group_signal_links']], ['/S'])
@@ -724,25 +756,14 @@ class EngineParityTests(unittest.TestCase):
 
     def check_parity(self, problem):
         import subprocess
-        from agent_ee import group_links
         executable = self.engine()
         done = subprocess.run([str(executable)], input=json.dumps(problem).encode(), capture_output=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr.decode(errors='replace')[-800:])
         evaluation = json.loads(done.stdout)['evaluations'][0]
         rust_links = evaluation['links']
-        footprints, pad_numbers = {}, {}
-        for row in problem['footprints']:
-            pads = []
-            for pad in row['pads']:
-                if pad['half_nm'] == [0, 0]:
-                    continue  # pcbnew_footprints reports non-aperture pads only
-                cx, cy = (row['pose']['x_nm'] + pad['local_nm'][0]) / 1e6, (row['pose']['y_nm'] + pad['local_nm'][1]) / 1e6
-                hx, hy = pad['half_nm'][0] / 1e6, pad['half_nm'][1] / 1e6
-                pads.append({'number': pad['number'], 'rect': (cx - hx, cy - hy, cx + hx, cy + hy),
-                             'net_id': {'A': 1, 'B': 2, 'GND': 3}[pad['net']], 'net': pad['net']})
-                pad_numbers[pad['uuid']] = pad['number']
-            footprints[row['native_ref']] = {'x': row['pose']['x_nm'] / 1e6, 'y': row['pose']['y_nm'] / 1e6, 'side': 'F', 'pads': pads}
-        report = group_links.measure({'groups': problem['groups']}, footprints, problem['rails'])
+        pad_numbers = {pad['uuid']: pad['number'] for row in problem['footprints']
+                       for pad in row['pads'] if pad['half_nm'] != [0, 0]}
+        report = evaluation['group_links']
         by_kind = {(r['kind'], r['group']): r for r in rust_links}
         g = report['groups']['g']
         if g['R2_intra_group_signal_links']:
@@ -764,9 +785,7 @@ class EngineParityTests(unittest.TestCase):
         unweighted_nm = sum(max(0, r['gap_nm']) for r in rust_links)
         self.assertEqual(int(evaluation['terms']['link_gap_nm']), unweighted_nm)
         self.assertEqual(evaluation['link_weight'], 1)
-        self.assertAlmostEqual(unweighted_nm / 1e6, group_links.objective(report), places=3)
-        report['objective_mm'] = group_links.objective(report)
-        self.assertEqual(evaluation['group_links'], report)
+        self.assertAlmostEqual(unweighted_nm / 1e6, report['objective_mm'], places=3)
         return evaluation
 
     def test_evaluate_emits_pad_edge_legs_and_edge_intent_reports(self):

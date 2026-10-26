@@ -274,7 +274,6 @@ class ReservationTests(unittest.TestCase):
 
     def test_connector_body_seat_is_distinct_from_courtyard_reservation(self):
         import pcbnew as k
-        from agent_ee.placement_edges import nearest_edge
         path, fixed = self.board('copper', body=True)
         board = k.LoadBoard(str(path))
         fp = next(f for f in board.GetFootprints() if f.GetReference() == 'M')
@@ -287,10 +286,10 @@ class ReservationTests(unittest.TestCase):
         row = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
         self.assertEqual(row['occupancy']['status'], 'courtyard')
         self.assertNotEqual(row['edge']['seat_local_nm'], row['occupancy']['local_rect_nm'])
-        court = row['occupancy']['local_rect_nm']
-        world_court = [court[0] + 26 * MM, court[1] + 15 * MM,
-                       court[2] + 26 * MM, court[3] + 15 * MM]
-        self.assertEqual(nearest_edge(world_court, [0, 0, 30 * MM, 30 * MM], 0), 'south')
+        court_problem = copy.deepcopy(problem)
+        court_row = next(f for f in court_problem['footprints'] if f['native_ref'] == 'M')
+        court_row['edge']['seat_local_nm'] = row['occupancy']['local_rect_nm']
+        self.assertEqual(evaluate(court_problem, [{}])[0]['edge_intent']['connectors'][0]['nearest'], 'south')
         result, _ = self.native(path, problem, {}, 'body-seat')
         self.assertTrue(result['feasible'], result)
         checked = job.check_edge_intent(self.root / 'body-seat' / 'board.kicad_pcb', declared)

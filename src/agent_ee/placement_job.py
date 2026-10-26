@@ -271,11 +271,23 @@ def _pad_copper(pad, origin, q):
 
 def _pad_half(pad, origin, q):
     """Axis-aligned half extents of the pad copper rect in the local frame (AGENTEE-479 pad_edge)."""
-    copper = _pad_copper(pad, origin, q)
-    if copper is None:
+    import pcbnew
+    if pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH or not pad.IsOnCopperLayer():
         return [0, 0]
-    x0, y0, x1, y1 = copper['rect_nm']
-    return [(x1 - x0) // 2, (y1 - y0) // 2]
+    if not any(pad.IsOnLayer(layer) for layer in pad.GetBoard().GetEnabledLayers().CuStack()):
+        return [0, 0]
+    if pad.GetShape(pcbnew.PADSTACK.ALL_LAYERS) == pcbnew.PAD_SHAPE_CUSTOM:
+        pos = pad.GetPosition()
+        box = pad.GetEffectiveShape(pad.GetLayer()).BBox()
+        hx = max(abs(int(box.GetLeft()) - int(pos.x)), abs(int(box.GetRight()) - int(pos.x)))
+        hy = max(abs(int(box.GetTop()) - int(pos.y)), abs(int(box.GetBottom()) - int(pos.y)))
+        return [hy, hx] if q % 2 else [hx, hy]
+    size = pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)
+    theta = math.radians(pad.GetOrientation().AsDegrees() - 90.0 * q)
+    cos, sin = abs(math.cos(theta)), abs(math.sin(theta))
+    hx = int(round((int(size.x) / 2) * cos + (int(size.y) / 2) * sin))
+    hy = int(round((int(size.x) / 2) * sin + (int(size.y) / 2) * cos))
+    return [hx, hy]
 
 
 def _pad_hole(pad, origin, q, clearance):
@@ -384,38 +396,91 @@ def _locality_grade(facts, document):
     return result
 
 
-def _check_edge_intent_native(path, intent):
-    """Reload native geometry and grade declared edges independently of solver output."""
+def _evaluate_board_native(path, *, intent=None, groups=None, edges=None, rails=None, proximity=None):
+    """Evaluate saved native geometry through the Rust placement engine (read-only)."""
     import pcbnew
-    from .placement_edges import nearest_edge, setbacks
     from .placement_probe import extract
-    if not intent.get('edge_connectors'):
-        return {'status': 'pass', 'connectors': [], 'violations': [], 'coverage': ['edge_identity']}
     before = Path(path).read_bytes()
     facts = extract(path)
-    rules = _edge_rules(intent, facts['footprints'])
     board = pcbnew.LoadBoard(str(path))
-    outline = _rectangle(facts['outline'])
     by_uuid = {f['uuid']: f for f in facts['footprints']}
-    by_ref = {fp.GetReference(): fp for fp in board.GetFootprints()}
-    rows, violations = [], []
-    for declaration in intent['edge_connectors']:
-        ref = declaration['ref']
-        fp = by_ref[ref]
-        occupancy = classify_footprint(fp, None, by_uuid[fp.m_Uuid.AsString()])['occupancy']
-        seat, basis = _edge_seat(fp, declaration, occupancy)
-        actual = nearest_edge(seat, outline, int(board.GetDesignSettings().m_CopperEdgeClearance))
-        row = {'ref': ref, 'uuid': fp.m_Uuid.AsString(), 'basis': basis,
-               'declared': rules[ref]['edge'], 'nearest': actual, 'seat_rect_nm': seat,
-               'setback_mm': {edge: distance / NM for edge, distance in setbacks(seat, outline).items()}}
+    if len(by_uuid) != len(facts['footprints']):
+        raise JobRefusal('duplicate native footprint UUID')
+    if intent and intent.get('edge_connectors'):
+        edge_declarations = list(intent['edge_connectors'])
+    elif edges:
+        edge_declarations = ([{'ref': r, 'edge': e} for r, e in edges.items()]
+                             if isinstance(edges, dict) else list(edges))
+    else:
+        edge_declarations = []
+    edge_rules = _edge_rules({'edge_connectors': edge_declarations}, facts['footprints'])
+    edge_by_ref = {row['ref']: (order, row) for order, row in enumerate(edge_declarations)}
+    group_rows = list(groups['groups'] if isinstance(groups, dict) else (groups or []))
+    group_refs = {r for g in group_rows for r in g['refs']}
+    ref_counts = Counter(f['ref'] for f in facts['footprints'])
+    settings = board.GetDesignSettings()
+    rows = []
+    for fp in board.GetFootprints():
+        uuid = fp.m_Uuid.AsString()
+        captured = by_uuid[uuid]
+        q = _quarter_turns(captured['rotation_deg'], uuid)
+        origin = captured['position_nm']
+        ref = captured['ref']
+        fixed_pose = {'ref': ref} if (ref_counts[ref] > 1 or captured['locked']
+                                      or (group_rows and ref not in group_refs)
+                                      or (not group_rows and ref not in edge_by_ref)) else None
+        info = classify_footprint(fp, fixed_pose, captured)
+        if info['role'] == 'movable' and (captured['locked'] or (group_rows and ref not in group_refs)):
+            info['role'] = 'fixed_body'
+        row = {'uuid': uuid, 'native_ref': ref, 'role': info['role'],
+               'pose': {'x_nm': origin[0], 'y_nm': origin[1], 'quarter_turns': q},
+               'occupancy': ({k: v for k, v in info['occupancy'].items() if k in ('status', 'label', 'rung')}
+                             | ({'local_rect_nm': _local_rect(info['occupancy']['box'], origin, q)}
+                                if 'box' in info['occupancy'] else {})),
+               'copper_local_nm': [],
+               'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
+                         'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
+                                                    int(p.GetPosition().y) - origin[1], q)),
+                         'half_nm': _pad_half(p, origin, q)}
+                        for p in fp.Pads()],
+               'rotations': [q]}
+        if ref in edge_by_ref:
+            order, declaration = edge_by_ref[ref]
+            seat, basis = _edge_seat(fp, declaration, info['occupancy'])
+            row['edge'] = dict(edge_rules[ref], seat_local_nm=_local_rect(seat, origin, q),
+                               seat_basis=basis, order=order)
         rows.append(row)
-        if actual != rules[ref]['edge']:
-            violations.append({'kind': 'edge_identity', 'ref': ref, 'expected': rules[ref]['edge'],
-                               'actual': actual, 'basis': basis})
+    rails_payload = ({'shared': {}, 'scoped': {}} if rails is None else
+                     {'shared': dict(rails.get('shared', rails.get('shared_rails', {}))),
+                      'scoped': dict(rails.get('scoped', {})), 'bindings': rails.get('bindings')})
+    raw_prox = proximity if proximity is not None else (intent.get('proximity') if intent else ())
+    prox_rows = [dict(c) for c in (raw_prox or []) if c.get('basis') == 'pad_edge']
+    payload = {'schema': INPUT_SCHEMA,
+               'outline': {'kind': 'rectangle', 'rect_nm': _rectangle(facts['outline'])},
+               'rules': {'copper_clearance_nm': _clearance(settings),
+                         'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
+                         'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
+                         'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
+               'footprints': sorted(rows, key=lambda r: r['uuid']),
+               'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in group_rows],
+               'rails': rails_payload, 'proximity': prox_rows,
+               'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20},
+               'evaluate': [{}]}
+    payload['problem_sha256'] = sha256_bytes(canonical({k: v for k, v in payload.items() if k != 'evaluate'}))
+    done = _run_child([str(rust_executable())], clock=Clock(60), input_bytes=json.dumps(payload).encode())
+    if done.returncode != 0:
+        err = (done.stdout + done.stderr).decode(errors='replace')[-2000:]
+        raise JobRefusal(f'placement engine evaluation failed (exit {done.returncode}): {err}')
     if Path(path).read_bytes() != before:
         raise JobRefusal('board changed during final edge-intent checks')
-    return {'status': 'failed' if violations else 'pass', 'connectors': rows,
-            'violations': violations, 'coverage': ['edge_identity']}
+    return json.loads(done.stdout)['evaluations'][0]
+
+
+def _check_edge_intent_native(path, intent):
+    """Reload native geometry and grade declared edges independently of solver output."""
+    if not intent.get('edge_connectors'):
+        return {'status': 'pass', 'connectors': [], 'violations': [], 'coverage': ['edge_identity']}
+    return _evaluate_board_native(path, intent=intent)['edge_intent']
 
 
 def _on_mask(pad):
@@ -906,8 +971,25 @@ def validate_intent(intent, groups):
 # ---------------------------------------------------------------- Rust search
 
 def rust_executable():
+    from .placement_runtime import PlanningProcessError
     from .placement_rust_runtime import resolve_executable
-    return resolve_executable()
+    try:
+        return resolve_executable()
+    except PlanningProcessError:
+        if 'AGENT_EE_RUST_PLANNER' in os.environ:
+            raise
+        root = Path(__file__).resolve().parents[2]
+        candidates = [root / 'build/placement-engine/agent-ee-placement']
+        git_dir = root / '.git'
+        if git_dir.is_file():
+            text = git_dir.read_text(errors='replace').strip()
+            if text.startswith('gitdir:'):
+                common = Path(text.split(':', 1)[1].strip()).resolve().parents[2]
+                candidates.append(common / 'build/placement-engine/agent-ee-placement')
+        for candidate in candidates:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate.resolve(strict=True)
+        raise
 
 
 def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None, clock=None):
@@ -1272,42 +1354,11 @@ def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None):
         anchor = centres[g['anchor']]
         spread = max(math.dist(anchor, centres[r]) for r in g['refs']) / NM
         grouping.append({'group': g['name'], 'anchor': g['anchor'], 'max_member_anchor_mm': round(spread, 3)})
-    edge_rows = []
-    if edges:
-        outline = board.GetBoardEdgesBoundingBox()
-        box = (outline.GetLeft(), outline.GetTop(), outline.GetRight(), outline.GetBottom())
-        for ref, edge in edges.items():
-            fp = next(f for f in board.GetFootprints() if f.GetReference() == ref)
-            fab = [g for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in ('F.Fab', 'B.Fab')]
-            items = fab or list(fp.Pads())
-            b = _union([_bbox(i) for i in items])
-            gaps = {'west': b[0] - box[0], 'north': b[1] - box[1], 'east': box[2] - b[2], 'south': box[3] - b[3]}
-            edge_rows.append({'ref': ref, 'declared': edge, 'basis': 'fab' if fab else 'pads',
-                              'nearest': min(gaps, key=gaps.get),
-                              'setback_mm': {k: round(v / NM, 4) for k, v in gaps.items()}})
-    group_links = None
-    if groups:
-        from . import group_links as links
-        refs = [r for g in groups for r in g['refs']]
-        footprints = links.pcbnew_footprints(board, refs)
-        group_links = links.measure({'groups': groups}, footprints, rails or {'shared_rails': {}, 'scoped': {}})
-        group_links['objective_mm'] = links.objective(group_links)
-    pad_edge_legs = None
-    if proximity:
-        from . import pad_edge
-        pads = {}
-        rows = []
-        for claim in proximity:
-            if claim.get('basis') != 'pad_edge':
-                continue
-            for ref in (claim['ref'], claim['near']):
-                if ref not in pads:
-                    pads[ref] = pad_edge.pcbnew_pads(board, ref) or []
-            result = pad_edge.claim_legs(claim, pads)
-            rows.append({'ref': claim['ref'], 'near': claim['near'], 'max_mm': claim.get('max_mm'),
-                         'authority': 'advisory_objective' if claim.get('context', {}).get('limit') == 'derived_default'
-                         else 'unassessed_authority', **result})
-        pad_edge_legs = rows
+    evaluated = (_evaluate_board_native(path, groups=groups, edges=edges, rails=rails, proximity=proximity)
+                 if (groups or edges or proximity) else None)
+    edge_rows = evaluated['edge_intent']['connectors'] if edges else []
+    group_links = evaluated['group_links'] if groups else None
+    pad_edge_legs = evaluated['pad_edge_legs'] if proximity else None
     return {'board_sha256': sha256_bytes(data), 'track_segments': segments, 'track_arcs': arcs,
             'route_length_mm': {k: round(v / NM, 4) for k, v in sorted(length.items())},
             'route_length_total_mm': round(sum(length.values()) / NM, 4), 'vias': len(vias),
