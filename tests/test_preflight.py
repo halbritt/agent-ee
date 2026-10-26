@@ -76,11 +76,11 @@ class PreflightTests(unittest.TestCase):
             'runtime_files': self.runtime}, {'candidate_id': 'candidate', 'scope': {'schema': 'agent-ee.scope/1'}},
             [self.definition])
         self.context['expected'] = self.expected
-        with patch('agent_ee.reviewers.dispatch') as provider, patch('agent_ee.preflight.execute') as probe:
+        with patch('agent_ee.reviewers.dispatch') as provider, native_run.using(native_run.Recorded()) as probe:
             record, value = self.call(policy=foreign)
         self.assertIn('policy_drift', record['error'])
         self.assertIsNone(value)
-        probe.assert_not_called()
+        self.assertEqual(probe.calls, [])
         provider.assert_not_called()
 
     def test_selected_missing_binary_is_specific_refusal(self):
