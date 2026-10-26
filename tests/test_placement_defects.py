@@ -2143,28 +2143,19 @@ class PlacementRoutingCarryTests(unittest.TestCase):
             self.assertEqual((check['outcome'], check['details']['reason']), ('defect', 'open_placement_defects'))
         self.assertEqual(campaign.verify_campaign(fixture.out)['state'], state['state'])
 
-    def test_native_routed_artwork_closes_carry_and_exports_fab(self):
+    def test_unclassified_routed_artwork_stays_anchored_and_the_carry_escalates(self):
+        """AGENTEE-523: a campaign artwork step without a source-bound policy cannot move graphics.
+
+        The fixture's carry is board silk graphics. Since c6461f21 (AGENTEE-523) graphics stay
+        anchored unless an explicit agent-ee.artwork-policy/1 request bound to the exact input
+        board classifies them, and a campaign step's input board exists only at run time. So
+        the receipted artwork step runs, moves nothing, and the open carry escalates. The
+        earlier carry-then-close-then-fab-export path awaits AGENTEE-551 (owner-gated).
+        """
         from agent_ee import campaign, stage_receipts
         from test_placement_adapter import BOARD
         fixture, checks, route = self.routing_fixture()
-        # The writer remains scripted; placement, routing, artwork and checks are native.
         from agent_ee import routed_artwork
-        # Original fixture bindings enable a real native fabrication export.
-        from agent_ee.schematic_emitter import _scan, _dump, Q
-        from agent_ee.symbol_library import children
-        schematic_path = fixture.source / 'project/rc_filter.kicad_sch'
-        tree = _scan(schematic_path.read_bytes())
-        for symbol in children(tree, 'symbol'):
-            props = {p[1]: p for p in children(symbol, 'property')}
-            ref = props['Reference'][2]
-            if ref not in ('C1', 'J1', 'R1'):
-                continue
-            for name, value in (('LCSC', 'C900010'), ('Manufacturer', 'Owned Fixture Works'),
-                                ('Partnumber', 'EE350-' + ref)):
-                prop = copy.deepcopy(props['Value'])
-                prop[1:3] = [Q(name), Q(value)]
-                symbol.append(prop)
-        schematic_path.write_text('\n'.join(_dump(tree)) + '\n')
         artwork_step = routed_artwork.step(fixture.root / 'artwork-tool', BOARD)
         closure_checks = [checks[0], {'id': 'netlist', 'kind': 'netlist', 'stage': 'placement'},
                           *checks[1:],
@@ -2178,38 +2169,35 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         next(r for r in closure_scope['baseline']['requirements'] if r['id'] == 'R-fab')['checks'] = ['netlist', 'fab']
         closure_scope['stages']['order'].extend(['verification', 'fab'])
         closure_scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
-        status, closed_state = fixture.campaign(fixture.declaration(), iterations=4,
-            scope=closure_scope, steps=[route, artwork_step], name='receipted-closure')
-        self.assertEqual((status, closed_state['state']), (0, 'criteria_satisfied'),
-                         {key: closed_state.get(key) for key in ('state', 'reason', 'error')})
-        refused = fixture.out / 'runs/3'
-        for check_id in ('verify', 'fab'):
-            refused_check = read_json(refused / f'checks/{check_id}.json')
-            self.assertEqual(refused_check['outcome'], 'defect')
-            self.assertEqual(refused_check['details']['reason'], 'open_placement_defects')
-        fixed = fixture.out / 'runs/4'
-        fixed_manifest = read_json(fixed / 'candidate.json')
-        recorded = lambda: placement_defects._recorded(fixed, 'fab', fixed_manifest)
-        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs', recorded), [])
-        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
-            placement_defects.open_defects(fixed_manifest, fixed / 'inputs')
-        self.assertEqual(len(fixed_manifest['scope'][placement_defects.DECLARATION]), 2)
-        for check_id in ('verify', 'fab', 'routed'):
-            self.assertEqual(read_json(fixed / f'checks/{check_id}.json')['outcome'], 'pass')
+        status, state = fixture.campaign(fixture.declaration(), iterations=4,
+            scope=closure_scope, steps=[route, artwork_step], name='anchored-artwork')
+        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'no_monotonic_progress'),
+                         {key: state.get(key) for key in ('state', 'reason', 'error')})
+        self.assertEqual(state['failed_criteria'], ['fab', 'verify'])
+        for run in ('runs/3', 'runs/4'):
+            for check_id in ('verify', 'fab'):
+                refused = read_json(fixture.out / run / f'checks/{check_id}.json')
+                self.assertEqual((refused['outcome'], refused['details']['reason']),
+                                 ('defect', 'open_placement_defects'), (run, check_id))
+            self.assertEqual(read_json(fixture.out / run / 'checks/routed.json')['outcome'], 'pass')
+        # The artwork step ran and was receipted, but anchored graphics did not move.
         artwork_receipt_dir = fixture.out / 'implementations/3/receipts/1-agent-ee-routed-artwork'
         artwork_receipt = stage_receipts.validate_receipt(artwork_receipt_dir)
         self.assertEqual(artwork_receipt['status'], 'completed')
         self.assertEqual(artwork_receipt['violations'], [])
-        proof = routed_artwork.write_scope((refused / 'inputs' / BOARD).read_bytes(),
-                                           (fixed / 'inputs' / BOARD).read_bytes())
-        self.assertTrue(proof['moved_identities'])
-        export = fixed / 'work/fab/fab'
-        self.assertTrue(list((export / 'gerbers').glob('*')))
-        self.assertTrue(list((export / 'drill').glob('*')))
-        self.assertTrue((export / 'bom.csv').is_file())
-        self.assertTrue((export / 'cpl.csv').is_file())
+        produced = read_json(artwork_receipt_dir / 'run' / placement_defects.REPORT)
+        self.assertEqual(produced['write_scope']['moved_identities'], [])
+        self.assertEqual(produced['verdict'], 'defect')
+        self.assertTrue(produced['open_defects'])
+        silk = read_json(artwork_receipt_dir / 'run' / placement_defects.ARTWORK)
+        self.assertEqual(silk['moved_graphics'], [])
+        self.assertTrue(silk['search_diagnostics'])
+        self.assertTrue(all(d['reason'] == 'anchored_artwork' for d in silk['search_diagnostics']),
+                        silk['search_diagnostics'])
+        final = fixture.out / 'runs/4'
+        self.assertTrue(placement_defects.open_defects(read_json(final / 'candidate.json'), final / 'inputs'))
         with patch('agent_ee.executor.execute', side_effect=AssertionError('replay launched a tool')):
-            self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'criteria_satisfied')
+            self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
 
 class ClosureEscapeTests(unittest.TestCase):
     def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None,
