@@ -163,14 +163,16 @@ def baseline_mounts(baseline):
 
 
 def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, cancel=None, adapter=None,
-        on_line=None, on_launch=None):
+        on_line=None, on_launch=None, on_tick=None):
     """Run intent and return its Execution.
 
     inputs is the read-only candidate (sandbox runs). deadline is an absolute monotonic time;
     the tool's timeout is clamped to it and a nearly spent deadline raises DeadlineExhausted.
     baseline names the run's baseline.json; when it exists it is mounted before mounts.
-    cancel is an executor.Cancellation. on_line receives each stdout line and on_launch the
-    child's pid once it starts (host and docker). When a callback raises, the run is stopped and
+    cancel is an executor.Cancellation. on_line receives each stdout line, on_launch the
+    child's pid once it starts, and on_tick is called on the caller's thread before every
+    supervision poll (at most 0.05 s apart, also while a descendant still holds a pipe after
+    the leader exits) for cooperative checkpoints (host and docker). When a callback raises, the run is stopped and
     reaped and the callback's exception propagates unchanged, carrying the stopped run's
     Execution as its native_execution attribute (execution "callback_failed").
     """
@@ -180,7 +182,7 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     mounts = (*baseline_mounts(baseline), *mounts)
     chosen = adapter or _active.get() or DEFAULT_ADAPTERS[intent.isolation]
     return chosen.run(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts,
-                      cancel=cancel, on_line=on_line, on_launch=on_launch)
+                      cancel=cancel, on_line=on_line, on_launch=on_launch, on_tick=on_tick)
 
 
 @contextlib.contextmanager
@@ -200,12 +202,12 @@ class Sandbox:
 
     name = "sandbox"
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
         if intent.isolation != "sandbox":
             raise ValueError(f"the sandbox adapter cannot run a {intent.isolation} intent")
         if inputs is None:
             raise ValueError("a sandboxed run needs its read-only inputs")
-        if on_line is not None or on_launch is not None:
+        if on_line is not None or on_launch is not None or on_tick is not None:
             raise ValueError("the sandbox adapter returns output with the record, not by callback")
         record = executor.execute(inputs, work, list(intent.argv), timeout=timeout, stdin=intent.stdin,
                                   network=intent.network, extra_ro=tuple(mounts), cancellation=cancel,
@@ -224,7 +226,7 @@ def _read_logs(work):
 
 
 def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_line=None, on_stop=None,
-              on_launch=None, stop_grace=None):
+              on_launch=None, stop_grace=None, on_tick=None):
     """Run argv as a host process group under one deadline and cancel handle.
 
     Returns (record fields, stdout, stderr). Output is drained without blocking, so a child
@@ -232,8 +234,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     cancel kill the whole group and then keep what it already wrote. on_stop (a container
     client's cleanup) runs after the kill on every exit except the tool's own completion.
     timeout None means no limit of its own. on_launch gets the child's pid. stop_grace sends
-    SIGTERM to the group and waits that long before SIGKILL on an early stop. When on_line or
-    on_launch raises, the run stops like a timeout (execution "callback_failed") and the exception
+    SIGTERM to the group and waits that long before SIGKILL on an early stop. on_tick runs before
+    every poll of the loop. When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
     is re-raised with (fields, stdout, stderr) attached as native_execution.
     """
     cancel = cancel or Cancellation()
@@ -287,6 +289,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                 if on_launch is not None:
                     on_launch(proc.pid)
                 while selector.get_map() or proc.poll() is None:
+                    if on_tick is not None:
+                        on_tick()
                     if cancel.cancelled.is_set() or interrupt:
                         stopped = "interrupted"
                         break
@@ -415,7 +419,7 @@ class Host:
 
     name = "host"
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
         if intent.isolation != "host":
             raise ValueError(f"the host adapter cannot run a {intent.isolation} intent")
         if mounts:
@@ -432,7 +436,7 @@ class Host:
 
                 return _supervised(finish, intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
                                    env=intent.env, cwd=intent.cwd, on_line=on_line, on_launch=on_launch,
-                                   stop_grace=intent.stop_grace_s)
+                                   on_tick=on_tick, stop_grace=intent.stop_grace_s)
         finally:
             forget_scope()
 
@@ -473,7 +477,7 @@ class Docker:
             command += ["--entrypoint", self.entrypoint]
         return command + [self.image, *intent.argv]
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
         if intent.isolation != "docker":
             raise ValueError(f"the docker adapter cannot run a {intent.isolation} intent")
         if mounts:
@@ -495,7 +499,7 @@ class Docker:
 
             return _supervised(finish, command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
                                on_line=on_line, on_stop=kill_container, on_launch=on_launch,
-                               stop_grace=intent.stop_grace_s)
+                               on_tick=on_tick, stop_grace=intent.stop_grace_s)
 
 
 @dataclass
@@ -530,7 +534,7 @@ class Recorded:
         self.responder = responder or (lambda call: Outcome())
         self.calls = []
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
         call = Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
                     timeout, tuple(mounts))
         self.calls.append(call)
@@ -544,6 +548,8 @@ class Recorded:
         execution = outcome.execution or ("ok" if outcome.exit_code == 0 else "failed")
         if on_launch is not None:
             on_launch(outcome.pid)
+        if on_tick is not None:
+            on_tick()
         record = {"argv": list(intent.argv)}
         if intent.isolation == "sandbox":
             record["sandbox_argv"] = executor.sandbox_argv(inputs, work, list(intent.argv), network=intent.network,

@@ -415,6 +415,40 @@ class HostTest(unittest.TestCase):
             native_run.run(self.host('import time; time.sleep(60)'), work=None, on_launch=bad_launch)
         self.assertEqual(caught.exception.native_execution['execution'], 'callback_failed')
 
+    def test_tick_checkpoint_cancels_while_a_descendant_holds_the_pipe(self):
+        # The leader exits at once; its detached-in-group child keeps stdout open and stays silent.
+        pidfile = self.root / 'child.pid'
+        code = ('import subprocess, sys; '
+                f'p = subprocess.Popen(["sleep", "60"], stdout=sys.stdout); open({str(pidfile)!r}, "w").write(str(p.pid))')
+        ticks, threads = [], set()
+
+        def on_tick():
+            import threading
+            threads.add(threading.get_ident())
+            ticks.append(time.monotonic())
+            if len(ticks) == 20:
+                raise ValueError('operation cancelled')
+
+        start = time.monotonic()
+        with self.assertRaises(ValueError) as caught:
+            native_run.run(self.host(code, timeout=30), work=None, on_tick=on_tick)
+        self.assertEqual(str(caught.exception), 'operation cancelled')
+        self.assertEqual(caught.exception.native_execution['execution'], 'callback_failed')
+        self.assertLess(time.monotonic() - start, 10)
+        import threading
+        self.assertEqual(threads, {threading.get_ident()})
+        child = int(pidfile.read_text())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(.05)
+        else:
+            os.kill(child, signal.SIGKILL)
+            self.fail('the pipe-holding descendant survived the failed checkpoint')
+
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
             native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])
