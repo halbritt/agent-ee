@@ -602,6 +602,10 @@ def normalize_intent(intent, groups, *, rails=None, locality=None, board_sha256=
         except ValueError as exc:
             raise ValueError('intent.electrical_locality: ' + str(exc)) from exc
         norm_intent['electrical_locality'] = locality
+    if net_groups is None and net_parts is not None:
+        # Group membership of a net follows from its parts and the validated groups; the caller supplies parts once.
+        owner = {ref: g['name'] for g in norm_groups['groups'] for ref in g['refs']}
+        net_groups = {net: {owner[ref] for ref in refs if ref in owner} for net, refs in net_parts.items()}
     norm_rails = (dict(EMPTY_RAILS) if rails is None else
                   validate_rails(rails, board_sha256=board_sha256, groups_sha256=groups_sha256,
                                  group_names={g['name'] for g in norm_groups['groups']},

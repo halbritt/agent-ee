@@ -76,7 +76,7 @@ class PadClearanceTests(unittest.TestCase):
     def shape_agreement(self, kind):
         import pcbnew as k
         path, fixed, pads = self.board(kind)
-        problem, _ = job.capture(path, fixed, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
         row = next(r for r in problem['footprints'] if r['native_ref'] == 'P')
         geometry = row['copper_local_nm'][0]['geometry']
         self.assertEqual(geometry['kind'], kind)
@@ -119,7 +119,7 @@ class PadClearanceTests(unittest.TestCase):
         pad.SetShape(k.PADSTACK.ALL_LAYERS, k.PAD_SHAPE_TRAPEZOID)
         with self.assertRaisesRegex(job.JobRefusal, 'unsupported native pad shape'):
             job._pad_copper(pad, (0, 0), 0)
-        problem, _ = job.capture(path, fixed, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
         row = next(r for r in problem['footprints'] if r['native_ref'] == 'P')
         row['copper_local_nm'][0]['geometry']['polygons'] = []
         with self.assertRaisesRegex(AssertionError, 'empty native copper polygons'):

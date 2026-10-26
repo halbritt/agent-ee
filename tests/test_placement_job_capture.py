@@ -33,7 +33,7 @@ print(json.dumps({
 class FreshRuleTests(Fixture):
     def setUp(self):
         super().setUp()
-        self.capture = job.capture
+        self.capture = lambda path, declared, grouped: job.capture(path, job.normalize_intent(declared, grouped))
         # Diagnostic rerun of these exact contracts against the held parent.
         old = os.environ.get('AGENT_EE_OLD_PLACEMENT_JOB')
         if old:
@@ -156,7 +156,7 @@ class FreshRuleTests(Fixture):
                 project['board']['design_settings']['rules'][field] = value
                 self.project.write_text(json.dumps(project))
                 with self.assertRaises(job.JobRefusal):
-                    job.capture(self.board, intent(), groups())
+                    job.capture(self.board, job.normalize_intent(intent(), groups()))
 
 
 class CaptureBoundaryTests(Fixture):
@@ -182,7 +182,7 @@ class CaptureBoundaryTests(Fixture):
                 try:
                     with patch.object(job.sys, 'executable', str(shim)):
                         with self.assertRaisesRegex(job.JobStopped, 'cancelled' if mode == 'cancel' else 'deadline'):
-                            job.capture(self.board, intent(), groups(), cancel_dir=self.dir,
+                            job.capture(self.board, job.normalize_intent(intent(), groups()), cancel_dir=self.dir,
                                         clock=job.Clock(3 if mode == 'cancel' else 0.3))
                     self.assertTrue(started.exists())
                     self.assertFalse(Path(f'/proc/{started.read_text()}').exists(), 'owned child was reaped')
@@ -194,10 +194,10 @@ class CaptureBoundaryTests(Fixture):
 
     def test_deadline_and_cancellation_before_capture(self):
         with self.assertRaisesRegex(job.JobStopped, 'deadline'):
-            job.capture(self.board, intent(), groups(), clock=job.Clock(0))
+            job.capture(self.board, job.normalize_intent(intent(), groups()), clock=job.Clock(0))
         (self.dir / 'CANCEL').touch()
         with self.assertRaisesRegex(job.JobStopped, 'cancelled'):
-            job.capture(self.board, intent(), groups(), cancel_dir=self.dir)
+            job.capture(self.board, job.normalize_intent(intent(), groups()), cancel_dir=self.dir)
 
     def test_failed_or_missing_child_output_never_returns_a_problem(self):
         for code, output in ((1, b''), (0, b''), (0, b'{}'), (0, b'null'),
@@ -207,7 +207,7 @@ class CaptureBoundaryTests(Fixture):
                 with patch.object(job, '_run_child', return_value=subprocess.CompletedProcess(
                         [], code, output, b'native diagnostic')):
                     with self.assertRaises(job.JobRefusal):
-                        job.capture(self.board, intent(), groups())
+                        job.capture(self.board, job.normalize_intent(intent(), groups()))
 
     def test_project_change_during_capture_refuses(self):
         def changed(*args, **kwargs):
@@ -217,7 +217,7 @@ class CaptureBoundaryTests(Fixture):
             return subprocess.CompletedProcess([], 0, json.dumps(output).encode(), b'')
         with patch.object(job, '_run_child', side_effect=changed):
             with self.assertRaisesRegex(job.JobRefusal, 'changed during capture'):
-                job.capture(self.board, intent(), groups())
+                job.capture(self.board, job.normalize_intent(intent(), groups()))
 
 
 class BoardZoneTests(Fixture):
@@ -260,7 +260,7 @@ class BoardZoneTests(Fixture):
             self.assertTrue(result['feasible'], result)
             print('OLD_KEEPOUT_FALSE_FEASIBLE ' + json.dumps(result), flush=True)
         with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
-            job.capture(path, {}, {'groups': []})
+            job.capture(path, job.normalize_intent({}, {'groups': []}))
         print('KEEPOUT_CONTROL ' + json.dumps({'native': violations, 'exit': execution['exit_code'],
                                              'new': 'refused before solve'}), flush=True)
 
@@ -270,12 +270,12 @@ class BoardZoneTests(Fixture):
                 build_board(self.board)
                 self.zone_board(kind)
                 with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
-                    job.capture(self.board, {}, {'groups': []})
+                    job.capture(self.board, job.normalize_intent({}, {'groups': []}))
 
     def test_footprint_zone_refusal_is_preserved(self):
         self.zone_board('keepout', footprint=True)
         with self.assertRaisesRegex(job.JobRefusal, 'footprint rule areas/zones'):
-            job.capture(self.board, {}, {'groups': []})
+            job.capture(self.board, job.normalize_intent({}, {'groups': []}))
 
     def test_zero_zone_positive(self):
         problem, _ = self.problem()

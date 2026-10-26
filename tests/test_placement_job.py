@@ -141,7 +141,7 @@ class Fixture(unittest.TestCase):
         self.project.write_text('{}\n')
 
     def problem(self):
-        return job.capture(self.board, intent(), groups())
+        return job.capture(self.board, job.normalize_intent(intent(), groups()))
 
     def search(self, seeds=2, steps=20000):
         return {'seeds': [{'seed': s, 'start': 'scattered' if s % 2 == 0 else 'clustered'} for s in range(seeds)],
@@ -202,14 +202,15 @@ class NativeTransformTests(Fixture):
         project_bytes = self.project.read_bytes()
         declaration = intent()
         declaration['fixed_poses'].append(dict(ref='FID~2', x=6.0, y=3.0, rot=0.0, side='F', basis='mechanical'))
-        problem, _ = job.capture(self.board, declaration, groups())
+        problem, _ = job.capture(self.board, job.normalize_intent(declaration, groups()))
         marks = {row['uuid']: row for row in problem['footprints'] if row['native_ref'] == 'FID'}
         self.assertEqual(len(marks), 2)
         self.assertTrue(all(row['role'] == 'fixed_copper_mark' for row in marks.values()))
         evaluated = self._evaluate(problem, {})
-        placed = job.materialize(self.board, evaluated['poses'], self.dir / 'marks', project_bytes, intent=declaration)
+        placed = job.materialize(self.board, evaluated['poses'], self.dir / 'marks', project_bytes,
+                                 normalized=job.normalize_intent(declaration, {'groups': []}))
         self.assertEqual(placed['integrity'], 'preserved', placed['problems'])
-        reloaded, _ = job.capture(placed['board'], declaration, groups())
+        reloaded, _ = job.capture(placed['board'], job.normalize_intent(declaration, groups()))
         after = {row['uuid']: row for row in reloaded['footprints'] if row['native_ref'] == 'FID'}
         for uuid, row in marks.items():
             for field in ('native_ref', 'pose', 'role', 'copper_local_nm', 'mask_local_nm', 'holes_local_nm', 'pads'):
@@ -223,7 +224,8 @@ class NativeTransformTests(Fixture):
                     target[field] = changed
                     directory = self.dir / f'protected-{uuid}-{field}'
                     with self.assertRaisesRegex(job.JobRefusal, 'protected footprint pose'):
-                        job.materialize(self.board, poses, directory, project_bytes, intent=declaration)
+                        job.materialize(self.board, poses, directory, project_bytes,
+                                        normalized=job.normalize_intent(declaration, {'groups': []}))
                     self.assertFalse(directory.exists())
 
     def test_sourced_locality_matches_saved_native_centroids_after_every_rotation(self):
@@ -238,27 +240,28 @@ class NativeTransformTests(Fixture):
                     'citation': quote, 'provenance': {'class': 'engineering', 'basis': 'qualification constraint',
                     'citation': dict(kind='captured_source', path='limit.txt', locator='line 1', quote=quote,
                         sha256=hashlib.sha256(quote.encode()).hexdigest())}})])
-        problem, _ = job.capture(self.board, declaration, groups())
+        problem, _ = job.capture(self.board, job.normalize_intent(declaration, groups()))
         rows = {f['native_ref']: f for f in problem['footprints']}
         for q in range(4):
             for dx, dy, expected in [(3 * MM, 0, 'pass'), (2400000, 2400000, 'defect')]:
                 evaluated = self._evaluate(problem, {rows['R1']['uuid']: [7 * MM, 5 * MM, q],
                     rows['C1']['uuid']: [7 * MM + dx, 5 * MM + dy, q]})
                 directory = self.dir / f'locality-{q}-{dy}'
-                check = job.materialize(self.board, evaluated['poses'], directory, b'{}\n', intent=declaration)
+                check = job.materialize(self.board, evaluated['poses'], directory, b'{}\n',
+                                        normalized=job.normalize_intent(declaration, {'groups': []}))
                 self.assertEqual(check['integrity'], 'preserved')
-                native = job.check_locality(check['board'], declaration)
+                native = job.check_locality(check['board'], job.normalize_intent(declaration, {'groups': []}))
                 self.assertEqual(native['status'], expected, native)
                 self.assertEqual(any(v['kind'] == 'electrical_locality' for v in evaluated['violations']),
                                  expected == 'defect', evaluated)
         broken = json.loads(json.dumps(declaration))
         broken['electrical_locality']['obligations'][0]['leg']['to']['net'] = 'GND'
         with self.assertRaisesRegex(job.JobRefusal, 'locality'):
-            job.capture(self.board, broken, groups())
+            job.capture(self.board, job.normalize_intent(broken, groups()))
         from unittest.mock import patch
         with patch.object(job, '_native_read', return_value={}):
             with self.assertRaisesRegex(job.JobRefusal, 'missing or invalid output'):
-                job.check_locality(self.board, declaration)
+                job.check_locality(self.board, job.normalize_intent(declaration, {'groups': []}))
 
     def test_engine_transform_equals_native_save_reload_for_every_quarter_turn(self):
         problem, _ = self.problem()
@@ -266,7 +269,8 @@ class NativeTransformTests(Fixture):
         for q in range(4):
             evaluated = self._evaluate(problem, {u1['uuid']: [12 * MM, 5 * MM, q]})
             poses = evaluated['poses']
-            check = job.materialize(self.board, poses, self.dir / f'q{q}', b'{}\n', intent=intent())
+            check = job.materialize(self.board, poses, self.dir / f'q{q}', b'{}\n',
+                                    normalized=job.normalize_intent(intent(), {'groups': []}))
             self.assertEqual(check['problems'], [], q)
             self.assertEqual(check['integrity'], 'preserved')
             row = next(p for p in poses if p['uuid'] == u1['uuid'])
@@ -281,14 +285,16 @@ class NativeTransformTests(Fixture):
         wrong = json.loads(json.dumps(poses))
         row = next(p for p in wrong if p['uuid'] == u1['uuid'])
         row['pads'][0]['x_nm'] += 1
-        check = job.materialize(self.board, wrong, self.dir / 'wrong', b'{}\n', intent=intent())
+        check = job.materialize(self.board, wrong, self.dir / 'wrong', b'{}\n',
+                                normalized=job.normalize_intent(intent(), {'groups': []}))
         self.assertEqual(check['integrity'], 'violated')
         self.assertTrue(any('differs from the engine transform' in p for p in check['problems']))
         fixed = json.loads(json.dumps(poses))
         fid = next(p for p in fixed if p['native_ref'] == 'FID')
         fid['moved'], fid['x_nm'] = True, fid['x_nm'] + MM
         with self.assertRaisesRegex(job.JobRefusal, 'protected'):
-            job.materialize(self.board, fixed, self.dir / 'fixed', b'{}\n', intent=intent())
+            job.materialize(self.board, fixed, self.dir / 'fixed', b'{}\n',
+                            normalized=job.normalize_intent(intent(), {'groups': []}))
         self.assertFalse((self.dir / 'fixed/board.kicad_pcb').exists())
 
     def test_uuid_round_trip_preserves_every_footprint(self):
@@ -296,7 +302,8 @@ class NativeTransformTests(Fixture):
         output, _ = job.solve(problem, self.search(2, 30000), self.dir, deadline_s=60)
         self.assertTrue(output['shortlist'], output['seeds'])
         candidate = output['shortlist'][0]
-        check = job.materialize(self.board, candidate['poses'], self.dir / 'c', b'{}\n', intent=intent())
+        check = job.materialize(self.board, candidate['poses'], self.dir / 'c', b'{}\n',
+                                normalized=job.normalize_intent(intent(), {'groups': []}))
         self.assertEqual(check['problems'], [])
         import pcbnew
         before = job.native_inventory(pcbnew.LoadBoard(str(self.board)))
@@ -501,8 +508,9 @@ class EspProgCaptureTests(unittest.TestCase):
         root = Path(os.environ['AGENT_EE_ESP_PROG_PREPARED'])
         for name, sha in ESP_PROG.items():
             self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), sha, name)
-        problem, record = job.capture(root / 'board.kicad_pcb', json.loads((root / 'intent.json').read_text()),
-                                      json.loads((root / 'groups.json').read_text()))
+        problem, record = job.capture(root / 'board.kicad_pcb',
+                                      job.normalize_intent(json.loads((root / 'intent.json').read_text()),
+                                                           json.loads((root / 'groups.json').read_text())))
         rows = problem['footprints']
         self.assertEqual(len(rows), 21)
         self.assertEqual(len({r['uuid'] for r in rows}), 21)
@@ -586,7 +594,7 @@ class NativeEscapeHintsTests(Fixture):
             fp.SetOrientationDegrees(90 * turn)
             pcbnew.SaveBoard(str(self.board), board)
             before = self.board.read_bytes(), self.project.read_bytes()
-            problem, capture = job.capture(self.board, intent(), groups())
+            problem, capture = job.capture(self.board, job.normalize_intent(intent(), groups()))
             row = next(f for f in problem['footprints'] if f['native_ref'] == 'U1')
             hints = row['escape_local_nm']
             self.assertEqual(len(hints), 1)

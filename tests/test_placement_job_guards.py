@@ -20,7 +20,9 @@ from test_placement_job import Fixture, intent, groups, MM
 
 def materialize(source, poses, destination):
     # Allows the identical negative to exercise the immutable pre-repair source.
-    kwargs = {'intent': intent()} if 'intent' in inspect.signature(job.materialize).parameters else {}
+    parameters = inspect.signature(job.materialize).parameters
+    kwargs = ({'normalized': job.normalize_intent(intent(), groups())} if 'normalized' in parameters
+              else {'intent': intent()} if 'intent' in parameters else {})
     return job.materialize(source, poses, destination, b'{}\n', **kwargs)
 
 
@@ -64,7 +66,7 @@ class FinalInventoryTests(Fixture):
         self.assertTrue(native['unconnected_items'])
         routed = {'status': 'routed', 'board': placed['board']}
         final = job.final_checks(routed, placed, job._owners(pcbnew.LoadBoard(placed['board'])),
-                                 set(), self.dir / 'final-incomplete', groups(), intent())
+                                 set(), self.dir / 'final-incomplete', job.normalize_intent(intent(), groups()))
         self.assertGreater(final['opens'], 0)
         self.assertEqual(final['integrity'], 'preserved')
         self.assertEqual(job._completion_status(routed, placed, final), 'verification_failed')
@@ -117,7 +119,8 @@ class FinalInventoryTests(Fixture):
                     return {'violations': [], 'unconnected_items': []}, execution
                 with patch.object(job, 'drc', side_effect=clean_drc):
                     final = job.final_checks({'status': 'routed', 'board': str(path)}, placed,
-                                             job._owners(board), set(), self.dir / f'final-{mutation}', groups(), intent())
+                                             job._owners(board), set(), self.dir / f'final-{mutation}',
+                                             job.normalize_intent(intent(), groups()))
                 self.assertTrue(final['identity_problems'], mutation)
                 self.assertEqual(final.get('eligibility'), 'INELIGIBLE')
                 self.assertEqual(final['physical_checks'], 'FAILED')
@@ -146,7 +149,7 @@ class FinalInventoryTests(Fixture):
         pcbnew.SaveBoard(str(path), board)
         path.with_suffix('.kicad_pro').write_bytes(Path(placed['board']).with_suffix('.kicad_pro').read_bytes())
         final = job.final_checks({'status': 'routed', 'board': str(path)}, placed, job._owners(board), set(),
-                                 self.dir / 'final', groups(), intent())
+                                 self.dir / 'final', job.normalize_intent(intent(), groups()))
         self.assertEqual(final['identity_problems'], [])
         zone = pcbnew.ZONE(board)
         zone.SetLayer(pcbnew.F_Cu)
@@ -160,9 +163,11 @@ class FinalInventoryTests(Fixture):
         pcbnew.SaveBoard(str(path), board)
         path.with_suffix('.kicad_pro').write_bytes(Path(placed['board']).with_suffix('.kicad_pro').read_bytes())
         routed = {'status': 'routed', 'board': str(path)}
-        protected = job.final_checks(routed, placed, job._owners(board), set(), self.dir / 'protected-zone', groups(), intent())
+        protected = job.final_checks(routed, placed, job._owners(board), set(), self.dir / 'protected-zone',
+                                     job.normalize_intent(intent(), groups()))
         self.assertTrue(protected['identity_problems'], 'an unowned zone must be protected')
-        owned = job.final_checks(routed, placed, job._owners(board), set(), self.dir / 'owned-zone', groups(), intent(),
+        owned = job.final_checks(routed, placed, job._owners(board), set(), self.dir / 'owned-zone',
+                                 job.normalize_intent(intent(), groups()),
                                  owned_zone_uuids={zone.m_Uuid.AsString()})
         self.assertEqual(owned['identity_problems'], [])
 

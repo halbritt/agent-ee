@@ -364,9 +364,9 @@ def _edge_seat(fp, declaration, occupancy):
     return occupancy['box'], occupancy.get('rung', occupancy['status'])
 
 
-def check_edge_intent(path, intent, *, clock=None, cancel_dir=None):
+def check_edge_intent(path, normalized, *, clock=None, cancel_dir=None):
     """Grade the saved board in a bounded fresh process, including saved settings."""
-    checked = _native_read(path, '_check_edges', {'intent': intent},
+    checked = _native_read(path, '_check_edges', {'intent': _bundle(normalized)['intent']},
                            clock=clock, cancel_dir=cancel_dir)
     if (checked.get('status') not in ('pass', 'failed')
             or checked.get('coverage') != ['edge_identity']
@@ -376,8 +376,9 @@ def check_edge_intent(path, intent, *, clock=None, cancel_dir=None):
     return checked
 
 
-def check_locality(path, intent, *, clock=None, cancel_dir=None):
+def check_locality(path, normalized, *, clock=None, cancel_dir=None):
     """Independently grade the saved native copper centroids, never solver costs."""
+    intent = _bundle(normalized)['intent']
     if 'electrical_locality' not in intent:
         return {'status': 'not_declared'}
     checked = _native_read(path, '_check_locality', {'intent': intent}, clock=clock, cancel_dir=cancel_dir)
@@ -651,6 +652,11 @@ def _validate_project_rules(project):
             _rule_mm(cls['clearance'], cls['name'] + ' clearance')
 
 
+NATIVE_READ_LABELS = {'_capture': 'capture', '_check_edges': 'edge check', '_check_locality': 'locality check',
+                      '_nets': 'net membership read'}
+BUNDLE_KEYS = frozenset(('intent', 'groups', 'rails', 'intent_contract', 'compatibility'))
+
+
 def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
     """Read native files in a fresh process, bounded by the caller's job lifetime.
 
@@ -661,7 +667,7 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
     board_path = Path(board_path).absolute()
     sources = (board_path, board_path.with_suffix('.kicad_pro'), board_path.with_suffix('.kicad_dru'))
     before = [p.read_bytes() if p.exists() else None for p in sources]
-    label = 'capture' if command == '_capture' else 'edge check'
+    label = NATIVE_READ_LABELS[command]
     done = _run_child([sys.executable, '-m', 'agent_ee.placement_job', command, str(board_path)],
                       clock=clock or Clock(300), cancel_dir=cancel_dir,
                       input_bytes=json.dumps(request).encode())
@@ -679,16 +685,15 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
     return captured
 
 
-def capture(board_path, intent, groups, *, rails=None, groups_sha256=None, clock=None, cancel_dir=None):
+def capture(board_path, normalized, *, clock=None, cancel_dir=None):
     """Capture native geometry and settings without inheriting cached defaults.
 
-    ``rails`` is a validated group-rails sidecar and ``groups_sha256`` the digest
-    of the exact groups bytes it binds; both are optional and never alter the
-    intent or groups documents.
+    ``normalized`` is the bundle from :func:`normalize_intent`; the child reads
+    its intent, groups, rails and compatibility record and never re-normalizes.
     """
-    normalize_intent(intent, groups)
-    captured = _native_read(board_path, '_capture', {'intent': intent, 'groups': groups, 'rails': rails,
-                                                     'groups_sha256': groups_sha256},
+    bundle = _bundle(normalized)
+    captured = _native_read(board_path, '_capture',
+                            {'normalized': {k: bundle[k] for k in ('intent', 'groups', 'rails', 'compatibility')}},
                             clock=clock, cancel_dir=cancel_dir)
     try:
         problem, record = captured['problem'], captured['record']
@@ -700,35 +705,34 @@ def capture(board_path, intent, groups, *, rails=None, groups_sha256=None, clock
     return problem, record
 
 
-def _rails(rails, board_bytes, groups, board, groups_sha256=None):
-    """The canonical rails for this capture: the validated sidecar bound to this board, or none.
+def _bundle(normalized):
+    """The normalized intent bundle; a raw intent document is refused, never guessed at."""
+    if not isinstance(normalized, dict) or not BUNDLE_KEYS <= set(normalized):
+        raise JobRefusal('expected the normalized intent bundle from normalize_intent, not a raw intent document')
+    return normalized
 
-    Declared group/part annotations are checked against the board's actual net
-    membership, so a sidecar can only cite members that really share the net.
+
+def _rail_membership(board_path, *, clock=None, cancel_dir=None):
+    """Board net membership for binding a group-rails sidecar: ``nets`` and ``net_parts``.
+
+    Read once at job entry in a fresh native process and passed to the single
+    :func:`normalize_intent` call, which derives each net's groups from its parts.
     """
-    from . import placement_intent
-    if rails is None:
-        return dict(placement_intent.EMPTY_RAILS)
-    if groups_sha256 is None:
-        raise JobRefusal('group rails need the sha256 of the exact groups bytes they bind')
-    owner = {ref: g['name'] for g in groups['groups'] for ref in g['refs']}
-    nets, net_parts, net_groups = set(), {}, {}
-    for fp in board.GetFootprints():
+    read = _native_read(board_path, '_nets', {}, clock=clock, cancel_dir=cancel_dir)
+    net_parts = read.get('net_parts')
+    if not isinstance(net_parts, dict) or any(not isinstance(v, list) for v in net_parts.values()):
+        raise JobRefusal('native net membership read returned missing or invalid output')
+    return {'nets': set(net_parts), 'net_parts': {net: set(refs) for net, refs in net_parts.items()}}
+
+
+def _rail_membership_native(board_path):
+    import pcbnew
+    net_parts = {}
+    for fp in pcbnew.LoadBoard(str(board_path)).GetFootprints():
         for pad in fp.Pads():
-            net = pad.GetNetname()
-            if not net:
-                continue
-            nets.add(net)
-            net_parts.setdefault(net, set()).add(fp.GetReference())
-            if fp.GetReference() in owner:
-                net_groups.setdefault(net, set()).add(owner[fp.GetReference()])
-    try:
-        return placement_intent.validate_rails(
-            rails, board_sha256=sha256_bytes(board_bytes), groups_sha256=groups_sha256,
-            group_names={g['name'] for g in groups['groups']}, nets=nets,
-            net_groups=net_groups, net_parts=net_parts)
-    except ValueError as exc:
-        raise JobRefusal(str(exc)) from exc
+            if pad.GetNetname():
+                net_parts.setdefault(pad.GetNetname(), set()).add(fp.GetReference())
+    return {'net_parts': {net: sorted(refs) for net, refs in sorted(net_parts.items())}}
 
 
 DIALECT_SUPPORTED = frozenset(('intent.assembly.sides', 'intent.envelope', 'edge.side', 'edge.cable_entry',
@@ -827,15 +831,17 @@ def escape_hints(row, *, width, gap, clearance):
     return result
 
 
-def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
+def _capture_native(board_path, normalized):
     """Native capture once; returns (problem without search section, capture record)."""
-    normalized = normalize_intent(intent, groups)
     intent, groups, dialect = normalized['intent'], normalized['groups'], normalized['compatibility']
     import pcbnew
     from .placement_probe import extract
     before = Path(board_path).read_bytes()
     project = _project_rules(board_path)
     _validate_project_rules(project)
+    bindings = normalized['rails'].get('bindings')
+    if bindings is not None and bindings['board_sha256'] != sha256_bytes(before):
+        raise JobRefusal('group_rails.bindings.board_sha256: sidecar is bound to a different board')
     board = pcbnew.LoadBoard(str(board_path))
     facts = extract(board_path, board=board, before=before)
     dialect_checks = _check_dialect_native(board, facts, dialect) if dialect else []
@@ -934,7 +940,7 @@ def _capture_native(board_path, intent, groups, rails=None, groups_sha256=None):
                          'mask_min_web_nm': int(settings.m_SolderMaskMinWidth)},
                'footprints': sorted(rows, key=lambda r: r['uuid']),
                'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups['groups']],
-               'rails': _rails(rails, before, groups, board, groups_sha256),
+               'rails': normalized['rails'],
                'proximity': proximity,
                'weights': {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}}
     if dialect:
@@ -1181,12 +1187,13 @@ def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False,
     return nodes
 
 
-def materialize(source, poses, destination, project_bytes, *, intent, rules_bytes=None):
+def materialize(source, poses, destination, project_bytes, *, normalized, rules_bytes=None):
     """Apply one pose vector to a disposable native board, save, reload and check.
 
     Returns the integrity record. Every footprint is addressed by full UUID; pads,
     nets, refs, sides, locks, graphics and all non-footprint board content must
     be unchanged, and every pad must sit where the engine's transform put it."""
+    fixed_poses = _bundle(normalized)['intent'].get('fixed_poses', [])
     import pcbnew
     destination = Path(destination)
     source_rules = Path(source).with_suffix('.kicad_dru')
@@ -1198,7 +1205,7 @@ def materialize(source, poses, destination, project_bytes, *, intent, rules_byte
                      rotation_deg=r['rotation_deg'])
                 for u, r in before.items()]
     protected = {u for u, row in before.items() if row['locked']} | set(
-        _fixed_pose_owner(intent.get('fixed_poses', []), captured))
+        _fixed_pose_owner(fixed_poses, captured))
     target = {row['uuid']: row for row in poses}
     if set(target) != set(before) or len(target) != len(poses):
         raise JobRefusal('candidate pose vector does not cover the native footprint UUIDs exactly')
@@ -1671,12 +1678,12 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 locality = strict_json(raw)
             except ValueError as exc:
                 raise JobRefusal('inputs.locality JSON: ' + str(exc)) from exc
+        # The one normalization of this job: every later step receives this bundle, never the raw documents.
+        membership = (_rail_membership(board_path, clock=clock) if rails is not None else {})
         normalized = normalize_intent(
             intent, groups, rails=rails, locality=locality,
-            board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes),
+            board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes), **membership,
         )
-        if locality is not None:
-            intent = dict(intent, electrical_locality=locality)
         report['intent_contract'] = normalized['intent_contract']
         plane_bytes = None
         plane_ids = ()
@@ -1720,8 +1727,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # as before, so that removing it can resume the same job. New cancellation
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
-        problem, record = capture(board_path, intent, groups, rails=rails, groups_sha256=sha256_bytes(groups_bytes),
-                                  clock=clock, cancel_dir=capture_cancel)
+        problem, record = capture(board_path, normalized, clock=clock, cancel_dir=capture_cancel)
         for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
             verified_input(config['inputs'][name], name)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
@@ -1796,15 +1802,15 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             directory = job_dir / 'candidates' / f'a{attempt}-{index:02d}-seed{cand["seed"]}'
             try:
                 check = materialize(board_path, cand['poses'], directory, project_bytes,
-                                    intent=intent, rules_bytes=rules_bytes)
+                                    normalized=normalized, rules_bytes=rules_bytes)
                 _check_stop(clock, job_dir)
                 report_, exec_ = drc(directory / 'board.kicad_pcb', directory, label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
-                             locality=check_locality(directory / 'board.kicad_pcb', intent,
+                             locality=check_locality(directory / 'board.kicad_pcb', normalized,
                                                      clock=clock, cancel_dir=job_dir),
-                             edge_intent=check_edge_intent(directory / 'board.kicad_pcb', intent,
+                             edge_intent=check_edge_intent(directory / 'board.kicad_pcb', normalized,
                                                            clock=clock, cancel_dir=job_dir),
                              board=check['board'], board_sha256=check['board_sha256'], drc=exec_,
                              errors=_error_summary(split), warnings=_warnings(report_),
@@ -1869,8 +1875,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         with clock.phase('final_validation'):
             _check_stop(clock, job_dir)
             selected_seed = next((row for row in report['engine']['seeds'] if row.get('seed') == selected['seed']), {})
-            report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', groups, intent,
-                                           rails=problem.get('rails'), refinement=selected_seed.get('refinement'),
+            report['final'] = final_checks(routed, selected, owners, base_keys, job_dir / f'final-{suffix}', normalized,
+                                           refinement=selected_seed.get('refinement'),
                                            clock=clock, cancel_dir=job_dir,
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
@@ -2025,9 +2031,10 @@ def verify_group_views(final):
     return problems
 
 
-def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, *, rails=None, refinement=None, clock=None, cancel_dir=None,
+def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
                  input_board=None, input_board_sha256=None):
+    groups, intent, rails = (_bundle(normalized)[k] for k in ('groups', 'intent', 'rails'))
     import pcbnew
     clock = clock or Clock(300)
     _check_stop(clock, cancel_dir)
@@ -2142,8 +2149,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, groups, intent, 
             ac_result['status'] = 'FAIL'
             ac_result.setdefault('defects', []).append('final AC result does not bind the saved board and requirement')
     split = classify_errors(report_, owners, base_keys, placed_keys)
-    edge_intent = check_edge_intent(board, intent, clock=clock, cancel_dir=cancel_dir)
-    locality = check_locality(board, intent, clock=clock, cancel_dir=cancel_dir)
+    edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
+    locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
     metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'))
     metrics['edges'] = edge_intent['connectors']
     metrics['refinement'] = refinement
@@ -2199,7 +2206,7 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
 def configure_parser(parser, *, internal=False):
     sub = parser.add_subparsers(dest='placement_command', required=True)
     if internal:
-        for command in ('_capture', '_check_edges', '_check_locality'):
+        for command in NATIVE_READ_LABELS:
             native = sub.add_parser(command, help=argparse.SUPPRESS)
             native.add_argument('board')
     run = sub.add_parser('run', help='run one whole placement-to-route job')
@@ -2213,13 +2220,14 @@ def configure_parser(parser, *, internal=False):
 
 
 def execute(args, parser):
-    if args.placement_command in ('_capture', '_check_edges', '_check_locality'):
+    if args.placement_command in NATIVE_READ_LABELS:
         request = json.load(sys.stdin)
         try:
             if args.placement_command == '_capture':
-                problem, record = _capture_native(args.board, request['intent'], request['groups'], request.get('rails'),
-                                                  request.get('groups_sha256'))
+                problem, record = _capture_native(args.board, request['normalized'])
                 result = {'problem': problem, 'record': record}
+            elif args.placement_command == '_nets':
+                result = _rail_membership_native(args.board)
             elif args.placement_command == '_check_locality':
                 from .placement_probe import extract
                 result = _locality_grade(extract(args.board), request['intent']['electrical_locality'])
@@ -2238,10 +2246,11 @@ def execute(args, parser):
         print(json.dumps({k: report.get(k) for k in ('status', 'phases', 'elapsed_s', 'incumbent')}, indent=1))
         return 0 if report['status'] == 'completed' else 1
     groups_document = read_json(args.groups) if args.groups else {'groups': []}
-    intent = read_json(args.intent) if args.intent else {}
-    metrics = board_metrics(args.board, groups_document['groups'], proximity=intent.get('proximity'))
-    if args.intent:
-        metrics['edge_intent'] = check_edge_intent(args.board, intent)
+    normalized = normalize_intent(read_json(args.intent), groups_document) if args.intent else None
+    metrics = board_metrics(args.board, (normalized['groups'] if normalized else groups_document)['groups'],
+                            proximity=normalized['intent'].get('proximity') if normalized else None)
+    if normalized:
+        metrics['edge_intent'] = check_edge_intent(args.board, normalized)
         metrics['edges'] = metrics['edge_intent']['connectors']
     print(json.dumps(metrics, indent=1))
     return 1 if metrics.get('edge_intent', {}).get('status') == 'failed' else 0

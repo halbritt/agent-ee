@@ -121,7 +121,8 @@ class NativeRuleJobTests(unittest.TestCase):
         owners = job._owners(k.LoadBoard(placed['board']))
         routed = dict(status='routed', router_accepted=True, board=str(board))
         result = job.final_checks(routed, placed, owners, set(), self.root / label,
-            read_json(self.config['inputs']['groups']['path']), read_json(self.config['inputs']['intent']['path']))
+            job.normalize_intent(read_json(self.config['inputs']['intent']['path']),
+                                 read_json(self.config['inputs']['groups']['path'])))
         return result, job._completion_status(routed, placed, result)
 
     def test_missing_or_changed_routed_rules_cannot_be_hidden_by_final_copy(self):

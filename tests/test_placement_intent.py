@@ -125,15 +125,16 @@ class NativeIntentTests(Fixture):
         next(row for row in poses if row['uuid'] == fixed)['moved'] = True
         out = self.dir / 'rejected'
         with self.assertRaisesRegex(job.JobRefusal, 'protected footprint'):
-            job.materialize(self.board, poses, out, self.project.read_bytes(), intent=intent())
+            job.materialize(self.board, poses, out, self.project.read_bytes(),
+                            normalized=job.normalize_intent(intent(), {'groups': []}))
         self.assertFalse(out.exists())
 
     def test_versioned_and_legacy_supported_intent_capture_identical_constraints(self):
         legacy = intent()
         versioned = dict(legacy, schema='agent-ee.placement-intent/1')
         before = copy.deepcopy(versioned)
-        old_problem, old_record = job.capture(self.board, legacy, groups())
-        new_problem, new_record = job.capture(self.board, versioned, groups())
+        old_problem, old_record = job.capture(self.board, job.normalize_intent(legacy, groups()))
+        new_problem, new_record = job.capture(self.board, job.normalize_intent(versioned, groups()))
         self.assertEqual(new_problem, old_problem)
         self.assertEqual(new_record, old_record)
         self.assertEqual(versioned, before)
@@ -144,9 +145,9 @@ class NativeIntentTests(Fixture):
             changed['fixed_poses'][0][field] = value
             with self.subTest(field=field), self.assertRaisesRegex(job.JobRefusal,
                     r'intent.fixed_poses\[0\].' + field):
-                job.capture(self.board, changed, groups())
+                job.capture(self.board, job.normalize_intent(changed, groups()))
         changed = intent()
         changed['proximity'] = [dict(ref='R1', near='C1', max_mm=3,
                                    pads={'R1': ['99'], 'C1': ['1']})]
         with self.assertRaisesRegex(job.JobRefusal, r'intent.proximity\[0\].pads.R1'):
-            job.capture(self.board, changed, groups())
+            job.capture(self.board, job.normalize_intent(changed, groups()))

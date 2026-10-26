@@ -61,7 +61,7 @@ class MaskGraphicCaptureTests(Fixture):
                     with self.subTest(margin=margin, side=side, turn=turn):
                         path, board, fp = self.mask_graphic(f'inherited-{margin}-{side}-{turn}',
                                                           board_margin=margin, side=side, turn=turn)
-                        problem, _ = job.capture(path, intent(), groups())
+                        problem, _ = job.capture(path, job.normalize_intent(intent(), groups()))
                         row = next(f for f in problem['footprints'] if f['native_ref'] == 'R1')
                         self.assertEqual(row['mask_local_nm'][-1], expected)
                         self.assertEqual(len(row['mask_local_nm']), 3)
@@ -97,7 +97,7 @@ class MaskGraphicCaptureTests(Fixture):
                     box, origin = graphic.GetBoundingBox(), fp.GetPosition()
                     expected = [int(box.GetLeft() - origin.x), int(box.GetTop() - origin.y),
                                 int(box.GetRight() - origin.x), int(box.GetBottom() - origin.y)]
-                    problem, _ = job.capture(path, intent(), groups())
+                    problem, _ = job.capture(path, job.normalize_intent(intent(), groups()))
                     row = next(f for f in problem['footprints'] if f['native_ref'] == 'R1')
                     self.assertEqual(row['mask_local_nm'][-1], expected)
                     self.assertEqual(len(row['mask_local_nm']), 3)

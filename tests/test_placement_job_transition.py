@@ -117,8 +117,9 @@ class PairTransitionTests(unittest.TestCase):
                     getattr(zone, 'SetDoNotAllow' + constraint)(True)
                 k.SaveBoard(str(path), board)
                 with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
-                    job.capture(path, read_json(self.root / constraint / 'intent.json'),
-                                read_json(self.root / constraint / 'groups.json'))
+                    job.capture(path,
+                                job.normalize_intent(read_json(self.root / constraint / 'intent.json'),
+                                                     read_json(self.root / constraint / 'groups.json')))
 
     def test_layer_selection_is_bound_to_resume_identity(self):
         out = self.root / 'cancelled'

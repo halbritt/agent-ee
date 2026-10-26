@@ -625,17 +625,20 @@ class CaptureDeclarationModeTests(unittest.TestCase):
             import pcbnew  # noqa: F401
         except ImportError:
             self.skipTest('pcbnew is not importable')
-        both = job.capture(self.board, self.dialect({'C1': ['1'], 'R1': ['1']}), self.groups())[0]['proximity'][0]
+        both = job.capture(self.board,
+                           job.normalize_intent(self.dialect({'C1': ['1'], 'R1': ['1']}),
+                                                self.groups()))[0]['proximity'][0]
         self.assertEqual((both['subject_declared'], both['partner_declared'], len(both['ref_pads']), len(both['near_pads'])),
                          (True, True, 1, 1))
-        partner = job.capture(self.board, self.dialect({'R1': ['1']}), self.groups())[0]['proximity'][0]
+        partner = job.capture(self.board,
+                              job.normalize_intent(self.dialect({'R1': ['1']}), self.groups()))[0]['proximity'][0]
         self.assertEqual((partner['subject_declared'], partner['partner_declared'], len(partner['near_pads'])), (False, True, 1))
         self.assertEqual(len(partner['ref_pads']), 2, 'an undeclared subject selects all non-aperture pads')
-        neither = job.capture(self.board, self.dialect({}), self.groups())[0]['proximity'][0]
+        neither = job.capture(self.board, job.normalize_intent(self.dialect({}), self.groups()))[0]['proximity'][0]
         self.assertEqual((neither['subject_declared'], neither['partner_declared']), (False, False))
         self.assertEqual((len(neither['ref_pads']), len(neither['near_pads'])), (2, 2))
         with self.assertRaises(job.JobRefusal) as caught:
-            job.capture(self.board, self.dialect({'C1': ['9'], 'R1': ['1']}), self.groups())
+            job.capture(self.board, job.normalize_intent(self.dialect({'C1': ['9'], 'R1': ['1']}), self.groups()))
         self.assertIn('intent.proximity[0].pads.C1', str(caught.exception))
 
 

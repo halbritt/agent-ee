@@ -76,6 +76,16 @@ validator hash participates in checkpoint identity. Adding the supported schema
 to an otherwise identical document leaves captured geometry and constraints
 unchanged, but changes input bytes and therefore requires a fresh job.
 
+The job normalizes intent once, at entry, with `inputs.group_rails`,
+`inputs.locality`, the board hash and the groups hash (AGENTEE-541). When a
+rails sidecar is present, one fresh native read supplies the board's nets and
+net parts to that same call, which derives each net's groups from its parts.
+Capture, its native child, candidate materialization, the edge and locality
+checks and the final checks all receive the resulting bundle and refuse a raw
+intent document. For an original-dialect intent they therefore all see the
+native projection; the connector `side` and `context` fields it removes stay
+operative only through the compatibility record that capture checks natively.
+
 Rich KRT `floorplan-intent` documents (`schema: 1`, `min_reader`, `assembly`,
 `blocks`, `keepouts`, `envelope`, `defaults`, `legality_budget`, `must_lock`,
 `decaps`, etc.) are not this contract, even if a collection is empty. The raw
@@ -485,7 +495,7 @@ rules, including stricter coupling limits, always remain in force.
    (`kicad-cli pcb drc --severity-all`) errors are split into **pre-existing**
    (all items in one footprint and the same finding on the unchanged input) and
    **placement-introduced**.
-   Before writing, `materialize(..., intent=...)` derives protected UUIDs from
+   Before writing, `materialize(..., normalized=...)` derives protected UUIDs from
    source-board native locks and the captured fixed intent. Any protected x, y,
    rotation or side difference, or a protected `moved: true` row, refuses the
    candidate independently of its predicted pads.

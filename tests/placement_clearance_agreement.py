@@ -30,8 +30,8 @@ class EspProgClearanceTests(unittest.TestCase):
         cls.out = Path(os.environ['AGENT_EE_CLEARANCE_EVIDENCE'])
         cls.out.mkdir(parents=True, exist_ok=True)
         problem, _ = job.capture(cls.source / 'board.kicad_pcb',
-                                 json.loads((cls.source / 'intent.json').read_text()),
-                                 json.loads((cls.source / 'groups.json').read_text()))
+                                 job.normalize_intent(json.loads((cls.source / 'intent.json').read_text()),
+                                                      json.loads((cls.source / 'groups.json').read_text())))
         cls.usb = next(r for r in problem['footprints'] if r['native_ref'] == 'USB1')
         cls.fid = next(r for r in problem['footprints']
                        if r['uuid'] == '00000000-0000-0000-0000-00005d8c55f6')

@@ -90,7 +90,7 @@ class ReservationTests(unittest.TestCase):
 
     def hole_controls(self, moving, fixed, q, fixed_q=0):
         path, fixed_intent = self.board(moving, fixed, q, fixed_q)
-        problem, _ = job.capture(path, fixed_intent, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(fixed_intent, {'groups': []}))
         m = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
         f = next(f for f in problem['footprints'] if f['native_ref'] == 'F')
         self.assertEqual(m['copper_local_nm'], [])
@@ -142,7 +142,7 @@ class ReservationTests(unittest.TestCase):
         path.with_suffix('.kicad_pro').write_text(json.dumps({
             'board': {'design_settings': {'rules': {'min_clearance': 0.2, 'min_hole_clearance': 0.2}}},
             'net_settings': {'classes': [{'name': 'Default', 'clearance': 0.2}]}}))
-        problem, _ = job.capture(path, intent(), groups())
+        problem, _ = job.capture(path, job.normalize_intent(intent(), groups()))
         ids = {f['native_ref']: f['uuid'] for f in problem['footprints']}
         for index, (x, bad) in enumerate(((14_700_000, True), (14_300_000, False))):
             result, report = self.native(path, problem, {ids['R1']: [x, 9 * MM, 0],
@@ -154,7 +154,7 @@ class ReservationTests(unittest.TestCase):
     def test_overhang_only_at_declared_edge_and_for_declared_component(self):
         path, fixed = self.board('copper', body=True)
         source_bytes = path.read_bytes()
-        original, _ = job.capture(path, fixed, {'groups': []})
+        original, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
         occupancy = next(f for f in original['footprints'] if f['native_ref'] == 'M')['occupancy']
         for edge, pose, wrong in (
                 ('west', [750_000, 10 * MM, 0], [29_250_000, 10 * MM, 0]),
@@ -163,7 +163,7 @@ class ReservationTests(unittest.TestCase):
                 ('south', [10 * MM, 29_250_000, 0], [10 * MM, 750_000, 0])):
             declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': edge,
                 'max_setback_mm': 0.75, 'overhang_mm': {'min': 0, 'max': 2}}])
-            problem, _ = job.capture(path, declared, {'groups': []})
+            problem, _ = job.capture(path, job.normalize_intent(declared, {'groups': []}))
             m = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
             self.assertEqual(m['occupancy'], occupancy, 'capture keeps derived occupancy unchanged')
             problem['rules']['copper_edge_clearance_nm'] = 200_000
@@ -199,7 +199,7 @@ class ReservationTests(unittest.TestCase):
         fid = next(f for f in board.GetFootprints() if f.GetReference() == 'F')
         next(iter(fid.Pads())).SetLocalClearance(1_016_000)
         k.SaveBoard(str(path), board)
-        problem, _ = job.capture(path, fixed, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
         m = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
         result, report = self.native(path, problem, {m['uuid']: [12_700_000, 10 * MM, 0]}, 'override')
         self.assertFalse(any(v['type'] == 'hole_clearance' for v in report['violations']), report)
@@ -223,20 +223,20 @@ class ReservationTests(unittest.TestCase):
         for interval in (None, {}, {'min': -1, 'max': 2}, {'min': 3, 'max': 2},
                          {'min': 0, 'max': True}, {'min': 0, 'max': float('inf')}):
             with self.subTest(interval=interval), self.assertRaisesRegex(job.JobRefusal, 'overhang'):
-                job.capture(path, dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'west',
-                    'overhang_mm': interval}]), {'groups': []})
+                job.capture(path, job.normalize_intent(dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'west',
+                    'overhang_mm': interval}]), {'groups': []}))
 
     def test_open_zero_minimum_does_not_grant_undeclared_overhang(self):
         path, fixed = self.board('copper', body=True)
         declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'west', 'overhang_mm': {'min': 0}}])
-        problem, _ = job.capture(path, declared, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(declared, {'groups': []}))
         m = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
         self.assertEqual(m['edge']['overhang_nm'], {'min': 0, 'max': None})
         self.assertTrue(evaluate(problem, [{m['uuid']: [4 * MM, 10 * MM, 0]}])[0]['feasible'])
         self.assertFalse(evaluate(problem, [{m['uuid']: [MM, 10 * MM, 0]}])[0]['feasible'])
         declared['edge_connectors'][0]['overhang_mm'] = {'min': 1}
         with self.assertRaisesRegex(job.JobRefusal, 'finite maximum'):
-            job.capture(path, declared, {'groups': []})
+            job.capture(path, job.normalize_intent(declared, {'groups': []}))
 
     def test_declared_edge_without_setback_rejects_wrong_edge_on_saved_board(self):
         import pcbnew
@@ -246,7 +246,7 @@ class ReservationTests(unittest.TestCase):
         for edge in poses:
             declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': edge,
                 'class': 'edge_receptacle', 'overhang_mm': {'min': 0}}])
-            problem, _ = job.capture(path, declared, {'groups': []})
+            problem, _ = job.capture(path, job.normalize_intent(declared, {'groups': []}))
             moving = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
             for actual, pose in poses.items():
                 expected = actual == edge
@@ -257,7 +257,7 @@ class ReservationTests(unittest.TestCase):
                     self.assertEqual(result['feasible'], expected, result)
                     directory = self.root / label
                     saved = directory / 'board.kicad_pcb'
-                    checked = job.check_edge_intent(saved, declared)
+                    checked = job.check_edge_intent(saved, job.normalize_intent(declared, {'groups': []}))
                     self.assertEqual(checked['status'], 'pass' if expected else 'failed', checked)
                     self.assertEqual(checked['connectors'][0]['basis'], 'body:fab')
                     self.assertEqual(checked['connectors'][0]['nearest'], actual)
@@ -265,7 +265,7 @@ class ReservationTests(unittest.TestCase):
                     final = job.final_checks({'status': 'routed', 'board': str(saved)},
                         {'board': str(saved), 'directory': str(directory)},
                         job._owners(pcbnew.LoadBoard(str(saved))), set(), self.root / f'final-{label}',
-                        {'groups': []}, declared)
+                        job.normalize_intent(declared, {'groups': []}))
                     (directory / 'final-checks.json').write_text(json.dumps(final, indent=2) + '\n')
                     self.assertEqual(final['integrity'], 'preserved')
                     self.assertEqual(final['opens'], 0)
@@ -282,7 +282,7 @@ class ReservationTests(unittest.TestCase):
             fp.Add(shape)
         k.SaveBoard(str(path), board)
         declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'east', 'class': 'edge_receptacle'}])
-        problem, _ = job.capture(path, declared, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(declared, {'groups': []}))
         row = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
         self.assertEqual(row['occupancy']['status'], 'courtyard')
         self.assertNotEqual(row['edge']['seat_local_nm'], row['occupancy']['local_rect_nm'])
@@ -292,7 +292,8 @@ class ReservationTests(unittest.TestCase):
         self.assertEqual(evaluate(court_problem, [{}])[0]['edge_intent']['connectors'][0]['nearest'], 'south')
         result, _ = self.native(path, problem, {}, 'body-seat')
         self.assertTrue(result['feasible'], result)
-        checked = job.check_edge_intent(self.root / 'body-seat' / 'board.kicad_pcb', declared)
+        checked = job.check_edge_intent(self.root / 'body-seat' / 'board.kicad_pcb',
+                                        job.normalize_intent(declared, {'groups': []}))
         self.assertEqual(checked['status'], 'pass', checked)
         self.assertEqual(checked['connectors'][0]['basis'], 'body:fab')
 
@@ -301,11 +302,12 @@ class ReservationTests(unittest.TestCase):
         declared = dict(fixed, edge_connectors=[{'ref': 'M', 'edge': 'east', 'class': 'edge_receptacle'}])
         declared['fixed_poses'] = fixed['fixed_poses'] + [
             {'ref': 'M', 'x': 10, 'y': 10, 'rot': 0, 'side': 'F'}]
-        problem, _ = job.capture(path, declared, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(declared, {'groups': []}))
         result = evaluate(problem, [{}])[0]
         self.assertTrue(any(v['kind'] == 'edge_identity' and v['ref'] == 'M'
                             for v in result['violations']), result)
-        self.assertEqual(job.check_edge_intent(path, declared)['status'], 'failed')
+        self.assertEqual(job.check_edge_intent(path,
+                                               job.normalize_intent(declared, {'groups': []}))['status'], 'failed')
 
     def test_larger_nondefault_netclass_clearance_is_preserved_in_search(self):
         import pcbnew as k
@@ -326,7 +328,7 @@ class ReservationTests(unittest.TestCase):
         self.assertTrue(clearance, report)
         self.assertTrue(any('0.8000' in v['description'] for v in clearance), clearance)
         print('NONDEFAULT_NEGATIVE ' + json.dumps({'native': clearance, 'exit': execution['exit_code']}), flush=True)
-        problem, _ = job.capture(path, fixed, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
         self.assertEqual(problem['rules']['copper_clearance_nm'], 800_000)
         self.assertFalse(evaluate(problem, [{}])[0]['feasible'])
 
@@ -334,7 +336,7 @@ class ReservationTests(unittest.TestCase):
         path, fixed = self.board('copper')
         self.project['net_settings']['classes'][0]['clearance'] = 0.8
         path.with_suffix('.kicad_pro').write_text(json.dumps(self.project))
-        problem, _ = job.capture(path, fixed, {'groups': []})
+        problem, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
         self.assertEqual(problem['rules']['copper_clearance_nm'], 800_000)
         m = next(f for f in problem['footprints'] if f['native_ref'] == 'M')
         result, report = self.native(path, problem, {m['uuid']: [12_700_000, 10 * MM, 0]}, 'default')

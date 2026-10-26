@@ -27,7 +27,7 @@ class FinalGroupViewTests(Fixture):
         job.drc(Path(placed['board']), self.dir / f'placed-{label}', label='native-drc')
         routed = {'status': 'routed', 'board': placed['board']}
         final = job.final_checks(routed, placed, job._owners(pcbnew.LoadBoard(placed['board'])), set(),
-                                 self.dir / f'final-{label}', out_groups or groups(), intent(),
+                                 self.dir / f'final-{label}', job.normalize_intent(intent(), out_groups or groups()),
                                  input_board=self.board, input_board_sha256=digest(self.board), **kwargs)
         return placed, routed, final
 
