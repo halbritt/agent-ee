@@ -688,12 +688,10 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
 def capture(board_path, normalized, *, clock=None, cancel_dir=None):
     """Capture native geometry and settings without inheriting cached defaults.
 
-    ``normalized`` is the bundle from :func:`normalize_intent`; the child reads
-    its intent, groups, rails and compatibility record and never re-normalizes.
+    ``normalized`` is the bundle from :func:`normalize_intent`; the child
+    receives it whole, checks it is a bundle and never re-normalizes.
     """
-    bundle = _bundle(normalized)
-    captured = _native_read(board_path, '_capture',
-                            {'normalized': {k: bundle[k] for k in ('intent', 'groups', 'rails', 'compatibility')}},
+    captured = _native_read(board_path, '_capture', {'normalized': _bundle(normalized)},
                             clock=clock, cancel_dir=cancel_dir)
     try:
         problem, record = captured['problem'], captured['record']
@@ -833,7 +831,7 @@ def escape_hints(row, *, width, gap, clearance):
 
 def _capture_native(board_path, normalized):
     """Native capture once; returns (problem without search section, capture record)."""
-    intent, groups, dialect = normalized['intent'], normalized['groups'], normalized['compatibility']
+    intent, groups, dialect = (_bundle(normalized)[k] for k in ('intent', 'groups', 'compatibility'))
     import pcbnew
     from .placement_probe import extract
     before = Path(board_path).read_bytes()
@@ -1679,7 +1677,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             except ValueError as exc:
                 raise JobRefusal('inputs.locality JSON: ' + str(exc)) from exc
         # The one normalization of this job: every later step receives this bundle, never the raw documents.
-        membership = (_rail_membership(board_path, clock=clock) if rails is not None else {})
+        # Same CANCEL convention as capture: a pre-existing CANCEL still reaches the identity checkpoint.
+        membership = (_rail_membership(board_path, clock=clock, cancel_dir=None if _cancelled(job_dir) else job_dir)
+                      if rails is not None else {})
         normalized = normalize_intent(
             intent, groups, rails=rails, locality=locality,
             board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes), **membership,

@@ -90,11 +90,12 @@ class ConsumerTests(unittest.TestCase):
         again.assert_not_called()
         [(command, request)] = reads.requests
         self.assertEqual(command, '_capture')
-        self.assertEqual(request, {'normalized': {k: json.loads(json.dumps(bundle[k]))
-                                                  for k in ('intent', 'groups', 'rails', 'compatibility')}})
+        self.assertEqual(request, {'normalized': json.loads(json.dumps(bundle))})
         self.assertNotIn('side', request['normalized']['intent']['edge_connectors'][0])
         self.assertIn('electrical_locality', request['normalized']['intent'])
         self.assert_refuses_raw(lambda raw: job.capture('board.kicad_pcb', raw))
+        # The child checks the bundle itself rather than failing on a missing key.
+        self.assert_refuses_raw(lambda raw: job._capture_native('board.kicad_pcb', raw))
 
     def test_edge_check_reads_the_projected_edge_rows(self):
         bundle = dialect_bundle()
@@ -237,6 +238,52 @@ class JobEntryTests(unittest.TestCase):
         self.assertIsNone(call.kwargs['net_groups'])
         self.assertEqual(bundle['rails']['shared'], {'GND': 'return'})
         self.assertEqual(bundle['intent']['electrical_locality'], locality())
+
+    def test_cancel_during_the_membership_read_stops_the_job_and_reaps_the_child(self):
+        import os
+        import threading
+        import time
+        from test_placement_job import intent, groups
+        grouped = groups()
+        rails = {'schema': placement_intent.RAILS_SCHEMA,
+                 'bindings': {'board_sha256': job.sha256_bytes(self.board.read_bytes()),
+                              'groups_sha256': job.sha256_bytes(json.dumps(grouped).encode())},
+                 'shared': {'GND': {'evidence': 'return', 'groups': ['g']}}, 'scoped': {}}
+        values = {'board': (self.board, self.board.read_bytes()), 'project': (self.project, b'{}'),
+                  'intent': (self.board, json.dumps(intent()).encode()),
+                  'groups': (self.board, json.dumps(grouped).encode()),
+                  'group_rails': (self.board, json.dumps(rails).encode())}
+        config = {'budget_s': 60, 'inputs': {k: {} for k in values}, 'search': {'shortlist': 1},
+                  'router': {'checkout': 'unused'}}
+        out, started = self.dir / 'job', self.dir / 'membership-started'
+        shim = self.dir / 'membership-python'
+        shim.write_text('#!/usr/bin/python3\nimport os,time\nfrom pathlib import Path\n'
+                        f'Path({str(started)!r}).write_text(str(os.getpid()))\n'
+                        'time.sleep(20)\n')
+        shim.chmod(0o755)
+        done = threading.Event()
+
+        def cancel():
+            while not done.wait(0.01):
+                if started.exists():
+                    (out / 'CANCEL').touch()
+                    return
+        thread = threading.Thread(target=cancel)
+        thread.start()
+        try:
+            with patch.object(job, 'verified_input', side_effect=lambda _entry, label: values[label]), \
+                    patch.object(job.sys, 'executable', str(shim)), \
+                    patch.object(job, 'capture') as capture:
+                begun = time.monotonic()
+                report = job.run_job(config, out)
+        finally:
+            done.set()
+            thread.join(timeout=3)
+        self.assertEqual(report['status'], 'cancelled', report)
+        self.assertLess(time.monotonic() - begun, 15)
+        capture.assert_not_called()
+        self.assertFalse(Path(f'/proc/{started.read_text()}').exists(), 'membership child was reaped')
+        self.assertTrue(os.path.exists(out / 'CANCEL'))
 
     def test_dialect_intent_with_locality_reaches_every_step_projected(self):
         bundle, call, membership = self.run_job(minimal_dialect(), minimal_groups(), located=locality())
