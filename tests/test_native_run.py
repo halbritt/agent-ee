@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import signal
@@ -334,16 +335,18 @@ class HostTest(unittest.TestCase):
 
     def test_stop_cleanup_runs_on_every_abnormal_exit(self):
         code = 'import time; print("line", flush=True); time.sleep(60)'
-        for label, failure in (('error', RuntimeError('on_line failed')), ('interrupt', KeyboardInterrupt())):
+        for label, failure, state in (('error', RuntimeError('on_line failed'), 'callback_failed'),
+                                      ('interrupt', KeyboardInterrupt(), 'interrupted')):
             stops = []
 
             def on_line(line):
                 raise failure
 
-            with self.subTest(label), self.assertRaises(type(failure)):
+            with self.subTest(label), self.assertRaises(type(failure)) as caught:
                 native_run.supervise(['/usr/bin/python3', '-c', code], timeout=30, on_line=on_line,
                                      on_stop=lambda: stops.append(1))
             self.assertEqual(stops, [1], label)
+            self.assertEqual(caught.exception.native_execution[0]['execution'], state)
         stops = []
         fields, _, _ = native_run.supervise(['/usr/bin/python3', '-c', code], timeout=1,
                                             on_stop=lambda: stops.append(1))
@@ -478,13 +481,27 @@ class HostTest(unittest.TestCase):
         fields, _, _ = native_run.supervise(['/usr/bin/true'], timeout=30)
         self.assertNotIn('logs_truncated', fields)
 
+    def test_merged_stream_and_live_sink(self):
+        code = ('import sys, time; sys.stdout.write("a"); sys.stdout.flush(); sys.stderr.write("b"); sys.stderr.flush(); '
+                'time.sleep(.1); sys.stdout.write("c\\n")')
+        sink = self.root / 'console.log'
+        with sink.open('wb') as stream:
+            record = native_run.run(self.host(code, merge_stderr=True), work=None, sink=stream)
+        self.assertEqual((record.stdout, record.stderr), (b'abc\n', b''))
+        self.assertEqual(sink.read_bytes(), b'abc\n')
+        with self.assertRaises(ValueError):
+            Intent('x', ['true'], merge_stderr=True)
+        with self.assertRaises(ValueError):
+            native_run.run(Intent('x', ['true']), inputs=self.root, work=self.root / 'w', sink=io.BytesIO(),
+                           adapter=native_run.Sandbox())
+
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):
             native_run.run(self.host('1'), work=None, mounts=[('/x', '/y')])
 
 
 class DockerTest(unittest.TestCase):
-    def test_argv_matches_the_benchmark_container_command(self):
+    def test_argv_is_the_documented_container_command(self):
         source, prepared, output = '/s/impl', '/c/prepared', '/o/run'
         args = ['_execute', prepared, output + '/runs']
         adapter = native_run.Docker(
@@ -492,9 +509,18 @@ class DockerTest(unittest.TestCase):
             volumes=((source, '/opt/agent-ee', True), (prepared, prepared, True), (output, output, False)),
             workdir='/opt/agent-ee', entrypoint='/usr/bin/python3')
         intent = Intent('benchmark', ['/opt/agent-ee/scripts/seeded_benchmark.py', *args], isolation='docker')
+        # The literal argv benchmark_run.container_command built before it moved onto this adapter.
         self.assertEqual(adapter.argv(intent),
-                         benchmark_run.container_command('agent-ee-21-run', 'sha256:' + 'a' * 64, source,
-                                                         [(prepared, True), (output, False)], args))
+                         ['docker', 'run', '--rm', '--init', '--name', 'agent-ee-21-run', '--network', 'none',
+                          '--user', f'{os.getuid()}:{os.getgid()}', '-e', 'HOME=/tmp', '-e', 'AGENT_EE_REQUIRE_TOOLCHAIN=1',
+                          '--security-opt', 'seccomp=unconfined', '--security-opt', 'apparmor=unconfined',
+                          '--security-opt', 'systempaths=unconfined', '-v', f'{source}:/opt/agent-ee:ro',
+                          '-v', f'{prepared}:{prepared}:ro', '-v', f'{output}:{output}', '-w', '/opt/agent-ee',
+                          '--entrypoint', '/usr/bin/python3', 'sha256:' + 'a' * 64,
+                          '/opt/agent-ee/scripts/seeded_benchmark.py', *args])
+        self.assertEqual(benchmark_run.container_command('agent-ee-21-run', 'sha256:' + 'a' * 64, source,
+                                                         [(prepared, True), (output, False)], args),
+                         adapter.argv(intent))
 
     def test_docker_refuses_other_intents(self):
         adapter = native_run.Docker(image='i', name='n')

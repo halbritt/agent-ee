@@ -44,6 +44,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agent_ee import native_run
+from native_hooks import Hooked
 from agent_ee import forward_annotation as fa
 from agent_ee import placement_adapter as pa
 from agent_ee.board_envelope import derive_requirements, validate
@@ -840,16 +842,14 @@ class FailureCampaignTest(PlacementCampaignFixture):
         self.assertEqual(verify_campaign(self.out, host=self.host)['state'], 'escalated')
 
     def test_helper_timeout(self):
-        from agent_ee import stage_receipts
-        real = stage_receipts.execute
-        def budgeted(inputs, work, argv, **kwargs):
+        def budgeted(call, run):
             # The declared minimum of one second can outlast the real helper on a fast host. The real
             # executor enforces a narrower budget on the real helper process, so its timeout is observed.
-            if argv[:4] == ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
-                kwargs['timeout'] = min(kwargs['timeout'], 0.05)
-            return real(inputs, work, argv, **kwargs)
+            if list(call.intent.argv[:4]) == ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
+                return run(timeout=min(call.timeout, 0.05))
+            return run()
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
-        patch('agent_ee.stage_receipts.execute', side_effect=budgeted).start()
+        self.enterContext(native_run.using(Hooked(budgeted)))
         _, record = self.failed('placement helper timeout', self.declaration(timeout_s=1), receipt_status='timeout')
         receipt = read_json(self.out / 'implementations/1' / record['helper']['receipt'] / 'receipt.json')
         self.assertEqual(receipt['execution']['execution'], 'timeout')
@@ -857,10 +857,10 @@ class FailureCampaignTest(PlacementCampaignFixture):
     def test_helper_cancellation(self):
         import _thread
         import signal
-        from agent_ee import executor, stage_receipts
+        from agent_ee import executor
         # interrupt_main() is a no-op while SIGINT is ignored (e.g. a backgrounded runner).
         self.addCleanup(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, signal.default_int_handler))
-        real_execute, real_popen = stage_receipts.execute, executor.subprocess.Popen
+        real_popen = executor.subprocess.Popen
         started = []
         # AGENTEE-345: readiness must persist even if communicate() misses the marker
         # under load. Only cancellation (or the executor deadline) ends this helper.
@@ -868,10 +868,10 @@ class FailureCampaignTest(PlacementCampaignFixture):
         launcher = ("from pathlib import Path\nimport signal\n"
                     "Path('/work/helper-started').write_text('started')\n"
                     "while True:\n    signal.pause()\n")
-        def interrupted(inputs, work, argv, **kwargs):
-            if argv[:4] != ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
-                return real_execute(inputs, work, argv, **kwargs)
-            marker = Path(work) / 'helper-started'
+        def interrupted(call, run):
+            if list(call.intent.argv[:4]) != ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
+                return run()
+            marker = call.work / 'helper-started'
             def launch(*args, **kw):
                 proc = real_popen(*args, **kw)
                 communicate = proc.communicate
@@ -884,9 +884,9 @@ class FailureCampaignTest(PlacementCampaignFixture):
                 proc.communicate = wait_for_helper
                 return proc
             with patch('agent_ee.executor.subprocess.Popen', side_effect=launch):
-                return real_execute(inputs, work, argv, **kwargs)
+                return run()
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
-        with patch.object(pa, 'LAUNCHER', launcher), patch('agent_ee.stage_receipts.execute', side_effect=interrupted):
+        with patch.object(pa, 'LAUNCHER', launcher), native_run.using(Hooked(interrupted)):
             state, record = self.failed('KeyboardInterrupt', self.declaration(timeout_s=120), receipt_status='cancelled')
         self.assertEqual(len(started), 1)
         self.assertIsNotNone(started[0].poll())

@@ -5,7 +5,7 @@ import time
 import uuid
 from pathlib import Path
 
-from .executor import execute
+from . import native_run
 from .storage import digest, identity, read_json, write_json
 from . import run_record
 from .run_record import pinned, policy_files, runtime_files
@@ -14,6 +14,14 @@ from .run_record import pinned, policy_files, runtime_files
 # Runtime entries each harness launch mounts; every other entry is the native tool set.
 HARNESS_RUNTIME = {'claude': ('claude',), 'codex': ('codex', 'codex_tool_host'), 'agy': ('agy',)}
 
+
+
+def _network_isolated(probe):
+    """True when the probe record's own sandbox profile unshares the network."""
+    try:
+        return not native_run.profile(probe).network
+    except ValueError:
+        return False
 
 def profile_definitions(scope):
     """Definitions a run's profile launches: reviewers, then the adjudicator."""
@@ -169,8 +177,8 @@ def guard(run, role, definition, context, cancellation=None):
         remaining = context['deadline'] - time.monotonic()
         if remaining <= 0:
             raise ValueError('deadline_exhausted')
-        probe = execute(run / 'inputs', work / 'probe', ['/usr/bin/true'],
-                        timeout=min(10, remaining), network=False, cancellation=cancellation)
+        probe = dict(native_run.run(native_run.Intent('probe', ['/usr/bin/true'], timeout=min(10, remaining)),
+                                    inputs=run / 'inputs', work=work / 'probe', cancel=cancellation))
         receipt['probe'] = probe
         if not isinstance(probe, dict) or not {'execution', 'exit_code', 'argv', 'sandbox_argv'} <= probe.keys():
             raise ValueError('malformed_probe_receipt')
@@ -184,7 +192,7 @@ def guard(run, role, definition, context, cancellation=None):
         if (probe != read_json(work / 'probe/execution.json') or
                 digest(work / 'probe/console.log') != probe.get('console_sha256') or
                 probe.get('argv') != ['/usr/bin/true'] or
-                '--unshare-net' not in probe.get('sandbox_argv', []) or
+                not _network_isolated(probe) or
                 any(digest(work / 'probe' / name) != probe.get(key) for name, key in
                     [('stdout.log', 'stdout_sha256'), ('stderr.log', 'stderr_sha256')])):
             raise ValueError('malformed_probe_receipt')
@@ -260,7 +268,7 @@ def verify_receipt(run, record, expected, role, boundary):
         probe = receipt.get('probe', {})
         if not isinstance(probe, dict) or probe != read_json(path.parent / 'probe/execution.json'):
             raise ValueError('malformed preflight probe record')
-        if probe.get('argv') != ['/usr/bin/true'] or probe.get('execution') != 'ok' or probe.get('exit_code') != 0 or '--unshare-net' not in probe.get('sandbox_argv', []):
+        if probe.get('argv') != ['/usr/bin/true'] or probe.get('execution') != 'ok' or probe.get('exit_code') != 0 or not _network_isolated(probe):
             raise ValueError('malformed preflight probe')
         for name, key in [('stdout.log', 'stdout_sha256'), ('stderr.log', 'stderr_sha256'), ('console.log', 'console_sha256')]:
             if digest(path.parent / 'probe' / name) != probe.get(key):

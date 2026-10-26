@@ -4,17 +4,15 @@ import json
 import math
 import os
 import platform
-import selectors
 import shutil
-import signal
-import subprocess
 import sys
 import time
 from pathlib import Path
 from threading import BoundedSemaphore
 
 from .evidence_requests import fresh_directory, read_request, seal_operation, validate_request
-from .executor import Cancellation, held_interrupt, sandbox_argv
+from . import native_run
+from .executor import Cancellation
 from .storage import digest, read_json, write_json
 
 
@@ -41,101 +39,34 @@ def supported_limits(spec):
     return limits
 
 
-def _kill(proc):
+# The script sees the candidate, the bundle and its own scratch, all read-only.
+REMOUNT_RO = ('/work', '/tmp', '/dev', '/proc', '/')
+
+
+def _execute(intent, inputs, work, bundle, out, cancellation):
+    """One bounded sandbox run through native_run, kept as the receipt fields replay records."""
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    proc.wait(timeout=2)
-
-
-def _execute(command, out, limits, cancellation):
-    record = {'execution': 'failed', 'exit_code': None, 'sandbox_argv': command,
-              'logs_truncated': False, 'cleanup_error': None}
-    start = time.monotonic()
-    proc = None
-    total = 0
-    logs = {'stdout': bytearray(), 'stderr': bytearray()}
-
-    def retain(name, data):
-        nonlocal total
-        available = limits['log_bytes'] - total
-        logs[name].extend(data[:available])
-        total += min(len(data), available)
-        if len(data) > available:
-            record['logs_truncated'] = True
-        return len(data) > available
-
-    try:
-        with held_interrupt() as interrupt, cancellation.launch_lock:
-            if cancellation.cancelled.is_set():
-                record['execution'] = 'interrupted'
-            else:
-                proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, start_new_session=True)
-        if interrupt:
-            raise KeyboardInterrupt
-        if proc is not None:
-            with selectors.DefaultSelector() as selector:
-                for stream, name in ((proc.stdout, 'stdout'), (proc.stderr, 'stderr')):
-                    os.set_blocking(stream.fileno(), False)
-                    selector.register(stream, selectors.EVENT_READ, name)
-                while True:
-                    if cancellation.cancelled.is_set():
-                        record['execution'] = 'interrupted'
-                        break
-                    if time.monotonic() - start >= limits['wall_seconds']:
-                        record['execution'] = 'timeout'
-                        break
-                    overflow = False
-                    for key, _ in selector.select(.02):
-                        data = os.read(key.fileobj.fileno(), 65536)
-                        if not data:
-                            selector.unregister(key.fileobj)
-                            continue
-                        if retain(key.data, data):
-                            overflow = True
-                            break
-                    if overflow:
-                        record['execution'] = 'output_limit'
-                        break
-                    if proc.poll() is not None and not selector.get_map():
-                        record['execution'] = 'ok' if proc.returncode == 0 else 'failed'
-                        break
-    except KeyboardInterrupt:
+        execution = native_run.run(intent, inputs=inputs, work=work, mounts=((bundle, '/bundle'),),
+                                   cancel=cancellation)
+    except KeyboardInterrupt as stop:
+        # The run was stopped and reaped; its outcome is still the replay's evidence.
         cancellation.cancel()
-        record['execution'] = 'interrupted'
-    except OSError as exc:
-        record.update(execution='unavailable', error=str(exc))
-    finally:
-        if proc is not None:
-            # Always kill the whole operation group, including on normal exit.
-            # bwrap's PID namespace and die-with-parent additionally confine
-            # children if a script attempts a syscall the policy denies.
-            try:
-                _kill(proc)
-            except subprocess.TimeoutExpired:
-                record.update(execution='cleanup_failed',
-                              cleanup_error='sandbox group killed but was not reaped within two seconds')
-            finally:
-                for stream, name in ((proc.stdout, 'stdout'), (proc.stderr, 'stderr')):
-                    try:
-                        # Drain the killed child's remaining pipe bytes within
-                        # the same retained-log ceiling; never block cleanup.
-                        while True:
-                            try:
-                                data = os.read(stream.fileno(), 65536)
-                            except BlockingIOError:
-                                break
-                            if not data or retain(name, data):
-                                break
-                    finally:
-                        stream.close()
-            record['exit_code'] = proc.returncode
-            record['signal'] = -proc.returncode if proc.returncode is not None and proc.returncode < 0 else None
-        for name, data in logs.items():
-            (out / f'{name}.log').write_bytes(data)
-        record['duration_s'] = round(time.monotonic() - start, 3)
+        execution = getattr(stop, 'native_execution', None)
+        if execution is None:
+            raise
+    returncode = execution.returncode
+    record = {'execution': execution['execution'], 'exit_code': returncode,
+              'sandbox_argv': execution['sandbox_argv'],
+              'logs_truncated': execution.get('logs_truncated', False),
+              'cleanup_error': execution.get('cleanup_error'),
+              'duration_s': execution['duration_s']}
+    if returncode is not None:
+        record['signal'] = -returncode if returncode < 0 else None
+    unavailable = execution['execution'] == 'unavailable'
+    if unavailable:
+        record['error'] = execution.stdout.decode(errors='replace')
+    (out / 'stdout.log').write_bytes(b'' if unavailable else execution.stdout)
+    (out / 'stderr.log').write_bytes(execution.stderr)
     return record
 
 
@@ -215,12 +146,8 @@ def replay(request_dir, out, *, cancellation=None, host=None):
         work.mkdir()
         launcher = Path(__file__).with_name('replay_child.py')
         shutil.copyfile(launcher, bundle / 'launcher.py')
-        command = sandbox_argv(Path(request['run']) / 'inputs', work,
-            [str(runtime), '-I', '-B', '/bundle/launcher.py', json.dumps(limits)],
-            extra_ro=((bundle, '/bundle'),))
-        boundary = command.index('--')
-        command[boundary:boundary] = [arg for path in ('/work', '/tmp', '/dev', '/proc', '/')
-                                      for arg in ('--remount-ro', path)]
+        intent = native_run.Intent('replay', [str(runtime), '-I', '-B', '/bundle/launcher.py', json.dumps(limits)],
+                                   timeout=limits['wall_seconds'], remount_ro=REMOUNT_RO, log_bytes=limits['log_bytes'])
         receipt.update(script_sha256=digest(bundle / 'script.py'),
             interpreter_sha256=digest(runtime), launcher_sha256=digest(bundle / 'launcher.py'),
             candidate_inputs=read_json(Path(request['run']) / 'candidate.json')['files'],
@@ -228,7 +155,7 @@ def replay(request_dir, out, *, cancellation=None, host=None):
                              'memory_semantics': 'RLIMIT_AS for the single script process',
                              'cpu_semantics': 'RLIMIT_CPU for the single script process',
                              'log_semantics': 'combined retained stdout and stderr byte ceiling'})
-        receipt.update(_execute(command, out, limits, cancellation))
+        receipt.update(_execute(intent, Path(request['run']) / 'inputs', work, bundle, out, cancellation))
         receipt['isolation_established'] = (out / 'stderr.log').read_bytes().startswith(
             b'agent-ee replay policy ready\n')
         if not receipt['isolation_established']:

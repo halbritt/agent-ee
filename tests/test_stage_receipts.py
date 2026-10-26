@@ -18,12 +18,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee import stage_receipts
+from agent_ee import native_run, stage_receipts
 from agent_ee.campaign import implement, run_campaign, verify_campaign
 from agent_ee.executor import Cancellation, sandbox_argv
 from agent_ee.stage_receipts import (adopt, applicability, bind_implementation, build_index, run_step,
                                      sandbox_profile, validate_receipt, validate_step, verify_implementation)
 from agent_ee.storage import digest, identity, read_json, write_json
+from native_hooks import Hooked, after, before
 
 try:
     from toolchain import toolchain_test
@@ -120,11 +121,11 @@ class StepDeclarationTests(unittest.TestCase):
                     validate_step(spec)
                 self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
                 receipt_dir = Path(self.tmp.name) / f'refused-{index}'
-                with patch.object(stage_receipts, 'execute') as execute, \
+                with native_run.using(native_run.Recorded()) as execute, \
                         patch.object(stage_receipts, 'observe_tool') as observe:
                     with self.assertRaisesRegex(ValueError, 'live_package_source:/tool'):
                         run_step(receipt_dir, Path(self.tmp.name) / 'absent-design', spec, {})
-                execute.assert_not_called()
+                self.assertEqual(execute.calls, [])
                 observe.assert_not_called()
                 self.assertFalse(receipt_dir.exists())
                 # Historical validation is independent of the live mount source.
@@ -272,22 +273,21 @@ for source in (alias, alias / suffix):
         design.mkdir()
         spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool | tee /work/listing'], source=None,
                          version_argv=['/usr/bin/ls', '/tool'], writes={}, artifacts=['listing'])
-        real_execute = stage_receipts.execute
         descriptors = []
 
-        def swapping(*args, **kwargs):
+        def swapping(call, run):
             if benign.is_dir() and not benign.is_symlink():
                 benign.rename(benign.with_name('old-tool'))
                 benign.symlink_to(Path(stage_receipts.__file__).resolve().parents[1])
-            descriptors.extend(source for source, dest in kwargs['extra_ro'] if isinstance(source, int))
+            descriptors.extend(source for source, dest in call.mounts if isinstance(source, int))
             try:
-                return real_execute(*args, **kwargs)
+                return run()
             finally:
                 benign.unlink()
                 benign.with_name('old-tool').rename(benign)
 
         receipt_dir = Path(self.tmp.name) / 'receipt'
-        with patch.object(stage_receipts, 'execute', swapping):
+        with native_run.using(Hooked(swapping)):
             receipt = run_step(receipt_dir, design, spec, {})
         self.assertEqual(receipt['status'], 'completed')
         for run in ('run', 'version'):
@@ -472,9 +472,11 @@ assert not (outer / 'receipt').exists()
             with self.subTest(case=name):
                 direct_dir = Path(self.tmp.name) / (name + '-direct')
                 guarded_dir = Path(self.tmp.name) / (name + '-guarded')
-                direct = stage_receipts.execute(design, direct_dir, argv, extra_ro=[(self.tool, '/tool')])
+                direct = native_run.run(native_run.Intent('probe', argv), inputs=design, work=direct_dir,
+                                        mounts=[(self.tool, '/tool')])
                 with stage_receipts._opened_mounts(runtime, identities) as mounts:
-                    guarded = stage_receipts.execute(design, guarded_dir, argv, extra_ro=mounts)
+                    guarded = native_run.run(native_run.Intent('probe', argv), inputs=design, work=guarded_dir,
+                                             mounts=mounts)
                 self.assertTrue(guarded['mount_guard'])
                 self.assertEqual(guarded['exit_code'], direct['exit_code'])
                 self.assertEqual((guarded_dir / 'stdout.log').read_bytes(),
@@ -526,14 +528,9 @@ assert not (outer / 'receipt').exists()
         design.mkdir()
         receipt_dir = Path(self.tmp.name) / 'receipt'
         spec = self.spec(argv=['/usr/bin/true'], writes={}, artifacts=['listing'], version_argv=None)
-        real_execute = stage_receipts.execute
+        execute = after(lambda call, record: os.link(stand_in, Path(self.tool) / 'late.py'))
 
-        def execute(*args, **kwargs):
-            record = real_execute(*args, **kwargs)
-            os.link(stand_in, Path(self.tool) / 'late.py')
-            return record
-
-        with live_inventory, patch.object(stage_receipts, 'execute', execute):
+        with live_inventory, native_run.using(execute):
             with self.assertRaises(stage_receipts.LivePackageSourceError):
                 run_step(receipt_dir, design, spec, {})
         self.assertFalse((receipt_dir / 'receipt.json').exists())
@@ -569,7 +566,6 @@ assert not (outer / 'receipt').exists()
         design = Path(self.tmp.name) / 'design'
         design.mkdir()
         late = Path(self.tool) / 'late.py'
-        real_execute = stage_receipts.execute
         for window in ('version', 'run'):
             with self.subTest(window=window):
                 receipt_dir = Path(self.tmp.name) / ('receipt-' + window)
@@ -577,17 +573,17 @@ assert not (outer / 'receipt').exists()
                                  version_argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
                                  writes={}, artifacts=['listing'])
 
-                def execute(*args, **kwargs):
+                def execute(call, run):
                     # Present only while the tool runs; removed before any post-run inventory.
-                    if Path(args[1]).name != window:
-                        return real_execute(*args, **kwargs)
+                    if call.work.name != window:
+                        return run()
                     os.link(stand_in, late)
                     try:
-                        return real_execute(*args, **kwargs)
+                        return run()
                     finally:
                         late.unlink()
 
-                with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+                with live_inventory, live_state, native_run.using(Hooked(execute)):
                     with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
                         run_step(receipt_dir, design, spec, {})
                 self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
@@ -609,13 +605,9 @@ assert not (outer / 'receipt').exists()
         spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /single > /work/listing'], source=None,
                          version_argv=None, writes={}, artifacts=['listing'],
                          mounts=[{'source': str(program), 'at': '/single'}])
-        real_execute = stage_receipts.execute
+        execute = before(lambda call: stand_in.chmod(0o600))  # a live status change no file mount can expose
 
-        def execute(*args, **kwargs):
-            stand_in.chmod(0o600)  # a live status change no file mount can expose
-            return real_execute(*args, **kwargs)
-
-        with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+        with live_inventory, live_state, native_run.using(execute):
             receipt = run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
         self.assertEqual(receipt['status'], 'completed')
 
@@ -625,7 +617,6 @@ assert not (outer / 'receipt').exists()
         stand_in, live_inventory, live_state = self._live_state_stand_in()
         design = Path(self.tmp.name) / 'design'
         design.mkdir()
-        real_execute = stage_receipts.execute
         for window in ('version', 'run'):
             with self.subTest(window=window):
                 receipt_dir = Path(self.tmp.name) / ('receipt-' + window)
@@ -634,16 +625,14 @@ assert not (outer / 'receipt').exists()
                                  writes={}, artifacts=['listing'])
                 baseline = stand_in.lstat()
 
-                def execute(*args, **kwargs):
-                    record = real_execute(*args, **kwargs)
-                    if Path(args[1]).name == window:
+                def execute(call, record):
+                    if call.work.name == window:
                         # A fresh inode under the same name; the baseline inode has no name left.
                         replacement = stand_in.with_name('replacement.py')
                         replacement.write_text('live')
                         replacement.replace(stand_in)
-                    return record
 
-                with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+                with live_inventory, live_state, native_run.using(after(execute)):
                     with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
                         run_step(receipt_dir, design, spec, {})
                 self.assertNotEqual(stand_in.lstat().st_ino, baseline.st_ino)
@@ -676,13 +665,10 @@ assert not (outer / 'receipt').exists()
         design.mkdir()
         spec = self.spec(argv=['/usr/bin/sh', '-c', 'echo done > /work/listing'], writes={},
                          artifacts=['listing'], version_argv=None)
-        real_execute, launched = stage_receipts.execute, []
+        launched = []
+        execute = before(lambda call: launched.append(time.clock_gettime_ns(stage_receipts.CLOCK_REALTIME_COARSE)))
 
-        def execute(*args, **kwargs):
-            launched.append(time.clock_gettime_ns(stage_receipts.CLOCK_REALTIME_COARSE))
-            return real_execute(*args, **kwargs)
-
-        with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+        with live_inventory, live_state, native_run.using(execute):
             receipt = run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
         self.assertEqual(receipt['status'], 'completed')
         self.assertGreaterEqual(launched[0], (stand_in.lstat().st_ctime_ns // 10**9 + 1) * 10**9)
@@ -808,15 +794,11 @@ assert not (outer / 'receipt').exists()
         receipt_dir = Path(self.tmp.name) / 'receipt'
         spec = self.spec(argv=['/usr/bin/true'], source='/tool/lib', version_argv=None,
                          writes={}, artifacts=['listing'])
-        real_execute = stage_receipts.execute
-
-        def execute(*args, **kwargs):
-            record = real_execute(*args, **kwargs)
+        def execute(call, record):
             (tool / 'lib').rename(tool / 'held-lib')
             (tool / 'lib').symlink_to(outside)
-            return record
 
-        with patch.object(stage_receipts, 'execute', execute):
+        with native_run.using(after(execute)):
             with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
                 run_step(receipt_dir, design, spec, {})
         self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
@@ -841,11 +823,7 @@ assert not (outer / 'receipt').exists()
         for window in ('before launch', 'after execution'):
             with self.subTest(window=window):
                 calls, launched = [], []
-                real_execute = stage_receipts.execute
-
-                def execute(*args, **kwargs):
-                    launched.append(True)
-                    return real_execute(*args, **kwargs)
+                execute = before(lambda call: launched.append(True))
 
                 def observe(value):
                     calls.append(True)
@@ -860,8 +838,7 @@ assert not (outer / 'receipt').exists()
                         (tool / 'held-lib').rename(tool / 'lib')
 
                 receipt_dir = Path(self.tmp.name) / ('receipt-' + window.replace(' ', '-'))
-                with patch.object(stage_receipts, 'observe_tool', observe), \
-                        patch.object(stage_receipts, 'execute', execute):
+                with patch.object(stage_receipts, 'observe_tool', observe), native_run.using(execute):
                     with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
                         run_step(receipt_dir, design, spec, {})
                 self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
@@ -1116,15 +1093,9 @@ assert not (outer / 'receipt').exists()
 
         receipt_dir = Path(self.tmp.name) / 'deep-run'
         executions = []
-        real_execute = stage_receipts.execute
+        execute = after(lambda call, record: executions.append(record))
 
-        def execute(*args, **kwargs):
-            record = real_execute(*args, **kwargs)
-            executions.append(record)
-            return record
-
-        with patch.object(stage_receipts, 'observe_tool', observe), \
-                patch.object(stage_receipts, 'execute', execute):
+        with patch.object(stage_receipts, 'observe_tool', observe), native_run.using(execute):
             with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
                 run_step(receipt_dir, design, spec, {})
         self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
@@ -1244,14 +1215,9 @@ assert not (outer / 'receipt').exists()
         design = Path(self.tmp.name) / 'design'
         design.mkdir()
         spec = self.spec(argv=['/usr/bin/true'], writes={}, artifacts=['listing'], version_argv=None)
-        real_execute = stage_receipts.execute
+        execute = after(lambda call, record: shutil.rmtree(self.tool))
 
-        def execute(*args, **kwargs):
-            record = real_execute(*args, **kwargs)
-            shutil.rmtree(self.tool)
-            return record
-
-        with patch.object(stage_receipts, 'execute', execute):
+        with native_run.using(execute):
             with self.assertRaisesRegex(ValueError, 'mount_source_changed:/tool') as failure:
                 run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
         self.assertEqual(failure.exception.violation, 'mount_source_changed:/tool')
@@ -1264,14 +1230,12 @@ assert not (outer / 'receipt').exists()
         entry.write_text('tool bytes')
         receipt_dir = Path(self.tmp.name) / 'receipt'
         spec = self.spec(argv=['/usr/bin/true'], writes={}, artifacts=['listing'], version_argv=None)
-        real_execute, real_digest = stage_receipts.execute, stage_receipts._entry_digest
+        real_digest = stage_receipts._entry_digest
         executed = False
 
-        def execute(*args, **kwargs):
+        def ran(call, record):
             nonlocal executed
-            record = real_execute(*args, **kwargs)
             executed = True
-            return record
 
         # Tree walks digest an entry of its held directory (AGENTEE-374).
         def deleting_digest(directory, name):
@@ -1279,7 +1243,7 @@ assert not (outer / 'receipt').exists()
                 entry.unlink()
             return real_digest(directory, name)
 
-        with patch.object(stage_receipts, 'execute', execute), \
+        with native_run.using(after(ran)), \
                 patch.object(stage_receipts, '_entry_digest', deleting_digest):
             with self.assertRaises(stage_receipts.MountSourceChangedError) as failure:
                 run_step(receipt_dir, design, spec, {})
@@ -1440,10 +1404,10 @@ assert not (outer / 'receipt').exists()
             return observed
         receipt_dir = Path(self.tmp.name) / 'receipt'
         with patch.object(stage_receipts, 'observe_tool', replacing), \
-                patch.object(stage_receipts, 'execute') as execute:
+                native_run.using(native_run.Recorded()) as execute:
             with self.assertRaisesRegex(ValueError, 'mount_source_changed:/tool'):
                 run_step(receipt_dir, design, self.spec(), {})
-        execute.assert_not_called()
+        self.assertEqual(execute.calls, [])
         self.assertFalse(receipt_dir.exists())
 
     @toolchain_test
@@ -2383,20 +2347,19 @@ class CoordinatorBoundaryTests(StepFixture):
         verify_implementation(self.root / 'work', anchor, 1, 'c' * 64)
 
     def test_records_on_disk_after_an_interrupt_are_trusted_only_as_cancellation(self):
-        real = stage_receipts.execute
         argv = ['/usr/bin/python3', '/tool/step.py', 'edit']
 
-        def interrupted_before_record(inputs, work, run_argv, **kwargs):
+        def interrupted_before_record(call, run):
             # As if the coordinator were interrupted before the executor wrote its own record,
             # leaving whatever the tool had planted in /work.
-            (Path(work) / 'home').mkdir(parents=True)
-            write_json(Path(work) / 'execution.json', planted)
+            (call.work / 'home').mkdir(parents=True)
+            write_json(call.work / 'execution.json', planted)
             raise KeyboardInterrupt
 
         cases = {'forged success': ({'execution': 'ok', 'exit_code': 0, 'argv': argv}, 'refused'),
                  'malformed interrupt': ({'execution': 'interrupted', 'argv': argv, 'sandbox_argv': 'x'}, 'refused')}
         for label, (planted, status) in cases.items():
-            with self.subTest(label), patch('agent_ee.stage_receipts.execute', side_effect=interrupted_before_record):
+            with self.subTest(label), native_run.using(Hooked(interrupted_before_record)):
                 with self.assertRaises(KeyboardInterrupt):
                     self.run_step(self.spec(version_argv=None))
                 path = self.root / 'work/receipts' / f'{self.count}-test-helper'
@@ -2404,7 +2367,6 @@ class CoordinatorBoundaryTests(StepFixture):
                 self.assertIsNone(receipt['execution'])
                 self.assertEqual(receipt['status'], status)
                 self.assertIn('executor_record_missing:run', receipt['violations'])
-        self.assertIs(stage_receipts.execute, real)
 
     @toolchain_test
     def test_malformed_backend_reports_keep_the_observed_process_receipt(self):

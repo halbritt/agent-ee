@@ -69,6 +69,8 @@ class Intent:
     # the combined stdout+stderr bytes kept; past it the run stops as output_limit.
     remount_ro: tuple = ()
     log_bytes: Optional[int] = None
+    # Host/docker: stderr joins stdout as one stream in arrival order (a container console).
+    merge_stderr: bool = False
 
     def __post_init__(self):
         if not self.tool or not isinstance(self.tool, str):
@@ -89,6 +91,8 @@ class Intent:
             raise ValueError("only a sandboxed run has a view to remount")
         if self.log_bytes is not None and (type(self.log_bytes) is not int or self.log_bytes <= 0):
             raise ValueError("log_bytes must be a positive integer")
+        if self.merge_stderr and self.isolation == "sandbox":
+            raise ValueError("merge_stderr applies to host or docker runs")
 
 
 class Execution(dict):
@@ -175,7 +179,7 @@ def baseline_mounts(baseline):
 
 
 def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, cancel=None, adapter=None,
-        on_line=None, on_launch=None, on_tick=None):
+        on_line=None, on_launch=None, on_tick=None, sink=None):
     """Run intent and return its Execution.
 
     inputs is the read-only candidate (sandbox runs). deadline is an absolute monotonic time;
@@ -186,7 +190,10 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     supervision poll (at most 0.05 s apart, also while a descendant still holds a pipe after
     the leader exits) for cooperative checkpoints (host and docker). When a callback raises, the run is stopped and
     reaped and the callback's exception propagates unchanged, carrying the stopped run's
-    Execution as its native_execution attribute (execution "callback_failed").
+    Execution as its native_execution attribute (execution "callback_failed"). An operator
+    interrupt (SIGINT held during the launch) likewise re-raises KeyboardInterrupt carrying the
+    stopped run's Execution (execution "interrupted") for host, docker and bounded sandbox runs.
+    sink, a binary file (host and docker), receives stdout as it arrives; it is also kept.
     """
     if not isinstance(intent, Intent):
         raise TypeError("native run needs an Intent")
@@ -194,7 +201,8 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     mounts = (*baseline_mounts(baseline), *mounts)
     chosen = adapter or _active.get() or DEFAULT_ADAPTERS[intent.isolation]
     return chosen.run(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts,
-                      cancel=cancel, on_line=on_line, on_launch=on_launch, on_tick=on_tick)
+                      cancel=cancel, on_line=on_line, on_launch=on_launch, on_tick=on_tick,
+                      **({} if sink is None else {"sink": sink}))
 
 
 @contextlib.contextmanager
@@ -214,12 +222,13 @@ class Sandbox:
 
     name = "sandbox"
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
+            **callbacks):
         if intent.isolation != "sandbox":
             raise ValueError(f"the sandbox adapter cannot run a {intent.isolation} intent")
         if inputs is None:
             raise ValueError("a sandboxed run needs its read-only inputs")
-        if on_line is not None or on_launch is not None or on_tick is not None:
+        if on_line is not None or on_launch is not None or on_tick is not None or callbacks:
             raise ValueError("the sandbox adapter returns output with the record, not by callback")
         if intent.remount_ro or intent.log_bytes is not None:
             return self._bounded(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts, cancel=cancel)
@@ -260,6 +269,13 @@ def sandbox_command(intent, inputs, work, mounts):
     return command
 
 
+def declared_sandbox_argv(inputs, work, argv, *, network=False, mounts=(), mount_identities=None):
+    """The bwrap argv a sandbox run of argv would carry, for checking a retained record against its
+    declaration; mount_identities stands in for descriptors that are no longer open. Nothing runs."""
+    return executor.sandbox_argv(inputs, work, list(argv), network=network, extra_ro=tuple(mounts),
+                                 mount_identities=mount_identities)
+
+
 def _read_logs(work):
     out = []
     for name in ("stdout.log", "stderr.log"):
@@ -271,7 +287,7 @@ def _read_logs(work):
 
 
 def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_line=None, on_stop=None,
-              on_launch=None, stop_grace=None, on_tick=None, log_bytes=None):
+              on_launch=None, stop_grace=None, on_tick=None, log_bytes=None, sink=None, merge_stderr=False):
     """Run argv as a host process group under one deadline and cancel handle.
 
     Returns (record fields, stdout, stderr). Output is drained without blocking, so a child
@@ -283,6 +299,7 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     SIGTERM to the group and waits that long before SIGKILL on an early stop. on_tick runs before
     every poll of the loop. log_bytes caps the combined stdout+stderr kept; the first read past it
     stops the run as output_limit (logs_truncated), and the post-stop drain stays within the cap.
+    sink gets each stdout chunk as it arrives (flushed); merge_stderr sends stderr into stdout.
     When on_line, on_launch or on_tick raises, the run stops like a timeout (execution "callback_failed") and the exception
     is re-raised with (fields, stdout, stderr) attached as native_execution.
     """
@@ -299,7 +316,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
             with held_interrupt() as interrupt, cancel.launch_lock:
                 if not cancel.cancelled.is_set():
                     proc = subprocess.Popen(list(argv), stdin=input_stream, stdout=subprocess.PIPE,
-                                            stderr=subprocess.PIPE, start_new_session=True,
+                                            stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+                                            start_new_session=True,
                                             env=None if env is None else dict(env), cwd=cwd)
         except FileNotFoundError as exc:
             fields["execution"] = "unavailable"
@@ -307,7 +325,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     if proc is None:
         fields["execution"] = "interrupted"
         if interrupt:
-            raise KeyboardInterrupt
+            stop = KeyboardInterrupt()
+            stop.native_execution = (fields, b"", b"")
+            raise stop
         return fields, b"", b""
     stopped, completed, failure = None, False, None
     if log_bytes is not None:
@@ -316,8 +336,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     try:
         with selectors.DefaultSelector() as selector:
             for stream in (proc.stdout, proc.stderr):
-                os.set_blocking(stream.fileno(), False)
-                selector.register(stream, selectors.EVENT_READ)
+                if stream is not None:
+                    os.set_blocking(stream.fileno(), False)
+                    selector.register(stream, selectors.EVENT_READ)
 
             def read(wait, deliver):
                 """Read what is ready; True when the retained-log ceiling was passed."""
@@ -337,6 +358,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                         errors.extend(chunk)
                     else:
                         output.extend(chunk)
+                        if sink is not None:
+                            sink.write(chunk)
+                            sink.flush()
                         if deliver and on_line is not None:
                             pending.extend(chunk)
                             while b"\n" in pending:
@@ -364,7 +388,10 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                         stopped = "output_limit"
                         break
             except BaseException as exc:
-                failure, stopped = exc, "callback_failed"
+                # An operator interrupt (SIGINT delivered while supervising) stops the run as interrupted;
+                # anything else raised here came from a callback.
+                failure = exc
+                stopped = "interrupted" if isinstance(exc, KeyboardInterrupt) else "callback_failed"
             if stopped is not None:
                 # Stop first, then keep what the group already wrote, bounded as the executor's drain is.
                 _stop_group(proc, stop_grace)
@@ -379,7 +406,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                 if pending and on_line is not None:
                     on_line(bytes(pending))
             except BaseException as exc:
-                failure, stopped = exc, "callback_failed"
+                failure = exc
+                stopped = "interrupted" if isinstance(exc, KeyboardInterrupt) else "callback_failed"
                 _stop_group(proc, stop_grace)
             else:
                 fields["exit_code"] = proc.wait()
@@ -395,7 +423,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
         if failure is not None:
             fields["exit_code"] = proc.returncode
         for stream in (proc.stdout, proc.stderr):
-            stream.close()
+            if stream is not None:
+                stream.close()
         # Any exit short of the tool's own completion (timeout, cancel, an interrupt or a failing
         # on_line) runs the stop cleanup; a killed container client leaves its container running.
         if not completed and on_stop is not None:
@@ -408,7 +437,9 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
         failure.native_execution = (fields, bytes(output), bytes(errors))
         raise failure
     if stopped == "interrupted" and interrupt:
-        raise KeyboardInterrupt
+        stop = KeyboardInterrupt()
+        stop.native_execution = (fields, bytes(output), bytes(errors))
+        raise stop
     return fields, bytes(output), bytes(errors)
 
 
@@ -491,7 +522,8 @@ class Host:
 
     name = "host"
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
+            sink=None):
         if intent.isolation != "host":
             raise ValueError(f"the host adapter cannot run a {intent.isolation} intent")
         if mounts:
@@ -508,7 +540,8 @@ class Host:
 
                 return _supervised(finish, intent.argv, timeout=timeout, stdin=intent.stdin, cancel=cancel,
                                    env=intent.env, cwd=intent.cwd, on_line=on_line, on_launch=on_launch,
-                                   on_tick=on_tick, stop_grace=intent.stop_grace_s)
+                                   on_tick=on_tick, stop_grace=intent.stop_grace_s, sink=sink,
+                                   merge_stderr=intent.merge_stderr)
         finally:
             forget_scope()
 
@@ -549,7 +582,8 @@ class Docker:
             command += ["--entrypoint", self.entrypoint]
         return command + [self.image, *intent.argv]
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
+            sink=None):
         if intent.isolation != "docker":
             raise ValueError(f"the docker adapter cannot run a {intent.isolation} intent")
         if mounts:
@@ -571,7 +605,8 @@ class Docker:
 
             return _supervised(finish, command, timeout=timeout, stdin=intent.stdin, cancel=cancel,
                                on_line=on_line, on_stop=kill_container, on_launch=on_launch,
-                               on_tick=on_tick, stop_grace=intent.stop_grace_s)
+                               on_tick=on_tick, stop_grace=intent.stop_grace_s, sink=sink,
+                               merge_stderr=intent.merge_stderr)
 
 
 @dataclass
@@ -606,7 +641,8 @@ class Recorded:
         self.responder = responder or (lambda call: Outcome())
         self.calls = []
 
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None):
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel, on_line=None, on_launch=None, on_tick=None,
+            sink=None):
         call = Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
                     timeout, tuple(mounts))
         self.calls.append(call)
@@ -640,13 +676,18 @@ class Recorded:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
             _write_records(opened, record, outcome.stdout, outcome.stderr)
+        if sink is not None:
+            sink.write(outcome.stdout)
         if on_line is not None:
             for line in outcome.stdout.splitlines():
                 on_line(line)
+        result = Execution(record, outcome.stdout, outcome.stderr,
+                           returncode=None if intent.isolation == "sandbox" else outcome.exit_code)
         if execution == "interrupted":
-            raise KeyboardInterrupt
-        return Execution(record, outcome.stdout, outcome.stderr,
-                         returncode=None if intent.isolation == "sandbox" else outcome.exit_code)
+            stop = KeyboardInterrupt()
+            stop.native_execution = result
+            raise stop
+        return result
 
 
 DEFAULT_ADAPTERS = {"sandbox": Sandbox(), "host": Host()}

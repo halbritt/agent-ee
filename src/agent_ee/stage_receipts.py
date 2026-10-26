@@ -20,7 +20,7 @@ import time
 import uuid
 from pathlib import Path, PurePosixPath
 
-from .executor import execute, sandbox_invocation
+from . import native_run
 from .storage import digest, digest_fd, identity, read_json, write_json
 
 STEP_SCHEMA = 'agent-ee.stage-step/1'
@@ -819,20 +819,7 @@ def observe_tool(spec):
 
 def sandbox_profile(sandbox_argv):
     """Sandbox options before the tool argv, with per-run host bind sources normalized."""
-    if not isinstance(sandbox_argv, list) or '--' not in sandbox_argv:
-        raise ValueError('malformed sandbox argv')
-    options = sandbox_argv[:sandbox_argv.index('--')]
-    profile, index = [], 0
-    while index < len(options):
-        token = options[index]
-        if token in ('--bind', '--ro-bind', '--ro-bind-fd') and index + 2 < len(options):
-            source, dest = options[index + 1], options[index + 2]
-            profile += [token, source if source == dest else '<host>', dest]
-            index += 3
-        else:
-            profile.append(token)
-            index += 1
-    return profile
+    return native_run.parse_profile(sandbox_argv).normalized()
 
 
 def _reported_version(spec, record, work):
@@ -1196,14 +1183,15 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         raise
     try:
         if spec['version_argv'] is not None:
-            version_record = execute(receipt_dir / 'inputs', receipt_dir / 'version', spec['version_argv'],
-                                     timeout=max(.001, min(VERSION_TIMEOUT_S, timeout)), network=False,
-                                     extra_ro=mounts, cancellation=cancellation)
+            version_record = dict(native_run.run(
+                native_run.Intent('version', spec['version_argv'], timeout=max(.001, min(VERSION_TIMEOUT_S, timeout))),
+                inputs=receipt_dir / 'inputs', work=receipt_dir / 'version', mounts=mounts, cancel=cancellation))
         _recheck_mounts(runtime_spec, mount_identities, live)
         # An exhausted budget is recorded as the step's own observed timeout.
-        execution = execute(receipt_dir / 'inputs', run, spec['argv'],
-                            timeout=max(.001, timeout - (time.monotonic() - start)), network=False,
-                            extra_ro=mounts, cancellation=cancellation, skip_visuals=skip_visuals)
+        execution = dict(native_run.run(
+            native_run.Intent('stage', spec['argv'], timeout=max(.001, timeout - (time.monotonic() - start)),
+                              skip_visuals=skip_visuals),
+            inputs=receipt_dir / 'inputs', work=run, mounts=mounts, cancel=cancellation))
     except KeyboardInterrupt:
         # The executor writes its record before re-raising an interrupt. Anything else on disk may
         # have been planted by the tool, and at most it yields a cancelled, unadoptable receipt.
@@ -1279,15 +1267,15 @@ def _execution_record(record, work, argv):
     if not isinstance(displaced, dict) or not set(displaced) <= set(RECORD_FILES):
         raise ValueError('malformed stage receipt displaced executor records')
     sandbox = record.get('sandbox_argv')
-    if (not isinstance(sandbox, list) or '--' not in sandbox or sandbox_invocation(sandbox)[0] != argv or
-            '--unshare-net' not in sandbox[:sandbox.index('--')]):
+    if not isinstance(sandbox, list) or '--' not in sandbox:
         raise ValueError('stage receipt sandbox lacks the exact argv or network isolation')
-    if sandbox_invocation(sandbox)[1] is not None and type(record.get('mount_guard')) is not bool:
+    profile = native_run.parse_profile(sandbox)
+    if list(profile.tool_argv) != argv or profile.network:
+        raise ValueError('stage receipt sandbox lacks the exact argv or network isolation')
+    if profile.guarded and type(record.get('mount_guard')) is not bool:
         raise ValueError('stage receipt lacks a coordinator mount guard observation')
-    options = sandbox[:sandbox.index('--')]
-    pairs = {tuple(options[i:i + 3]) for i in range(len(options) - 2)}
-    if (not any(p[0] == '--ro-bind' and p[2] == '/candidate' for p in pairs) or
-            not any(p[0] == '--bind' and p[2] == '/work' for p in pairs)):
+    if (not any(bind.option == '--ro-bind' and bind.dest == '/candidate' for bind in profile.binds) or
+            not any(bind.option == '--bind' and bind.dest == '/work' for bind in profile.binds)):
         raise ValueError('stage receipt sandbox lacks read-only candidate or scratch binding')
     for name, key in (('stdout.log', 'stdout_sha256'), ('stderr.log', 'stderr_sha256'),
                       ('console.log', 'console_sha256')):

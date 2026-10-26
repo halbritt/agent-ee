@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from agent_ee import native_run
+from native_hooks import after
 from agent_ee import fab_stage, generate as g, rung1_campaign as rc, rung1_qualified as q
 from agent_ee.fab_package import PREVIEW_ACTION
 from agent_ee.stage_receipts import run_step, validate_receipt
@@ -82,17 +84,13 @@ class InputTests(unittest.TestCase):
                     'version_argv': ['/usr/bin/python3', '--version'],
                     'mounts': [{'source': str(tool), 'at': '/tool'}], 'source': '/tool',
                     'writes': {}, 'artifacts': ['result.txt']}
-            execute = stage_receipts.execute
-
-            def execute_then_import(*args, **kwargs):
-                result = execute(*args, **kwargs)
+            def execute_then_import(call, record):
                 # Deterministically model a neighboring host import after the initial
                 # identity observation. Every execution and digest remains real.
-                if Path(args[1]).name == 'version':
+                if call.work.name == 'version':
                     py_compile.compile(str(script), doraise=True)
-                return result
 
-            with mock.patch.object(stage_receipts, 'execute', side_effect=execute_then_import):
+            with native_run.using(after(execute_then_import)):
                 receipt = run_step(root / 'receipt', design, spec, {'test': 'cache-boundary'})
             self.assertEqual((receipt['exit_code'], receipt['status']), (0, 'refused'))
             self.assertEqual(receipt['violations'], ['mount_changed:/tool', 'source_changed'])

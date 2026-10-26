@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from agent_ee import native_run
+from native_hooks import after, before
 from agent_ee import fab_stage, rung1_campaign as rc, rung1_qualified as q, stage_receipts
 from agent_ee.storage import identity
 from agent_ee.tool_source import snapshot
@@ -131,9 +133,8 @@ class SnapshotTests(unittest.TestCase):
                 'version_argv': ['/usr/bin/python3', '--version'],
                 'mounts': [{'source': str(mounted), 'at': '/tool'}], 'source': '/tool',
                 'writes': {}, 'artifacts': ['result.txt']}
-        execute = stage_receipts.execute
         processes = []
-        def concurrent_prune(*args, **kwargs):
+        def concurrent_prune(call):
             if not processes:
                 code = """import fcntl, os
 from pathlib import Path
@@ -153,9 +154,8 @@ prune(older_than_days=0)
                 self.assertEqual(proc.stdout.readline().strip(), 'step holds lock')
                 self.assertIsNone(proc.poll())
             self.assertTrue(mounted.exists())
-            return execute(*args, **kwargs)
         try:
-            with mock.patch.object(stage_receipts, 'execute', side_effect=concurrent_prune):
+            with native_run.using(before(concurrent_prune)):
                 receipt = stage_receipts.run_step(self.root / 'receipt', design, spec, {})
             self.assertEqual(receipt['status'], 'completed', receipt)
             self.assertEqual(receipt['violations'], [])
@@ -363,15 +363,12 @@ prune(older_than_days=0)
         inputs = candidate(self.root / 'inputs')
         stage = g.Stage(self.root / 'generator', 7, 'fab')
         stage.start()
-        execute = stage_receipts.execute
         mounted = snapshot(g.PACKAGE_ROOT)
         planted = mounted / 'receipt-probe.txt'
-        def execute_then_mutate(*args, **kwargs):
-            result = execute(*args, **kwargs)
-            if Path(args[1]).name == 'version':
+        def execute_then_mutate(call, record):
+            if call.work.name == 'version':
                 planted.write_text('mutation')
-            return result
-        with mock.patch.object(stage_receipts, 'execute', side_effect=execute_then_mutate):
+        with native_run.using(after(execute_then_mutate)):
             with self.assertRaisesRegex(g.StageFailure, 'violations.*mount_changed.*receipt kept at'):
                 g.stage_fab(stage, {'name': 'cpl', 'reviewed_inputs': inputs}, {})
         receipt_dir = stage.dir / 'export-fab'
@@ -513,15 +510,13 @@ prune(older_than_days=0)
                 'version_argv': ['/usr/bin/python3', '--version'],
                 'mounts': [{'source': str(mounted), 'at': '/tool'}], 'source': '/tool',
                 'writes': {}, 'artifacts': ['result.txt']}
-        execute = stage_receipts.execute
         cases = ['host-pyc', 'new.py', 'new.pyc', 'note.txt', 'edit.py']
         for case in cases:
             with self.subTest(case=case):
                 original = (mounted / 'tool.py').read_bytes()
                 planted = mounted / case
-                def execute_then_mutate(*args, **kwargs):
-                    result = execute(*args, **kwargs)
-                    if Path(args[1]).name == 'version':
+                def execute_then_mutate(call, record):
+                    if call.work.name == 'version':
                         if case == 'host-pyc':
                             py_compile.compile(str(self.source / 'tool.py'), doraise=True)
                         elif case == 'edit.py':
@@ -529,9 +524,8 @@ prune(older_than_days=0)
                             (mounted / 'tool.py').write_bytes(original + b'\n# edit\n')
                         else:
                             planted.write_bytes(b'planted')
-                    return result
                 receipt_dir = self.root / case
-                with mock.patch.object(stage_receipts, 'execute', side_effect=execute_then_mutate):
+                with native_run.using(after(execute_then_mutate)):
                     receipt = stage_receipts.run_step(receipt_dir, design, spec, {'case': case})
                 self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
                 self.assertEqual(receipt['exit_code'], 0)

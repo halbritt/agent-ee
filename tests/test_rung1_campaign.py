@@ -14,6 +14,8 @@ from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 import unittest
 from unittest import mock
 
+from agent_ee import native_run
+from native_hooks import before
 from agent_ee import generate as g
 from agent_ee import rung1_campaign as rc
 from agent_ee.stage_receipts import validate_receipt
@@ -588,11 +590,7 @@ class ReadOnlyIdentityTest(unittest.TestCase):
         spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': 'probe-window',
                 'argv': ['/usr/bin/python3', '/tool/step.py'], 'mounts': [{'source': str(self.tool), 'at': '/tool'}],
                 'writes': {'board.txt': 'design/board.txt'}, 'timeout_s': 60}
-        execute = stage_receipts.execute
-        def concurrent(*args, **kwargs):
-            probe()
-            return execute(*args, **kwargs)
-        with mock.patch.object(stage_receipts, 'execute', concurrent):
+        with native_run.using(before(lambda call: probe())):
             return stage_receipts.run_step(self.root / f'receipt-{probe.__name__}', design, spec, {'test': 1})
 
     def test_receipt_over_the_checkout_stays_completed_with_the_read_only_probe(self):

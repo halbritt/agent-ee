@@ -9,6 +9,7 @@ import subprocess
 import tarfile
 import urllib.request
 
+from . import native_run
 from .benchmark import checked_read, mutate, safe_path, sha
 from .findings import CHECK_EXECUTIONS, CHECK_OUTCOMES, safe_id
 from .storage import canonical, digest, identity, read_json, write_json
@@ -364,7 +365,8 @@ def execute_batch(prepared, output):
         raise ValueError('missing/invalid committed strict execution request')
     output = fresh(output)
     with (output/'doctor.json').open('wb') as doctor:
-        subprocess.run(['/opt/agent-ee/bin/agent-ee','doctor','--checks-only'],stdout=doctor,check=True)
+        _checked(native_run.run(native_run.Intent('doctor',['/opt/agent-ee/bin/agent-ee','doctor','--checks-only'],
+                                                  isolation='host',timeout=None),work=None,sink=doctor),pass_stderr=True)
     records = []
     baselines = {}
     for scope in sorted(prepared.glob('*/scope.json')):
@@ -382,7 +384,9 @@ def execute_batch(prepared, output):
 def pinned_image(image, expected):
     if not re.fullmatch(r'sha256:[a-f0-9]{64}',image) or image!=expected:
         raise ValueError('image differs from pinned immutable image identity')
-    actual = subprocess.run(['docker','image','inspect',image,'--format','{{.Id}}'],capture_output=True,text=True,check=True).stdout.strip()
+    inspected = _checked(native_run.run(native_run.Intent('docker-inspect',['docker','image','inspect',image,'--format','{{.Id}}'],
+                                                           isolation='host',timeout=None),work=None))
+    actual = inspected.stdout.decode().strip()
     if actual!=image:
         raise ValueError('Docker image identity mismatch')
 
@@ -404,27 +408,44 @@ def archive_implementation(output):
     return output, implementation, sha(archive), source
 
 
+def _checked(execution, *, pass_stderr=False):
+    """subprocess check=True semantics for a host native run: a missing tool or a nonzero exit raises."""
+    if pass_stderr and execution.stderr:
+        os.write(2, execution.stderr)
+    if execution['execution'] == 'unavailable':
+        raise FileNotFoundError(execution.stdout.decode(errors='replace'))
+    if execution['execution'] != 'ok':
+        raise subprocess.CalledProcessError(execution.returncode, list(execution['argv']), execution.stdout,
+                                            execution.stderr)
+    return execution
+
+
+def container_run(name, image, source, mounts, args):
+    """The pinned image without network, under the documented outer confinement: (adapter, intent)."""
+    docker = native_run.Docker(image=image, name=name, env=('HOME=/tmp','AGENT_EE_REQUIRE_TOOLCHAIN=1'),
+        volumes=((source,'/opt/agent-ee',True),*((path,path,readonly) for path,readonly in mounts)),
+        workdir='/opt/agent-ee', entrypoint='/usr/bin/python3')
+    return docker, native_run.Intent('benchmark',['/opt/agent-ee/scripts/seeded_benchmark.py',*args],
+                                     isolation='docker',timeout=None,merge_stderr=True)
+
+
 def container_command(name, image, source, mounts, args):
-    """The pinned image without network, under the documented outer confinement."""
-    command = ['docker','run','--rm','--init','--name',name,
-        '--network','none','--user',f'{os.getuid()}:{os.getgid()}','-e','HOME=/tmp',
-        '-e','AGENT_EE_REQUIRE_TOOLCHAIN=1','--security-opt','seccomp=unconfined',
-        '--security-opt','apparmor=unconfined','--security-opt','systempaths=unconfined',
-        '-v',f'{source}:/opt/agent-ee:ro']
-    for path,readonly in mounts:
-        command += ['-v',f'{path}:{path}'+(':ro' if readonly else '')]
-    return command+['-w','/opt/agent-ee','--entrypoint','/usr/bin/python3',image,
-                    '/opt/agent-ee/scripts/seeded_benchmark.py',*args]
+    docker, intent = container_run(name, image, source, mounts, args)
+    return docker.argv(intent)
 
 
-def launch(command, output):
+def launch(container, output):
+    docker, intent = container
+    command = docker.argv(intent)
     write_json(output/'command.json',command)
+
+    def launched(pid):
+        starttime = Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()[19]
+        write_json(output/'process.json',{'pid':pid,'starttime':starttime,'container':docker.name,'command':command})
+
     with (output/'console.log').open('wb') as console:
-        with subprocess.Popen(command,stdout=console,stderr=subprocess.STDOUT) as process:
-            starttime = Path(f'/proc/{process.pid}/stat').read_text().rsplit(')',1)[1].split()[19]
-            write_json(output/'process.json',{'pid':process.pid,'starttime':starttime,
-                'container':command[command.index('--name')+1],'command':command})
-            returncode = process.wait()
+        execution = native_run.run(intent,work=None,adapter=docker,on_launch=launched,sink=console)
+    returncode = execution.returncode
     write_json(output/'exit.json',{'exit_code':returncode})
     if returncode:
         raise subprocess.CalledProcessError(returncode,command)
@@ -441,7 +462,7 @@ def run(manifest_path, cache_prepared, output, expectation_commit, image):
         'implementation_archive_sha256':archive_sha256,'image_id':image,'prepared_sha256':digest(prepared/'prepared.json'),
         'strict_toolchain':True,'model_pass':False}
     write_json(output/'request.json',request)
-    launch(container_command(manifest.get('container_prefix','agent-ee-21-')+output.name,image,source,
+    launch(container_run(manifest.get('container_prefix','agent-ee-21-')+output.name,image,source,
         [(prepared,True),(output,False)],['_execute',str(prepared),str(output/'runs')]),output)
     if check_prepared(prepared,manifest_path)!=record:
         raise ValueError('prepared input changed during execution')
@@ -457,7 +478,7 @@ def image_native_rerun(first, output, image, repeats=2):
         'source_request_sha256':digest(first/'request.json'),'source_implementation_commit':retained['implementation_commit'],
         'implementation_commit':implementation,'implementation_archive_sha256':archive_sha256,'image_id':image,
         'repeats':repeats,'strict_toolchain':True,'model_pass':False})
-    launch(container_command('agent-ee-'+output.name,image,source,[(first,True),(output,False)],
+    launch(container_run('agent-ee-'+output.name,image,source,[(first,True),(output,False)],
         ['native-rerun',str(first),str(output/'rerun'),'--repeats',str(repeats)]),output)
     return read_json(output/'rerun'/'native-rerun.json')
 
@@ -477,14 +498,13 @@ def execution_identity(record, run, check_id):
     It must bind exactly one ``<dir>/inputs`` at /candidate and ``<dir>/work/<check>/containment``
     at /work, with ``<dir>`` named like the retained run; otherwise None.
     """
-    argv = record.get('sandbox_argv') if isinstance(record,dict) else None
-    if not isinstance(argv,list) or not all(isinstance(a,str) for a in argv):
+    try:
+        profile = native_run.profile(record)
+    except ValueError:
         return None
-    binds = {}
-    for i in range(len(argv)-2):
-        if argv[i] in ('--ro-bind','--bind') and argv[i+2] in ('/candidate','/work'):
-            binds.setdefault(argv[i+2],[]).append(argv[i+1])
-    if sorted(binds)!=['/candidate','/work'] or any(len(v)!=1 for v in binds.values()):
+    binds = {dest:[bind.source for bind in profile.binds if bind.dest==dest and bind.option!='--ro-bind-fd']
+             for dest in ('/candidate','/work')}
+    if any(len(v)!=1 for v in binds.values()):
         return None
     from pathlib import PurePosixPath
     inputs, work = PurePosixPath(binds['/candidate'][0]), PurePosixPath(binds['/work'][0])
@@ -495,37 +515,19 @@ def execution_identity(record, run, check_id):
     return str(identity)
 
 
-# Operand counts of the bwrap options executor.sandbox_argv emits. Anything else
-# is an unsupported layout and is left unnormalized.
-SANDBOX_FLAGS = {'--die-with-parent','--new-session','--unshare-pid','--unshare-ipc','--unshare-uts',
-                 '--unshare-net','--clearenv'}
-SANDBOX_ONE = {'--proc','--dev','--tmpfs','--dir','--chdir'}
-SANDBOX_TWO = {'--ro-bind','--bind','--symlink','--setenv'}
-
-
 def sandbox_path_operands(argv):
-    """Indexes of the execution-path operands: the sources of validated --ro-bind/--bind options.
+    """Indexes of the execution-path operands: the sources of --ro-bind/--bind options, from the
+    sandbox's own parsed profile; None when the layout is not one the native-run module emits.
 
-    Parses the option layout through its '--' delimiter; None when the layout is
-    not exactly understood. Environment values, other options and the command stay verbatim.
+    Descriptor-mounted layouts stay unnormalized, as they always have been here.
     """
-    if not argv or argv[0]!='bwrap' or '--' not in argv:
+    try:
+        profile = native_run.parse_profile(argv)
+    except ValueError:
         return None
-    end = argv.index('--')
-    found, i = [], 1
-    while i<end:
-        option = argv[i]
-        if option in SANDBOX_FLAGS:
-            i += 1
-        elif option in SANDBOX_ONE and i+1<end:
-            i += 2
-        elif option in SANDBOX_TWO and i+2<end:
-            if option in ('--ro-bind','--bind'):
-                found.append(i+1)
-            i += 3
-        else:
-            return None
-    return found if i==end else None
+    if any(bind.option=='--ro-bind-fd' for bind in profile.binds):
+        return None
+    return profile.path_source_indexes()
 
 
 def canonical_execution(record, identity):

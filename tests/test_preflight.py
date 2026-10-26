@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee.reviewers import reviewer_call
 from agent_ee.storage import read_json
 
@@ -57,10 +58,10 @@ class PreflightTests(unittest.TestCase):
         return record
 
     def test_runtime_and_policy_drift_refuse_before_probe_or_dispatch(self):
-        with patch('agent_ee.preflight.execute') as probe:
+        with native_run.using(native_run.Recorded()) as probe:
             self.runtime = {**self.runtime, 'changed': {}}
             self.assert_refused('runtime_drift')
-            probe.assert_not_called()
+            self.assertEqual(probe.calls, [])
         with patch('agent_ee.reviewers.dispatch') as provider:
             record, _ = self.call('physical', policy={'changed': 'hash'})
             self.assertIn('policy_drift', record['error'])
@@ -198,7 +199,11 @@ class PreflightTests(unittest.TestCase):
         self.assert_refused('missing_binary:kicad-cli')
 
     def test_broken_and_malformed_probe_never_dispatch(self):
-        with patch('agent_ee.preflight.execute', return_value={'execution': 'ok'}):
+        class Malformed:
+            def run(self, intent, **_):
+                return {'execution': 'ok'}
+
+        with native_run.using(Malformed()):
             self.assert_refused('malformed_probe_receipt')
 
     def test_runtime_probe_timeout_retains_valid_refusal_without_dispatch(self):
@@ -327,11 +332,9 @@ class PreflightTests(unittest.TestCase):
         self.assertIn('missing_binary:pcbnew', record['error'])
 
     def test_simulated_namespace_denial_is_specific_and_no_provider_runs(self):
-        def denied(inputs, work, argv, **kwargs):
-            work.mkdir(parents=True)
-            (work / 'stderr.log').write_text('bwrap: Creating new namespace failed: Operation not permitted')
-            return {'execution': 'failed', 'exit_code': 1, 'argv': argv, 'sandbox_argv': ['bwrap', '--unshare-net']}
-        with patch('agent_ee.preflight.execute', side_effect=denied):
+        denied = native_run.Recorded(lambda call: native_run.Outcome(
+            exit_code=1, stderr=b'bwrap: Creating new namespace failed: Operation not permitted'))
+        with native_run.using(denied):
             self.assert_refused('sandbox_namespace_denied')
 
     def test_missing_receipt_link_is_not_admission_evidence(self):
