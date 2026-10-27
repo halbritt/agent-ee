@@ -1609,6 +1609,8 @@ class ReceiptIterationTest(unittest.TestCase):
                 cancellation.cancel()
             return proc
 
+        # Recorded cannot prove a real helper is reaped after cancel-at-launch.
+        # Keep this launch hook and the observed returncode assertion together.
         with patch('agent_ee.executor.subprocess.Popen', side_effect=cancel_helper):
             with self.assertRaises(KeyboardInterrupt):
                 self.iterate(cancellation=cancellation)

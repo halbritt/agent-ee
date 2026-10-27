@@ -431,6 +431,8 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
                 if marker.exists() or time.monotonic() >= end:
                     raise ValueError('operation cancelled')
             try:
+                # Recorded has no descendant or inherited output pipe: this regression
+                # needs a real child to prove cancellation kills the process group.
                 with patch('agent_ee.native_run.subprocess.Popen', side_effect=launch), \
                         self.assertRaisesRegex(ValueError, 'operation cancelled'):
                     pcbnew_extension(checkpoint=checkpoint)

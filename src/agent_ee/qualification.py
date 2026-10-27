@@ -180,7 +180,7 @@ def _operational(report):
 def checks_dimension(root, review):
     if review is None:
         return _dimension()
-    directory, result, scope, binding = review.directory, review.result, review.scope, review.binding
+    directory, result, binding = review.directory, review.result, review.binding
     rows = result['checks']
     status = 'pass' if rows else 'not_assessed'
     if any(row['execution'] != 'ok' or row['outcome'] not in ('pass', 'info') for row in rows):
@@ -192,7 +192,7 @@ def checks_dimension(root, review):
 def _review_dimension(root, review):
     if review is None:
         return _dimension()
-    directory, result, scope, binding = review.directory, review.result, review.scope, review.binding
+    directory, result, binding = review.directory, review.result, review.binding
     if (len(result.get('reviews', [])) < 2 or len(result.get('review_executions', [])) < 2 or not result.get('adjudicated')
             or not all(row['execution'] == 'ok' for row in result.get('review_executions', []))):
         return _dimension(reason='No complete full engineering review is referenced')
@@ -206,7 +206,7 @@ def rules_register(root, review):
     from .design_rule_provenance import advisory_numeric, require_evaluated_limits
     if review is None:
         return []
-    directory, result, scope, binding = review.directory, review.result, review.scope, review.binding
+    directory, result, binding = review.directory, review.result, review.binding
     records = []
     for row in result['checks']:
         if row['kind'] not in ('erc', 'drc'):

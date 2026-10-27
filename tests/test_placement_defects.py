@@ -2343,7 +2343,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertTrue(list((export / 'drill').glob('*')))
         self.assertTrue((export / 'bom.csv').is_file())
         self.assertTrue((export / 'cpl.csv').is_file())
-        with patch('agent_ee.executor.execute', side_effect=AssertionError('replay launched a tool')):
+        with native_run.using(native_run.Recorded(lambda call: AssertionError('replay launched a tool'))):
             self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], 'criteria_satisfied')
 
 class ClosureEscapeTests(unittest.TestCase):

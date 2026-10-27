@@ -4,9 +4,9 @@ The original dialect shares top-level keys with the native form, so a consumer
 that read the raw document could look right while missing the projection (an
 edge connector's ``side`` and most of its ``context`` are removed; locality from
 ``inputs.locality`` is added). Each consumer here takes the bundle and refuses a
-raw document; the job-level test checks that one bundle object reaches them all.
+raw document; the job-level test follows the projection through real native
+placement, routing and saved-board checks.
 """
-from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agent_ee import placement_intent, placement_job as job
+from agent_ee import native_run, placement_intent, placement_job as job
 from test_intent_dialect import minimal_dialect, minimal_groups
 
 MM = 1_000_000
@@ -152,7 +152,7 @@ class RailsMembershipTests(unittest.TestCase):
 
 
 class JobEntryTests(unittest.TestCase):
-    """One normalization at entry; capture, materialize, both checks and final checks get that one object."""
+    """One normalization at entry, observed through native requests and the final saved board."""
 
     def setUp(self):
         from toolchain import require_toolchain
@@ -167,62 +167,52 @@ class JobEntryTests(unittest.TestCase):
         self.project.write_text('{}\n')
 
     def run_job(self, declared, grouped, *, rails=None, located=None):
-        inputs = ('board', 'project', 'intent', 'groups') + (('group_rails',) if rails else ()) + (
-            ('locality',) if located else ())
-        values = {'board': (self.board, self.board.read_bytes()), 'project': (self.project, b'{}'),
-                  'intent': (self.board, json.dumps(declared).encode()),
-                  'groups': (self.board, json.dumps(grouped).encode())}
-        if rails:
-            values['group_rails'] = (self.board, json.dumps(rails).encode())
-        if located:
-            values['locality'] = (self.board, json.dumps(located).encode())
-        config = {'budget_s': 60, 'inputs': {k: {} for k in inputs}, 'search': {'shortlist': 1},
-                  'router': {'checkout': 'unused'}}
-        output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
-                  'shortlist': [{'seed': 0, 'cost': '1', 'poses': [0]}]}
-        problem = {'problem_sha256': 'p', 'rails': {}}
-        seen = {}
+        from toolchain import require_kicad_route
+        import os
+        require_kicad_route()
+        files = {'board': self.board, 'project': self.project}
+        documents = {'intent': declared, 'groups': grouped}
+        if rails is not None:
+            documents['group_rails'] = rails
+        if located is not None:
+            documents['locality'] = located
+        for label, document in documents.items():
+            files[label] = self.dir / (label + '.json')
+            files[label].write_text(json.dumps(document))
+        config = {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
+                  'inputs': {label: {'path': str(path), 'sha256': job.digest(path)}
+                             for label, path in files.items()},
+                  'search': {'seeds': [{'seed': 0, 'start': 'scattered'}, {'seed': 1, 'start': 'clustered'}],
+                             'steps_per_seed': 30000, 'shortlist': 2},
+                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60}}
+        calls = []
 
-        def remember(name, result):
-            def call(*args, **kwargs):
-                bundle = kwargs.get('normalized', next((a for a in args if isinstance(a, dict) and 'intent_contract' in a),
-                                                       None))
-                seen.setdefault(name, []).append(bundle)
-                return result(*args, **kwargs) if callable(result) else result
-            return call
+        class ObservedHost(native_run.Host):
+            def run(self, intent, **options):
+                calls.append(intent)
+                return super().run(intent, **options)
 
-        def materialized(*_args, **_kwargs):
-            entry = {'index': 0, 'seed': 0, 'board_sha256': 'fixture', 'errors': {}, 'engine_violations': [],
-                     'directory': str(self.dir), 'board': str(self.board)}
-            (self.dir / 'job' / 'incumbent.json').write_text(json.dumps(entry))
-            return {'board': str(self.board), 'board_sha256': 'fixture', 'integrity': 'preserved', 'problems': []}
-
-        routed = {'status': 'routed', 'board': str(self.board), 'preflight': {
-            k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
-        with ExitStack() as stack:
-            stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label: values[label]))
-            stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
-            normalize = stack.enter_context(patch.object(placement_intent, 'normalize_intent',
-                                                         wraps=placement_intent.normalize_intent))
-            membership = stack.enter_context(patch.object(job, '_rail_membership', wraps=job._rail_membership))
-            stack.enter_context(patch.object(job, 'capture', side_effect=remember('capture', (problem, {}))))
-            stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
-            stack.enter_context(patch.object(job, 'materialize', side_effect=remember('materialize', materialized)))
-            stack.enter_context(patch.object(job, 'check_locality', side_effect=remember('locality', {'status': 'pass'})))
-            stack.enter_context(patch.object(job, 'check_edge_intent', side_effect=remember('edges', {'status': 'pass'})))
-            stack.enter_context(patch.object(job, 'promote', return_value=True))
-            stack.enter_context(patch.object(job, 'retain_diagnostic', return_value=False))
-            stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
-            stack.enter_context(patch.object(job, 'route', return_value=routed))
-            stack.enter_context(patch.object(job, 'final_checks', side_effect=remember('final', {
-                'integrity': 'preserved', 'edge_intent': {'status': 'pass'}, 'eligibility': 'eligible',
-                'physical_checks': 'PASS'})))
+        # Only spy on the once-per-job contract. All consumers, native loads,
+        # placement, routing and saved-board checks run through their real paths.
+        with native_run.using(ObservedHost()), patch.object(
+                placement_intent, 'normalize_intent', wraps=placement_intent.normalize_intent) as normalize:
             report = job.run_job(config, self.dir / 'job')
         self.assertEqual(report['status'], 'completed', report)
         self.assertEqual(normalize.call_count, 1)
-        bundles = [b for name in ('capture', 'materialize', 'locality', 'edges', 'final') for b in seen[name]]
-        self.assertTrue(all(b is bundles[0] for b in bundles), seen)
-        return bundles[0], normalize.call_args, membership
+        requests = [(call.argv[3], json.loads(call.stdin)) for call in calls
+                    if len(call.argv) > 3 and call.argv[1:3] == ('-m', 'agent_ee.placement_job')]
+        captures = [request['normalized'] for command, request in requests if command == '_capture']
+        self.assertEqual(len(captures), 1)
+        bundle = captures[0]
+        for command in ('_check_locality', '_check_edges'):
+            checked = [request['intent'] for name, request in requests if name == command]
+            self.assertGreaterEqual(len(checked), 2, 'candidate and final board must both be checked')
+            self.assertTrue(all(intent == bundle['intent'] for intent in checked), checked)
+        self.assertEqual(report['final']['integrity'], 'preserved')
+        self.assertEqual(report['final']['edge_intent']['status'], 'pass')
+        self.assertEqual(report['final']['locality']['status'], 'pass')
+        membership = [request for command, request in requests if command == '_nets']
+        return bundle, normalize.call_args, membership
 
     def test_native_intent_with_rails_and_locality(self):
         from test_placement_job import intent, groups
@@ -232,7 +222,7 @@ class JobEntryTests(unittest.TestCase):
                               'groups_sha256': job.sha256_bytes(json.dumps(grouped).encode())},
                  'shared': {'GND': {'evidence': 'return', 'groups': ['g'], 'parts': ['R1', 'U1']}}, 'scoped': {}}
         bundle, call, membership = self.run_job(intent(), grouped, rails=rails, located=locality())
-        self.assertEqual(membership.call_count, 1)
+        self.assertEqual(len(membership), 1)
         self.assertEqual(call.kwargs['nets'], {'A', 'B', 'GND'})
         self.assertEqual(call.kwargs['net_parts']['GND'], {'R1', 'U1'})
         self.assertIsNone(call.kwargs['net_groups'])
@@ -286,8 +276,16 @@ class JobEntryTests(unittest.TestCase):
         self.assertTrue(os.path.exists(out / 'CANCEL'))
 
     def test_dialect_intent_with_locality_reaches_every_step_projected(self):
-        bundle, call, membership = self.run_job(minimal_dialect(), minimal_groups(), located=locality())
-        membership.assert_not_called()
+        # Keep the original-dialect projection fields, bound to this original board.
+        declared = json.loads(json.dumps(minimal_dialect()).replace('J1', 'R1'))
+        declared['fixed_poses'] = [{'ref': 'FID', 'x': 3.0, 'y': 3.0, 'rot': 0.0, 'side': 'F',
+                                    'basis': 'mechanical', 'why': 'fixed fiducial'}]
+        declared['envelope']['rect'] = [0.0, 0.0, 20.0, 12.0]
+        declared['edge_connectors'][0]['max_setback_mm'] = 12.0
+        declared['proximity'] = []
+        from test_placement_job import groups
+        bundle, call, membership = self.run_job(declared, groups(), located=locality())
+        self.assertEqual(membership, [])
         self.assertIsNone(call.kwargs['nets'])
         self.assertNotIn('side', bundle['intent']['edge_connectors'][0])
         self.assertEqual(bundle['intent']['electrical_locality'], locality())

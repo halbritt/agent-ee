@@ -1257,12 +1257,13 @@ class ContainerCommandTests(unittest.TestCase):
         # Review finding (AGENTEE-540 batch d): an unavailable client used to return with exit_code null.
         import tempfile
         from pathlib import Path
-        from unittest import mock
+        from agent_ee import native_run
         from agent_ee.benchmark_run import container_run, launch
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)
             container = container_run('agent-ee-21-x', 'sha256:'+'a'*64, Path('/src'), [(output, False)], ['_execute'])
-            with mock.patch('agent_ee.native_run.subprocess.Popen', side_effect=FileNotFoundError('docker')), \
+            with native_run.using(native_run.Recorded(lambda call: native_run.Outcome(
+                    execution='unavailable', exit_code=None))), \
                     self.assertRaisesRegex(FileNotFoundError, 'docker'):
                 launch(container, output)
             self.assertTrue((output/'command.json').is_file())

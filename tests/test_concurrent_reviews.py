@@ -665,6 +665,8 @@ with ExitStack() as stack:
     if sys.argv[2] == 'preflight':
         stack.enter_context(patch('agent_ee.executor.sandbox_argv', side_effect=slow_probe))
     if sys.argv[2] == 'launch':
+        # Recorded cannot reproduce cancellation between Popen and communicate
+        # across this driver process, or establish that the real child was reaped.
         stack.enter_context(patch('agent_ee.executor.subprocess.Popen', side_effect=launching))
     status = run_review(root / 'scope.json', root / 'run', int(sys.argv[3]), host=case.host)
 sys.exit(0 if status == 1 else 2)

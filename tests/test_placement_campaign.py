@@ -883,6 +883,8 @@ class FailureCampaignTest(PlacementCampaignFixture):
                     return communicate(*a, **k)
                 proc.communicate = wait_for_helper
                 return proc
+            # Recorded cannot expose communicate() racing with SIGINT or prove
+            # the launched helper is reaped; retain the real-process hook here.
             with patch('agent_ee.executor.subprocess.Popen', side_effect=launch):
                 return run()
         edit_board(self.source / BOARD, move={'R1': (109, 100)})

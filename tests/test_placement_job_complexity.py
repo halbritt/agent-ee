@@ -2,7 +2,8 @@
 
 The Rust engine owns the contour limits (AGENTEE-538): capture emits native
 contours unchanged and the engine refuses an over-limit problem with the owning
-footprint and pad. The limits below are read from job.rs, their only copy.
+footprint and pad. The boundary cases below exercise the supported limits through
+the executable, independently of its source spelling.
 """
 import copy
 import hashlib
@@ -10,7 +11,6 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import time
@@ -18,10 +18,10 @@ import unittest
 
 from agent_ee import placement_job as job
 
-_ENGINE_SOURCE = (Path(__file__).resolve().parents[1] / 'crates/placement-engine/src/job.rs').read_text()
-MAX_CONTOUR_VERTICES, MAX_ITEM_CONTOURS, MAX_PROBLEM_CONTOUR_VERTICES = (
-    int(re.search(r'pub const ' + name + r': usize = (\d+);', _ENGINE_SOURCE)[1])
-    for name in ('MAX_CONTOUR_VERTICES', 'MAX_ITEM_CONTOURS', 'MAX_PROBLEM_CONTOUR_VERTICES'))
+# Accepted geometry boundaries: exactly at the limit succeeds; one beyond it refuses.
+MAX_CONTOUR_VERTICES = 2048
+MAX_ITEM_CONTOURS = 16
+MAX_PROBLEM_CONTOUR_VERTICES = 16384
 
 
 def contour(n):
