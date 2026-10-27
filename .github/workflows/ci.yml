@@ -10,13 +10,67 @@ on:
   schedule:
     - cron: '0 12 * * *'
   workflow_dispatch:
+    inputs:
+      gate:
+        description: 'Full release qualification, or affected checks only (never release evidence)'
+        type: choice
+        options: [full, affected]
+        default: full
+      change_base:
+        description: 'Git commit for affected checks; missing/unknown bases run the full suite'
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
+# Coalesce supported triggers on the same ref. An affected diagnostic must never
+# cancel the authoritative full gate. Cancelled runs retain their console logs
+# and cannot satisfy full-gate below; no candidate payload is uploaded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.gate || 'full' }}
+  cancel-in-progress: true
+
 jobs:
+  checks:
+    name: Cheap docs, origins, schema and selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.selection.outputs.mode }}
+      native_required: ${{ steps.selection.outputs.native_required }}
+      modules: ${{ steps.selection.outputs.modules }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Record the selected modules and reason
+        id: selection
+        env:
+          GATE_MODE: ${{ inputs.gate || 'full' }}
+          CHANGE_BASE: ${{ inputs.change_base }}
+        run: |
+          if [ "$GATE_MODE" = affected ]; then
+            python3 scripts/strict_suite.py --print-selection --change-base "$CHANGE_BASE" > "$RUNNER_TEMP/selection.json"
+          else
+            python3 scripts/strict_suite.py --print-selection --full > "$RUNNER_TEMP/selection.json"
+          fi
+          cat "$RUNNER_TEMP/selection.json"
+          cat "$RUNNER_TEMP/selection.json" >> "$GITHUB_STEP_SUMMARY"
+          python3 - "$RUNNER_TEMP/selection.json" >> "$GITHUB_OUTPUT" <<'PY'
+          import json, sys
+          plan = json.load(open(sys.argv[1]))
+          print('mode=' + plan['mode'])
+          print('native_required=' + str(plan['native_required']).lower())
+          print('modules=' + json.dumps(plan['modules']))
+          PY
+      - name: Documentation, origins and result-schema checks before native setup
+        run: python3 scripts/strict_suite.py --cheap-checks
+
   image:
-    name: Image, strict suite, docs and RC fixtures
+    name: Image, selected strict suite and RC fixtures
+    needs: checks
+    if: needs.checks.outputs.native_required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -47,15 +101,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Select native board render regressions
-        id: render-selection
-        env:
-          RENDER_BASE: ${{ github.event.before }}
-        run: |
-          mode=$(python3 scripts/strict_suite.py --print-render-mode --render-change-base "$RENDER_BASE")
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "Native board render regressions: $mode"
 
       - name: Permit unprivileged user namespaces as on the project hosts
         # The project hosts run kernel.apparmor_restrict_unprivileged_userns=0 with
@@ -176,27 +221,33 @@ jobs:
           chmod 0444 "$drawing"
           echo "J1_DRAWING=$drawing" >> "$GITHUB_ENV"
 
-      # Every module runs, four at a time, in strict mode. Native 3D board render
-      # regressions are selected for renderer changes and unknown change bases;
-      # the summary names any omitted tests. Any failure or skip fails the step.
+      # Full qualification runs every module and native render. Explicit affected
+      # diagnostics use the recorded roster; they never satisfy full-gate.
+      # Four workers at most. Any failure or skip fails the step.
       # A test whose required input is absent
       # fails and is named in the job summary as not executed (docs/container.md).
       # The fome-mc store and the J1 drawing are mounted read-only.
       # AGENT_EE_POD_INPUTS stays unset: the J1 tests use their committed fixtures.
       - name: Strict test suite, change-selected board renders, no skips
         env:
-          RENDER_MODE: ${{ steps.render-selection.outputs.mode }}
+          SELECTION_MODE: ${{ needs.checks.outputs.mode }}
+          MODULES_JSON: ${{ needs.checks.outputs.modules }}
         run: |
+          suite_args=(--full)
+          if [ "$SELECTION_MODE" = affected ]; then
+            mapfile -t suite_args < <(python3 -c 'import json, os; print("\n".join(json.loads(os.environ["MODULES_JSON"])))')
+            [ "${#suite_args[@]}" -gt 0 ] || exit 1
+          fi
           summary=$(mktemp -d "$RUNNER_TEMP/agent-ee-suite-XXXXXX")
           chmod 0777 "$summary"
           store=$(realpath "$FOME_MC_STORE")
           status=0
           docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 \
-            -e AGENT_EE_NATIVE_RENDER_MODE="$RENDER_MODE" -e PYTHONPATH=src -v "$summary:/summary" \
+            -e AGENT_EE_NATIVE_RENDER_MODE=run -e PYTHONPATH=src -v "$summary:/summary" \
             -v "$store:/opt/fome-mc:ro" -e AGENT_EE_FOME_MC_CHECKOUT=/opt/fome-mc \
             -v "$J1_DRAWING:/opt/j1/te-776228-1.pdf:ro" -e AGENT_EE_J1_DRAWING=/opt/j1/te-776228-1.pdf \
             -w /opt/agent-ee "$IMAGE" python3 scripts/strict_suite.py --jobs 4 \
-            --summary /summary/strict-suite.md || status=$?
+            --summary /summary/strict-suite.md "${suite_args[@]}" || status=$?
           if [ -f "$summary/strict-suite.md" ]; then
             cat "$summary/strict-suite.md" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -204,15 +255,6 @@ jobs:
             status=1
           fi
           exit "$status"
-
-      # The checks below also run after a failed suite step so that their own
-      # results are reported; any failed step still fails the job.
-      - name: Documentation check
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: docker run --rm --network none -w /opt/agent-ee "$IMAGE" python3 scripts/check_docs.py
-      - name: Refuse committed merge-conflict markers
-        if: ${{ !cancelled() }}
-        run: sh scripts/check_conflict_markers.sh
 
       # Run directories hold copies of the candidate inputs, including third-party
       # design files (the FOME-MC-origin RC fixture and stock KiCad library
@@ -263,3 +305,16 @@ jobs:
             --expect-check rc-step=defect --expect-check erc=pass --expect-check drc=pass \
             --expect-check geometry=pass || status=1
           exit "$status"
+
+  full-gate:
+    name: Authoritative composed-candidate full gate
+    needs: [checks, image]
+    if: ${{ always() && (inputs.gate != 'affected' || needs.checks.outputs.mode == 'full') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all cheap, strict native and RC fixture checks
+        env:
+          CHEAP_RESULT: ${{ needs.checks.result }}
+          NATIVE_RESULT: ${{ needs.image.result }}
+        run: |
+          [ "$CHEAP_RESULT" = success ] && [ "$NATIVE_RESULT" = success ]

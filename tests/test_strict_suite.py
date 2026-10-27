@@ -552,13 +552,42 @@ class WorkflowInputTests(unittest.TestCase):
         step = self.WORKFLOW.split('- name: Strict test suite, change-selected board renders, no skips', 1)[1]
         return step.split('\n      - name: ', 1)[0]
 
-    def test_ci_uses_the_changed_base_and_passes_selection_to_the_strict_runner(self):
+    def test_supported_triggers_default_to_full_and_affected_is_explicit(self):
         self.assertIn('fetch-depth: 0', self.WORKFLOW)
-        self.assertIn('RENDER_BASE: ${{ github.event.before }}', self.WORKFLOW)
-        self.assertIn('python3 scripts/strict_suite.py --print-render-mode --render-change-base "$RENDER_BASE"',
-                      self.WORKFLOW)
-        self.assertIn('RENDER_MODE: ${{ steps.render-selection.outputs.mode }}', self.suite_step())
-        self.assertIn('-e AGENT_EE_NATIVE_RENDER_MODE="$RENDER_MODE"', self.suite_step())
+        triggers = self.WORKFLOW.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
+        self.assertIn('schedule:', triggers)
+        self.assertIn('workflow_dispatch:', triggers)
+        for forbidden in ('push:', 'pull_request:', 'paths-ignore:'):
+            self.assertNotIn(forbidden, triggers)
+        self.assertIn("GATE_MODE: ${{ inputs.gate || 'full' }}", self.WORKFLOW)
+        self.assertIn('--print-selection --change-base "$CHANGE_BASE"', self.WORKFLOW)
+        self.assertIn('--print-selection --full', self.WORKFLOW)
+        self.assertIn('suite_args=(--full)', self.suite_step())
+        self.assertIn('-e AGENT_EE_NATIVE_RENDER_MODE=run', self.suite_step())
+        self.assertIn('"${suite_args[@]}"', self.suite_step())
+
+    def test_cheap_checks_precede_native_setup_and_full_gate_refuses_non_success(self):
+        cheap = self.WORKFLOW.split('\n  checks:\n', 1)[1].split('\n  image:\n', 1)[0]
+        native = self.WORKFLOW.split('\n  image:\n', 1)[1].split('\n  full-gate:\n', 1)[0]
+        self.assertIn('run: python3 scripts/strict_suite.py --cheap-checks', cheap)
+        self.assertNotIn('docker', cheap)
+        self.assertIn('needs: checks', native)
+        self.assertIn("if: needs.checks.outputs.native_required == 'true'", native)
+        gate = self.WORKFLOW.split('\n  full-gate:\n', 1)[1]
+        self.assertIn("always() && (inputs.gate != 'affected' || needs.checks.outputs.mode == 'full')", gate)
+        self.assertIn('[ "$CHEAP_RESULT" = success ] && [ "$NATIVE_RESULT" = success ]', gate)
+
+    def test_superseded_runs_cancel_within_gate_mode_and_cannot_accept_cancellation(self):
+        concurrency = self.WORKFLOW.split('\nconcurrency:\n', 1)[1].split('\njobs:', 1)[0]
+        self.assertIn("${{ github.workflow }}-${{ github.ref }}-${{ inputs.gate || 'full' }}", concurrency)
+        self.assertIn('cancel-in-progress: true', concurrency)
+        # Exercise the same final status predicate for success, failure, skipped
+        # native setup and superseded cancellation; only two successes accept.
+        for cheap in ('success', 'failure', 'cancelled', 'skipped'):
+            for native in ('success', 'failure', 'cancelled', 'skipped'):
+                status = subprocess.run(['bash', '-c', '[ "$CHEAP_RESULT" = success ] && [ "$NATIVE_RESULT" = success ]'],
+                                        env=dict(os.environ, CHEAP_RESULT=cheap, NATIVE_RESULT=native)).returncode
+                self.assertEqual(status == 0, (cheap, native) == ('success', 'success'))
 
     def test_fome_mc_fetch_is_the_tests_pin_without_credentials(self):
         fetch = self.WORKFLOW.split('- name: Fetch the pinned fome-mc object store', 1)[1]
@@ -573,7 +602,7 @@ class WorkflowInputTests(unittest.TestCase):
         for absent in ('uses:', 'token', 'secrets.', 'Authorization', '--filter', '--depth', 'submodule'):
             self.assertNotIn(absent, fetch)
         # Only the agent-ee checkout uses actions/checkout, with the job's default token.
-        self.assertEqual(self.WORKFLOW.count('uses: actions/checkout@'), 1)
+        self.assertEqual(self.WORKFLOW.count('uses: actions/checkout@'), 2)
         self.assertIn(f'\n      FOME_MC_COMMIT: {toolchain.FOME_MC_COMMIT}\n', self.WORKFLOW)
         self.assertIn('\n      FOME_MC_STORE: build/external/fome-mc\n', self.WORKFLOW)
         self.assertIn('if [ "$head" != "$FOME_MC_COMMIT" ]; then', self.WORKFLOW)

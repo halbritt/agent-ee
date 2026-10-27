@@ -29,6 +29,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / 'tests'
+sys.path.insert(0, str(ROOT / 'scripts'))
+import strict_selection
 RENDER_CHANGE_PATHS = {
     '.github/workflows/ci.yml', '.dockerignore', 'Dockerfile',
     'docker/apt-retry.sh', 'docker/kicad-10.0-releases.asc',
@@ -255,6 +257,26 @@ def precompile_sources(root=ROOT):
     return True
 
 
+def run_cheap_checks():
+    """Run documentation, origin inventory and result-schema negatives without EDA setup."""
+    schema_checks = '''
+import sys, unittest
+from tests.test_action_gate import ActionGateTests
+suite = unittest.defaultTestLoader.loadTestsFromTestCase(ActionGateTests)
+result = unittest.TextTestRunner(verbosity=2).run(suite)
+sys.exit(0 if result.wasSuccessful() and not (result.skipped or result.expectedFailures) else 1)
+'''
+    status = 0
+    for command in ([sys.executable, 'scripts/check_docs.py'],
+                    [sys.executable, 'scripts/check_origins.py'],
+                    ['sh', 'scripts/check_conflict_markers.sh'],
+                    [sys.executable, '-c', schema_checks]):
+        result = subprocess.run(command, cwd=ROOT, env=dict(os.environ, PYTHONPATH=str(ROOT / 'src')))
+        if result.returncode:
+            status = 1
+    return status
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n', 1)[0])
     parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
@@ -262,12 +284,45 @@ def main(argv=None):
     parser.add_argument('--summary', type=Path, help='append a Markdown summary to this file')
     parser.add_argument('--previous-log', type=Path,
                         help='previous strict-suite stdout log for longest-first scheduling; invalid/missing logs use alphabetical order')
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument('--change-base', help='affected modules against this commit; unknown/dirty means full')
+    selection.add_argument('--full', action='store_true', help='authoritative composed-candidate qualification: all modules and renders')
+    parser.add_argument('--print-selection', action='store_true', help='print the module plan as JSON without native setup')
+    parser.add_argument('--cheap-checks', action='store_true', help='docs, origins and result-schema checks without image/native setup')
     parser.add_argument('--render-change-base', help='compare this Git commit with HEAD; unknown base runs renders')
     parser.add_argument('--print-render-mode', action='store_true', help='print run or omit for the change base')
     parser.add_argument('--render-mode', choices=('run', 'omit'),
                         help='explicit native 3D board render selection (default: run)')
     parser.add_argument('modules', nargs='*', help='test modules (default: every tests/test_*.py)')
     args = parser.parse_args(argv)
+    if args.cheap_checks:
+        if args.modules or args.full or args.change_base is not None or args.print_selection:
+            parser.error('--cheap-checks cannot be combined with module selection')
+        return run_cheap_checks()
+    if (args.full or args.change_base is not None or args.print_selection) and args.modules:
+        parser.error('automatic/full selection cannot be combined with explicit modules')
+    if args.full and (args.render_mode == 'omit' or args.render_change_base is not None or args.print_render_mode):
+        parser.error('--full requires native board renders')
+    if args.change_base is not None and (args.render_mode or args.render_change_base is not None or args.print_render_mode):
+        parser.error('--change-base owns render selection; do not combine render flags')
+    plan = None
+    if args.full or args.change_base is not None or args.print_selection:
+        plan = (strict_selection.from_change_base(ROOT, args.change_base, modules())
+                if args.change_base is not None
+                else strict_selection.full_plan(modules(), 'full composed-candidate qualification'))
+    if args.print_selection:
+        print(json.dumps(plan, sort_keys=True))
+        return 0
+    if plan:
+        print('Test selection: ' + json.dumps(plan, sort_keys=True), flush=True)
+        if not plan['native_required']:
+            status = run_cheap_checks()
+            message = 'affected cheap checks passed; full native qualification not executed' if status == 0 else 'affected cheap checks FAILED'
+            print(message, file=sys.stderr)
+            if args.summary:
+                with args.summary.open('a') as stream:
+                    stream.write('## Affected test selection\n\n' + json.dumps(plan, sort_keys=True) + '\n\n' + message + '\n')
+            return status
     if args.print_render_mode:
         if args.modules or args.render_mode or args.summary or args.previous_log:
             parser.error('--print-render-mode only accepts --render-change-base')
@@ -275,13 +330,13 @@ def main(argv=None):
         return 0
     if args.render_mode and args.render_change_base:
         parser.error('--render-mode and --render-change-base are mutually exclusive')
-    render_mode = (render_mode_from_change_base(args.render_change_base) if args.render_change_base is not None
+    render_mode = ('run' if plan else render_mode_from_change_base(args.render_change_base) if args.render_change_base is not None
                    else args.render_mode or os.environ.get('AGENT_EE_NATIVE_RENDER_MODE', 'run'))
     if render_mode not in ('run', 'omit'):
         parser.error('AGENT_EE_NATIVE_RENDER_MODE must be run or omit')
     if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1':
         parser.error('strict suite requires AGENT_EE_REQUIRE_TOOLCHAIN=1')
-    selected = args.modules or modules()
+    selected = plan['modules'] if plan else args.modules or modules()
     unknown = sorted(set(selected).difference(modules()))
     if unknown:
         parser.error('unknown test module(s): ' + ', '.join(unknown))
@@ -311,6 +366,8 @@ def main(argv=None):
     print(verdict(records, problems, missing), file=sys.stderr)
     if args.summary:
         with args.summary.open('a') as stream:
+            if plan:
+                stream.write('## Test selection\n\n' + json.dumps(plan, sort_keys=True) + '\n\n')
             stream.write(summary_markdown(records, problems, missing, render_mode) + '\n')
     return 1 if problems else 0
 
