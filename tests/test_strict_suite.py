@@ -552,6 +552,72 @@ class WorkflowInputTests(unittest.TestCase):
         step = self.WORKFLOW.split('- name: Strict test suite, change-selected board renders, no skips', 1)[1]
         return step.split('\n      - name: ', 1)[0]
 
+    def full_gate_script(self):
+        """Extract the sole literal run block; unsupported YAML layouts fail closed."""
+        import re
+
+        lines = self.WORKFLOW.splitlines()
+        top = [line for line in lines if line and not line[0].isspace() and not line.startswith('#')]
+        self.assertEqual(len(top), 5, 'unexpected or duplicate top-level workflow keys')
+        self.assertEqual({line.split(':', 1)[0] for line in top},
+                         {'name', 'on', 'permissions', 'concurrency', 'jobs'})
+        self.assertEqual(lines.count('jobs:'), 1, 'expected one jobs mapping')
+        jobs = lines[lines.index('jobs:') + 1:]
+        headers = [i for i, line in enumerate(jobs)
+                   if line.strip() and not line.lstrip().startswith('#') and len(line) - len(line.lstrip()) <= 2]
+        names = [jobs[i] for i in headers]
+        self.assertTrue(all(re.fullmatch(r'  [a-zA-Z0-9_-]+:', name) for name in names),
+                        'unsupported job mapping layout')
+        self.assertEqual(len(names), len(set(names)), 'duplicate job mapping')
+        self.assertEqual(names.count('  full-gate:'), 1, 'expected one full-gate job')
+        position = names.index('  full-gate:')
+        end = headers[position + 1] if position + 1 < len(headers) else len(jobs)
+        gate = jobs[headers[position] + 1:end]
+        for indent in (4, 8):
+            fields = [line for line in gate if line.strip() and not line.lstrip().startswith('#')
+                      and len(line) - len(line.lstrip()) == indent]
+            self.assertTrue(all(re.match(r' *[a-zA-Z0-9_-]+:', line) for line in fields),
+                            'unsupported gate mapping key')
+            keys = [line.strip().split(':', 1)[0] for line in fields]
+            self.assertEqual(len(keys), len(set(keys)), 'duplicate gate mapping key')
+            if indent == 8:
+                self.assertEqual(set(keys), {'env', 'run'}, 'unsupported step fields or shell override')
+        self.assertEqual(gate.count('    steps:'), 1, 'expected one steps sequence')
+        steps = [line for line in gate if line.startswith('      - ')]
+        self.assertEqual(len(steps), 1,
+                         'expected one full-gate step')
+        self.assertTrue(steps[0].startswith('      - name:'), 'unsupported step layout')
+        runs = [i for i, line in enumerate(gate)
+                if re.match(r'''\s*(?:run|'run'|"run")\s*:''', line)]
+        self.assertEqual(len(runs), 1, 'expected one run block')
+        self.assertEqual(gate[runs[0]], '        run: |', 'expected a literal run block')
+        body = []
+        for line in gate[runs[0] + 1:]:
+            if line.strip() and len(line) - len(line.lstrip()) <= 8:
+                break
+            self.assertTrue(not line.strip() or line.startswith('          '),
+                            'invalid run block indentation')
+            body.append(line[10:] if line.strip() else '')
+        self.assertTrue(any(line.strip() for line in body), 'empty run block')
+        return '\n'.join(body) + '\n'
+
+    def test_full_gate_extraction_refuses_missing_ambiguous_or_unsupported_blocks(self):
+        original = self.WORKFLOW
+        for broken in (original.replace('  full-gate:', '  other-gate:'),
+                       original + '\n  full-gate:\n    steps: []\n',
+                       original.replace('        run: |\n          [ "$CHEAP_RESULT"',
+                                        '        run: true\n          [ "$CHEAP_RESULT"'),
+                       original + '        "run": |\n          exit 0\n',
+                       original + '    "steps": []\n',
+                       original + '        shell: sh\n',
+                       original + '      - run: exit 0\n',
+                       original.replace('          [ "$CHEAP_RESULT"', '         [ "$CHEAP_RESULT"')):
+            with self.subTest(workflow=broken[-200:]):
+                self.WORKFLOW = broken
+                with self.assertRaises(AssertionError):
+                    self.full_gate_script()
+        self.WORKFLOW = original
+
     def test_supported_triggers_default_to_full_and_affected_is_explicit(self):
         self.assertIn('fetch-depth: 0', self.WORKFLOW)
         triggers = self.WORKFLOW.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
@@ -581,13 +647,13 @@ class WorkflowInputTests(unittest.TestCase):
         concurrency = self.WORKFLOW.split('\nconcurrency:\n', 1)[1].split('\njobs:', 1)[0]
         self.assertIn("${{ github.workflow }}-${{ github.ref }}-${{ inputs.gate || 'full' }}", concurrency)
         self.assertIn('cancel-in-progress: true', concurrency)
-        # Exercise the same final status predicate for success, failure, skipped
-        # native setup and superseded cancellation; only two successes accept.
+        gate_run = self.full_gate_script()
         for cheap in ('success', 'failure', 'cancelled', 'skipped'):
             for native in ('success', 'failure', 'cancelled', 'skipped'):
-                status = subprocess.run(['bash', '-c', '[ "$CHEAP_RESULT" = success ] && [ "$NATIVE_RESULT" = success ]'],
-                                        env=dict(os.environ, CHEAP_RESULT=cheap, NATIVE_RESULT=native)).returncode
-                self.assertEqual(status == 0, (cheap, native) == ('success', 'success'))
+                with self.subTest(cheap=cheap, native=native):
+                    status = subprocess.run(['bash', '--noprofile', '--norc', '-e', '-c', gate_run],
+                                            env=dict(os.environ, CHEAP_RESULT=cheap, NATIVE_RESULT=native)).returncode
+                    self.assertEqual(status == 0, (cheap, native) == ('success', 'success'))
 
     def test_fome_mc_fetch_is_the_tests_pin_without_credentials(self):
         fetch = self.WORKFLOW.split('- name: Fetch the pinned fome-mc object store', 1)[1]
