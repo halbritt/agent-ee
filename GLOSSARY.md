@@ -11,7 +11,7 @@ An immutable copy of the selected source files, identified by its scope and file
 _Avoid_: working copy, input set
 
 **Capture**:
-The act of producing a candidate from explicit sources, hashing each file and re-checking the live source for races.
+The act of producing a candidate from explicit sources, hashing each file and re-checking the live source for races (`placement_problem.capture` is the placement problem builder's solving entry point on an in-memory board description, not candidate capture).
 _Avoid_: ingest
 
 **Baseline**:
@@ -63,7 +63,7 @@ _Avoid_: P run, placer invocation
 The declared engineering constraints on placement (fixed poses, edge connectors, proximity, groups, rails) in its normalized form; the only form later steps see.
 
 **Placement problem**:
-The engine's single input document for a board: geometry, intent, groups, rails, rules and weights; built once and shared by solving and by final-board evaluation.
+The engine's input document for a board: geometry, intent, groups, rails, rules and weights; built in two builds through one shared builder (`placement_problem._document`) — `placement_problem.capture` for solving (not the candidate **Capture** above) and `placement_problem.evaluate` for final-board evaluation.
 _Avoid_: problem JSON
 
 **Candidate pose**:

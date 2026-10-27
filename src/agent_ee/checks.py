@@ -1,9 +1,12 @@
 """Native and engineering checks on a captured candidate (Fable-owned).
 
-`run_checks(run_dir, deadline)` loads `candidate.json`, iterates
-`scope.checks`, runs every check through `agent_ee.executor.execute` (native
-tools see the read-only candidate at /candidate and one writable scratch at
-/work), and writes `checks/<id>.json` immediately per check. Validation logic
+`run_checks(run_dir, deadline, **context)` loads `candidate.json`, iterates
+`scope.checks` through `agent_ee.check_registry.registry` (evaluating each
+kind's declared prerequisites and running native tools through
+`agent_ee.native_run.run`, where sandboxed tools see the read-only candidate at
+`/candidate`, any run baseline at `/evidence/baseline.json`, and one writable
+scratch at `/work`), and writes `checks/<id>.json` (`CheckRecord`) immediately
+per check. Validation logic
 for report shape, sheet coverage, silent parity skips and ngspice output is
 adapted from fome-mc `toolchain/eda.py` (read at fome-mc commit c43ad7b).
 

@@ -36,10 +36,14 @@ epistemic independence.
 | Module | Responsibility |
 | --- | --- |
 | [candidate.py](../src/agent_ee/candidate.py) | Resolve explicit sources, select files, copy/hash, verify snapshot/current source |
-| [native_run.py](../src/agent_ee/native_run.py) | The one entry point for native tool runs: intent builders (DRC, netlist, pcbnew script), deadline clamp, baseline mount, sandbox/host/docker/recorded adapters, parsed sandbox profile |
+| [native_run.py](../src/agent_ee/native_run.py) | The one entry point for native tool runs: intent builders (DRC, netlist, pcbnew script), deadline `clamp` with 1 s launch floor (`LAUNCH_FLOOR_S`), `completed()` `subprocess.run`/`TimeoutExpired` None-parity, baseline mount, sandbox/host/docker/recorded adapters, parsed sandbox profile |
 | [executor.py](../src/agent_ee/executor.py) | Construct Bubblewrap view; run/cancel subprocess groups; persist raw execution (the engine behind native_run's sandbox adapter) |
-| [checks.py](../src/agent_ee/checks.py) | Hierarchy validation, native report interpretation, criteria and passive deck generation |
+| [checks.py](../src/agent_ee/checks.py) | `run_checks` loop and `Ctx` (prerequisite evaluation and native execution via `native_run.run`), built-in check handlers (`erc`, `drc`, `netlist`, `geometry`, `rc_transient`), hierarchy validation, native report interpretation and passive SPICE deck generation |
+| [check_registry.py](../src/agent_ee/check_registry.py) | Check-kind registrations (`Registration`, `Registry`, `CheckFunctions`): capability descriptor, handler, declared prerequisites and construction `context_keys` |
+| [check_record.py](../src/agent_ee/check_record.py) | `CheckRecord` dict constructor and in-memory limitation-scope tracking during composite check evaluation |
+| [check_prerequisites.py](../src/agent_ee/check_prerequisites.py) | Deferred check-kind prerequisite callbacks (`placement_clear`, `staged_placement_clear`, `stage_progress`, `fab_output`) |
 | [geometry_probe.py](../src/agent_ee/geometry_probe.py) | Saved pcbnew geometry extraction inside the sandbox |
+| [placement_problem.py](../src/agent_ee/placement_problem.py) | Single builder (`_document`) for the placement engine input document in both solving (`capture`) and saved-board measurement (`evaluate`) |
 | [profiles.py](../src/agent_ee/profiles.py) | Validate explicit role, subscription harness, model, effort and timeout definitions |
 | [harnesses.py](../src/agent_ee/harnesses.py) | Native subscription command construction, sandbox mounts and response parsing |
 | [reviewers.py](../src/agent_ee/reviewers.py) | Bounded packets, subscription adapter, initial lenses and adjudicator prompts/schemas |
@@ -49,6 +53,10 @@ epistemic independence.
 | [empirical.py](../src/agent_ee/empirical.py) | Candidate-bound bench ingestion, accumulated residual intervals and fresh verification |
 | [campaign.py](../src/agent_ee/campaign.py) | Single implementation writer, immutable history snapshots and empirical epochs |
 | [convergence.py](../src/agent_ee/convergence.py) | Protected criteria, margin progress and bounded escalation |
+| [build_plan.py](../src/agent_ee/build_plan.py) | Build plan validation (`agent-ee.build-plan/1` and `/2`), input admission and source inventory |
+| [build_stages.py](../src/agent_ee/build_stages.py) | Build stage producers (`requirements`, `parts`, `scaffold`, `schematic`, `placement-routing`, `artwork`, `package`) whose retained records `retained_run` owns |
+| [retained_run.py](../src/agent_ee/retained_run.py) | Custody and access for a build's retained run directory, `build-report.json`, scope, accounting, completed stages, review and qualification records |
+| [qualification.py](../src/agent_ee/qualification.py) | Qualification of retained builds from sealed typed evidence (`agent-ee.qualification/1`) and report summaries |
 | [locking.py](../src/agent_ee/locking.py) | Process writer leases including enclosing campaigns |
 | [storage.py](../src/agent_ee/storage.py) | Canonical identities, digests and atomic JSON writes |
 | [run_record.py](../src/agent_ee/run_record.py) | Run record: work lifecycle, `result.json` shape, outcome and report projections, freshness verification, operator mutations, and the policy and runtime fingerprints it verifies against (a caller that holds them passes them in) |

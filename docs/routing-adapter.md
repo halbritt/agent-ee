@@ -1095,7 +1095,13 @@ Experiment evidence is never dropped and is never qualified.
   existing grid_router extension `610b3acd…` agent-507 qualified it with. These
   were copied into a private checkout-mode layout, because the executor reserves
   `/home` and the private state's manifest names its `/home` directory. The pin,
-  the code map and the defaults are unchanged. The policy was current-policy,
+  the code map and the defaults are unchanged (note: the docstring claim at
+  `scripts/k91_native_positive.py:13-16` that the pin is patched for `step()`
+  while `attempt.PIN` and `PINNED_CODE` on disk stay unchanged is stale after
+  AGENTEE-539 moved the pin to `src/agent_ee/data/kicad-route-pin.json`, and the
+  `PIN`/`PINNED_CODE` patch at `scripts/k91_native_positive.py:141` is inert;
+  the v1 script bytes are kept unchanged because
+  `tests/test_k91_harness_classifier.py:55` sha-pins them). The policy was current-policy,
   F.Cu/B.Cu, and the router's own policy qualification was PASS. The attempt is
   not a positive: it was a contradiction, with no candidate and adoption rejected.
   It had two causes. The adapter refused the run settings above, which this

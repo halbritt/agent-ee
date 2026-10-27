@@ -42,18 +42,47 @@ at inputs/stock/footprints; copy required stock libraries or all stock libraries
 
 ## Checks API (Fable)
 
-`agent_ee.checks.run_checks(run_dir: Path, deadline: float) -> list[dict]`.
+`agent_ee.checks.run_checks(run_dir: Path, deadline: float, **context) -> list[dict]`.
 Deadline is `time.monotonic()` absolute. Load `candidate.json` and iterate
-`scope.checks`. Each check has unique safe `id` and `kind`; kinds initially
-`erc`, `drc`, `netlist`, `geometry`, `rc_transient`. Parameters may be added and
-documented by Fable. `agent_ee.native_run.run(intent, inputs=..., work=...,
-deadline=..., baseline=...)` runs an `Intent` (argv, timeout, stdin, network,
+`scope.checks` through `agent_ee.check_registry.registry`. Each check has unique
+safe `id` and `kind`; kinds initially `erc`, `drc`, `netlist`, `geometry`,
+`rc_transient`. Parameters may be added and documented by Fable.
+`agent_ee.native_run.run(intent, *, work, inputs=None, deadline=None, mounts=(),
+baseline=None, ...)` runs an `Intent` (argv, timeout, stdin, network,
 isolation) through one adapter; the sandbox adapter runs argv inside Bubblewrap
 (via `agent_ee.executor.execute`), with inputs visible at `/candidate`, current
-scratch at `/work`, Python package at `/app`. It clamps the timeout to the
-deadline and mounts the run's baseline. It returns execution record (`ok|failed|timeout|unavailable|interrupted`),
-exit_code, argv, sandbox_argv, console_sha256. No passing fallback.
+scratch at `/work`, Python package at `/app`. When `deadline` is supplied,
+`native_run.clamp(intent, deadline)` cuts the timeout to the remaining budget and
+enforces a 1 s launch floor (`native_run.LAUNCH_FLOOR_S = 1`): if
+`deadline - time.monotonic() <= 1`, it refuses before launch by raising
+`native_run.DeadlineExhausted`. Stage steps (`stage_receipts._run_bound_step`)
+apply that 1 s floor once at admission via `native_run.clamp` before creating the
+receipt directory (refusing with `ValueError('stage step deadline exhausted
+before launch')`); once admitted, their version and stage runs pass
+`deadline=None` to `native_run.run` with timeouts cut to the remaining admitted
+step budget (floored at `0.001 s`), so budget spent in setup is recorded in the
+receipt as an observed `timeout` rather than raising `DeadlineExhausted` after
+the receipt directory exists (which would leave a receipt without an executor
+record, reported as `cancelled`). `native_run.run` mounts the run's baseline at
+`/evidence/baseline.json` when present and returns an `Execution` record
+(`ok|failed|timeout|unavailable|interrupted|output_limit|callback_failed`),
+exit_code, argv, sandbox_argv, console_sha256. For host and docker runs,
+`native_run.completed(execution, *, text=False)` returns
+`subprocess.CompletedProcess` or raises with `subprocess.run` parity: a fresh
+copy of `execution.launch_error` (or `FileNotFoundError`) when `execution ==
+"unavailable"`, and `subprocess.TimeoutExpired` when `execution == "timeout"`
+with POSIX None-parity (`output` and `stderr` remain `bytes` even when
+`text=True`, and a silent stream with `b""` is `None` rather than `b""`). No
+passing fallback.
 `agent_ee.storage`: digest(path), identity(JSON), read_json(path), write_json(path,value).
+Historical note: the docstring claim in `scripts/k91_native_positive.py:13-16`
+that the router pin is patched for `step()` while `attempt.PIN` and
+`PINNED_CODE` on disk stay unchanged is stale after AGENTEE-539 moved the pin to
+`src/agent_ee/data/kicad-route-pin.json` (`routing_adapter.pinned_layout` /
+`qualified_layout`), and the `patch.object(attempt, 'PIN', ...)` /
+`PINNED_CODE` context at `scripts/k91_native_positive.py:141` is inert; the
+script's bytes are intentionally kept unchanged because
+`tests/test_k91_harness_classifier.py:55` sha-pins the frozen v1 harness.
 
 Result shape: `{id, kind, execution: 'ok|failed|unavailable|timeout|malformed|not_run|interrupted|unsupported',
 outcome: 'pass|defect|unknown|info', summary: str, evidence: [run-relative files],
