@@ -242,8 +242,13 @@ def rotation_record(run_dir, scope, candidate_id, manifest):
     corrected = report.get('cpl') or {}
     if corrected.get('path') != 'cpl/cpl.csv' or digest(cpl_path) != corrected.get('sha256'):
         raise ValueError(f'cpl_rotation {cid!r} corrected CPL differs from its report')
+    cpl_text = cpl_path.read_text(encoding='utf-8')
+    records = report.get('designators')
+    if (not isinstance(records, list) or not all(isinstance(r, dict) for r in records)
+            or read_native_cpl(cpl_text) != [r.get('cpl') for r in records]):
+        raise ValueError(f'cpl_rotation {cid!r} corrected CPL rows differ from its report')
     policy = report.get('policy') or {}
-    obligations = preview_obligations(status, policy.get('sha256'), report, cpl_path.read_text(encoding='utf-8'))
+    obligations = preview_obligations(status, policy.get('sha256'), report, cpl_text)
     return {'status': status, 'check_id': cid, 'policy_id': policy.get('policy_id'),
             'policy_sha256': policy.get('sha256'), 'report': report_rel, 'report_sha256': digest(report_path),
             'cpl': cpl_rel, 'cpl_sha256': corrected['sha256'], 'native_cpl_sha256': native_cpl,
@@ -502,6 +507,7 @@ def orientation_assessment(profile, profile_sha256, rotation, report, native_cpl
     sealed pcbnew pads. Raises ValueError when the profile does not bind to the sealed rotation
     evidence or a row lacks the facts it needs; the caller reports that as unsupported.
     """
+    from .cpl_rotation import corrected_rotation
     validate_profile(profile)
     if rotation.get('status') == 'not_declared' or rotation.get('check_id') != profile['rotation_check']:
         raise ValueError(f'assembly profile names cpl_rotation {profile["rotation_check"]!r}, '
@@ -535,6 +541,10 @@ def orientation_assessment(profile, profile_sha256, rotation, report, native_cpl
         pin1 = record.get('pin1') or {}
         if pin1.get('offset_degrees') is None or _decimal(pin1['offset_degrees'], f'{ref} pin-1 offset') != delta % 360:
             raise ValueError(f'{ref}: sealed pin-1 offset {pin1.get("offset_degrees")!r} does not support delta {delta}')
+        expected_angle = corrected_rotation(_decimal(angle, f'{ref} native angle'), side, delta)
+        if _decimal(exported[4], f'{ref} exported angle') != expected_angle:
+            raise ValueError(f'{ref}: native angle {angle} with policy delta {delta} on {side} '
+                             f'does not support exported angle {exported[4]!r}; expected {expected_angle}')
         mount = mounts[ref]
         in_profile = side in sides and mount in mount_scope
         if not in_profile:

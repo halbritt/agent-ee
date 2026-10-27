@@ -1,5 +1,7 @@
 """Explicit assembly-profile orientation assessment (AGENTEE-524 part B) on the owned CPL control."""
 import copy
+import csv
+import io
 import json
 import shutil
 import time
@@ -231,6 +233,39 @@ class NativeAssessmentTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'), result)
         self.assertIn('corrected CPL differs from its report', result['summary'])
         self.assertNotIn('assembly_orientation', result['details'])
+
+    def test_hashed_cpl_faults_cannot_pass_profile_assessment(self):
+        """AGENTEE-524: custody cannot support wrong angles or rows the report never assessed."""
+        producer = checks.CHECK_FUNCS['cpl_rotation']
+
+        def faulty_rotation(ctx):
+            producer(ctx)
+            report_path = ctx.work / 'cpl-rotation.json'
+            report = read_json(report_path)
+            row = report['designators'][0]
+            cpl_path = ctx.work / 'cpl/cpl.csv'
+            rows = list(csv.reader(io.StringIO(cpl_path.read_text())))
+            for cells in rows[1:]:
+                if cells[0] == row['designator']:
+                    cells[column] = str(Decimal(cells[column]) + (90 if column == 4 else Decimal('0.05')))
+                    if change_report_row:
+                        row['cpl'][column] = cells[column]
+            with cpl_path.open('w', newline='') as stream:
+                csv.writer(stream).writerows(rows)
+            report['cpl']['sha256'] = digest(cpl_path)
+            write_json(report_path, report)
+            ctx.result['details']['report_sha256'] = digest(report_path)
+
+        for column, change_report_row, execution, message in (
+                (4, True, 'unsupported', 'does not support exported angle'),
+                (1, False, 'malformed', 'corrected CPL rows differ from its report'),
+                (4, False, 'malformed', 'corrected CPL rows differ from its report')):
+            with self.subTest(column=column, change_report_row=change_report_row):
+                with mock.patch.dict(checks.CHECK_FUNCS, {'cpl_rotation': faulty_rotation}):
+                    result = self.run_case(self.scope(profile_document(self.policy_sha())))
+                self.assertEqual((result['execution'], result['outcome']), (execution, 'unknown'), result)
+                self.assertIn(message, result['summary'])
+                self.assertNotIn('assembly_orientation', result['details'])
 
     def test_incomplete_report_coverage_cannot_assess(self):
         """P5: a report missing a row, or an unsupported row, never yields a complete assessment."""
