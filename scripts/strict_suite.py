@@ -15,6 +15,7 @@ the summary names every test omitted that way. An unknown change base runs them.
 """
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import math
 import os
@@ -215,6 +216,45 @@ def summary_markdown(records, problems, missing, render_mode='run'):
     return '\n'.join(lines)
 
 
+def precompile_sources(root=ROOT):
+    """Write current bytecode for every src/ module a child could otherwise rewrite; False on error.
+
+    Children run with PYTHONDONTWRITEBYTECODE, but a child that ignores it (an isolated -I
+    interpreter or a scrubbed environment) would write a missing or stale .pyc into the live
+    package during another module's run, and the live-source checks refuse any change under src
+    while a step runs. Every module is recompiled unconditionally, so each cache records its
+    source's exact mtime and size (a timestamp-only freshness check misses a same-second edit).
+    A cache directory no process can write is skipped, as in the read-only published image. An
+    unreadable directory, a directory symlink (the walk cannot cover it) or a compile error fails
+    the run instead of being left out.
+    """
+    import importlib.util
+    import py_compile
+
+    def refuse(error):
+        raise error
+
+    try:
+        for directory, subdirectories, files in os.walk(root / 'src', onerror=refuse):
+            subdirectories[:] = sorted(name for name in subdirectories if name != '__pycache__')
+            linked = [name for name in subdirectories if os.path.islink(os.path.join(directory, name))]
+            if linked:
+                raise OSError(f'directory symlink under src cannot be precompiled: {os.path.join(directory, linked[0])}')
+            for name in sorted(files):
+                if not name.endswith('.py'):
+                    continue
+                source = os.path.join(directory, name)
+                cache = importlib.util.cache_from_source(source)
+                cache_directory = os.path.dirname(cache)
+                if not os.access(cache_directory if os.path.isdir(cache_directory) else directory, os.W_OK):
+                    continue
+                py_compile.compile(source, cfile=cache, doraise=True)
+    except (OSError, py_compile.PyCompileError) as error:
+        print(f'precompile failed: {error}', file=sys.stderr)
+        return False
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n', 1)[0])
     parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
@@ -246,6 +286,9 @@ def main(argv=None):
     if unknown:
         parser.error('unknown test module(s): ' + ', '.join(unknown))
     selected = schedule_modules(selected, args.previous_log)
+    if not precompile_sources():
+        print('strict suite FAILED: src/ bytecode could not be precompiled before the run', file=sys.stderr)
+        return 1
     lock, records = threading.Lock(), []
     with tempfile.TemporaryDirectory(prefix='agent-ee-strict-suite-') as scratch, \
             concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:

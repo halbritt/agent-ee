@@ -74,6 +74,16 @@ redirection does not truncate it before it is read. Timings only guide schedulin
 all selected modules still execute, skips remain problems, and summary and log
 formats are unchanged. `tests.test_strict_suite` covers these boundaries.
 
+Before any module starts, the runner recompiles every `src/` module whose cache
+directory is writable, so each `.pyc` records its source's exact mtime and size,
+and fails the run on a compile error, an unreadable directory or a directory
+symlink under `src/`. Children run with `PYTHONDONTWRITEBYTECODE`, but a child
+that ignores it (an isolated `-I` interpreter or a scrubbed environment) would
+otherwise write a missing or stale `.pyc` into the live package mid-run, which
+the live-source checks refuse as a changed package source
+(`LivePackageSourceError`). Caches that no process can write, such as those in
+the read-only published image, are skipped.
+
 
 | Test module | Protection |
 | --- | --- |

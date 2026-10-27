@@ -30,6 +30,18 @@ MISSING = ('Traceback (most recent call last):\nAssertionError: AGENT_EE_REQUIRE
            'fome-mc-store missing: fome-mc object store with df304f332129 not available at /absent\n')
 # The skip reason a5e5ca4's runner accepted as a declared gap; it must now fail.
 DECLARED = 'declared gap fome-mc-store: fome-mc object store with df304f332129 not available at /absent'
+# main() precompiles the real src/ before submitting modules. These tests call main() in-process,
+# often while the strict suite itself is running, so they must never write bytecode into src/.
+REAL_PRECOMPILE = strict_suite.precompile_sources
+_precompile = patch.object(strict_suite, 'precompile_sources', return_value=True)
+
+
+def setUpModule():
+    _precompile.start()
+
+
+def tearDownModule():
+    _precompile.stop()
 
 
 def record(module='test_x', exit=0, **result):
@@ -103,6 +115,102 @@ class SchedulingTests(unittest.TestCase):
             records = [record(module=name) for name in sorted(self.SELECTED)]
             self.assertEqual(summary.read_text(), strict_suite.summary_markdown(records, [], []) + '\n')
             self.assertEqual(err.getvalue(), strict_suite.verdict(records, [], []) + '\n')
+
+
+class PrecompileTests(unittest.TestCase):
+    """Before any module runs, every src/ cache a child could write matches its source exactly."""
+
+    def tree(self, tmp):
+        package = Path(tmp) / 'src/agent_ee'
+        (package / 'sub').mkdir(parents=True)
+        for path in (package / '__init__.py', package / 'sub/__init__.py'):
+            path.write_text('')
+        (package / 'mod.py').write_text('VALUE = 1\n')
+        return Path(tmp)
+
+    @staticmethod
+    def header(source):
+        """The (mtime, size) a timestamp .pyc records, as import validates it."""
+        import importlib.util as util
+        data = Path(util.cache_from_source(str(source))).read_bytes()
+        return int.from_bytes(data[8:12], 'little'), int.from_bytes(data[12:16], 'little')
+
+    @staticmethod
+    def stamp(source):
+        info = source.stat()
+        return int(info.st_mtime) & 0xFFFFFFFF, info.st_size & 0xFFFFFFFF
+
+    def test_missing_stale_and_same_second_edits_are_precompiled(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-pyc-') as tmp:
+            root = self.tree(tmp)
+            source = root / 'src/agent_ee/mod.py'
+            self.assertTrue(REAL_PRECOMPILE(root))
+            self.assertEqual(self.header(source), self.stamp(source))
+            # A size-changing edit inside the same mtime second: a timestamp-only check keeps the old cache.
+            mtime = source.stat().st_mtime_ns
+            source.write_text('VALUE = 2222\n')
+            os.utime(source, ns=(mtime, mtime))
+            self.assertTrue(REAL_PRECOMPILE(root))
+            self.assertEqual(self.header(source), self.stamp(source))
+            self.assertEqual(self.header(root / 'src/agent_ee/sub/__init__.py'),
+                             self.stamp(root / 'src/agent_ee/sub/__init__.py'))
+
+    def test_unwritable_caches_are_skipped_but_writable_descendants_are_not(self):
+        import importlib.util as util
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-pyc-') as tmp:
+            root = self.tree(tmp)
+            package = root / 'src/agent_ee'
+            package.chmod(0o555)
+            try:
+                if os.access(package, os.W_OK):
+                    self.fail('test host lets this user write a mode 555 directory (running as root?)')
+                self.assertTrue(REAL_PRECOMPILE(root))
+                self.assertFalse(Path(util.cache_from_source(str(package / 'mod.py'))).exists())
+                self.assertTrue(Path(util.cache_from_source(str(package / 'sub/__init__.py'))).is_file())
+            finally:
+                package.chmod(0o755)
+
+    def test_compile_errors_and_unreadable_directories_fail(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-pyc-') as tmp:
+            root = self.tree(tmp)
+            (root / 'src/agent_ee/broken.py').write_text('def (:\n')
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertFalse(REAL_PRECOMPILE(root))
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-pyc-') as tmp:
+            root = self.tree(tmp)
+            hidden = root / 'src/agent_ee/sub'
+            hidden.chmod(0o000)
+            try:
+                if os.access(hidden, os.R_OK):
+                    self.fail('test host lets this user read a mode 000 directory (running as root?)')
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertFalse(REAL_PRECOMPILE(root))
+            finally:
+                hidden.chmod(0o755)
+
+    def test_a_directory_symlink_under_src_fails(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-pyc-') as tmp:
+            root = self.tree(tmp)
+            outside = Path(tmp) / 'outside'
+            outside.mkdir()
+            (outside / '__init__.py').write_text('')
+            (root / 'src/linked').symlink_to(outside, target_is_directory=True)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertFalse(REAL_PRECOMPILE(root))
+            self.assertIn('directory symlink', err.getvalue())
+
+    def test_main_refuses_to_run_modules_when_precompiling_fails(self):
+        out, err = io.StringIO(), io.StringIO()
+        with patch.dict(os.environ, AGENT_EE_REQUIRE_TOOLCHAIN='1'), \
+                patch.object(strict_suite, 'modules', return_value=['test_a']), \
+                patch.object(strict_suite, 'precompile_sources', return_value=False), \
+                patch.object(strict_suite, 'run_module') as run, \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = strict_suite.main(['--jobs', '1', 'test_a'])
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        self.assertIn('bytecode could not be precompiled', err.getvalue())
 
 
 class JudgeTests(unittest.TestCase):
