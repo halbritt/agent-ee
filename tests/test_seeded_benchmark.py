@@ -1261,11 +1261,21 @@ class ContainerCommandTests(unittest.TestCase):
         from agent_ee.benchmark_run import container_run, launch
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)
-            container = container_run('agent-ee-21-x', 'sha256:'+'a'*64, Path('/src'), [(output, False)], ['_execute'])
-            with native_run.using(native_run.Recorded(lambda call: native_run.Outcome(
-                    execution='unavailable', exit_code=None))), \
-                    self.assertRaisesRegex(FileNotFoundError, 'docker'):
-                launch(container, output)
+            docker, intent = container_run('agent-ee-21-x', 'sha256:'+'a'*64, Path('/src'),
+                                           [(output, False)], ['_execute'])
+
+            class MissingDocker(native_run.Recorded):
+                name = docker.name
+
+                def argv(self, intent):
+                    return docker.argv(intent)
+
+            # launch supplies its adapter explicitly. Raise at the Recorded launch
+            # boundary, before on_launch: an unavailable client never has a PID.
+            missing = MissingDocker(lambda call: FileNotFoundError('docker'))
+            with self.assertRaisesRegex(FileNotFoundError, 'docker'):
+                launch((missing, intent), output)
+            self.assertEqual(len(missing.calls), 1)
             self.assertTrue((output/'command.json').is_file())
             self.assertFalse((output/'exit.json').exists())
             self.assertFalse((output/'process.json').exists())
