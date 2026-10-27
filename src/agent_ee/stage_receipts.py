@@ -24,11 +24,10 @@ from . import native_run
 from .storage import digest, digest_fd, identity, read_json, write_json
 
 STEP_SCHEMA = 'agent-ee.stage-step/1'
-# /2 receipts are produced only by strict source observation (AGENTEE-357). A /1 receipt still
-# replays unless its recorded source identity could be a link-only one (AGENTEE-374).
-RECEIPT_SCHEMA = 'agent-ee.stage-receipt/2'
+# /3 additionally binds artifact modes and directory entries (AGENTEE-465).
+RECEIPT_SCHEMA = 'agent-ee.stage-receipt/3'
 LEGACY_RECEIPT_SCHEMA = 'agent-ee.stage-receipt/1'
-RECEIPT_SCHEMAS = (LEGACY_RECEIPT_SCHEMA, RECEIPT_SCHEMA)
+RECEIPT_SCHEMAS = (LEGACY_RECEIPT_SCHEMA, 'agent-ee.stage-receipt/2', RECEIPT_SCHEMA)
 INDEX_SCHEMA = 'agent-ee.stage-receipt-index/1'
 STAGES = ('scaffold', 'parts', 'schematic', 'placement', 'routing', 'verification', 'fab')
 ADOPTABLE = ('completed', 'partial')
@@ -57,8 +56,16 @@ STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'sourc
 RECEIPT_KEYS = {'schema', 'receipt_id', 'binding', 'spec', 'spec_sha256', 'argv', 'tool', 'tool_after',
                 'inputs', 'outputs', 'changed', 'violations', 'artifacts', 'execution',
                 'version_execution', 'exit_code', 'status', 'started_unix', 'duration_s',
-                'sandbox_profile_sha256', 'identity'}
+                'sandbox_profile_sha256', 'identity', 'artifact_tree'}
+LEGACY_RECEIPT_KEYS = RECEIPT_KEYS - {'artifact_tree'}
 INDEX_KEYS = {'schema', 'implementation', 'source_candidate_id', 'receipts', 'delivered', 'identity'}
+
+
+def receipt_keys(schema):
+    """Exact fields for a supported receipt version, including retained legacy receipts."""
+    if schema not in RECEIPT_SCHEMAS:
+        raise ValueError('unknown stage receipt schema')
+    return RECEIPT_KEYS if schema == RECEIPT_SCHEMA else LEGACY_RECEIPT_KEYS
 
 
 def _sandbox_path(value, label):
@@ -557,7 +564,7 @@ def _regular(root, rel, *, content=False, limit=None):
         return 'file', stream.read(-1 if limit is None else limit + 1)
 
 
-def _scan(descriptor, files, other):
+def _scan(descriptor, files, other, *, metadata=None):
     """Walk an open directory without following links; consumes descriptor."""
     try:
         stack = [(descriptor, '', iter(sorted(os.listdir(descriptor))))]
@@ -577,21 +584,31 @@ def _scan(descriptor, files, other):
                 child = os.open(name, NOFOLLOW, dir_fd=current)
             except OSError:
                 other.append(rel)
+                if metadata is not None:
+                    metadata[rel] = None
                 continue
             mode = os.fstat(child).st_mode
             if stat.S_ISREG(mode):
                 files[rel] = _digest_fd(child)
+                if metadata is not None:
+                    metadata[rel] = {'kind': 'file', 'mode': stat.S_IMODE(mode), 'sha256': files[rel]}
             elif stat.S_ISDIR(mode) and len(stack) < TREE_DEPTH:
                 try:
                     entries = iter(sorted(os.listdir(child)))
                 except OSError:
                     os.close(child)
                     other.append(rel)
+                    if metadata is not None:
+                        metadata[rel] = None
                     continue
+                if metadata is not None:
+                    metadata[rel] = {'kind': 'directory', 'mode': stat.S_IMODE(mode)}
                 stack.append((child, rel + '/', entries))
             else:
                 os.close(child)
                 other.append(rel)
+                if metadata is not None:
+                    metadata[rel] = None
     finally:
         for current, _, _ in stack:
             os.close(current)
@@ -916,20 +933,24 @@ def _backend(spec, run):
     return {'status': 'reported', 'value': value[report['key']], 'reason': None}
 
 
-def _artifacts(spec, run):
-    found = {}
+def _artifact_observation(spec, run):
+    found, tree = {}, {}
     for declared in spec['artifacts']:
         state, descriptor = _lookup(run, declared)
         mode = os.fstat(descriptor).st_mode if state == 'ok' else None
         if mode is not None and stat.S_ISREG(mode):
             found[declared] = _digest_fd(descriptor)
+            tree[declared] = {'kind': 'file', 'mode': stat.S_IMODE(mode), 'sha256': found[declared]}
         elif mode is not None and stat.S_ISDIR(mode):
-            files, other = {}, []
+            files, other, metadata = {}, [], {}
             try:
-                _scan(descriptor, files, other)
+                _scan(descriptor, files, other, metadata=metadata)
             except ValueError:
                 found[declared] = None
+                tree[declared] = None
                 continue
+            tree[declared] = {'kind': 'directory', 'mode': stat.S_IMODE(mode)}
+            tree.update({f'{declared}/{rel}': entry for rel, entry in metadata.items()})
             found.update({f'{declared}/{rel}': sha for rel, sha in files.items()})
             found.update({f'{declared}/{rel}': None for rel in other})
             if not files and not other:
@@ -939,7 +960,12 @@ def _artifacts(spec, run):
             if descriptor is not None:
                 os.close(descriptor)
             found[declared] = None
-    return dict(sorted(found.items()))
+            tree[declared] = None
+    return dict(sorted(found.items())), dict(sorted(tree.items()))
+
+
+def _artifacts(spec, run):
+    return _artifact_observation(spec, run)[0]
 
 
 def _writes(spec, run):
@@ -1221,12 +1247,13 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
     outputs = _outputs(spec, run)
     violations = _violations(spec, inputs, receipt_dir, tool, tool_after,
                              {'run': execution, 'version': version_record})
+    artifacts, artifact_tree = _artifact_observation(spec, run)
     receipt.update(
         tool={**tool, 'reported_version': _reported_version(spec, version_record, receipt_dir / 'version'),
               'backend': _backend(spec, run)},
         tool_after=tool_after, inputs=inputs, outputs=outputs,
         changed=sorted(rel for rel, sha in outputs.items() if sha != inputs.get(rel)),
-        violations=violations, artifacts=_artifacts(spec, run), execution=execution,
+        violations=violations, artifacts=artifacts, artifact_tree=artifact_tree, execution=execution,
         version_execution=version_record, exit_code=execution['exit_code'] if execution else None,
         status=_status(spec, execution, violations), started_unix=started_unix,
         duration_s=round(time.monotonic() - start, 3),
@@ -1320,7 +1347,8 @@ def validate_receipt(receipt_dir, *, binding=None):
     """Recompute every derivable receipt field from retained coordinator records."""
     receipt_dir = Path(receipt_dir)
     receipt = read_json(receipt_dir / 'receipt.json')
-    if not isinstance(receipt, dict) or receipt.get('schema') not in RECEIPT_SCHEMAS or set(receipt) != RECEIPT_KEYS:
+    if (not isinstance(receipt, dict) or receipt.get('schema') not in RECEIPT_SCHEMAS or
+            set(receipt) != receipt_keys(receipt['schema'])):
         raise ValueError('malformed stage receipt')
     if identity({k: v for k, v in receipt.items() if k != 'identity'}) != receipt['identity']:
         raise ValueError('stage receipt identity mismatch')
@@ -1369,8 +1397,11 @@ def validate_receipt(receipt_dir, *, binding=None):
     outputs = _outputs(spec, run)
     if receipt['outputs'] != outputs:
         raise ValueError('stage receipt outputs changed')
-    if receipt['artifacts'] != _artifacts(spec, run):
+    artifacts, artifact_tree = _artifact_observation(spec, run)
+    if receipt['artifacts'] != artifacts:
         raise ValueError('stage receipt artifacts changed')
+    if receipt['schema'] == RECEIPT_SCHEMA and receipt['artifact_tree'] != artifact_tree:
+        raise ValueError('stage receipt artifact tree changed')
     if receipt['changed'] != sorted(rel for rel, sha in outputs.items() if sha != receipt['inputs'].get(rel)):
         raise ValueError('stage receipt changed paths mismatch')
     violations = _violations(spec, receipt['inputs'], receipt_dir, observed, after,
@@ -1441,6 +1472,8 @@ def adopt(receipt_dir, receipt, design):
     # Only the retained coordinator receipt, revalidated now, authorizes adoption.
     if validate_receipt(receipt_dir) != receipt:
         raise ValueError('stage receipt differs from the retained coordinator receipt')
+    if receipt['schema'] != RECEIPT_SCHEMA and spec['artifacts']:
+        raise ValueError('legacy stage receipt lacks artifact tree identity; rerun before adoption')
     design = Path(design)
     if _strict_tree(design) != receipt['inputs']:
         raise ValueError(f"design changed during stage step {spec['step']}")

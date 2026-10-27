@@ -1565,11 +1565,200 @@ class StepFixture(unittest.TestCase):
 
 
 class StepExecutionTests(StepFixture):
+    def routing_fixture(self, label):
+        from agent_ee import routing_adapter
+        from agent_ee.executor import execute
+        from tests.test_kicad_route_native import ROOT, STRIP
+        from tests.toolchain import require_kicad_route, require_toolchain
+        require_toolchain(native=True)
+        checkout = require_kicad_route()
+        design = self.root / label
+        shutil.copytree(ROOT / 'fixtures/rc/control', design / 'project')
+        shutil.copytree(ROOT / 'fixtures/rc/requirements', design / 'requirements')
+        stripped = self.root / (label + '-strip')
+        record = execute(ROOT / 'fixtures/rc', stripped, ['/usr/bin/python3', '-I', '-B', '-c', STRIP,
+                         '/candidate/control/rc_filter.kicad_pcb', '/work/placed.kicad_pcb'], timeout=300)
+        self.assertEqual(record['exit_code'], 0, record)
+        shutil.copyfile(stripped / 'placed.kicad_pcb', design / 'project/rc_filter.kicad_pcb')
+        spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+                                    schematic='rc_filter.kicad_sch', name='rc_filter', label=label,
+                                    checkout=checkout, budget=120)
+        return design, spec
+
+    @toolchain_test
+    def test_bare_routing_adopt_refuses_artifact_tree_mutations_before_writing(self):
+        # AGENTEE-465: real pinned routing, with unedited receipts and reports.
+        from agent_ee import routing_adapter
+        design, spec = self.routing_fixture('artifact-tree')
+        path = self.root / 'routing-receipt'
+        receipt = run_step(path, design, spec, self.binding)
+        summary = routing_adapter.verify_campaign_receipt(path)
+        self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'))
+        original = stage_receipts.file_tree(design)
+        receipt_hash = digest(path / 'receipt.json')
+        report_hash = digest(path / 'run/routing/adapter-report.json')
+        control = self.root / 'control-design'
+        shutil.copytree(design, control)
+        adopt(path, receipt, control)
+        self.assertEqual(stage_receipts.file_tree(control)[0], stage_receipts.after_tree(receipt))
+        self.assertNotEqual(stage_receipts.file_tree(control), original)
+        staged = path / 'run/routing/agent-ee-original'
+        schematic = staged / 'project/rc_filter.kicad_sch'
+        mode = stat_mode(schematic)
+        for mutation in ('chmod', 'nested-empty-directory'):
+            with self.subTest(mutation=mutation):
+                mutant_design = self.root / ('bare-' + mutation)
+                shutil.copytree(design, mutant_design)
+                if mutation == 'chmod':
+                    schematic.chmod(0o700)
+                else:
+                    (staged / 'added/empty').mkdir(parents=True)
+                try:
+                    with self.assertRaises(ValueError):
+                        routing_adapter.verify(path / 'run', receipt=receipt)
+                    with self.assertRaisesRegex(ValueError, 'artifact.*changed'):
+                        adopt(path, receipt, mutant_design)
+                    self.assertEqual(stage_receipts.file_tree(mutant_design), original)
+                    self.assertEqual(digest(path / 'receipt.json'), receipt_hash)
+                    self.assertEqual(digest(path / 'run/routing/adapter-report.json'), report_hash)
+                finally:
+                    schematic.chmod(mode)
+                    if (staged / 'added').exists():
+                        shutil.rmtree(staged / 'added')
+
+    @toolchain_test
+    def test_routing_consumer_refuses_post_seal_tree_mutations_before_adoption(self):
+        from agent_ee import routing_adapter
+        from agent_ee.campaign import run_implementation_steps
+        for mutation in ('intact', 'chmod', 'nested-empty-directory'):
+            with self.subTest(mutation=mutation):
+                design, spec = self.routing_fixture('consumer-' + mutation)
+                spec = validate_step(spec)
+                original = stage_receipts.file_tree(design)
+                work = self.root / ('consumer-' + mutation + '-work') / '1'
+                binding = {'spec': spec, 'tool': stage_receipts.observe_tool(spec),
+                           'adapter_sha256': digest(routing_adapter.ADAPTER_SOURCE)}
+                state = {'routing_binding': binding, 'stage_receipts': {}}
+                manifest = {'candidate_id': 'c' * 64, 'files': original[0]}
+                real_run_step = stage_receipts.run_step
+
+                def mutate_after_seal(receipt_dir, *args, **kwargs):
+                    receipt = real_run_step(receipt_dir, *args, **kwargs)
+                    summary = routing_adapter.verify_campaign_receipt(receipt_dir, binding=binding)
+                    self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'))
+                    staged = Path(receipt_dir) / 'run/routing/agent-ee-original'
+                    if mutation == 'chmod':
+                        (staged / 'project/rc_filter.kicad_sch').chmod(0o700)
+                    elif mutation == 'nested-empty-directory':
+                        (staged / 'added/empty').mkdir(parents=True)
+                    return receipt
+
+                # Fault injection only: execution, receipts, verification and verdicts are real.
+                with patch.object(stage_receipts, 'run_step', side_effect=mutate_after_seal):
+                    if mutation == 'intact':
+                        run_implementation_steps(work, design, manifest, state, time.monotonic() + 600,
+                                                 [{'kind': 'routing', 'receipt_index': 1}])
+                    else:
+                        with self.assertRaises(ValueError):
+                            run_implementation_steps(work, design, manifest, state, time.monotonic() + 600,
+                                                     [{'kind': 'routing', 'receipt_index': 1}])
+                if mutation == 'intact':
+                    self.assertNotEqual(stage_receipts.file_tree(design), original)
+                else:
+                    self.assertEqual(stage_receipts.file_tree(design), original)
+
+    @toolchain_test
+    def test_artifact_tree_identity_refuses_mode_directory_file_and_link_changes(self):
+        argv = ['/usr/bin/python3', '-c',
+                'from pathlib import Path; Path("out/empty/nested").mkdir(parents=True); '
+                'Path("out/board.txt").write_text("routed board")']
+        path, receipt = self.run_step(self.spec(argv=argv, writes={'project/board.txt': 'out/board.txt'},
+                                                artifacts=['out']))
+        original = stage_receipts.file_tree(self.design)
+        self.assertEqual(validate_receipt(path), receipt)
+        for mutation in ('file-mode', 'directory-mode', 'root-mode', 'removed-empty',
+                         'added-empty', 'changed-file', 'missing-file', 'link'):
+            with self.subTest(mutation=mutation):
+                retained = self.root / ('mutant-' + mutation)
+                shutil.copytree(path, retained, symlinks=True)
+                out = retained / 'run/out'
+                if mutation == 'file-mode':
+                    entry = out / 'board.txt'
+                    entry.chmod(0o700 if stat_mode(entry) != 0o700 else 0o755)
+                elif mutation == 'directory-mode':
+                    entry = out / 'empty/nested'
+                    entry.chmod(0o700 if stat_mode(entry) != 0o700 else 0o755)
+                elif mutation == 'root-mode':
+                    out.chmod(0o700 if stat_mode(out) != 0o700 else 0o755)
+                elif mutation == 'removed-empty':
+                    (out / 'empty/nested').rmdir()
+                elif mutation == 'added-empty':
+                    (out / 'added/empty').mkdir(parents=True)
+                elif mutation == 'changed-file':
+                    (out / 'board.txt').write_text('changed')
+                else:
+                    (out / 'board.txt').unlink()
+                    if mutation == 'link':
+                        (out / 'board.txt').symlink_to(path / 'run/out/board.txt')
+                with self.assertRaises(ValueError):
+                    adopt(retained, receipt, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), original)
+        for schema in ('agent-ee.stage-receipt/1', 'agent-ee.stage-receipt/2'):
+            retained, legacy = self._as_schema(path, schema)
+            self.assertEqual(validate_receipt(retained), legacy)
+            with self.assertRaisesRegex(ValueError, 'legacy.*artifact tree identity'):
+                adopt(retained, legacy, self.design)
+            self.assertEqual(stage_receipts.file_tree(self.design), original)
+        adopt(path, receipt, self.design)
+        self.assertEqual((self.design / 'project/board.txt').read_text(), 'routed board')
+
+    @toolchain_test
+    def test_rating_consumer_accepts_current_and_legacy_receipts_but_refuses_unknown_fields(self):
+        from tests.test_passive_ratings import ReceiptBoundRatingProvenanceTests
+        helper = ReceiptBoundRatingProvenanceTests('test_genuine_receipted_record_is_accepted')
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        self.root = helper.root
+        path = self.root / helper.provenance['receipt']
+        original = read_json(path)
+        for schema in (*stage_receipts.RECEIPT_SCHEMAS, 'agent-ee.stage-receipt/999'):
+            with self.subTest(schema=schema):
+                receipt = {**original, 'schema': schema}
+                if schema != stage_receipts.RECEIPT_SCHEMA:
+                    receipt.pop('artifact_tree')
+                receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+                write_json(path, receipt)
+                helper.provenance['receipt_sha256'] = digest(path)
+                result = helper.evaluate(helper.fields)
+                self.assertEqual(result['outcome'], 'unknown' if schema.endswith('/999') else 'pass', result)
+        receipt = {**original, 'unrecognized': 'field'}
+        receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+        write_json(path, receipt)
+        helper.provenance['receipt_sha256'] = digest(path)
+        result = helper.evaluate(helper.fields)
+        self.assertEqual(result['outcome'], 'unknown', result)
+
+    def test_refusal_cleanup_retains_supported_receipt_versions(self):
+        from tests import receipt_diagnostics
+        for schema in (*stage_receipts.RECEIPT_SCHEMAS, 'agent-ee.stage-receipt/999'):
+            with self.subTest(schema=schema):
+                retained = self.root / schema.rsplit('/', 1)[1]
+                output = io.StringIO()
+                with patch.object(receipt_diagnostics, 'RETENTION_ROOT', retained), \
+                        contextlib.redirect_stderr(output):
+                    with receipt_diagnostics.ReceiptTemporaryDirectory(dir=self.root) as tmp:
+                        write_json(Path(tmp) / 'receipt.json', {'schema': schema, 'status': 'refused',
+                                                              'violations': ['test-refusal']})
+                self.assertEqual(retained.exists(), schema in stage_receipts.RECEIPT_SCHEMAS)
+                self.assertEqual('test-refusal' in output.getvalue(), schema in stage_receipts.RECEIPT_SCHEMAS)
+
     def _as_schema(self, path, schema, tag='', **fields):
         # A retained receipt as an earlier implementation would have written it.
         copy = self.root / 'historical' / f'{path.name}-{len(fields)}-{schema.rsplit("/", 1)[1]}{tag}'
         shutil.copytree(path, copy, symlinks=True)
         receipt = {**read_json(path / 'receipt.json'), **fields, 'schema': schema}
+        if schema != stage_receipts.RECEIPT_SCHEMA:
+            receipt.pop('artifact_tree', None)
         receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
         write_json(copy / 'receipt.json', receipt)
         return copy, receipt
@@ -1581,7 +1770,7 @@ class StepExecutionTests(StepFixture):
         (self.tool / 'lib').mkdir()
         (self.tool / 'lib/module.py').write_text('mounted source')
         path, receipt = self.run_step(self.spec(source='/tool/lib'))
-        self.assertEqual((receipt['schema'], receipt['status']), ('agent-ee.stage-receipt/2', 'completed'))
+        self.assertEqual((receipt['schema'], receipt['status']), (stage_receipts.RECEIPT_SCHEMA, 'completed'))
         self.assertEqual(receipt['tool']['source_tree']['files'], 1)
         self.assertEqual(validate_receipt(path), receipt)
         legacy = 'agent-ee.stage-receipt/1'

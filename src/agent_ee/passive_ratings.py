@@ -243,7 +243,7 @@ def load_provenance(root, declaration):
     coordinator-pinned sha256, and the captured ``binding-fill.json``. The report is
     accepted only as the exact artifact the adoptable receipt recorded.
     """
-    from .stage_receipts import ADOPTABLE, RECEIPT_KEYS, RECEIPT_SCHEMAS, legacy_source_refusal, validate_step
+    from .stage_receipts import ADOPTABLE, RECEIPT_SCHEMAS, legacy_source_refusal, receipt_keys, validate_step
     from .storage import digest, identity
     root = Path(root)
     receipt_path, report_path = root / declaration['receipt'], root / declaration['report']
@@ -253,7 +253,8 @@ def load_provenance(root, declaration):
     if digest(receipt_path) != declaration['receipt_sha256']:
         raise ValueError('binding-fill receipt differs from its pinned sha256')
     receipt = strict_json(receipt_path.read_bytes())
-    if (not isinstance(receipt, dict) or receipt.get('schema') not in RECEIPT_SCHEMAS or set(receipt) != RECEIPT_KEYS or
+    if (not isinstance(receipt, dict) or receipt.get('schema') not in RECEIPT_SCHEMAS or
+            set(receipt) != receipt_keys(receipt['schema']) or
             identity({k: v for k, v in receipt.items() if k != 'identity'}) != receipt['identity']):
         raise ValueError('malformed binding-fill stage receipt')
     legacy_source_refusal(receipt)
