@@ -167,7 +167,8 @@ not consult this candidate-imaging flag.
 
 ### Sandbox render policy (AGENTEE-458)
 
-`executor.execute(..., skip_visuals=)` (and `stage_receipts.run_step`) takes a
+`native_run.Intent(..., skip_visuals=)` (passed to `executor.execute` by the
+sandbox adapter, and `stage_receipts.run_step`) takes a
 typed candidate-imaging policy. `None`, the default, adds nothing and keeps every
 sandbox argv byte-identical. A boolean adds exactly
 `--setenv AGENT_EE_SKIP_VISUALS 1|0` to the fixed `--clearenv` allowlist; any

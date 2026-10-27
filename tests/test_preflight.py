@@ -431,7 +431,7 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
                 if marker.exists() or time.monotonic() >= end:
                     raise ValueError('operation cancelled')
             try:
-                with patch('agent_ee.run_record.subprocess.Popen', side_effect=launch), \
+                with patch('agent_ee.native_run.subprocess.Popen', side_effect=launch), \
                         self.assertRaisesRegex(ValueError, 'operation cancelled'):
                     pcbnew_extension(checkpoint=checkpoint)
                 self.assertTrue(marker.exists(), 'test probe did not start child')

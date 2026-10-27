@@ -5,12 +5,9 @@ files) are observed here; callers that already hold an observation pass it as ``
 
 import copy
 import datetime
-import locale
 import math
-import os
 import re
 import shutil
-import subprocess
 import time
 import traceback
 import uuid
@@ -88,17 +85,13 @@ def pcbnew_extension(*, checkpoint=None, python='/usr/bin/python3'):
         if checkpoint is not None and partial is not None and partial.get('cleanup_error'):
             raise ValueError('runtime_probe_cleanup_timeout') from exc
         raise
-    if probe['execution'] == 'unavailable':
-        raise FileNotFoundError(probe.stdout.decode())
-    if checkpoint is not None and probe.get('cleanup_error'):
-        raise ValueError('runtime_probe_cleanup_timeout')
-    if probe['execution'] == 'timeout':
-        if checkpoint is not None:
+    if checkpoint is not None and probe['execution'] != 'unavailable':
+        if probe.get('cleanup_error'):
+            raise ValueError('runtime_probe_cleanup_timeout')
+        if probe['execution'] == 'timeout':
             raise ValueError('runtime_probe_timeout')
-        raise subprocess.TimeoutExpired(argv, 15, output=probe.stdout, stderr=probe.stderr)
-    stdout, stderr = (raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-                      for raw in (probe.stdout, probe.stderr))
-    return (stdout.strip(), '') if probe.returncode == 0 else (None, stderr)
+    result = native_run.completed(probe, text=True)
+    return (result.stdout.strip(), '') if result.returncode == 0 else (None, result.stderr)
 
 
 def artifacts(run):

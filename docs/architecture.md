@@ -36,7 +36,8 @@ epistemic independence.
 | Module | Responsibility |
 | --- | --- |
 | [candidate.py](../src/agent_ee/candidate.py) | Resolve explicit sources, select files, copy/hash, verify snapshot/current source |
-| [executor.py](../src/agent_ee/executor.py) | Construct Bubblewrap view; run/cancel subprocess groups; persist raw execution |
+| [native_run.py](../src/agent_ee/native_run.py) | The one entry point for native tool runs: intent builders (DRC, netlist, pcbnew script), deadline clamp, baseline mount, sandbox/host/docker/recorded adapters, parsed sandbox profile |
+| [executor.py](../src/agent_ee/executor.py) | Construct Bubblewrap view; run/cancel subprocess groups; persist raw execution (the engine behind native_run's sandbox adapter) |
 | [checks.py](../src/agent_ee/checks.py) | Hierarchy validation, native report interpretation, criteria and passive deck generation |
 | [geometry_probe.py](../src/agent_ee/geometry_probe.py) | Saved pcbnew geometry extraction inside the sandbox |
 | [profiles.py](../src/agent_ee/profiles.py) | Validate explicit role, subscription harness, model, effort and timeout definitions |

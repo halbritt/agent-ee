@@ -153,7 +153,8 @@ establish scheduling behavior, not live-model latency or engineering review qual
    calculation, datasheet, model, native geometry or measurement can establish.
 2. Implement a handler in `src/agent_ee/checks.py` and register its kind in
    `CHECK_FUNCS`. Use `Ctx` to record native commands/results and
-   `executor.execute` for isolated subprocess work. Candidate files are at
+   `ctx.execute` / `ctx.run_native` (both through `agent_ee.native_run`) for
+   isolated subprocess work. Candidate files are at
    `/candidate`, writable scratch at `/work`; Python helpers are available at
    `/app`. Dependencies/configuration that affect results need recorded identity.
 3. Retain original tool/source artifacts. An extraction must identify its source

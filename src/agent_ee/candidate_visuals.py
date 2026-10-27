@@ -2,7 +2,6 @@
 
 import os
 import shutil
-import subprocess
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -119,11 +118,7 @@ def _plot(board, root, name, layers):
             sink=stdout,
             stderr_sink=stderr,
         )
-        if execution['execution'] == 'unavailable':
-            raise FileNotFoundError(execution.stdout.decode())
-        if execution['execution'] == 'timeout':
-            raise subprocess.TimeoutExpired(command, 150, output=None, stderr=None)
-        completed = subprocess.CompletedProcess(command, execution.returncode, None, None)
+        completed = native_run.completed(execution)
     write_json(work / 'command.json', {'argv': command, 'returncode': completed.returncode})
     if completed.returncode:
         raise ValueError(f'{name}: kicad-cli exited {completed.returncode}')

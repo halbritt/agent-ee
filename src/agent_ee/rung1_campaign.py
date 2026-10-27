@@ -574,11 +574,7 @@ def run_logged(argv, log_dir, label, timeout, source=PACKAGE_ROOT):
             native_run.Intent('stage', argv, timeout=timeout, isolation='host', cwd=REPO_ROOT, env=env),
             work=None,
         )
-        if execution['execution'] == 'unavailable':
-            raise FileNotFoundError(execution.stdout.decode())
-        if execution['execution'] == 'timeout':
-            raise subprocess.TimeoutExpired(argv, timeout, output=execution.stdout, stderr=execution.stderr)
-        proc = subprocess.CompletedProcess(argv, execution.returncode, execution.stdout, execution.stderr)
+        proc = native_run.completed(execution)
         code, out, err = proc.returncode, proc.stdout, proc.stderr
     except subprocess.TimeoutExpired as exc:
         code, out, err = None, exc.stdout or b'', exc.stderr or b''

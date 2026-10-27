@@ -469,9 +469,7 @@ def check_drc(ctx):
         raise CheckError("unsupported", str(exc)) from exc
     ctx.candidate_path(ctx.scope["schematic"])  # parity needs it alongside
     ctx.seed_kicad_config()
-    ctx.execute(["kicad-cli", "pcb", "drc", "--format", "json", "--severity-all",
-                 "--schematic-parity", "--units", "mm", "-o", "/work/drc.json", board],
-                timeout=900)
+    ctx.execute(native_run.drc_argv(board, "/work/drc.json", parity=True, units="mm"), timeout=900)
     ctx.evidence("drc.json")
     report = ctx.load_json("drc.json", "DRC")
     if not isinstance(report, dict):
@@ -594,8 +592,7 @@ def check_netlist(ctx):
     sch = ctx.candidate_path(ctx.scope["schematic"])
     files, expected = verified_hierarchy(ctx)
     ctx.seed_kicad_config()
-    ctx.execute(["kicad-cli", "sch", "export", "netlist", "--format", "kicadxml",
-                 "-o", "/work/design.xml", sch], timeout=600)
+    ctx.execute(native_run.netlist_argv(sch, "/work/design.xml"), timeout=600)
     ctx.evidence("design.xml")
     out = ctx.work / "design.xml"
     if not out.is_file() or out.stat().st_size == 0:

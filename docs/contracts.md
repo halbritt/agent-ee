@@ -46,10 +46,12 @@ at inputs/stock/footprints; copy required stock libraries or all stock libraries
 Deadline is `time.monotonic()` absolute. Load `candidate.json` and iterate
 `scope.checks`. Each check has unique safe `id` and `kind`; kinds initially
 `erc`, `drc`, `netlist`, `geometry`, `rc_transient`. Parameters may be added and
-documented by Fable. `agent_ee.executor.execute(inputs, work, argv, timeout=...,
-stdin=None, network=False, extra_ro=())` runs argv inside Bubblewrap; inputs
-visible at `/candidate`, current scratch at `/work`, Python package at `/app`.
-It returns execution record (`ok|failed|timeout|unavailable|interrupted`),
+documented by Fable. `agent_ee.native_run.run(intent, inputs=..., work=...,
+deadline=..., baseline=...)` runs an `Intent` (argv, timeout, stdin, network,
+isolation) through one adapter; the sandbox adapter runs argv inside Bubblewrap
+(via `agent_ee.executor.execute`), with inputs visible at `/candidate`, current
+scratch at `/work`, Python package at `/app`. It clamps the timeout to the
+deadline and mounts the run's baseline. It returns execution record (`ok|failed|timeout|unavailable|interrupted`),
 exit_code, argv, sandbox_argv, console_sha256. No passing fallback.
 `agent_ee.storage`: digest(path), identity(JSON), read_json(path), write_json(path,value).
 

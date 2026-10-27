@@ -19,6 +19,7 @@ import re
 import sqlite3
 import xml.etree.ElementTree as ET
 
+from . import native_run
 from .candidate import safe_relative
 from .catalog import decimal_number
 from .fab_export import natural_key
@@ -2725,8 +2726,7 @@ def check_assembly_readiness(ctx):
     except AssemblyReadinessExecutionError as exc:
         raise CheckError(exc.execution, str(exc)) from exc
     ctx.seed_kicad_config()
-    ctx.execute(["kicad-cli", "sch", "export", "netlist", "--format", "kicadxml",
-                 "-o", "/work/design.xml", sch], timeout=NETLIST_TIMEOUT)
+    ctx.execute(native_run.netlist_argv(sch, "/work/design.xml"), timeout=NETLIST_TIMEOUT)
     ctx.evidence("design.xml")
     netlist = ctx.work / "design.xml"
     if not netlist.is_file() or netlist.stat().st_size == 0:

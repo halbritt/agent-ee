@@ -4,13 +4,11 @@ Only a four-line rectangular Edge.Cuts crop is qualified here. Native geometry
 is exported, never reconstructed from group positions. Views express membership
 and recorded poses; they do not assess functional coherence or orientation.
 """
-import locale
 import copy
 import hashlib
 import math
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
@@ -213,19 +211,7 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
     execution = native_run.run(
         native_run.Intent('probe', [str(binary), 'version'], timeout=30, isolation='host'), work=None
     )
-    if execution['execution'] == 'unavailable':
-        raise FileNotFoundError(execution.stdout.decode())
-    if execution['execution'] == 'timeout':
-        raise subprocess.TimeoutExpired(
-            [str(binary), 'version'], 30, output=execution.stdout, stderr=execution.stderr
-        )
-    stdout_text, stderr_text = (
-        raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-        for raw in (execution.stdout, execution.stderr)
-    )
-    version = subprocess.CompletedProcess(
-        [str(binary), 'version'], execution.returncode, stdout_text, stderr_text
-    )
+    version = native_run.completed(execution, text=True)
     version.check_returncode()
     runtime['kicad_version'] = version.stdout.strip()
     out.mkdir(parents=True, exist_ok=False)

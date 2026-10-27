@@ -5,7 +5,6 @@ the enabled, referenced file exists; native rendering logs establish whether
 KiCad actually loaded it. Fetching is a separate, explicitly invoked operation.
 """
 
-import locale
 import hashlib
 import json
 import os
@@ -192,17 +191,7 @@ def _kicad_model_defaults(env):
         execution = native_run.run(
             native_run.Intent('probe', [cli, 'version'], timeout=20, isolation='host'), work=None
         )
-        if execution['execution'] == 'unavailable':
-            raise FileNotFoundError(execution.stdout.decode())
-        if execution['execution'] == 'timeout':
-            raise subprocess.TimeoutExpired(
-                [cli, 'version'], 20, output=execution.stdout, stderr=execution.stderr
-            )
-        stdout_text, stderr_text = (
-            raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-            for raw in (execution.stdout, execution.stderr)
-        )
-        probe = subprocess.CompletedProcess([cli, 'version'], execution.returncode, stdout_text, stderr_text)
+        probe = native_run.completed(execution, text=True)
     except (OSError, subprocess.SubprocessError):
         return {}, None
     version = probe.stdout.strip()

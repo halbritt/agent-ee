@@ -3,7 +3,6 @@
 Engineering decisions remain captured inputs. Every stage consumes the preceding
 stage's real files; final acceptance comes from independently sealed checks.
 """
-import locale
 import fcntl
 import hashlib
 import json
@@ -39,17 +38,7 @@ def _runtime():
     execution = native_run.run(
         native_run.Intent('probe', [cli, 'version'], timeout=30, isolation='host'), work=None
     )
-    if execution['execution'] == 'unavailable':
-        raise FileNotFoundError(execution.stdout.decode())
-    if execution['execution'] == 'timeout':
-        raise subprocess.TimeoutExpired(
-            [cli, 'version'], 30, output=execution.stdout, stderr=execution.stderr
-        )
-    stdout_text, stderr_text = (
-        raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-        for raw in (execution.stdout, execution.stderr)
-    )
-    version = subprocess.CompletedProcess([cli, 'version'], execution.returncode, stdout_text, stderr_text)
+    version = native_run.completed(execution, text=True)
     version.check_returncode()
     extension, diagnostic = pcbnew_extension()
     if extension is None:

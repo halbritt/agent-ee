@@ -1,6 +1,5 @@
 """Export a native KiCad board and serve a self-contained local viewer."""
 
-import locale
 import functools
 import json
 import re
@@ -74,15 +73,7 @@ def _probe(command):
         execution = native_run.run(
             native_run.Intent('probe', command, timeout=15, isolation='host'), work=None
         )
-        if execution['execution'] == 'unavailable':
-            raise FileNotFoundError(execution.stdout.decode())
-        if execution['execution'] == 'timeout':
-            raise subprocess.TimeoutExpired(command, 15, output=execution.stdout, stderr=execution.stderr)
-        stdout_text, stderr_text = (
-            raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-            for raw in (execution.stdout, execution.stderr)
-        )
-        result = subprocess.CompletedProcess(command, execution.returncode, stdout_text, stderr_text)
+        result = native_run.completed(execution, text=True)
     except subprocess.TimeoutExpired as exc:
         raise ViewerError("KiCad CLI did not respond within 15 seconds") from exc
     if result.returncode:
@@ -156,11 +147,7 @@ def build_viewer(source: Path, out: Path, *, timeout=300) -> Path:
                     sink=stdout,
                     stderr_sink=stderr,
                 )
-                if execution['execution'] == 'unavailable':
-                    raise FileNotFoundError(execution.stdout.decode())
-                if execution['execution'] == 'timeout':
-                    raise subprocess.TimeoutExpired(command, timeout, output=None, stderr=None)
-                result = subprocess.CompletedProcess(command, execution.returncode, None, None)
+                result = native_run.completed(execution)
             except subprocess.TimeoutExpired as exc:
                 export["status"] = "timeout"
                 write_json(out / "export.json", export)

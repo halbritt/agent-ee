@@ -528,8 +528,8 @@ def _board(manifest):
 
 
 def _argv(board):
-    return ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-            '--output', '/work/native-drc.json', f'/candidate/{board}']
+    from . import native_run
+    return native_run.drc_argv(f'/candidate/{board}', '/work/native-drc.json', output_flag='--output')
 
 
 def _recompute(ctx):

@@ -744,8 +744,7 @@ def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None
 def drc(board, out_dir, *, refill=False, label='drc', clock=None, cancel_dir=None):
     out_dir = Path(out_dir)
     report = out_dir / f'{label}.json'
-    argv = ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-            *(['--refill-zones'] if refill else []), '--output', str(report), str(board)]
+    argv = native_run.drc_argv(board, report, refill=refill, output_flag='--output')
     done = _run_child(argv, clock=clock or Clock(300), cancel_dir=cancel_dir)
     (out_dir / f'{label}.log').write_bytes(done.stdout + done.stderr)
     # kicad-cli exits 0 when it writes a report; a missing or malformed report is never a pass.

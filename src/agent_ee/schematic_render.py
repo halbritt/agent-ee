@@ -142,11 +142,7 @@ def png_bytes(width, height, pixels):
 
 def _command(argv, out, label):
     execution = native_run.run(native_run.Intent('stage', argv, timeout=90, isolation='host'), work=None)
-    if execution['execution'] == 'unavailable':
-        raise FileNotFoundError(execution.stdout.decode())
-    if execution['execution'] == 'timeout':
-        raise subprocess.TimeoutExpired(argv, 90, output=execution.stdout, stderr=execution.stderr)
-    result = subprocess.CompletedProcess(argv, execution.returncode, execution.stdout, execution.stderr)
+    result = native_run.completed(execution)
     (out / (label + '.stdout.log')).write_bytes(result.stdout)
     (out / (label + '.stderr.log')).write_bytes(result.stderr)
     if result.returncode:

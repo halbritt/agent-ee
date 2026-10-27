@@ -7,7 +7,6 @@ review verdict is ``criteria_satisfied``, the fab exports exist and are nonempty
 and the CPL rotation status is in ``fab_package.DONE_ROTATION_STATUSES`` (a
 PREVIEW_REQUIRED status with its recomputed ``preview_obligations``, AGENTEE-151).
 """
-import locale
 import argparse
 import csv
 import datetime
@@ -210,25 +209,7 @@ def tool_identity(name):
                 ),
                 work=None,
             )
-            if execution['execution'] == 'unavailable':
-                raise FileNotFoundError(execution.stdout.decode())
-            if execution['execution'] == 'timeout':
-                raise subprocess.TimeoutExpired(
-                    ['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],
-                    30,
-                    output=execution.stdout,
-                    stderr=execution.stderr,
-                )
-            stdout_text, stderr_text = (
-                raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-                for raw in (execution.stdout, execution.stderr)
-            )
-            probe = subprocess.CompletedProcess(
-                ['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],
-                execution.returncode,
-                stdout_text,
-                stderr_text,
-            )
+            probe = native_run.completed(execution, text=True)
             record['version'] = probe.stdout.strip() or None
             if not path:
                 record['diagnostic'] = diagnostic
@@ -259,17 +240,7 @@ def tool_identity(name):
                 execution = native_run.run(
                     native_run.Intent('probe', command, timeout=30, isolation='host'), work=None
                 )
-                if execution['execution'] == 'unavailable':
-                    raise FileNotFoundError(execution.stdout.decode())
-                if execution['execution'] == 'timeout':
-                    raise subprocess.TimeoutExpired(
-                        command, 30, output=execution.stdout, stderr=execution.stderr
-                    )
-                stdout_text, stderr_text = (
-                    raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-                    for raw in (execution.stdout, execution.stderr)
-                )
-                probe = subprocess.CompletedProcess(command, execution.returncode, stdout_text, stderr_text)
+                probe = native_run.completed(execution, text=True)
                 record['version'] = (probe.stdout.strip() or probe.stderr.strip()) or None
         if record['path'] and Path(record['path']).is_file():
             record['sha256'] = digest(record['path'])
@@ -331,15 +302,7 @@ class Stage:
                 ),
                 work=None,
             )
-            if execution['execution'] == 'unavailable':
-                raise FileNotFoundError(execution.stdout.decode())
-            if execution['execution'] == 'timeout':
-                raise subprocess.TimeoutExpired(
-                    record['argv'], timeout, output=execution.stdout, stderr=execution.stderr
-                )
-            proc = subprocess.CompletedProcess(
-                record['argv'], execution.returncode, execution.stdout, execution.stderr
-            )
+            proc = native_run.completed(execution)
             record.update(exit_code=proc.returncode, execution='ok' if proc.returncode == 0 else 'failed')
             out, err = proc.stdout, proc.stderr
         except subprocess.TimeoutExpired as exc:

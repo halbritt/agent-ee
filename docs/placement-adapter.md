@@ -257,10 +257,9 @@ captured netlist.
 `source` and `Sheetfile` depend on the export path and working directory. The
 captured netlist must therefore be exported the way the step's sandbox exports
 it: with the design mounted at `/candidate` and the working directory `/work`.
-For example, run `executor.execute(design, work, ["kicad-cli", "sch", "export",
-"netlist", "--format", "kicadxml", "-o", "/work/netlist.xml",
-"/candidate/<schematic>"])`. A host-path export differs in `source` and is
-refused.
+For example, run `native_run.run(native_run.netlist("/candidate/<schematic>",
+"/work/netlist.xml", timeout=600), inputs=design, work=work)`. A host-path
+export differs in `source` and is refused.
 
 ## Placement write scope
 

@@ -1,6 +1,5 @@
 """Render source-bound KiCad still images in isolated native processes."""
 
-import locale
 import concurrent.futures
 import contextvars
 import datetime
@@ -40,15 +39,7 @@ def _probe(command):
         execution = native_run.run(
             native_run.Intent('probe', command, timeout=20, isolation='host'), work=None
         )
-        if execution['execution'] == 'unavailable':
-            raise FileNotFoundError(execution.stdout.decode())
-        if execution['execution'] == 'timeout':
-            raise subprocess.TimeoutExpired(command, 20, output=execution.stdout, stderr=execution.stderr)
-        stdout_text, stderr_text = (
-            raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
-            for raw in (execution.stdout, execution.stderr)
-        )
-        result = subprocess.CompletedProcess(command, execution.returncode, stdout_text, stderr_text)
+        result = native_run.completed(execution, text=True)
     except subprocess.TimeoutExpired as exc:
         raise RenderError("KiCad render capability probe timed out after 20 seconds") from exc
     if result.returncode:
