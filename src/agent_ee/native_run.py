@@ -16,6 +16,7 @@ readers ask for binds, network and the mount guard instead of re-tokenising the 
 
 import contextlib
 import contextvars
+import copy
 import errno
 import hashlib
 import json
@@ -167,7 +168,7 @@ def completed(execution, *, text=False):
     if execution["execution"] == "unavailable":
         # Popen's own error (errno, strerror and the missing program or cwd as filename).
         if execution.launch_error is not None:
-            raise execution.launch_error
+            raise copy.copy(execution.launch_error)   # a fresh error each call: no accumulated traceback
         raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), argv[0])
     if execution["execution"] == "timeout":
         # As subprocess.run on POSIX: partial output stays bytes even in text mode, and a stream

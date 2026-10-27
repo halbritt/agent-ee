@@ -6,6 +6,7 @@ import os
 import signal
 import tempfile
 import time
+import traceback
 import unittest
 from pathlib import Path
 
@@ -629,6 +630,15 @@ class HostTest(unittest.TestCase):
                                   missing.exception.filename, str(missing.exception)),
                                  (type(real.exception), real.exception.errno, real.exception.strerror,
                                   real.exception.filename, str(real.exception)))
+                # Each call raises a fresh error; repeating it does not carry the first call's traceback.
+                execution = native_run.run(Intent('probe', argv, isolation='host', cwd=cwd), work=None)
+                depths = []
+                for _ in range(2):
+                    try:
+                        native_run.completed(execution)
+                    except FileNotFoundError as exc:
+                        depths.append(len(traceback.extract_tb(exc.__traceback__)))
+                self.assertEqual(depths[0], depths[1])
         recorded = native_run.Recorded(lambda call: native_run.Outcome(exit_code=None, execution='unavailable'))
         with self.assertRaises(FileNotFoundError) as fallback:
             native_run.completed(native_run.run(Intent('probe', ['tool'], isolation='host'), work=None,
