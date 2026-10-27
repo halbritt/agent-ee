@@ -71,6 +71,17 @@ class SchedulingTests(unittest.TestCase):
             '===== test_unselected (99.0s, exit 0) [4/4]\n'),
             ['test_c', 'test_a', 'test_b', 'test_d'])
 
+    def test_partial_run_uses_completed_timings_and_sorts_the_rest(self):
+        self.assertEqual(self.schedule('===== test_d (3.0s, exit 0) [1/4]\n'
+                                       'unittest still running when capture stopped\n'),
+                         ['test_d', 'test_a', 'test_b', 'test_c'])
+
+    def test_child_banner_does_not_discard_completed_timings(self):
+        for banner in ('===== native diagnostic\n', '===== cleanup\n', '===== \n'):
+            with self.subTest(banner=banner):
+                self.assertEqual(self.schedule('===== test_d (3.0s, exit 0) [1/4]\n' + banner),
+                                 ['test_d', 'test_a', 'test_b', 'test_c'])
+
     def test_zero_timing_precedes_untimed_modules(self):
         self.assertEqual(self.schedule('===== test_d (0.0s, exit 0) [1/1]\n'),
                          ['test_d', 'test_a', 'test_b', 'test_c'])
@@ -85,7 +96,7 @@ class SchedulingTests(unittest.TestCase):
 
     def test_malformed_log_falls_back_without_partial_timings(self):
         valid = '===== test_c (9.0s, exit 0) [1/2]\n'
-        for invalid in ('', 'unrelated log\n', '===== broken\n',
+        for invalid in ('', 'unrelated log\n', '===== test_a (1.5s,\n', '===== test_a\n', '===== test_\n',
                         '===== test_a (oops, exit 0) [2/2]\n',
                         *(f'===== test_a ({value}s, exit 0) [2/2]\n'
                           for value in ('NaN', 'inf', '-1', '1e999')),

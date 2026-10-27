@@ -92,7 +92,7 @@ def schedule_modules(selected, previous_log=None):
     if previous_log is not None:
         try:
             for line in Path(previous_log).read_text().splitlines():
-                if not line.startswith('===== '):
+                if not re.match(r'===== test_\w*(?:\s|$)', line):
                     continue
                 match = re.fullmatch(r'===== (test_\w+) \(([^\s]+)s, exit [^\n]+\) \[\d+/\d+\]', line)
                 if match is None:

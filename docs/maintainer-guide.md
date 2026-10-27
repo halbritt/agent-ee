@@ -67,6 +67,11 @@ pass its path with `--previous-log build/strict-previous.log` (AGENTEE-468).
 The runner reads its existing `===== test_module (Ns, exit ...) [n/total]`
 completion lines before submitting work. Timed modules run longest-first;
 ties and modules without timings sort alphabetically, with untimed modules last.
+A partial run log is usable: completed modules supply timings even if other
+modules never finished. An incomplete or malformed completion line invalidates
+the timings instead. Other child-output banners beginning with `===== ` are
+ignored; the runner reserves the `===== test_` module-name prefix for completion
+lines, including malformed or truncated ones.
 Without a log, or with a missing, unreadable or malformed log, submission is
 alphabetical. Duplicate module timings also invalidate the log; use one run per
 file. Keep the previous log separate from the current stdout destination so shell
