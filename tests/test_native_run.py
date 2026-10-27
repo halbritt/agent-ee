@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import io
 import json
@@ -609,11 +610,30 @@ class HostTest(unittest.TestCase):
             native_run.completed(native_run.run(Intent('probe', slow, isolation='host', timeout=1), work=None),
                                  text=True)
         self.assertEqual((caught.exception.stdout, caught.exception.timeout), (b'x', 1))
-        with self.assertRaises(FileNotFoundError) as missing:
-            native_run.completed(native_run.run(Intent('probe', ['/nonexistent/tool'], isolation='host'), work=None))
-        with self.assertRaises(FileNotFoundError) as real:
-            subprocess.run(['/nonexistent/tool'], capture_output=True)
-        self.assertEqual(str(missing.exception), str(real.exception))
+        silent = ['/usr/bin/python3', '-c', 'import time; time.sleep(30)']
+        with self.assertRaises(subprocess.TimeoutExpired) as quiet:
+            native_run.completed(native_run.run(Intent('probe', silent, isolation='host', timeout=1), work=None))
+        with self.assertRaises(subprocess.TimeoutExpired) as real_quiet:
+            subprocess.run(silent, capture_output=True, timeout=1)
+        self.assertEqual((quiet.exception.stdout, quiet.exception.stderr),
+                         (real_quiet.exception.stdout, real_quiet.exception.stderr))
+        self.assertEqual((quiet.exception.stdout, quiet.exception.stderr), (None, None))
+        for label, argv, cwd in (('program', ['/nonexistent/tool'], None),
+                                 ('cwd', ['/usr/bin/true'], str(self.root / 'absent'))):
+            with self.subTest(missing=label):
+                with self.assertRaises(FileNotFoundError) as missing:
+                    native_run.completed(native_run.run(Intent('probe', argv, isolation='host', cwd=cwd), work=None))
+                with self.assertRaises(FileNotFoundError) as real:
+                    subprocess.run(argv, capture_output=True, cwd=cwd)
+                self.assertEqual((type(missing.exception), missing.exception.errno, missing.exception.strerror,
+                                  missing.exception.filename, str(missing.exception)),
+                                 (type(real.exception), real.exception.errno, real.exception.strerror,
+                                  real.exception.filename, str(real.exception)))
+        recorded = native_run.Recorded(lambda call: native_run.Outcome(exit_code=None, execution='unavailable'))
+        with self.assertRaises(FileNotFoundError) as fallback:
+            native_run.completed(native_run.run(Intent('probe', ['tool'], isolation='host'), work=None,
+                                                adapter=recorded))
+        self.assertEqual((fallback.exception.errno, fallback.exception.filename), (errno.ENOENT, 'tool'))
 
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):

@@ -16,6 +16,7 @@ readers ask for binds, network and the mount guard instead of re-tokenising the 
 
 import contextlib
 import contextvars
+import errno
 import hashlib
 import json
 import locale
@@ -109,6 +110,7 @@ class Execution(dict):
         self.stdout = stdout
         self.stderr = stderr
         self.returncode = returncode
+        self.launch_error = None   # the OSError a host/docker child failed to start with
 
 
 # --- argv builders: each native command is spelled in one place ---------------------------------
@@ -163,10 +165,14 @@ def completed(execution, *, text=False):
     argv = list(execution["argv"])
     out, err = execution.stdout, execution.stderr
     if execution["execution"] == "unavailable":
-        raise FileNotFoundError(out.decode(errors="replace"))
+        # Popen's own error (errno, strerror and the missing program or cwd as filename).
+        if execution.launch_error is not None:
+            raise execution.launch_error
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), argv[0])
     if execution["execution"] == "timeout":
-        # As subprocess.run on POSIX: the partial output stays bytes even in text mode.
-        raise subprocess.TimeoutExpired(argv, execution["timeout_s"], output=out, stderr=err)
+        # As subprocess.run on POSIX: partial output stays bytes even in text mode, and a stream
+        # that produced nothing is None.
+        raise subprocess.TimeoutExpired(argv, execution["timeout_s"], output=out or None, stderr=err or None)
     if text:
         encoding = "utf-8" if sys.flags.utf8_mode else locale.getencoding()
         out, err = (data.decode(encoding).replace("\r\n", "\n").replace("\r", "\n") for data in (out, err))
@@ -358,6 +364,7 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
                                             env=None if env is None else dict(env), cwd=cwd)
         except FileNotFoundError as exc:
             fields["execution"] = "unavailable"
+            fields["launch_error"] = exc
             return fields, str(exc).encode(), b""
     if proc is None:
         fields["execution"] = "interrupted"
@@ -511,8 +518,10 @@ def _supervised(finish, argv, **options):
     exception propagates with that Execution as native_execution."""
     def complete(fields, output, stderr):
         returncode = fields.pop("returncode", None)
+        launch_error = fields.pop("launch_error", None)
         execution = finish(fields, output, stderr)
         execution.returncode = returncode
+        execution.launch_error = launch_error
         return execution
 
     try:
