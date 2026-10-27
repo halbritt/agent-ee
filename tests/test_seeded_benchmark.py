@@ -1255,27 +1255,18 @@ class FontSubstitutionTests(unittest.TestCase):
 class ContainerCommandTests(unittest.TestCase):
     def test_launch_that_cannot_start_docker_raises_before_an_exit_record(self):
         # Review finding (AGENTEE-540 batch d): an unavailable client used to return with exit_code null.
+        # Keep the process-launch seam: the real Docker adapter must convert the missing
+        # client to an unavailable execution, then launch must raise before writing exit.json.
         import tempfile
         from pathlib import Path
-        from agent_ee import native_run
+        from unittest import mock
         from agent_ee.benchmark_run import container_run, launch
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)
-            docker, intent = container_run('agent-ee-21-x', 'sha256:'+'a'*64, Path('/src'),
-                                           [(output, False)], ['_execute'])
-
-            class MissingDocker(native_run.Recorded):
-                name = docker.name
-
-                def argv(self, intent):
-                    return docker.argv(intent)
-
-            # launch supplies its adapter explicitly. Raise at the Recorded launch
-            # boundary, before on_launch: an unavailable client never has a PID.
-            missing = MissingDocker(lambda call: FileNotFoundError('docker'))
-            with self.assertRaisesRegex(FileNotFoundError, 'docker'):
-                launch((missing, intent), output)
-            self.assertEqual(len(missing.calls), 1)
+            container = container_run('agent-ee-21-x', 'sha256:'+'a'*64, Path('/src'), [(output, False)], ['_execute'])
+            with mock.patch('agent_ee.native_run.subprocess.Popen', side_effect=FileNotFoundError('docker')), \
+                    self.assertRaisesRegex(FileNotFoundError, 'docker'):
+                launch(container, output)
             self.assertTrue((output/'command.json').is_file())
             self.assertFalse((output/'exit.json').exists())
             self.assertFalse((output/'process.json').exists())
