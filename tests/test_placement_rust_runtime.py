@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from agent_ee import placement_rust_runtime, placement_runtime, placer_runner
+from agent_ee import native_run, placement_rust_runtime, placement_runtime, placer_runner
 from test_placer_search import promotion_case
 
 
@@ -39,7 +39,7 @@ class RustRuntimeTest(unittest.TestCase):
     def test_reference_context_is_explicit_and_restored(self):
         facts, policy = promotion_case()
         with placement_runtime.python_reference(), \
-                mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=AssertionError('Rust called')):
+                native_run.using(native_run.Recorded(lambda call: AssertionError('Rust called'))):
             self.assertEqual(placer_runner._plan(facts, {'policy': policy}),
                              placer_runner._plan_local(facts, {'policy': policy}))
             with self.assertRaisesRegex(ValueError, 'already active'):
@@ -142,7 +142,7 @@ class RustTransportTest(unittest.TestCase):
             binary.with_name('planner.json').write_text(json.dumps({
                 'schema': 'agent-ee.placement-engine-install/1',
                 'binary_sha256': hashlib.sha256(b'original planner').hexdigest()}))
-            with mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=AssertionError('child started')):
+            with native_run.using(native_run.Recorded(lambda call: AssertionError('child started'))):
                 with self.assertRaisesRegex(placement_runtime.PlanningProcessError, 'differs from its build receipt'):
                     placement_rust_runtime.Session(binary).plan({}, {}, None, None, heartbeat=self.fail)
 
@@ -165,7 +165,7 @@ class RustTransportTest(unittest.TestCase):
     def test_json_validation_rejects_lossy_input_before_starting_child(self):
         for payload, reason in [({'tuple': (1, 2)}, 'JSON-native values'), ({1: 2}, 'keys must be strings')]:
             with self.subTest(payload=payload):
-                with mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=AssertionError('child started')):
+                with native_run.using(native_run.Recorded(lambda call: AssertionError('child started'))):
                     with self.assertRaisesRegex(ValueError, reason):
                         placement_rust_runtime.Session(sys.executable).plan(payload, {}, None, None, heartbeat=self.fail)
 
@@ -192,6 +192,8 @@ class RustTransportTest(unittest.TestCase):
                     return process
 
                 record = {}
+                # Recorded has no live stdin/stdout handles or owned process to reap;
+                # this transport regression checks those real cleanup obligations.
                 with mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=capture):
                     with self.assertRaises(exception):
                         placement_rust_runtime._exchange(command, b'{}', callback, record)

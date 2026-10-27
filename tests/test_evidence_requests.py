@@ -320,6 +320,8 @@ class RequestTests(unittest.TestCase):
                 self.addCleanup(lambda: proc.poll() is None and (proc.kill(), proc.wait()))
                 os.kill(os.getpid(), signal.SIGINT)
             return proc
+        # Recorded cannot signal inside Popen before its handle returns or prove
+        # that the real sandbox is reaped in that interval (AGENTEE-269).
         with mock.patch.object(subprocess, 'Popen', interrupted_launch):
             receipt = replay(self.root / 'request', self.root / 'launch-interrupted')
         self.assertEqual(receipt['execution'], 'interrupted', receipt)

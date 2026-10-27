@@ -403,6 +403,8 @@ assert not (outer / 'receipt').exists()
             return real_popen(command, **kwargs)
 
         receipt_dir = Path(self.tmp.name) / 'receipt'
+        # This changes the actual bwrap fd after native_run builds its intent.
+        # Recorded cannot exercise the kernel mount guard or prove the tool never executes.
         with patch.object(subprocess, 'Popen', wrong_mount):
             receipt = run_step(receipt_dir, design, spec, {})
         self.assertEqual(receipt['status'], 'refused')
