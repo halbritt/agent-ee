@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee.placement_probe import extract, custom_pad_geometry
 from agent_ee.placer import pack, transform
 from agent_ee.placer_runner import place_candidate, _apply_plan
@@ -283,13 +284,11 @@ class CustomPadPlacementTest(unittest.TestCase):
     def test_writer_scope_native_failure_and_missing_output_refuse(self):
         from agent_ee import placement_adapter as pa
         before, after = self.flipped_with_arc()
-        for record in ({'execution': 'failed'}, {'execution': 'ok'}):
-            with self.subTest(record=record):
-                def failed(inputs, work, argv, **kwargs):
-                    work.mkdir()
-                    (work / 'console.log').write_text('deliberate test failure')
-                    return record
-                with patch('agent_ee.executor.execute', failed):
+        for exit_code in (1, 0):
+            with self.subTest(exit_code=exit_code):
+                failed = native_run.Recorded(lambda call: native_run.Outcome(
+                    exit_code=exit_code, stdout=b'deliberate test failure'))
+                with native_run.using(failed):
                     report = pa.write_scope(before, after)
                 self.assertEqual(report['status'], 'refused', report)
                 self.assertTrue(any('probe' in v for v in report['violations']))
@@ -522,13 +521,11 @@ class CustomPadPlacementTest(unittest.TestCase):
     def test_reflection_value_error_precedes_shutdown_noise(self):
         from agent_ee.placement_adapter import write_scope
         before, after = self.flipped_with_arc()
-        def failed(inputs, work, argv, **kwargs):
-            work.mkdir()
-            (work / 'console.log').write_text('Traceback (most recent call last):\n'
-                'ValueError: source custom pads are not native qualified\n' +
-                'swig/python detected a memory leak\n' * 200)
-            return {'execution': 'failed'}
-        with patch('agent_ee.executor.execute', failed):
+        failed = native_run.Recorded(lambda call: native_run.Outcome(
+            exit_code=1, stdout=('Traceback (most recent call last):\n'
+                                 'ValueError: source custom pads are not native qualified\n' +
+                                 'swig/python detected a memory leak\n' * 200).encode()))
+        with native_run.using(failed):
             report = write_scope(before, after)
         self.assertEqual(report['status'], 'refused', report)
         self.assertEqual(report['violations'][0], 'native custom-pad side flip: reflection probe failed: '

@@ -3,11 +3,11 @@ import json
 import math
 import re
 import shutil
-import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
 
+from . import native_run
 from .storage import digest, identity, write_json
 
 # Leading underscore cannot alias the compiler's agent_ee_ constraint namespace.
@@ -420,9 +420,9 @@ def run_constraint(source, root, constraint, probe, directory=None):
     record['generated_rules_sha256'] = constraint['rules_sha256']
     record['project_sha256'] = digest(target.with_suffix('.kicad_pro'))
     record['board_sha256'] = digest(target)
-    argv = ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--units', 'mm',
-            '-o', str(directory / 'drc.json'), str(target)]
-    proc = subprocess.run(argv, capture_output=True, timeout=600)
+    intent = native_run.drc(target, directory / 'drc.json', units='mm', timeout=600, isolation='host')
+    argv = list(intent.argv)
+    proc = native_run.completed(native_run.run(intent, work=None))
     (directory / 'stdout.log').write_bytes(proc.stdout)
     (directory / 'stderr.log').write_bytes(proc.stderr)
     write_json(directory / 'invocation.json', {'argv': argv, 'exit_code': proc.returncode})

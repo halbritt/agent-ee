@@ -8,6 +8,8 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
+from agent_ee import native_run
+from native_hooks import after
 from agent_ee.footprint_library import canonical, index_footprints
 from tests.test_footprint_library import capture, fixture, smd, owner_declarations, symbol_capture, declarations
 from tests.toolchain import fome_mc_store, require_toolchain
@@ -110,13 +112,11 @@ class CustomPadIndexTests(unittest.TestCase):
                     self.assert_multi_outline_refusal(indexed(text))
 
     def test_missing_or_invalid_native_outline_evidence_refuses(self):
-        from agent_ee.executor import execute as real_execute
         for count in (None, 0, True, '1', 1.0, -1):
             with self.subTest(count=count):
-                def altered(inputs, work, argv, **kwargs):
-                    result = real_execute(inputs, work, argv, **kwargs)
+                def altered(call, result):
                     self.assertEqual(result['execution'], 'ok')
-                    path = Path(work) / 'footprint.json'
+                    path = call.work / 'footprint.json'
                     report = json.loads(path.read_text())
                     for pad in report['pads']:
                         if pad['shape'] == 'custom':
@@ -126,7 +126,7 @@ class CustomPadIndexTests(unittest.TestCase):
                                 pad['outline_count'] = count
                     path.write_text(json.dumps(report))
                     return result
-                with patch('agent_ee.executor.execute', side_effect=altered):
+                with native_run.using(after(altered)):
                     result = indexed(custom())
                 self.assertEqual((result['execution'], result['outcome'], result['coverage']),
                                  ('failed', 'unknown', 'missing'))
@@ -170,7 +170,6 @@ class CustomPadIndexTests(unittest.TestCase):
                 self.assertEqual(result['footprints'], [])
 
     def test_primitive_magnitude_bounds_refuse_without_native_loading(self):
-        from agent_ee.executor import execute as real_execute
         cases = [
             PRIMITIVES['rect'].replace('(end 2 1)', '(end 3000 1)'),
             PRIMITIVES['rect'].replace('(start -1 -1)', '(start -3000 -1)'),
@@ -188,14 +187,14 @@ class CustomPadIndexTests(unittest.TestCase):
             '(gr_circle (center 0 0) (end 1000 0) (width 0.000001) (fill yes))',
         ]
         for primitive in cases:
-            with self.subTest(primitive=primitive), patch('agent_ee.executor.execute', wraps=real_execute) as execute:
+            with self.subTest(primitive=primitive), native_run.using(native_run.Recorded()) as execute:
                 result = indexed(custom(primitive))
                 self.assertEqual((result['execution'], result['outcome'], result['coverage']),
                                  ('failed', 'unknown', 'missing'))
                 self.assertEqual(result['footprints'], [])
                 self.assertEqual(result['findings'][0]['code'], 'library_coverage')
                 self.assertIn('1000 mm', result['findings'][0]['message'])
-                execute.assert_not_called()
+                self.assertEqual(execute.calls, [])
 
     def test_rotation_invariant_reach_refuses_before_native_loading(self):
         square = '(gr_rect (start -1000 -1000) (end 1000 1000) (width 0) (fill yes))'
@@ -217,7 +216,7 @@ class CustomPadIndexTests(unittest.TestCase):
             ('(gr_circle (center 0 0) (end 999 0) (width 0) (fill yes))', '1 0.000001'),
         ]
         for primitive, at in cases:
-            with self.subTest(primitive=primitive, at=at), patch('agent_ee.executor.execute') as execute:
+            with self.subTest(primitive=primitive, at=at), native_run.using(native_run.Recorded()) as execute:
                 result = indexed(custom(primitive, at=at))
                 self.assertEqual((result['execution'], result['outcome'], result['coverage']),
                                  ('failed', 'unknown', 'missing'))
@@ -225,7 +224,7 @@ class CustomPadIndexTests(unittest.TestCase):
                 self.assertEqual(result['findings'][0]['code'], 'library_coverage')
                 self.assertIn('custom-pad copper reach exceeds 1000 mm from footprint origin',
                               result['findings'][0]['message'])
-                execute.assert_not_called()
+                self.assertEqual(execute.calls, [])
 
     def test_bounded_rotated_translated_reach_keeps_exact_native_extents(self):
         cases = [
@@ -264,12 +263,9 @@ class CustomPadIndexTests(unittest.TestCase):
     def test_native_crash_or_missing_output_never_qualifies(self):
         # Transport fault injection tests refusal only; successful cases above use real pcbnew.
         for status in ('failed', 'ok'):
-            with self.subTest(status=status), patch('agent_ee.executor.execute') as execute:
-                def fault(inputs, work, argv, **kwargs):
-                    Path(work).mkdir()
-                    (Path(work) / 'console.log').write_text('injected child failure')
-                    return dict(execution=status)
-                execute.side_effect = fault
+            fault = native_run.Recorded(lambda call: native_run.Outcome(
+                exit_code=1 if status == 'failed' else 0, stdout=b'injected child failure'))
+            with self.subTest(status=status), native_run.using(fault):
                 result = indexed(custom())
                 self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
                 self.assertEqual(result['footprints'], [])
@@ -293,14 +289,14 @@ class CustomPadIndexTests(unittest.TestCase):
             ('(gr_poly (pts (xy 0 0) (xy 800 800) (xy 0 1)) (width 0) (fill yes))', '0 0'),
         ]
         for primitive, at in cases:
-            with self.subTest(primitive=primitive), patch('agent_ee.executor.execute') as execute:
+            with self.subTest(primitive=primitive), native_run.using(native_run.Recorded()) as execute:
                 result = indexed(custom(primitive, at=at), declarations=declared)
                 self.assertEqual((result['execution'], result['outcome'], result['coverage']),
                                  ('failed', 'unknown', 'missing'))
                 self.assertEqual(result['footprints'], [])
                 self.assertEqual(result['findings'][0]['code'], 'library_coverage')
                 self.assertIn('1000 mm', result['findings'][0]['message'])
-                execute.assert_not_called()
+                self.assertEqual(execute.calls, [])
 
     def test_declared_custom_one_outline_on_each_copper_layer(self):
         declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
@@ -319,16 +315,14 @@ class CustomPadIndexTests(unittest.TestCase):
                         self.assertNotIn('native_geometry', pad)
 
     def test_declared_custom_missing_outline_evidence_refuses(self):
-        from agent_ee.executor import execute as real_execute
         declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
         cases = [(False, counts) for counts in (None, [], [True], ['1'], [1.0], [0], [1, 2])]
         cases.extend([(True, [1]), (True, [1] * 31)])
         for multilayer, counts in cases:
             with self.subTest(multilayer=multilayer, counts=counts):
-                def altered(inputs, work, argv, **kwargs):
-                    execution = real_execute(inputs, work, argv, **kwargs)
+                def altered(call, execution):
                     self.assertEqual(execution['execution'], 'ok')
-                    path = Path(work) / 'footprint.json'
+                    path = call.work / 'footprint.json'
                     report = json.loads(path.read_text())
                     for pad in report['pads']:
                         if pad['shape'] == 'custom':
@@ -338,7 +332,7 @@ class CustomPadIndexTests(unittest.TestCase):
                                 pad['layer_outline_counts'] = counts
                     path.write_text(json.dumps(report))
                     return execution
-                with patch('agent_ee.executor.execute', side_effect=altered):
+                with native_run.using(after(altered)):
                     text = custom().replace('F.Cu', '*.Cu') if multilayer else custom()
                     result = indexed(text, declarations=declared)
                 self.assertEqual((result['execution'], result['outcome'], result['coverage']),
@@ -386,16 +380,14 @@ class CustomPadIndexTests(unittest.TestCase):
         self.assertNotIn('native_geometry', pads['2'])
 
     def test_native_number_disagreement_refuses(self):
-        from agent_ee.executor import execute as real_execute
-        def altered(inputs, work, argv, **kwargs):
-            result = real_execute(inputs, work, argv, **kwargs)
+        def altered(call, result):
             self.assertEqual(result['execution'], 'ok')
-            path = Path(work) / 'footprint.json'
+            path = call.work / 'footprint.json'
             report = json.loads(path.read_text())
             report['pads'][0]['number'] = 'wrong'
             path.write_text(json.dumps(report))
             return result
-        with patch('agent_ee.executor.execute', side_effect=altered):
+        with native_run.using(after(altered)):
             result = indexed(custom())
         self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
         self.assertIn('native pad identity differs', result['findings'][0]['message'])

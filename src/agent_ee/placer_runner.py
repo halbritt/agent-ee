@@ -14,6 +14,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
+from . import native_run
 from . import placement_groups, placement_trace
 from .board_net_names import from_xml
 from .locking import writer_lock
@@ -141,12 +142,12 @@ def _footprint_pad_inventory(fp):
 
 def _native_drc(board, scratch):
     report_path = scratch / 'native-drc.json'
-    command = ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-               '--output', str(report_path), str(board)]
+    intent = native_run.drc(board, report_path, output_flag='--output', timeout=120, isolation='host')
+    command = list(intent.argv)
     execution = {'argv': command, 'execution': 'not_run', 'exit_code': None}
     write_json(scratch / 'native-drc-execution.json', execution)
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        completed = native_run.completed(native_run.run(intent, work=None), text=True)
     except (OSError, subprocess.SubprocessError) as exc:
         execution.update(execution='failed', error=str(exc))
         write_json(scratch / 'native-drc-execution.json', execution)

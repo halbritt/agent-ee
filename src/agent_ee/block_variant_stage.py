@@ -8,8 +8,8 @@ import argparse
 import copy
 import json
 from pathlib import Path
-import subprocess
 
+from . import native_run
 from . import block_variants, blocks, stage_receipts
 from .storage import digest, identity, read_json, write_json
 
@@ -161,9 +161,8 @@ def produce_stage(inputs, work, ctx):
     out.mkdir(parents=True, exist_ok=False)
     netlist = out / section['netlist']
     netlist.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                             '-o', str(netlist), str(inputs / bound['schematic'])],
-                            capture_output=True, text=True, timeout=120)
+    result = native_run.completed(native_run.run(
+        native_run.netlist(inputs / bound['schematic'], netlist, timeout=120, isolation='host'), work=None), text=True)
     (work / 'netlist-export.stdout').write_text(result.stdout)
     (work / 'netlist-export.stderr').write_text(result.stderr)
     if result.returncode:

@@ -306,9 +306,8 @@ def _captures(manifest, root):
 
 
 def _child(inputs, work, argv, timeout):
-    from .executor import execute
-    record = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.forward_annotation_probe', *argv],
-                     timeout=timeout)
+    from . import native_run
+    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.forward_annotation_probe', *argv], timeout=timeout), inputs=inputs, work=work))
     if record['execution'] != 'ok':
         console = (Path(work) / 'console.log').read_text(errors='replace')[-2000:]
         raise AnnotationError('native_child', f'pcbnew child {record["execution"]} '

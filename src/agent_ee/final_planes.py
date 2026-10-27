@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .add_planes import validate_plan, zone_ids, _planned_zone_errors
 from .catalog import strict_json
-from .executor import execute
+from . import native_run
 from .storage import digest, read_json, write_json
 
 
@@ -21,9 +21,9 @@ def validate(inputs, board, plan_path, work, *, drc=None, timeout=180):
         plan = validate_plan(strict_json((inputs/plan_path).read_bytes()))
         if any(z['island_removal'] != 'always' for z in plan['zones']):
             raise ValueError('final planned planes require island_removal=always')
-        record = execute(inputs, work/'native', ['/usr/bin/python3', '-B', '-m',
+        record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m',
             'agent_ee.final_planes', '/candidate/'+board, '/candidate/'+plan_path,
-            '/work/facts.json'], timeout=timeout)
+            '/work/facts.json'], timeout=timeout), inputs=inputs, work=work/'native'))
         if record['execution'] != 'ok' or record['exit_code'] != 0:
             raise ValueError('native final plane inspection failed: ' +
                              (work/'native/console.log').read_text(errors='replace')[-2000:])
@@ -33,8 +33,8 @@ def validate(inputs, board, plan_path, work, *, drc=None, timeout=180):
             remaining = expires - time.monotonic()
             if remaining <= 1:
                 raise ValueError('deadline exhausted before final plane DRC')
-            record = execute(inputs, work/'drc', ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format',
-                'json', '--severity-all', '-o', '/work/report.json', '/candidate/'+board], timeout=remaining)
+            record = dict(native_run.run(native_run.drc('/candidate/'+board, '/work/report.json', timeout=remaining,
+                                                        executable='/usr/bin/kicad-cli'), inputs=inputs, work=work/'drc'))
             if record['execution'] != 'ok' or record['exit_code'] != 0:
                 raise ValueError('native final plane DRC failed')
             drc = read_json(work/'drc/report.json')

@@ -18,10 +18,12 @@ import contextlib
 import contextvars
 import hashlib
 import json
+import locale
 import os
 import selectors
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -112,13 +114,18 @@ class Execution(dict):
 # --- argv builders: each native command is spelled in one place ---------------------------------
 
 def drc_argv(board, report, *, parity=False, refill=False, save_board=False, units=None,
-             severity_all=True, output_flag="-o", executable="kicad-cli"):
-    """kicad-cli pcb drc with a JSON report."""
+             severity_all=True, output_flag="-o", executable="kicad-cli", parity_first=False):
+    """kicad-cli pcb drc with a JSON report.
+
+    parity_first spells --schematic-parity before --format, as board_build's retained build records
+    have always carried it; kicad-cli reads the flags in any order."""
     if output_flag not in ("-o", "--output"):
         raise ValueError("DRC output flag must be -o or --output")
-    return [executable, "pcb", "drc", "--format", "json",
+    if parity_first and not parity:
+        raise ValueError("parity_first needs parity")
+    return [executable, "pcb", "drc", *(["--schematic-parity"] if parity_first else []), "--format", "json",
             *(["--severity-all"] if severity_all else []),
-            *(["--schematic-parity"] if parity else []),
+            *(["--schematic-parity"] if parity and not parity_first else []),
             *(["--refill-zones"] if refill else []),
             *(["--save-board"] if save_board else []),
             *(["--units", units] if units else []),
@@ -135,17 +142,35 @@ def python_module_argv(module, *args, no_bytecode=True, interpreter="/usr/bin/py
     return [interpreter, *(["-B"] if no_bytecode else []), "-m", module, *map(str, args)]
 
 
-def drc(board, report, *, timeout, **options):
-    return Intent("drc", drc_argv(board, report, **options), timeout=timeout)
+def drc(board, report, *, timeout, isolation="sandbox", **options):
+    return Intent("drc", drc_argv(board, report, **options), timeout=timeout, isolation=isolation)
 
 
-def netlist(schematic, output, *, timeout, executable="kicad-cli"):
-    return Intent("netlist", netlist_argv(schematic, output, executable=executable), timeout=timeout)
+def netlist(schematic, output, *, timeout, executable="kicad-cli", isolation="sandbox"):
+    return Intent("netlist", netlist_argv(schematic, output, executable=executable), timeout=timeout,
+                  isolation=isolation)
 
 
 def pcbnew_script(module, *args, timeout, no_bytecode=True, **intent):
     return Intent("pcbnew_script", python_module_argv(module, *args, no_bytecode=no_bytecode),
                   timeout=timeout, **intent)
+
+
+def completed(execution, *, text=False):
+    """What subprocess.run(capture_output=True[, text=True]) returned for this host run, or raised:
+    FileNotFoundError when the tool could not start, TimeoutExpired past the timeout. text decodes
+    exactly as subprocess's text mode does (locale or UTF-8 mode encoding, strict, universal newlines)."""
+    argv = list(execution["argv"])
+    out, err = execution.stdout, execution.stderr
+    if execution["execution"] == "unavailable":
+        raise FileNotFoundError(out.decode(errors="replace"))
+    if execution["execution"] == "timeout":
+        # As subprocess.run on POSIX: the partial output stays bytes even in text mode.
+        raise subprocess.TimeoutExpired(argv, execution["timeout_s"], output=out, stderr=err)
+    if text:
+        encoding = "utf-8" if sys.flags.utf8_mode else locale.getencoding()
+        out, err = (data.decode(encoding).replace("\r\n", "\n").replace("\r", "\n") for data in (out, err))
+    return subprocess.CompletedProcess(argv, execution.returncode, out, err)
 
 
 # --- the one entry point ---------------------------------------------------------------------

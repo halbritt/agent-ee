@@ -17,7 +17,7 @@ import tempfile
 import traceback
 from pathlib import Path, PurePosixPath
 
-from .executor import execute
+from . import native_run
 from .footprint_library import FootprintError, index_footprints, load_document
 from .reference_blocks import _git, verify_external_source
 from .storage import json_bytes
@@ -87,7 +87,7 @@ def _committed_blob(repository, commit, path):
 
 
 def _run(inputs, work, argv, timeout):
-    record = execute(inputs, work, argv, timeout=timeout)
+    record = dict(native_run.run(native_run.Intent('probe', argv, timeout=timeout), inputs=inputs, work=work))
     if record['execution'] != 'ok':
         console = (Path(work) / 'console.log').read_text(errors='replace')[-2000:]
         raise CaptureError(f'{" ".join(argv)} {record["execution"]}: {console}')

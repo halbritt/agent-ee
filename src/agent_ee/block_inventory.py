@@ -146,7 +146,7 @@ def _hierarchy(blobs, root):
 
 def native_export(repo, commit, root, scratch):
     """Export the pinned schematics' native XML netlist inside the network-less sandbox."""
-    from .executor import execute
+    from . import native_run
     inputs, work = Path(scratch) / 'inputs', Path(scratch) / 'work'
     blobs = {}
     for path in _tree(repo, commit):
@@ -159,14 +159,14 @@ def native_export(repo, commit, root, scratch):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
     work.mkdir()
-    record = execute(inputs, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                                    '-o', '/work/native.xml', '/candidate/' + root], timeout=NATIVE_LIMIT_S)
+    record = dict(native_run.run(native_run.netlist('/candidate/' + root, '/work/native.xml', timeout=NATIVE_LIMIT_S),
+                                 inputs=inputs, work=work))
     if record['execution'] != 'ok' or not (work / 'native.xml').is_file():
         raise ValueError('native netlist export failed: ' + record['execution'] + ' '
                          + (work / 'console.log').read_text(errors='replace')[-2000:])
     probe = Path(scratch) / 'version'
     probe.mkdir()
-    if execute(inputs, probe, ['kicad-cli', 'version'], timeout=60)['execution'] != 'ok':
+    if dict(native_run.run(native_run.Intent('kicad-cli', ['kicad-cli', 'version'], timeout=60), inputs=inputs, work=probe))['execution'] != 'ok':
         raise ValueError('kicad-cli version probe failed')
     tool = (probe / 'stdout.log').read_text().strip()
     console = (work / 'console.log').read_text(errors='replace').strip()

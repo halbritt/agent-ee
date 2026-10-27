@@ -26,6 +26,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from . import native_run
 from .storage import digest, json_bytes, read_json, write_json
 
 ENVELOPE_SCHEMA = 'agent-ee.rung1-envelope/0-experimental'
@@ -379,7 +380,8 @@ def construct_isolated(spec, scratch, mode='--construct'):
         # The child imports this same package source, whatever the caller's path.
         env = {**os.environ, 'PYTHONPATH': os.pathsep.join(
             [str(Path(__file__).resolve().parents[1])] + [p for p in [os.environ.get('PYTHONPATH')] if p])}
-        completed = subprocess.run(argv, capture_output=True, text=True, timeout=300, env=env)
+        completed = native_run.completed(native_run.run(
+            native_run.Intent('pcbnew_script', argv, timeout=300, isolation='host', env=env), work=None), text=True)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ToolFailure(f'pcbnew construction could not run: {exc}') from exc
     (scratch / f'{mode[2:]}.stderr.txt').write_text(completed.stderr)
@@ -532,10 +534,11 @@ def parity_drc(board, scratch):
     shutil.copytree(board.parent, project)
     copy = project / board.name
     report_path = scratch / 'drc-parity.json'
-    argv = ['kicad-cli', 'pcb', 'drc', '--schematic-parity', '--format', 'json', '--severity-all',
-            '--units', 'mm', '--output', str(report_path), str(copy)]
+    intent = native_run.drc(copy, report_path, parity=True, parity_first=True, units='mm', output_flag='--output',
+                            timeout=300, isolation='host')
+    argv = list(intent.argv)
     try:
-        completed = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+        completed = native_run.completed(native_run.run(intent, work=None), text=True)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ToolFailure(f'native parity DRC could not run: {exc}') from exc
     (scratch / 'drc-parity.stdout.txt').write_text(completed.stdout)
@@ -589,7 +592,8 @@ def tool_identity():
     import _pcbnew
     import pcbnew
     cli = shutil.which('kicad-cli')
-    version = subprocess.run([cli, 'version'], capture_output=True, text=True, timeout=30) if cli else None
+    version = native_run.completed(native_run.run(native_run.Intent('kicad-cli', [cli, 'version'], timeout=30,
+                                                                    isolation='host'), work=None), text=True) if cli else None
     return {'pcbnew': {'version': pcbnew.Version(), 'build_version': pcbnew.GetBuildVersion(),
                        'binary': _pcbnew.__file__, 'sha256': digest(_pcbnew.__file__)},
             'kicad-cli': {'path': cli, 'sha256': digest(cli) if cli else None,

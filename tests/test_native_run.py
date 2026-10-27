@@ -170,8 +170,15 @@ class BuilderTest(unittest.TestCase):
         for label, (built, literal) in cases.items():
             with self.subTest(label):
                 self.assertEqual(built, literal)
+        # board_build's retained build records carry this historical spelling (parity before --format).
+        self.assertEqual(build('/s/copy.kicad_pcb', '/s/drc-parity.json', parity=True, parity_first=True, units='mm',
+                               output_flag='--output'),
+                         ['kicad-cli', 'pcb', 'drc', '--schematic-parity', '--format', 'json', '--severity-all',
+                          '--units', 'mm', '--output', '/s/drc-parity.json', '/s/copy.kicad_pcb'])
         with self.assertRaises(ValueError):
             build('b', 'r', output_flag='--out')
+        with self.assertRaises(ValueError):
+            build('b', 'r', parity_first=True)
 
     def test_netlist_and_module_sites(self):
         self.assertEqual(native_run.netlist_argv('/candidate/a.kicad_sch', '/work/design.xml'),
@@ -585,6 +592,28 @@ class HostTest(unittest.TestCase):
         self.assertEqual(record['console_sha256'], hashlib.sha256(b'o1|e1e1').hexdigest())
         with self.assertRaises(ValueError), io.BytesIO() as err:
             native_run.run(self.host('1'), work=self.root / 'w', stderr_sink=err)
+
+    def test_completed_matches_subprocess_run(self):
+        import subprocess
+        code = 'import sys; sys.stdout.write("a\\r\\nb\\rc"); sys.stderr.write("e"); sys.exit(2)'
+        argv = ['/usr/bin/python3', '-c', code]
+        expected = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        got = native_run.completed(native_run.run(Intent('probe', argv, isolation='host', timeout=30), work=None),
+                                   text=True)
+        self.assertEqual((got.args, got.returncode, got.stdout, got.stderr),
+                         (expected.args, expected.returncode, expected.stdout, expected.stderr))
+        raw = native_run.completed(native_run.run(Intent('probe', argv, isolation='host', timeout=30), work=None))
+        self.assertEqual(raw.stdout, b'a\r\nb\rc')
+        slow = ['/usr/bin/python3', '-c', 'import sys, time; sys.stdout.write("x"); sys.stdout.flush(); time.sleep(30)']
+        with self.assertRaises(subprocess.TimeoutExpired) as caught:
+            native_run.completed(native_run.run(Intent('probe', slow, isolation='host', timeout=1), work=None),
+                                 text=True)
+        self.assertEqual((caught.exception.stdout, caught.exception.timeout), (b'x', 1))
+        with self.assertRaises(FileNotFoundError) as missing:
+            native_run.completed(native_run.run(Intent('probe', ['/nonexistent/tool'], isolation='host'), work=None))
+        with self.assertRaises(FileNotFoundError) as real:
+            subprocess.run(['/nonexistent/tool'], capture_output=True)
+        self.assertEqual(str(missing.exception), str(real.exception))
 
     def test_host_refuses_mounts(self):
         with self.assertRaises(ValueError):

@@ -446,8 +446,8 @@ def _coverage(label, extraction, request, verified):
 
 
 def _run(inputs, work, argv, timeout=120):
-    from .executor import execute
-    record = execute(inputs, work, argv, timeout=timeout)
+    from . import native_run
+    record = dict(native_run.run(native_run.Intent('probe', argv, timeout=timeout), inputs=inputs, work=work))
     return record, Path(work)
 
 

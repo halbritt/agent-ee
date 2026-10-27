@@ -49,6 +49,7 @@ import subprocess
 import sys
 import tempfile
 
+from . import native_run
 from .catalog import strict_json
 from .storage import identity as value_digest
 from .placer import rotate
@@ -1133,7 +1134,8 @@ def _native_capture(board):
             env = {**os.environ, 'PYTHONPATH': os.pathsep.join(
                 [str(Path(__file__).resolve().parents[1])] + [p for p in [os.environ.get('PYTHONPATH')] if p])}
             try:
-                completed = subprocess.run(argv, capture_output=True, text=True, timeout=600, env=env, cwd=tmp)
+                completed = native_run.completed(native_run.run(native_run.Intent(
+                    'pcbnew_script', argv, timeout=600, isolation='host', env=env, cwd=tmp), work=None), text=True)
             except (OSError, subprocess.SubprocessError) as exc:
                 raise ValueError(f'native capture could not run: {exc}') from exc
             if completed.returncode != 0 or not out.is_file():
@@ -1690,7 +1692,7 @@ def qualify(board_path, groups, out):
     rule files are restored to the source bytes before DRC. Execution failure
     is refused, never a pass.
     """
-    from .executor import execute
+    from . import native_run
     from .placement_probe import routing_geometry
     board_path, out = Path(board_path), Path(out)
     if out.exists():
@@ -1710,9 +1712,9 @@ def qualify(board_path, groups, out):
         return directory
 
     def drc(directory, work):
-        record = execute(directory, work, ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-                                           '--refill-zones', '-o', '/work/report.json',
-                                           '/candidate/' + board_path.name], timeout=600)
+        record = dict(native_run.run(native_run.drc('/candidate/' + board_path.name, '/work/report.json', refill=True,
+                                                    timeout=600, executable='/usr/bin/kicad-cli'),
+                                     inputs=directory, work=work))
         if record['execution'] != 'ok' or not (work / 'report.json').is_file():
             raise ValueError(f'native DRC execution failed: {record["execution"]}')
         return strict_json((work / 'report.json').read_bytes())

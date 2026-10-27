@@ -8,8 +8,8 @@ import argparse
 from pathlib import Path
 import re
 import shutil
-import subprocess
 
+from . import native_run
 from .add_planes import SIBLINGS
 from .storage import write_json
 
@@ -34,9 +34,9 @@ def _copy(source, dest):
 
 def _refill(board, log):
     """The refill kicad-route grades with (cli.kicad_drc refill_and_save)."""
-    rec = subprocess.run(['/usr/bin/kicad-cli', 'pcb', 'drc', '--refill-zones', '--save-board', '--format', 'json',
-                          '-o', str(log.with_suffix('.json')), str(board)],
-                         capture_output=True, text=True, timeout=1200)
+    rec = native_run.completed(native_run.run(native_run.drc(
+        board, log.with_suffix('.json'), refill=True, save_board=True, severity_all=False, timeout=1200,
+        executable='/usr/bin/kicad-cli', isolation='host'), work=None), text=True)
     log.write_text(rec.stdout + rec.stderr)
     if rec.returncode != 0:
         raise ValueError(f'zone refill failed (exit {rec.returncode})')

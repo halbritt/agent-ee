@@ -4,11 +4,14 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+import dataclasses
 from unittest.mock import patch
 
 from agent_ee import add_planes as planes, benchmark, stage_receipts
 from agent_ee import routing_adapter
+from agent_ee import native_run
 from agent_ee.executor import execute
+from native_hooks import Hooked, after
 from agent_ee.storage import digest, read_json, write_json
 from tests.toolchain import require_toolchain, require_kicad_route
 
@@ -217,11 +220,11 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
         self.assertGreater(fills['never']['filled_area_mm2'], fills['always']['filled_area_mm2'])
 
     def test_drc_execution_failure_never_publishes_board(self):
-        original=planes.execute
-        def broken(inputs,work,argv,**kw):
-            if argv[0]=='/usr/bin/kicad-cli':argv=['/usr/bin/false']
-            return original(inputs,work,argv,**kw)
-        with patch.object(planes,'execute',side_effect=broken):
+        def broken(call, run):
+            if call.intent.argv[0]=='/usr/bin/kicad-cli':
+                return run(intent=dataclasses.replace(call.intent, argv=('/usr/bin/false',)))
+            return run()
+        with native_run.using(Hooked(broken)):
             report=self.run_plan()
         self.assertEqual(report['execution'],'failed')
         self.assertIn('DRC execution failed',str(report['findings']))
@@ -252,14 +255,13 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
                 planes._planned_zone_errors(malformed, planes.zone_ids(self.plan))
 
     def test_missing_native_error_metadata_never_publishes_board(self):
-        splice, execute_native = planes.splice_zones, planes.execute
+        splice = planes.splice_zones
         for missing in ('severity', 'uuid'):
             with self.subTest(missing=missing):
                 native_errors = []
-                def corrupt_report(inputs, work, argv, **kwargs):
-                    result = execute_native(inputs, work, argv, **kwargs)
-                    if argv[0] == '/usr/bin/kicad-cli':
-                        path = work/'report.json'; data = read_json(path)
+                def corrupt_report(call, result):
+                    if call.intent.argv[0] == '/usr/bin/kicad-cli':
+                        path = call.work/'report.json'; data = read_json(path)
                         for violation in data['violations']:
                             if violation['severity']=='error' and any(i['uuid'] in planes.zone_ids(self.plan) for i in violation['items']):
                                 native_errors.append(copy.deepcopy(violation))
@@ -269,9 +271,8 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
                                     for item in violation['items']:
                                         del item['uuid']
                         write_json(path, data)
-                    return result
                 with patch.object(planes, 'splice_zones', side_effect=lambda *args:self.bad_fill(splice(*args))), \
-                     patch.object(planes, 'execute', side_effect=corrupt_report):
+                     native_run.using(after(corrupt_report)):
                     report = self.run_plan('missing-'+missing)
                 self.assertTrue(native_errors, 'the probe must first produce actual native planned-zone errors')
                 self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)

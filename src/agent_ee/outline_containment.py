@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 import subprocess
 
+from . import native_run
 from .storage import canonical, read_json, write_json
 
 
@@ -53,8 +54,8 @@ def run(board, work):
     """Child invocation for producers already running in their isolated workspace."""
     path = Path(work) / 'copper-containment.json'
     try:
-        completed = subprocess.run(['/usr/bin/python3', '-B', '-m', 'agent_ee.outline_containment',
-            str(board), '-o', str(path)], capture_output=True, text=True, timeout=120)
+        completed = native_run.completed(native_run.run(native_run.pcbnew_script(
+            'agent_ee.outline_containment', board, '-o', path, timeout=120, isolation='host'), work=None), text=True)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ValueError('native copper containment could not run: ' + str(exc)) from exc
     (Path(work) / 'copper-containment.stdout.txt').write_text(completed.stdout)
@@ -66,9 +67,9 @@ def run(board, work):
 
 def sandboxed(inputs, board, work):
     """Read captured board bytes in the existing networkless executor."""
-    from .executor import execute
-    record = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.outline_containment',
-        '/candidate/' + str(board), '-o', '/work/copper-containment.json'], timeout=120)
+    from . import native_run
+    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.outline_containment',
+        '/candidate/' + str(board), '-o', '/work/copper-containment.json'], timeout=120), inputs=inputs, work=work))
     # Keep the complete receipt while leaving packet excerpt space for later checks.
     (Path(work) / 'execution.json').write_bytes(canonical(record) + b'\n')
     if record['execution'] != 'ok' or record['exit_code'] != 0:

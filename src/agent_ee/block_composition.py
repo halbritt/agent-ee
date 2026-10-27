@@ -112,14 +112,14 @@ def models(directory, plan, exporter):
 
 def native_models(root, block_dir, plan):
     """Read selected components through private networkless native exports."""
-    from .executor import execute
+    from . import native_run
     from .native_netlist import read_native_inventory
     with tempfile.TemporaryDirectory(prefix='agent-ee-block-composition-') as tmp:
         def export(index, sheet):
             work = Path(tmp) / str(index)
             work.mkdir()
-            record = execute(Path(root), work, ['kicad-cli', 'sch', 'export', 'netlist', '--format',
-                'kicadxml', '-o', '/work/design.xml', '/candidate/' + block_dir + '/' + sheet], timeout=120)
+            record = dict(native_run.run(native_run.netlist('/candidate/' + block_dir + '/' + sheet, '/work/design.xml',
+                                                            timeout=120), inputs=Path(root), work=work))
             if record['execution'] != 'ok' or record['exit_code'] != 0:
                 raise ValueError('composition source native export failed')
             return read_native_inventory(work / 'design.xml')

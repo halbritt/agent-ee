@@ -251,9 +251,8 @@ def plan_group(group, top, sub, sub_sha256):
 
 
 def _child(inputs, work, argv, timeout=300):
-    from .executor import execute
-    record = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.sublayout_probe', *argv],
-                     timeout=timeout)
+    from . import native_run
+    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.sublayout_probe', *argv], timeout=timeout), inputs=inputs, work=work))
     if record['execution'] != 'ok':
         console = (Path(work) / 'console.log').read_text(errors='replace')[-2000:]
         raise SublayoutError('native_child', f'pcbnew child {record["execution"]} '
@@ -297,7 +296,7 @@ def _mm(value):
 
 def native_drc(board, work, *, project_board=None):
     """Native DRC of a board copy inside the networkless sandbox; failure is missing coverage."""
-    from .executor import execute
+    from . import native_run
     project_board = Path(project_board if project_board is not None else board)
     work = Path(work)
     inputs = work / 'drc-input'
@@ -313,9 +312,8 @@ def native_drc(board, work, *, project_board=None):
     # Empty global tables: the saved board embeds every footprint it uses.
     (config / 'fp-lib-table').write_text('(fp_lib_table\n\t(version 7)\n)\n')
     (config / 'sym-lib-table').write_text('(sym_lib_table\n\t(version 7)\n)\n')
-    record = execute(inputs, work / 'drc', ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-                                            '--units', 'mm', '-o', '/work/drc.json', '/candidate/' + staged.name],
-                     timeout=DRC_TIMEOUT)
+    record = dict(native_run.run(native_run.drc('/candidate/' + staged.name, '/work/drc.json', units='mm',
+                                                timeout=DRC_TIMEOUT), inputs=inputs, work=work / 'drc'))
     path = work / 'drc' / 'drc.json'
     if record['execution'] != 'ok' or record['exit_code'] != 0 or not path.is_file():
         raise SublayoutError('drc_unavailable', f"native DRC {record['execution']} (exit {record['exit_code']})")

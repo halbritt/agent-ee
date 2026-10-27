@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 
 from . import stage_receipts
-from .executor import execute
+from . import native_run
 from .storage import digest, read_json, write_json
 
 SCHEMA = 'agent-ee.pour-budget/1'
@@ -33,8 +33,8 @@ def measure(candidate, board, out):
     out.mkdir(parents=True)
     before = digest(candidate/board)
     report = dict(schema=SCHEMA, execution='failed', board=board, board_sha256=before)
-    record = execute(candidate, out/'native', ['/usr/bin/python3', '-B', '-m', 'agent_ee.pour_budget_probe',
-                                               '/candidate/'+board, '/work/facts.json'], timeout=3600)
+    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.pour_budget_probe',
+                                               '/candidate/'+board, '/work/facts.json'], timeout=3600), inputs=candidate, work=out/'native'))
     if record['execution'] != 'ok' or record['exit_code'] != 0:
         report['reason'] = (f'native pour budget child {record["execution"]} exit {record["exit_code"]}: ' +
                             (out/'native/console.log').read_text(errors='replace')[-2000:])

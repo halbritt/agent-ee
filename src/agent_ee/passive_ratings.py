@@ -84,12 +84,12 @@ def load_sources(root, declaration):
 def verify_citations(root, facts, extractor):
     """Fact id -> (status, reason) and PDF dependencies from the pinned pdftotext in the existing sandbox."""
     from .datasheet_facts import EXTRACTOR, page_support, split_pages, value_in_quote, verify_extractor
-    from .executor import execute
+    from . import native_run
     from .parts_manifest import read_captured
     verify_extractor(extractor)
     results, pages, dependencies = {}, {}, {}
     with tempfile.TemporaryDirectory(prefix='agent-ee-ratings-') as scratch:
-        version = execute(root, Path(scratch) / 'version', [EXTRACTOR, '-v'], timeout=60)
+        version = dict(native_run.run(native_run.Intent('probe', [EXTRACTOR, '-v'], timeout=60), inputs=root, work=Path(scratch) / 'version'))
         lines = (Path(scratch) / 'version/console.log').read_text(errors='replace').splitlines()
         if version['execution'] != 'ok' or not lines or lines[0] != extractor['version']:
             raise ValueError('installed pdftotext version unavailable or differs from the declaration')
@@ -104,8 +104,8 @@ def verify_citations(root, facts, extractor):
                 continue
             if source['path'] not in pages:
                 work = Path(scratch) / f'pdf-{index}'
-                record = execute(root, work, [EXTRACTOR, '-layout', '/candidate/' + source['path'],
-                                              '/work/document.txt'], timeout=60)
+                record = dict(native_run.run(native_run.Intent('probe', [EXTRACTOR, '-layout', '/candidate/' + source['path'],
+                                              '/work/document.txt'], timeout=60), inputs=root, work=work))
                 # A failed extraction is never support: the fact stays unverified and refuses on use.
                 pages[source['path']] = (split_pages((work / 'document.txt').read_text(encoding='utf-8'))
                                          if record['execution'] == 'ok' and (work / 'document.txt').is_file()

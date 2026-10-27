@@ -407,7 +407,7 @@ def _native_custom_geometry(data, footprint):
     import tempfile
     from pathlib import Path
     from collections import Counter
-    from .executor import execute
+    from . import native_run
     from .symbol_library import children, field
     numbering_only = not any(p.get('geometry') == 'native_custom' for p in footprint['pads'])
 
@@ -426,8 +426,8 @@ def _native_custom_geometry(data, footprint):
             inputs = root / 'inputs'
             inputs.mkdir()
             (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
-            execution = execute(inputs, root / 'work', ['/usr/bin/python3', '-B', '-m',
-                'agent_ee.footprint_probe', footprint['name']], timeout=60)
+            execution = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m',
+                'agent_ee.footprint_probe', footprint['name']], timeout=60), inputs=inputs, work=root / 'work'))
             if execution['execution'] != 'ok':
                 console = (root / 'work' / 'console.log').read_text(errors='replace')[-2000:]
                 raise FootprintError('native custom-pad load failed: ' + console)

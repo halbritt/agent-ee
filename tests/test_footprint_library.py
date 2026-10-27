@@ -2,6 +2,7 @@
 import hashlib
 import unittest
 
+from agent_ee import native_run
 from agent_ee.footprint_library import index_footprints
 
 
@@ -619,25 +620,25 @@ class PadReachTests(unittest.TestCase):
             for at, size in [('1500 0', '1 1'), ('-1500 0 90', '1 1'),
                              ('0 0 45', '2200 2200'), ('800 800 33.3', '1 1'),
                              ('999.500001 0', '1 1'), ('0 0', '3000 1'), ('0 0 90', '2000.000001 2000')]:
-                with self.subTest(shape=shape, extra=extra, at=at, size=size), patch('agent_ee.executor.execute') as execute:
+                with self.subTest(shape=shape, extra=extra, at=at, size=size), native_run.using(native_run.Recorded()) as execute:
                     result, _ = self.indexed(shape, at, size, extra)
                     self.assertEqual((result['execution'], result['outcome'], result['coverage']),
                                      ('failed', 'unknown', 'missing'))
                     self.assertEqual(result['footprints'], [])
                     self.assertEqual(result['findings'][0]['code'], 'library_coverage')
                     self.assertIn('reach exceeds 1000 mm', result['findings'][0]['message'])
-                    execute.assert_not_called()
+                    self.assertEqual(execute.calls, [])
 
         # A preceding qualified custom pad must not trigger native loading
         # before the later ordinary pad has passed the same reach guard.
         from tests.test_custom_pad_index import custom
         text = custom().replace('(at 4 0)', '(at 1500 0)')
-        with patch('agent_ee.executor.execute') as execute:
+        with native_run.using(native_run.Recorded()) as execute:
             result = index_footprints(*capture(text, 'OwnedCustom'))
             self.assertEqual((result['execution'], result['outcome'], result['coverage']),
                              ('failed', 'unknown', 'missing'))
             self.assertIn('pad copper reach exceeds 1000 mm', result['findings'][0]['message'])
-            execute.assert_not_called()
+            self.assertEqual(execute.calls, [])
 
     def test_anchor_drill_and_trapezoid_extents_are_bounded(self):
         for shape, at, size, extra, kind in [

@@ -26,7 +26,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .design_diff import Malformed, compare
-from .executor import execute
+from . import native_run
 from .schematic_decompile import _pin_position
 from .schematic_emit import Quoted, _mm, format_sexpr, parse_quoted
 from .storage import digest, identity, read_json, write_json
@@ -309,8 +309,8 @@ def inverse_maps(kind, change):
 def export_netlist(project, root, work):
     """Sandboxed native export; returns (bytes or None, execution record)."""
     work.mkdir(parents=True)
-    record = execute(project, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                                     '-o', '/work/netlist.xml', '/candidate/' + root], timeout=EXPORT_TIMEOUT_S)
+    record = dict(native_run.run(native_run.netlist('/candidate/' + root, '/work/netlist.xml', timeout=EXPORT_TIMEOUT_S),
+                                 inputs=project, work=work))
     output = work / 'netlist.xml'
     ok = (record['execution'] == 'ok' and record['exit_code'] == 0 and not record.get('displaced_records')
           and output.is_file() and output.stat().st_size > 0)
@@ -383,7 +383,7 @@ def prepare(project, root, seed, out):
     if original is None:
         raise CalibrationError('original netlist export failed: ' + record['execution'])
     version = out / 'proof' / 'kicad-cli-version'
-    tool = execute(out / 'design' / 'original', version, ['kicad-cli', 'version'], timeout=60)
+    tool = dict(native_run.run(native_run.Intent('kicad-cli', ['kicad-cli', 'version'], timeout=60), inputs=out / 'design' / 'original', work=version))
     variants = []
     for kind in (*EQUIVALENT_KINDS, *DIFFERENT_KINDS):
         rng = random.Random(f'{seed}:{kind}')

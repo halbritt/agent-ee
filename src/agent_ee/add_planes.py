@@ -9,7 +9,7 @@ import uuid
 
 from . import benchmark, stage_receipts
 from .catalog import strict_json
-from .executor import execute
+from . import native_run
 from .tool_source import snapshot
 from .design_rule_provenance import advisory_numeric, classify_finding, finding_sources, require_evaluated_limits
 from .storage import digest, identity, read_json, write_json
@@ -135,7 +135,7 @@ def splice_zones(original, generated, planned):
 
 
 def _child(inputs, work, argv, timeout=180):
-    record = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.add_planes_probe', *argv], timeout=timeout)
+    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.add_planes_probe', *argv], timeout=timeout), inputs=inputs, work=work))
     if record['execution'] != 'ok' or record['exit_code'] != 0:
         raise ValueError(f'native plane child {record["execution"]} exit {record["exit_code"]}: ' +
                          (work/'console.log').read_text(errors='replace')[-2000:])
@@ -279,8 +279,8 @@ def generate(candidate, board, plan_path, out, *, phase=None):
         verified = _verify_inputs(candidate, board, plan_path, proposed, out)
         _child(verified, out/'verify', ['inspect', '/candidate/'+board, '/candidate/'+plan_path, '/work/facts.json'])
         facts = read_json(out/'verify/facts.json')
-        drc = execute(verified, out/'drc', ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format', 'json',
-                      '--severity-all', '-o', '/work/report.json', '/candidate/'+board], timeout=180)
+        drc = dict(native_run.run(native_run.drc('/candidate/'+board, '/work/report.json', timeout=180,
+                                                 executable='/usr/bin/kicad-cli'), inputs=verified, work=out/'drc'))
         if drc['execution'] != 'ok' or drc['exit_code'] != 0:
             raise ValueError('native plane DRC execution failed')
         checks = read_json(out/'drc/report.json')

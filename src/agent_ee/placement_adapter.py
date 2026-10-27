@@ -19,12 +19,12 @@ import copy
 import hashlib
 import json
 import re
-import subprocess
 import tempfile
 import uuid
 from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 
+from . import native_run
 from .storage import digest, identity, read_json, write_json
 from .symbol_library import LibraryError, children, parse_sexpr
 from .placer import rotate
@@ -510,7 +510,7 @@ def refuse_policy_sources(policy):
 
 def _mechanical_capture(inputs, files, board):
     """Probe sealed bytes with the existing bounded, networkless native executor."""
-    from .executor import execute
+    from . import native_run
     from .routing_rules import captured_file
 
     related = [board] + [str(PurePosixPath(board).with_suffix(suffix))
@@ -527,8 +527,8 @@ def _mechanical_capture(inputs, files, board):
             target = source / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(raw)
-        record = execute(source, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe',
-                                       '/candidate/' + board, '--out', '/work/mechanical-probe.json'], timeout=60)
+        record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe',
+                                       '/candidate/' + board, '--out', '/work/mechanical-probe.json'], timeout=60), inputs=source, work=work))
         if record['execution'] != 'ok':
             console = work / 'console.log'
             detail = console.read_text(errors='replace')[-2000:] if console.is_file() else record['execution']
@@ -1280,7 +1280,7 @@ def native_custom_flip_probe():
 
 def _native_custom_flips(before, after, selected):
     """Use the existing networkless executor; missing native evidence refuses admission."""
-    from .executor import execute
+    from . import native_run
     with tempfile.TemporaryDirectory(prefix='agent-ee-custom-flip-') as tmp:
         root = Path(tmp)
         inputs = root / 'inputs'
@@ -1289,9 +1289,8 @@ def _native_custom_flips(before, after, selected):
         (inputs / 'after.kicad_pcb').write_bytes(after)
         write_json(inputs / 'selected.json', selected)
         work = root / 'work'
-        record = execute(inputs, work, ['/usr/bin/python3', '-B', '-c',
-            'from agent_ee.placement_adapter import native_custom_flip_probe; native_custom_flip_probe()'],
-            timeout=60)
+        record = dict(native_run.run(native_run.Intent('probe', ['/usr/bin/python3', '-B', '-c',
+            'from agent_ee.placement_adapter import native_custom_flip_probe; native_custom_flip_probe()'], timeout=60), inputs=inputs, work=work))
         if record['execution'] != 'ok':
             lines = (work / 'console.log').read_text(errors='replace').splitlines()
             # SWIG shutdown warnings can bury the actual native refusal.
@@ -2002,11 +2001,12 @@ def sandbox_main(argv=None):
     root = Path(args.root)
     root.mkdir()
     netlist = root / 'netlist.xml'
-    command = ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', str(netlist), args.schematic]
+    export = native_run.netlist(args.schematic, netlist, timeout=120, isolation='host')
+    command = list(export.argv)
     record = {'schema': DRIVER_SCHEMA, 'netlist_export': {'argv': command, 'exit_code': None},
               'status': 'running', 'error': None}
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        completed = native_run.completed(native_run.run(export, work=None), text=True)
         (root / 'netlist-export.stdout.txt').write_text(completed.stdout)
         (root / 'netlist-export.stderr.txt').write_text(completed.stderr)
         record['netlist_export']['exit_code'] = completed.returncode
