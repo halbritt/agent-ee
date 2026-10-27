@@ -1340,19 +1340,16 @@ def _prerequisite(ctx, nid):
 
 def _step(ctx, name, argv):
     """Run one native step with its own /work so each record is retained."""
-    from .executor import execute
+    from . import native_run
     directory = ctx.work / 'steps' / name
     if (directory / 'out').exists() or (directory / 'out').is_symlink():
         raise _error('malformed', f'kicad-cli {name} output directory already exists; refusing stale outputs')
     config = ctx.work / 'kicad-config'
     if config.is_dir():
         shutil.copytree(config, directory / 'kicad-config', dirs_exist_ok=True)
-    remaining = ctx.remaining()
-    if remaining <= 1:
-        raise _error('interrupted', f'deadline exhausted before kicad-cli {name}')
-    clamped = min(STEP_CEILING, remaining)
+    intent = native_run.Intent('kicad-cli', argv, timeout=STEP_CEILING)
     try:
-        record = execute(ctx.inputs, directory, argv, timeout=clamped)
+        record = ctx.run_native(intent, work=directory, exhausted=f'deadline exhausted before kicad-cli {name}')
     finally:
         for rel in ('execution.json', 'console.log', 'stdout.log', 'stderr.log'):
             ctx.evidence(f'steps/{name}/{rel}')
@@ -1363,8 +1360,8 @@ def _step(ctx, name, argv):
     ctx.result['details'].setdefault('tools', {})[name] = {
         'argv': record['argv'], 'exit_code': record['exit_code'],
         'duration_s': record['duration_s'], 'console_sha256': record['console_sha256']}
-    if record['execution'] == 'timeout' and clamped < STEP_CEILING:
-        raise _error('interrupted', f'run deadline cut kicad-cli {name} off after {clamped:.0f}s')
+    if native_run.cut_by_deadline(record, intent):
+        raise _error('interrupted', f'run deadline cut kicad-cli {name} off after {record["timeout_s"]:.0f}s')
     if record['execution'] != 'ok':
         raise _error(record['execution'], f'kicad-cli {name} {record["execution"]} '
                                           f'(exit {record["exit_code"]}); no package was marked complete')

@@ -109,7 +109,7 @@ def check_measurements(ctx):
 
 def execute_measurement_tool(ctx, request):
     from .checks import CheckError
-    from .executor import execute
+    from . import native_run
 
     tool = ctx.params["tool"]
     argv = tool["argv"]
@@ -125,13 +125,10 @@ def execute_measurement_tool(ctx, request):
     work = ctx.work / "tool"
     work.mkdir()
     write_json(work / "request.json", request)
-    mounts = [(ctx.run_dir / "baseline.json", "/evidence/baseline.json")] if request["baseline"] else []
-    mounts.append((work / "request.json", "/work/request.json"))
-    remaining = ctx.remaining()
-    if remaining <= 0:
-        raise CheckError("interrupted", "deadline exhausted before measurement tool")
-    execution = execute(ctx.inputs, work, argv, timeout=min(remaining, ctx.params.get("timeout_s", 600)),
-                        extra_ro=mounts)
+    # The run's baseline is mounted by native_run (Ctx.run_native) whenever it exists.
+    mounts = [(work / "request.json", "/work/request.json")]
+    execution = ctx.run_native(native_run.Intent("measurement", argv, timeout=ctx.params.get("timeout_s", 600)),
+                               work=work, mounts=mounts, exhausted="deadline exhausted before measurement tool")
     hashes = {}
     for path in sorted(work.rglob("*")):
         if path.is_symlink():

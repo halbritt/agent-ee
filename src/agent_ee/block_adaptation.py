@@ -332,20 +332,18 @@ def semantic_diff(source, actual, occurrence, bindings, block):
 
 
 def _export(ctx, label, schematic, extra_ro=()):
+    from . import native_run
     from .checks import CheckError
-    from .executor import execute
     from .native_netlist import read_native_inventory
     work = ctx.work / label
     if work.exists():
         raise CheckError('malformed', 'native export workspace already exists: ' + label)
     work.mkdir()
-    remaining = ctx.remaining()
-    if remaining <= 1:
-        raise CheckError('interrupted', 'deadline exhausted before ' + label + ' export')
-    record = execute(ctx.inputs, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format',
-        'kicadxml', '-o', '/work/design.xml', schematic], timeout=min(120, remaining), extra_ro=extra_ro)
+    intent = native_run.netlist(schematic, '/work/design.xml', timeout=120)
+    record = ctx.run_native(intent, work=work, mounts=extra_ro,
+                            exhausted='deadline exhausted before ' + label + ' export')
     ctx.evidence(*(label + '/' + name for name in ('execution.json', 'console.log', 'design.xml')))
-    if record['execution'] == 'timeout' and remaining < 120:
+    if native_run.cut_by_deadline(record, intent):
         raise CheckError('interrupted', 'deadline cut off ' + label + ' export')
     if record['execution'] != 'ok' or record['exit_code'] != 0:
         raise CheckError(record['execution'] if record['execution'] != 'ok' else 'failed', label + ' native export failed')

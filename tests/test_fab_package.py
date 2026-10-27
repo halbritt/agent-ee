@@ -18,6 +18,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from native_hooks import after
+from agent_ee import native_run
 from agent_ee import cli, executor, fab_export, fab_package
 from agent_ee import rung1_campaign as rc
 from agent_ee.baseline import compile_baseline, freeze_evidence, load_baseline, verify_evidence
@@ -494,14 +496,10 @@ class NativeFabPackageTests(NativeRun):
         self.assertNotIn('artifacts', result['details'])
 
     def test_empty_native_output_is_failed(self):
-        native_execute = executor.execute
-
-        def empty_output(inputs, work, argv, **kwargs):
-            record = native_execute(inputs, work, argv, **kwargs)
-            if argv[:4] == ['kicad-cli', 'pcb', 'export', 'drill']:
-                next((Path(work) / 'out').glob('*-NPTH.drl')).write_bytes(b'')
-            return record
-        with mock.patch.object(executor, 'execute', side_effect=empty_output):
+        def empty_output(call, record):
+            if list(call.intent.argv[:4]) == ['kicad-cli', 'pcb', 'export', 'drill']:
+                next((call.work / 'out').glob('*-NPTH.drl')).write_bytes(b'')
+        with native_run.using(after(empty_output)):
             result = self.run_case()
         self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'), result)
         self.assertFalse((self.run_dir / 'work/fab/fab/manifest.json').exists())

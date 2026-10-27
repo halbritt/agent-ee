@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from native_hooks import after
+from agent_ee import native_run
 from agent_ee import executor
 from agent_ee.baseline import compile_baseline, freeze_evidence, verify_evidence
 from agent_ee.candidate import capture
@@ -1419,13 +1421,7 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertIn('work/fab/fab.incomplete/bom.csv', result['evidence'])
 
     def damaged(self, mutate):
-        real = executor.execute
-
-        def wrapper(inputs, work, argv, **kwargs):
-            record = real(inputs, work, argv, **kwargs)
-            mutate(Path(work), argv)
-            return record
-        with mock.patch.object(executor, 'execute', wrapper):
+        with native_run.using(after(lambda call, record: mutate(call.work, list(call.intent.argv)))):
             return self.run_case()
 
     def test_empty_missing_or_unparseable_native_output_is_never_pass(self):

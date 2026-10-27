@@ -337,8 +337,10 @@ class NativeAdaptationTests(unittest.TestCase):
         verify_evidence(run, list(checks.values()), required=True)
 
     def test_source_export_crash_missing_and_malformed_output_are_unknown(self):
-        from agent_ee.executor import execute
-        # Inject only the executable command. Production execute still launches
+        import dataclasses
+        from agent_ee import native_run
+        from native_hooks import Hooked
+        # Inject only the executable command. The production sandbox adapter still launches
         # and records the failing process inside its networkless sandbox.
         commands = {
             'crash': ['/bin/false'],
@@ -346,9 +348,9 @@ class NativeAdaptationTests(unittest.TestCase):
             'malformed': ['/usr/bin/python3', '-c', "open('/work/design.xml','w').write('<bad>')"],
         }
         for label, argv in commands.items():
-            def fault(inputs, work, command, **kwargs):
-                return execute(inputs, work, argv, **kwargs)
-            with self.subTest(case=label), patch('agent_ee.executor.execute', side_effect=fault):
+            def fault(call, run, argv=argv):
+                return run(intent=dataclasses.replace(call.intent, argv=tuple(argv)))
+            with self.subTest(case=label), native_run.using(Hooked(fault)):
                 # Exercise the provenance export itself, independently of the
                 # earlier native board producer.
                 write_json(self.root / 'scope.json', self.scope)

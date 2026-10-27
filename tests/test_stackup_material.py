@@ -15,6 +15,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+import native_hooks
+from agent_ee import native_run
 from agent_ee.board_envelope import board_facts, round_trip, source_inventory, validate
 from agent_ee.envelope_check import compare_saved, saved_structure
 from agent_ee.scaffold import board
@@ -263,9 +265,7 @@ class StackupMaterialTest(unittest.TestCase):
 
     def test_public_native_discrepancy_overrides_saved_defect(self):
         """AGENTEE-495: declared probe fault injection, not an observed bad board."""
-        from agent_ee import executor
         require_toolchain(native=True)
-        execute = executor.execute
         for known_loss in (True, False):
             declared = copy.deepcopy(self.envelope)
             if known_loss:
@@ -283,13 +283,12 @@ class StackupMaterialTest(unittest.TestCase):
                     ('thickness_nm', 'native thickness differs from saved board thickness'),
                     ('has_stackup', 'native load did not retain an explicit stackup')):
                 with self.subTest(known_loss=known_loss, injected_probe_field=fault):
-                    def injected_execute(inputs, work, argv, **kwargs):
-                        result = execute(inputs, work, argv, **kwargs)
-                        probe_path = Path(work) / 'envelope-probe.json'
+                    def injected_execute(call, result, fault=fault):
+                        probe_path = call.work / 'envelope-probe.json'
                         if fault is not None and result['execution'] == 'ok':
                             probe = json.loads(probe_path.read_text())
                             # Preserve the real observation separately from the injected control.
-                            (Path(work) / 'envelope-probe-before-injection.json').write_bytes(
+                            (call.work / 'envelope-probe-before-injection.json').write_bytes(
                                 probe_path.read_bytes())
                             if fault == 'thickness_nm':
                                 probe[fault] += 1
@@ -297,9 +296,8 @@ class StackupMaterialTest(unittest.TestCase):
                                 self.assertIs(probe[fault], True)
                                 probe[fault] = False
                             probe_path.write_bytes(encoded(probe))
-                        return result
 
-                    with patch.object(executor, 'execute', injected_execute):
+                    with native_run.using(native_hooks.after(injected_execute)):
                         result, judgment = self.public_check(
                             payload, f'native-{known_loss}-{fault}')
                     expected = 'unknown' if fault else 'defect'

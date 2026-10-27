@@ -4,6 +4,9 @@ from unittest.mock import patch
 import unittest
 from pathlib import Path
 
+import dataclasses
+from native_hooks import Hooked
+from agent_ee import native_run
 from agent_ee.block_first import verify_block, integrate
 from agent_ee.storage import read_json, write_json
 from block_first_fixture import fixture
@@ -86,11 +89,12 @@ class BlockFirstTests(unittest.TestCase):
         self.assertFalse((self.root/'integration/checks').exists())
 
     def test_failed_native_worker_is_missing_coverage(self):
-        from agent_ee.executor import execute
-        def fail_erc(inputs, work, argv, **kwargs):
-            return execute(inputs, work, ['/bin/false'] if argv[1:3] == ['sch', 'erc'] else argv, **kwargs)
+        def fail_erc(call, run):
+            if list(call.intent.argv[1:3]) == ['sch', 'erc']:
+                return run(intent=dataclasses.replace(call.intent, argv=('/bin/false',)))
+            return run()
         first = next(iter(self.scopes))
-        with patch('agent_ee.executor.execute', side_effect=fail_erc):
+        with native_run.using(Hooked(fail_erc)):
             report = verify_block(self.scopes[first], self.runs[first])
         self.assertEqual(report['status'], 'missing_coverage', self.diagnostic(report))
         erc = report['checks'][0]
@@ -280,11 +284,12 @@ class BlockFirstTests(unittest.TestCase):
         self.assertFalse((self.root/'integration/checks').exists())
 
     def test_missing_native_output_has_no_success_fallback(self):
-        from agent_ee.executor import execute
-        def empty_erc(inputs, work, argv, **kwargs):
-            return execute(inputs, work, ['/bin/true'] if argv[1:3] == ['sch', 'erc'] else argv, **kwargs)
+        def empty_erc(call, run):
+            if list(call.intent.argv[1:3]) == ['sch', 'erc']:
+                return run(intent=dataclasses.replace(call.intent, argv=('/bin/true',)))
+            return run()
         first = next(iter(self.scopes))
-        with patch('agent_ee.executor.execute', side_effect=empty_erc):
+        with native_run.using(Hooked(empty_erc)):
             report = verify_block(self.scopes[first], self.runs[first])
         self.assertEqual(report['status'], 'missing_coverage', self.diagnostic(report))
         erc = report['checks'][0]

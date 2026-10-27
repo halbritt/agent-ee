@@ -526,7 +526,7 @@ def _argv(board):
 
 def _recompute(ctx):
     """Native DRC on the captured board bytes, run in the tool sandbox; the witness binds it."""
-    from . import executor
+    from . import native_run
     from .checks import CheckError
     board = _board(ctx.manifest)
     path = ctx.inputs / board
@@ -535,10 +535,9 @@ def _recompute(ctx):
     rules = path.with_suffix('.kicad_dru')
     if rules.is_file() and re.search(rb'\(\s*severity\s+"?ignore\b', rules.read_bytes(), re.I):
         raise ValueError('a custom DRC rule ignores findings; placement lineage cannot be verified natively')
-    if ctx.remaining() <= 1:
-        raise CheckError('interrupted', 'deadline exhausted before placement lineage verification could run')
     work = ctx.work / VERIFICATION
-    rec = executor.execute(ctx.inputs, work, _argv(board), timeout=min(900, ctx.remaining()))
+    rec = ctx.run_native(native_run.Intent('drc', _argv(board), timeout=900), work=work,
+                         exhausted='deadline exhausted before placement lineage verification could run')
     ctx.evidence(*(f'{VERIFICATION}/{name}' for name in ('execution.json', 'console.log', 'native-drc.json')))
     if rec['execution'] != 'ok' or rec['exit_code'] != 0:
         raise CheckError('interrupted' if rec['execution'] == 'timeout' else 'malformed',

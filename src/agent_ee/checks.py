@@ -70,7 +70,7 @@ import xml.etree.ElementTree as ET
 from array import array
 from pathlib import Path, PurePosixPath
 
-from . import executor
+from . import native_run
 from .storage import read_json, write_json
 
 SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
@@ -157,21 +157,26 @@ class Ctx:
             if (self.run_dir / rel).is_file() and rel not in self.result["evidence"]:
                 self.result["evidence"].append(rel)
 
+    def run_native(self, intent, *, work=None, mounts=(), exhausted="deadline exhausted before the tool could run"):
+        """One native run for this check: the check deadline clamps it and the run's baseline is
+        mounted, both by native_run. A spent deadline is an interrupted check (exhausted names it)."""
+        try:
+            return dict(native_run.run(intent, inputs=self.inputs, work=self.work if work is None else work,
+                                       deadline=self.deadline, baseline=self.run_dir / "baseline.json",
+                                       mounts=mounts))
+        except native_run.DeadlineExhausted:
+            raise CheckError("interrupted", exhausted) from None
+
     def execute(self, argv, timeout, *, extra_ro=()):
-        remaining = self.remaining()
-        if remaining <= 1:
-            raise CheckError("interrupted", "deadline exhausted before the tool could run")
-        clamped = min(timeout, remaining)
-        baseline = self.run_dir / "baseline.json"
-        mounts = [(baseline, "/evidence/baseline.json")] if baseline.is_file() else []
-        rec = executor.execute(self.inputs, self.work, argv, timeout=clamped, extra_ro=[*mounts, *extra_ro])
+        intent = native_run.Intent("check", argv, timeout=timeout)
+        rec = self.run_native(intent, mounts=extra_ro)
         self.evidence("execution.json", "console.log")
         self.result["details"]["tool"] = {
             "argv": rec["argv"], "exit_code": rec["exit_code"],
             "duration_s": rec["duration_s"], "console_sha256": rec["console_sha256"],
         }
-        if rec["execution"] == "timeout" and clamped < timeout:
-            raise CheckError("interrupted", f"run deadline cut the tool off after {clamped:.0f}s")
+        if native_run.cut_by_deadline(rec, intent):
+            raise CheckError("interrupted", f"run deadline cut the tool off after {rec['timeout_s']:.0f}s")
         if rec["execution"] != "ok":
             raise CheckError(rec["execution"],
                              f"{argv[0]} {rec['execution']} (exit {rec['exit_code']})")
@@ -281,10 +286,9 @@ def sealed_kicad_cli(ctx):
     from .kicad_quirks import erc_coordinate_regime
     pinned = pinned_kicad_cli()
     tool = {"path": pinned[0] if pinned else None, "sha256": pinned[1] if pinned else None, "version": None}
-    if ctx.remaining() <= 1:
-        raise CheckError("interrupted", "deadline exhausted before kicad-cli version could run")
-    rec = executor.execute(ctx.inputs, ctx.work / "kicad-version", ["kicad-cli", "version"],
-                           timeout=min(60, ctx.remaining()))
+    rec = ctx.run_native(native_run.Intent("kicad-cli", ["kicad-cli", "version"], timeout=60),
+                         work=ctx.work / "kicad-version",
+                         exhausted="deadline exhausted before kicad-cli version could run")
     ctx.evidence(*(f"kicad-version/{name}" for name in
                    ("execution.json", "console.log", "stdout.log", "stderr.log")))
     stdout = ctx.work / "kicad-version" / "stdout.log"

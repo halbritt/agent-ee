@@ -381,13 +381,11 @@ def verify_extractor(tool):
 
 
 def extract(ctx, name, argv):
+    from . import native_run
     from .checks import CheckError
-    from .executor import execute
     work = ctx.work / name
-    remaining = ctx.remaining()
-    if remaining <= 1:
-        raise CheckError('interrupted', 'deadline exhausted before PDF extraction')
-    record = execute(ctx.inputs, work, argv, timeout=min(60, remaining))
+    record = ctx.run_native(native_run.Intent('pdftotext', argv, timeout=60), work=work,
+                            exhausted='deadline exhausted before PDF extraction')
     ctx.evidence(*(f'{name}/{p}' for p in ('execution.json', 'console.log', 'stdout.log', 'stderr.log')))
     if record['execution'] != 'ok':
         raise CheckError(record['execution'], f'pdftotext {name} {record["execution"]}')

@@ -643,20 +643,19 @@ def extract_metrics(path, analysis, nodes, condition):
 
 
 def run_analysis(ctx, directory, argv, mounts=()):
+    from . import native_run
     from .checks import CheckError
-    from .executor import execute
-    remaining = ctx.remaining()
-    if remaining <= 1:
-        raise CheckError('interrupted', 'deadline exhausted before active SPICE analysis')
+    intent = native_run.Intent('ngspice', argv, timeout=600)
     try:
-        record = execute(ctx.inputs, directory, argv, timeout=min(600, remaining), extra_ro=mounts)
+        record = ctx.run_native(intent, work=directory, mounts=mounts,
+                                exhausted='deadline exhausted before active SPICE analysis')
     finally:
         for path in sorted(directory.rglob('*')):
             if path.is_file():
                 ctx.evidence(path.relative_to(ctx.work).as_posix())
     if record['execution'] != 'ok':
         status = record['execution']
-        if status == 'timeout' and remaining < 600:
+        if native_run.cut_by_deadline(record, intent):
             status = 'interrupted'
         raise CheckError(status, 'ngspice execution did not complete; retained execution/logs')
     return record

@@ -178,7 +178,7 @@ def subject_witness(manifest, baseline, stage, observed):
 def before_check(ctx, prior):
     """Return whether the handler may run, retaining actual probe and gate artifacts."""
     from .checks import CheckError
-    from . import executor
+    from . import native_run
     from .storage import read_json, write_json
     config = declaration(ctx.scope, ctx.manifest['files'])
     if config is None:
@@ -196,9 +196,9 @@ def before_check(ctx, prior):
         return True
     work = ctx.work / 'stage-subject'
     work.mkdir()
-    rec = executor.execute(ctx.inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.stages',
-        ctx.candidate_path(subject['path']), subject['kind'], '/work/references.json'],
-        timeout=min(60, ctx.remaining()))
+    rec = ctx.run_native(native_run.pcbnew_script('agent_ee.stages', ctx.candidate_path(subject['path']),
+                                                  subject['kind'], '/work/references.json', timeout=60),
+                         work=work, exhausted='deadline exhausted before the stage subject probe could run')
     ctx.evidence('stage-subject/execution.json', 'stage-subject/console.log',
                  'stage-subject/native-netlist.xml', 'stage-subject/native-observation.json')
     if rec['execution'] != 'ok':
@@ -363,13 +363,20 @@ def finding_keys(checks):
 def native_probe(path, kind):
     """Require the pinned native reader to agree before attesting absence."""
     import subprocess
+    import sys
     import xml.etree.ElementTree as ET
+    from . import native_run
     from .storage import write_json
     observed = native_references(path, kind)
     if kind == 'symbols':
-        argv = ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                '-o', '/work/native-netlist.xml', path]
-        subprocess.run(argv, check=True)
+        intent = native_run.netlist(path, '/work/native-netlist.xml', timeout=None, isolation='host')
+        argv = list(intent.argv)
+        # This probe already runs inside the check sandbox; its output streams into that run's console.
+        done = native_run.completed(native_run.run(intent, work=None, sink=sys.stdout.buffer,
+                                                   stderr_sink=sys.stderr.buffer))
+        if done.returncode:
+            # As subprocess.run(argv, check=True) with inherited streams: no captured output on the error.
+            raise subprocess.CalledProcessError(done.returncode, argv)
         root = ET.parse('/work/native-netlist.xml').getroot()
         if root.tag != 'export' or root.find('components') is None or root.find('design') is None:
             raise ValueError('native stage netlist is incomplete')

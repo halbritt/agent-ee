@@ -24,14 +24,10 @@ class ToolFailureTests(unittest.TestCase):
             run.mkdir()
             capture(root / "scope.json", run)
 
-            def fake_native(inputs, work, argv, **kwargs):
-                work.mkdir(parents=True, exist_ok=True)  # as executor.execute does
-                (work / "erc.json").write_text('{"sheets": "not a list"}')
-                (work / "console.log").write_text("tool exited successfully\n")
-                return {"execution": "ok", "argv": argv, "exit_code": 0, "duration_s": 0,
-                        "console_sha256": "unused in parser test"}
+            fake_native = native_run.Recorded(lambda call: native_run.Outcome(
+                stdout=b"tool exited successfully\n", files={"erc.json": b'{"sheets": "not a list"}'}))
 
-            with patch("agent_ee.checks.executor.execute", side_effect=fake_native):
+            with native_run.using(fake_native):
                 results = run_checks(run, time.monotonic() + 30)
             self.assertEqual(results[0]["execution"], "malformed")
             self.assertEqual(results[0]["outcome"], "unknown")

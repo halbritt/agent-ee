@@ -501,9 +501,9 @@ class StageExecutionTests(unittest.TestCase):
     @toolchain_test
     def test_missing_probe_output_is_unknown(self):
         from unittest.mock import patch
-        def no_output(inputs, work, argv, **kwargs):
-            return {'execution': 'ok'}
-        with patch('agent_ee.executor.execute', side_effect=no_output):
+        from agent_ee import native_run
+        no_output = native_run.Recorded()   # the probe "succeeds" and writes nothing
+        with native_run.using(no_output):
             results = self.checks()
         self.assertEqual(results[0]['execution'], 'malformed')
         self.assertEqual(results[0]['outcome'], 'unknown')
@@ -806,3 +806,25 @@ class NativeFailureBoundaryTests(unittest.TestCase):
         self.assertEqual(checks[0]['outcome'], 'unknown')
         self.assertNotIn('reason', checks[0]['details'])
         self.assertEqual(checks[1]['execution'], 'not_run')
+
+
+class NativeProbeErrorTests(unittest.TestCase):
+    def test_failed_netlist_export_raises_as_check_true_with_inherited_streams(self):
+        # Review a#1 (3b1fe927): subprocess.run(argv, check=True) left output/stderr None on the error.
+        import os
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from agent_ee import stages
+        with tempfile.TemporaryDirectory() as tmp:
+            cli = Path(tmp) / 'kicad-cli'
+            cli.write_text('#!/bin/sh\necho out; echo err >&2; exit 3\n')
+            cli.chmod(0o755)
+            with patch.dict(os.environ, {'PATH': tmp + os.pathsep + os.environ['PATH']}), \
+                    patch.object(stages, 'native_references', return_value=[]), \
+                    self.assertRaises(subprocess.CalledProcessError) as caught:
+                stages.native_probe(str(Path(tmp) / 'design.kicad_sch'), 'symbols')
+        error = caught.exception
+        self.assertEqual((error.returncode, error.output, error.stderr), (3, None, None))
+        self.assertEqual(error.cmd[:4], ['kicad-cli', 'sch', 'export', 'netlist'])

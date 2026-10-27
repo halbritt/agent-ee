@@ -25,6 +25,8 @@ from pathlib import Path, PurePosixPath
 from unittest import mock
 from urllib.parse import quote
 
+from native_hooks import after
+from agent_ee import native_run
 from agent_ee import checks, executor, fab_consistency
 from agent_ee.baseline import freeze_evidence, load_baseline, validate_witnesses, verify_evidence
 from agent_ee.candidate import capture
@@ -1696,14 +1698,10 @@ class NativeFabPipelineTests(unittest.TestCase):
                 self.assert_witness(result, accepted=False)
 
     def test_empty_native_export_is_failed_and_cannot_qualify_a_witness(self):
-        native_execute = executor.execute
-
-        def empty_output(inputs, work, argv, **kwargs):
-            record = native_execute(inputs, work, argv, **kwargs)
-            if argv[:4] == ['kicad-cli', 'pcb', 'export', 'gerbers']:
-                next((Path(work) / 'out').glob('*F_Cu.gtl')).write_bytes(b'')
-            return record
-        with mock.patch.object(executor, 'execute', side_effect=empty_output):
+        def empty_output(call, record):
+            if list(call.intent.argv[:4]) == ['kicad-cli', 'pcb', 'export', 'gerbers']:
+                next((call.work / 'out').glob('*F_Cu.gtl')).write_bytes(b'')
+        with native_run.using(after(empty_output)):
             result = self.run_case()
         producer = self.results[-2]
         self.assertEqual((producer['execution'], producer['outcome']), ('failed', 'unknown'), producer)

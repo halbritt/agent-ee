@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee import placement_defects
 from agent_ee.storage import digest, read_json, write_json
 
@@ -2196,7 +2197,7 @@ class PlacementRoutingCarryTests(unittest.TestCase):
                         silk['search_diagnostics'])
         final = fixture.out / 'runs/4'
         self.assertTrue(placement_defects.open_defects(read_json(final / 'candidate.json'), final / 'inputs'))
-        with patch('agent_ee.executor.execute', side_effect=AssertionError('replay launched a tool')):
+        with native_run.using(native_run.Recorded(lambda call: AssertionError('replay launched a tool'))):
             self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], 'escalated')
 
 class ClosureEscapeTests(unittest.TestCase):
