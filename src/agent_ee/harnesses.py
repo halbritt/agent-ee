@@ -1,8 +1,12 @@
 """Native subscription adapters adapted from Relay/Council's observed CLI contracts."""
+import hashlib
 import json
 import os
+import re
 import shutil
+import stat
 from pathlib import Path
+from uuid import UUID
 
 
 from . import native_run
@@ -72,6 +76,63 @@ def parse_stream(harness, text, model, tools=True):
         'model_observed': start['init']['model'], 'usage': end.get('usage', {})}
 
 
+def codex_model_identity(home, session):
+    """Project CLI metadata only; never retain rollout content or infer from argv."""
+    evidence = {'schema': 'agent-ee.codex-model/1', 'harness_session': session,
+        'model_observed': None, 'identity_limitation': 'Codex session model metadata unavailable; observed model is UNKNOWN.'}
+    def unknown(reason):
+        evidence['identity_limitation'] = reason + '; observed model is UNKNOWN.'
+        return evidence
+    try:
+        if str(UUID(session)) != session:
+            return unknown('Invalid Codex session identifier')
+        sessions = home / '.codex/sessions'
+        paths = list(sessions.rglob('rollout-*-' + session + '.jsonl'))
+        if len(paths) != 1:
+            return unknown('Missing or ambiguous Codex session rollout')
+        path = paths[0]
+        # Refuse links in every path component, including the sessions directory.
+        if any(p.is_symlink() for p in (path, *path.parents) if p.is_relative_to(home)):
+            return unknown('Linked Codex session metadata refused')
+        metas, models, sha = [], set(), hashlib.sha256()
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                return unknown('Non-regular Codex session metadata refused')
+            for line in stream:
+                sha.update(line)
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    return unknown('Malformed Codex session metadata')
+                if row.get('type') == 'session_meta':
+                    metas.append(row['payload'])
+                elif row.get('type') == 'turn_context':
+                    model = row['payload']['model']
+                    if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', model):
+                        return unknown('Invalid Codex turn model metadata')
+                    models.add(model)
+        if len(metas) != 1 or not isinstance(metas[0], dict) or metas[0].get('id') != session:
+            return unknown('Codex rollout session mismatch or ambiguity')
+        if len(models) != 1:
+            return unknown('Missing or conflicting Codex turn model metadata')
+        version = metas[0].get('cli_version')
+        if not isinstance(version, str) or not re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}', version):
+            return unknown('Missing or invalid Codex CLI version metadata')
+        provider = metas[0].get('model_provider')
+        if provider is None:
+            return unknown('Missing Codex provider metadata')
+        if provider != 'openai':
+            evidence['identity_error'] = 'Codex session provider differs from the subscription route; no fallback attempted'
+            return unknown('Unexpected Codex provider metadata')
+        evidence.update(model_observed=models.pop(), cli_version=version, model_provider='openai',
+            rollout_sha256=sha.hexdigest(),
+            identity_limitation='Observed CLI turn-context model; this does not attest the server deployment.')
+        return evidence
+    except (OSError, ValueError, TypeError, KeyError):
+        return unknown('Unreadable or malformed Codex session metadata')
+
+
 def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
     harness = definition['harness']
     model, effort = definition['model'], definition['effort']
@@ -96,7 +157,7 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             guest = '/work/home/.codex/auth.json'
             (home / '.codex').mkdir()
             write_json(work / 'schema.json', strict_schema(schema))
-            argv = ['/reviewer', 'exec', '--json', '--ignore-user-config', '--ignore-rules', '--ephemeral',
+            argv = ['/reviewer', 'exec', '--json', '--ignore-user-config', '--ignore-rules',
                 '--sandbox', 'danger-full-access' if tools else 'read-only', '--skip-git-repo-check', '--color', 'never', '--model', model,
                 '--output-schema', '/work/schema.json']
             configs = ['approval_policy="never"', 'forced_login_method="chatgpt"', 'web_search=' + json.dumps('live' if tools else 'disabled'),
@@ -152,13 +213,24 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             return record, None
         try:
             value, observed = parse_stream(harness, (work / 'stdout.log').read_text(), model, tools)
+            record.update(observed)
+            if harness == 'codex':
+                identity = codex_model_identity(home, observed['harness_session'])
+                identity_path = work / 'model-identity.json'
+                write_json(identity_path, identity)
+                record.update(model_observed=identity['model_observed'],
+                    identity_limitation=identity['identity_limitation'],
+                    model_evidence={'path': str(identity_path.relative_to(run_dir)), 'sha256': digest(identity_path)})
+                if identity.get('identity_error'):
+                    raise RuntimeError(identity['identity_error'])
+                if identity['model_observed'] is not None and identity['model_observed'] != model:
+                    raise RuntimeError('Codex observed model differs from requested model; no fallback attempted')
             if not isinstance(value, dict):
                 raise OutputFormatRefusal('review response must be an object')
             if harness == 'codex' and isinstance(value.get('decisions'), list):
                 for decision in value['decisions']:
                     if decision.get('duplicate_of') is None:
                         decision.pop('duplicate_of', None)
-            record.update(observed)
             return record, value
         except OutputFormatRefusal as exc:
             record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
