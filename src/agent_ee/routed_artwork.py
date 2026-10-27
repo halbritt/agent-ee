@@ -17,6 +17,8 @@ TOOL_AT = '/artwork-tool'
 # Reuse the placement evidence envelope and its immutable carry capture.
 from .placement_defects import REPORT, BOARD, ARTWORK
 SOURCE = 'placement/placed/baseline/candidate.kicad_pcb'
+# The producer's sealed copy of a writer-authored policy file, for carry replay.
+POLICY_COPY = 'placement/placed/baseline/artwork-policy.json'
 LAUNCHER = '''import sys
 sys.path.insert(0, '/artwork-tool')
 from agent_ee.routed_artwork import main
@@ -68,6 +70,18 @@ def decode_artwork_policy(text):
     policy = normalize_artwork_policy(value)
     if policy is None:
         raise ValueError('artwork policy cannot be null')
+    return policy
+
+
+def decode_artwork_policy_file(data):
+    """A writer-authored policy file holds exactly the request's canonical JSON."""
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise ValueError('artwork policy file is not UTF-8') from exc
+    policy = decode_artwork_policy(text)
+    if canonical_artwork_policy(policy) != text:
+        raise ValueError('artwork policy file is not canonical')
     return policy
 
 
@@ -366,9 +380,35 @@ def _target_argv(targets):
     return [v for ref, field in sorted(targets) for v in ('--target', ref, field)]
 
 
-def receipt_scope(argv):
-    """Recover a receipt's write-scope authority (targets or field poses) from its argv."""
+def receipt_policy_file(argv):
+    """The candidate path of a receipt's writer-authored policy file, or None."""
+    from .placement_adapter import _relative
     rest = argv[5:]
+    if rest[:1] != ['--artwork-policy-file']:
+        return None
+    if len(rest) != 2 or not isinstance(rest[1], str):
+        raise ValueError('artwork receipt policy-file arguments malformed')
+    return _relative(rest[1], 'artwork policy file')
+
+
+def carried_files(argv):
+    """Run artifacts a carried artwork receipt needs for replay."""
+    return [SOURCE, *([POLICY_COPY] if receipt_policy_file(argv) is not None else [])]
+
+
+def receipt_scope(argv, policy_file=None):
+    """Recover a receipt's write-scope authority (targets, field poses or policy) from its argv.
+
+    A writer-authored policy file is named in the argv; the caller supplies its
+    bytes, already checked against the receipt's input digest for that path.
+    """
+    rest = argv[5:]
+    if receipt_policy_file(argv) is not None:
+        if policy_file is None:
+            raise ValueError('artwork receipt policy file not supplied')
+        return {'artwork_policy': decode_artwork_policy_file(policy_file)}
+    if policy_file is not None:
+        raise ValueError('artwork receipt names no policy file')
     if rest[:1] == ['--artwork-policy']:
         if len(rest) != 2 or not isinstance(rest[1], str):
             raise ValueError('artwork receipt policy arguments malformed')
@@ -565,25 +605,37 @@ def write_scope(before, after, targets=None, field_poses=None, artwork_policy=No
     return proof
 
 
-def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, field_poses=None, artwork_policy=None):
+def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, field_poses=None,
+         artwork_policy=None, artwork_policy_file=None):
     """Create an immutable source snapshot and an ordinary campaign implementation step.
 
     targets restricts the repair to named (reference, field) pairs, receipted
     in canonical order in the producer argv. A field-pose request is receipted
     whole, as its canonical JSON. Free rigid groups use --artwork-policy with
     canonical source-bound membership, independently replayed by the qualifier.
+    artwork_policy_file instead names a candidate file that the implementation
+    writer authors for the board it delivers; it is a declared step input, so
+    the receipt hashes it, and the qualifier decodes it from the receipt inputs.
     """
     from .placement_adapter import tool_snapshot, _relative
     _relative(board, 'artwork board')
     targets = normalize_targets(targets)
     artwork_policy = normalize_artwork_policy(artwork_policy)
-    if artwork_policy is not None and (targets is not None or field_poses is not None):
+    if artwork_policy_file is not None:
+        _relative(artwork_policy_file, 'artwork policy file')
+        if artwork_policy_file == board:
+            raise ValueError('artwork policy file cannot be the artwork board')
+        if artwork_policy is not None:
+            raise ValueError('artwork policy and policy file are exclusive')
+    if (artwork_policy is not None or artwork_policy_file is not None) and (
+            targets is not None or field_poses is not None):
         raise ValueError('artwork policy and field-only scopes are exclusive')
     if targets is not None and field_poses is not None:
         raise ValueError('artwork target and field-pose request are exclusive')
     scope = (_target_argv(targets) if targets else
              ['--field-pose', canonical_field_poses(field_poses)] if field_poses is not None else
-             ['--artwork-policy', canonical_artwork_policy(artwork_policy)] if artwork_policy is not None else [])
+             ['--artwork-policy', canonical_artwork_policy(artwork_policy)] if artwork_policy is not None else
+             ['--artwork-policy-file', artwork_policy_file] if artwork_policy_file is not None else [])
     tool_dir = tool_snapshot(Path(tool_dir).resolve())
     (tool_dir / 'artwork.py').write_text(LAUNCHER)
     return {'schema': 'agent-ee.stage-step/1', 'stage': stage, 'step': STEP,
@@ -591,7 +643,8 @@ def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, 
                      *scope],
             'mounts': [{'source': str(tool_dir), 'at': TOOL_AT}], 'source': TOOL_AT,
             'version_argv': ['/usr/bin/kicad-cli', 'version'],
-            'writes': {board: BOARD}, 'artifacts': ['placement'], 'timeout_s': timeout_s}
+            'writes': {board: BOARD}, 'artifacts': ['placement'], 'timeout_s': timeout_s,
+            **({'inputs': [artwork_policy_file]} if artwork_policy_file is not None else {})}
 
 
 def qualify_receipt(receipt_dir, receipt, board, source_files):
@@ -612,8 +665,19 @@ def qualify_receipt(receipt_dir, receipt, board, source_files):
     if tree != {'path': TOOL_AT, **tree_identity_from_files(expected)}:
         raise ValueError('artwork source differs from campaign source pin')
     root = Path(receipt_dir)
+    policy_file = receipt_policy_file(spec['argv'])
+    if policy_file is not None:
+        if spec.get('inputs') != [policy_file] or policy_file == board:
+            raise ValueError('artwork receipt policy file is not its declared input')
+        data = (root / 'inputs' / policy_file).read_bytes()
+        if (hashlib.sha256(data).hexdigest() != receipt['inputs'].get(policy_file) or
+                receipt['artifacts'].get(POLICY_COPY) != receipt['inputs'][policy_file] or
+                digest(root / 'run' / POLICY_COPY) != receipt['inputs'][policy_file]):
+            raise ValueError('artwork policy file differs from receipt input')
+    elif 'inputs' in spec:
+        raise ValueError('artwork receipt declares inputs without a policy file')
     proof = write_scope((root / 'inputs' / board).read_bytes(), (root / 'run' / BOARD).read_bytes(),
-                        **receipt_scope(spec['argv']))
+                        **receipt_scope(spec['argv'], None if policy_file is None else data))
     if digest(root / 'run' / SOURCE) != receipt['inputs'].get(board):
         raise ValueError('artwork source artifact differs from receipt input')
     report = read_json(root / 'run' / REPORT)
@@ -694,17 +758,22 @@ def compare_artwork_drc(source, output, before, after, *, native_pins, **scope):
     return comparison
 
 
-def produce(source, root, targets=None, field_poses=None, artwork_policy=None):
+def produce(source, root, targets=None, field_poses=None, artwork_policy=None, policy_file=None):
     """Write a disposable candidate, retain native DRC and fail on any new non-silk finding.
 
     With targets only the named footprint fields may move; graphics stay put.
     A field-pose request writes exactly its requested poses, without a search,
     and the reloaded saved board must carry exactly those poses. Graphics stay
     anchored unless a source-bound policy explicitly names free rigid groups.
+    policy_file is a writer-authored policy's exact bytes; a sealed copy is kept.
     """
     import pcbnew as k
     from .placer_runner import _native_drc
     from .silk_artwork import relocate, ARTWORK_CONFLICTS, containment_witness
+    if policy_file is not None:
+        if artwork_policy is not None:
+            raise ValueError('artwork policy and policy file are exclusive')
+        artwork_policy = decode_artwork_policy_file(policy_file)
     targets = normalize_targets(targets)
     field_poses = normalize_field_poses(field_poses)
     artwork_policy = normalize_artwork_policy(artwork_policy)
@@ -725,6 +794,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None):
     original = baseline / 'candidate.kicad_pcb'
     shutil.copyfile(source, original)
     shutil.copyfile(source, output)
+    if policy_file is not None:
+        (root / POLICY_COPY).write_bytes(policy_file)
     payloads = {s: source.with_suffix(s).read_bytes() if source.with_suffix(s).is_file() else None
                 for s in ('.kicad_pro', '.kicad_dru')}
     for suffix, payload in payloads.items():
@@ -790,8 +861,16 @@ def main():
     parser.add_argument('--target', nargs=2, action='append', metavar=('REFERENCE', 'FIELD'))
     parser.add_argument('--field-pose', metavar='JSON', help='canonical exact field-pose request')
     parser.add_argument('--artwork-policy', metavar='JSON', help='source-bound free rigid groups')
+    parser.add_argument('--artwork-policy-file', metavar='PATH',
+                        help='candidate path of a writer-authored canonical artwork policy')
     args = parser.parse_args()
+    if args.artwork_policy_file is not None:
+        from .placement_adapter import _relative
+        policy_file = (Path('/candidate') / _relative(args.artwork_policy_file, 'artwork policy file')).read_bytes()
+    else:
+        policy_file = None
     produce(args.board, Path('/work'), targets=args.target,
             field_poses=None if args.field_pose is None else decode_field_poses(args.field_pose),
-            artwork_policy=None if args.artwork_policy is None else decode_artwork_policy(args.artwork_policy))
+            artwork_policy=None if args.artwork_policy is None else decode_artwork_policy(args.artwork_policy),
+            policy_file=policy_file)
     return 0

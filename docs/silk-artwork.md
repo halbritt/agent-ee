@@ -552,7 +552,9 @@ tracks/vias/zones preservation, non-silk and marking-damage refusals, source-pin
 and output binding, missing output, exhausted searches, ignored silk coverage
 and a nonroot read-only host sandbox.
 `tests.test_placement_defects` runs placement, the pinned native router,
-verification/fab refusal, receipted graphic repair, closure, passing verification
+verification/fab refusal, receipted graphic repair under a
+[writer-authored policy file](#writer-authored-artwork-policy-file-agentee-551),
+closure, passing verification
 geometry and native fab export (Gerbers, drill, BOM and CPL), followed by campaign
 replay. A passing export does not authorize fabrication.
 Its closure-currency fixture uses a closed Edge.Cuts rectangle and a canonical
@@ -579,3 +581,51 @@ circular board with tangent, straddling, in-hole, within-tolerance and cleared
 boxes, plus native board- and footprint-owned round holes. `tests.test_routed_artwork`
 moves both carried labels of a routed board around a straight slot and a round
 hole placed over their hole-free destinations, then closes the carry.
+
+### Writer-authored artwork policy file (AGENTEE-551)
+
+Graphics stay anchored unless an `agent-ee.artwork-policy/1` request, bound by
+`source_sha256` to the exact board being relocated, classifies them as free
+rigid groups (AGENTEE-523). A campaign artwork step receives its board only
+when the campaign runs, so a policy fixed in the step's argv cannot name that
+board. `step(tool_dir, board, artwork_policy_file=PATH)` instead names a design
+file that the implementation writer authors for the board it delivers:
+
+- `PATH` is a normalized candidate path, other than the board. The campaign
+  must capture it and list it in `mutable_inputs`, because a writer can edit
+  captured mutable files but cannot add files.
+- The file holds exactly the request's canonical JSON, as
+  `canonical_artwork_policy` writes it: sorted keys, no whitespace, no
+  trailing newline. Other bytes refuse (`artwork policy file is not canonical`),
+  so the file has one meaning.
+- The producer argv is `--artwork-policy-file PATH`. The step declares `PATH`
+  as its only stage-step input, so a missing file is a receipt violation. The
+  receipt's input tree hashes it like every delivered file.
+- The producer reads `/candidate/PATH` and applies it as an argv policy. A
+  policy whose `source_sha256` differs from the received board refuses
+  (`artwork policy names a different source board`). The producer keeps a
+  sealed copy at `placement/placed/baseline/artwork-policy.json`.
+- `qualify_receipt` requires the argv path to be the declared input. It
+  requires the retained input file and the sealed copy to match the receipt's
+  input digest. It then decodes the policy from those bytes and recomputes
+  `write_scope` against the receipt's exact source and output. Carry replay
+  does the same from the sealed copy in the carried bundle.
+- An argv policy, a policy file, targets and field poses are mutually
+  exclusive.
+
+The classification must be explicit: member UUIDs the author recorded, never a
+geometric inference at relocation time. The mode adds no new move authority.
+Membership, owner, side, visibility and common-translation checks are the
+argv-policy checks. Receipts without a policy file keep their historical
+shape: no step inputs and no sealed policy copy.
+
+`tests.test_artwork_policy` covers canonical decoding, argv and input
+exclusivity, the hashed input, tampered input bytes or digests, a dropped
+declaration and a policy bound to another board.
+`test_writer_authored_artwork_policy_closes_carry_and_exports_fab` in
+`tests.test_placement_defects` runs the full campaign. The fixture records the
+UUIDs of the board silk it authors. On the verification turn the scripted
+writer binds the policy to its board. The receipted step then closes the carry,
+and the native fab export follows. Without a policy the same carry stays anchored
+and escalates
+(`test_unclassified_routed_artwork_stays_anchored_and_the_carry_escalates`).

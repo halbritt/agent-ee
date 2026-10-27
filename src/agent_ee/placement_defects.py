@@ -189,7 +189,7 @@ def adopted(root, state, number):
                 raise ValueError('placement defect carry differs from its qualified helper')
         names = [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]
         if artwork:
-            names.append(routed_artwork.SOURCE)
+            names.extend(routed_artwork.carried_files(receipt['spec']['argv']))
         data = {'receipt.json': path.read_bytes()}
         for name in names:
             artifact = path.parent / 'run' / name
@@ -287,7 +287,7 @@ def _bundle(manifest, inputs, link):
     loaded = {}
     names = [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]
     if artwork:
-        names.append(routed_artwork.SOURCE)
+        names.extend(routed_artwork.carried_files(receipt['spec']['argv']))
     for name in names:
         loaded[name] = _read(manifest, inputs, f'{prefix}/{name}', receipt['artifacts'].get(name))
         if receipt['artifacts'].get(name) is None:
@@ -302,8 +302,16 @@ def _bundle(manifest, inputs, link):
             (report.get('open_defects') and (report.get('outcome'), report.get('verdict')) != ('defect', 'defect'))):
         raise ValueError('carried placement result is not bound to its receipt')
     if artwork:
+        policy_file = routed_artwork.receipt_policy_file(receipt['spec']['argv'])
+        policy = None
+        if policy_file is not None:
+            # The sealed copy must be the exact file the receipt hashed as its input.
+            policy = loaded[routed_artwork.POLICY_COPY].read_bytes()
+            if (receipt['spec'].get('inputs') != [policy_file] or
+                    hashlib.sha256(policy).hexdigest() != receipt['inputs'].get(policy_file)):
+                raise ValueError('carried artwork policy file differs from its receipt input')
         proof = routed_artwork.write_scope(loaded[routed_artwork.SOURCE].read_bytes(), loaded[BOARD].read_bytes(),
-                                           **routed_artwork.receipt_scope(receipt['spec']['argv']))
+                                           **routed_artwork.receipt_scope(receipt['spec']['argv'], policy))
         if (report.get('producer') != routed_artwork.STEP or report.get('write_scope') != proof or
                 digest(loaded[routed_artwork.SOURCE]) != receipt['inputs'].get(board)):
             raise ValueError('carried artwork scope differs from its receipt')

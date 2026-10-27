@@ -1,6 +1,7 @@
 """Carried placement evidence must gate only its own downstream candidate lineage."""
 import contextlib
 import copy
+import hashlib
 from pathlib import Path
 import re
 import shutil
@@ -1978,6 +1979,13 @@ class PlacementRoutingCarryTests(unittest.TestCase):
                 scope['inputs'] = [i for i in scope['inputs'] if not i['at'].startswith('stock/')]
                 return scope
 
+            def agent(self, run, label, *args, **kwargs):
+                # A scripted writer turn may also author files, e.g. an artwork policy.
+                author = getattr(self, 'author', {}).get(int(Path(run).name)) if label == 'implementation' else None
+                if author:
+                    author(Path(run) / 'review-work/implementation/design')
+                return super().agent(run, label, *args, **kwargs)
+
         OwnedCarryCampaign.setUpClass()
         self.addCleanup(OwnedCarryCampaign.tearDownClass)
         fixture = OwnedCarryCampaign()
@@ -2003,6 +2011,8 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         request = pa.helper_request((fixture.source / BOARD).read_bytes(), policy, ['J1'])
         plan = _plan(extract(fixture.source / BOARD), request)
         self.assertEqual(plan['status'], 'planned')
+        # Board silk this fixture authors, recorded by UUID when it is created.
+        fixture.authored_graphics = []
         for placement in plan['placements']:
             if placement['fixed']:
                 continue
@@ -2014,7 +2024,11 @@ class PlacementRoutingCarryTests(unittest.TestCase):
             graphic.SetEnd(k.VECTOR2I(x + 1800000, y))
             graphic.SetWidth(150000)
             board.Add(graphic)
+            fixture.authored_graphics.append(graphic.m_Uuid.AsString())
         k.SaveBoard(str(fixture.source / BOARD), board, True)
+        saved = {item.m_Uuid.AsString() for item in k.LoadBoard(str(fixture.source / BOARD)).GetDrawings()}
+        self.assertTrue(fixture.authored_graphics)
+        self.assertLessEqual(set(fixture.authored_graphics), saved)
         # This acceptance check measures the declared C1/R1 origin separation.
         # The placement helper still performs its ordinary native collision gates.
         solver = fixture.source / 'project/separation.py'
@@ -2150,8 +2164,9 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         The fixture's carry is board silk graphics. Since c6461f21 (AGENTEE-523) graphics stay
         anchored unless an explicit agent-ee.artwork-policy/1 request bound to the exact input
         board classifies them, and a campaign step's input board exists only at run time. So
-        the receipted artwork step runs, moves nothing, and the open carry escalates. The
-        earlier carry-then-close-then-fab-export path awaits AGENTEE-551 (owner-gated).
+        the receipted artwork step runs, moves nothing, and the open carry escalates. A
+        writer-authored policy file closes the same carry
+        (test_writer_authored_artwork_policy_closes_carry_and_exports_fab, AGENTEE-551).
         """
         from agent_ee import campaign, stage_receipts
         from test_placement_adapter import BOARD
@@ -2199,6 +2214,137 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertTrue(placement_defects.open_defects(read_json(final / 'candidate.json'), final / 'inputs'))
         with native_run.using(native_run.Recorded(lambda call: AssertionError('replay launched a tool'))):
             self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], 'escalated')
+
+    def assert_carried_policy_copy_is_bound(self, manifest, inputs):
+        """Carry replay reads the policy from its carried sealed copy, bound to the receipt input digest."""
+        from agent_ee import routed_artwork
+        from agent_ee.storage import identity, json_bytes
+        links = manifest['scope'][placement_defects.DECLARATION]
+        artwork = [link for link in links
+                   if read_json(inputs / link['receipt'])['spec']['step'] == routed_artwork.STEP]
+        self.assertEqual(len(artwork), 1)
+        link = artwork[0]
+        self.assertEqual(placement_defects._bundle(manifest, inputs, link)[0]['producer'], routed_artwork.STEP)
+        copy_rel = f"{Path(link['receipt']).parent}/{routed_artwork.POLICY_COPY}"
+        policy = routed_artwork.decode_artwork_policy_file((inputs / copy_rel).read_bytes())
+        anchored = routed_artwork.canonical_artwork_policy({**policy, 'free_groups': []}).encode()
+        with tempfile.TemporaryDirectory() as temporary:
+            # A changed carried copy alone is refused as changed evidence.
+            tampered = Path(temporary) / 'copy'
+            shutil.copytree(inputs, tampered)
+            (tampered / copy_rel).write_bytes(anchored)
+            with self.assertRaisesRegex(ValueError, 'carried placement evidence missing or changed'):
+                placement_defects._bundle(manifest, tampered, link)
+            # A self-consistent bundle whose sealed copy is not the receipt's hashed input
+            # (copy, receipt artifact, receipt identity and manifest all rewritten) is still refused.
+            forged = Path(temporary) / 'forged'
+            shutil.copytree(inputs, forged)
+            (forged / copy_rel).write_bytes(anchored)
+            receipt = read_json(forged / link['receipt'])
+            receipt['artifacts'][routed_artwork.POLICY_COPY] = hashlib.sha256(anchored).hexdigest()
+            receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+            (forged / link['receipt']).write_bytes(json_bytes(receipt))
+            files = dict(manifest['files'])
+            files[copy_rel] = digest(forged / copy_rel)
+            files[link['receipt']] = digest(forged / link['receipt'])
+            forged_link = {**link, 'sha256': files[link['receipt']]}
+            with self.assertRaisesRegex(ValueError, 'carried artwork policy file differs from its receipt input'):
+                placement_defects._bundle({**manifest, 'files': files}, forged, forged_link)
+
+    def test_writer_authored_artwork_policy_closes_carry_and_exports_fab(self):
+        """AGENTEE-551: the writer classifies the fixture's authored silk, by UUID, for the exact board it holds.
+
+        The policy file is a captured mutable input. On the verification turn the scripted
+        writer rewrites it bound to its board's digest; the artwork step reads it, the
+        receipt hashes it and replay decodes it from there. The assertions are those of
+        test_native_routed_artwork_closes_carry_and_exports_fab before c6461f21 anchored
+        unclassified graphics, plus the policy's exact source binding.
+        """
+        from agent_ee import campaign, stage_receipts
+        from test_placement_adapter import BOARD, SCHEMATIC
+        fixture, checks, route = self.routing_fixture()
+        # The writer remains scripted; placement, routing, artwork and checks are native.
+        from agent_ee import routed_artwork
+        # Original fixture bindings enable a real native fabrication export.
+        from agent_ee.schematic_emitter import _scan, _dump, Q
+        from agent_ee.symbol_library import children
+        schematic_path = fixture.source / 'project/rc_filter.kicad_sch'
+        tree = _scan(schematic_path.read_bytes())
+        for symbol in children(tree, 'symbol'):
+            props = {p[1]: p for p in children(symbol, 'property')}
+            ref = props['Reference'][2]
+            if ref not in ('C1', 'J1', 'R1'):
+                continue
+            for name, value in (('LCSC', 'C900010'), ('Manufacturer', 'Owned Fixture Works'),
+                                ('Partnumber', 'EE350-' + ref)):
+                prop = copy.deepcopy(props['Value'])
+                prop[1:3] = [Q(name), Q(value)]
+                symbol.append(prop)
+        schematic_path.write_text('\n'.join(_dump(tree)) + '\n')
+        policy_path = 'project/artwork-policy.json'
+        def author(design):
+            # One free group per authored segment: an explicit classification, not a geometric inference.
+            policy = dict(schema=routed_artwork.ARTWORK_POLICY, source_sha256=digest(design / BOARD),
+                          free_groups=[dict(owner_uuid=None, members=[uid]) for uid in fixture.authored_graphics])
+            (design / policy_path).write_text(routed_artwork.canonical_artwork_policy(policy))
+        # The captured file is the design author's classification of the source board;
+        # the writer rebinds it on the verification turn.
+        author(fixture.source)
+        fixture.author = {3: author}
+        artwork_step = routed_artwork.step(fixture.root / 'artwork-tool', BOARD, artwork_policy_file=policy_path)
+        closure_checks = [checks[0], {'id': 'netlist', 'kind': 'netlist', 'stage': 'placement'},
+                          *checks[1:],
+                          {'id': 'fab', 'kind': 'fab_export', 'stage': 'fab',
+                           'params': {'netlist_check': 'netlist'}}]
+        closure_scope = fixture.scope(closure_checks)
+        closure_scope['mutable_inputs'] = [BOARD, SCHEMATIC, policy_path]
+        # The netlist supplies native XML to fab; it is informational, not an
+        # independent acceptance requirement.
+        closure_scope['baseline']['requirements'] = [r for r in closure_scope['baseline']['requirements']
+                                                      if r['id'] != 'R-netlist']
+        next(r for r in closure_scope['baseline']['requirements'] if r['id'] == 'R-fab')['checks'] = ['netlist', 'fab']
+        closure_scope['stages']['order'].extend(['verification', 'fab'])
+        closure_scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
+        status, closed_state = fixture.campaign(fixture.declaration(), iterations=4,
+            scope=closure_scope, steps=[route, artwork_step], name='receipted-closure')
+        self.assertEqual((status, closed_state['state']), (0, 'criteria_satisfied'),
+                         {key: closed_state.get(key) for key in ('state', 'reason', 'error')})
+        refused = fixture.out / 'runs/3'
+        for check_id in ('verify', 'fab'):
+            refused_check = read_json(refused / f'checks/{check_id}.json')
+            self.assertEqual(refused_check['outcome'], 'defect')
+            self.assertEqual(refused_check['details']['reason'], 'open_placement_defects')
+        fixed = fixture.out / 'runs/4'
+        fixed_manifest = read_json(fixed / 'candidate.json')
+        recorded = lambda: placement_defects._recorded(fixed, 'fab', fixed_manifest)
+        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs', recorded), [])
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(fixed_manifest, fixed / 'inputs')
+        self.assertEqual(len(fixed_manifest['scope'][placement_defects.DECLARATION]), 2)
+        for check_id in ('verify', 'fab', 'routed'):
+            self.assertEqual(read_json(fixed / f'checks/{check_id}.json')['outcome'], 'pass')
+        artwork_receipt_dir = fixture.out / 'implementations/3/receipts/1-agent-ee-routed-artwork'
+        artwork_receipt = stage_receipts.validate_receipt(artwork_receipt_dir)
+        self.assertEqual(artwork_receipt['status'], 'completed')
+        self.assertEqual(artwork_receipt['violations'], [])
+        # The writer's file is bound to the exact board the step received, and hashed in the receipt.
+        policy_bytes = (fixed / 'inputs' / policy_path).read_bytes()
+        policy = routed_artwork.decode_artwork_policy_file(policy_bytes)
+        self.assertEqual(policy['source_sha256'], digest(refused / 'inputs' / BOARD))
+        self.assertEqual(artwork_receipt['inputs'][BOARD], digest(refused / 'inputs' / BOARD))
+        self.assertEqual(artwork_receipt['inputs'][policy_path], hashlib.sha256(policy_bytes).hexdigest())
+        proof = routed_artwork.write_scope((refused / 'inputs' / BOARD).read_bytes(),
+                                           (fixed / 'inputs' / BOARD).read_bytes(), artwork_policy=policy)
+        self.assertTrue(proof['moved_identities'])
+        self.assertLessEqual(set(proof['moved_identities']), set(fixture.authored_graphics))
+        self.assert_carried_policy_copy_is_bound(fixed_manifest, fixed / 'inputs')
+        export = fixed / 'work/fab/fab'
+        self.assertTrue(list((export / 'gerbers').glob('*')))
+        self.assertTrue(list((export / 'drill').glob('*')))
+        self.assertTrue((export / 'bom.csv').is_file())
+        self.assertTrue((export / 'cpl.csv').is_file())
+        with patch('agent_ee.executor.execute', side_effect=AssertionError('replay launched a tool')):
+            self.assertEqual(campaign.verify_campaign(fixture.out, host=self.host)['state'], 'criteria_satisfied')
 
 class ClosureEscapeTests(unittest.TestCase):
     def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None,

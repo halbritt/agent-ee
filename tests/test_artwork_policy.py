@@ -94,6 +94,47 @@ class ArtworkPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             art.write_scope(before, before, artwork_policy=policy, field_poses=F.request(before))
 
+    def test_policy_file_receipt_scope_needs_exact_canonical_bytes(self):
+        """AGENTEE-551: a writer-authored policy file is decoded from its bytes, never inferred."""
+        before = F.board()
+        policy = dict(schema=art.ARTWORK_POLICY, source_sha256=hashlib.sha256(before).hexdigest(),
+                      free_groups=[dict(owner_uuid=None, members=['b', 'a'])])
+        canonical = art.canonical_artwork_policy(policy).encode()
+        argv = ['python3', '-B', '-I', '/artwork.py', '/board', '--artwork-policy-file', 'project/policy.json']
+        self.assertEqual(art.receipt_policy_file(argv), 'project/policy.json')
+        self.assertEqual(art.carried_files(argv), [art.SOURCE, art.POLICY_COPY])
+        self.assertEqual(art.carried_files(argv[:5]), [art.SOURCE])
+        self.assertEqual(art.receipt_scope(argv, canonical)['artwork_policy']['free_groups'],
+                         [dict(owner_uuid=None, members=['a', 'b'])])
+        for data, message in ((None, 'not supplied'), (json.dumps(policy).encode(), 'not canonical'),
+                              (canonical + b'\n', 'not canonical'), (b'null', 'cannot be null'),
+                              (b'\xff', 'not UTF-8')):
+            with self.subTest(data=data), self.assertRaisesRegex(ValueError, message):
+                art.receipt_scope(argv, data)
+        for tail in (['--artwork-policy-file'], ['--artwork-policy-file', '/abs.json'],
+                     ['--artwork-policy-file', '../up.json'],
+                     ['--artwork-policy-file', 'project/policy.json', '--target', 'U31', 'Reference']):
+            with self.subTest(tail=tail), self.assertRaises(ValueError):
+                art.receipt_scope(argv[:5] + tail, canonical)
+        # Bytes offered for a receipt that names no policy file are refused, not ignored.
+        with self.assertRaisesRegex(ValueError, 'names no policy file'):
+            art.receipt_scope(argv[:5], canonical)
+
+    def test_policy_file_step_declares_its_input_and_stays_exclusive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = art.step(Path(tmp) / 'tool', 'board.kicad_pcb', artwork_policy_file='project/policy.json')
+            self.assertEqual(spec['argv'][5:], ['--artwork-policy-file', 'project/policy.json'])
+            self.assertEqual(spec['inputs'], ['project/policy.json'])
+            self.assertNotIn('inputs', art.step(Path(tmp) / 'tool2', 'board.kicad_pcb'))
+        policy = dict(schema=art.ARTWORK_POLICY, source_sha256='0' * 64, free_groups=[])
+        for kwargs in (dict(artwork_policy=policy), dict(targets=[('U31', 'Reference')]),
+                       dict(field_poses=F.request(F.board()))):
+            with self.subTest(kwargs=sorted(kwargs)), self.assertRaisesRegex(ValueError, 'exclusive'):
+                art.step('/nonexistent', 'board.kicad_pcb', artwork_policy_file='project/policy.json', **kwargs)
+        for path in ('board.kicad_pcb', '/abs.json', '../policy.json'):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                art.step('/nonexistent', 'board.kicad_pcb', artwork_policy_file=path)
+
     def test_visible_text_named_hide_is_not_a_visibility_attribute(self):
         before=b'(kicad_pcb (gr_text "hide" (at 1 2) (layer "F.SilkS") (uuid "visible")))'
         policy=dict(schema=art.ARTWORK_POLICY,source_sha256=hashlib.sha256(before).hexdigest(),
@@ -213,6 +254,64 @@ class NativeArtworkPolicyTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError,message):
                 art.qualify_receipt(directory, changed, 'board.kicad_pcb', policy_files())
         saved.write_bytes(data)
+
+    def test_writer_policy_file_is_hashed_input_and_bound_to_exact_source(self):
+        """AGENTEE-551: the receipt hashes the writer's policy file and replay decodes it from there."""
+        import pcbnew as k
+        from agent_ee import stage_receipts
+        from agent_ee.run_record import policy_files
+        source = self.fixture.board(graphic=True)
+        board = k.LoadBoard(str(source))
+        ids = [item.m_Uuid.AsString() for item in board.GetDrawings() if item.GetLayer() == k.F_SilkS]
+        self.assertEqual(len(ids), 1)
+        rel = 'artwork-policy.json'
+        def run(name, policy):
+            design = self.root / name / 'design'
+            design.mkdir(parents=True)
+            (design / 'board.kicad_pcb').write_bytes(source.read_bytes())
+            (design / rel).write_text(art.canonical_artwork_policy(policy))
+            spec = art.step(self.root / name / 'tool', 'board.kicad_pcb', artwork_policy_file=rel)
+            directory = self.root / name / 'receipt'
+            return directory, stage_receipts.run_step(directory, design, spec, {'implementation': 1})
+        bound = dict(schema=art.ARTWORK_POLICY, source_sha256=art.digest(source),
+                     free_groups=[dict(owner_uuid=None, members=ids)])
+        directory, receipt = run('bound', bound)
+        self.assertEqual((receipt['status'], receipt['violations']), ('completed', []))
+        self.assertEqual(receipt['inputs'][rel], art.digest(directory / 'inputs' / rel))
+        proof = art.qualify_receipt(directory, receipt, 'board.kicad_pcb', policy_files())
+        self.assertEqual(proof['moved_identities'], ids)
+        self.assertEqual(proof['artwork_policy'], bound)
+        # The same output under the default anchored scope is refused: the file is the authority.
+        with self.assertRaisesRegex(ValueError, 'anchored artwork'):
+            art.write_scope((directory / 'inputs/board.kicad_pcb').read_bytes(),
+                            (directory / 'run' / art.BOARD).read_bytes())
+        policy_input, sealed = directory / 'inputs' / rel, directory / 'run' / art.POLICY_COPY
+        original = policy_input.read_bytes()
+        self.assertEqual(sealed.read_bytes(), original)
+        anchored = art.canonical_artwork_policy({**bound, 'free_groups': []}).encode()
+        for name, mutate, message in (
+                ('input bytes', lambda r: policy_input.write_bytes(anchored), 'differs from receipt input'),
+                ('input digest', lambda r: r['inputs'].update({rel: hashlib.sha256(anchored).hexdigest()}),
+                 'differs from receipt input'),
+                # The producer's sealed copy, which carry replay reads, must be the hashed input too.
+                ('sealed bytes', lambda r: sealed.write_bytes(anchored), 'differs from receipt input'),
+                ('sealed digest', lambda r: r['artifacts'].update({art.POLICY_COPY: hashlib.sha256(anchored).hexdigest()}),
+                 'differs from receipt input'),
+                ('undeclared', lambda r: r['spec'].pop('inputs'), 'not its declared input'),
+                ('argv dropped', lambda r: r['spec'].__setitem__('argv', r['spec']['argv'][:5]),
+                 'inputs without a policy file')):
+            changed = copy.deepcopy(receipt)
+            mutate(changed)
+            with self.subTest(name), self.assertRaisesRegex(ValueError, message):
+                art.qualify_receipt(directory, changed, 'board.kicad_pcb', policy_files())
+            policy_input.write_bytes(original)
+            sealed.write_bytes(original)
+        self.assertEqual(art.qualify_receipt(directory, receipt, 'board.kicad_pcb', policy_files()), proof)
+        # A policy bound to any other board is refused by the producer, as for argv policies.
+        _, refused = run('other', {**bound, 'source_sha256': '0' * 64})
+        self.assertNotEqual(refused['status'], 'completed')
+        stderr = (self.root / 'other/receipt/run/stderr.log').read_text()
+        self.assertIn('artwork policy names a different source board', stderr)
 
     def test_two_intrinsic_warnings_retained_and_edge_residual_visible(self):
         import pcbnew as k
