@@ -1730,7 +1730,9 @@ def verify_group_views(final):
         elif digest(path) != row['sha256']:
             problems.append(f'{side} view file changed: {row["path"]}')
     board = Path(final.get('board') or '')
-    if board.is_file() and digest(board) != final.get('board_sha256'):
+    if not board.is_file():
+        problems.append('final board missing after its views were rendered')
+    elif digest(board) != final.get('board_sha256'):
         problems.append('final board changed after its views were rendered')
     return problems
 

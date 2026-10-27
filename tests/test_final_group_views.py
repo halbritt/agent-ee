@@ -82,6 +82,15 @@ class FinalGroupViewTests(Fixture):
         (out / 'manifest.json').write_bytes(b'{}')
         self.assertIn('group view manifest missing or changed', job.verify_group_views(final))
 
+    def test_changed_or_missing_final_board_invalidates_retained_views(self):
+        # AGENTEE-479: intact images cannot establish custody of a deleted candidate.
+        _, _, final = self._final('missing-board')
+        self.assertEqual(job.verify_group_views(final), [])
+        Path(final['board']).write_bytes(Path(final['board']).read_bytes() + b'\n')
+        self.assertEqual(job.verify_group_views(final), ['final board changed after its views were rendered'])
+        Path(final['board']).unlink()
+        self.assertEqual(job.verify_group_views(final), ['final board missing after its views were rendered'])
+
     def test_missing_view_evidence_is_reported_not_silent(self):
         # The helper refuses an output directory that already exists: a realistic failed render.
         (self.dir / 'final-refused-group-views').mkdir()
