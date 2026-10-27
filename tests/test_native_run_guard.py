@@ -37,8 +37,12 @@ ANY = None   # every site in the file
 EXEMPT = {
     'in-sandbox router script': {
         'reason': 'kicad_route_attempt.py is stdlib-only and byte-hashed on a read-only mount (AGENTEE-93/539), '
-                  'so it cannot import native_run; it runs only inside an outer native run that is already '
-                  'sandboxed, deadline-clamped and cancellable. Its launch is not exempt.',
+                  'so it cannot import native_run. Its router and measurement children run inside an outer '
+                  'native run that is sandboxed, deadline-clamped and cancellable; its launch is not exempt. '
+                  'verify_state also runs host-side, outside any native run: routing_adapter.preflight calls '
+                  'attempt.preflight in-process (from routing_adapter.step and validate_campaign_step, '
+                  'placement_job, the CLI and the rung-1 qualifiers), and its installed-state check is a host '
+                  'python -I child with its own 60 s timeout, no deadline and no cancel handle (AGENTEE-553).',
         'tool': None,
         'sites': {('src/agent_ee/kicad_route_attempt.py', ANY)},
     },

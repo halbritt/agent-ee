@@ -1888,6 +1888,43 @@ class StepExecutionTests(StepFixture):
         with self.assertRaisesRegex(ValueError, 'no output adopted'):
             adopt(path, receipt, self.design)
 
+    def test_deadline_inside_the_launch_floor_refuses_before_any_receipt(self):
+        # AGENTEE-553: admission applies native_run's floor; nothing is observed, run or written.
+        for left in (native_run.LAUNCH_FLOOR_S - .5, native_run.LAUNCH_FLOOR_S - .99, -1):
+            with self.subTest(left=left), native_run.using(native_run.Recorded()) as execute, \
+                    patch.object(stage_receipts, 'observe_tool') as observe:
+                path = self.root / 'work/receipts' / f'refused-{left}'
+                with self.assertRaisesRegex(ValueError, 'stage step deadline exhausted before launch'):
+                    run_step(path, self.design, self.spec(), self.binding, deadline=time.monotonic() + left)
+                self.assertEqual(execute.calls, [])
+                observe.assert_not_called()
+                self.assertFalse(path.exists())
+
+    @toolchain_test
+    def test_budget_spent_in_setup_runs_as_an_observed_sub_second_timeout(self):
+        # AGENTEE-553: once admitted, the step's runs carry no deadline into native_run, so a budget
+        # its setup spent is a real sandboxed timeout with an executor record, not DeadlineExhausted.
+        # The version probe is cut to the remaining step budget too.
+        real_observe, slept = stage_receipts.observe_tool, []
+
+        def slow_setup(value):
+            observed = real_observe(value)
+            if not slept:
+                slept.append(time.sleep(1.4))
+            return observed
+
+        deadline = time.monotonic() + 2
+        with patch.object(stage_receipts, 'observe_tool', slow_setup):
+            path, receipt = self.run_step(self.spec('sleep'), deadline=deadline)
+        self.assertEqual(receipt['status'], 'timeout')
+        self.assertEqual(receipt['execution']['execution'], 'timeout')
+        self.assertLess(receipt['execution']['timeout_s'], native_run.LAUNCH_FLOOR_S)
+        self.assertLess(receipt['version_execution']['timeout_s'], native_run.LAUNCH_FLOOR_S)
+        self.assertLess(time.monotonic() - deadline, 5)
+        self.assertEqual(validate_receipt(path), receipt)
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(path, receipt, self.design)
+
     @toolchain_test
     def test_tampered_forged_and_foreign_receipts_refused(self):
         path, receipt = self.run_step(self.spec())

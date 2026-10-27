@@ -39,6 +39,11 @@ from .storage import forget_scope, json_bytes, publish
 # Checks see the run's baseline here when it exists (Ctx.execute's mount, now the module's).
 BASELINE_AT = "/evidence/baseline.json"
 # A run with this little of its deadline left is refused rather than launched.
+# Exempt: a stage step's version and stage runs (stage_receipts._run_bound_step). The step applies
+# this floor once, through clamp, when it is admitted and before its receipt directory exists; its
+# runs then pass no deadline, and a budget its setup spent becomes a sub-second timeout recorded as
+# the step's own observed timeout. Refusing there would leave a receipt with no executor record,
+# which reads as a cancellation (AGENTEE-553).
 LAUNCH_FLOOR_S = 1
 ISOLATIONS = ("sandbox", "host", "docker")
 

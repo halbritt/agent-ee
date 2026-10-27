@@ -1151,11 +1151,15 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
                     *, deadline=None, cancellation=None, skip_visuals=None):
     if not isinstance(binding, dict):
         raise ValueError('stage receipt binding must be an object')
-    timeout = spec['timeout_s']
-    if deadline is not None:
-        timeout = min(timeout, deadline - time.monotonic())
-        if timeout <= 0:
-            raise ValueError('stage step deadline exhausted before launch')
+    # The launch floor applies here, at admission, before a receipt directory exists (AGENTEE-553).
+    # Once admitted, the step's runs pass no deadline to native_run: a budget that setup spent is
+    # recorded as the step's own observed timeout, never refused, so the receipt keeps an executor
+    # record instead of reporting the exhaustion as a cancellation.
+    try:
+        timeout = native_run.clamp(native_run.Intent('stage', spec['argv'], timeout=spec['timeout_s']), deadline)
+    except native_run.DeadlineExhausted:
+        raise ValueError('stage step deadline exhausted before launch') from None
+    admitted = time.monotonic()
     _strict_tree(design)
     # A routing input's owning context is lost once design is copied (AGENTEE-442 review H2).
     from .routing_adapter import input_refusal
@@ -1182,16 +1186,18 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         # Nothing was executed or observed; a partial copy is not evidence.
         _discard(receipt_dir, exc)
         raise
+    def left():
+        # What the admitted budget still holds; an exhausted one runs as an observed timeout.
+        return max(.001, timeout - (time.monotonic() - admitted))
+
     try:
         if spec['version_argv'] is not None:
             version_record = dict(native_run.run(
-                native_run.Intent('version', spec['version_argv'], timeout=max(.001, min(VERSION_TIMEOUT_S, timeout))),
+                native_run.Intent('version', spec['version_argv'], timeout=min(VERSION_TIMEOUT_S, left())),
                 inputs=receipt_dir / 'inputs', work=receipt_dir / 'version', mounts=mounts, cancel=cancellation))
         _recheck_mounts(runtime_spec, mount_identities, live)
-        # An exhausted budget is recorded as the step's own observed timeout.
         execution = dict(native_run.run(
-            native_run.Intent('stage', spec['argv'], timeout=max(.001, timeout - (time.monotonic() - start)),
-                              skip_visuals=skip_visuals),
+            native_run.Intent('stage', spec['argv'], timeout=left(), skip_visuals=skip_visuals),
             inputs=receipt_dir / 'inputs', work=run, mounts=mounts, cancel=cancellation))
     except KeyboardInterrupt:
         # The executor writes its record before re-raising an interrupt. Anything else on disk may

@@ -1634,9 +1634,15 @@ class ReceiptIterationTest(unittest.TestCase):
             pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, legacy,
                                        self.declaration, time.monotonic() + 600, receipts=self.receipts)
         self.assertFalse((self.work / 'receipts').exists())
-        with self.assertRaisesRegex(ValueError, 'deadline exhausted'):
-            pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, self.state,
-                                       self.declaration, time.monotonic() - 1, receipts=self.receipts)
+        # A deadline still positive but inside native_run's launch floor is refused the same way (AGENTEE-553).
+        from agent_ee import native_run
+        for left in (-1, native_run.LAUNCH_FLOOR_S - .5):
+            with self.subTest(left=left), native_run.using(native_run.Recorded()) as execute:
+                with self.assertRaisesRegex(ValueError, 'stage step deadline exhausted before launch'):
+                    pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, self.state,
+                                               self.declaration, time.monotonic() + left, receipts=self.receipts)
+                self.assertEqual(execute.calls, [])
+                self.assertEqual(read_json(self.work / 'placement-adapter.json')['helper']['receipt_id'], None)
         self.assertUnadopted()
         self.assertEqual(read_json(self.work / 'stage-receipts.json')['receipts'], [])
 
