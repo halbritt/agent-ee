@@ -996,8 +996,8 @@ def native_fab_outcome(run):
              'board_sha256': data.get('board_sha256'), 'designators': data.get('designators'),
              'rotation_status': 'not_declared'}
     try:
-        from .fab_export import verify_manifest
-        verify_manifest(manifest.parent)
+        from .fab_export import load_verified_manifest
+        load_verified_manifest(manifest.parent)
         entry['verify_manifest'] = 'ok'
     except Exception as exc:  # noqa: BLE001 - recorded as observed
         entry['verify_manifest'] = f'{type(exc).__name__}: {exc}'

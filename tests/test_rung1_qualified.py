@@ -53,6 +53,44 @@ class EnvelopeTest(unittest.TestCase):
         self.assertIn('R-envelope-rung1-rc-outline', ids)
 
 
+class NativeFabOutcomeTest(unittest.TestCase):
+    def setUp(self):
+        from agent_ee.fab_export import SCHEMA
+        from agent_ee.storage import write_json
+        self.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-fab-outcome-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.run = self.root / 'review'
+        self.stage = self.run / 'work/fab/fab'
+        self.stage.mkdir(parents=True)
+        write_json(self.run / 'candidate.json', {'scope': {'checks': [{'kind': 'fab_export'}]}})
+        self.artifact = self.stage / 'bom.csv'
+        self.artifact.write_text('Designator,Value\nR1,10k\n')
+        self.manifest = {'schema': SCHEMA, 'files': {'bom.csv': digest(self.artifact)},
+                         'board_sha256': 'a' * 64, 'designators': {'board_non_dnp': ['R1']}}
+        write_json(self.stage / 'manifest.json', self.manifest)
+
+    def record(self):
+        from agent_ee.storage import read_json
+        q.write_record(self.root, {}, fab=q.fab_outcome(self.run))
+        return read_json(self.root / 'rung1-qualified-record.json')['fab_manifest']
+
+    def test_qualification_records_the_verified_export_verdict(self):
+        entry = self.record()
+        self.assertEqual(entry['verify_manifest'], 'ok')
+        self.assertEqual(entry['rotation_status'], 'not_declared')
+        self.assertEqual(entry['files'], 1)
+        self.assertEqual(entry['board_sha256'], self.manifest['board_sha256'])
+        self.assertEqual(entry['designators'], self.manifest['designators'])
+        self.assertEqual(entry['sha256'], digest(self.stage / 'manifest.json'))
+
+    def test_qualification_records_inventory_failure_for_changed_bytes(self):
+        self.artifact.write_text('Designator,Value\nR1,22k\n')
+        verdict = self.record()['verify_manifest']
+        self.assertIn("ValueError: manifest inventory mismatch", verdict)
+        self.assertIn("changed=['bom.csv']", verdict)
+
+
 class IntentAndLayoutTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
