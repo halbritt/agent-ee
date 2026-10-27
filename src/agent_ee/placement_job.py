@@ -26,14 +26,12 @@ import json
 import math
 import os
 from pathlib import Path
-import selectors
 import shutil
-import signal
 import subprocess
 import sys
 import time
 
-from . import placement_problem
+from . import native_run, placement_problem
 from .placement_problem import (INPUT_SCHEMA, OUTPUT_SCHEMA, JobRefusal, escape_hints,  # noqa: F401
                                 quarter_turns as _quarter_turns, rule_mm as _rule_mm)
 from .storage import canonical, digest, read_json, write_json
@@ -69,73 +67,42 @@ def _check_stop(clock, cancel_dir):
         raise JobStopped('deadline')
 
 
-def _run_child(argv, *, clock, cancel_dir=None, input_bytes=b'', on_line=None,
-               stdout=None, stderr=None, **kwargs):
-    """Bound pipe reads, writes and child lifetime by the same job clock.
+class _Discard:
+    """A sink that keeps nothing: on_line consumes the stream and memory stays flat."""
+    def write(self, chunk):
+        return len(chunk)
 
-    Each child owns a process group, including router/simulator descendants.
-    Nonblocking pipes also cover a child which never reads stdin or closes stdout.
+    def flush(self):
+        pass
+
+
+def _run_child(argv, *, clock, cancel_dir=None, input_bytes=b'', on_line=None,
+               stdout=None, stderr=None, env=None, cwd=None):
+    """One host native run bounded by the job clock and the CANCEL file.
+
+    native_run owns the process group (router/simulator descendants included), the nonblocking
+    pipes and the kill. Its timeout is what the job clock has left, so it never waits past the
+    deadline, and its per-poll checkpoint raises JobStopped on CANCEL or an expired clock; either
+    stops and reaps the group before JobStopped('deadline'|'cancelled') propagates. stdout/stderr,
+    when given, receive the streams live; stdout consumed by on_line is not kept. Returns what
+    subprocess.run would: stdout is empty when it went to a file or to on_line, and stderr is
+    always kept.
     """
     _check_stop(clock, cancel_dir)
-    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, start_new_session=True, **kwargs)
-    output, errors, pending = bytearray(), bytearray(), bytearray()
-    sent = 0
-    try:
-        with selectors.DefaultSelector() as selector:
-            for pipe in (proc.stdout, proc.stderr, proc.stdin):
-                os.set_blocking(pipe.fileno(), False)
-            selector.register(proc.stdout, selectors.EVENT_READ)
-            selector.register(proc.stderr, selectors.EVENT_READ)
-            if input_bytes:
-                selector.register(proc.stdin, selectors.EVENT_WRITE)
-            else:
-                proc.stdin.close()
-            while selector.get_map() or proc.poll() is None:
-                _check_stop(clock, cancel_dir)
-                for key, _ in selector.select(timeout=max(0.0, min(0.05, clock.remaining()))):
-                    pipe = key.fileobj
-                    if pipe is proc.stdin:
-                        try:
-                            sent += os.write(pipe.fileno(), input_bytes[sent:sent + 65536])
-                        except BrokenPipeError:
-                            sent = len(input_bytes)
-                        if sent == len(input_bytes):
-                            selector.unregister(pipe)
-                            pipe.close()
-                        continue
-                    chunk = os.read(pipe.fileno(), 65536)
-                    if not chunk:
-                        selector.unregister(pipe)
-                        continue
-                    if pipe is proc.stderr:
-                        errors.extend(chunk)
-                        if stderr is not None:
-                            stderr.write(chunk)
-                    else:
-                        if stdout is not None:
-                            stdout.write(chunk)
-                        if on_line is None:
-                            if stdout is None:
-                                output.extend(chunk)
-                        else:
-                            pending.extend(chunk)
-                            while b'\n' in pending:
-                                line, _, rest = pending.partition(b'\n')
-                                pending[:] = rest
-                                on_line(line)
-            if pending and on_line is not None:
-                on_line(bytes(pending))
-            return subprocess.CompletedProcess(argv, proc.wait(), bytes(output), bytes(errors))
-    finally:
-        # Reap the owned group even if its leader exited but a descendant holds a pipe.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait()
-        for pipe in (proc.stdin, proc.stdout, proc.stderr):
-            pipe.close()
+    intent = native_run.Intent('placement_child', argv, timeout=clock.remaining(), isolation='host',
+                               stdin=input_bytes or None, env=env, cwd=None if cwd is None else str(cwd))
+    sink = stdout if stdout is not None else _Discard() if on_line is not None else None
+    done = native_run.run(intent, work=None, on_tick=lambda: _check_stop(clock, cancel_dir), on_line=on_line,
+                          sink=sink, stderr_sink=stderr)
+    if done['execution'] == 'unavailable':
+        native_run.completed(done)   # raises Popen's own launch error (errno, strerror, filename)
+    # The job clock and CANCEL decide, not the child's own limit (which started counting later):
+    # a run that ends after the deadline or a cancel is stopped, never a completion.
+    _check_stop(clock, cancel_dir)
+    if done['execution'] == 'timeout':
+        raise JobStopped('deadline')
+    output = b'' if sink is not None else done.stdout
+    return subprocess.CompletedProcess(argv, done.returncode, output, done.stderr)
 
 
 def sha256_bytes(data):

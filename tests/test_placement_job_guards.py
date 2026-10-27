@@ -365,6 +365,61 @@ class ChildCancellationTests(Fixture):
                     signal.setitimer(signal.ITIMER_REAL, 0)
                     signal.signal(signal.SIGALRM, old)
 
+    def test_child_run_is_bounded_by_the_job_clock(self):
+        # Review c#1 (e9370fb1): native_run gets what the job clock has left as its timeout, so it
+        # never waits past the deadline, and a run its limit stopped is the job deadline, not completion.
+        from agent_ee import native_run
+        seen = []
+        real = native_run.run
+        def capture(intent, **kwargs):
+            seen.append(intent.timeout)
+            return real(intent, **kwargs)
+        clock = job.Clock(5)
+        with patch.object(job.native_run, 'run', side_effect=capture):
+            job._run_child(['/usr/bin/true'], clock=clock)
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(0 < seen[0] <= 5, seen)
+        stopped = native_run.Execution({'execution': 'timeout', 'exit_code': None, 'argv': ['x']}, returncode=-9)
+        with patch.object(job.native_run, 'run', return_value=stopped), \
+                self.assertRaisesRegex(job.JobStopped, 'deadline'):
+            job._run_child(['x'], clock=job.Clock(5))
+
+    def test_delayed_supervision_cannot_outlast_the_job_clock(self):
+        # Review c#1 r2 (a83a06e7): 80 ms clock, 60 ms late entry into native_run.run, a child that
+        # closes both pipes after 30 ms. The job clock has expired when the run returns: deadline.
+        from agent_ee import native_run
+        real = native_run.run
+        def late(intent, **kwargs):
+            time.sleep(0.06)
+            return real(intent, **kwargs)
+        for _ in range(3):
+            with patch.object(job.native_run, 'run', side_effect=late), \
+                    self.assertRaisesRegex(job.JobStopped, 'deadline'):
+                job._run_child([sys.executable, '-c', 'import time; time.sleep(0.03)'], clock=job.Clock(0.08))
+
+    def test_on_line_stream_is_not_kept(self):
+        # Review c#2 (e9370fb1): stdout consumed by on_line is streamed, never retained (as the old loop).
+        import tracemalloc
+        code = 'import sys\nfor i in range(8192): sys.stdout.write("x" * 1023 + "\\n")'
+        lines = []
+        tracemalloc.start()
+        try:
+            tracemalloc.reset_peak()
+            done = job._run_child([sys.executable, '-c', code], clock=job.Clock(30),
+                                  on_line=lambda line: lines.append(len(line)))
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertEqual((len(lines), set(lines), done.stdout), (8192, {1023}, b''))
+        self.assertLess(peak, 2 * 1024 * 1024, '8 MiB of on_line output must not be kept')
+
+    def test_missing_program_raises_its_own_launch_error(self):
+        # Review c#3 (e9370fb1): errno and filename survive, as subprocess.Popen reports them.
+        with self.assertRaises(FileNotFoundError) as caught:
+            job._run_child([str(self.dir / 'no-such-program')], clock=job.Clock(5))
+        self.assertEqual((caught.exception.errno, caught.exception.filename),
+                         (2, str(self.dir / 'no-such-program')))
+
     def test_watchdog_kills_descendants_even_after_leader_closes_streams(self):
         marker = self.dir / 'descendant'
         script = ('import subprocess,sys\n'
