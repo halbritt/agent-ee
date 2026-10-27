@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import native_run
 from .candidate import capture, safe_relative, verify_snapshot, verify_source
+from .check_record import CheckRecord
 from .storage import digest, digest_scope, fingerprint as runtime_digest, read_json, write_json
 
 
@@ -442,10 +443,10 @@ def recover_records(run, result):
                 continue
             raw = run / "work" / spec["id"] / "execution.json"
             execution = read_json(raw).get("execution", "interrupted") if raw.exists() else "not_run"
-            check = {"id": spec["id"], "kind": spec["kind"], "candidate_id": result["candidate_id"],
-                "execution": execution if execution != "ok" else "interrupted", "outcome": "unknown",
-                "summary": "run stopped before this check produced a validated result", "details": {},
-                "evidence": [raw.relative_to(run).as_posix()] if raw.exists() else [], "limitations": []}
+            check = CheckRecord(spec['id'], spec['kind'], result['candidate_id'],
+                execution=execution if execution != 'ok' else 'interrupted',
+                summary='run stopped before this check produced a validated result',
+                evidence=[raw.relative_to(run).as_posix()] if raw.exists() else [])
             result["checks"].append(check)
         done = {r["role"] for r in result["review_executions"]}
         for spec in scope.get("review_profile", {}).get("reviewers", [{"role": "circuit"}, {"role": "physical"}]):

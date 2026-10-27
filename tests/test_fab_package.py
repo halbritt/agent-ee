@@ -24,7 +24,7 @@ from agent_ee.baseline import compile_baseline, freeze_evidence, load_baseline, 
 from agent_ee.campaign import fab_artifacts, run_campaign, verify_campaign
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
-from agent_ee.checks import run_checks
+from agent_ee.checks import CHECK_FUNCS, run_checks
 from agent_ee.fab_package import (PREVIEW_ACTION, artifact_record, preview_obligations, rotation_blocker,
                                    rotation_record)
 from agent_ee.storage import digest, read_json, write_json
@@ -226,7 +226,7 @@ class NativeRun(unittest.TestCase):
             mutate(ctx.work / 'fab')
             # A deleted file is one the producer never wrote, so it is not cited either.
             ctx.result['evidence'] = [e for e in ctx.result['evidence'] if (ctx.run_dir / e).is_file()]
-        with mock.patch.object(fab_export, 'check_fab_export', damaged if mutate else producer):
+        with mock.patch.dict(CHECK_FUNCS, {'fab_export': damaged if mutate else producer}):
             self.results = run_checks(self.run_dir, time.monotonic() + 300)
         freeze_evidence(self.run_dir, self.results)
         verify_evidence(self.run_dir, self.results, required=True)

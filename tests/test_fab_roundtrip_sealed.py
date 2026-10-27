@@ -182,8 +182,9 @@ class NativeSealedRoundtripTests(unittest.TestCase):
         def tampered_roundtrip(ctx):
             after_seal(ctx.run_dir / 'work/fab/fab')
             roundtrip(ctx)
-        with mock.patch.object(fab_export, 'check_fab_export', faulty_export if export_fault else producer), \
-                mock.patch.dict(checks.CHECK_FUNCS, {'fab_roundtrip': tampered_roundtrip if after_seal else roundtrip}):
+        with mock.patch.dict(checks.CHECK_FUNCS, {
+                'fab_export': faulty_export if export_fault else producer,
+                'fab_roundtrip': tampered_roundtrip if after_seal else roundtrip}):
             results = checks.run_checks(self.run_dir, time.monotonic() + 300)
         freeze_evidence(self.run_dir, results)
         verify_evidence(self.run_dir, results, required=True)

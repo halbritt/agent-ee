@@ -1702,13 +1702,14 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
         raise _error('malformed', f'manifest does not verify: {exc}') from exc
     ctx.evidence('fab/manifest.json')
     details['manifest_sha256'] = digest(fab / 'manifest.json')
-    ctx.result['limitations'] += [
+    ctx.result['limitations'].append(
         'CPL rotations are the native KiCad position-file values; no JLC rotation, offset or '
-        'pin-1 policy was applied; the cpl_rotation check (AGENTEE-72) corrects them',
+        'pin-1 policy was applied; the cpl_rotation check (AGENTEE-72) corrects them')
+    ctx.result.add_limitation(
         'pass means the exports exist, parsed, agree on designators and are hashed; '
         'part, side and model consistency require fab_consistency (AGENTEE-73)',
-        'no DFM, panelisation, stock, price or orderability evaluation',
-    ]
+        scope='export_only')
+    ctx.result['limitations'].append('no DFM, panelisation, stock, price or orderability evaluation')
     if excluded:
         ctx.result['limitations'].append(
             f'{", ".join(excluded_refs)} populated but excluded from BOM and CPL by the declared rule '

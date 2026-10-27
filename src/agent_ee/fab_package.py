@@ -67,7 +67,6 @@ ANGLE_BASES = ('native_supported', 'corrected', 'outside_profile', 'unassessed')
 SUPPLIER_CONFIRMATION = 'pending_preview'
 REQUIRED_FILES = ('gerbers.zip', 'bom.csv', 'cpl.csv')
 PREDICATES = ['fab-package:done-gate', 'fab-package:sealed-artifacts']
-EXPORT_SCOPE_NOTE = 'pass means the exports exist, parsed, agree on designators and are hashed'
 # Rotation statuses a done predicate accepts (decision B, AGENTEE-126). `not_declared` keeps the
 # native-CPL behaviour of a scope without a cpl_rotation check; `ok` is a declared correction with
 # nothing physically pending. `PREVIEW_REQUIRED` (every cpl_rotation result today) is admitted by
@@ -318,29 +317,24 @@ def check_fab_package(ctx):
     except ValueError as exc:
         raise CheckError('unsupported', str(exc)) from exc
     details = ctx.result['details']
-    saved_params = ctx.params
-    ctx.params = export_params(ctx.params)
-    try:
-        fab_export.check_fab_export(ctx)
-    finally:
-        ctx.params = saved_params
-    ctx.result['limitations'] = [text for text in ctx.result['limitations']
-                                 if not text.startswith(EXPORT_SCOPE_NOTE)]
-    export_summary = ctx.result['summary']
-    export_result = {'evidence': list(ctx.result['evidence'])}
+    export_result = ctx.invoke('fab_export', export_params(ctx.params))
+    details.update(export_result['details'])
+    ctx.result['evidence'] += export_result['evidence']
+    ctx.result.update({key: export_result[key] for key in ('execution', 'outcome', 'summary')})
+    if export_result['execution'] != 'ok':
+        ctx.result['limitations'] += export_result['limitations']
+        raise CheckError(export_result['execution'], export_result['summary'])
+    ctx.result['limitations'] += export_result.limitations_except('export_only')
+    export_summary = export_result['summary']
 
-    sub_result = {'id': ctx.cid, 'kind': ctx.spec.get('kind'),
-                  'candidate_id': ctx.manifest['candidate_id'],
-                  'execution': 'not_run', 'outcome': 'unknown', 'location': '', 'summary': '',
-                  'evidence': [], 'details': {}, 'limitations': []}
-    try:
-        fab_consistency.gate(ctx, ctx.cid, ctx.spec, export_result, ctx.work / 'fab', result=sub_result)
-    finally:
-        details['consistency'] = sub_result['details']
-        for entry in sub_result['evidence']:
-            if entry not in ctx.result['evidence']:
-                ctx.result['evidence'].append(entry)
-        ctx.result['limitations'] += sub_result['limitations']
+    sub_result = fab_consistency.gate(ctx, ctx.cid, ctx.spec, export_result, ctx.work / 'fab')
+    details['consistency'] = sub_result['details']
+    for entry in sub_result['evidence']:
+        if entry not in ctx.result['evidence']:
+            ctx.result['evidence'].append(entry)
+    ctx.result['limitations'] += sub_result['limitations']
+    if sub_result['execution'] != 'ok':
+        raise CheckError(sub_result['execution'], sub_result['summary'])
     if sub_result['outcome'] == 'defect':
         ctx.result.update(execution='ok', outcome='defect', location=sub_result['location'],
                           summary=f'fab package done gate failed: {sub_result["summary"]}')

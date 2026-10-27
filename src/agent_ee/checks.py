@@ -56,6 +56,7 @@ design violations is execution `ok`, outcome `defect`; incomplete coverage or
 unreadable output is never a clean result.
 """
 
+from .check_record import CheckRecord
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
 
@@ -103,24 +104,41 @@ class CheckError(Exception):
 class Ctx:
     """One check's run context: sandbox invocation, evidence, result record."""
 
-    def __init__(self, run_dir, manifest, spec, deadline, *, context=None):
+    def __init__(self, run_dir, manifest, spec, deadline, *, context=None, params=None):
         self.run_dir = Path(run_dir)
         self.manifest = manifest
         self.scope = manifest["scope"]
         self.spec = spec
         self.cid = spec["id"]
-        self.params = spec.get("params", {})
+        self.params = spec.get("params", {}) if params is None else params
         self.deadline = deadline
         self.context = {} if context is None else context
         self.inputs = self.run_dir / "inputs"
         self.work = self.run_dir / "work" / self.cid
         self.work.mkdir(parents=True, exist_ok=True)
-        self.result = {
-            "id": self.cid, "kind": spec.get("kind"),
-            "candidate_id": manifest["candidate_id"],
-            "execution": "not_run", "outcome": "unknown", "summary": "",
-            "evidence": [], "details": {}, "limitations": [],
-        }
+        self.result = CheckRecord(self.cid, spec.get('kind'), manifest['candidate_id'])
+
+    def invoke(self, kind, params):
+        """Delegate a registered handler after the enclosing check's prerequisites."""
+        from .check_registry import registry
+        registration = registry[kind]
+        return self.evaluate(registration.check, params=params,
+                             context=registration.context_values(self.context))
+
+    def evaluate(self, handler, *, params=None, context=None, location=None):
+        """Return an isolated sub-result, retaining this check's identity and evidence paths."""
+        from copy import deepcopy
+        child = Ctx(self.run_dir, self.manifest, self.spec, self.deadline,
+                    params=deepcopy(self.params if params is None else params),
+                    context=self.context if context is None else context)
+        if location is not None:
+            child.result['location'] = location
+        try:
+            handler(child)
+            child.validate_result()
+        except CheckError as exc:
+            child.result.update(execution=exc.execution, outcome='unknown', summary=str(exc))
+        return child.result
 
     def validate_result(self):
         from .stages import validate_gate_findings
@@ -1172,11 +1190,10 @@ def run_checks(run_dir, deadline, **context):
     for index, spec in enumerate(scope.get("checks", [])):
         cid = spec.get("id")
         if not isinstance(cid, str) or not SAFE_ID.match(cid) or cid in seen:
-            record = {"id": cid, "kind": spec.get("kind"),
-                      "candidate_id": manifest["candidate_id"],
-                      "execution": "malformed", "outcome": "unknown",
-                      "summary": f"check #{index} has a missing, unsafe or duplicate id: {cid!r}",
-                      "evidence": [], "details": {"spec": spec}, "limitations": []}
+            record = CheckRecord(cid, spec.get('kind'), manifest['candidate_id'],
+                      execution='malformed',
+                      summary=f"check #{index} has a missing, unsafe or duplicate id: {cid!r}",
+                      details={'spec': spec})
             write_json(run_dir / "checks" / f"invalid-{index}.json", record)
             results.append(record)
             continue

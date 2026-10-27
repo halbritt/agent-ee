@@ -738,18 +738,12 @@ def resolve_model(ctx, path, footprint, board, libraries):
 # ------------------------------------------------------------------------- check
 
 def check_fab_consistency(ctx):
-    gate(ctx, *export_prerequisite(ctx))
+    _gate(ctx, *export_prerequisite(ctx))
 
 
-def gate(ctx, eid, export_spec, export_result, stage, *, result=None):
+def gate(ctx, eid, export_spec, export_result, stage):
     """Verify one sealed export staging tree; `fab_package` runs this on its own export (eid == ctx.cid)."""
-    saved = ctx.result
-    if result is not None:
-        ctx.result = result
-    try:
-        return _gate(ctx, eid, export_spec, export_result, stage)
-    finally:
-        ctx.result = saved
+    return ctx.evaluate(lambda child: _gate(child, eid, export_spec, export_result, stage), location='')
 
 
 def _gate(ctx, eid, export_spec, export_result, stage):
