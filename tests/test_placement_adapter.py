@@ -1634,15 +1634,26 @@ class ReceiptIterationTest(unittest.TestCase):
             pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, legacy,
                                        self.declaration, time.monotonic() + 600, receipts=self.receipts)
         self.assertFalse((self.work / 'receipts').exists())
-        # A deadline still positive but inside native_run's launch floor is refused the same way (AGENTEE-553).
+        with self.assertRaisesRegex(ValueError, 'deadline exhausted'):
+            pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, self.state,
+                                       self.declaration, time.monotonic() - 1, receipts=self.receipts)
+        self.assertUnadopted()
+        self.assertEqual(read_json(self.work / 'stage-receipts.json')['receipts'], [])
+
+    def test_deadline_inside_the_launch_floor_runs_no_helper(self):
+        # AGENTEE-553: a deadline still positive but within native_run's launch floor is refused at
+        # stage admission, before any receipt, sandbox launch or adoption.
+        import time
         from agent_ee import native_run
-        for left in (-1, native_run.LAUNCH_FLOOR_S - .5):
-            with self.subTest(left=left), native_run.using(native_run.Recorded()) as execute:
-                with self.assertRaisesRegex(ValueError, 'stage step deadline exhausted before launch'):
-                    pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, self.state,
-                                               self.declaration, time.monotonic() + left, receipts=self.receipts)
-                self.assertEqual(execute.calls, [])
-                self.assertEqual(read_json(self.work / 'placement-adapter.json')['helper']['receipt_id'], None)
+        with native_run.using(native_run.Recorded()) as execute, \
+                self.assertRaisesRegex(ValueError, 'stage step deadline exhausted before launch'):
+            pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, self.state,
+                                       self.declaration, time.monotonic() + native_run.LAUNCH_FLOOR_S - .5,
+                                       receipts=self.receipts)
+        self.assertEqual(execute.calls, [])
+        helper = read_json(self.work / 'placement-adapter.json')['helper']
+        self.assertNotIn('receipt_id', helper)
+        self.assertFalse((self.work / helper['receipt']).exists())
         self.assertUnadopted()
         self.assertEqual(read_json(self.work / 'stage-receipts.json')['receipts'], [])
 

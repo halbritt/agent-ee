@@ -1904,23 +1904,22 @@ class StepExecutionTests(StepFixture):
     def test_budget_spent_in_setup_runs_as_an_observed_sub_second_timeout(self):
         # AGENTEE-553: once admitted, the step's runs carry no deadline into native_run, so a budget
         # its setup spent is a real sandboxed timeout with an executor record, not DeadlineExhausted.
-        # The version probe is cut to the remaining step budget too.
+        # The version probe is cut to the remaining step budget too. Setup outlasts the whole 1 s
+        # budget, so both runs get the 0.001 s remainder whatever the scheduling.
         real_observe, slept = stage_receipts.observe_tool, []
 
         def slow_setup(value):
             observed = real_observe(value)
             if not slept:
-                slept.append(time.sleep(1.4))
+                slept.append(time.sleep(1.2))
             return observed
 
-        deadline = time.monotonic() + 2
         with patch.object(stage_receipts, 'observe_tool', slow_setup):
-            path, receipt = self.run_step(self.spec('sleep'), deadline=deadline)
+            path, receipt = self.run_step(self.spec('sleep', timeout_s=1))
         self.assertEqual(receipt['status'], 'timeout')
         self.assertEqual(receipt['execution']['execution'], 'timeout')
-        self.assertLess(receipt['execution']['timeout_s'], native_run.LAUNCH_FLOOR_S)
-        self.assertLess(receipt['version_execution']['timeout_s'], native_run.LAUNCH_FLOOR_S)
-        self.assertLess(time.monotonic() - deadline, 5)
+        self.assertEqual(receipt['execution']['timeout_s'], .001)
+        self.assertEqual(receipt['version_execution']['timeout_s'], .001)
         self.assertEqual(validate_receipt(path), receipt)
         with self.assertRaisesRegex(ValueError, 'no output adopted'):
             adopt(path, receipt, self.design)
