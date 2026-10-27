@@ -103,8 +103,60 @@ class RoutedArtworkTest(unittest.TestCase):
                     self.assertTrue(children(parse_sexpr(before), 'segment'))
                     self.assertTrue(children(parse_sexpr(before), 'via'))
                     self.assertTrue(children(parse_sexpr(before), 'zone'))
+                    assessment = report['via_pad_assessment']
+                    self.assertEqual(assessment['board_sha256'], hashlib.sha256(output.read_bytes()).hexdigest())
+                    self.assertEqual(assessment['status'], 'unassessed')
                 finally:
                     self.root = prior
+
+    def test_via_pad_inventory_keeps_native_identities_and_missing_process_explicit(self):
+        import pcbnew as k
+        board = k.BOARD()
+        footprint = k.FOOTPRINT(board)
+        board.Add(footprint)
+        footprint.SetReference('U1')
+        expected = {}
+        for copper, mask, name in ((k.F_Cu, k.F_Mask, 'F.Cu'), (k.B_Cu, k.B_Mask, 'B.Cu')):
+            pad = k.PAD(footprint)
+            pad.SetNumber('1')
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            pad.SetShape(k.PAD_SHAPE_RECT)
+            pad.SetSize(k.VECTOR2I(2000000, 2000000))
+            pad.SetPosition(k.VECTOR2I(10000000, 10000000))
+            layers = k.LSET()
+            layers.AddLayer(copper)
+            layers.AddLayer(mask)
+            pad.SetLayerSet(layers)
+            footprint.Add(pad)
+            expected[pad.m_Uuid.AsString()] = [name]
+        via = k.PCB_VIA(board)
+        via.SetPosition(k.VECTOR2I(10000000, 10000000))
+        via.SetWidth(600000)
+        via.SetDrill(300000)
+        via.SetLayerPair(k.F_Cu, k.B_Cu)
+        board.Add(via)
+        path = self.root / 'via-sites.kicad_pcb'
+        for position, expected_sites in ((10000000, expected), (20000000, {})):
+            with self.subTest(position=position):
+                via.SetPosition(k.VECTOR2I(position, position))
+                k.SaveBoard(str(path), board, True)
+                before = path.read_bytes()
+                report = art.via_pad_assessment(path)
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(report['board_sha256'], hashlib.sha256(before).hexdigest())
+                self.assertEqual(report['status'], 'unassessed')
+                self.assertIsNone(report['process_profile'])
+                self.assertEqual(report['site_count'], len(expected_sites))
+                self.assertEqual({s['pad_uuid']: s['copper_layers'] for s in report['sites']}, expected_sites)
+                for site in report['sites']:
+                    self.assertEqual(site['via_uuid'], via.m_Uuid.AsString())
+                    self.assertEqual(site['footprint_uuid'], footprint.m_Uuid.AsString())
+                    self.assertEqual(site['reference'], 'U1')
+                    self.assertEqual(site['pad_number'], '1')
+                    self.assertEqual(site['pad_attribute'], 'SMD')
+                    self.assertEqual(site['via_drill_nm'], 300000)
+                    self.assertEqual(site['status'], 'unassessed')
+                    self.assertIsNone(site['process_evidence'])
 
     def test_native_producer_closes_carry_with_internal_slots(self):
         import pcbnew as k

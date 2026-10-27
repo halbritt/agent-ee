@@ -758,6 +758,49 @@ def compare_artwork_drc(source, output, before, after, *, native_pins, **scope):
     return comparison
 
 
+def via_pad_assessment(board_path):
+    """Inventory saved-board via centres in outer-layer pad copper, read-only.
+
+    Native geometry cannot establish filled/capped manufacture or assembly
+    support. No process profile is selected here; every site stays unassessed,
+    including on an otherwise clean artwork candidate. This is not a full
+    via-annulus clearance check or an assembly qualification.
+    """
+    import pcbnew as k
+    from .geometry_probe import load_readonly_board, pad_attribute, verify_unchanged
+
+    board, before = load_readonly_board(board_path)
+    sites = []
+    for via in board.GetTracks():
+        if via.GetClass() != 'PCB_VIA':
+            continue
+        position = via.GetPosition()
+        for footprint in board.GetFootprints():
+            for pad in footprint.Pads():
+                layers = [layer for layer in (k.F_Cu, k.B_Cu)
+                          if via.IsOnLayer(layer) and pad.IsOnLayer(layer)
+                          and pad.HitTest(position, 0, layer)]
+                if not layers:
+                    continue
+                sites.append(dict(
+                    via_uuid=via.m_Uuid.AsString(), pad_uuid=pad.m_Uuid.AsString(),
+                    footprint_uuid=footprint.m_Uuid.AsString(), reference=footprint.GetReference(),
+                    pad_number=pad.GetNumber(), pad_attribute=pad_attribute(pad),
+                    via_center_nm=[position.x, position.y], via_drill_nm=int(via.GetDrillValue()),
+                    via_net=via.GetNetname(), pad_net=pad.GetNetname(),
+                    copper_layers=[board.GetLayerName(layer) for layer in layers],
+                    status='unassessed', process_evidence=None))
+    verify_unchanged(board_path, before, 'artwork via/pad assessment')
+    return dict(schema='agent-ee.via-pad-assessment/1',
+                board_sha256=hashlib.sha256(before).hexdigest(),
+                status='unassessed', process_profile=None,
+                reason='No assembly/via process profile is selected by the artwork producer.',
+                method='via centre inside native pad copper: PAD.HitTest(position, 0, layer) on F.Cu/B.Cu',
+                site_count=len(sites), sites=sorted(sites, key=lambda s: (s['via_uuid'], s['pad_uuid'])),
+                limitations=['Centre containment does not measure full via-annulus clearance.',
+                             'Native geometry does not establish filled/capped process or assembly support.'])
+
+
 def produce(source, root, targets=None, field_poses=None, artwork_policy=None, policy_file=None):
     """Write a disposable candidate, retain native DRC and fail on any new non-silk finding.
 
@@ -847,6 +890,7 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     report = {'schema': 'agent-ee.placed-candidate/1', 'status': 'placed', 'producer': STEP,
               'authority': 'disposable-unsealed-proposal', 'source_sha256': digest(source),
               'board_sha256': digest(output), 'containment': containment_witness(output),
+              'via_pad_assessment': via_pad_assessment(output),
               'write_scope': proof, 'open_defects': defects,
               'native_drc_comparison': comparison,
               'outcome': 'defect' if defects else 'informational',
