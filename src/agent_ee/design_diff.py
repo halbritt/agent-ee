@@ -11,6 +11,7 @@ difference is electrically acceptable.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 import hashlib
 import json
@@ -622,4 +623,5 @@ def describe_regeneration_determinism(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('regeneration_determinism', describe_regeneration_determinism, check_regeneration_determinism)
+    _register_check('regeneration_determinism', describe_regeneration_determinism, check_regeneration_determinism,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

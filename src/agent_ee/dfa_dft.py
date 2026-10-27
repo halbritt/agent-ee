@@ -11,6 +11,7 @@ unknown; there are no default current limits or tolerances.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 from fractions import Fraction
 import math
 import re
@@ -661,4 +662,5 @@ def describe_dfa_dft(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('dfa_dft', describe_dfa_dft, check_dfa_dft, accepts_criterion=True)
+    _register_check('dfa_dft', describe_dfa_dft, check_dfa_dft, accepts_criterion=True,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

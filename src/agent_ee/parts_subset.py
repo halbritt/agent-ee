@@ -1,6 +1,7 @@
 """One offline predicate: declared native part membership and bounded multiplicity."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 import copy
 from xml.etree.ElementTree import ParseError
@@ -239,4 +240,5 @@ def describe_parts_subset(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('parts_subset', describe_parts_subset, check_parts_subset)
+    _register_check('parts_subset', describe_parts_subset, check_parts_subset,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

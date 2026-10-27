@@ -46,7 +46,7 @@ def before_fab_check(ctx):
     """Unknown until the declared step runs; a failed/stale receipt is never pending."""
     from .checks import CheckError
     from .stage_receipts import after_tree, validate_receipt, ADOPTABLE
-    context = getattr(ctx, 'fab_context', None)
+    context = ctx.context.get('fab_context')
     if context is None or ctx.spec['kind'] not in FAB_CHECKS:
         return
     write_json(ctx.work / 'fab-step.json', context)
@@ -75,7 +75,7 @@ def before_fab_check(ctx):
 def _step_package(ctx):
     """Retained output paths only after receipt validation, with every byte in its seal."""
     from .checks import CheckError
-    context = getattr(ctx, 'fab_context', None)
+    context = ctx.context.get('fab_context')
     if context is None:
         return None
     path = Path(context['receipt']['path'])

@@ -1,6 +1,7 @@
 """Bounded first-order RC endpoint qualification, never physical calibration."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import copy
 import itertools
@@ -241,4 +242,5 @@ def describe_passive_corners(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('passive_corners', describe_passive_corners, check_passive_corners)
+    _register_check('passive_corners', describe_passive_corners, check_passive_corners,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

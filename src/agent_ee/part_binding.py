@@ -1,6 +1,7 @@
 """Part-binding properties embedded in native KiCad symbols and footprints, with validator."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 from decimal import Decimal, DecimalException
 import json
@@ -1432,4 +1433,5 @@ def describe_part_binding(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('part_binding', describe_part_binding, check_part_binding)
+    _register_check('part_binding', describe_part_binding, check_part_binding,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

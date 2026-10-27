@@ -1,6 +1,7 @@
 """Textual citation support and an explicitly scoped native symbol pin consumer."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import copy
 import json
@@ -597,6 +598,8 @@ def describe_datasheet_facts(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('datasheet_facts', describe_datasheet_facts, check_datasheet_facts)
+    _register_check('datasheet_facts', describe_datasheet_facts, check_datasheet_facts,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 if __name__ != '__main__':
-    _register_check('pin_map', describe_datasheet_facts, check_pin_map)
+    _register_check('pin_map', describe_datasheet_facts, check_pin_map,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

@@ -43,6 +43,7 @@ JLCPCB placement preview before ordering. The status itself is never upgraded.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import re
 from decimal import Decimal, InvalidOperation
@@ -595,4 +596,6 @@ def describe_fab_package(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('fab_package', describe_fab_package, check_fab_package)
+    _register_check('fab_package', describe_fab_package, check_fab_package,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress, _requires.fab_output),
+        context_keys=('fab_context',))

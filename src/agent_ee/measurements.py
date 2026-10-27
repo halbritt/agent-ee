@@ -1,6 +1,7 @@
 """Tool-produced scalar measurements and explicit cross-domain margin checks."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import math
 import re
@@ -195,7 +196,8 @@ def describe_measurements(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('measurements', describe_measurements, check_measurements)
+    _register_check('measurements', describe_measurements, check_measurements,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 
 
 def describe_coupled_margins(ctx):
@@ -203,7 +205,8 @@ def describe_coupled_margins(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('coupled_margins', describe_coupled_margins, check_coupled_margins)
+    _register_check('coupled_margins', describe_coupled_margins, check_coupled_margins,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 
 
 def _measurements(params, captured):

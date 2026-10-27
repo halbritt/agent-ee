@@ -1,6 +1,7 @@
 """Qualified installed kicad-happy output, with explicit evaluation coverage."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import math
 from pathlib import Path
 
@@ -307,4 +308,5 @@ def describe_kicad_happy(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('kicad_happy', describe_kicad_happy, check_kicad_happy)
+    _register_check('kicad_happy', describe_kicad_happy, check_kicad_happy,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

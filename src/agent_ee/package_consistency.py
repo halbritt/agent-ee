@@ -6,6 +6,7 @@ their relation only from a captured explicit table. Unmapped names are unknown.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import re
 import sys
 from pathlib import Path
@@ -299,4 +300,5 @@ def describe_package_consistency(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('package_consistency', describe_package_consistency, check_package_consistency)
+    _register_check('package_consistency', describe_package_consistency, check_package_consistency,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

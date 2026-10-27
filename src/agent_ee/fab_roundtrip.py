@@ -16,6 +16,7 @@ geometry is the independent sealed pcbnew `geometry` probe of the captured board
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import hashlib
 import io
 import math
@@ -990,4 +991,5 @@ def describe_fab_roundtrip(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('fab_roundtrip', describe_fab_roundtrip, check_fab_roundtrip)
+    _register_check('fab_roundtrip', describe_fab_roundtrip, check_fab_roundtrip,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

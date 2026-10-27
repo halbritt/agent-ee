@@ -35,6 +35,7 @@ atopile's MIT-licensed cost_estimation domain; no code or prices are copied.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import hashlib
 import json
@@ -721,4 +722,5 @@ def describe_jlc_cost_estimate(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('jlc_cost_estimate', describe_jlc_cost_estimate, check_jlc_cost_estimate)
+    _register_check('jlc_cost_estimate', describe_jlc_cost_estimate, check_jlc_cost_estimate,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

@@ -16,6 +16,7 @@ compensation, thermal relief, paste, panel and board-edge rules.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import math
 import re
 from fractions import Fraction
@@ -739,4 +740,5 @@ def describe_dfm_geometry(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('dfm_geometry', describe_dfm_geometry, check_dfm_geometry)
+    _register_check('dfm_geometry', describe_dfm_geometry, check_dfm_geometry,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

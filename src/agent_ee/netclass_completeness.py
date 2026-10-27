@@ -1,6 +1,7 @@
 """Presence-only Default netclass qualification over captured project bytes."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import json
 from pathlib import Path
 
@@ -106,4 +107,5 @@ def describe_netclass_completeness(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('netclass_completeness', describe_netclass_completeness, check_netclass_completeness)
+    _register_check('netclass_completeness', describe_netclass_completeness, check_netclass_completeness,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

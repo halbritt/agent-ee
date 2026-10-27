@@ -1,6 +1,7 @@
 """Read-only native verification of declared net classes in a saved candidate."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
@@ -192,4 +193,5 @@ def describe_net_class_assignment(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('net_class_assignment', describe_net_class_assignment, check_net_class_assignment)
+    _register_check('net_class_assignment', describe_net_class_assignment, check_net_class_assignment,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

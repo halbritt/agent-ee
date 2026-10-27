@@ -11,6 +11,7 @@ See docs/schematic-lint.md.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import hashlib
 import math
 import os
@@ -914,4 +915,5 @@ def describe_schematic_lint(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('schematic_lint', describe_schematic_lint, check_schematic_lint)
+    _register_check('schematic_lint', describe_schematic_lint, check_schematic_lint,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

@@ -33,6 +33,7 @@ physically validates a JLCPCB placement model.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import hashlib
 import json
@@ -892,4 +893,6 @@ def describe_cpl_rotation(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('cpl_rotation', describe_cpl_rotation, check_cpl_rotation)
+    _register_check('cpl_rotation', describe_cpl_rotation, check_cpl_rotation,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress, _requires.fab_output),
+        context_keys=('fab_context',))

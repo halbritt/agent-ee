@@ -1,6 +1,7 @@
 """Owner-declared severity policy over four pinned offline analyzer reports."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import re
 from collections import Counter
 import shutil
@@ -144,4 +145,5 @@ def describe_kicad_happy_severity_gate(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('kicad_happy_severity_gate', describe_kicad_happy_severity_gate, check_severity_gate)
+    _register_check('kicad_happy_severity_gate', describe_kicad_happy_severity_gate, check_severity_gate,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

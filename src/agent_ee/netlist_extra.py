@@ -1,6 +1,7 @@
 """Declared direct-net topology checks using the shared strict native XML reader."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 from collections import defaultdict
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
@@ -239,4 +240,5 @@ def describe_netlist_extra(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('netlist_extra', describe_netlist_extra, check_netlist_extra)
+    _register_check('netlist_extra', describe_netlist_extra, check_netlist_extra,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

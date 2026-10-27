@@ -510,14 +510,15 @@ class DeclaredFabStepTests(unittest.TestCase):
         import time
         from agent_ee.checks import Ctx, CheckError
         manifest = read_json(self.run_dir / 'candidate.json')
-        ctx = Ctx(self.run_dir, manifest, self.scope['checks'][2], time.monotonic() + 120)
+        context = json.loads(json.dumps(self.context))
+        context['receipt']['sha256'] = '0' * 64
+        ctx = Ctx(self.run_dir, manifest, self.scope['checks'][2], time.monotonic() + 120,
+                  context={'fab_context': context})
         ctx.work = self.root / 'changed-context'
         ctx.work.mkdir()
-        ctx.fab_context = json.loads(json.dumps(self.context))
-        ctx.fab_context['receipt']['sha256'] = '0' * 64
         with self.assertRaisesRegex(CheckError, 'receipt changed'):
             fab_stage.before_fab_check(ctx)
-        ctx.fab_context = self.context
+        context['receipt']['sha256'] = self.context['receipt']['sha256']
         ctx.manifest = {**manifest, 'files': {**manifest['files'], self.scope['board']: '0' * 64}}
         with self.assertRaisesRegex(CheckError, 'not applicable'):
             fab_stage.before_fab_check(ctx)
@@ -537,10 +538,10 @@ class DeclaredFabStepTests(unittest.TestCase):
                 "write_json(m,d)")
         spec = {**self.spec, 'argv': self.spec['argv'][:5] + ['-c', code]}
         context = self.context_for(spec, 'different-package')
-        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'), self.scope['checks'][2], time.monotonic()+120)
+        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'), self.scope['checks'][2], time.monotonic()+120,
+                  context={'fab_context': context})
         ctx.work = self.root / 'fresh-comparison'
         shutil.copytree(self.run_dir / 'work/fab-export', ctx.work)
-        ctx.fab_context = context
         fab_stage.before_fab_check(ctx)
         with self.assertRaisesRegex(CheckError, 'differs from the fresh sandbox export'):
             fab_stage.grade_native(ctx)
@@ -561,10 +562,10 @@ class DeclaredFabStepTests(unittest.TestCase):
                 spec = {**self.spec, 'argv': self.spec['argv'][:5] + ['-c', code]}
                 context = self.context_for(spec, 'malformed-' + label)
                 ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'),
-                          self.scope['checks'][2], time.monotonic() + 120)
+                          self.scope['checks'][2], time.monotonic() + 120,
+                          context={'fab_context': context})
                 ctx.work = self.root / ('malformed-comparison-' + label)
                 shutil.copytree(self.run_dir / 'work/fab-export', ctx.work)
-                ctx.fab_context = context
                 fab_stage.before_fab_check(ctx)
                 with self.assertRaisesRegex(CheckError, 'manifest') as error:
                     fab_stage.grade_native(ctx)
@@ -574,10 +575,10 @@ class DeclaredFabStepTests(unittest.TestCase):
         import time
         from agent_ee.checks import Ctx, CheckError
         ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'),
-                  self.scope['checks'][2], time.monotonic() + 120)
+                  self.scope['checks'][2], time.monotonic() + 120,
+                  context={'fab_context': self.context})
         ctx.work = self.root / 'metadata-comparison'
         shutil.copytree(self.run_dir / 'work/fab-export', ctx.work)
-        ctx.fab_context = self.context
         fab_stage.before_fab_check(ctx)
         path = ctx.work / 'fab/manifest.json'
         manifest = read_json(path)
@@ -588,10 +589,10 @@ class DeclaredFabStepTests(unittest.TestCase):
     def test_missing_or_changed_sealed_artifact_stays_unknown(self):
         import time
         from agent_ee.checks import Ctx, CheckError
-        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'), self.scope['checks'][2], time.monotonic()+120)
+        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'), self.scope['checks'][2], time.monotonic()+120,
+                  context={'fab_context': self.context})
         ctx.work = self.root / 'missing-artifact'
         ctx.work.mkdir()
-        ctx.fab_context = self.context
         artifact = self.receipt_dir / 'run/out/fab/cpl.csv'
         data = artifact.read_bytes()
         try:

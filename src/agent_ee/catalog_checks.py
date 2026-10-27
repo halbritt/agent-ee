@@ -1,6 +1,7 @@
 """Captured catalog adapters; preparation never authenticates upstream claims."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 import re
 from pathlib import Path
@@ -93,6 +94,8 @@ def describe_catalog(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('catalog', describe_catalog, check_catalog)
+    _register_check('catalog', describe_catalog, check_catalog,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))
 if __name__ != '__main__':
-    _register_check('part_selection', describe_catalog, check_catalog)
+    _register_check('part_selection', describe_catalog, check_catalog,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

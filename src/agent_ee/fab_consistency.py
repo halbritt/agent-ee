@@ -23,6 +23,7 @@ captured member's bytes match the receipt hash; anything else stays unknown.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import csv
 import io
@@ -978,4 +979,5 @@ def describe_fab_consistency(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('fab_consistency', describe_fab_consistency, check_fab_consistency)
+    _register_check('fab_consistency', describe_fab_consistency, check_fab_consistency,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

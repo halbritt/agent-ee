@@ -1,6 +1,7 @@
 """Exact, bounded schematic graph comparison over independently captured inputs."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import json
 from collections import Counter
 from pathlib import Path
@@ -587,4 +588,5 @@ def describe_netlist_parity(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('netlist_parity', describe_netlist_parity, check_netlist_parity)
+    _register_check('netlist_parity', describe_netlist_parity, check_netlist_parity,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

@@ -1,6 +1,7 @@
 """Qualified ideal one-dimensional DC conduction on endpoint-only planar copper."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import math
 from fractions import Fraction
 from pathlib import Path
@@ -515,4 +516,5 @@ def describe_dc_path(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('dc_path', describe_dc_path, check_dc_path)
+    _register_check('dc_path', describe_dc_path, check_dc_path,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

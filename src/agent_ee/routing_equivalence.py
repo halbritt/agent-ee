@@ -1,6 +1,7 @@
 """Compare saved routed copper primitives, independently of serialization order."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 from collections import Counter
 import hashlib
@@ -114,4 +115,5 @@ def describe_routing_equivalence(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('routing_equivalence', describe_routing_equivalence, check_routing_equivalence)
+    _register_check('routing_equivalence', describe_routing_equivalence, check_routing_equivalence,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

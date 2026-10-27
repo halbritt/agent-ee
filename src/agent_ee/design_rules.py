@@ -12,6 +12,7 @@ design.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import re
 from decimal import Decimal
 from pathlib import Path
@@ -728,4 +729,5 @@ def describe_design_rules(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('design_rules', describe_design_rules, check_design_rules)
+    _register_check('design_rules', describe_design_rules, check_design_rules,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

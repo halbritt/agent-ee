@@ -22,12 +22,6 @@ DRC = 'placement/placed/native-drc.json'
 ARTWORK = 'placement/placed/placement-silkscreen.json'
 EXECUTION = 'placement/placed/native-drc-execution.json'
 FILES = (REPORT, BOARD, DRC, EXECUTION)
-GATED_KINDS = frozenset({
-    'fab_export', 'fab_package', 'cpl_rotation', 'fab_consistency', 'jlc_dfm',
-    'fab_roundtrip', 'fab_profile', 'dfm_geometry', 'dfa_dft', 'assembly_readiness',
-    'jlc_cost_estimate', 'drc', 'part_binding', 'package_consistency', 'parts_subset',
-    'land_pattern', 'catalog', 'part_selection',
-})
 # Board lineage stamp (AGENTEE-351): a title block comment names each carry digest of the
 # placement results that published open defects on this board's ancestry. It travels with
 # the board bytes, so a re-scoped copy cannot release without its placement evidence.
@@ -700,10 +694,18 @@ def _closes(defect, original, current, conflicts, moved, current_board, graphic_
             ('native' in defect or all(u in moved or current[u][2] != original[u][2] for u in ids)))
 
 
-def gated(spec):
+def requires_clearance(spec, *, declared=False):
     if placement_projection(spec):
         return False
-    return spec.get('stage') in ('verification', 'fab', 'release') or spec.get('kind') in GATED_KINDS
+    return declared or spec.get('stage') in ('verification', 'fab', 'release')
+
+
+def gated(spec):
+    from .check_registry import registry
+    from .check_prerequisites import placement_clear
+    registration = registry.get(spec.get('kind'))
+    declared = registration is not None and placement_clear in registration.early_prerequisites
+    return requires_clearance(spec, declared=declared)
 
 
 def placement_projection(spec):
@@ -759,9 +761,10 @@ def projection_record(ctx, unwaived):
     return carried
 
 
-def before_check(ctx):
+def before_check(ctx, *, required=None):
     """Return False with typed refusal when carried open defects block this gate."""
-    if not gated(ctx.spec):
+    enabled = gated(ctx.spec) if required is None else requires_clearance(ctx.spec, declared=required)
+    if not enabled:
         return True
     from .checks import CheckError
     cache = []

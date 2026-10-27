@@ -17,6 +17,7 @@ nets, and only two-terminal passives may be matched with swapped terminals.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation
@@ -671,4 +672,5 @@ def describe_topology_rules(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('topology_rules', describe_topology_rules, check_topology_rules)
+    _register_check('topology_rules', describe_topology_rules, check_topology_rules,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

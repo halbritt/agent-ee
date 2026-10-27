@@ -18,6 +18,7 @@ not calibrated against routed outcomes.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 from fractions import Fraction
 import json
@@ -1021,4 +1022,5 @@ def describe_placement_congestion(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('placement_congestion', describe_placement_congestion, check_placement_congestion)
+    _register_check('placement_congestion', describe_placement_congestion, check_placement_congestion,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

@@ -1,6 +1,7 @@
 """Captured owner declarations over direct native schematic conductors."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import hashlib
 import json
 import re
@@ -1173,4 +1174,5 @@ def describe_hardware_interface(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('hardware_interface', describe_hardware_interface, check_hardware_interface)
+    _register_check('hardware_interface', describe_hardware_interface, check_hardware_interface,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

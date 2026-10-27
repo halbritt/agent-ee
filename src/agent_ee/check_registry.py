@@ -11,6 +11,12 @@ class Registration:
     capability: object
     check: object
     accepts_criterion: bool = False
+    early_prerequisites: tuple = ()
+    prerequisites: tuple = ()
+    context_keys: tuple = ()
+
+    def context_values(self, supplied):
+        return {key: supplied.get(key) for key in self.context_keys}
 
 
 class Registry(Mapping):
@@ -37,14 +43,46 @@ class Registry(Mapping):
         self._load()
         return len(self._registrations)
 
-    def register(self, kind, capability, check, *, accepts_criterion=False):
+    def register(self, kind, capability, check, *, accepts_criterion=False,
+                 early_prerequisites=None, prerequisites=None, context_keys=()):
         if kind in self._registrations:
             raise ValueError(f'check kind already registered: {kind}')
         if not callable(capability) or not callable(check):
             raise TypeError('check kind requires capability and check functions')
-        record = Registration(kind, capability, check, accepts_criterion)
+        # A caller using the original registration API still participates in
+        # scope-declared stages. Explicit tuples replace these defaults.
+        from .check_prerequisites import staged_placement_clear, stage_progress
+        if early_prerequisites is None:
+            early_prerequisites = (staged_placement_clear,)
+        if prerequisites is None:
+            prerequisites = (stage_progress,)
+        early_prerequisites, prerequisites = tuple(early_prerequisites), tuple(prerequisites)
+        if isinstance(context_keys, (str, bytes)):
+            raise TypeError('check context keys must be a sequence of identifiers')
+        context_keys = tuple(context_keys)
+        if not all(callable(value) for value in (*early_prerequisites, *prerequisites)):
+            raise TypeError('check prerequisites must be callable')
+        if (any(not isinstance(key, str) or not key.isidentifier() for key in context_keys)
+                or len(set(context_keys)) != len(context_keys)):
+            raise ValueError('check context keys must be distinct identifiers')
+        record = Registration(kind, capability, check, accepts_criterion,
+                              early_prerequisites, prerequisites, context_keys)
         self._registrations[kind] = record
         return record
+
+    def execution(self, kind):
+        """Unknown handlers retain stage-dependent admission before refusal."""
+        from .check_prerequisites import staged_placement_clear, stage_progress
+        self._load()
+        return self._registrations.get(kind, Registration(
+            kind, None, None, early_prerequisites=(staged_placement_clear,),
+            prerequisites=(stage_progress,)))
+
+    def validate_context(self, supplied):
+        keys = {key for record in self.values() for key in record.context_keys}
+        for key in supplied:
+            if key not in keys:
+                raise TypeError(f'run_checks() got an unexpected keyword argument {key!r}')
 
 
 registry = Registry()

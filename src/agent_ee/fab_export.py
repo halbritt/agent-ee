@@ -42,6 +42,7 @@ the partial staging is renamed `fab.incomplete/` and no manifest is written.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import csv
 import hashlib
@@ -1753,4 +1754,6 @@ def describe_fab_export(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('fab_export', describe_fab_export, check_fab_export)
+    _register_check('fab_export', describe_fab_export, check_fab_export,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress, _requires.fab_output),
+        context_keys=('fab_context',))

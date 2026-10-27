@@ -24,6 +24,7 @@ obligations outside this gate.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 from decimal import Decimal
 import hashlib
@@ -715,4 +716,5 @@ def describe_antenna_placement(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('antenna_placement', describe_antenna_placement, check_antenna_placement)
+    _register_check('antenna_placement', describe_antenna_placement, check_antenna_placement,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

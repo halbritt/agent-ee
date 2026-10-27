@@ -8,6 +8,7 @@ read-only saved-board probe.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import json
 from pathlib import PurePosixPath
 
@@ -384,4 +385,5 @@ def describe_placement(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('placement', describe_placement, check_placement, accepts_criterion=True)
+    _register_check('placement', describe_placement, check_placement, accepts_criterion=True,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

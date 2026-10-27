@@ -1,6 +1,7 @@
 """Bounded captured-subcircuit simulation; model data cannot supply control code."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -823,4 +824,5 @@ def describe_active_spice(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('active_spice', describe_active_spice, check_active_spice)
+    _register_check('active_spice', describe_active_spice, check_active_spice,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

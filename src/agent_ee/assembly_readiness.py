@@ -6,6 +6,7 @@ of the captured schematic hierarchy, the same source the JLC BOM in
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -2596,7 +2597,7 @@ def stock_evaluation_params(ctx):
     doc = _load_strict_json(path)
     if not is_capture(doc):
         return params
-    context = getattr(ctx, 'stock_context', None)
+    context = ctx.context.get('stock_context')
     witness = {'context': context}
     try:
         if context is None:
@@ -2771,4 +2772,6 @@ def describe_assembly_readiness(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('assembly_readiness', describe_assembly_readiness, check_assembly_readiness)
+    _register_check('assembly_readiness', describe_assembly_readiness, check_assembly_readiness,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,),
+        context_keys=('stock_context',))

@@ -6,6 +6,7 @@ no thickness-to-weight conversion is inferred here.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 from decimal import Decimal
 from fractions import Fraction
 import re
@@ -529,4 +530,5 @@ def describe_board_envelope(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('board_envelope', describe_board_envelope, check_board_envelope, accepts_criterion=True)
+    _register_check('board_envelope', describe_board_envelope, check_board_envelope, accepts_criterion=True,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

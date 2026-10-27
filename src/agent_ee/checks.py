@@ -57,6 +57,7 @@ unreadable output is never a clean result.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import json
 import math
@@ -102,7 +103,7 @@ class CheckError(Exception):
 class Ctx:
     """One check's run context: sandbox invocation, evidence, result record."""
 
-    def __init__(self, run_dir, manifest, spec, deadline):
+    def __init__(self, run_dir, manifest, spec, deadline, *, context=None):
         self.run_dir = Path(run_dir)
         self.manifest = manifest
         self.scope = manifest["scope"]
@@ -110,6 +111,7 @@ class Ctx:
         self.cid = spec["id"]
         self.params = spec.get("params", {})
         self.deadline = deadline
+        self.context = {} if context is None else context
         self.inputs = self.run_dir / "inputs"
         self.work = self.run_dir / "work" / self.cid
         self.work.mkdir(parents=True, exist_ok=True)
@@ -119,6 +121,14 @@ class Ctx:
             "execution": "not_run", "outcome": "unknown", "summary": "",
             "evidence": [], "details": {}, "limitations": [],
         }
+
+    def validate_result(self):
+        from .stages import validate_gate_findings
+        try:
+            validate_gate_findings(self.result)
+        except ValueError as exc:
+            self.result['details'].pop('gate_findings', None)
+            raise CheckError('malformed', str(exc)) from exc
 
     def remaining(self):
         return self.deadline - time.monotonic()
@@ -1150,8 +1160,10 @@ CHECK_FUNCS = CheckFunctions()
 
 # ------------------------------------------------------------------ entry point
 
-def run_checks(run_dir, deadline, *, fab_context=None, stock_context=None):
+def run_checks(run_dir, deadline, **context):
     """Run every scope check; write checks/<id>.json immediately; return results."""
+    from .check_registry import registry
+    registry.validate_context(context)
     run_dir = Path(run_dir)
     manifest = read_json(run_dir / "candidate.json")
     scope = manifest["scope"]
@@ -1169,28 +1181,18 @@ def run_checks(run_dir, deadline, *, fab_context=None, stock_context=None):
             results.append(record)
             continue
         seen.add(cid)
-        ctx = Ctx(run_dir, manifest, spec, deadline)
-        ctx.fab_context = fab_context
-        ctx.stock_context = stock_context
+        registration = registry.execution(spec.get('kind'))
+        ctx = Ctx(run_dir, manifest, spec, deadline, context=registration.context_values(context))
         func = CHECK_FUNCS.get(spec.get("kind"))
         try:
-            from .placement_defects import before_check as placement_defect_gate
-            if placement_defect_gate(ctx):
+            if all(requirement(ctx, results) for requirement in registration.early_prerequisites):
                 if ctx.remaining() < MIN_CHECK_SECONDS:
                     raise CheckError("interrupted", "run deadline exhausted before this check started")
                 if func is None:
                     raise CheckError("unsupported", f"unknown check kind {spec.get('kind')!r}")
-                from .stages import before_check
-                if before_check(ctx, results):
-                    from .fab_stage import before_fab_check
-                    before_fab_check(ctx)
+                if all(requirement(ctx, results) for requirement in registration.prerequisites):
                     func(ctx)
-            from .stages import validate_gate_findings
-            try:
-                validate_gate_findings(ctx.result)
-            except ValueError as exc:
-                ctx.result['details'].pop('gate_findings', None)
-                raise CheckError('malformed', str(exc)) from exc
+            ctx.validate_result()
         except CheckError as exc:
             ctx.result["execution"] = exc.execution
             ctx.result["outcome"] = "unknown"
@@ -1228,11 +1230,14 @@ def describe_native(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('erc', describe_native, check_erc)
+    _register_check('erc', describe_native, check_erc,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 if __name__ != '__main__':
-    _register_check('drc', describe_native, check_drc)
+    _register_check('drc', describe_native, check_drc,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))
 if __name__ != '__main__':
-    _register_check('netlist', describe_native, check_netlist)
+    _register_check('netlist', describe_native, check_netlist,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 
 
 def describe_geometry(ctx):
@@ -1251,7 +1256,8 @@ def describe_geometry(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('geometry', describe_geometry, check_geometry, accepts_criterion=True)
+    _register_check('geometry', describe_geometry, check_geometry, accepts_criterion=True,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 
 
 def describe_rc_transient(ctx):
@@ -1259,7 +1265,8 @@ def describe_rc_transient(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('rc_transient', describe_rc_transient, check_rc_transient)
+    _register_check('rc_transient', describe_rc_transient, check_rc_transient,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
 
 
 def _geometry(params):

@@ -10,6 +10,7 @@ immutable criteria; no rotation, scale or alias search is performed.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 from fractions import Fraction
 import hashlib
@@ -782,4 +783,5 @@ def describe_land_pattern(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('land_pattern', describe_land_pattern, check_land_pattern)
+    _register_check('land_pattern', describe_land_pattern, check_land_pattern,
+        early_prerequisites=(_requires.placement_clear,), prerequisites=(_requires.stage_progress,))

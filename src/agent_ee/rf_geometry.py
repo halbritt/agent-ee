@@ -41,6 +41,7 @@ declared guard width is graded only as the geometric guard it declares.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 from decimal import Decimal
 from fractions import Fraction
@@ -1617,4 +1618,5 @@ def describe_rf_geometry(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('rf_geometry', describe_rf_geometry, check_rf_geometry)
+    _register_check('rf_geometry', describe_rf_geometry, check_rf_geometry,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

@@ -5,6 +5,7 @@ selection. Its source rows, exclusions and normalization reasons remain visible.
 """
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 import re
 from pathlib import Path
@@ -299,4 +300,5 @@ def describe_part_decisions(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('part_decisions', describe_part_decisions, check_part_decisions)
+    _register_check('part_decisions', describe_part_decisions, check_part_decisions,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

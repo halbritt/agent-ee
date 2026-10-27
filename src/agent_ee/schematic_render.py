@@ -1,6 +1,7 @@
 """Optional source-bound schematic images; visual drift never produces a verdict."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 
 import argparse
 import re
@@ -337,4 +338,5 @@ def describe_schematic_render(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('schematic_render', describe_schematic_render, check_schematic_render)
+    _register_check('schematic_render', describe_schematic_render, check_schematic_render,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

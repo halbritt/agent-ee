@@ -1,6 +1,7 @@
 """Coordinator pin-reference check over explicit captured selected-symbol queries."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -68,4 +69,5 @@ def describe_symbol_pins(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('symbol_pins', describe_symbol_pins, check_symbol_pins)
+    _register_check('symbol_pins', describe_symbol_pins, check_symbol_pins,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

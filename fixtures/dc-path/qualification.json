@@ -4,7 +4,7 @@
   "max_loads": 8,
   "max_nodes": 32,
   "min_length_width_ratio": 10,
-  "model_sha256": "15bf2c7b8a29c34d02bdc1a5d3f7b3de754cae7cd9ea06c646c6ba96391a8097",
+  "model_sha256": "172a6e5832c6b4fd88383b31fb52153dbb8995dc54fb0a13e9b846162a55ad34",
   "pcbnew_version": "10.0.7",
   "physics": "ideal rho*L/A; endpoint contacts; external temperature; fixed topology",
   "policy": "endpoint-planar-dc/2",

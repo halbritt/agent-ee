@@ -1,6 +1,7 @@
 """Instantiate captured blocks before capture; grade adaptations as ordinary checks."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 import argparse
 import copy
 import json
@@ -513,4 +514,5 @@ def describe_block_provenance(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('block_provenance', describe_block_provenance, check_block_provenance)
+    _register_check('block_provenance', describe_block_provenance, check_block_provenance,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))

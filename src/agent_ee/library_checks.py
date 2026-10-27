@@ -1,6 +1,7 @@
 """Coordinator adapter for captured library checks; offline helpers stay pure."""
 
 from .check_registry import register as _register_check
+from . import check_prerequisites as _requires
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -148,4 +149,5 @@ def describe_footprint_assignment(ctx):
 
 
 if __name__ != '__main__':
-    _register_check('footprint_assignment', describe_footprint_assignment, check_footprint_assignment)
+    _register_check('footprint_assignment', describe_footprint_assignment, check_footprint_assignment,
+        early_prerequisites=(_requires.staged_placement_clear,), prerequisites=(_requires.stage_progress,))
