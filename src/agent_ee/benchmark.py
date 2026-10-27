@@ -10,6 +10,7 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from . import native_run
 
 
 @dataclass
@@ -491,7 +492,7 @@ def _native_partitions(items, root_rel):
     # of these exact bytes, so one process reuses it.
     texts = dict(items)
     import tempfile
-    from .executor import execute
+
     from .hardware_interface import read_inventory
     with tempfile.TemporaryDirectory(prefix='agent-ee-benchmark-netlist-') as directory:
         source, work = Path(directory)/'candidate', Path(directory)/'work'
@@ -500,8 +501,11 @@ def _native_partitions(items, root_rel):
                 target = safe_path(source, rel)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(text.encode('utf-8'))
-        record = execute(source, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                                        '-o', '/work/design.xml', '/candidate/'+root_rel], timeout=600)
+        record = native_run.run(
+            native_run.netlist('/candidate/' + root_rel, '/work/design.xml', timeout=600),
+            inputs=source,
+            work=work,
+        )
         if record['execution'] != 'ok' or record['exit_code'] != 0 or record.get('displaced_records'):
             raise ValueError('native netlist export failed during structural preparation')
         inventory = read_inventory(work/'design.xml')

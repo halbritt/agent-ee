@@ -140,8 +140,8 @@ class NativeRoundtripTests(unittest.TestCase):
 
     def test_failed_missing_and_malformed_native_exports_retain_execution(self):
         import json
-        from unittest.mock import patch
-        from agent_ee.executor import execute
+        from dataclasses import replace
+        from agent_ee import native_run
         from agent_ee.schematic_roundtrip import roundtrip
         # Only the tool boundary is fault-injected; each failure is actually
         # executed and recorded by the production networkless executor.
@@ -149,9 +149,24 @@ class NativeRoundtripTests(unittest.TestCase):
                         malformed=['/usr/bin/python3', '-c', "open('/work/design.xml','w').write('<bad>')"],
                         absent=['/bin/true'])
         for label, argv in commands.items():
-            def fault(inputs, work, command, **kwargs):
-                return execute(inputs, work, argv if 'netlist' in command else command, **kwargs)
-            with self.subTest(label=label), patch('agent_ee.schematic_roundtrip.execute', side_effect=fault):
+            def execute_fault(call):
+                result = native_run.run(
+                    call.intent,
+                    inputs=call.inputs,
+                    work=call.work,
+                    mounts=call.mounts,
+                    adapter=native_run.Sandbox(),
+                )
+                return native_run.Outcome(execution=result['execution'], exit_code=result['exit_code'],
+                                          stdout=result.stdout, stderr=result.stderr)
+
+            class FaultedRun(native_run.Recorded):
+                def run(self, intent, **kwargs):
+                    if 'netlist' in intent.argv:
+                        intent = replace(intent, argv=argv)
+                    return super().run(intent, **kwargs)
+
+            with self.subTest(label=label), native_run.using(FaultedRun(execute_fault)):
                 out = self.out.parent / label
                 report = roundtrip((FIXTURE / 'imu.kicad_sch').read_bytes(), MANIFEST, CAPTURES, LAYOUT, out)
                 self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)

@@ -5,11 +5,9 @@ import json
 import os
 import shutil
 from pathlib import Path
-import subprocess
-import tempfile
 import time
 
-from . import placement_runtime
+from . import native_run, placement_runtime
 
 _SCHEMA = 'agent-ee.rust-planning-output/1'
 
@@ -102,51 +100,46 @@ class Session:
 
 
 def _exchange(argv, encoded, heartbeat, record):
-    """Own and reap one child; stderr cannot block its streamed stdout protocol."""
+    """Keep the streamed protocol over one owned native run."""
     response = None
-    with tempfile.TemporaryFile(mode='w+b') as errors:
-        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
+
+    def on_line(line):
+        nonlocal response
         try:
-            process.stdin.write(encoded)
-            process.stdin.close()  # The native reader needs EOF before planning starts.
-            for line in process.stdout:
-                try:
-                    event = json.loads(line)
-                except (ValueError, UnicodeError) as exc:
-                    raise placement_runtime.PlanningProcessError('invalid Rust planning JSON record') from exc
-                if not isinstance(event, dict) or event.get('schema') != _SCHEMA or response is not None:
-                    raise placement_runtime.PlanningProcessError('unexpected Rust planning protocol record')
-                if event.get('kind') == 'heartbeat':
-                    if not isinstance(event.get('record'), dict):
-                        raise placement_runtime.PlanningProcessError('invalid Rust planning heartbeat')
-                    heartbeat(event['record'])
-                elif 'kind' not in event and (('plan' in event) != ('error' in event)):
-                    response = event
-                else:
-                    raise placement_runtime.PlanningProcessError('unknown Rust planning protocol record')
-            process.wait()
-            if response is None:
-                errors.seek(0)
-                diagnostic = errors.read().decode('utf-8', errors='replace')
-                raise placement_runtime.PlanningProcessError(
-                    f'Rust planning exited {process.returncode} without a result: {diagnostic}')
-            return response
-        except BrokenPipeError as exc:
-            raise placement_runtime.PlanningProcessError('Rust planning closed its input pipe') from exc
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-            record['exit_code'] = process.returncode
-            if not process.stdin.closed:
-                try:
-                    process.stdin.close()
-                except BrokenPipeError:
-                    pass  # The original failure remains visible; the owned child is reaped.
-            process.stdout.close()
-            errors.seek(0)
-            record['stderr'] = errors.read().decode('utf-8', errors='replace')
+            event = json.loads(line)
+        except (ValueError, UnicodeError) as exc:
+            raise placement_runtime.PlanningProcessError('invalid Rust planning JSON record') from exc
+        if not isinstance(event, dict) or event.get('schema') != _SCHEMA or response is not None:
+            raise placement_runtime.PlanningProcessError('unexpected Rust planning protocol record')
+        if event.get('kind') == 'heartbeat':
+            if not isinstance(event.get('record'), dict):
+                raise placement_runtime.PlanningProcessError('invalid Rust planning heartbeat')
+            heartbeat(event['record'])
+        elif 'kind' not in event and (('plan' in event) != ('error' in event)):
+            response = event
+        else:
+            raise placement_runtime.PlanningProcessError('unknown Rust planning protocol record')
+
+    execution = None
+    try:
+        execution = native_run.run(
+            native_run.Intent(
+                'rust_planner', argv, isolation='host', timeout=None, stdin=encoded, stop_grace_s=5
+            ),
+            work=None,
+            on_line=on_line,
+        )
+        if execution['execution'] == 'unavailable':
+            raise FileNotFoundError(execution.stdout.decode())
+        if response is None:
+            diagnostic = execution.stderr.decode('utf-8', errors='replace')
+            raise placement_runtime.PlanningProcessError(
+                f'Rust planning exited {execution.returncode} without a result: {diagnostic}')
+        return response
+    except BaseException as exc:
+        execution = getattr(exc, 'native_execution', execution)
+        raise
+    finally:
+        if execution is not None:
+            record['exit_code'] = execution.returncode
+            record['stderr'] = execution.stderr.decode('utf-8', errors='replace')

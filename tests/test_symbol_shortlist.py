@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee import symbol_library
+from agent_ee import native_run, symbol_library
 from agent_ee.footprint_library import canonical, digest
 from agent_ee.symbol_shortlist import (APPROVAL_SCHEMA, LIBRARY_PICK, SYMBOL_PICK, ShortlistError,
                                        approved_symbols, build_index, main, plan_chunks, select, verify)
@@ -361,15 +361,14 @@ class ShortlistTests(unittest.TestCase):
                                                           ('Owned_Passive:Phantom', ['R-divider']))}
         launches = []
 
-        def recorded(inputs, work, argv, **kwargs):
-            launches.append(dict(argv=argv, network=kwargs.get('network'), stdin=kwargs.get('stdin')))
-            (work / 'stdout.log').write_text(json.dumps({'subtype': 'success', 'is_error': False,
-                                                         'structured_output': consoles[work.name]}))
-            return {'execution': 'ok', 'exit_code': 0}
+        def recorded(call):
+            launches.append(dict(argv=list(call.intent.argv), network=call.intent.network, stdin=call.intent.stdin))
+            return native_run.Outcome(stdout=json.dumps({'subtype': 'success', 'is_error': False,
+                                                         'structured_output': consoles[call.work.name]}).encode())
 
         with patch('agent_ee.reviewers.Path.home', return_value=home), \
                 patch('agent_ee.reviewers.shutil.which', return_value='/usr/bin/true'), \
-                patch('agent_ee.reviewers.execute', side_effect=recorded):
+                native_run.using(native_run.Recorded(recorded)):
             result = select(request(self.libraries, always=()), self.files, DEFINITION, self.tmp / 'run')
         self.assertEqual([s['lib_id'] for s in result['symbols']], ['Owned_Passive:R_0402'])
         self.assertEqual(result['dropped'][0]['reason'], 'symbol_not_in_library')

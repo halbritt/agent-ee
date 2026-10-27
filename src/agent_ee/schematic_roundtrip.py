@@ -15,9 +15,10 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from . import native_run
 from .candidate import safe_relative
 from .connectivity_ir import _json_bytes, _read_json
-from .executor import execute
+
 from .native_netlist import read_native_inventory
 from .netlist_parity import compare, resolved_inventory, validate_policy, MAX_BYTES, MAX_LIBRARY_BYTES
 from .schematic_decompile import decompile
@@ -99,7 +100,12 @@ def roundtrip(source, libraries, captures, layout, out, *, timeout=120, cancella
     def run(inputs, work, argv):
         report['executions'][work.name] = str((work / 'execution.json').relative_to(out))
         try:
-            record = execute(inputs, work, argv, timeout=timeout, cancellation=cancellation)
+            record = native_run.run(
+                native_run.Intent('schematic_roundtrip', argv, timeout=timeout),
+                inputs=inputs,
+                work=work,
+                cancel=cancellation,
+            )
             if cancellation is not None and cancellation.cancelled.is_set():
                 raise KeyboardInterrupt
             return record

@@ -17,6 +17,7 @@ no checks is ``completed``. The fab stage is the ``fab_package`` done gate (AGEN
 The driver composes ``rung1_qualified``; it adds no step, check or campaign code. Its record
 is ``experimental-unqualified`` and is the precursor run that AGENTEE-96 replaces.
 """
+import locale
 import argparse
 import copy
 import json
@@ -26,6 +27,7 @@ import shutil
 import subprocess
 import sys
 
+from . import native_run
 from . import rung1_campaign as rc
 from . import rung1_qualified as rq
 from .storage import canonical, digest, identity, read_json, write_json
@@ -340,7 +342,18 @@ def run_plan(rundir, setup):
 def tool_versions():
     def first_line(argv):
         try:
-            proc = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+            execution = native_run.run(
+                native_run.Intent('probe', argv, timeout=60, isolation='host'), work=None
+            )
+            if execution['execution'] == 'unavailable':
+                raise FileNotFoundError(execution.stdout.decode())
+            if execution['execution'] == 'timeout':
+                raise subprocess.TimeoutExpired(argv, 60, output=execution.stdout, stderr=execution.stderr)
+            stdout_text, stderr_text = (
+                raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+                for raw in (execution.stdout, execution.stderr)
+            )
+            proc = subprocess.CompletedProcess(argv, execution.returncode, stdout_text, stderr_text)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {'argv': argv, 'version': None, 'reason': f'{type(exc).__name__}: {exc}'}
         # ngspice frames its banner in asterisks; the first line with text is the version.

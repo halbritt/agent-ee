@@ -3,6 +3,7 @@
 Engineering decisions remain captured inputs. Every stage consumes the preceding
 stage's real files; final acceptance comes from independently sealed checks.
 """
+import locale
 import fcntl
 import hashlib
 import json
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import uuid
 
+from . import native_run
 from . import build_plan, build_stages, placement_intent, qualification, requirement_map, retained_run
 from .retained_run import retained_path as _retained_path
 from .catalog import strict_json
@@ -34,7 +36,21 @@ def _runtime():
     cli = shutil.which('kicad-cli')
     if cli is None:
         raise ValueError('kicad-cli is unavailable')
-    version = subprocess.run([cli, 'version'], capture_output=True, text=True, timeout=30, check=True)
+    execution = native_run.run(
+        native_run.Intent('probe', [cli, 'version'], timeout=30, isolation='host'), work=None
+    )
+    if execution['execution'] == 'unavailable':
+        raise FileNotFoundError(execution.stdout.decode())
+    if execution['execution'] == 'timeout':
+        raise subprocess.TimeoutExpired(
+            [cli, 'version'], 30, output=execution.stdout, stderr=execution.stderr
+        )
+    stdout_text, stderr_text = (
+        raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+        for raw in (execution.stdout, execution.stderr)
+    )
+    version = subprocess.CompletedProcess([cli, 'version'], execution.returncode, stdout_text, stderr_text)
+    version.check_returncode()
     extension, diagnostic = pcbnew_extension()
     if extension is None:
         raise ValueError('pcbnew native extension unavailable: ' + str(diagnostic))

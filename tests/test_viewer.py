@@ -144,17 +144,18 @@ else:
         self.assertFalse(self.out.exists())
 
     def test_timeout_preserves_diagnostics_and_cleans_staging(self):
-        real_run = subprocess.run
+        from agent_ee import native_run
         staged = []
 
-        def timeout_export(command, **kwargs):
+        def timeout_export(call):
+            command = call.intent.argv
             if '--output' not in command:
-                return real_run(command, **kwargs)
+                result = native_run.run(call.intent, work=None, adapter=native_run.Host())
+                return native_run.Outcome(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
             staged.append(Path(command[-1]))
-            kwargs['stderr'].write(b'partial export diagnostic')
-            raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+            return native_run.Outcome(execution='timeout', exit_code=None, stderr=b'partial export diagnostic')
 
-        with patch('agent_ee.viewer.subprocess.run', side_effect=timeout_export):
+        with native_run.using(native_run.Recorded(timeout_export)):
             with self.assertRaisesRegex(ViewerError, 'timed out'):
                 build_viewer(self.board, self.out, timeout=.1)
         self.assertFalse(staged[0].exists())

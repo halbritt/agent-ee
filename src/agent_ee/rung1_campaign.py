@@ -20,7 +20,8 @@ import subprocess
 import sys
 import uuid
 
-from . import executor
+
+from . import native_run
 from . import generate as g
 from .storage import canonical, digest, identity, read_json, write_json
 from .run_record import validate_scope
@@ -353,7 +354,9 @@ def scaffold_load_checks(rundir, scaffold):
     for label, argv in commands.items():
         work = base / label
         g.seed_kicad_config(work, candidate)
-        record = executor.execute(candidate, work, argv, timeout=300)
+        record = native_run.run(
+            native_run.Intent('scaffold_check', argv, timeout=300), inputs=candidate, work=work
+        )
         report = next((p for p in (work / 'report.json', work / 'report.xml') if p.is_file()), None)
         entry = {'argv': argv, 'execution': record['execution'], 'exit_code': record['exit_code'],
                  'report': rel(report, rundir) if report else None,
@@ -569,7 +572,15 @@ def run_logged(argv, log_dir, label, timeout, source=PACKAGE_ROOT):
     log_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, 'PYTHONPATH': str(source), 'PYTHONDONTWRITEBYTECODE': '1'}
     try:
-        proc = subprocess.run(argv, capture_output=True, timeout=timeout, cwd=REPO_ROOT, env=env)
+        execution = native_run.run(
+            native_run.Intent('stage', argv, timeout=timeout, isolation='host', cwd=REPO_ROOT, env=env),
+            work=None,
+        )
+        if execution['execution'] == 'unavailable':
+            raise FileNotFoundError(execution.stdout.decode())
+        if execution['execution'] == 'timeout':
+            raise subprocess.TimeoutExpired(argv, timeout, output=execution.stdout, stderr=execution.stderr)
+        proc = subprocess.CompletedProcess(argv, execution.returncode, execution.stdout, execution.stderr)
         code, out, err = proc.returncode, proc.stdout, proc.stderr
     except subprocess.TimeoutExpired as exc:
         code, out, err = None, exc.stdout or b'', exc.stderr or b''

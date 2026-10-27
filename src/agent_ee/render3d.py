@@ -1,20 +1,21 @@
 """Render source-bound KiCad still images in isolated native processes."""
 
+import locale
 import concurrent.futures
+import contextvars
 import datetime
 import math
 import os
 import re
 import shutil
-import signal
 import struct
 import subprocess
 import tempfile
-import threading
 import time
 import zlib
 from pathlib import Path
 
+from . import native_run
 from .candidate import verify_snapshot
 from .storage import digest, write_json
 from .viewer import _source_board, _stage_board
@@ -36,7 +37,18 @@ def _now():
 
 def _probe(command):
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        execution = native_run.run(
+            native_run.Intent('probe', command, timeout=20, isolation='host'), work=None
+        )
+        if execution['execution'] == 'unavailable':
+            raise FileNotFoundError(execution.stdout.decode())
+        if execution['execution'] == 'timeout':
+            raise subprocess.TimeoutExpired(command, 20, output=execution.stdout, stderr=execution.stderr)
+        stdout_text, stderr_text = (
+            raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+            for raw in (execution.stdout, execution.stderr)
+        )
+        result = subprocess.CompletedProcess(command, execution.returncode, stdout_text, stderr_text)
     except subprocess.TimeoutExpired as exc:
         raise RenderError("KiCad render capability probe timed out after 20 seconds") from exc
     if result.returncode:
@@ -108,12 +120,7 @@ def _png_info(path):
     return {"width": width, "height": height, "sha256": digest(path)}
 
 
-def _kill(process):
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass  # The native process can finish between timeout and cancellation.
-    process.wait()
+
 
 
 def _unchanged(source, board, board_hash, project, project_hash):
@@ -178,19 +185,14 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
     manifest_path = out / "render-manifest.json"
     write_json(manifest_path, manifest)
     started = time.monotonic()
-    stop = threading.Event()
-    lock = threading.Lock()
-    processes = {}
+    cancel = native_run.Cancellation()
+    stop = cancel.cancelled
     interrupted = False
     executor = None
     futures = {}
 
     def cancel_processes():
-        stop.set()
-        with lock:
-            active = list(processes.values())
-        for process in active:
-            _kill(process)
+        cancel.cancel()
 
     def render_view(view, snapshot, cli, environment, work_root):
         record = records[view]
@@ -217,24 +219,37 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
             record.update(command=command, config_directory=str(config), status="running")
             write_json(out / f"{view}.json", record)
             with (out / record["stdout"]).open("wb") as stdout, (out / record["stderr"]).open("wb") as stderr:
-                with lock:
-                    if stop.is_set():
-                        record["status"] = "interrupted"
-                        return
-                    process = subprocess.Popen(command, cwd=working, env=env, stdout=stdout,
-                                               stderr=stderr, start_new_session=True)
-                    processes[view] = process
-                    record["pid"] = process.pid
-                try:
-                    record["returncode"] = process.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    _kill(process)
-                    record.update(status="timeout", returncode=process.returncode,
-                                  error=f"native render timed out after {timeout}s")
+                if stop.is_set():
+                    record["status"] = "interrupted"
                     return
-                finally:
-                    with lock:
-                        processes.pop(view, None)
+
+                def launched(pid):
+                    record["pid"] = pid
+
+                try:
+                    execution = native_run.run(
+                        native_run.Intent(
+                            'render3d', command, timeout=timeout, isolation='host', cwd=working, env=env
+                        ),
+                        work=None,
+                        cancel=cancel,
+                        on_launch=launched,
+                    )
+                except BaseException as exc:
+                    partial = getattr(exc, 'native_execution', None)
+                    if partial is not None:
+                        stdout.write(partial.stdout)
+                        stderr.write(partial.stderr)
+                    raise
+                if execution['execution'] == 'unavailable':
+                    raise FileNotFoundError(execution.stdout.decode())
+                stdout.write(execution.stdout)
+                stderr.write(execution.stderr)
+                if execution.returncode is not None:
+                    record["returncode"] = execution.returncode
+                if execution['execution'] == 'timeout':
+                    record.update(status="timeout", error=f"native render timed out after {timeout}s")
+                    return
             if stop.is_set():
                 record.update(status="interrupted", error="render interrupted")
             elif record["returncode"]:
@@ -319,7 +334,7 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
                 for view in views:
                     if progress:
                         progress(f"Queued {view} render ({width}×{height}, {quality})")
-                    future = executor.submit(render_view, view, snapshot, cli, env, work_root)
+                    future = executor.submit(contextvars.copy_context().run, render_view, view, snapshot, cli, env, work_root)
                     futures[future] = view
                 for future in concurrent.futures.as_completed(futures):
                     future.result()

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
+from agent_ee import native_run
 from agent_ee.models3d import (
     STOCK_REPOSITORY,
     STOCK_REVISIONS,
@@ -177,9 +178,8 @@ class ModelClosureTests(unittest.TestCase):
     setUp = ModelInventoryTests.setUp
     write_board = ModelInventoryTests.write_board
     def test_default_identity_unknown_version_and_absent_library(self):
-        from subprocess import CompletedProcess
         with patch('agent_ee.models3d.shutil.which', return_value='/usr/bin/kicad-cli'), \
-                patch('agent_ee.models3d.subprocess.run', return_value=CompletedProcess([], 0, '10.0.7\n', '')):
+                native_run.using(native_run.Recorded(lambda call: native_run.Outcome(stdout=b'10.0.7\n'))):
             defaults, identity = _kicad_model_defaults({})
             self.assertEqual(identity['version'], '10.0.7')
             self.assertEqual(identity['source'], 'kicad-default')
@@ -200,7 +200,7 @@ class ModelClosureTests(unittest.TestCase):
         for version, code in (('9.0.7', 0), ('11.0.0', 0), ('10.0.7', 1), ('bad', 0)):
             with self.subTest(version=version, code=code), \
                     patch('agent_ee.models3d.shutil.which', return_value='/usr/bin/kicad-cli'), \
-                    patch('agent_ee.models3d.subprocess.run', return_value=CompletedProcess([], code, version, '')):
+                    native_run.using(native_run.Recorded(lambda call: native_run.Outcome(exit_code=code, stdout=version.encode()))):
                 self.assertEqual(_kicad_model_defaults({}), ({}, None))
 
     def test_default_sources_env_precedence_and_missing_default(self):

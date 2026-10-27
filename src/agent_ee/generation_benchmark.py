@@ -7,11 +7,12 @@ import time
 from fractions import Fraction
 from pathlib import Path
 
+from . import native_run
 from .baseline import compile_baseline, freeze_evidence, verify_evidence
 from .candidate import capture, safe_relative, verify_snapshot
 from .catalog import exact_fields, nonempty, strict_json
 from .design_diff import read_side, summarize
-from .executor import RECORDS, SANDBOX_PATH, execute
+from .executor import RECORDS, SANDBOX_PATH
 from .findings import safe_id
 from .storage import digest, fingerprint, identity, json_bytes, write_json
 from .run_record import pcbnew_extension, policy_files
@@ -334,8 +335,15 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
             write_json(work / 'feedback.json', {
                 'checks': prior['evaluation']['checks'],
                 'missing_deliverables': prior['generation']['missing_deliverables']})
-        record = execute(public, work, ['/usr/bin/python3', '/candidate/generator.py',
-                                        '/candidate/prompt.md', '/work/output'], timeout=timeout)
+        record = native_run.run(
+            native_run.Intent(
+                'generation',
+                ['/usr/bin/python3', '/candidate/generator.py', '/candidate/prompt.md', '/work/output'],
+                timeout=timeout,
+            ),
+            inputs=public,
+            work=work,
+        )
         path = evaluate(task_root, work / 'output', scratch / f'evaluation-{index + 1}', store,
                         generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
                         expect_pins=task['files']['pins.json'], execution_work=work)

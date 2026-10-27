@@ -4,6 +4,7 @@ Only a four-line rectangular Edge.Cuts crop is qualified here. Native geometry
 is exported, never reconstructed from group positions. Views express membership
 and recorded poses; they do not assess functional coherence or orientation.
 """
+import locale
 import copy
 import hashlib
 import math
@@ -14,6 +15,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
+from . import native_run
 from . import candidate_visuals
 from .storage import digest, identity, json_bytes, write_json
 from .run_record import pcbnew_extension
@@ -208,7 +210,23 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
     runtime = dict(kicad_cli_sha256=digest(binary), pcbnew_sha256=digest(extension),
                    pcbnew_version=pcbnew.Version(), python_sha256=digest(sys.executable),
                    helper_sha256=digest(__file__), native_export_helper_sha256=digest(candidate_visuals.__file__))
-    version = subprocess.run([str(binary), 'version'], capture_output=True, text=True, check=True, timeout=30)
+    execution = native_run.run(
+        native_run.Intent('probe', [str(binary), 'version'], timeout=30, isolation='host'), work=None
+    )
+    if execution['execution'] == 'unavailable':
+        raise FileNotFoundError(execution.stdout.decode())
+    if execution['execution'] == 'timeout':
+        raise subprocess.TimeoutExpired(
+            [str(binary), 'version'], 30, output=execution.stdout, stderr=execution.stderr
+        )
+    stdout_text, stderr_text = (
+        raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+        for raw in (execution.stdout, execution.stderr)
+    )
+    version = subprocess.CompletedProcess(
+        [str(binary), 'version'], execution.returncode, stdout_text, stderr_text
+    )
+    version.check_returncode()
     runtime['kicad_version'] = version.stdout.strip()
     out.mkdir(parents=True, exist_ok=False)
     source = out / 'source'

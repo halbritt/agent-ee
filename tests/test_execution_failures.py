@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
 from agent_ee.reviewers import claude_call
@@ -46,15 +47,13 @@ class ReviewerFailureTests(unittest.TestCase):
             run = root / "run"
             (run / "inputs").mkdir(parents=True)
 
-            def fake_provider(inputs, work, argv, **kwargs):
-                (work / "console.log").write_text(text)
-                (work / "stdout.log").write_text(text)
-                (work / "stderr.log").write_text("harmless harness warning\n")
-                return {"execution": execution, "exit_code": 0 if execution == "ok" else 1}
+            def fake_provider(call):
+                return native_run.Outcome(execution=execution, exit_code=0 if execution == "ok" else 1,
+                                          stdout=text.encode(), stderr=b"harmless harness warning\n")
 
             with patch("agent_ee.reviewers.Path.home", return_value=home), \
                     patch("agent_ee.reviewers.shutil.which", return_value="/usr/bin/true"), \
-                    patch("agent_ee.reviewers.execute", side_effect=fake_provider):
+                    native_run.using(native_run.Recorded(fake_provider)):
                 record, value = claude_call(run, "review", "declared-model", "packet", {}, 10)
             self.assertFalse((run / "review-work/review/home").exists())
             return record, value

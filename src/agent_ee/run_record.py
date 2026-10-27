@@ -5,17 +5,18 @@ files) are observed here; callers that already hold an observation pass it as ``
 
 import copy
 import datetime
+import locale
 import math
 import os
 import re
 import shutil
-import signal
 import subprocess
 import time
 import traceback
 import uuid
 from pathlib import Path
 
+from . import native_run
 from .candidate import capture, safe_relative, verify_snapshot, verify_source
 from .storage import digest, digest_scope, fingerprint as runtime_digest, read_json, write_json
 
@@ -76,34 +77,27 @@ def _runtime_files(checkpoint):
 
 def pcbnew_extension(*, checkpoint=None, python='/usr/bin/python3'):
     """Return (path, diagnostic) for KiCad's native _pcbnew extension module."""
-    # pcbnew shares a large native extension rather than a standalone CLI.
     argv = [python, '-c', 'import _pcbnew; print(_pcbnew.__file__)']
-    if checkpoint is None:
-        probe = subprocess.run(argv, capture_output=True, text=True, timeout=15)
-        return (probe.stdout.strip(), '') if probe.returncode == 0 else (None, probe.stderr)
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          text=True, start_new_session=True) as probe:
-        end = time.monotonic() + 15
-        try:
-            while True:
-                checkpoint()
-                if time.monotonic() >= end:
-                    raise ValueError('runtime_probe_timeout')
-                try:
-                    stdout, stderr = probe.communicate(timeout=.05)
-                    return (stdout.strip(), '') if probe.returncode == 0 else (None, stderr)
-                except subprocess.TimeoutExpired:
-                    continue
-        finally:
-            # The leader may have exited while a descendant still holds a pipe.
-            try:
-                os.killpg(probe.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                probe.communicate(timeout=1)
-            except subprocess.TimeoutExpired as exc:
-                raise ValueError('runtime_probe_cleanup_timeout') from exc
+    try:
+        probe = native_run.run(
+            native_run.Intent('probe', argv, timeout=15, isolation='host'), work=None, on_tick=checkpoint
+        )
+    except BaseException as exc:
+        partial = getattr(exc, 'native_execution', None)
+        if checkpoint is not None and partial is not None and partial.get('cleanup_error'):
+            raise ValueError('runtime_probe_cleanup_timeout') from exc
+        raise
+    if probe['execution'] == 'unavailable':
+        raise FileNotFoundError(probe.stdout.decode())
+    if checkpoint is not None and probe.get('cleanup_error'):
+        raise ValueError('runtime_probe_cleanup_timeout')
+    if probe['execution'] == 'timeout':
+        if checkpoint is not None:
+            raise ValueError('runtime_probe_timeout')
+        raise subprocess.TimeoutExpired(argv, 15, output=probe.stdout, stderr=probe.stderr)
+    stdout, stderr = (raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+                      for raw in (probe.stdout, probe.stderr))
+    return (stdout.strip(), '') if probe.returncode == 0 else (None, stderr)
 
 
 def artifacts(run):

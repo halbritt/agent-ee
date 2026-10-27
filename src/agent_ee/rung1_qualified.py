@@ -33,7 +33,8 @@ import shutil
 import sys
 import uuid
 
-from . import executor
+
+from . import native_run
 from . import generate as g
 from . import rung1_campaign as rc
 from .storage import canonical, digest, read_json, write_json
@@ -220,9 +221,8 @@ def golden_netlist(work):
     candidate = g.native_candidate(work / 'candidate', g.FIXTURE_PROJECT, FOOTPRINT_LIBRARIES)
     run = work / 'export'
     g.seed_kicad_config(run, candidate)
-    argv = ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', '/work/design.xml',
-            '/candidate/project/rc_filter.kicad_sch']
-    record = executor.execute(candidate, run, argv, timeout=600)
+    argv = native_run.netlist_argv('/candidate/project/rc_filter.kicad_sch', '/work/design.xml')
+    record = native_run.run(native_run.Intent('netlist', argv, timeout=600), inputs=candidate, work=run)
     out = run / 'design.xml'
     if record['execution'] != 'ok' or not out.is_file() or out.stat().st_size == 0:
         raise PrepareFailure('reference netlist export failed: ' + json.dumps(

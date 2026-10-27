@@ -4,7 +4,8 @@ import os
 import shutil
 from pathlib import Path
 
-from .executor import execute
+
+from . import native_run
 from .storage import digest, write_json
 from .review_run import OutputFormatRefusal
 
@@ -137,8 +138,15 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             mounts += [(host, '/codex-code-mode-host')]
             record['tool_host_sha256'] = digest(host)
         record['harness_binary_sha256'] = digest(executable)
-        record.update(execute(Path(run_dir) / 'inputs', work, argv, stdin=stdin, timeout=timeout,
-            network=True, extra_ro=mounts, cancellation=cancellation))
+        record.update(
+            native_run.run(
+                native_run.Intent('model', argv, stdin=stdin, timeout=timeout, network=True),
+                inputs=Path(run_dir) / 'inputs',
+                work=work,
+                mounts=mounts,
+                cancel=cancellation,
+            )
+        )
         if record['execution'] != 'ok':
             record['error'] = 'harness execution failed; inspect retained console; no fallback attempted'
             return record, None

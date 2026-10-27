@@ -1,5 +1,6 @@
 """Fresh subscription reviewer calls, with bounded and inspectable evidence packets."""
 
+import contextvars
 import json
 import shutil
 import time
@@ -8,7 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from threading import Lock
 from pathlib import Path
 
-from .executor import Cancellation, execute
+from . import native_run
+from .executor import Cancellation
 from .storage import digest, identity, read_json, write_json
 from .review_run import OutputFormatRefusal
 from .findings import CITATION_PATH_RULE, REVIEW_VERSION, DECISIONS_VERSION, citation_format
@@ -202,9 +204,18 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
         if tools:
             argv += ["--allowedTools", "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch", "--add-dir", "/candidate", "--output-format", "stream-json", "--verbose"]
         from .harnesses import evidence_mounts
-        execution = execute(run_dir / "inputs", work, argv, stdin=prompt, timeout=timeout,
-                            network=True, cancellation=cancellation, extra_ro=[(executable, "/reviewer"),
-                                (credentials, "/work/home/.claude/.credentials.json"), *evidence_mounts(run_dir, label)])
+
+        execution = native_run.run(
+            native_run.Intent('reviewer', argv, stdin=prompt, timeout=timeout, network=True),
+            inputs=run_dir / "inputs",
+            work=work,
+            cancel=cancellation,
+            mounts=[
+                (executable, "/reviewer"),
+                (credentials, "/work/home/.claude/.credentials.json"),
+                *evidence_mounts(run_dir, label),
+            ],
+        )
         record.update(execution)
         record["harness_binary_sha256"] = digest(executable)
         if execution["execution"] != "ok":
@@ -435,7 +446,7 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
     futures = []
     try:
         for definition in definitions:
-            futures.append(pool.submit(review_role, definition))
+            futures.append(pool.submit(contextvars.copy_context().run, review_role, definition))
         results = [future.result() for future in futures]
     except BaseException:
         cancellation.cancel()

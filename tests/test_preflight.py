@@ -281,20 +281,21 @@ class PreflightTests(unittest.TestCase):
         home = self.run / 'credential-source'
         (home / '.claude').mkdir(parents=True)
         (home / '.claude/.credentials.json').write_text('scripted credential; no network')
-        def provider(inputs, work, argv, **kwargs):
-            self.assertEqual(kwargs['extra_ro'][0], (str(self.binary), '/reviewer'))
-            (work / 'stdout.log').write_text(json.dumps({'subtype': 'success', 'structured_output': {}}))
-            return {'execution': 'ok'}
+        from agent_ee import native_run
+        def provider(call):
+            self.assertEqual(call.mounts[0], (str(self.binary), '/reviewer'))
+            return native_run.Outcome(stdout=json.dumps({'subtype': 'success', 'structured_output': {}}).encode())
+        calls = native_run.Recorded(provider)
         with patch.dict(os.environ, {'AGENT_EE_CLAUDE_BINARY': str(self.binary)}), \
              patch('agent_ee.reviewers.Path.home', return_value=home), \
-             patch('agent_ee.reviewers.execute', side_effect=provider) as calls:
+             native_run.using(calls):
             self.assertEqual(executable_for('claude'), str(self.binary))
             # No tools makes the scripted terminal JSON sufficient for this adapter test.
             self.definition['tool_mode'] = 'none'
             self.expected['identity'] = identity({k: v for k, v in self.expected.items() if k != 'identity'})
             record, _ = self.call()
         self.assertEqual(record['execution'], 'ok')
-        calls.assert_called_once()
+        self.assertEqual(len(calls.calls), 1)
 
     def test_foreign_baseline_receipt_is_rejected_even_with_updated_link_hash(self):
         from tests.toolchain import require_toolchain
@@ -451,4 +452,3 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
         for exc in (FileNotFoundError(2, 'No such file or directory'), ProcessLookupError(3, 'No such process')):
             with patch.object(Path, 'read_text', side_effect=exc):
                 self.assertIsNone(self._proc_state(os.getpid()))
-

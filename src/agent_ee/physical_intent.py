@@ -21,7 +21,8 @@ from pathlib import Path
 from collections import Counter
 from fractions import Fraction
 
-from . import blocks, electrical_locality, executor, locality_provenance, placement, source_authority, topology_rules
+from . import native_run
+from . import blocks, electrical_locality, locality_provenance, placement, source_authority, topology_rules
 from .baseline import load_baseline, verify_evidence
 from .candidate import safe_relative, verify_snapshot
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -412,9 +413,23 @@ def admitted_board(run, src):
         _refuse('stale source: board bytes differ from the intent')
     rel = path.relative_to(Path(src['run']) / 'inputs').as_posix()
     with tempfile.TemporaryDirectory(prefix='physical-intent-native-') as work:
-        record = executor.execute(Path(src['run']) / 'inputs', work, [
-            '/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', f'/candidate/{rel}',
-            '--out', '/work/native-board.json'], timeout=600)
+        record = native_run.run(
+            native_run.Intent(
+                'pcbnew_script',
+                [
+                    '/usr/bin/python3',
+                    '-B',
+                    '-m',
+                    'agent_ee.placement_probe',
+                    f'/candidate/{rel}',
+                    '--out',
+                    '/work/native-board.json',
+                ],
+                timeout=600,
+            ),
+            inputs=Path(src['run']) / 'inputs',
+            work=work,
+        )
         if record['execution'] != 'ok':
             lines = (Path(work) / 'stderr.log').read_text(errors='replace').strip().splitlines()
             _refuse(f'native admission: pcbnew does not load the bound board ({record["execution"]}, '

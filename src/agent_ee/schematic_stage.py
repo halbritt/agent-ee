@@ -6,10 +6,11 @@ This module supplies their ordered campaign steps, not an intent compiler.
 import argparse
 from pathlib import Path
 
+from . import native_run
 from . import forward_annotation, schematic_emitter
 from .schematic_regenerate import regenerate_schematic
 from .connectivity_ir import _read_json
-from .executor import execute
+
 from .footprint_library import load_document, read_captures
 from .stage_receipts import _relative, validate_step
 from .storage import write_json
@@ -129,8 +130,11 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
     for sheet in sheets:
         if (candidate / sheet).read_bytes() != files[Path(sheet).name]:
             raise ValueError('forward annotation schematic differs from current intent emission: ' + sheet)
-    native = execute(candidate, out / 'netlist', ['kicad-cli', 'sch', 'export', 'netlist',
-        '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/' + schematic], timeout=120)
+    native = native_run.run(
+        native_run.netlist('/candidate/' + schematic, '/work/design.xml', timeout=120),
+        inputs=candidate,
+        work=out / 'netlist',
+    )
     if native['execution'] != 'ok':
         return 1
     manifest = load_document(candidate / footprints)

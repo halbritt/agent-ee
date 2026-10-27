@@ -39,7 +39,7 @@ class RustRuntimeTest(unittest.TestCase):
     def test_reference_context_is_explicit_and_restored(self):
         facts, policy = promotion_case()
         with placement_runtime.python_reference(), \
-                mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=AssertionError('Rust called')):
+                mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=AssertionError('Rust called')):
             self.assertEqual(placer_runner._plan(facts, {'policy': policy}),
                              placer_runner._plan_local(facts, {'policy': policy}))
             with self.assertRaisesRegex(ValueError, 'already active'):
@@ -142,7 +142,7 @@ class RustTransportTest(unittest.TestCase):
             binary.with_name('planner.json').write_text(json.dumps({
                 'schema': 'agent-ee.placement-engine-install/1',
                 'binary_sha256': hashlib.sha256(b'original planner').hexdigest()}))
-            with mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=AssertionError('child started')):
+            with mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=AssertionError('child started')):
                 with self.assertRaisesRegex(placement_runtime.PlanningProcessError, 'differs from its build receipt'):
                     placement_rust_runtime.Session(binary).plan({}, {}, None, None, heartbeat=self.fail)
 
@@ -165,7 +165,7 @@ class RustTransportTest(unittest.TestCase):
     def test_json_validation_rejects_lossy_input_before_starting_child(self):
         for payload, reason in [({'tuple': (1, 2)}, 'JSON-native values'), ({1: 2}, 'keys must be strings')]:
             with self.subTest(payload=payload):
-                with mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=AssertionError('child started')):
+                with mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=AssertionError('child started')):
                     with self.assertRaisesRegex(ValueError, reason):
                         placement_rust_runtime.Session(sys.executable).plan(payload, {}, None, None, heartbeat=self.fail)
 
@@ -182,23 +182,24 @@ class RustTransportTest(unittest.TestCase):
                            'import sys,time; sys.stdin.buffer.read(); '
                            'sys.stderr.write("child diagnostics\\n"); sys.stderr.flush(); '
                            'print(' + repr(output) + ', flush=True); time.sleep(30)']
-                spawned, launch = [], subprocess.Popen
+                spawned, input_streams, launch = [], [], subprocess.Popen
 
                 def capture(*args, **kwargs):
                     process = launch(*args, **kwargs)
                     self.assertGreater(process.pid, 1)  # Only a real child owned by this test is signalled.
                     spawned.append(process)
+                    input_streams.append(kwargs['stdin'])
                     return process
 
                 record = {}
-                with mock.patch.object(placement_rust_runtime.subprocess, 'Popen', side_effect=capture):
+                with mock.patch.object(placement_rust_runtime.native_run.subprocess, 'Popen', side_effect=capture):
                     with self.assertRaises(exception):
                         placement_rust_runtime._exchange(command, b'{}', callback, record)
                 self.assertEqual(len(spawned), 1)
                 self.assertLess(spawned[0].returncode, 0)
                 self.assertEqual(record['exit_code'], spawned[0].returncode)
                 self.assertEqual(record['stderr'], 'child diagnostics\n')
-                self.assertTrue(spawned[0].stdin.closed)
+                self.assertTrue(input_streams[0].closed)
                 self.assertTrue(spawned[0].stdout.closed)
 
     def test_nonzero_exit_without_result_is_process_error_with_diagnostics(self):

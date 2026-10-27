@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee.cli import main
 from agent_ee.run_record import runtime_files
 from agent_ee.preflight import runtime_drift
@@ -50,7 +51,9 @@ class DoctorTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, "Python 3.12.3\n", "")
         if command[0] == "/usr/bin/python3":
             if self.pcbnew_fails:
-                return subprocess.CompletedProcess(command, 1, "", "ModuleNotFoundError: No module named 'pcbnew'\n")
+                return subprocess.CompletedProcess(
+                    command, 1, "", "ModuleNotFoundError: No module named 'pcbnew'\n"
+                )
             if "_pcbnew.__file__" in command[2]:
                 return subprocess.CompletedProcess(command, 0, f"{self.binaries['_pcbnew.so']}\n", "")
             return subprocess.CompletedProcess(command, 0, "10.0.7-10.0.7~ubuntu24.04.1\n", "")
@@ -58,8 +61,13 @@ class DoctorTests(unittest.TestCase):
 
     def doctor(self, *args):
         out = io.StringIO()
+        def recorded(call):
+            result = self.run_probe(list(call.intent.argv))
+            return native_run.Outcome(exit_code=result.returncode, stdout=result.stdout.encode(),
+                                      stderr=result.stderr.encode())
         with patch("agent_ee.cli.shutil.which", side_effect=self.which), \
                 patch("agent_ee.cli.subprocess.run", side_effect=self.run_probe), \
+                native_run.using(native_run.Recorded(recorded)), \
                 contextlib.redirect_stdout(out):
             code = main(["doctor", *args])
         return code, json.loads(out.getvalue())

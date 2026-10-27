@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee.candidate import capture
 from agent_ee.candidate_visuals import produce, packet_visuals, capture_visuals
 from agent_ee.storage import digest
@@ -182,7 +183,7 @@ class CandidateVisualTests(unittest.TestCase):
         self.assertEqual((ctx.work / 'manifest.json').read_text(), 'check output')
 
     def test_explicit_skip_has_no_native_launch_and_type_is_strict(self):
-        with patch('agent_ee.candidate_visuals.execute', side_effect=AssertionError('must not launch')):
+        with native_run.using(native_run.Recorded(lambda call: AssertionError('must not launch'))):
             report = produce(self.board, self.root / 'skipped', skip=True)
         self.assertEqual(report['status'], 'skipped')
         self.assertEqual(report['images'], [])
@@ -201,12 +202,12 @@ class CandidateVisualTests(unittest.TestCase):
 
     def test_timeout_and_missing_manifest_remain_unavailable(self):
         for status in ('timeout', 'failed', 'ok'):
-            with self.subTest(status=status), patch('agent_ee.candidate_visuals.execute',
-                                                    return_value={'execution': status}) as execute:
+            adapter = native_run.Recorded(lambda call: native_run.Outcome(execution=status))
+            with self.subTest(status=status), native_run.using(adapter):
                 report = produce(self.board, self.root / status)
                 self.assertEqual(report['status'], 'unavailable')
                 self.assertEqual(report['images'], [])
-                self.assertEqual(execute.call_args.kwargs['timeout'], 180)
+                self.assertEqual(adapter.calls[0].timeout, 180)
 
     def test_old_capture_and_stale_source_are_explicit(self):
         self.assertEqual(packet_visuals(self.root, {})['status'], 'unavailable')

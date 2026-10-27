@@ -7,6 +7,7 @@ review verdict is ``criteria_satisfied``, the fab exports exist and are nonempty
 and the CPL rotation status is in ``fab_package.DONE_ROTATION_STATUSES`` (a
 PREVIEW_REQUIRED status with its recomputed ``preview_obligations``, AGENTEE-151).
 """
+import locale
 import argparse
 import csv
 import datetime
@@ -23,7 +24,8 @@ import sys
 import time
 import traceback
 
-from . import executor
+
+from . import native_run
 from .storage import canonical, digest, write_json
 from .run_record import pcbnew_extension
 
@@ -199,8 +201,34 @@ def tool_identity(name):
         if name == 'pcbnew':
             path, diagnostic = pcbnew_extension()
             record['path'] = path
-            probe = subprocess.run(['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],
-                                   capture_output=True, text=True, timeout=30)
+            execution = native_run.run(
+                native_run.Intent(
+                    'probe',
+                    ['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],
+                    timeout=30,
+                    isolation='host',
+                ),
+                work=None,
+            )
+            if execution['execution'] == 'unavailable':
+                raise FileNotFoundError(execution.stdout.decode())
+            if execution['execution'] == 'timeout':
+                raise subprocess.TimeoutExpired(
+                    ['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],
+                    30,
+                    output=execution.stdout,
+                    stderr=execution.stderr,
+                )
+            stdout_text, stderr_text = (
+                raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+                for raw in (execution.stdout, execution.stderr)
+            )
+            probe = subprocess.CompletedProcess(
+                ['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())'],
+                execution.returncode,
+                stdout_text,
+                stderr_text,
+            )
             record['version'] = probe.stdout.strip() or None
             if not path:
                 record['diagnostic'] = diagnostic
@@ -228,7 +256,20 @@ def tool_identity(name):
                     record['version'] = 'git ' + head.stdout.strip()
                     record['checkout'] = str(root)
             elif record['path'] and command:
-                probe = subprocess.run(command, capture_output=True, text=True, timeout=30)
+                execution = native_run.run(
+                    native_run.Intent('probe', command, timeout=30, isolation='host'), work=None
+                )
+                if execution['execution'] == 'unavailable':
+                    raise FileNotFoundError(execution.stdout.decode())
+                if execution['execution'] == 'timeout':
+                    raise subprocess.TimeoutExpired(
+                        command, 30, output=execution.stdout, stderr=execution.stderr
+                    )
+                stdout_text, stderr_text = (
+                    raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+                    for raw in (execution.stdout, execution.stderr)
+                )
+                probe = subprocess.CompletedProcess(command, execution.returncode, stdout_text, stderr_text)
                 record['version'] = (probe.stdout.strip() or probe.stderr.strip()) or None
         if record['path'] and Path(record['path']).is_file():
             record['sha256'] = digest(record['path'])
@@ -284,7 +325,21 @@ class Stage:
         started, record = time.monotonic(), {'label': label, 'argv': [str(a) for a in argv],
                                              'cwd': str(cwd) if cwd else None, 'sandbox': None}
         try:
-            proc = subprocess.run(record['argv'], cwd=cwd, env=env, capture_output=True, timeout=timeout)
+            execution = native_run.run(
+                native_run.Intent(
+                    'stage', record['argv'], timeout=timeout, isolation='host', cwd=cwd, env=env
+                ),
+                work=None,
+            )
+            if execution['execution'] == 'unavailable':
+                raise FileNotFoundError(execution.stdout.decode())
+            if execution['execution'] == 'timeout':
+                raise subprocess.TimeoutExpired(
+                    record['argv'], timeout, output=execution.stdout, stderr=execution.stderr
+                )
+            proc = subprocess.CompletedProcess(
+                record['argv'], execution.returncode, execution.stdout, execution.stderr
+            )
             record.update(exit_code=proc.returncode, execution='ok' if proc.returncode == 0 else 'failed')
             out, err = proc.stdout, proc.stderr
         except subprocess.TimeoutExpired as exc:
@@ -304,7 +359,7 @@ class Stage:
 
     def sandboxed(self, inputs, work, argv, *, timeout=600, label):
         """Run through the Bubblewrap executor: /candidate read-only, /work writable, no network."""
-        result = executor.execute(inputs, work, argv, timeout=timeout)
+        result = native_run.run(native_run.Intent('stage', argv, timeout=timeout), inputs=inputs, work=work)
         self.receipt['commands'].append({
             'label': label, 'argv': result['argv'], 'cwd': '/work', 'sandbox': 'bwrap',
             'candidate': self.rel(inputs), 'work': self.rel(work), 'exit_code': result['exit_code'],

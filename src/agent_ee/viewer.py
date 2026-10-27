@@ -1,5 +1,6 @@
 """Export a native KiCad board and serve a self-contained local viewer."""
 
+import locale
 import functools
 import json
 import re
@@ -11,6 +12,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PureWindowsPath
 from urllib.parse import unquote, urlsplit
 
+from . import native_run
 from .candidate import safe_relative, verify_snapshot
 from .storage import digest, write_json
 
@@ -69,7 +71,18 @@ def _source_board(source):
 
 def _probe(command):
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        execution = native_run.run(
+            native_run.Intent('probe', command, timeout=15, isolation='host'), work=None
+        )
+        if execution['execution'] == 'unavailable':
+            raise FileNotFoundError(execution.stdout.decode())
+        if execution['execution'] == 'timeout':
+            raise subprocess.TimeoutExpired(command, 15, output=execution.stdout, stderr=execution.stderr)
+        stdout_text, stderr_text = (
+            raw.decode(locale.getpreferredencoding(False)).replace('\r\n', '\n').replace('\r', '\n')
+            for raw in (execution.stdout, execution.stderr)
+        )
+        result = subprocess.CompletedProcess(command, execution.returncode, stdout_text, stderr_text)
     except subprocess.TimeoutExpired as exc:
         raise ViewerError("KiCad CLI did not respond within 15 seconds") from exc
     if result.returncode:
@@ -137,11 +150,32 @@ def build_viewer(source: Path, out: Path, *, timeout=300) -> Path:
         write_json(out / "export.json", export)
         with (out / "export.stdout.log").open("wb") as stdout, (out / "export.stderr.log").open("wb") as stderr:
             try:
-                result = subprocess.run(command, cwd=staged.parent, stdout=stdout, stderr=stderr, timeout=timeout)
+                try:
+                    execution = native_run.run(
+                        native_run.Intent(
+                            'stage', command, timeout=timeout, isolation='host', cwd=staged.parent
+                        ),
+                        work=None,
+                    )
+                except BaseException as exc:
+                    partial = getattr(exc, 'native_execution', None)
+                    if partial is not None:
+                        stdout.write(partial.stdout)
+                        stderr.write(partial.stderr)
+                    raise
+                if execution['execution'] == 'unavailable':
+                    raise FileNotFoundError(execution.stdout.decode())
+                stdout.write(execution.stdout)
+                stderr.write(execution.stderr)
+                if execution['execution'] == 'timeout':
+                    raise subprocess.TimeoutExpired(command, timeout, output=None, stderr=None)
+                result = subprocess.CompletedProcess(command, execution.returncode, None, None)
             except subprocess.TimeoutExpired as exc:
                 export["status"] = "timeout"
                 write_json(out / "export.json", export)
-                raise ViewerError(f"KiCad GLB export timed out after {timeout}s; logs retained in {out}") from exc
+                raise ViewerError(
+                    f"KiCad GLB export timed out after {timeout}s; logs retained in {out}"
+                ) from exc
     export["returncode"] = result.returncode
     write_json(out / "export.json", export)
     if digest(board) != board_hash:

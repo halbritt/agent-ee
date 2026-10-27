@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from . import native_run
 from .symbol_library import children, parse_sexpr
 
 NS = '{http://www.w3.org/2000/svg}'
@@ -181,7 +182,7 @@ def place_native_text(files, work):
     unsupported drawing, unplaceable field or remaining pin-text overlap refuses
     the emission; none is a clean result. Existing retained output is never edited.
     """
-    from .executor import execute
+
     from .schematic_emitter import PAPERS, EmissionError, _dump, _mm, _scan, publish
     from .schematic_lint import BODY_RULES, _Symbol
 
@@ -195,8 +196,24 @@ def place_native_text(files, work):
     def measure(draft, step):
         candidate, output = work / ('draft-' + str(step)), work / ('svg-' + str(step))
         publish(draft, candidate)
-        result = execute(candidate, output, ['kicad-cli', 'sch', 'export', 'svg', '--exclude-drawing-sheet',
-                                             '-o', '/work/', '/candidate/' + name], timeout=120)
+        result = native_run.run(
+            native_run.Intent(
+                'schematic_svg',
+                [
+                    'kicad-cli',
+                    'sch',
+                    'export',
+                    'svg',
+                    '--exclude-drawing-sheet',
+                    '-o',
+                    '/work/',
+                    '/candidate/' + name,
+                ],
+                timeout=120,
+            ),
+            inputs=candidate,
+            work=output,
+        )
         if result['execution'] != 'ok':
             raise EmissionError('presentation_text', 'native SVG export did not complete: ' + result['execution'])
         try:

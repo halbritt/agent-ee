@@ -7,8 +7,9 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from . import native_run
 from .candidate import safe_relative, verify_snapshot
-from .executor import execute
+
 from .render3d import render_board
 from .storage import digest, read_json, write_json
 
@@ -37,9 +38,15 @@ def produce(board, out, *, skip=False, inputs=None):
               'status': 'skipped' if skip else 'unavailable', 'images': [],
               'reason': 'explicit skip_visuals/AGENT_EE_SKIP_VISUALS flag' if skip else None}
     if not skip:
-        execution = execute(inputs, out / 'native',
-                            ['/usr/bin/python3', '-B', '-m', 'agent_ee.candidate_visuals', relative],
-                            timeout=180)
+        execution = native_run.run(
+            native_run.Intent(
+                'candidate_visuals',
+                ['/usr/bin/python3', '-B', '-m', 'agent_ee.candidate_visuals', relative],
+                timeout=180,
+            ),
+            inputs=inputs,
+            work=out / 'native',
+        )
         report['execution'] = execution
         manifest = out / 'native' / 'visuals.json'
         if execution['execution'] == 'ok' and manifest.is_file():
@@ -100,8 +107,30 @@ def _plot(board, root, name, layers):
                '--mode-single', '--exclude-drawing-sheet', '--page-size-mode', '2',
                '--define-var', 'KIPRJMOD=' + str(board.parent), '--output', str(path), str(board)]
     with (work / 'stdout.log').open('wb') as stdout, (work / 'stderr.log').open('wb') as stderr:
-        completed = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=150,
-                                   env=dict(os.environ, KICAD_CONFIG_HOME=str(work / 'config')))
+        try:
+            execution = native_run.run(
+                native_run.Intent(
+                    'stage',
+                    command,
+                    timeout=150,
+                    isolation='host',
+                    env=dict(os.environ, KICAD_CONFIG_HOME=str(work / 'config')),
+                ),
+                work=None,
+            )
+        except BaseException as exc:
+            partial = getattr(exc, 'native_execution', None)
+            if partial is not None:
+                stdout.write(partial.stdout)
+                stderr.write(partial.stderr)
+            raise
+        if execution['execution'] == 'unavailable':
+            raise FileNotFoundError(execution.stdout.decode())
+        stdout.write(execution.stdout)
+        stderr.write(execution.stderr)
+        if execution['execution'] == 'timeout':
+            raise subprocess.TimeoutExpired(command, 150, output=None, stderr=None)
+        completed = subprocess.CompletedProcess(command, execution.returncode, None, None)
     write_json(work / 'command.json', {'argv': command, 'returncode': completed.returncode})
     if completed.returncode:
         raise ValueError(f'{name}: kicad-cli exited {completed.returncode}')
