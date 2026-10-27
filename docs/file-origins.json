@@ -517,6 +517,27 @@
   "rules": [
     {
       "paths": [
+        "fixtures/fab-records/retained.zip"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE",
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-556: inspected retained synthetic fab-export control from AGENTEE-544. Contains original generated board/schematic, requirement text, captured candidate/baseline and prerequisite records, native KiCad outputs, and golden check records. No third-party design/library source or font caches included; home and kicad-config trees excluded. Provenance and source hashes are in fixtures/fab-records/README.md."
+    },
+    {
+      "paths": [
+        "fixtures/fab-records/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-556 retained fab record identity regression and provenance."
+    },
+    {
+      "paths": [
         "tests/test_physical_intent.py"
       ],
       "kind": "owned-source",

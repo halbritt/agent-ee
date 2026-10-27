@@ -7,6 +7,48 @@ with [implementation review dispositions](closed-loop-review.md) and
 single-writer campaigns and empirical re-review while preserving the original
 candidate/reviewer/adjudicator information boundary.
 
+## ADR: accept the campaign architecture (2026-10-27, AGENTEE-556)
+
+Accepted. Direct owner instruction: "Accept the campaign's current architecture
+as its end state. Do not initiate a second refactoring pass solely to reduce
+public interfaces, eliminate lazy imports, or consolidate code paths."
+Architectural assessment, debt prioritization and implementation strategy belong
+to engineering agents. Escalation is for genuinely non-delegable authorization.
+
+The wider `placement_problem` interface keeps capture and saved-board evaluation
+on one document builder while exposing helpers their callers use. Explicit
+`run_record` host arguments preserve supplied runtime identity; deferred imports
+avoid eager dependency cycles. Registry prerequisite adapters and separate
+capture/evaluation paths retain their current behavior. These choices cost
+surface area, import-order complexity and some repeated policy knowledge.
+Further consolidation would migrate callers and tests, disturb import ordering
+and revalidate native records and compatibility, without an established behavior
+or maintenance benefit sufficient to justify that work. Counts of public names,
+lazy imports or similar expressions alone do not justify another pass.
+
+The alleged duplicate scope writer is not established by its citations:
+[`scaffold`](../src/agent_ee/scaffold.py) writes the producer's receipted
+`product/scope.json`; [`retained_run.scope`](../src/agent_ee/retained_run.py)
+selects that path and returns a `Scope`, without writing.
+`retained_run.write_scope` writes separate stage/review `scope.json` artifacts.
+[`build_stages`](../src/agent_ee/build_stages.py) compares the produced and authored
+baselines before writing its stage scope. These are distinct artifacts and
+lifecycles; no competing writer to the same product scope was demonstrated.
+The producer boundary stands.
+
+The behavioral obligations stand too. [Retained fab records](../fixtures/fab-records/README.md)
+are compared byte-for-byte through current production checks. Published baseline
+predicates are asserted for geometry and the historical block-provenance regression.
+The remaining AGENTEE-541 job-level coverage gap is already tracked in AGENTEE-555:
+its two mocked orchestration tests can miss a consumer ignoring projected intent.
+The specific simplification is to replace those two tests' fake consumer pipeline
+with real native job execution and saved-result assertions. A candidate exists,
+but its required full gate is still failing; it is not accepted evidence on main.
+No additional debt tickets follow from the unproven duplication or interface counts.
+Future debt must name a demonstrated consequence and a measurable deletion or
+simplification, with preservation tests; routine engineering choices need no
+owner escalation.
+
 ## Nominal manufacturing dimensions (2026-10-24)
 
 Agent-selected implementation decision under the owner's continuing delivery

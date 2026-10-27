@@ -22,6 +22,8 @@ class CapabilityTests(unittest.TestCase):
         baseline = compile_baseline(self.scope, self.files)
         self.assertEqual(baseline['schema'], 'agent-ee.baseline/2')
         coverage = baseline['coverage']
+        self.assertEqual(coverage['checks']['width']['predicates'], ['geometry:straight-width/1'])
+        self.assertEqual(coverage['checks']['net']['predicates'], [])
         self.assertFalse(coverage['checks']['net']['can_evaluate_bound'])
         self.assertEqual(coverage['requirements']['R1']['acceptance_checks'], ['width'])
         self.assertEqual(set(coverage['checks']), {'net', 'width'})

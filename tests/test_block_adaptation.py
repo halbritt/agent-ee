@@ -128,6 +128,12 @@ class InstantiationTests(unittest.TestCase):
             run.mkdir()
             manifest = capture(root / 'scope.json', run)
             baseline = load_baseline(run)
+            # AGENTEE-556: the 2026-10-18 regression dropped block predicates
+            # while leaving the kind registered. Assert the published baseline.
+            provenance = baseline['coverage']['checks']['provenance']
+            self.assertTrue(provenance['can_evaluate_bound'])
+            self.assertEqual(provenance['predicates'],
+                             ['block-boundary:VIN', 'block-boundary:VOUT', 'block-boundary:GND'])
             self.assertIn('instance.json', baseline['files'])
             self.assertTrue(all('blocks/rc/' + p in baseline['files'] for p in read_json(root / 'blocks/rc/block.json')['files']))
             from agent_ee.campaign import mutable_inputs
