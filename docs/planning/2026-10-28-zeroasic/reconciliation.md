@@ -38,7 +38,7 @@ Outcome grouping: existing 512 is dependable-reference/final-geometry parent and
 | 515 | In Progress | Accepted readiness packet is preparation only; actual current acquisition plus original esp_prog, negative/resume cases, independent final candidate review and release record missing. |
 | 519 | Done | Runtime/input baseline delivered. Reuse; broader current release is 515/ZA-01. |
 | 520 | Done | Strict unsupported intent refusal delivered. Reuse. |
-| 521 | In Progress | Seven independent concurrences, seven missing judgments; no final candidate/package binding. |
+| 521 | In Progress | Three records with existing concurrence, four authored records awaiting witnesses, and seven missing records; no final candidate/package binding. Corrected against the retained bundle and AGENTEE-521-evidence-agent-674.md on 2026-10-28. |
 | 479 | In Progress | Full normal-job final block contract and representative workflow remain; views alone do not gate eligibility. |
 | 523 | In Progress | Eight native via-centre sites explicitly unassessed; full-annulus/process acceptance absent; readable source-bound artwork unresolved. |
 | 524 | In Progress | Exact CPL row/angle handoff checks landed. Complete final package/source judgment and supplier-specific assembly obligations remain separate; no supplier completion. |
