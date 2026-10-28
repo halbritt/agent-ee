@@ -101,6 +101,7 @@ class IntentRetryTests(unittest.TestCase):
         receipt_path = failed / 'receipts/2-emit-schematic/receipt.json'
         receipt = read_json(receipt_path)
         receipt['artifacts']['out/emission.json'] = digest(emission_path)
+        receipt['artifact_tree']['out/emission.json']['sha256'] = digest(emission_path)
         receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
         write_json(receipt_path, receipt)
         index = read_json(failed / 'stage-receipts.json')
