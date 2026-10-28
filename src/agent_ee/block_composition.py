@@ -8,7 +8,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from .hardware_interface import exact_keys, text
+from .hardware_interface import exact_keys, text, sheet_items, marker_isolation, xy
 from .reference_blocks import sheet_symbols
 from .schematic_emit import Quoted, format_sexpr, parse_quoted, _mm
 from .schematic_lint import _Symbol
@@ -69,6 +69,59 @@ def validate(plan, block):
     return [{k: v for k, v in port.items() if k not in ('alias_of', 'reason')} for port in plan['ports']]
 
 
+def _no_connect_status(tree, graph, reference, pin):
+    """Prove a physical NC from captured geometry and the independent export."""
+    comp = graph['components'].get(reference)
+    if comp is None or pin not in comp['pins']:
+        return 'violation', 'physical no-connect pin is missing'
+    geometry, problems = sheet_items(tree)
+    targets = [item for item in geometry if item['kind'] == 'pin' and item['number'] == pin
+               and field(item['node'], 'uuid', 1) == [comp['uuid']]]
+    if len(targets) != 1:
+        return 'unknown', 'no-connect pin has no unique captured source point'
+    markers = [item for item in geometry if item['kind'] == 'no_connect'
+               and item['shape'][0] == targets[0]['shape'][0]]
+    if len(markers) != 1:
+        return 'violation', 'physical pin requires one explicit no-connect marker'
+    status, detail = marker_isolation(reference, geometry, problems, targets[0], pin)
+    if status != 'disconnected':
+        return 'unknown', detail
+    net = graph['nets'].get(graph['memberships'].get((reference, pin)))
+    if net is not None and (net['terminals'] != ((reference, pin),)
+                            or not net['auto_unconnected_singleton']):
+        return 'violation', 'native export connects the declared no-connect pin'
+    return 'disconnected', detail
+
+
+def _source_no_connects(tree, node, comp, graph):
+    markers = {xy(children(marker, 'at')[0]) for marker in children(tree, 'no_connect')}
+    geometry, _ = sheet_items(tree) if markers else ([], [])
+    declared = {pin for pin in comp['pins']
+                if comp['pin_metadata'][pin]['electrical_type'] == 'no_connect'}
+    declared.update(item['number'] for item in geometry if item['kind'] == 'pin'
+                    and item['node'] is node and item['shape'][0] in markers)
+    for pin in sorted(declared):
+        status, reason = _no_connect_status(tree, graph, comp['reference'], pin)
+        if status != 'disconnected':
+            raise ValueError(f'source no-connect {comp["reference"]}.{pin} is unproven: {reason}')
+    return sorted(declared)
+
+
+def no_connect_changes(selected, actual, tree, references):
+    """Keep lost NC markers and newly connected NC pins as provenance defects."""
+    changes = []
+    for item in selected:
+        ref = references[item['delivered']]
+        for pin in item['no_connects']:
+            status, reason = _no_connect_status(tree, actual, ref, pin)
+            if status == 'unknown':
+                raise ValueError(f'no-connect coverage unknown for {ref}.{pin}: {reason}')
+            if status != 'disconnected':
+                changes.append(dict(terminal=[ref, pin], severity='defect', before='no_connect',
+                                    after=status, reason=reason))
+    return changes
+
+
 def models(directory, plan, exporter):
     """Bind every selected reference and pin to a fresh native source graph."""
     result = []
@@ -95,8 +148,11 @@ def models(directory, plan, exporter):
                 raise ValueError('selected source symbol missing or ambiguous in native export')
             comp = native[0]
             node = next(n for n in children(tree, 'symbol') if field(n, 'uuid', 1) == [uid])
+            no_connects = _source_no_connects(tree, node, comp, graph)
             nets = {}
             for pin in comp['pins']:
+                if pin in no_connects:
+                    continue
                 nid = graph['memberships'].get((comp['reference'], pin))
                 net = graph['nets'].get(nid)
                 if net is None or net['name'] not in source['nets']:
@@ -104,7 +160,7 @@ def models(directory, plan, exporter):
                 used_nets.add(net['name'])
                 nets[pin] = source['nets'][net['name']]
             result.append(dict(source=source, reference=ref, delivered=delivered,
-                               native=comp, node=node, tree=tree, nets=nets))
+                               native=comp, node=node, tree=tree, nets=nets, no_connects=no_connects))
         if used_nets != set(source['nets']):
             raise ValueError('composition contains unused source net mappings')
     return result
@@ -171,8 +227,10 @@ def emit(selected, plan, occurrence, project):
         tree.append(node)
         for pin in model.pins:
             px, py = map(_mm, pin['point'])
-            tree.append(['label', Quoted(item['nets'][pin['number']]), ['at', px, py, '0'],
-                ['effects', ['font', ['size', '1', '1']]], ['uuid', Quoted(uid(item['delivered'] + '/' + pin['number']))]])
+            marker = ['no_connect', ['at', px, py]] if pin['number'] in item['no_connects'] else [
+                'label', Quoted(item['nets'][pin['number']]), ['at', px, py, '0'],
+                ['effects', ['font', ['size', '1', '1']]]]
+            tree.append([*marker, ['uuid', Quoted(uid(item['delivered'] + '/' + pin['number']))]])
     for index, port in enumerate(plan['ports']):
         x, y = '20', str(160 + index * 5)
         tree.append(['hierarchical_label', Quoted(port['name']), ['shape', port['direction']],
@@ -200,7 +258,8 @@ def compare(selected, actual, occurrence, bindings):
     observed = {ref: physical(c) for ref, c in actual['components'].items() if c['sheet'] == occurrence['path']}
     component_changes = [{'reference': ref, 'severity': 'defect', 'before': expected.get(ref), 'after': observed.get(ref)}
                          for ref in sorted(expected.keys() | observed.keys()) if expected.get(ref) != observed.get(ref)]
-    net_changes = []
+    net_changes = no_connect_changes(selected, actual, occurrence['tree'],
+                                     {item['delivered']: item['delivered'] for item in selected})
     for terminal, expected_name in sorted(expected_nets.items()):
         net = actual['nets'].get(actual['memberships'].get(terminal))
         name = net['name'] if net else None

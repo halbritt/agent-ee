@@ -175,6 +175,8 @@ def compose(root, intent, blocks, bindings, captured_libraries):
             if component['id'] in {c['id'] for c in output['components']}:
                 raise ValueError('component id collision')
             output['components'].append(component)
+            output['no_connects'].extend({'component': component['id'], 'pin': {'number': pin}}
+                                         for pin in item['no_connects'])
             for pin, port in sorted(item['nets'].items()):
                 name = bound[port]
                 found = [net for net in output['nets'] if net['name'] == name]
@@ -193,6 +195,7 @@ def compose(root, intent, blocks, bindings, captured_libraries):
     for key in ('components', 'nets'):
         output[key].sort(key=lambda item: item['id'])
     output['libraries'].sort(key=lambda item: item['name'])
+    output['no_connects'].sort(key=lambda t: (t['component'], repr(t['pin'])))
     for net in output['nets']:
         net['terminals'].sort(key=lambda t: (t['component'], repr(t['pin'])))
     resolved = resolve_intent(output, captures)
@@ -248,7 +251,7 @@ def check(ctx, descriptor):
     Adaptation is information, never approval. Boundary failures remain defects.
     """
     from .block_adaptation import _export, _read
-    from .block_composition import models
+    from .block_composition import models, no_connect_changes
     from .checks import parse_xml_netlist
     from .datasheet_facts import prerequisite
     from .native_netlist import read_native_inventory
@@ -277,7 +280,8 @@ def check(ctx, descriptor):
                 'in_bom', 'pins', 'pin_metadata', 'library_pins')},
                 'lib_id': lib_id or native['lib_id'],
                 'properties': {k: v for k, v in native['properties'].items() if k not in ('Sheetname', 'Sheetfile')}}
-    changes, nets, boundary = [], [], []
+    changes, boundary = [], []
+    nets = no_connect_changes(selected, actual, sheets[0]['tree'], record['references'])
     expected_refs = set(record['references'].values())
     expected_by_port = {}
     for item in selected:
@@ -320,7 +324,7 @@ def check(ctx, descriptor):
     report = json.loads(json.dumps(report))
     write_json(ctx.work / 'provenance.json', report); ctx.evidence('provenance.json')
     ctx.result['details'].update(report)
-    defects = sum(p['status'] == 'violation' for p in boundary)
+    defects = sum(p['status'] == 'violation' for p in boundary) + sum(n['severity'] == 'defect' for n in nets)
     ctx.result.update(execution='ok', outcome='defect' if defects else 'info' if changes or nets else 'pass',
         summary=f'flat block: {len(changes)} component and {len(nets)} pin-net adaptations; {defects} boundary defects')
     ctx.result['limitations'].append('Flat source comparison only. Adaptations are reported, not approved; '

@@ -3548,6 +3548,16 @@
     },
     {
       "paths": [
+        "tests/test_block_no_connects.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original ZA-03a CPU regression. Both abstract package symbol bodies, schematic strings and XML export records are authored in this test; their NC pin numbers exercise the acquisition blocker without copying its design or stock library data. No native tool is executed."
+    },
+    {
+      "paths": [
         "src/agent_ee/intent_retry.py",
         "tests/test_campaign_intent_retry.py"
       ],

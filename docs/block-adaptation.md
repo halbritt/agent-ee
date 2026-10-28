@@ -158,6 +158,13 @@ Only flat, explicit single-unit symbols with resolved visible pins are supported
 The source-native net map is injective within each source; cross-source joins are
 explicit shared destinations. Port aliases must name a canonical port, and their
 board bindings must agree. Distinct canonical ports cannot share a board binding.
+Explicit no-connect terminals are dispositions, not source nets or ports. The
+source must retain one isolated marker on each such physical pin, and the native
+export must agree that it is isolated. A generated `unconnected-(...)` name or a
+library pin's `no_connect` type alone cannot supply this evidence. Missing or
+ambiguous source geometry refuses composition. The emitted child retains the
+markers; fresh provenance treats a lost marker or newly connected NC pin as a
+defect, with unsupported geometry leaving coverage unknown.
 Source netlist-only requirements remain informational and must map to fresh native
 netlist checks. All other source requirements still need fresh acceptance checks.
 The producer performs native source exports before writing the child; subsequent
@@ -204,6 +211,10 @@ merge implicitly. A boundary with only one selected physical pin must gain a
 real surrounding-board terminal before the complete intent can resolve. Missing
 connections are refused; the producer adds no dummy components and does not
 weaken the resolver's singleton or pin-accounting checks.
+Captured no-connects instead become explicit `intent.no_connects` terminals, with
+every physical pin retained. They are not singleton nets and cannot be exposed as
+composition ports. Flat provenance also rejects lost markers or connected NC pins;
+other adaptations retain the reporting behavior below.
 
 Symbols come from the captured native source definitions, never ambient symbol
 search. Derived libraries use deterministic instance-specific namespaces and
@@ -261,6 +272,7 @@ Verdicts have a narrow meaning:
 | Source identities/topology and boundary bindings unchanged | `pass` for this provenance predicate |
 | Component adaptation, such as R9 120 ohm to 60 ohm, with boundaries intact | `info`, never approval |
 | Missing/rebound selected boundary terminal | `defect`, with the topology adaptation retained |
+| Lost no-connect marker or newly connected captured no-connect pin | `defect` |
 | Missing, unreadable or inconsistent source/capture/native evidence | Unsupported/unknown coverage |
 
 A reported adaptation does not qualify the source or approve the changed circuit.
@@ -283,3 +295,12 @@ to `{ "part_ref": "<explicit parts/1 part id>" }`. The caller explicitly maps
 AGENTEE-174 owns exhaustive coverage validation and supplied-binding mismatch
 refusal. This producer does not implement or bypass that validator, invent part
 IDs, or add fields that intent/1 ignores.
+
+`tests/test_block_no_connects.py` exercises offline Git capture, synthetic XML
+reading, composition, connectivity resolution and schematic emission on the CPU.
+Only the native process boundary is stubbed. It covers both library NC pins and
+ordinary pins with explicit NC markers, and rejects connected/missing terminals,
+unproven markers, false boundary ports and claimed port currents. These tests do
+not qualify KiCad export behavior or an acquisition role. The retained acquisition
+source capture and its open obligations are described in
+[the source record](qualification/acquisition-block-source-2026-10-28.md).
