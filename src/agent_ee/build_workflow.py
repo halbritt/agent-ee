@@ -92,6 +92,9 @@ def preflight_build(plan_path, out):
     placement_intent.admit_source(
         strict_json((source / plan['placement']['intent']).read_bytes()),
         strict_json((source / plan['placement']['groups']).read_bytes()))
+    if 'block_source' in plan['placement']:
+        from .block_source_stage import admit
+        admit(source, plan, source_files)
     requirement_map.admit_source(
         (source / plan['requirements']['map']).read_bytes(),
         typed=plan['schema'] == TYPED_SCHEMA, source_files=source_files)
@@ -102,7 +105,7 @@ def run(plan_path, out, *, resume=False, through='package'):
     if through not in STAGES:
         raise ValueError('unknown build stage')
     plan_path, out, plan_raw, plan, source, source_files = preflight_build(plan_path, out)
-    if through == 'package' and 'block_contract' in plan['placement']:
+    if through == 'package' and {'block_contract', 'block_source'} & plan['placement'].keys():
         raise ValueError('strict block contract package acceptance requires final artwork revalidation; '
                          'use --through artwork; package bridge is not implemented')
     pin = dict(plan_sha256=hashlib.sha256(plan_raw).hexdigest(), source=source_files, runtime=_runtime())

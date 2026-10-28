@@ -216,3 +216,41 @@ remains as defense in depth: final artwork/package contract revalidation is not
 yet implemented.
 The placement report cannot qualify different artwork bytes. The existing
 file-only package behavior for plans without this input remains unchanged.
+
+## Boardless source producer (Slice A; diagnostic only)
+
+A build plan may instead capture `placement.block_source`, mutually exclusive
+with `placement.block_contract`. Its outer schema is
+`agent-ee.block-contract-source/1`: the same allocation/eligibility fragments,
+relationships, templates, thickness and optional routing obligations, except
+`allocation.board_sha256` and `eligibility.sources.board_sha256` must be absent.
+Keep `eligibility.sources` explicit. Source authority and every authored role,
+member anchor and physical pad endpoint remain explicit; this producer does not
+compile a brief, guess native membership or migrate an old native contract.
+
+After the last successful schematic step, a fixed receipted producer inserts
+only those two observed native identity leaves into a NEW native contract.
+It retains exact original board/project/present rules bytes, records rules
+absence, and uses the normal normalized intent, groups and uniquely declared
+locality file. The existing bounded capture child returns the prepared binding.
+All outputs are individually declared regular files in
+`build-generated/block-contract/`; captured inputs cannot occupy that namespace.
+The producer publishes derivation evidence only after native capture and
+unchanged-input/policy checks succeed. The fixed entrypoint reuses the existing
+outer-stage filesystem witness before its supervised Host capture child.
+
+Before placement the completed schematic receipt chain, fixed tool source,
+original bytes, source, effective policy and derived outputs must verify. The
+normal placement job recaptures the same strict contract; its retained binding
+is compared before routed output adoption. Repeated fixed/silk labels keep the
+UUID projection; no native labels are edited. Source/runtime changes refuse
+resume, and a partial producer is not a completed stage.
+
+Slice A leaves the authored requirement map and baseline unchanged. It neither
+adds nor requires a `block-contract/1` check criterion. Both strict input forms
+still refuse package/default/resume-to-package before runtime, output creation
+or judgment freeze; the stage guard also remains. Through-artwork is diagnostic
+and `accepted:false`. Slice B must introduce its real final-artwork criterion
+and matching coverage in a NEW captured map/run. No late check insertion or
+resume upgrade can qualify an A build. Native feasibility, composition, timing,
+final-artwork/package grading and engineering acceptance remain unqualified.

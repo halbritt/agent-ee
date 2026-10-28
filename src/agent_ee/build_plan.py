@@ -33,15 +33,22 @@ def validate_plan(plan):
                 or reserved.startswith(plan['judgments'] + '/') for reserved in ('build-generated', requirement_map.PROVENANCE)):
             raise ValueError('judgments directory overlaps the source root or generated namespace')
     _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
-    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes', 'block_contract'))
+    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes', 'block_contract', 'block_source'))
+    if {'block_contract', 'block_source'} <= plan['placement'].keys():
+        raise ValueError('block_contract and block_source are mutually exclusive')
     paths = [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
              plan['placement']['intent'], plan['placement']['groups']]
     if 'planes' in plan['placement']:
         paths.append(plan['placement']['planes'])
-    if 'block_contract' in plan['placement']:
-        paths.append(plan['placement']['block_contract'])
+    for key in ('block_contract', 'block_source'):
+        if key in plan['placement']:
+            paths.append(plan['placement'][key])
     for path in paths:
         _relative(path, 'build input')
+        if 'block_source' in plan['placement'] and (path == 'build-generated/block-contract' or
+                path.startswith('build-generated/block-contract/') or
+                'build-generated/block-contract'.startswith(path + '/')):
+            raise ValueError('build input occupies block source output namespace')
         if 'judgments' in plan and (path == plan['judgments'] or path.startswith(plan['judgments'] + '/')):
             raise ValueError('pre-package build input occupies the judgments directory')
     timeout = plan.get('verification_timeout_s', 3600)

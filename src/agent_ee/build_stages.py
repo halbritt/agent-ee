@@ -130,7 +130,7 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
 
 
 def _package(plan, candidate, stage_dir, scope, accounting):
-    if 'block_contract' in plan['placement']:
+    if {'block_contract', 'block_source'} & plan['placement'].keys():
         raise ValueError('strict block contract package acceptance requires final artwork revalidation; '
                          'use --through artwork; package bridge is not implemented')
     qualification.manufacturing_coverage(plan, scope, accounting)
@@ -216,6 +216,10 @@ def execute(attempt, plan, previous, *, diagnostic=False):
             intent=GENERATED, layout=plan['parts']['layout'])
         for index, step in enumerate([content, *native['implementation_steps']]):
             _step(directory, candidate, step, index)
+        if 'block_source' in plan['placement']:
+            from . import block_source_stage
+            step = block_source_stage.configuration(SOURCE_ROOT, candidate, scope, plan)
+            _step(directory, candidate, step, len(native['implementation_steps']) + 1)
     elif stage == 'placement-routing':
         from . import placement_job
         accounting = retained_run.accounting(out)['requirements']
@@ -243,17 +247,25 @@ def execute(attempt, plan, previous, *, diagnostic=False):
             if name in placement:
                 path = candidate / placement[name]
                 config['inputs'][name] = dict(path=str(path), sha256=digest(path))
-        locality = {c['params']['locality'] for c in scope['checks'] if c['kind'] == 'placement'
-                    and c['params'].get('criterion') == 'electrical-locality/1'}
-        if len(locality) > 1:
-            raise ValueError('placement build requires one shared electrical locality document')
+        from .block_source_stage import locality_path
+        locality = locality_path(scope)
         if locality:
-            path = candidate / locality.pop()
+            path = candidate / locality
             config['inputs']['locality'] = dict(path=str(path), sha256=digest(path))
         write_json(directory / 'placement-config.json', config)
+        if 'block_source' in placement:
+            from . import block_source_stage
+            bound = block_source_stage.verify(out, candidate, scope, plan)
+            path = candidate / block_source_stage.DIRECTORY / 'contract.json'
+            config['inputs']['block_contract'] = dict(path=str(path), sha256=digest(path))
+            write_json(directory / 'placement-config.json', config)
         report = placement_job.run_job(config, directory / 'placement')
         if report['status'] != 'completed' or report.get('final', {}).get('eligibility') != 'eligible':
             raise ValueError('placement/routing did not pass: ' + report['status'])
+        if 'block_source' in placement:
+            captured = read_json(directory / 'placement/capture.json')
+            if captured.get('block_contract') != bound:
+                raise ValueError('fresh placement capture differs from generated block source binding')
         native = Path(report['final']['board'])
         if digest(native) != report['final']['board_sha256']:
             raise ValueError('routed native board changed before adoption')
