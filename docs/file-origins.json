@@ -4305,6 +4305,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-519 retained-input inventory: file paths, byte counts, SHA-256 hashes, article identities and access restrictions only. Names externally retained acquisition and esp_prog inputs without copying design, library, model, datasheet or supplier-response bytes. No redistribution clearance or upstream licence claim is granted by this inventory."
+    },
+    {
+      "paths": [
+        "tests/test_schematic_stage_execution.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-559/570 CPU regression for confined schematic annotation. The minimal one-component XML export, mount records, board facts and process diagnostics are authored in this test. Board and library inputs are the existing owned stage/generation fixtures; custom-pad geometry uses the existing authored test_custom_pad_index.custom helper. No third-party design or stock library bytes are embedded. Native process calls are replaced by test handlers; these controls do not establish native qualification."
     }
   ]
 }
