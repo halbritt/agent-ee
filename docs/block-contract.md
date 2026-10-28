@@ -169,3 +169,40 @@ including pad identities, geometry, owned rule areas, and metadata. Only private
 footprint `_packing_*` caches are excluded; finite native-range quarter-turn
 footprint and pad angles use integral JSON spelling. Capture outputs and strict
 plan comparison retain their original representation.
+
+## Strict prepared placement jobs (ZA-05 source slice)
+
+A normal `place run` config may supply `inputs.block_contract` with `path` and
+`sha256` for this existing contract. A build plan may name that captured file as
+`placement.block_contract`. Omitting it preserves the historical narrower path;
+a historical result is not strict block acceptance.
+
+Capture binds the contract to the original board, the complete allocation,
+normalized groups, effective locality document and checking-policy hashes.
+Membership and member anchors must match the prepared groups exactly. The
+current bridge supports group member anchors; fixed-interface and centroid
+anchors remain unsupported here. It does not invent numeric relationships or
+translate qualitative groups into arbitrary distance limits.
+
+Native fixed copper marks and silk-only graphics use explicit `uuid:UUID`
+references in allocation and eligibility, including when their native labels
+are duplicated or empty. This is a report projection keyed by the native UUID;
+it does not rename footprints in the source board. These objects still require
+an explicit fixed/shared allocation. Duplicate circuit references still refuse.
+Logical fixed roles grant no new pose authority: the bridge separately carries
+native locks and the prepared job's actual fixed-pose roles.
+
+After materialization and after final save/refill, the job's existing bounded
+native-read seam reloads the board and delegates to `block_contract.judge`.
+The result binds the final board, original capture, contract, groups and policy.
+Defect or unknown blocks promotion and final eligibility for the requested
+strict path. Advisory-only `info` keeps its existing meaning; it is not an
+independent qualitative engineering judgment. Missing pin coverage remains
+unknown. A later board change invalidates the saved result.
+
+This is a source/CPU-tested vertical slice. Native calibration, the real public
+control/mutation and independent acceptance remain required. Strict builds can
+produce a diagnostic through `artwork`, but their `package` stage explicitly
+refuses: final artwork/package contract revalidation is not yet implemented.
+The placement report cannot qualify different artwork bytes. The existing
+file-only package behavior for plans without this input remains unchanged.

@@ -33,11 +33,13 @@ def validate_plan(plan):
                 or reserved.startswith(plan['judgments'] + '/') for reserved in ('build-generated', requirement_map.PROVENANCE)):
             raise ValueError('judgments directory overlaps the source root or generated namespace')
     _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
-    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes',))
+    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes', 'block_contract'))
     paths = [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
              plan['placement']['intent'], plan['placement']['groups']]
     if 'planes' in plan['placement']:
         paths.append(plan['placement']['planes'])
+    if 'block_contract' in plan['placement']:
+        paths.append(plan['placement']['block_contract'])
     for path in paths:
         _relative(path, 'build input')
         if 'judgments' in plan and (path == plan['judgments'] or path.startswith(plan['judgments'] + '/')):

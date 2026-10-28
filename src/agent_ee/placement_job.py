@@ -277,6 +277,28 @@ def _locality_grade(facts, document):
     return result
 
 
+def check_block_contract(path, normalized, *, clock=None, cancel_dir=None):
+    """Require strict block evidence only when the caller declared that contract."""
+    from .storage import identity
+    normalized = _bundle(normalized)
+    if 'block_contract' not in normalized:
+        return {'status': 'not_declared'}
+    binding = normalized.get('block_contract_binding')
+    if (binding is None or binding['groups_sha256'] != identity(normalized['groups'])
+            or identity(binding['contract']) != identity(normalized['block_contract'])):
+        raise JobRefusal('block contract has no matching original capture binding')
+    report = _native_read(path, '_check_blocks', {'binding': binding}, clock=clock, cancel_dir=cancel_dir)
+    if (report.get('schema') != 'agent-ee.block-contract-report/1'
+            or report.get('status') not in ('pass', 'info', 'defect', 'unknown')
+            or report.get('binding_sha256') != binding['binding_sha256']
+            or report.get('contract_sha256') != identity(binding['contract'])
+            or report.get('original_board_sha256') != binding['original_capture']['board_sha256']
+            or report.get('board_sha256') != digest(path)
+            or any(not isinstance(report.get(k), list) for k in ('defects', 'unknown', 'advisories'))):
+        raise JobRefusal('native block contract check returned missing or invalid output')
+    return report
+
+
 def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=None, proximity=None,
                            board=None, before=None):
     """Evaluate saved native geometry through the Rust placement engine (read-only).
@@ -503,7 +525,7 @@ def _validate_project_rules(project):
 
 
 NATIVE_READ_LABELS = {'_capture': 'capture', '_check_edges': 'edge check', '_check_locality': 'locality check',
-                      '_nets': 'net membership read'}
+                      '_nets': 'net membership read', '_check_blocks': 'block contract check'}
 BUNDLE_KEYS = frozenset(('intent', 'groups', 'rails', 'intent_contract', 'compatibility'))
 
 
@@ -652,7 +674,11 @@ def _capture_native(board_path, normalized):
     problem, records = placement_problem.capture(
         description, normalized, dialect_checks=dialect_checks,
         locality_footprints=facts['footprints'] if 'electrical_locality' in intent else None)
-    return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before),
+    strict = {}
+    if 'block_contract' in normalized:
+        from .placement_contract import bind
+        strict['block_contract'] = bind(facts, normalized['block_contract'], normalized, records)
+    return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before), **strict,
                      'pcbnew_version': facts['pcbnew_version'], 'footprints': records,
                      'native': {f['uuid']: {'ref': f['ref'], 'side': f['side'], 'locked': f['locked']}
                                 for f in description['footprints']},
@@ -975,6 +1001,7 @@ def _placement_eligible(entry):
             and entry.get('status') == 'checked' and entry.get('engine_feasible') is True
             and entry.get('edge_intent', {}).get('status') == 'pass'
             and entry.get('locality', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
+            and entry.get('block_contract', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
             and not entry.get('engine_violations'))
 
 
@@ -1342,7 +1369,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         pair_layers = router_options['pair_layers']
         impedance = router_options['pair_impedance']
         matching = router_options['intra_pair_match']
-        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails'}
+        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails', 'block_contract'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
@@ -1388,6 +1415,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             intent, groups, rails=rails, locality=locality,
             board_sha256=sha256_bytes(board_bytes), groups_sha256=sha256_bytes(groups_bytes), **membership,
         )
+        if 'block_contract' in config['inputs']:
+            _, raw = verified_input(config['inputs']['block_contract'], 'block_contract')
+            try:
+                normalized['block_contract'] = strict_json(raw)
+            except ValueError as exc:
+                raise JobRefusal('inputs.block_contract JSON: ' + str(exc)) from exc
+            if not isinstance(normalized['block_contract'], dict):
+                raise JobRefusal('inputs.block_contract: expected object')
         report['intent_contract'] = normalized['intent_contract']
         plane_bytes = None
         plane_ids = ()
@@ -1432,11 +1467,17 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
         problem, record = capture(board_path, normalized, clock=clock, cancel_dir=capture_cancel)
+        if 'block_contract' in normalized:
+            if 'block_contract' not in record:
+                raise JobRefusal('native capture omitted the requested block contract binding')
+            normalized['block_contract_binding'] = record['block_contract']
         for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
             verified_input(config['inputs'][name], name)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
+                                       **({'block_contract': record['block_contract']['binding_sha256']}
+                                          if 'block_contract' in normalized else {}),
                                        'intent_contract': report['intent_contract'],
                                        'router': report['preflight'].get('router'),
                                        'plane_tools': report['preflight'].get('plane_tools'),
@@ -1512,6 +1553,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                      clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
+                             block_contract=check_block_contract(directory / 'board.kicad_pcb', normalized,
+                                                                  clock=clock, cancel_dir=job_dir),
                              locality=check_locality(directory / 'board.kicad_pcb', normalized,
                                                      clock=clock, cancel_dir=job_dir),
                              edge_intent=check_edge_intent(directory / 'board.kicad_pcb', normalized,
@@ -1857,6 +1900,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     split = classify_errors(report_, owners, base_keys, placed_keys)
     edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
+    block_result = check_block_contract(board, normalized, clock=clock, cancel_dir=cancel_dir)
     metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'),
                             fixed_poses=intent.get('fixed_poses', []))
     metrics['edges'] = edge_intent['connectors']
@@ -1866,12 +1910,16 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     group_views = _group_views(board, groups, final_dir.parent / (final_dir.name + '-group-views'),
                                input_board=input_board, input_board_sha256=input_board_sha256,
                                clock=clock, cancel_dir=cancel_dir)
+    final_board_sha256 = digest(board)
+    if block_result['status'] != 'not_declared' and block_result['board_sha256'] != final_board_sha256:
+        problems.append('final board changed after block contract check')
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
+              or block_result['status'] not in ('pass', 'info', 'not_declared')
               or impedance_result is not None and impedance_result.get('status') != 'PASS'
               or length_result is not None and length_result.get('status') != 'PASS'
               or ac_result is not None and ac_result.get('status') != 'PASS')
-    return {'status': 'checked', 'board': str(board), 'board_sha256': digest(board),
+    return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             **({'impedance': impedance_result} if impedance_result is not None else {}),
             **({'length_matching': length_result} if length_result is not None else {}),
@@ -1882,7 +1930,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
-            'edge_intent': edge_intent, 'locality': locality, 'metrics': metrics,
+            'edge_intent': edge_intent, 'locality': locality, 'block_contract': block_result, 'metrics': metrics,
             'group_views': group_views, 'evidence_complete': group_views['status'] == 'rendered'}
 
 
@@ -1937,6 +1985,10 @@ def execute(args, parser):
             elif args.placement_command == '_check_locality':
                 from .placement_probe import extract
                 result = _locality_grade(extract(args.board), request['intent']['electrical_locality'])
+            elif args.placement_command == '_check_blocks':
+                from .placement_probe import extract
+                from .placement_contract import grade
+                result = grade(extract(args.board), request['binding'])
             else:
                 result = _check_edge_intent_native(args.board, request['intent'])
         except JobRefusal as exc:

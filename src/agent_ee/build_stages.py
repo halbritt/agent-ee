@@ -130,6 +130,9 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
 
 
 def _package(plan, candidate, stage_dir, scope, accounting):
+    if 'block_contract' in plan['placement']:
+        raise ValueError('strict block contract package acceptance requires final artwork revalidation; '
+                         'use --through artwork; package bridge is not implemented')
     qualification.manufacturing_coverage(plan, scope, accounting)
     result = retained_run.review_candidate(candidate_scope(scope, candidate), stage_dir, plan.get('verification_timeout_s', 3600))
     artifacts = qualification.package_artifacts(result, scope, candidate)
@@ -236,9 +239,10 @@ def execute(attempt, plan, previous, *, diagnostic=False):
         rules = (candidate / scope['board']).with_suffix('.kicad_dru')
         if rules.exists():
             config['inputs']['rules'] = dict(path=str(rules), sha256=digest(rules))
-        if 'planes' in placement:
-            path = candidate / placement['planes']
-            config['inputs']['planes'] = dict(path=str(path), sha256=digest(path))
+        for name in ('planes', 'block_contract'):
+            if name in placement:
+                path = candidate / placement[name]
+                config['inputs'][name] = dict(path=str(path), sha256=digest(path))
         locality = {c['params']['locality'] for c in scope['checks'] if c['kind'] == 'placement'
                     and c['params'].get('criterion') == 'electrical-locality/1'}
         if len(locality) > 1:
