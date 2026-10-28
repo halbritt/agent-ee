@@ -104,7 +104,7 @@ def _fields(elements):
     return fields
 
 
-def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
+def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints, *, _execution=None):
     """Plan from captured bytes; supported custom geometry requires a native child."""
     plan = dict(schema=PLAN_SCHEMA, execution='failed', outcome='unknown', findings=[],
                 inputs=dict(board_sha256=board_sha256, xml_sha256=hashlib.sha256(xml_bytes).hexdigest(),
@@ -148,6 +148,18 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
             if not inventory['components'][ref]['on_board']:
                 raise AnnotationError('board_exclusion_unsupported',
                                       'native export excludes this symbol from the board', '/components/' + ref)
+        if _execution is not None:
+            # The custom-pad probe owns a separate hard-coded /candidate and /work
+            # protocol. Do not accidentally nest it or infer native geometry here.
+            from .symbol_library import children, parse_sexpr
+            try:
+                custom = any(len(pad) > 3 and pad[3] == 'custom' for data in captured_footprints.values()
+                             for pad in children(parse_sexpr(data), 'pad'))
+            except ValueError as exc:
+                raise AnnotationError('footprint_library_coverage', str(exc)) from exc
+            if custom:
+                raise AnnotationError('native_custom_pad_stage_pending',
+                                      'custom-pad qualification needs a separately sandboxed library step')
         index = index_footprints(manifest, captured_footprints)
         if index['coverage'] != 'complete':
             raise AnnotationError('footprint_library_coverage',
@@ -305,9 +317,65 @@ def _captures(manifest, root):
     return read_captures(root, paths)
 
 
-def _child(inputs, work, argv, timeout):
+class _StageExecution:
+    """Private to schematic_stage.main's fixed, already sandboxed annotation.
+
+    This is not a host execution option for the standalone annotator. Refuse a
+    normal host/container view, even when it happens to contain /candidate.
+    The receipted launcher owns network/PID confinement and mount identities;
+    this check verifies its filesystem view before choosing supervised children.
+    """
+    def __init__(self):
+        mounts = {}
+        for line in Path('/proc/self/mountinfo').read_text().splitlines():
+            view, filesystem = line.split(' - ', 1)
+            fields = view.split()
+            mounts[fields[4]] = (set(fields[5].split(',')), filesystem.split()[0])
+        required = {'/candidate': 'ro', '/app': 'ro', '/tool/agent-ee': 'ro',
+                    '/work': 'rw', '/usr': 'ro', '/etc': 'ro'}
+        allowed = ('/candidate', '/app', '/tool/agent-ee', '/work', '/usr', '/etc',
+                   '/lib', '/lib64', '/bin', '/sbin', '/proc', '/dev', '/tmp')
+        if (mounts.get('/', (set(), None))[1] != 'tmpfs'
+                or any(mode not in mounts.get(path, (set(), None))[0] for path, mode in required.items())
+                or any(path != '/' and not any(Path(path).is_relative_to(root) for root in allowed)
+                       for path in mounts)
+                or any('ro' not in flags for path, (flags, _) in mounts.items()
+                       if any(Path(path).is_relative_to(root) for root in ('/candidate', '/app', '/tool/agent-ee', '/usr', '/etc')))
+                or not Path(__file__).resolve().is_relative_to('/tool/agent-ee')):
+            raise AnnotationError('stage_confinement', 'annotation requires the fixed receipted stage sandbox')
+        self.scratch = Path('/work/out')
+
+    def child(self, inputs, work, argv, timeout):
+        from . import native_run
+        from .stage_receipts import file_tree
+        inputs, work = _absolute(inputs), _absolute(work)
+        if not inputs.is_relative_to(self.scratch) or not work.is_relative_to(self.scratch):
+            raise AnnotationError('stage_confinement', 'annotation child paths must stay in stage scratch')
+        before, other = file_tree(inputs)
+        if other:
+            raise AnnotationError('unsafe_path', 'annotation child inputs must be regular captured files')
+        concrete = []
+        for arg in argv:
+            if arg.startswith('/candidate/'):
+                arg = str(inputs / arg.removeprefix('/candidate/'))
+            elif arg.startswith('/work/'):
+                arg = str(work / arg.removeprefix('/work/'))
+            concrete.append(arg)
+        record = native_run.run(native_run.Intent('pcbnew_script',
+            ['/usr/bin/python3', '-B', '-P', '-m', 'agent_ee.forward_annotation_probe', *concrete],
+            timeout=timeout, isolation='host'), work=work)
+        after, other = file_tree(inputs)
+        if other or after != before:
+            raise AnnotationError('stale_input', 'annotation child changed its private inputs')
+        return dict(record)
+
+
+def _child(inputs, work, argv, timeout, *, _execution=None):
     from . import native_run
-    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.forward_annotation_probe', *argv], timeout=timeout), inputs=inputs, work=work))
+    if _execution is None:
+        record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.forward_annotation_probe', *argv], timeout=timeout), inputs=inputs, work=work))
+    else:
+        record = _execution.child(inputs, work, argv, timeout)
     if record['execution'] != 'ok':
         console = (Path(work) / 'console.log').read_text(errors='replace')[-2000:]
         raise AnnotationError('native_child', f'pcbnew child {record["execution"]} '
@@ -315,15 +383,15 @@ def _child(inputs, work, argv, timeout):
     return record
 
 
-def board_facts(board, work, timeout=300):
-    """Facts from a private read-only copy of the board, through the sandboxed child."""
+def board_facts(board, work, timeout=300, *, _execution=None):
+    """Facts from a private copy through a fresh child; standalone copies are remounted read-only."""
     work = Path(work)
     inputs = work / 'facts-input'
     inputs.mkdir(parents=True)
     shutil.copyfile(board, inputs / 'board.kicad_pcb')
     if _sha256(inputs / 'board.kicad_pcb') != _sha256(board):
         raise AnnotationError('stale_input', 'board changed while it was copied')
-    _child(inputs, work / 'facts', ['facts', '/candidate/board.kicad_pcb', '-o', '/work/facts.json'], timeout)
+    _child(inputs, work / 'facts', ['facts', '/candidate/board.kicad_pcb', '-o', '/work/facts.json'], timeout, _execution=_execution)
     return json.loads((work / 'facts' / 'facts.json').read_text())
 
 
@@ -332,7 +400,7 @@ def _failed(schema, code, message, location='/', **fields):
                       findings=[dict(code=code, location=location, message=message)]))
 
 
-def plan(board, xml, manifest, footprint_root, work):
+def plan(board, xml, manifest, footprint_root, work, *, _execution=None):
     """Plan for exact current bytes; ``work`` must be a new private directory."""
     work = Path(work)
     work.mkdir(mode=0o700, parents=False, exist_ok=False)
@@ -349,14 +417,14 @@ def plan(board, xml, manifest, footprint_root, work):
         probes = {ref: parse_marker(fields[PROPERTY]) for ref, fields in _fields(elements).items()
                   if PROPERTY in fields}
         validate_board(Path(board).read_bytes(), probes, require_all=False, allow_legacy=True)
-        facts = board_facts(board, work)
+        facts = board_facts(board, work, _execution=_execution)
         if _sha256(board) != board_sha:
             raise AnnotationError('stale_input', 'board changed during planning')
     except AnnotationError as exc:
         return _failed(PLAN_SCHEMA, exc.code, str(exc), exc.location)
     except (ValueError, KeyError, TypeError) as exc:
         return _failed(PLAN_SCHEMA, 'probe_feature_mismatch', str(exc))
-    return build_plan(xml_bytes, board_sha, facts, manifest, captures)
+    return build_plan(xml_bytes, board_sha, facts, manifest, captures, _execution=_execution)
 
 
 def _verify(plan_record, before, after):
@@ -546,7 +614,7 @@ def _preflight(board, out, backup_dir):
     return in_place
 
 
-def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backup_dir=None):
+def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backup_dir=None, _execution=None):
     """Recompute, compare, apply on a copy, verify, then publish ``out`` atomically.
 
     The supplied plan is a declaration of intent only: it must equal a fresh plan
@@ -561,7 +629,7 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
     try:
         if plan_record.get('execution') != 'ok':
             raise AnnotationError('plan_rejected', 'the plan did not complete')
-        fresh = plan(board, xml, manifest, footprint_root, work / 'replan')
+        fresh = plan(board, xml, manifest, footprint_root, work / 'replan', _execution=_execution)
         if _canonical(fresh) != _canonical(plan_record):
             raise AnnotationError('stale_plan', 'plan differs from a fresh plan over the current inputs')
         board, out = Path(board), Path(out)
@@ -585,10 +653,11 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
                 target.write_bytes(data)
             (inputs / 'plan.json').write_bytes(_canonical(plan_record))
             _child(inputs, work / 'apply', ['apply', '/candidate/board.kicad_pcb', '--plan', '/candidate/plan.json',
-                                            '--libraries', '/candidate/libraries', '-o', '/work/board.kicad_pcb'], 300)
+                                            '--libraries', '/candidate/libraries', '-o', '/work/board.kicad_pcb'], 300,
+                   _execution=_execution)
             before = json.loads((work / 'replan' / 'facts' / 'facts.json').read_text())
             # A fresh child reads the saved output; the writer's process is not trusted for it.
-            after = board_facts(work / 'apply' / 'board.kicad_pcb', work / 'verify')
+            after = board_facts(work / 'apply' / 'board.kicad_pcb', work / 'verify', _execution=_execution)
             _verify(plan_record, before, after)
             output = (work / 'apply' / 'board.kicad_pcb').read_bytes()
             if hashlib.sha256(output).hexdigest() != _sha256(work / 'verify' / 'facts-input' / 'board.kicad_pcb'):

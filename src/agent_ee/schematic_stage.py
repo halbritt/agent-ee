@@ -94,7 +94,7 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
 
 
 def run(command, candidate, out, *, board, schematic, intent, layout, captures, footprints,
-        regeneration_intent=None, child_schematics=()):
+        regeneration_intent=None, child_schematics=(), _execution=None):
     """Return failure with retained findings; never substitute previous native output."""
     candidate, out = Path(candidate), Path(out)
     sheets = _sheets(schematic, child_schematics)
@@ -131,7 +131,9 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
         if (candidate / sheet).read_bytes() != files[Path(sheet).name]:
             raise ValueError('forward annotation schematic differs from current intent emission: ' + sheet)
     native = native_run.run(
-        native_run.netlist('/candidate/' + schematic, '/work/design.xml', timeout=120),
+        native_run.netlist('/candidate/' + schematic,
+            str(out / 'netlist/design.xml') if _execution is not None else '/work/design.xml',
+            timeout=120, isolation='host' if _execution is not None else 'sandbox'),
         inputs=candidate,
         work=out / 'netlist',
     )
@@ -139,12 +141,12 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
         return 1
     manifest = load_document(candidate / footprints)
     plan = forward_annotation.plan(candidate / board, out / 'netlist/design.xml', manifest,
-                                   candidate / captures, out / 'plan-work')
+                                   candidate / captures, out / 'plan-work', _execution=_execution)
     write_json(out / 'plan.json', plan)
     if plan['execution'] != 'ok':
         return 1
     result = forward_annotation.apply(plan, candidate / board, out / 'netlist/design.xml', manifest,
-        candidate / captures, out / 'board.kicad_pcb', out / 'apply-work')
+        candidate / captures, out / 'board.kicad_pcb', out / 'apply-work', _execution=_execution)
     write_json(out / 'annotation.json', result)
     return 0 if result['execution'] == 'ok' else 1
 
@@ -157,7 +159,10 @@ def main(argv=None):
     parser.add_argument('--regeneration-intent')
     parser.add_argument('--child-schematic', action='append', default=[], dest='child_schematics')
     args = vars(parser.parse_args(argv))
-    return run(args.pop('command'), '/candidate', '/work/out', **args)
+    command = args.pop('command')
+    # Only this fixed entrypoint selects children that inherit the receipted sandbox.
+    execution = forward_annotation._StageExecution() if command == 'annotate' else None
+    return run(command, '/candidate', '/work/out', _execution=execution, **args)
 
 
 if __name__ == '__main__':
