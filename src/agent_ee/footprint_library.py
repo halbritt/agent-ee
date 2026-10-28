@@ -402,7 +402,7 @@ def _copper_layer_count(layers):
     return 32 if '*.Cu' in layers else sum(layer.endswith('.Cu') for layer in layers)
 
 
-def _native_custom_geometry(data, footprint):
+def _native_custom_geometry(data, footprint, *, _native_geometry=None):
     """Check custom outlines; retain geometry only for natively qualified pads."""
     import tempfile
     from pathlib import Path
@@ -421,59 +421,62 @@ def _native_custom_geometry(data, footprint):
         return (pad['number'], pad['type'], pad['shape'], pad['x_nm'], pad['y_nm'],
                 angle, tuple(pad['size_nm']), layers)
     try:
-        with tempfile.TemporaryDirectory(prefix='agent-ee-custom-pad-') as tmp:
-            root = Path(tmp)
-            inputs = root / 'inputs'
-            inputs.mkdir()
-            (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
-            execution = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m',
-                'agent_ee.footprint_probe', footprint['name']], timeout=60), inputs=inputs, work=root / 'work'))
-            if execution['execution'] != 'ok':
-                console = (root / 'work' / 'console.log').read_text(errors='replace')[-2000:]
-                raise FootprintError('native custom-pad load failed: ' + console)
-            report = json.loads((root / 'work' / 'footprint.json').read_bytes())
-            native = report['pads']
-            if Counter(map(identity, native)) != Counter(map(identity, footprint['pads'])):
-                raise FootprintError('native pad identity differs from captured footprint')
-            for pad in footprint['pads']:
-                if pad['shape'] != 'custom':
-                    continue
-                matches = [p for p in native if identity(p) == identity(pad)]
-                if pad['geometry'] == 'declared_custom':
-                    # Numbering-only duplicates need no unique geometry binding;
-                    # the inventory counter binds their multiplicity and layers.
-                    for found in matches:
-                        outlines = found['layer_outline_counts']
-                        if (not isinstance(outlines, list) or not outlines
-                                or len(outlines) != _copper_layer_count(pad['layers'])):
-                            raise FootprintError('native custom-pad outline evidence missing/incomplete')
-                        for count in outlines:
-                            if type(count) is not int or count != 1:
-                                raise FootprintError(f'native custom pad {pad["number"]!r} has {count!r} outlines; '
-                                                     'exactly one merged copper outline required')
-                    continue
-                if len(matches) != 1:
-                    raise FootprintError('ambiguous native custom-pad identity')
-                found = matches[0]
-                outlines = found['outline_count']
-                anchor = field(children(pad['native'], 'options')[0], 'anchor', 1)[0]
-                if found['anchor'] != anchor:
-                    raise FootprintError('native custom-pad anchor differs from captured footprint')
-                if type(outlines) is not int or outlines != 1:
-                    raise FootprintError(f'native custom pad {pad["number"]!r} has {outlines!r} outlines; '
-                                         'exactly one merged copper outline required')
-                bbox = found['bbox_nm']
-                if (len(bbox) != 4 or any(type(v) is not int for v in bbox)
-                        or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):
-                    raise FootprintError('native custom-pad copper extent missing/empty')
-                pad['number'] = found['number']
-                pad['native_geometry'] = dict(pcbnew_version=report['pcbnew_version'],
-                                              number=found['number'], anchor=found['anchor'], bbox_nm=bbox)
+        if _native_geometry is not None:
+            report = _native_geometry(data, footprint)
+        else:
+            with tempfile.TemporaryDirectory(prefix='agent-ee-custom-pad-') as tmp:
+                root = Path(tmp)
+                inputs = root / 'inputs'
+                inputs.mkdir()
+                (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
+                execution = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m',
+                    'agent_ee.footprint_probe', footprint['name']], timeout=60), inputs=inputs, work=root / 'work'))
+                if execution['execution'] != 'ok':
+                    console = (root / 'work' / 'console.log').read_text(errors='replace')[-2000:]
+                    raise FootprintError('native custom-pad load failed: ' + console)
+                report = json.loads((root / 'work' / 'footprint.json').read_bytes())
+        native = report['pads']
+        if Counter(map(identity, native)) != Counter(map(identity, footprint['pads'])):
+            raise FootprintError('native pad identity differs from captured footprint')
+        for pad in footprint['pads']:
+            if pad['shape'] != 'custom':
+                continue
+            matches = [p for p in native if identity(p) == identity(pad)]
+            if pad['geometry'] == 'declared_custom':
+                # Numbering-only duplicates need no unique geometry binding;
+                # the inventory counter binds their multiplicity and layers.
+                for found in matches:
+                    outlines = found['layer_outline_counts']
+                    if (not isinstance(outlines, list) or not outlines
+                            or len(outlines) != _copper_layer_count(pad['layers'])):
+                        raise FootprintError('native custom-pad outline evidence missing/incomplete')
+                    for count in outlines:
+                        if type(count) is not int or count != 1:
+                            raise FootprintError(f'native custom pad {pad["number"]!r} has {count!r} outlines; '
+                                                 'exactly one merged copper outline required')
+                continue
+            if len(matches) != 1:
+                raise FootprintError('ambiguous native custom-pad identity')
+            found = matches[0]
+            outlines = found['outline_count']
+            anchor = field(children(pad['native'], 'options')[0], 'anchor', 1)[0]
+            if found['anchor'] != anchor:
+                raise FootprintError('native custom-pad anchor differs from captured footprint')
+            if type(outlines) is not int or outlines != 1:
+                raise FootprintError(f'native custom pad {pad["number"]!r} has {outlines!r} outlines; '
+                                     'exactly one merged copper outline required')
+            bbox = found['bbox_nm']
+            if (len(bbox) != 4 or any(type(v) is not int for v in bbox)
+                    or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):
+                raise FootprintError('native custom-pad copper extent missing/empty')
+            pad['number'] = found['number']
+            pad['native_geometry'] = dict(pcbnew_version=report['pcbnew_version'],
+                                          number=found['number'], anchor=found['anchor'], bbox_nm=bbox)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise FootprintError('native custom-pad evidence unavailable: ' + str(exc)) from exc
 
 
-def _footprint(data, library, source, declared=None):
+def _footprint(data, library, source, declared=None, *, _native_geometry=None):
     # Shared reader owned by AGENTEE-39; no competing S-expression parser.
     try:
         from .symbol_library import parse_sexpr, children, field, nanometres, LibraryError
@@ -587,14 +590,14 @@ def _footprint(data, library, source, declared=None):
         if entry is not None:
             result['declaration'] = entry
         if any(p['shape'] == 'custom' for p in pads):
-            _native_custom_geometry(data, result)
+            _native_custom_geometry(data, result, _native_geometry=_native_geometry)
             result['electrical_numbers'] = sorted({p['number'] for p in pads if p['role'] == 'electrical'})
         return result
     except (LibraryError, TypeError) as exc:
         raise FootprintError(str(exc)) from exc
 
 
-def index_footprints(manifest, captured_files, declarations=None):
+def index_footprints(manifest, captured_files, declarations=None, *, _native_geometry=None):
     """Validate every declared member before any selected-name absence claim.
 
     Optional ``declarations`` are captured owner pad/assembly declarations
@@ -625,7 +628,7 @@ def index_footprints(manifest, captured_files, declarations=None):
             total_bytes += len(data)
             if total_bytes > 64 * 1024 * 1024:
                 raise FootprintError('footprint inventory exceeds 64 MiB byte limit')
-            footprint = _footprint(data, library, member, declared)
+            footprint = _footprint(data, library, member, declared, _native_geometry=_native_geometry)
             if any(x['lib_id'] == footprint['lib_id'] for x in result['footprints']):
                 raise FootprintError('duplicate exact footprint identity')
             result['footprints'].append(footprint)

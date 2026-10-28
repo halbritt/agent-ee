@@ -148,22 +148,12 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints, *,
             if not inventory['components'][ref]['on_board']:
                 raise AnnotationError('board_exclusion_unsupported',
                                       'native export excludes this symbol from the board', '/components/' + ref)
-        if _execution is not None:
-            # The custom-pad probe owns a separate hard-coded /candidate and /work
-            # protocol. Do not accidentally nest it or infer native geometry here.
-            from .symbol_library import children, parse_sexpr
-            try:
-                custom = any(len(pad) > 3 and pad[3] == 'custom' for data in captured_footprints.values()
-                             for pad in children(parse_sexpr(data), 'pad'))
-            except ValueError as exc:
-                raise AnnotationError('footprint_library_coverage', str(exc)) from exc
-            if custom:
-                raise AnnotationError('native_custom_pad_stage_pending',
-                                      'custom-pad qualification needs a separately sandboxed library step')
-        index = index_footprints(manifest, captured_footprints)
+        index = index_footprints(manifest, captured_footprints,
+            _native_geometry=None if _execution is None else _execution.custom_geometry)
         if index['coverage'] != 'complete':
             raise AnnotationError('footprint_library_coverage',
-                                  '; '.join(f.get('message', f['code']) for f in index['findings']))
+                                  '; '.join((f['path'] + ': ' if 'path' in f else '') + f.get('message', f['code'])
+                                            for f in index['findings']))
         library = {fp['lib_id']: fp for fp in index['footprints']}
         _plan(plan, inventory, fields_by_ref, facts, library, names)
         retained = {item['footprint_uuid']: item['reference'] for item in plan['retain']}
@@ -326,26 +316,62 @@ class _StageExecution:
     this check verifies its filesystem view before choosing supervised children.
     """
     def __init__(self):
-        mounts = {}
-        for line in Path('/proc/self/mountinfo').read_text().splitlines():
-            view, filesystem = line.split(' - ', 1)
-            fields = view.split()
-            mounts[fields[4]] = (set(fields[5].split(',')), filesystem.split()[0])
+        try:
+            mounts, ids = {}, set()
+            for line in Path('/proc/self/mountinfo').read_text().splitlines():
+                view, filesystem = line.split(' - ')
+                fields, native = view.split(), filesystem.split()
+                if (len(fields) < 6 or len(native) != 3 or not fields[0].isdigit()
+                        or int(fields[0]) <= 0 or str(int(fields[0])) != fields[0]
+                        or fields[0] in ids or not fields[1].isdigit()
+                        or str(int(fields[1])) != fields[1]
+                        or len(fields[2].split(':')) != 2
+                        or any(not n.isdigit() for n in fields[2].split(':'))
+                        or not fields[3].startswith('/') or not fields[4].startswith('/')
+                        or '\\' in fields[4] or str(Path(fields[4])) != fields[4]
+                        or '..' in Path(fields[4]).parts):
+                    raise ValueError('malformed mountinfo')
+                flags = set(fields[5].split(','))
+                if len(flags & {'ro', 'rw'}) != 1:
+                    raise ValueError('ambiguous mount permissions')
+                ids.add(fields[0])
+                # A later stacked mount is the effective view at this destination.
+                mounts[fields[4]] = (flags, native[0])
+        except (OSError, ValueError, IndexError) as exc:
+            raise AnnotationError('stage_confinement', 'malformed or unavailable stage mountinfo') from exc
+        readonly = ('/candidate', '/app', '/tool/agent-ee', '/usr', '/etc',
+                    '/lib', '/lib64', '/bin', '/sbin')
         required = {'/candidate': 'ro', '/app': 'ro', '/tool/agent-ee': 'ro',
                     '/work': 'rw', '/usr': 'ro', '/etc': 'ro'}
-        allowed = ('/candidate', '/app', '/tool/agent-ee', '/work', '/usr', '/etc',
-                   '/lib', '/lib64', '/bin', '/sbin', '/proc', '/dev', '/tmp')
-        if (mounts.get('/', (set(), None))[1] != 'tmpfs'
+        special = {'/': 'tmpfs', '/proc': 'proc', '/dev': 'tmpfs', '/tmp': 'tmpfs',
+                   '/dev/pts': 'devpts', '/dev/shm': 'tmpfs', '/dev/mqueue': 'mqueue'}
+        devices = {'/dev/' + name for name in ('null', 'zero', 'full', 'random', 'urandom', 'tty')}
+        def supported(path, flags, filesystem):
+            if path in special:
+                return filesystem == special[path]
+            if path in devices:
+                return filesystem in ('tmpfs', 'devtmpfs')
+            if Path(path).is_relative_to('/proc'):
+                return filesystem == 'proc'
+            if Path(path).is_relative_to('/work'):
+                return True
+            return any(Path(path).is_relative_to(root) for root in readonly) and 'ro' in flags
+        if (any(path not in mounts for path in ('/', '/proc', '/dev', '/tmp'))
                 or any(mode not in mounts.get(path, (set(), None))[0] for path, mode in required.items())
-                or any(path != '/' and not any(Path(path).is_relative_to(root) for root in allowed)
-                       for path in mounts)
-                or any('ro' not in flags for path, (flags, _) in mounts.items()
-                       if any(Path(path).is_relative_to(root) for root in ('/candidate', '/app', '/tool/agent-ee', '/usr', '/etc')))
+                or any(not supported(path, flags, filesystem) for path, (flags, filesystem) in mounts.items())
                 or not Path(__file__).resolve().is_relative_to('/tool/agent-ee')):
             raise AnnotationError('stage_confinement', 'annotation requires the fixed receipted stage sandbox')
         self.scratch = Path('/work/out')
 
-    def child(self, inputs, work, argv, timeout):
+    def environment(self, inputs, work):
+        inputs, work = _absolute(inputs), _absolute(work)
+        return {**os.environ, 'PYTHONPATH': '/tool/agent-ee', 'HOME': str(work / 'home'),
+                'KICAD_CONFIG_HOME': str(work / 'kicad-config'),
+                'KICAD10_SYMBOL_DIR': str(inputs / 'stock/symbols'),
+                'KICAD10_FOOTPRINT_DIR': str(inputs / 'stock/footprints'),
+                'KICAD10_TEMPLATE_DIR': str(inputs / 'stock/template')}
+
+    def _probe(self, inputs, work, argv, timeout):
         from . import native_run
         from .stage_receipts import file_tree
         inputs, work = _absolute(inputs), _absolute(work)
@@ -354,20 +380,40 @@ class _StageExecution:
         before, other = file_tree(inputs)
         if other:
             raise AnnotationError('unsafe_path', 'annotation child inputs must be regular captured files')
-        concrete = []
-        for arg in argv:
-            if arg.startswith('/candidate/'):
-                arg = str(inputs / arg.removeprefix('/candidate/'))
-            elif arg.startswith('/work/'):
-                arg = str(work / arg.removeprefix('/work/'))
-            concrete.append(arg)
         record = native_run.run(native_run.Intent('pcbnew_script',
-            ['/usr/bin/python3', '-B', '-P', '-m', 'agent_ee.forward_annotation_probe', *concrete],
-            timeout=timeout, isolation='host'), work=work)
+            ['/usr/bin/python3', '-B', '-P', *argv], timeout=timeout, isolation='host',
+            env=self.environment(inputs, work)), work=work)
         after, other = file_tree(inputs)
         if other or after != before:
             raise AnnotationError('stale_input', 'annotation child changed its private inputs')
         return dict(record)
+
+    def child(self, inputs, work, argv, timeout):
+        concrete = []
+        for arg in argv:
+            if arg.startswith('/candidate/'):
+                arg = str(Path(inputs) / arg.removeprefix('/candidate/'))
+            elif arg.startswith('/work/'):
+                arg = str(Path(work) / arg.removeprefix('/work/'))
+            concrete.append(arg)
+        return self._probe(inputs, work, ['-m', 'agent_ee.forward_annotation_probe', *concrete], timeout)
+
+    def custom_geometry(self, data, footprint):
+        parent = self.scratch / 'library-probes'
+        parent.mkdir(exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix='member-', dir=parent))
+        inputs, work = root / 'inputs', root / 'work'
+        inputs.mkdir()
+        (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
+        # Fixed captured helper; only concrete paths/name are arguments, never code from inputs.
+        command = ('from agent_ee.footprint_probe import _stage_main; import sys; '
+                   '_stage_main(*sys.argv[1:])')
+        result = self._probe(inputs, work, ['-c', command, str(inputs), footprint['name'],
+                                           str(work / 'footprint.json')], 60)
+        if result['execution'] != 'ok':
+            console = (work / 'console.log').read_text(errors='replace')[-2000:]
+            raise FootprintError('native custom-pad load ' + result['execution'] + ': ' + console)
+        return json.loads((work / 'footprint.json').read_bytes())
 
 
 def _child(inputs, work, argv, timeout, *, _execution=None):

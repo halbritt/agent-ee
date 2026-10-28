@@ -67,7 +67,7 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
         ('emit', 'emit-schematic', schematic, 'out/project/' + Path(schematic).name,
          ['out/emission.json', 'out/project']),
         ('annotate', 'forward-annotate', board, 'out/board.kicad_pcb',
-         ['out/emission.json', 'out/netlist', 'out/plan.json', 'out/annotation.json']),
+         ['out/emission.json', 'out/netlist', 'out/plan.json', 'out/annotation.json', 'out/library-probes']),
     ):
         writes = {target: produced}
         if command == 'emit':
@@ -131,9 +131,10 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
         if (candidate / sheet).read_bytes() != files[Path(sheet).name]:
             raise ValueError('forward annotation schematic differs from current intent emission: ' + sheet)
     native = native_run.run(
-        native_run.netlist('/candidate/' + schematic,
-            str(out / 'netlist/design.xml') if _execution is not None else '/work/design.xml',
-            timeout=120, isolation='host' if _execution is not None else 'sandbox'),
+        native_run.Intent('netlist', native_run.netlist_argv('/candidate/' + schematic,
+            str(out / 'netlist/design.xml') if _execution is not None else '/work/design.xml'),
+            timeout=120, isolation='host' if _execution is not None else 'sandbox',
+            **({'env': _execution.environment(candidate, out / 'netlist')} if _execution is not None else {})),
         inputs=candidate,
         work=out / 'netlist',
     )

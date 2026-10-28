@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_ee import forward_annotation as fa, native_run, schematic_stage
+from tests.test_custom_pad_index import custom
 
 ROOT = Path(__file__).resolve().parents[1]
 XML = b'''<export version="E"><design><sheet name="/" tstamps="/"/></design>
@@ -26,7 +27,8 @@ EMPTY = dict(pcbnew_version='authored CPU facts', footprints=[], tracks=[], zone
 
 
 def mount_view():
-    entries = [('/', 'rw', 'tmpfs'), ('/proc', 'rw', 'proc')]
+    entries = [('/', 'rw', 'tmpfs'), ('/proc', 'rw', 'proc'), ('/dev', 'rw', 'tmpfs'),
+               ('/dev/pts', 'rw', 'devpts'), ('/dev/shm', 'rw', 'tmpfs'), ('/tmp', 'rw', 'tmpfs')]
     entries += [(path, 'rw' if path == '/work' else 'ro', 'ext4')
                 for path in ('/candidate', '/app', '/tool/agent-ee', '/work', '/usr', '/etc')]
     return '\n'.join(f'{i} 0 0:1 / {path} {mode} - {kind} none {mode}'
@@ -68,16 +70,56 @@ class StageExecutionTests(unittest.TestCase):
         self.mutate_copy = False
         self.bad_pose = False
         self.change_xml_on_apply = False
+        self.custom_error = None
 
     def native(self, intent, *, work, inputs=None, **kwargs):
         """External process boundary: write authored facts/bytes, retain exact intent."""
         self.calls.append(intent)
         work = Path(work)
+        self.assertFalse(work.exists(), 'the caller precreated Host records scratch')
+        if intent.isolation == 'host':
+            self.assertIn('-P', intent.argv)
+            self.assertEqual(intent.env['HOME'], str(work/'home'))
+            self.assertEqual(intent.env['KICAD_CONFIG_HOME'], str(work/'kicad-config'))
+            self.assertEqual(intent.env['PYTHONPATH'], '/tool/agent-ee')
+            for path in ('home', 'kicad-config'):
+                self.assertFalse((work/path).exists())
         work.mkdir(parents=True, exist_ok=True)
         argv = list(intent.argv)
         (work / 'console.log').write_text('authored process diagnostic')
         if self.failure:
             return dict(execution=self.failure, exit_code=9 if self.failure == 'failed' else None)
+        if 'agent_ee.footprint_probe' in argv or '-c' in argv:
+            if intent.isolation == 'host':
+                self.assertIn('from agent_ee.footprint_probe import _stage_main', argv[argv.index('-c')+1])
+                inputs = Path(argv[-3])
+                output = Path(argv[-1])
+            else:
+                inputs, output = Path(inputs), work/'footprint.json'
+            self.assertEqual(len(list(inputs.glob('*.kicad_mod'))), 1)
+            self.assert_stock_env(intent, inputs)
+            report = dict(pcbnew_version='authored CPU custom facts', pads=[
+                dict(number='1', type='smd', shape='custom', x_nm=0, y_nm=0,
+                     orientation_microdegrees=0, size_nm=[1000000,1000000], anchor='rect',
+                     layer_outline_counts=[1], outline_count=1, bbox_nm=[-1000000,-1000000,2000000,1000000]),
+                dict(number='2', type='smd', shape='rect', x_nm=4000000, y_nm=0,
+                     orientation_microdegrees=0, size_nm=[1000000,1000000])])
+            if self.custom_error == 'timeout':
+                return dict(execution='timeout', exit_code=None)
+            if self.custom_error == 'missing-output':
+                return dict(execution='ok', exit_code=0)
+            if self.custom_error == 'islands':
+                report['pads'][0]['outline_count'] = 2
+            if self.custom_error == 'bbox':
+                report['pads'][0]['bbox_nm'] = [0,0,0,0]
+            if self.custom_error == 'number':
+                report['pads'][0]['number'] = '9'
+            if self.custom_error == 'anchor':
+                report['pads'][0]['anchor'] = 'circle'
+            output.write_text(json.dumps(report))
+            if self.custom_error == 'mutation':
+                next(inputs.glob('*.kicad_mod')).write_bytes(b'changed custom input')
+            return dict(execution='ok', exit_code=0)
         operation = argv[argv.index('agent_ee.forward_annotation_probe') + 1]
         if intent.isolation == 'sandbox':
             source = Path(inputs) / 'board.kicad_pcb'
@@ -88,6 +130,7 @@ class StageExecutionTests(unittest.TestCase):
             self.assertNotEqual(output.parent, source.parent)
             self.assertTrue(source.is_relative_to(self.root))
             self.assertTrue(output.is_relative_to(work))
+        self.assert_stock_env(intent, source.parent)
         if operation == 'facts':
             facts = self.after if source.read_bytes() == b'authored changed board' else EMPTY
             facts = deepcopy(facts)
@@ -172,18 +215,99 @@ class StageExecutionTests(unittest.TestCase):
         self.assertEqual(changed['findings'][0]['code'], 'stale_input')
         self.assertFalse((self.root/'changed-output').exists())
 
-    def test_custom_pad_stage_is_explicitly_pending_before_a_nested_probe(self):
-        self.captures.joinpath('CAP_2PAD.kicad_mod').write_bytes(b'(footprint "CAP_2PAD" (pad "1" smd custom))')
-        self.manifest['libraries'][0]['members'][0]['sha256'] = hashlib.sha256(
-            self.captures.joinpath('CAP_2PAD.kicad_mod').read_bytes()).hexdigest()
+    def assert_stock_env(self, intent, inputs):
+        if intent.isolation == 'host':
+            for suffix, folder in (('SYMBOL', 'symbols'), ('FOOTPRINT', 'footprints'), ('TEMPLATE', 'template')):
+                self.assertEqual(intent.env['KICAD10_'+suffix+'_DIR'], str(inputs/'stock'/folder))
+
+    def install_custom(self, text=None, name='CAP_2PAD'):
+        data = (text if text is not None else custom()).replace('OwnedCustom', name).encode()
+        path = name+'.kicad_mod'
+        self.captures.joinpath(path).write_bytes(data)
+        member = dict(path=path, sha256=hashlib.sha256(data).hexdigest())
+        members = self.manifest['libraries'][0]['members']
+        members[:] = [m for m in members if m['path'] != path] + [member]
+
+    def test_qualified_custom_control_replans_applies_and_indexes_unused_members(self):
+        self.install_custom()
+        self.install_custom(name='Unused')
+        before = self.board.read_bytes()
         with patch.object(native_run, 'run', self.native):
-            result = self.plan()
-        self.assertEqual(result['findings'][0]['code'], 'native_custom_pad_stage_pending')
-        self.assertEqual(len(self.calls), 1)  # Only the facts child, no custom-pad subprocess.
-        self.captures.joinpath('CAP_2PAD.kicad_mod').write_bytes(b'not a footprint (')
+            planned = self.plan()
+            self.assertEqual(planned['execution'], 'ok', planned)
+            result = fa.apply(planned, self.board, self.xml, self.manifest, self.captures,
+                self.root/'custom-output', self.root/'custom-apply', _execution=self.execution)
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertEqual(self.board.read_bytes(), before)
+        geometry = [c for c in self.calls if '-c' in c.argv]
+        self.assertEqual([c.argv[-2] for c in geometry], ['CAP_2PAD','Unused']*2)
+        self.assertEqual(len({c.env['HOME'] for c in self.calls}), len(self.calls))
+        self.assertEqual(len({c.env['KICAD_CONFIG_HOME'] for c in self.calls}), len(self.calls))
+        self.assertTrue(all(c.isolation == 'host' for c in self.calls))
+        self.assertTrue(all(Path(c.env['HOME']).parent/'footprint.json' in
+                            list((self.root/'library-probes').glob('member-*/work/footprint.json'))
+                            for c in geometry))
+
+    def test_custom_native_refusals_identify_the_member_and_stay_unknown(self):
+        self.install_custom(name='Unused')
+        for error in ('islands','bbox','number','anchor','timeout','missing-output','mutation'):
+            with self.subTest(error=error):
+                self.custom_error = error
+                with patch.object(native_run, 'run', self.native):
+                    result = self.plan(name='custom-'+error)
+                self.assertEqual((result['execution'],result['outcome']), ('failed','unknown'), result)
+                self.assertIn('Unused.kicad_mod', result['findings'][0]['message'])
+        self.custom_error = None
+
+    def test_custom_bounds_drill_and_unsupported_syntax_refuse_without_geometry_loading(self):
+        variants = [custom().replace('(end 2 1)', '(end 3000 1)'),
+                    custom().replace('(zone_connect 2)', '(zone_connect 1)'),
+                    custom().replace('(size 1 1)', '(size 1 1) (drill 0.5)', 1),
+                    'not a footprint (']
+        for index, source in enumerate(variants):
+            with self.subTest(index=index):
+                self.install_custom(source)
+                self.calls = []
+                with patch.object(native_run, 'run', self.native):
+                    result = self.plan(name='unsupported-'+str(index))
+                self.assertEqual(result['execution'], 'failed', result)
+                self.assertIn('CAP_2PAD.kicad_mod', result['findings'][0]['message'])
+                self.assertEqual(len(self.calls), 1)  # Board facts only.
+
+    def test_standalone_custom_index_retains_its_sandbox_protocol(self):
+        self.install_custom()
         with patch.object(native_run, 'run', self.native):
-            malformed = self.plan(name='malformed-library')
-        self.assertEqual(malformed['findings'][0]['code'], 'footprint_library_coverage')
+            result = self.plan(execution=False)
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertEqual([c.isolation for c in self.calls], ['sandbox','sandbox'])
+        self.assertEqual(self.calls[1].argv[-2:], ('agent_ee.footprint_probe','CAP_2PAD'))
+        self.assertIsNone(self.calls[1].env)
+
+    def test_mount_guard_accepts_only_supported_effective_layouts(self):
+        base = mount_view()
+        def mount(point, flags='rw', kind='ext4', ident=99):
+            return f'\n{ident} 0 0:1 / {point} {flags} - {kind} none {flags}'
+        positive = [base, base+mount('/lib','ro'), base+mount('/lib64','ro')+mount('/bin','ro',ident=100),
+                    base+mount('/proc/sys','ro','proc'), base+mount('/dev/mqueue','rw','mqueue'),
+                    base+mount('/dev/null','rw','devtmpfs'), base+mount('/work/out'),
+                    base+mount('/candidate')+mount('/candidate','ro',ident=100)]
+        negative = [base+mount(root) for root in ('/lib','/lib64','/bin','/sbin')]
+        negative += [base.replace('/dev rw - tmpfs', '/dev rw - devtmpfs'),
+                     base+mount('/tmp/hosthome'), base+mount('/tmp/hosthome','ro','tmpfs'),
+                     base+mount('/dev/hosthome'), base+mount('/proc/hosthome'),
+                     base+mount('/candidate'), base+mount('/usr/lib'),
+                     base+mount('/etc'), base+mount('/app'), base+mount('/tool/agent-ee'),
+                     base+mount('/lib/x'), base+'\nmalformed',
+                     base+mount('/lib','ro',ident=1), base+mount('/candidate','ro,rw')]
+        for accepted, views in ((True, positive),(False, negative)):
+            for view in views:
+                with self.subTest(accepted=accepted,view=view), patch.object(Path,'read_text',return_value=view), \
+                     patch.object(fa,'__file__','/tool/agent-ee/agent_ee/forward_annotation.py'):
+                    if accepted:
+                        fa._StageExecution()
+                    else:
+                        with self.assertRaises(fa.AnnotationError):
+                            fa._StageExecution()
 
     def test_stage_entrypoint_refuses_a_host_view_and_incomplete_mount_declarations(self):
         args = ['annotate', '--board','a.kicad_pcb','--schematic','a.kicad_sch',
@@ -225,6 +349,14 @@ class StageExecutionTests(unittest.TestCase):
                 observed = []
                 def fail(intent, **kw):
                     observed.append(intent)
+                    self.assertFalse(Path(kw['work']).exists())
+                    if confined:
+                        self.assertEqual(intent.env['HOME'], str(out/'netlist/home'))
+                        self.assertEqual(intent.env['KICAD_CONFIG_HOME'], str(out/'netlist/kicad-config'))
+                        self.assert_stock_env(intent, candidate)
+                        self.assertEqual(intent.env['PYTHONPATH'], '/tool/agent-ee')
+                    else:
+                        self.assertIsNone(intent.env)
                     Path(kw['work']).mkdir(parents=True)
                     (Path(kw['work'])/'console.log').write_text('authored netlist timeout')
                     return dict(execution='timeout', exit_code=None)
@@ -243,3 +375,19 @@ class StageExecutionTests(unittest.TestCase):
                 self.assertEqual(list(observed[0].argv), ['kicad-cli', 'sch', 'export', 'netlist',
                     '--format', 'kicadxml', '-o', str(out/'netlist/design.xml') if confined else '/work/design.xml',
                     '/candidate/'+root])
+
+    def test_private_footprint_helper_passes_the_concrete_library_and_never_clobbers_output(self):
+        from agent_ee import footprint_probe
+        output = self.root/'native-helper.json'
+        def external_native_extract(name, *, _library):
+            self.assertEqual(name, 'OwnedCustom')
+            self.assertEqual(_library, str(self.captures))
+            return {'pcbnew_version':'authored native boundary','pads':[]}
+        # extract is the unchanged native pcbnew boundary; no native import occurs.
+        with patch.object(footprint_probe, 'extract', external_native_extract):
+            footprint_probe._stage_main(str(self.captures), 'OwnedCustom', str(output))
+            original = output.read_bytes()
+            self.assertEqual(json.loads(original)['pcbnew_version'], 'authored native boundary')
+            with self.assertRaises(FileExistsError):
+                footprint_probe._stage_main(str(self.captures), 'OwnedCustom', str(output))
+        self.assertEqual(output.read_bytes(), original)

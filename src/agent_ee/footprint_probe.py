@@ -5,9 +5,9 @@ import sys
 from .geometry_probe import box_nm, pad_attribute, pad_vec
 
 
-def extract(name):
+def extract(name, *, _library="/candidate"):
     import pcbnew
-    footprint = pcbnew.FootprintLoad('/candidate', name)
+    footprint = pcbnew.FootprintLoad(_library, name)
     if footprint is None:
         raise ValueError('captured footprint did not load')
     shapes = {pcbnew.PAD_SHAPE_RECT: 'rect', pcbnew.PAD_SHAPE_CIRCLE: 'circle',
@@ -38,6 +38,12 @@ def extract(name):
                 record['outline_count'] = counts[0]
         pads.append(record)
     return dict(pcbnew_version=pcbnew.Version(), pads=pads)
+
+
+def _stage_main(library, name, output):
+    """Fixed schematic-stage child with concrete paths inside its outer sandbox."""
+    with open(output, 'x') as stream:
+        json.dump(extract(name, _library=library), stream, sort_keys=True)
 
 
 if __name__ == '__main__':
