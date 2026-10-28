@@ -173,9 +173,15 @@ plan comparison retain their original representation.
 ## Strict prepared placement jobs (ZA-05 source slice)
 
 A normal `place run` config may supply `inputs.block_contract` with `path` and
-`sha256` for this existing contract. A build plan may name that captured file as
-`placement.block_contract`. Omitting it preserves the historical narrower path;
-a historical result is not strict block acceptance.
+`sha256` for this existing contract. Build-plan validation also admits a captured
+file path as `placement.block_contract`. This is admission only: its allocation
+and eligibility must already name the exact pre-placement native board hash.
+That board is generated inside a build run, and this slice does not generate or
+bind a contract against that in-run identity. An earlier run is usable only if
+the resulting pre-placement board bytes match exactly; this is not established
+by the CPU tests. ZA-02/03b owns the generated-board binding follow-up. No strict
+native build is demonstrated here. Omitting this input preserves the historical
+narrower path; a historical result is not strict block acceptance.
 
 Capture binds the contract to the original board, the complete allocation,
 normalized groups, effective locality document and checking-policy hashes.
@@ -201,8 +207,12 @@ independent qualitative engineering judgment. Missing pin coverage remains
 unknown. A later board change invalidates the saved result.
 
 This is a source/CPU-tested vertical slice. Native calibration, the real public
-control/mutation and independent acceptance remain required. Strict builds can
-produce a diagnostic through `artwork`, but their `package` stage explicitly
-refuses: final artwork/package contract revalidation is not yet implemented.
+control/mutation and independent acceptance remain required. Strict build
+admission permits a diagnostic target through `artwork`, subject to the missing
+generated-board binding above. Requests targeting `package`, including default-
+target resumes, refuse after source preflight and before runtime probes, output
+creation, retained-run writes or judgment freezing. The package-stage guard
+remains as defense in depth: final artwork/package contract revalidation is not
+yet implemented.
 The placement report cannot qualify different artwork bytes. The existing
 file-only package behavior for plans without this input remains unchanged.

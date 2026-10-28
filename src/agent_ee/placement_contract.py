@@ -30,19 +30,19 @@ def bind(capture, contract, normalized, records):
                   if r['role'] in ('fixed_copper_mark', 'silk_only')}
     original = _project(capture, references)
     groups = normalized['groups']['groups']
-    section = dict(contract=contract, side_eligibility=contract.get('eligibility'), candidates=[],
-        allocation_text=json.dumps({'schema': 'agent-ee.block-allocation/1', 'blocks': [
-            dict(id=g['name'], references=g['refs'], anchor=g['anchor']) for g in groups]}))
     try:
+        section = dict(contract=contract, side_eligibility=contract.get('eligibility'), candidates=[],
+            allocation_text=json.dumps({'schema': 'agent-ee.block-allocation/1', 'blocks': [
+                dict(id=g['name'], references=g['refs'], anchor=g['anchor']) for g in groups]}))
         block_contract.validate(original, section, normalized['intent'])
         anchors = {g['name']: {'member': g['anchor']} for g in groups}
         for block in contract['allocation']['blocks']:
             if anchors.get(block['id']) != block['anchor']:
                 raise ValueError('prepared block contract requires the declared group member anchor')
-    except (ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
         raise JobRefusal('block contract: ' + str(exc)) from exc
     fixed = [references.get(r['uuid'], r['native_ref']) for r in records
-             if r['role'] in ('fixed_body', 'fixed_copper_mark')]
+             if r['role'] in ('fixed_body', 'fixed_copper_mark', 'silk_only')]
     binding = dict(schema=SCHEMA, contract=deepcopy(contract), original_capture=original,
                    references=references, fixed_refs=fixed, groups_sha256=identity(normalized['groups']),
                    policy_sha256=identity(policy_files()))

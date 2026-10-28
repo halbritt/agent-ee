@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from agent_ee import placement_job, placement_contract
 
@@ -128,6 +129,34 @@ class PreparedBlockContractTests(unittest.TestCase):
                     placement_job.check_block_contract('/not-a-board', requested)
         self.assertEqual(placement_job.check_block_contract('/not-a-board', normalized), {'status':'not_declared'})
 
+    def test_parent_requires_the_returned_report_to_bind_this_request_and_saved_bytes(self):
+        capture, contract, normalized, records = fixture()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, 'authored-board-bytes')
+            path.write_bytes(b'CPU hash-binding fixture, not a native board')
+            board_sha = placement_job.digest(path)
+            capture['board_sha256'] = board_sha
+            contract['allocation']['board_sha256'] = board_sha
+            contract['eligibility']['sources']['board_sha256'] = board_sha
+            binding = placement_contract.bind(capture, contract, normalized, records)
+            requested = dict(normalized, block_contract=contract, block_contract_binding=binding)
+            report = placement_contract.grade(capture, binding)
+            # The child process is an external native boundary; only its parent contract is under test.
+            with patch.object(placement_job, '_native_read', return_value=report):
+                self.assertEqual(placement_job.check_block_contract(path, requested), report)
+            for key, wrong in (('board_sha256', 'b'*64), ('binding_sha256', 'b'*64),
+                               ('contract_sha256', 'b'*64), ('original_board_sha256', 'b'*64),
+                               ('schema', 'unrecognized'), ('status', 'unrecognized'), ('unknown', None)):
+                changed = dict(report, **{key: wrong})
+                with self.subTest(key=key), patch.object(placement_job, '_native_read', return_value=changed):
+                    with self.assertRaisesRegex(placement_job.JobRefusal, 'missing or invalid output'):
+                        placement_job.check_block_contract(path, requested)
+
+    def test_malformed_contract_uses_the_typed_refusal_boundary(self):
+        capture, _, normalized, records = fixture()
+        with self.assertRaisesRegex(placement_job.JobRefusal, 'block contract:'):
+            placement_contract.bind(capture, [], normalized, records)
+
     def test_explicit_uuid_roles_preserve_repeated_marks_and_empty_graphic_labels(self):
         capture, contract, normalized, records = fixture()
         for i, (label, role) in enumerate((('FID', 'fixed_copper_mark'), ('FID', 'fixed_copper_mark'),
@@ -146,16 +175,18 @@ class PreparedBlockContractTests(unittest.TestCase):
         self.assertEqual(report['reference_aliases'], {'extra-0':'uuid:extra-0', 'extra-1':'uuid:extra-1',
                                                      'extra-2':'uuid:extra-2'})
         self.assertEqual(capture, before)
-        for kind in ('pose', 'reference'):
-            changed = deepcopy(capture)
-            if kind == 'pose':
-                changed['footprints'][3]['position_nm'][0] += MM
-            else:
-                changed['footprints'][3]['ref'] = 'other-mark'
-            result = placement_contract.grade(changed, binding)
-            self.assertEqual(result['status'], 'defect')
-            self.assertTrue(any(d['kind'] == ('fixed_pose_changed' if kind == 'pose'
-                                            else 'saved_native_reference_changed') for d in result['defects']))
+        self.assertIn('uuid:extra-2', [r['reference'] for r in report['pose_constraints']])
+        for index in (3, 5):  # An actual fixed mark and the immovable silk-only graphic.
+            for kind in ('pose', 'reference'):
+                changed = deepcopy(capture)
+                if kind == 'pose':
+                    changed['footprints'][index]['position_nm'][0] += MM
+                else:
+                    changed['footprints'][index]['ref'] = 'other-label'
+                result = placement_contract.grade(changed, binding)
+                self.assertEqual(result['status'], 'defect')
+                self.assertTrue(any(d['kind'] == ('fixed_pose_changed' if kind == 'pose'
+                                                else 'saved_native_reference_changed') for d in result['defects']))
 
     def test_duplicate_circuit_references_are_not_promoted_to_mark_aliases(self):
         capture, contract, normalized, records = fixture()
