@@ -1968,9 +1968,13 @@ removed during a run, detected by live entries' status-change times (AGENTEE-357
 with a missing baseline entry refused and a whole-second clock fence before launch so a
 same-tick link cannot keep its time (AGENTEE-374). Mount, source and live tree walks are
 descriptor-relative; a component replaced mid-walk refuses as `mount_source_changed:<at>`.
-New receipts are `agent-ee.stage-receipt/2`; a `/1` receipt with a nested source whose
+New receipts are `agent-ee.stage-receipt/3`; a `/1` receipt with a nested source whose
 identity has one entry (possibly an escaped link-only record), or a missing or non-integer count, refuses on replay as
-`legacy_source_identity:<source>` (AGENTEE-374).
+`legacy_source_identity:<source>` (AGENTEE-374). `/3` additionally binds artifact
+file permissions and directory entries, including empty directories, and
+recomputes them before adoption (AGENTEE-465). Historical `/1` and `/2` receipts
+remain inspectable under their existing validation rules, but those with declared
+artifacts must be rerun before adoption because they lack this identity.
 Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and

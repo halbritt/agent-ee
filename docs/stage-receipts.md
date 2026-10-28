@@ -254,11 +254,12 @@ A nested-source `/1` receipt whose `tool` or `tool_after` source identity lacks 
 count, or whose count is not a non-negative integer (null, string, float, bool,
 negative), cannot show that it is outside that class and refuses the same way.
 The stored receipt is never rewritten or reinterpreted; re-run the step to obtain
-a `/2` receipt. Every other `/1` receipt (no source, a source at a mount root,
-or a nested source whose two counts are both integers, each zero or at least two) replays exactly as before.
-Receipts written now are `agent-ee.stage-receipt/2`, produced only by the strict
-run observation above, so a one-entry nested source in a `/2` receipt is an
-ordinary one-file tree and replays. Transient
+a current receipt. Other `/1` receipts (no source, a source at a mount root,
+or a nested source whose two counts are both integers, each zero or at least two)
+remain valid under this source guard. Receipts written now are
+`agent-ee.stage-receipt/3`; both `/2` and `/3` use the strict run observation above,
+so a one-entry nested source is an ordinary one-file tree. Artifact-bearing
+legacy receipts have a separate adoption restriction described below. Transient
 in-place edits of tool bytes between observations remain outside the guard. This
 guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
 `--ro-bind-fd`; unavailable facilities fail closed.
@@ -328,8 +329,10 @@ boundaries; `tests.test_tool_source` validates copied native refusal receipts.
 
 ## Receipt fields and status
 
-Schema `agent-ee.stage-receipt/2` (written since AGENTEE-374; `/1` has the same fields and
-still replays except for the legacy source class above), `receipts/<k>-<step>/receipt.json`, retained with
+Schema `agent-ee.stage-receipt/3` (AGENTEE-465) adds `artifact_tree` to the fields
+of `/1` and `/2`. Historical receipts retain their original version and exact
+field set; validation still applies the legacy source restriction above.
+Receipts are stored at `receipts/<k>-<step>/receipt.json`, retained with
 `inputs/` (the pre-step design, mounted at `/candidate`), `run/` (executor records, the
 writable `design/` copy and declared outputs) and `version/`.
 
@@ -346,6 +349,14 @@ writable `design/` copy and declared outputs) and `version/`.
   64, or an integer beyond the interpreter limit. No backend is guessed, and the process receipt
   is still written. A malformed report alone does not change the step status: the backend is provenance.
 - `inputs` and `outputs`: sha256 by candidate path. `changed` lists outputs whose bytes differ.
+- `artifacts`: the existing digest map for declared artifact files, with null
+  entries for unavailable or unsafe paths.
+- `artifact_tree` (`/3`): metadata keyed by artifact path, including declared roots
+  and nested empty directories. Regular files record `kind`, permission `mode`
+  and `sha256`; directories record `kind` and permission `mode`. Unavailable or
+  unsafe entries are null. Validation recomputes this tree without following
+  links and refuses changed file bytes, permissions or directory entries.
+  Existing link allowances for write-bearing steps remain unchanged.
 - `violations`: `inventory_changed`, `write_outside_scope`, `missing_output`,
   `missing_artifact:<path>` (a null artifact entry when `writes` is empty), `unsafe_output`
   (the write source is behind a link or special entry), `executor_record_unsafe:<dir>/<file>` (an
@@ -391,7 +402,12 @@ a path below the run directory by name.
   descriptors, iteratively. Directories deeper than 128 levels are recorded as special entries rather
   than entered. A link or special entry in the design copy is an `inventory_changed` violation.
 - `adopt` first revalidates the retained receipt and refuses any receipt object that differs from it.
-  A writer-supplied or edited copy cannot authorize adoption. It then reads each output without following
+  A writer-supplied or edited copy cannot authorize adoption. A `/1` or `/2` receipt
+  with declared artifacts lacks artifact-tree identity and refuses adoption with
+  `legacy stage receipt lacks artifact tree identity; rerun before adoption`.
+  Rerun the step to obtain a `/3` receipt; do not rewrite its version or identity.
+  Receipts with no declared artifacts retain their existing adoption checks.
+  It then reads each output without following
   links, checks the sha256 of the bytes it read, and writes those same bytes beneath the design, again
   without following links. A replaced output or ancestor is refused even when its bytes match.
 - The executor writes `stdout.log`, `stderr.log`, `console.log` and `execution.json` into `/work`
