@@ -1,0 +1,122 @@
+{
+  "ZA-02": {
+    "identifier": "AGENTEE-525",
+    "id": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12",
+    "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+    "reused": true,
+    "readback_state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+    "readback_verified": true
+  },
+  "ZA-05": {
+    "identifier": "AGENTEE-479",
+    "id": "531a39a9-ff5c-471e-a9d9-0804a48d6904",
+    "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+    "reused": true,
+    "readback_state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+    "readback_verified": true
+  },
+  "ZA-06": {
+    "identifier": "AGENTEE-489",
+    "id": "b6d05a39-83ef-410a-b976-c512ba0e2fb8",
+    "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+    "reused": true,
+    "readback_state": "a2c6c05a-281c-4f87-8c42-39652d081c13",
+    "readback_verified": true
+  },
+  "ZA-07": {
+    "identifier": "AGENTEE-516",
+    "id": "40da87f6-c7c2-43fc-abff-fa8d7a79b846",
+    "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+    "reused": true,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-01": {
+    "identifier": "AGENTEE-559",
+    "id": "deea8613-2879-41ac-b89c-14131e61832d",
+    "parent": "5219d0d5-9365-4f71-bcb4-1474eb1375ab",
+    "reused": false,
+    "readback_state": "31c5d8d3-1bf8-41de-86ad-74f5bfe55cf7",
+    "readback_verified": true
+  },
+  "ZA-03a": {
+    "identifier": "AGENTEE-560",
+    "id": "04734a3a-ecae-4370-abf1-69e5869131ea",
+    "parent": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12",
+    "reused": false,
+    "readback_state": "31c5d8d3-1bf8-41de-86ad-74f5bfe55cf7",
+    "readback_verified": true
+  },
+  "ZA-03b": {
+    "identifier": "AGENTEE-561",
+    "id": "c64b05d1-f9b6-4dc6-ab53-f3ec568c1afb",
+    "parent": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-04": {
+    "identifier": "AGENTEE-562",
+    "id": "a85e5511-c9c9-45e5-b8cb-c61097e3578d",
+    "parent": "95d953c2-fb67-4ef9-a2c9-ee3ea2a06a12",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-08": {
+    "identifier": "AGENTEE-563",
+    "id": "c6e7facc-8a8e-4711-8bf9-f24559624e78",
+    "parent": "e691b454-8ba9-43c7-a6f8-188a177d2b9c",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-09": {
+    "identifier": "AGENTEE-564",
+    "id": "aaee5fc9-5363-40f8-9072-950a40a13f56",
+    "parent": "7b3018db-72f2-4e09-b5fe-e8fd5dd2d96a",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-10": {
+    "identifier": "AGENTEE-565",
+    "id": "9ba43074-6bf2-477f-92f8-3392d52a45c0",
+    "parent": "8e9c4383-1a52-4bb6-bc40-c3bc15d26587",
+    "reused": false,
+    "readback_state": "31c5d8d3-1bf8-41de-86ad-74f5bfe55cf7",
+    "readback_verified": true
+  },
+  "ZA-11": {
+    "identifier": "AGENTEE-566",
+    "id": "b02b5237-45ab-471f-8ebc-3dbbd608bb83",
+    "parent": "8d5fbaf6-d9ed-47a1-933b-66b145d957e4",
+    "reused": false,
+    "readback_state": "31c5d8d3-1bf8-41de-86ad-74f5bfe55cf7",
+    "readback_verified": true
+  },
+  "ZA-11a": {
+    "identifier": "AGENTEE-567",
+    "id": "82d4974f-9110-4420-be4f-90a70a4ae105",
+    "parent": "b02b5237-45ab-471f-8ebc-3dbbd608bb83",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-11b": {
+    "identifier": "AGENTEE-568",
+    "id": "c2ab2ed9-8dfe-4bc7-8d0a-20f6c4d1c31e",
+    "parent": "b02b5237-45ab-471f-8ebc-3dbbd608bb83",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  },
+  "ZA-11c": {
+    "identifier": "AGENTEE-569",
+    "id": "aaa51e0d-d712-4e0a-8eb8-fe68c93d048a",
+    "parent": "b02b5237-45ab-471f-8ebc-3dbbd608bb83",
+    "reused": false,
+    "readback_state": "cf20022c-dde1-4315-89b9-ad1d886c2a9c",
+    "readback_verified": true
+  }
+}

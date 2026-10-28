@@ -1,0 +1,64 @@
+{
+  "ZA-01": [
+    "AGENTEE-519"
+  ],
+  "ZA-02": [
+    "ZA-01",
+    "ZA-03a"
+  ],
+  "ZA-03a": [
+    "AGENTEE-89",
+    "AGENTEE-90"
+  ],
+  "ZA-03b": [
+    "ZA-03a",
+    "ZA-02"
+  ],
+  "ZA-04": [
+    "ZA-03b"
+  ],
+  "ZA-05": [
+    "AGENTEE-520",
+    "AGENTEE-521 qualification contract"
+  ],
+  "ZA-06": [
+    "ZA-05"
+  ],
+  "ZA-07": [
+    "ZA-05",
+    "ZA-06 only for side-changing repair"
+  ],
+  "ZA-08": [
+    "ZA-01",
+    "ZA-05",
+    "qualified route options"
+  ],
+  "ZA-09": [
+    "ZA-01",
+    "qualified DC model"
+  ],
+  "ZA-10": [
+    "ZA-02 for integrated acceptance only"
+  ],
+  "ZA-11": [
+    "ZA-02",
+    "ZA-03b",
+    "ZA-04",
+    "ZA-05",
+    "ZA-10",
+    "AGENTEE-515 for G4",
+    "ZA-11a",
+    "ZA-11b",
+    "ZA-11c"
+  ],
+  "ZA-11a": [
+    "frozen protected evaluator contract",
+    "subscription admission"
+  ],
+  "ZA-11b": [
+    "frozen unsupported clause and captured context"
+  ],
+  "ZA-11c": [
+    "existing benchmark accounting contract"
+  ]
+}
