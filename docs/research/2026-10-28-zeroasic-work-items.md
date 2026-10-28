@@ -3,6 +3,9 @@
 Drafted 2026-10-28 against agent-ee
 `09bd4e74bdb5383d4de1da3cfb329783d43dc30a`.
 Context and pinned code examples: [research report](2026-10-28-zeroasic-autonomy.md).
+[Campaign order, Plane setup and acceptance gates](2026-10-28-zeroasic-campaign-plan.md)
+were added 2026-10-28. The campaign splits ZA-03 into qualification and
+composition slices so ZA-02 can consume qualified reference entries.
 
 These are local proposals, not published Plane tickets or implementation
 dispatches. `ZA-01` through `ZA-11` are document identifiers. Existing item IDs
@@ -21,16 +24,17 @@ Each slice ends in observable behavior through a supported entrypoint.
 | Local ID | Deliverable | Priority | Existing work to extend | Local prerequisites |
 | --- | --- | --- | --- | --- |
 | ZA-01 | Portable current build with attributable negative cases | P0 | AGENTEE-519/515/524; generation benchmark AGENTEE-69 | Existing runtime and typed qualification |
-| ZA-02 | Acquisition brief to typed inputs and a generated package | P0 | AGENTEE-525 | ZA-01 reference |
-| ZA-03 | One automatically composed regulator/ADC/interface design | P1 | AGENTEE-525; block work AGENTEE-89/90 | ZA-02 |
-| ZA-04 | One validated part alternative after a catalog change | P1 | AGENTEE-525; parts stage AGENTEE-79 | ZA-03 |
+| ZA-02 | Acquisition brief to typed inputs and a generated package | P0 | AGENTEE-525 | ZA-01 reference; ZA-03a qualified entries |
+| ZA-03a | Qualified acquisition regulator/ADC/interface entries | P0 | AGENTEE-525; block work AGENTEE-89/90 | Existing capture/adaptation contracts |
+| ZA-03b | One automatically selected and composed variant | P1 | AGENTEE-525; block work AGENTEE-89/90 | ZA-03a; ZA-02 preparation interface |
+| ZA-04 | One validated part alternative after a catalog change | P1 | AGENTEE-525; parts stage AGENTEE-79 | ZA-03b |
 | ZA-05 | Final functional-group gate on the ordinary build path | P0 | AGENTEE-479 | Existing supported intent and runtime |
 | ZA-06 | One congested board solved with permitted underside placement | P1 | AGENTEE-489 | ZA-05 |
 | ZA-07 | A failed route produces one constrained placement repair | P1 | AGENTEE-516 | ZA-05; ZA-06 only for side-changing repair |
 | ZA-08 | Matched experiment for a bounded routing tournament | P2 | AGENTEE-513/527/516 | ZA-01, ZA-05; qualified route options |
 | ZA-09 | A DC-drop failure drives one verified copper repair | P1 | Existing DC-path work AGENTEE-13; AGENTEE-517 | ZA-01; qualified DC-path model |
-| ZA-10 | Generated candidate enters independent review and repair | P0 for engineering-complete claim | Existing campaign/review; AGENTEE-83/525 | ZA-02; existing qualification contracts |
-| ZA-11 | Frozen brief-to-board evaluation with intervention counts | P1 | AGENTEE-69/515/517 | ZA-02/03/04/05/10 |
+| ZA-10 | Generated candidate enters independent review and repair | P0 for engineering-complete claim | Existing campaign/review; AGENTEE-83/525 | Existing qualification contracts; ZA-02 for integrated acceptance |
+| ZA-11 | Frozen brief-to-board evaluation with intervention counts | P1 | AGENTEE-69/515/517 | ZA-02/03b/04/05/10; M1 closure for campaign acceptance |
 
 ## ZA-01 — Make the current complete build a portable reference
 
@@ -114,6 +118,17 @@ This slice completes an actual generated variant. A new library schema,
 retrieval index or collection of schematic fragments alone is insufficient.
 Keep the existing block-first design policy and explicit unsupported hierarchy
 limits; require fresh checks after adaptation.
+
+Implement in two parts:
+
+- **ZA-03a — qualify the reference entries.** Capture the three roles and their
+  source/model/physical contracts using existing machinery. Demonstrate one
+  valid reference composition and the two incompatible boundary cases below.
+  This supplies ZA-02's inputs without requiring automatic selection first.
+- **ZA-03b — select and compose from the brief.** Use ZA-02's preparation
+  interface to select a supported parameterization, instantiate it and reach
+  the full generated-variant acceptance below. Recheck adaptation and invalidate
+  evidence affected by changed parts or parameters.
 
 Acceptance:
 
@@ -285,6 +300,11 @@ engine. A requested engineering-complete outcome must run the applicable
 independent reviewers and adjudication, retain source/candidate-bound findings,
 and send accepted defects through the existing bounded writer loop. File-only
 builds keep their narrower existing behavior and qualification dimensions.
+Develop this integration against a fixed candidate while ZA-02 is in progress;
+final acceptance requires the generated public path. Bind actual review evidence
+to qualification through a supported interface: judgment witnesses alone do not
+supply the separate engineering-review result. Follow the campaign plan's
+pre-package judgment sequence and invalidate affected evidence after repairs.
 
 Acceptance:
 
@@ -296,6 +316,9 @@ Acceptance:
   engineering-review outcome, while retaining separately valid file evidence.
 - [ ] A repair cannot weaken requirements or sever their source mappings.
   A changed candidate reopens applicable judgments and package verification.
+- [ ] Review repairs re-enter the supported production path with valid stage
+  receipts. Checks on an externally edited board cannot substitute for the
+  seven-stage generated-candidate evidence.
 - [ ] The final report explains the engineering-review outcome without
   relabeling it as supplier confirmation or physical validation.
 
@@ -312,6 +335,14 @@ negative controls out of the writer's mutable scope. Start with acquisition
 control, a changed load/interface brief, a qualified part-alternative case and
 an intentionally unsupported or contradictory request.
 
+The current benchmark scores board deliverables and ignores generator
+`result.json` claims. Add or qualify an independent evaluator for a structured,
+source-bound refusal; absence of board files alone cannot establish a correct
+refusal. Also enforce the enclosing case budget: the current harness defaults
+to three attempts and applies its timeout separately to generation and
+evaluation. Configure two attempts explicitly for the campaign and preserve
+one deadline/work counter across child stages and retries.
+
 Acceptance:
 
 - [ ] Supported cases start from brief plus captured catalog/block/fab context
@@ -322,6 +353,13 @@ Acceptance:
   final artifact hashes. A missing result stays missing in the denominator.
 - [ ] Include an unseen supported parameter variant; do not use the evaluator
   to tune the recipe during the measured run.
+- [ ] The refusal evaluator identifies the exact unsupported clause and checks
+  its reason against frozen context. A generic refusal, invented obstacle or
+  accompanying release claim fails; its verdict stays separate from board
+  completion.
+- [ ] Forced exhaustion proves that preparation, native work, review,
+  evaluation and retries share the declared case budget. Timeouts and missing
+  outputs remain counted, with final-grading time reserved.
 - [ ] A held-out mutation that weakens a generated check cannot fool the
   evaluator. Existing evidence seals and source bindings remain enforced.
 - [ ] Report the limited supported domain and sample size. Do not extrapolate
@@ -339,8 +377,10 @@ acceptance criteria: typed claims, input drift refusal, block contracts,
 ordinary routing retries and fabrication exports already exist. A new child
 item is warranted only for a distinct remaining deliverable.
 
-The first useful implementation is ZA-02 on the validated reference from
-ZA-01, while ZA-05 completes its existing correctness work. Tournament and
+The first integrated deliverable is ZA-02 plus ZA-10 on the validated reference
+from ZA-01 and qualified entries from ZA-03a, with ZA-05's final group gate.
+Follow the [campaign plan](2026-10-28-zeroasic-campaign-plan.md) for Plane setup,
+implementation order and the frozen acceptance series. Tournament and
 mixed-signal research do not block that path. Broader pod execution, supplier
 uploads, orders and physical qualification keep their existing authority and
 evidence requirements.

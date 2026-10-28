@@ -7,7 +7,7 @@ input for design decisions and Plane items; they are not specifications.
 
 | Prompt | Results | Status |
 | --- | --- | --- |
-| [Zero ASIC research request](2026-10-28-zeroasic-prompt.md) | [Source and code findings](2026-10-28-zeroasic-autonomy.md), [local work items](2026-10-28-zeroasic-work-items.md) | researched 2026-10-28; mapped to existing recovery work; Plane unavailable |
+| [Zero ASIC research request](2026-10-28-zeroasic-prompt.md) | [Source and code findings](2026-10-28-zeroasic-autonomy.md), [local work items](2026-10-28-zeroasic-work-items.md), [implementation campaign](2026-10-28-zeroasic-campaign-plan.md) | researched and planned 2026-10-28; mapped to existing recovery work; Plane unavailable |
 | `2026-10-21-routability-brief-prompt.md`: routability-driven placement, channel reservation, negotiated-congestion routing, escape routing, benchmarks | [Research reports and PDF exports](2026-10-21-routability-brief/README.md) | received 2026-10-21; [source-verified design and implementation plan](2026-10-21-routability-design.md), including two later owner briefs |
 | [GPU placement/routing request](2026-10-21-gpu-pcb/PROMPT.md) | [GPU experiments and implementation gates](2026-10-21-gpu-pcb/README.md) | measured on peecee-wsl RTX 3090 Ti; exact score, pattern and dense-field CPU/GPU comparisons; implementation report for agent-508 |
 

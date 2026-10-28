@@ -3,7 +3,8 @@
 Research date: 2026-10-28. Agent-ee source inspected:
 `09bd4e74bdb5383d4de1da3cfb329783d43dc30a`.
 [Owner request](2026-10-28-zeroasic-prompt.md) ·
-[Concrete work items](2026-10-28-zeroasic-work-items.md)
+[Concrete work items](2026-10-28-zeroasic-work-items.md) ·
+[Implementation campaign](2026-10-28-zeroasic-campaign-plan.md)
 
 The strongest opportunity is to automate engineering preparation for a bounded
 circuit family, feeding agent-ee's existing build and qualification machinery.
@@ -132,8 +133,12 @@ must become one process or be replaced by SiliconCompiler.
    only when a named requirement cannot be decided by existing models.
 
 The [local work list](2026-10-28-zeroasic-work-items.md) spells out deliverables,
-dependencies, negative cases and experiment caps. It maps to existing item IDs
-from the local recovery records; Plane state was not queried or changed.
+dependencies, negative cases and experiment caps. The
+[campaign plan](2026-10-28-zeroasic-campaign-plan.md) refines this sequence into
+Plane setup, ordered gates and a finite acceptance series. It qualifies the
+reference blocks before brief preparation and develops independent review
+alongside it. These proposals map to existing item IDs from the local recovery
+records; Plane state was not queried or changed.
 
 ## Source coverage and reproducibility
 

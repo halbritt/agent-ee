@@ -76,7 +76,7 @@ product's hardware qualification.
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
 | Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
 | Plan generation from an empty candidate: stages, benchmark ladder and epics | [Generator roadmap](generator-roadmap.md) |
-| Apply Zero ASIC's design automation ideas to requirements-to-board generation | [Research and code examples](research/2026-10-28-zeroasic-autonomy.md), [local work items](research/2026-10-28-zeroasic-work-items.md) |
+| Apply Zero ASIC's design automation ideas to requirements-to-board generation | [Research and code examples](research/2026-10-28-zeroasic-autonomy.md), [local work items](research/2026-10-28-zeroasic-work-items.md), [implementation campaign](research/2026-10-28-zeroasic-campaign-plan.md) |
 | Record a board's outline, stackup, keepouts and fixed connectors before generation | [Board envelope](board-envelope.md) |
 | Record coordinator-run writer-side steps and their exact applicability | [Stage receipts](stage-receipts.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
