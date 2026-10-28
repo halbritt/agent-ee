@@ -159,12 +159,17 @@ The source-native net map is injective within each source; cross-source joins ar
 explicit shared destinations. Port aliases must name a canonical port, and their
 board bindings must agree. Distinct canonical ports cannot share a board binding.
 Explicit no-connect terminals are dispositions, not source nets or ports. The
-source must retain one isolated marker on each such physical pin, and the native
-export must agree that it is isolated. A generated `unconnected-(...)` name or a
-library pin's `no_connect` type alone cannot supply this evidence. Missing or
-ambiguous source geometry refuses composition. The emitted child retains the
-markers; fresh provenance treats a lost marker or newly connected NC pin as a
-defect, with unsupported geometry leaving coverage unknown.
+source must retain one isolated marker on each such physical pin. Its native
+membership must be exactly the single physical terminal in an auto-unconnected
+net, with the reader's `no_connect_marker` witness from `+no_connect` pintype.
+Missing membership is a violation, never evidence of isolation. A generated
+`unconnected-(...)` name or a library pin's `no_connect` type alone cannot supply
+this evidence. All physical-pin and source-geometry conditions remain required.
+Missing or ambiguous source geometry refuses composition. The emitted child
+retains the markers; fresh provenance treats a lost marker or newly connected NC
+pin as a defect. A proved connection is classified before geometry isolation,
+so a retained marker touching its new conductor cannot hide the defect or other
+provenance findings. Otherwise unsupported geometry leaves coverage unknown.
 Source netlist-only requirements remain informational and must map to fresh native
 netlist checks. All other source requirements still need fresh acceptance checks.
 The producer performs native source exports before writing the child; subsequent
@@ -300,7 +305,13 @@ IDs, or add fields that intent/1 ignores.
 reading, composition, connectivity resolution and schematic emission on the CPU.
 Only the native process boundary is stubbed. It covers both library NC pins and
 ordinary pins with explicit NC markers, and rejects connected/missing terminals,
-unproven markers, false boundary ports and claimed port currents. These tests do
-not qualify KiCad export behavior or an acquisition role. The retained acquisition
+absent memberships, missing export marker witnesses, unproven geometry, false
+boundary ports and claimed port currents. The hierarchical control compares the
+emitted child with rebound references, UUIDs and sheet paths in authored XML;
+removed-marker and connected-with-marker mutations produce defects, retaining
+other provenance findings. This XML is a CPU substitution, never export proof.
+Actual source and flat/hierarchical exports must independently demonstrate the
+auto-unconnected singleton and `+no_connect` witness before native admission.
+These tests do not qualify KiCad export behavior or an acquisition role. The retained acquisition
 source capture and its open obligations are described in
 [the source record](qualification/acquisition-block-source-2026-10-28.md).

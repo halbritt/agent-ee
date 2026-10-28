@@ -74,6 +74,16 @@ def _no_connect_status(tree, graph, reference, pin):
     comp = graph['components'].get(reference)
     if comp is None or pin not in comp['pins']:
         return 'violation', 'physical no-connect pin is missing'
+    net = graph['nets'].get(graph['memberships'].get((reference, pin)))
+    # A proved connection is a defect even when its conductor obscures isolation.
+    if net is None:
+        return 'violation', 'native export lacks the declared no-connect membership'
+    if net['terminals'] != ((reference, pin),):
+        return 'violation', 'native export connects the declared no-connect pin'
+    if not net['auto_unconnected_singleton']:
+        return 'violation', 'native export lacks an auto-unconnected singleton'
+    if not net['no_connect_marker']:
+        return 'violation', 'native export lacks the explicit no-connect marker witness'
     geometry, problems = sheet_items(tree)
     targets = [item for item in geometry if item['kind'] == 'pin' and item['number'] == pin
                and field(item['node'], 'uuid', 1) == [comp['uuid']]]
@@ -86,10 +96,6 @@ def _no_connect_status(tree, graph, reference, pin):
     status, detail = marker_isolation(reference, geometry, problems, targets[0], pin)
     if status != 'disconnected':
         return 'unknown', detail
-    net = graph['nets'].get(graph['memberships'].get((reference, pin)))
-    if net is not None and (net['terminals'] != ((reference, pin),)
-                            or not net['auto_unconnected_singleton']):
-        return 'violation', 'native export connects the declared no-connect pin'
     return 'disconnected', detail
 
 

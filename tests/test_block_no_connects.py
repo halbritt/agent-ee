@@ -1,4 +1,4 @@
-"""CPU composition regression; owned symbols and a synthetic export, no KiCad run."""
+"""CPU composition regression; authored XML substitutes for export, never proves it."""
 import copy
 import hashlib
 from pathlib import Path
@@ -15,9 +15,9 @@ from agent_ee.hardware_interface import marker_isolation, sheet_items
 from agent_ee.native_netlist import read_native_inventory
 from agent_ee.reference_blocks import capture_block
 from agent_ee.schematic_emitter import emit_schematic
-from agent_ee.schematic_emit import parse_quoted
+from agent_ee.schematic_emit import Quoted, format_sexpr, parse_quoted
 from agent_ee.storage import read_json, write_json
-from agent_ee.symbol_library import children
+from agent_ee.symbol_library import children, field
 
 
 ROOT_UUID = 'b2e692b5-8926-44d7-ad8b-372ea736bc29'
@@ -59,8 +59,7 @@ def source_fixture():
             ET.SubElement(libpins, 'pin', num=str(pin), name='P' + str(pin), type=electrical)
             node = ET.Element('node', ref=ref, pin=str(pin), pintype=electrical)
             if pin == nc:
-                if ref == 'U2':
-                    node.set('pintype', 'passive+no_connect')
+                node.set('pintype', electrical + '+no_connect')
                 net = ET.Element('net', code=ref, name=f'unconnected-({ref}-P{pin}-Pad{pin})')
                 net.append(node); opens.append(net)
             else:
@@ -167,7 +166,6 @@ class NoConnectCompositionTests(unittest.TestCase):
     def test_source_nc_requires_isolated_marker_and_matching_export(self):
         tree = parse_quoted(self.sheet)
         markers = children(tree, 'no_connect')
-        from agent_ee.schematic_emit import format_sexpr
         variants = []
         for marker in markers:
             missing = copy.deepcopy(tree)
@@ -186,16 +184,23 @@ class NoConnectCompositionTests(unittest.TestCase):
 
     def test_connected_or_missing_native_nc_pin_cannot_be_composed(self):
         original = self.xml
-        for mutation in ('connected', 'missing'):
+        for mutation in ('connected', 'missing', 'no_membership', 'no_marker_witness', 'ordinary_singleton'):
             export = ET.fromstring(original)
             if mutation == 'connected':
                 nets = export.find('nets')
                 nc = nets.find("net[@code='U2']")
                 nets.remove(nc)
                 nets.find("net[@code='1']").append(nc.find('node'))
-            else:
+            elif mutation == 'missing':
                 pins = export.find("./components/comp[@ref='U2']/units/unit/pins")
                 pins.remove(pins.find("pin[@num='2']"))
+            elif mutation == 'no_membership':
+                nets = export.find('nets')
+                nets.remove(nets.find("net[@code='U2']"))
+            elif mutation == 'no_marker_witness':
+                export.find("./nets/net[@code='U2']/node").set('pintype', 'passive')
+            else:
+                export.find("./nets/net[@code='U2']").set('name', 'ordinary-singleton')
             self.xml = ET.tostring(export)
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 self.compose()
@@ -215,20 +220,86 @@ class NoConnectCompositionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unused source net mappings'):
             self.compose()
 
-    def test_hierarchical_emission_and_provenance_preserve_nc_disposition(self):
+    def hierarchical_fixture(self):
         path = self.root / 'synthetic.xml'; path.write_bytes(self.xml)
         graph = read_native_inventory(path)
-        selected = models(self.root / 'block', self.plan, lambda i, sheet: graph)
-        occurrence = dict(path='/', instance_path='/' + ROOT_UUID, file='source.kicad_sch',
+        plan = copy.deepcopy(self.plan)
+        references = {'U1': 'U11', 'U2': 'U12'}
+        plan['sources'][0]['references'] = references
+        selected = models(self.root / 'block', plan, lambda i, sheet: graph)
+        child_path = '/cd825fc6-1bc7-416a-afd6-96369c047344/'
+        occurrence = dict(path=child_path, instance_path='/' + ROOT_UUID + child_path.rstrip('/'), file='child.kicad_sch',
                           sha256=hashlib.sha256(self.sheet).hexdigest(), tree=parse_quoted(self.sheet))
-        emitted = parse_quoted(emit(selected, self.plan, occurrence, 'child'))
-        self.assertEqual(len(children(emitted, 'no_connect')), 2)
-        self.assertEqual(compare(selected, graph, occurrence, {'SIGNAL': '/COMMON'}), ([], []))
-        removed_marker = copy.deepcopy(occurrence)
-        marker = children(removed_marker['tree'], 'no_connect')[1]
-        removed_marker['tree'].remove(marker)
-        _, changes = compare(selected, graph, removed_marker, {'SIGNAL': '/COMMON'})
-        self.assertEqual([(c['terminal'], c['severity']) for c in changes], [(['U2', '2'], 'defect')])
+        emitted = emit(selected, plan, occurrence, 'child')
+        occurrence.update(tree=parse_quoted(emitted), sha256=hashlib.sha256(emitted).hexdigest())
+        # Authored CPU substitution: references/sheet paths/UUIDs match the child.
+        # This rebinds fixture XML; no exporter produced or verified these bytes.
+        xml = ET.fromstring(self.xml)
+        ET.SubElement(xml.find('design'), 'sheet', name='/child/', tstamps=child_path)
+        symbols = {next(p[2] for p in children(n, 'property') if p[1] == 'Reference'): n
+                   for n in children(occurrence['tree'], 'symbol')}
+        for comp in xml.findall('./components/comp'):
+            ref = references[comp.get('ref')]
+            comp.set('ref', ref)
+            comp.find('tstamps').text = field(symbols[ref], 'uuid', 1)[0]
+            comp.find('sheetpath').set('tstamps', child_path)
+            comp.find('sheetpath').set('names', '/child/')
+        for net in xml.findall('./nets/net'):
+            if net.get('code') == '1':
+                net.set('name', '/child/SIGNAL')
+            else:
+                ref = references[net.get('code')]
+                pin = net.find('node').get('pin')
+                net.set('name', f'unconnected-({ref}-P{pin}-Pad{pin})')
+            for node in net.findall('node'):
+                node.set('ref', references[node.get('ref')])
+        return selected, occurrence, xml
+
+    def test_hierarchical_emitted_child_and_rebound_graph_preserve_nc_disposition(self):
+        selected, occurrence, xml = self.hierarchical_fixture()
+        path = self.root / 'authored-child.xml'; path.write_bytes(ET.tostring(xml))
+        graph = read_native_inventory(path)
+        self.assertEqual(set(graph['components']), {'U11', 'U12'})
+        self.assertEqual(len(children(occurrence['tree'], 'no_connect')), 2)
+        self.assertEqual(compare(selected, graph, occurrence, {'SIGNAL': '/child/SIGNAL'}), ([], []))
+        for mutation in ('removed_marker', 'connected_with_marker'):
+            delivered = copy.deepcopy(occurrence)
+            changed = copy.deepcopy(xml)
+            marker = children(delivered['tree'], 'no_connect')[1]
+            if mutation == 'removed_marker':
+                delivered['tree'].remove(marker)
+            else:
+                at = copy.deepcopy(children(marker, 'at')[0]); at.append('0')
+                delivered['tree'].append(['label', Quoted('SIGNAL'), at,
+                    ['uuid', Quoted('a5681c13-732b-4b35-bfca-0c2fc77894f9')]])
+                nets = changed.find('nets'); nc = nets.find("net[@code='U2']")
+                nets.remove(nc)
+                nets.find("net[@code='1']").append(nc.find('node'))
+                # An unrelated provenance defect must survive the NC finding.
+                changed.find("./components/comp[@ref='U11']/value").text = 'changed'
+            path.write_bytes(ET.tostring(changed))
+            with self.subTest(mutation=mutation):
+                components, changes = compare(selected, read_native_inventory(path), delivered,
+                                              {'SIGNAL': '/child/SIGNAL'})
+                self.assertEqual([(c['terminal'], c['severity']) for c in changes], [(['U12', '2'], 'defect')])
+                self.assertEqual([c['reference'] for c in components], ['U11'] if mutation == 'connected_with_marker' else [])
+
+    def test_source_without_no_connects_retains_all_connected_pins(self):
+        tree = parse_quoted(self.sheet.replace(b'(pin no_connect line', b'(pin passive line'))
+        for marker in children(tree, 'no_connect'):
+            tree.remove(marker)
+        xml = ET.fromstring(self.xml)
+        xml.find("./libparts/libpart[@part='Package5']/pins/pin[@num='4']").set('type', 'passive')
+        nets = xml.find('nets')
+        for code in ('U1', 'U2'):
+            net = nets.find(f"net[@code='{code}']"); node = net.find('node')
+            node.set('pintype', 'passive')
+            nets.remove(net); nets.find("net[@code='1']").append(node)
+        self.xml = ET.tostring(xml)
+        self.revise_source(('\n'.join(format_sexpr(tree)) + '\n').encode(), 'all-connected')
+        result = self.compose()
+        self.assertEqual(result['intent']['no_connects'], [])
+        self.assertEqual(sum(len(n['terminals']) for n in result['intent']['nets']), 15)
 
 
 if __name__ == '__main__':

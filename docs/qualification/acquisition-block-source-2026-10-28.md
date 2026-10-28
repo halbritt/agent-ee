@@ -14,8 +14,8 @@ Git object tree at commit `9268a4240febf7ce4272fc972760000441c58822`.
 No source, PDF, manufacturer text, model or native capture was added to this
 repository or pushed. Original input and sealed-review bytes remain unchanged.
 
-The private evidence directory is
-`/home/halbritt/.local/share/agent-ee/zeroasic-20261028-agent688/implementation-blocks/`.
+The coordinator's private lane evidence (`implementation-blocks`) retains the
+private Git commit above and its custody records.
 It retains `capture_reference.py`, `capture-receipt.json`, `private-source/` and
 `captures/`. The source script uses the existing `reference_blocks.capture_block`
 interface; it executes no native tool. Each retained `block.json` can also be
