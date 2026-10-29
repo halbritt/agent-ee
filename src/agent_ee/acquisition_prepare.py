@@ -16,7 +16,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,8 +37,9 @@ REVISION_BASIS = {
     'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
     'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
-    'OPERATING.md': 'Apply selected total bus capacitance to operating instructions',
-    'engineering-calculations.json': 'Recompute the retained RC model with the selected operand',
+    'OPERATING.md': 'Apply selected total bus capacitance and source-qualified ADC applicability labels',
+    'analysis/geometry-model.json': 'Correct C4/C5 exact Murata attribution; numerical geometry unchanged',
+    'engineering-calculations.json': 'Recompute RC operand; bind captured sources and rate-qualified ADC terms',
     'ENGINEERING-REVIEW.md': 'Transcribe changed arithmetic and withhold inherited review credit',
 }
 
@@ -247,12 +248,18 @@ def _load_overlay(before, sources):
                           ('requirement-map.json', 'requirement_map_sha256')]:
         if before[filename] != overlay['base'][key]:
             raise ValueError(f'{filename}: captured base differs from the selected typed overlay')
-    if sources.keys() != overlay['added_inputs'].keys():
+    original_sources = {k: v for k, v in sources.items() if k != acquisition_source_supplement.AT}
+    if original_sources.keys() != overlay['added_inputs'].keys():
         raise ValueError('added inputs must supply exactly cpl, manufacturer-text and operating-supplement')
-    additions = {key: requirement_map.input_inventory(path) for key, path in sources.items()}
+    additions = {key: requirement_map.input_inventory(path) for key, path in original_sources.items()}
     for key, files in additions.items():
         if files != overlay['added_inputs'][key]['files']:
             raise ValueError(f'{key}: additive capture differs from the typed overlay inventory')
+    if acquisition_source_supplement.AT in sources:
+        captured = acquisition_source_supplement.read(sources[acquisition_source_supplement.AT])
+        files = {name: spec_record.sha256(raw) for name, raw in captured.items()}
+        additions[acquisition_source_supplement.AT] = files
+        overlay['added_inputs'][acquisition_source_supplement.AT] = dict(files=files)
     return raw, overlay, additions
 
 
@@ -424,6 +431,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                        acquisition_alternative.part_selection, acquisition_alternative.parts_manifest,
                        acquisition_alternative_context.jlc_stock_capture):
             recipe['helpers'][module.__name__] = spec_record.sha256(Path(module.__file__).read_bytes())
+    supplement_captures = None
+    if acquisition_source_supplement.AT in sources:
+        supplement_captures = acquisition_source_supplement.read(sources[acquisition_source_supplement.AT])
+        recipe['source_supplement_pins_sha256'] = storage.digest(acquisition_source_supplement.PINS)
+        recipe['helpers'][acquisition_source_supplement.__name__] = storage.digest(
+            Path(acquisition_source_supplement.__file__))
     identity = spec_record.sha256(json_bytes(recipe))
     with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
         scratch = Path(scratch)
@@ -470,7 +483,24 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             membership_binding = _bind_parts_membership(revised, membership_scope)
             overlay['base']['requirement_map_sha256'] = spec_record.sha256(
                 (revised / 'requirement-map.json').read_bytes())
+        supplement_report = None
+        if supplement_captures is not None:
+            source_files = requirement_map.input_inventory(revised)
+            source_files.update({'manufacturer-text/' + n: h for n, h in additions['manufacturer-text'].items()})
+            # A selected purchasing display label may change circuit bytes; the
+            # authored calculation source remains captured in the original archive.
+            source_files.update({'history/acquisition-preparation-original/' + n: h
+                                 for n, h in before.items() if source_files.get(n) != h})
+            supplement_report = acquisition_source_supplement.apply(
+                revised, overlay, supplement_captures, source_files)
+            (provenance / 'source-supplement-pins.json').write_bytes(
+                acquisition_source_supplement.PINS.read_bytes())
         changed = _archive_revision(base, revised, before, identity)
+        if supplement_report is not None:
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = json.loads(ledger_path.read_bytes())
+            ledger['source_supplement'] = supplement_report
+            ledger_path.write_bytes(json_bytes(ledger))
         if alternative_report is not None:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = json.loads(ledger_path.read_bytes())
@@ -540,6 +570,13 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                     raise ValueError('captured alternative source changed before publication')
             if (bundle / 'inputs' / alternative['path']).read_bytes() != context_raw:
                 raise ValueError('captured alternative context changed before publication')
+        if supplement_captures is not None:
+            if (storage.digest(acquisition_source_supplement.PINS) != recipe['source_supplement_pins_sha256']
+                    or acquisition_source_supplement.read(sources[acquisition_source_supplement.AT]) != supplement_captures):
+                raise ValueError('source supplement changed during preparation')
+            for name, captured in supplement_captures.items():
+                if (bundle / 'inputs' / acquisition_source_supplement.AT / name).read_bytes() != captured:
+                    raise ValueError('sealed source supplement differs from admitted bytes')
         rename_noreplace(bundle, out)
     return report
 

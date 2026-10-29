@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import hashlib
 
+from . import acquisition_source_supplement
 from .catalog import strict_json
 from .mechanical_reservations import _native_owner, _current_owner, _sha
 from .storage import canonical, digest
@@ -17,7 +18,10 @@ CONNECTORS = ('J1', 'J2', 'J3')
 
 def declaration(root):
     root = Path(root)
-    return {'schema': SCHEMA, 'sources': {rel: digest(root / rel) for rel in SOURCES}}
+    sources = {rel: digest(root / rel) for rel in SOURCES}
+    if sources['analysis/geometry-model.json'] == acquisition_source_supplement.CORRECTED_MODEL:
+        sources.update(acquisition_source_supplement.geometry_sources())
+    return {'schema': SCHEMA, 'sources': sources}
 
 
 def load(path):
@@ -25,8 +29,9 @@ def load(path):
     document = strict_json(path.read_bytes())
     if (not isinstance(document, dict) or set(document) != {'schema', 'sources'}
             or document['schema'] != SCHEMA or not isinstance(document['sources'], dict)
-            or set(document['sources']) != set(SOURCES)):
+            or not set(SOURCES) <= set(document['sources'])):
         raise ValueError('unsupported acquisition mechanics recipe')
+    _version(document)
     raw = {}
     for rel, expected in document['sources'].items():
         source = path.parent / rel
@@ -35,8 +40,6 @@ def load(path):
         raw[rel] = source.read_bytes()
         if hashlib.sha256(raw[rel]).hexdigest() != expected:
             raise ValueError('acquisition mechanics source changed: ' + rel)
-    if document['sources']['analysis/geometry-model.json'] != MODEL or document['sources']['analysis/geometry_model.py'] != CHECKER:
-        raise ValueError('unsupported acquisition model/checker revision')
     requirements = strict_json(raw['requirement-map.json'])
     from .typed_overlay import _check_pool
     try:
@@ -60,12 +63,23 @@ def _identity(binding):
     return hashlib.sha256(canonical({k: v for k, v in binding.items() if k != 'binding_sha256'})).hexdigest()
 
 
+def _version(document):
+    sources = document['sources']
+    model = sources['analysis/geometry-model.json']
+    extra = acquisition_source_supplement.geometry_sources() if model == acquisition_source_supplement.CORRECTED_MODEL else {}
+    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL)
+            or sources['analysis/geometry_model.py'] != CHECKER
+            or set(sources) != set(SOURCES) | set(extra)
+            or any(sources.get(name) != pin for name, pin in extra.items())):
+        raise ValueError('unsupported acquisition model/checker revision or source custody')
+
+
 def _recipe(recipe):
-    if (hashlib.sha256(recipe['model_raw'].encode()).hexdigest() != MODEL
+    _version(recipe['declaration'])
+    if (hashlib.sha256(recipe['model_raw'].encode()).hexdigest()
+            != recipe['declaration']['sources']['analysis/geometry-model.json']
             or strict_json(recipe['model_raw'].encode()) != recipe['model']
-            or recipe['declaration']['schema'] != SCHEMA
-            or recipe['declaration']['sources']['analysis/geometry-model.json'] != MODEL
-            or recipe['declaration']['sources']['analysis/geometry_model.py'] != CHECKER):
+            or recipe['declaration']['schema'] != SCHEMA):
         raise ValueError('acquisition mechanics recipe changed')
 
 

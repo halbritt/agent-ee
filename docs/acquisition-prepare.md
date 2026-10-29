@@ -286,3 +286,44 @@ still pin the purchasing decision separately. No requirement or consumer guard i
 weakened, and no compiler receipt/native acceptance is manufactured. The normal
 requirements stage later captures the same operative spec bytes into its reserved
 namespace; the input revision does not occupy that namespace itself.
+
+## Optional exact-part source supplement
+
+The finite captured source correction is supplied through the existing option:
+
+```sh
+--added-input source-supplement=/absolute/path/reviewed-source-supplement
+```
+
+The original 198-file recipe and original additive captures are still admitted
+exactly. The optional directory must match the complete private capture inventory
+in `fixtures/acquisition-typed/source-supplement.json`. The repository stores
+hashes, not manufacturer documents. The directory contains full original Samsung
+HTML (including the historical page cited by the calculations), the exact embedded
+JSON span, chart-definition script and request custody; exact Murata product
+association/PDF and PDF text extraction provenance; and the ADC source analysis.
+No new fetch or PDF extraction occurs during preparation. Recorded extraction
+tool versions describe provenance; installed tool versions are not admission gates.
+
+Before the existing typed overlay seals inputs, the producer corrects only C4/C5
+geometry attribution to exact GRM1885C1H103JA01D reference-sheet page 2. Their
+1.7/0.9/0.9 mm maxima and every numerical geometry field remain unchanged.
+Mechanics supports the historical model/checker pair and exactly this corrected
+model with the same checker and mandatory captured Murata source dependencies;
+missing/changed sources or another model/checker still refuse. The full supplement,
+its inventory descriptor, helper hash, model and source declarations enter the
+preparation/input identities. Changed originals are archived in the existing
+history tree and listed in the edit ledger before sealing.
+
+The generated ADC analysis retains single-shot 128 SPS and labels the 8-SPS/25 C
+gain maximum and single-ended offset typical as conditional source values, with
+no applicable guaranteed 128-SPS total accuracy. Ideal quantization and typical
+shorted-input noise are distinguished without double-counting quantization RMS
+or PGA/reference error. Calculation citations resolve to actual captured bytes.
+Fresh judgment briefs cite the supplement; none of the 14 judgments is supplied
+or accepted by preparation. Typical Samsung curves do not establish guaranteed
+biased capacitance/ESR bounds. Power-model/corner corrections, new native results,
+independent judgments, supplier and physical obligations remain separate.
+
+Omitting this optional input preserves the historical recipe path. It composes
+with the existing captured carrier context and supported 100–150 pF briefs.
