@@ -426,7 +426,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             alternative_context=None, alternative_source=None, alternative_context_sha256=None,
             addr_tie=None, evaluation_context=None, evaluation_context_sha256=None,
             expected_intent=None, expected_intent_sha256=None, expected_parts_receipt=None,
-            expected_parts_receipt_sha256=None):
+            expected_parts_receipt_sha256=None, final_groups=False):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
@@ -435,6 +435,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     committed operating supplement is used unless explicitly supplied. Explicit
     review context is captured separately from the unchanged circuit recipe.
     """
+    if type(final_groups) is not bool:
+        raise ValueError('final_groups must be an explicit boolean')
     if addr_tie is not None and addr_tie not in ('GND', 'V3V3'):
         raise ValueError('addr_tie must be GND or V3V3')
     if (evaluation_context is None) != (evaluation_context_sha256 is None):
@@ -538,6 +540,14 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             recipe['selected_cpl_inventory'][name] = spec_record.sha256(captured)
     if addr_tie is not None:
         recipe['addr_tie'] = addr_tie
+    if final_groups:
+        from . import acquisition_block_source
+        recipe['final_groups'] = dict(path=acquisition_block_source.PATH,
+            qualification='unverified; existing acquisition allocation and constraints only')
+        for module in (acquisition_block_source, acquisition_block_source.connectivity_ir,
+                       acquisition_block_source.electrical_locality, acquisition_block_source.parts_manifest,
+                       acquisition_block_source.placement_contract):
+            recipe['helpers'][module.__name__] = storage.digest(Path(module.__file__))
     if expectation is not None:
         recipe['expected_intent'] = dict(path=acquisition_expected_intent.EXPECTED, sha256=expected_intent_sha256,
             receipt_sha256=expected_parts_receipt_sha256, receipt_identity=expectation['receipt']['identity'],
@@ -637,7 +647,24 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             (provenance / 'addr-selection.json').write_bytes(json_bytes(addr_report))
         if replay is not None:
             (provenance / 'evaluation-context.json').write_bytes(replay[1])
+        if final_groups:
+            from . import block_source_stage
+            group_source = acquisition_block_source.derive(revised, plan)
+            group_path = acquisition_block_source.PATH
+            (revised / group_path).write_bytes(json_bytes(group_source))
+            declaration = requirement_map.map_declaration((revised / 'requirement-map.json').read_bytes())
+            declaration['scope']['inputs'].append(dict(path=group_path, at=group_path))
+            (revised / 'requirement-map.json').write_bytes(json_bytes(declaration))
+            overlay['base']['requirement_map_sha256'] = storage.digest(revised / 'requirement-map.json')
+            plan['placement']['block_source'] = group_path
+            block_source_stage.admit(revised, plan, requirement_map.input_inventory(revised))
         changed = _archive_revision(base, revised, before, identity)
+        if final_groups:
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = json.loads(ledger_path.read_bytes())
+            ledger['final_groups'] = dict(path=group_path, sha256=storage.digest(revised / group_path),
+                sources=group_source['eligibility']['sources'], qualification='unverified; native identity remains unbound')
+            ledger_path.write_bytes(json_bytes(ledger))
         if addr_report is not None or replay is not None or expected_report is not None:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = json.loads(ledger_path.read_bytes())
@@ -693,6 +720,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         plan['placement']['mechanics'] = 'placement-mechanics.json'
         result = typed_overlay.prepare(revised, overlay_file, bundle / 'inputs', added_sources=sources)
         acquisition_mechanics.load(bundle / 'inputs/placement-mechanics.json')
+        if final_groups:
+            sealed = bundle / 'inputs'
+            if (catalog.strict_json((sealed / group_path).read_bytes()) != group_source
+                    or acquisition_block_source.derive(sealed, plan) != group_source):
+                raise ValueError('sealed acquisition final-group source differs from admitted derivation')
+            block_source_stage.admit(sealed, plan, requirement_map.input_inventory(sealed))
         (bundle / 'build-plan.json').write_bytes(json_bytes(plan))
         (bundle / 'overlay.json').write_bytes(json_bytes(overlay))
         if requirement_map.input_inventory(base) != before:
@@ -703,7 +736,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             accounting=result['manifest']['accounting'],
             inputs=requirement_map.input_inventory(bundle / 'inputs'),
             remaining=['Native public build and file qualification', 'Independent judgments and engineering review',
-                       'Strict block-source selection and final artwork/package revalidation if strict grouping is requested',
+                       ('Native strict final-group and artwork/package revalidation' if final_groups else
+                        'Strict block-source selection and final artwork/package revalidation if strict grouping is requested'),
                        'Supplier and physical validation'])
         if expected_report is not None:
             report['expected_intent'] = expected_report
@@ -763,6 +797,7 @@ def main(argv=None):
     parser.add_argument('--build-plan', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--review-profile', type=Path, help='explicit full engineering review profile to capture')
+    parser.add_argument('--final-groups', action='store_true', help='derive strict final-group source from the captured acquisition allocation')
     parser.add_argument('--verification-timeout-s', type=int,
                         help='explicit build verification budget; requires --review-profile, no automatic increase')
     parser.add_argument('--alternative-context', type=Path, help='pinned finite acquisition carrier context JSON')
@@ -792,7 +827,8 @@ def main(argv=None):
                          evaluation_context_sha256=args.evaluation_context_sha256,
                          expected_intent=args.expected_intent, expected_intent_sha256=args.expected_intent_sha256,
                          expected_parts_receipt=args.expected_parts_receipt,
-                         expected_parts_receipt_sha256=args.expected_parts_receipt_sha256)
+                         expected_parts_receipt_sha256=args.expected_parts_receipt_sha256,
+                         final_groups=args.final_groups)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1

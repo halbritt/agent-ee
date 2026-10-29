@@ -84,6 +84,135 @@ class AcquisitionPreparationTests(unittest.TestCase):
             added_sources=self.sources if sources is None else sources, **context)
         return out, report
 
+    def test_final_groups_opt_in_seals_admitted_source_and_mechanics_map(self):
+        from agent_ee import acquisition_mechanics, block_source_stage, placement_contract
+        out, report = self.prepare(brief('125'), final_groups=True)
+        inputs = out / 'inputs'
+        plan = json.loads((out / 'build-plan.json').read_bytes())
+        path = plan['placement']['block_source']
+        source = json.loads((inputs / path).read_bytes())
+        self.assertEqual(source['schema'], 'agent-ee.block-contract-source/1')
+        self.assertEqual(source['allocation']['blocks'], [
+            dict(id=g['name'], references=g['refs'], anchor={'member':g['anchor']}, interfaces_to_fixed=None)
+            for g in json.loads((BASE / 'groups.json').read_bytes())['groups']])
+        self.assertEqual([len(b['references']) for b in source['allocation']['blocks']], [7,7,3])
+        self.assertEqual(source['allocation']['fixed'], [])
+        self.assertEqual(source['allocation']['shared'], [])
+        self.assertEqual(source['eligibility']['default'], {'faces':['F']})
+        self.assertEqual(source['thickness_nm'], 1200000)
+        self.assertEqual(source['relationships'], json.loads((inputs / 'electrical-locality.json').read_bytes()))
+        pairs = [(o['id'], r, o[r]) for o in source['relationships']['obligations']
+                 for r in ('supply','return','leg') if r in o]
+        self.assertEqual(len(pairs), 8)
+        self.assertTrue(all(p['max_distance_nm'] == 3000000 for _,_,p in pairs))
+        self.assertEqual(source['templates'], [dict(relationship=i, role=r, template='same-face-only') for i,r,_ in pairs])
+        self.assertNotIn('board_sha256', source['allocation'])
+        self.assertNotIn('board_sha256', source['eligibility']['sources'])
+        placement_contract.validate_source(source)
+        block_source_stage.admit(inputs, plan, report['inputs'])
+        admitted = build_workflow.preflight_build(out / 'build-plan.json', self.root / 'not-run')
+        self.assertEqual(admitted[3], plan)
+        mechanics = acquisition_mechanics.load(inputs / 'placement-mechanics.json')
+        self.assertEqual(mechanics['declaration']['sources']['requirement-map.json'], storage.digest(inputs / 'requirement-map.json'))
+        declaration = json.loads((inputs / 'requirement-map.json').read_bytes())
+        self.assertIn({'path':path, 'at':path}, declaration['scope']['inputs'])
+        self.assertEqual(report['inputs'][path], storage.digest(inputs / path))
+        self.assertIn('agent_ee.acquisition_block_source', report['recipe']['helpers'])
+        from agent_ee import acquisition_block_source
+        self.assertEqual(report['recipe']['helpers']['agent_ee.acquisition_block_source'],
+                         storage.digest(Path(acquisition_block_source.__file__)))
+        ledger = json.loads((inputs / 'preparation/edit-ledger.json').read_bytes())
+        self.assertEqual(ledger['final_groups']['sha256'], report['inputs'][path])
+        self.assertNotIn('requirement-map.json', source['eligibility']['sources'])
+        self.assertEqual(report['qualification'], 'unverified')
+        legacy, old = self.prepare(brief('125'), name='legacy')
+        self.assertNotIn('block_source', json.loads((legacy / 'build-plan.json').read_bytes())['placement'])
+        self.assertNotIn(path, old['inputs'])
+        self.assertNotEqual(old['identity'], report['identity'])
+        for name in ('groups.json','circuit.json','layout.json','adc-ties.json'):
+            self.assertEqual((inputs / name).read_bytes(), (legacy / 'inputs' / name).read_bytes())
+
+    def test_final_groups_refuse_owned_source_drift_and_publish_nothing_on_late_copy_drift(self):
+        from agent_ee import acquisition_block_source
+        out, _ = self.prepare(brief('100'), final_groups=True)
+        plan = json.loads((out / 'build-plan.json').read_bytes())
+        mutations = [
+            ('groups.json', lambda d:d['groups'][0].update(anchor='U1')),
+            ('groups.json', lambda d:d['groups'][0]['refs'].append('J1')),
+            ('parts.json', lambda d:d['parts'][0]['instances'].clear()),
+            ('circuit.json', lambda d:d['nets'][0]['terminals'].remove({'component':'U2','pin':{'number':'3'}})),
+            ('electrical-locality.json', lambda d:d['obligations'][0]['supply']['from'].update(pad='2')),
+            ('electrical-locality.json', lambda d:d['obligations'][0].pop('return')),
+            ('electrical-locality.json', lambda d:d['obligations'][0]['supply'].update(max_distance_nm=3000001)),
+            ('electrical-locality.json', lambda d:d['source_records'].update({'spec.md':'foreign source'})),
+            ('electrical-locality.json', lambda d:d['obligations'][0]['supply']['provenance']['citation'].update(sha256='0'*64)),
+            ('envelope.json', lambda d:d['stackup'].update(thickness_mm=1.6)),
+        ]
+        for index, (name, mutate) in enumerate(mutations):
+            with self.subTest(name=name, index=index):
+                root = self.root / ('drift-' + str(index))
+                shutil.copytree(out / 'inputs', root)
+                document = json.loads((root / name).read_bytes())
+                mutate(document)
+                storage.write_json(root / name, document)
+                with self.assertRaises(ValueError):
+                    acquisition_block_source.derive(root, plan)
+        copied = shutil.copyfile
+        def drift_copy(src, dst, *args, **kwargs):
+            result = copied(src, dst, *args, **kwargs)
+            if Path(src) == BASE / 'groups.json' and Path(dst).parent.name == 'revision':
+                data = json.loads(Path(dst).read_bytes())
+                data['groups'][0]['anchor'] = 'U1'
+                storage.write_json(dst, data)
+            return result
+        before = requirement_map.input_inventory(BASE)
+        with patch('shutil.copyfile', drift_copy), self.assertRaisesRegex(ValueError, 'allocation/anchors'):
+            self.prepare(brief('100'), name='late-groups-drift', final_groups=True)
+        self.assertFalse((self.root / 'late-groups-drift').exists())
+        self.assertEqual(requirement_map.input_inventory(BASE), before)
+        for name in ('groups.json', 'Device.kicad_sym'):
+            root = self.root / ('linked-' + name)
+            shutil.copytree(out / 'inputs', root)
+            target = root / name
+            original = target.read_bytes()
+            target.unlink()
+            target.symlink_to(out / 'inputs' / name)
+            with self.subTest(link=name), self.assertRaises(ValueError):
+                acquisition_block_source.derive(root, plan)
+            target.unlink()
+            target.write_bytes(original + b'\n')
+            if name.endswith('.kicad_sym'):
+                with self.assertRaisesRegex(ValueError, 'pin resolution'):
+                    acquisition_block_source.derive(root, plan)
+        root = self.root / 'during-derivation'
+        shutil.copytree(out / 'inputs', root)
+        read = acquisition_block_source.parts_manifest.read_captured
+        changed = []
+        def drift_read(directory, name):
+            raw = read(directory, name)
+            if Path(directory) == root and name == 'Device.kicad_sym' and not changed:
+                (root / name).write_bytes(raw + b'\n')
+                changed.append(name)
+            return raw
+        with patch('agent_ee.parts_manifest.read_captured', drift_read), self.assertRaisesRegex(ValueError, 'source changed during derivation'):
+            acquisition_block_source.derive(root, plan)
+
+    def test_final_groups_refuse_record_drift_in_the_actual_typed_copy_before_publication(self):
+        from agent_ee import acquisition_block_source
+        copytree = shutil.copytree
+        def drift_copy(src, dst, *args, **kwargs):
+            result = copytree(src, dst, *args, **kwargs)
+            if Path(src).name == 'revision':
+                path = Path(dst) / acquisition_block_source.PATH
+                if path.exists():
+                    record = json.loads(path.read_bytes())
+                    record['eligibility']['sources']['spec.md'] = '0' * 64
+                    storage.write_json(path, record)
+            return result
+        with patch('shutil.copytree', drift_copy), self.assertRaisesRegex(ValueError, 'sealed acquisition final-group source differs'):
+            self.prepare(brief('100'), name='typed-copy-drift', final_groups=True)
+        self.assertFalse((self.root / 'typed-copy-drift').exists())
+
     def test_changed_brief_prepares_complete_typed_source_for_public_build(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -526,6 +655,31 @@ class AddrPreparationTests(unittest.TestCase):
         report=acquisition_prepare.prepare(self.brief,PLAN,out,
             **{**self.options,**self.replay,**self.fixed,'addr_tie':choice,**options})
         return out,report
+
+    def test_final_groups_compose_with_fixed_oracle_and_current_captured_parts(self):
+        self.options['final_groups'] = True
+        self.seed = self.root / 'final-group-seed'
+        acquisition_prepare.prepare(self.brief, PLAN, self.seed, **self.options)
+        self.replay = dict(evaluation_context=self.seed / 'preparation.json',
+                          evaluation_context_sha256=storage.digest(self.seed / 'preparation.json'))
+        source = self.root / 'final-group-control'
+        shutil.copytree(self.seed / 'inputs', source)
+        receipt, _ = self.parts_receipt(source, 'final-group-control')
+        expected = receipt / 'run/out/connectivity-intent.json'
+        self.fixed = dict(expected_intent=expected, expected_intent_sha256=storage.digest(expected),
+                         expected_parts_receipt=receipt / 'receipt.json',
+                         expected_parts_receipt_sha256=storage.digest(receipt / 'receipt.json'))
+        ground, _ = self.prepare('final-group-ground')
+        wrong, _ = self.prepare('final-group-wrong', choice='V3V3')
+        self.assertEqual(self.compiled(ground, 'final-group-ground')[1], self.compiled(wrong, 'final-group-wrong')[1])
+        from agent_ee import acquisition_block_source, acquisition_mechanics, block_source_stage
+        for out in (ground, wrong):
+            plan = json.loads((out / 'build-plan.json').read_bytes())
+            inputs = out / 'inputs'
+            block_source_stage.admit(inputs, plan, requirement_map.input_inventory(inputs))
+            acquisition_mechanics.load(inputs / 'placement-mechanics.json')
+            self.assertEqual((inputs / acquisition_block_source.PATH).read_bytes(),
+                             (ground / 'inputs' / acquisition_block_source.PATH).read_bytes())
 
     def compiled(self,out,label):
         from agent_ee.baseline import compile_baseline

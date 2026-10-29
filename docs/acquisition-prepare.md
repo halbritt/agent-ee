@@ -163,10 +163,10 @@ bin/agent-ee build run /absolute/path/new-acquisition-150/build-plan.json \
 ```
 
 Source preflight consumes this bundle; no native run is implied by preparation.
-The emitted plan retains the captured file-only placement path and does not
-invent a strict block source/contract or native identity. Selecting and proving
-the current strict generated-board block bridge remains a separate consumer
-step. Its final artwork/package revalidation guard must remain effective.
+By default the emitted plan retains the captured file-only placement path.
+The explicit `--final-groups` option below derives the strict boardless source;
+native identity and final artwork/package proof still require the public build.
+Its final artwork/package revalidation guard must remain effective.
 Required judgments need actual independent concurrence, and ZA-10's full
 engineering review remains separate. The preparer does not supply stage
 receipts, ERC/DRC, file release, original esp_prog/M1 closure, supplier preview or
@@ -541,3 +541,41 @@ not the conditional25C screen or its engineering limitations.
 Pure fixture receipts simulate process execution while computing real parts
 intent/report bytes. They are software controls, never a native control receipt,
 a target preparation, G2 acceptance or a full campaign repair-loop proof.
+
+## Explicit final-group source derivation
+
+Add `--final-groups` to the same preparation command (Python `final_groups=True`)
+to emit `inputs/acquisition-block-source.json` and select it with the existing
+`build-plan.json` field `placement.block_source`. Omitting the option retains
+the ordinary preparation path. No caller-authored block JSON is accepted.
+
+The finite derivation preserves the captured power/analog/host groups of 7/7/3
+physical references, with member anchors J1/J3/J2. Each connector remains in its
+existing group; explicit fixed/shared allocation lists are empty. Existing native
+connector locks and mechanics checks still apply. Eligibility retains the
+existing all-front mechanics contract, and the nominal stackup stays 1.2 mm.
+The complete operative locality document and citations are copied unchanged:
+five obligations contain eight physical pad legs, each bounded by the existing
+3 mm requirement. One existing `same-face-only` template is selected per leg.
+No new radius, clearance, geometry limit or qualified-role claim is introduced.
+
+Before sealing, the producer verifies exact membership/anchors and selected
+physical instances, resolves physical pin/net identities against the captured
+symbol libraries, and refuses missing, foreign, duplicated or changed legs,
+limits, source citations or thickness. It runs existing block-source admission.
+The generated file enters the requirement map before the operative map and
+mechanics hash are computed. Its source hashes and output hash enter the edit
+ledger; the helper and its dependencies enter the preparation identity. There
+is no map/mechanics/source hash cycle and no authored native board identity.
+Before publication, the sealed copy must equal the admitted record and its
+derivation from the sealed source inputs; source admission runs on that copy.
+
+The ordinary public build then runs its existing schematic-stage block-source
+producer, native placement binding, final artwork proof and package replay.
+Source preparation and source preflight establish none of those native results.
+Use a fresh prepared bundle and fresh build under separate coordinator admission;
+never add this file to an old sealed run. Candidate-specific judgments, independent
+verification, full engineering review, supplier and physical obligations remain.
+This option composes with the finite ADDR/fixed-expectation context. The same
+option and final source must be used for the independently captured control and
+both later candidates; source changes invalidate the old producer receipt.
