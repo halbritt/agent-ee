@@ -570,6 +570,164 @@ class BudgetBoundaryTests(unittest.TestCase):
             signal.assert_not_called()
 
 
+class CaptureIdentityBudgetTests(unittest.TestCase):
+    """Actual capture/runtime identity seams; only external process outcomes are authored."""
+    def setUp(self):
+        from agent_ee import native_run
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.generator = self.root/'generator.py'
+        self.generator.write_text('authored complete-deliverable process boundary\n')
+        self.extension = self.root/'authored-pcbnew.so'
+        self.extension.write_bytes(b'CPU identity fixture, not a loaded extension')
+        self.clock = 1000.0
+        self.cancel = native_run.Cancellation()
+        self.calls = []
+        self.mode = None
+        self.stack = contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch('time.monotonic', lambda: self.clock))
+        self.stack.enter_context(patch.object(native_run, 'supervise', self.process))
+        generation = native_run.Recorded(lambda call: native_run.Outcome(files={
+            'output/circuit.kicad_sch': (FIXTURE/'reference.kicad_sch').read_bytes()}))
+        owner = self
+        class Boundary:
+            def run(self, intent, **kwargs):
+                if intent.tool == 'generation':
+                    return generation.run(intent, **kwargs)
+                if intent.isolation != 'host':
+                    if owner.mode == 'identity-final-cutoff':
+                        owner.calls.append({'kind':'check'})
+                        return native_run.Recorded(lambda call: native_run.Outcome(
+                            execution='unavailable', exit_code=None, stderr=b'authored unavailable native check')).run(intent, **kwargs)
+                    raise AssertionError('checks must not start after the failed capture/identity seam')
+                return native_run.Host().run(intent, **kwargs)
+        self.stack.enter_context(native_run.using(Boundary()))
+
+    def process(self, argv, *, timeout, cancel=None, **kwargs):
+        from agent_ee import native_run
+        kind = 'git' if argv[0] == 'git' else 'identity'
+        self.calls.append({'kind': kind, 'timeout': timeout, 'deadline': native_run._deadline.get(),
+                           'same_cancel': cancel is self.cancel, 'argv': list(argv)})
+        if kind == 'git':
+            self.assertEqual(tuple(argv[-2:]), ('rev-parse', 'HEAD'))
+            if self.mode == 'git-cutoff':
+                self.assertIs(cancel, self.cancel)
+                self.assertEqual(timeout, native_run._deadline.get()-self.clock)
+                self.clock = native_run._deadline.get()
+                return {'execution':'timeout','exit_code':None,'returncode':-9}, b'', b'authored case cutoff'
+            if self.mode == 'git-cancel':
+                self.assertIs(cancel, self.cancel)
+                cancel.cancel()
+                return {'execution':'interrupted','exit_code':None,'returncode':-9}, b'', b'authored cancellation'
+            code = 128 if self.mode == 'git-not-repo' else 0
+            return {'execution':'failed' if code else 'ok','exit_code':code,'returncode':code}, b'  authored-revision  \n', b''
+        self.assertIn('import _pcbnew', argv[-1])
+        if self.mode == 'identity-cutoff' or (self.mode == 'identity-final-cutoff' and
+                sum(c['kind'] == 'identity' for c in self.calls) == 2):
+            self.assertIs(cancel, self.cancel)
+            self.assertLess(timeout, 15)
+            self.clock = native_run._deadline.get()
+            return {'execution':'timeout','exit_code':None,'returncode':-9}, b'', b'authored enclosing cutoff'
+        if self.mode == 'identity-local-timeout':
+            self.assertEqual(timeout, 15)
+            self.clock += 15
+            return {'execution':'timeout','exit_code':None,'returncode':-9}, b'', b'authored local probe timeout'
+        if self.mode == 'identity-unavailable':
+            return {'execution':'unavailable','exit_code':None,'launch_error':FileNotFoundError('authored missing interpreter')}, b'', b''
+        return {'execution':'ok','exit_code':0,'returncode':0}, (str(self.extension)+'\n').encode(), b''
+
+    def run_case(self, case_timeout=10):
+        return run_task(FIXTURE, self.generator, self.root/'trial', self.root/'store',
+                        attempts=2, timeout=100, case_timeout=case_timeout,
+                        grading_reserve=3, cancel=self.cancel)
+
+    def assert_retained(self, status):
+        ledger = read_json(self.root/'trial/trial.json')
+        self.assertEqual((ledger['status'],ledger['attempts_started'],ledger['work_started']), (status,1,2))
+        self.assertEqual(ledger['attempt_records'][0]['generation_execution'], 'ok')
+        self.assertIsNone(ledger['attempt_records'][0]['evaluation_report'])
+        self.assertEqual((self.root/'trial/attempt-1/output/circuit.kicad_sch').read_bytes(),
+                         (FIXTURE/'reference.kicad_sch').read_bytes())
+        self.assertFalse((self.root/'trial/attempt-2').exists())
+
+    def test_complete_deliverable_capture_git_cutoff_keeps_attempt_and_stops_following_probes(self):
+        self.mode = 'git-cutoff'
+        self.assertEqual(self.run_case(), [])
+        self.assert_retained('budget_exhausted')
+        self.assertTrue((self.root/'trial/evaluation-1/scope.json').is_file())
+        self.assertTrue((self.root/'trial/evaluation-1/evaluation-inputs/circuit.kicad_sch').is_file())
+        self.assertEqual([c['kind'] for c in self.calls], ['identity','git'])
+        self.assertTrue(all(c['same_cancel'] for c in self.calls))
+        self.assertFalse((self.root/'trial/evaluation-1/run/candidate.json').exists())
+
+    def test_complete_deliverable_capture_git_cancel_keeps_attempt_and_no_next_probe(self):
+        self.mode = 'git-cancel'
+        self.assertEqual(self.run_case(), [])
+        self.assert_retained('cancelled')
+        self.assertEqual([c['kind'] for c in self.calls], ['identity','git'])
+        self.assertTrue(all(c['same_cancel'] for c in self.calls))
+
+    def test_real_identity_probe_timeout_at_case_cutoff_is_budget_exhaustion(self):
+        self.mode = 'identity-cutoff'
+        self.assertEqual(self.run_case(), [])
+        self.assert_retained('budget_exhausted')
+        self.assertEqual([c['kind'] for c in self.calls], ['identity'])
+
+    def test_final_identity_observation_cutoff_keeps_captured_unknown_checks_and_attempt(self):
+        self.mode = 'identity-final-cutoff'
+        self.assertEqual(self.run_case(), [])
+        self.assert_retained('budget_exhausted')
+        run = self.root/'trial/evaluation-1/run'
+        self.assertTrue((run/'candidate.json').is_file())
+        self.assertTrue((run/'work/verification/evidence.json').is_file())
+        self.assertTrue(list((run/'checks').glob('*.json')))
+        self.assertIn('check', [c['kind'] for c in self.calls])
+        self.assertEqual(self.calls[-1]['kind'], 'identity')
+        self.assertEqual(sum(c['kind'] == 'identity' for c in self.calls), 2)
+
+    def test_identity_cutoff_uses_a_shorter_inherited_scope(self):
+        from agent_ee import native_run
+        self.mode = 'identity-cutoff'
+        with native_run.using(deadline=1005, cancel=self.cancel):
+            self.assertEqual(self.run_case(case_timeout=100), [])
+        self.assert_retained('budget_exhausted')
+        self.assertEqual(self.clock, 1005)
+        self.assertEqual(self.calls[0]['timeout'], 5)
+
+    def test_shorter_identity_probe_timeout_stays_a_genuine_error(self):
+        import subprocess
+        self.mode = 'identity-local-timeout'
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.run_case(case_timeout=100)
+        self.assert_retained('error')
+        self.assertLess(self.clock, 1100)
+        self.assertEqual([c['kind'] for c in self.calls], ['identity'])
+
+    def test_identity_environment_failure_is_not_relabelled_exhaustion(self):
+        self.mode = 'identity-unavailable'
+        with self.assertRaisesRegex(FileNotFoundError, 'authored missing interpreter'):
+            self.run_case(case_timeout=100)
+        self.assert_retained('error')
+        self.assertEqual(self.clock, 1000)
+
+    def test_standalone_source_revision_and_non_repository_none_are_preserved(self):
+        from agent_ee.candidate import source_manifest
+        payload = self.root/'payload.txt'
+        payload.write_text('authored source')
+        scope = {'inputs':[{'path':'payload.txt','at':'payload.txt'}]}
+        for mode, expected in (('git-success','authored-revision'), ('git-not-repo',None)):
+            with self.subTest(mode=mode):
+                self.mode = mode
+                files, sources, revisions = source_manifest(scope, self.root)
+                self.assertEqual(revisions, {'payload.txt':expected})
+                self.assertEqual(files, {'payload.txt':digest(payload)})
+                self.assertEqual(sources, {'payload.txt':str(payload)})
+                self.assertIsNone(self.calls[-1]['timeout'])
+                self.assertIsNone(self.calls[-1]['deadline'])
+
+
 class NativeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

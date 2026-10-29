@@ -2,6 +2,7 @@
 import argparse
 import shutil
 import stat
+import subprocess
 import sys
 import time
 from fractions import Fraction
@@ -200,11 +201,19 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         raise ValueError('timeout must be a positive integer')
     deadline = min(time.monotonic() + timeout, deadline) if deadline is not None else time.monotonic() + timeout
     with native_run.using(deadline=deadline, cancel=cancel):
+        deadline = native_run._deadline.get()
+        cancel = native_run._cancel.get()
         def checkpoint():
             if cancel is not None and cancel.cancelled.is_set():
                 raise native_run.DeadlineExhausted('evaluation cancelled')
             if time.monotonic() >= deadline:
                 raise native_run.DeadlineExhausted('evaluation deadline exhausted')
+        def observe_identity():
+            try:
+                return evaluator_identity()
+            except subprocess.TimeoutExpired:
+                checkpoint()
+                raise
         checkpoint()
         if generation_execution not in ('ok', 'failed'):
             raise ValueError('generation execution must be ok or failed')
@@ -216,7 +225,7 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
             generation_execution = 'failed'
         missing = [] if output_error else sorted(set(task['deliverables']) - set(observed))
         selected = {k: observed[k] for k in task['deliverables'] if k in observed}
-        environment = evaluator_identity()
+        environment = observe_identity()
         checkpoint()
         trial.mkdir(parents=True, exist_ok=False)
         generation_records = None
@@ -272,7 +281,7 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         if (pinned_task(task_root)['files'] != task['files'] or
                 (current, current_error) != (observed, output_error)):
             raise ValueError('task or output changed during evaluation')
-        if evaluator_identity() != environment:
+        if observe_identity() != environment:
             raise ValueError('evaluator runtime changed during evaluation')
         report = {'schema': 'agent-ee.generation-evaluation/1', 'task': task['id'],
                   'domain': task['domain'], 'difficulty': task['difficulty'], 'fingerprint': task['fingerprint'],

@@ -3,9 +3,9 @@
 import errno
 import fnmatch
 import shutil
-import subprocess
 from pathlib import Path, PurePosixPath
 
+from . import native_run
 from .storage import digest, identity, read_json, write_json
 
 
@@ -50,8 +50,13 @@ def source_manifest(scope, base):
     files, sources, revisions = {}, {}, {}
     for spec in scope["inputs"]:
         source = source_path(spec["path"], base)
-        proc = subprocess.run(["git", "-C", str(source if source.is_dir() else source.parent),
-                               "rev-parse", "HEAD"], capture_output=True, text=True)
+        intent = native_run.Intent("source_revision",
+            ["git", "-C", str(source if source.is_dir() else source.parent), "rev-parse", "HEAD"],
+            timeout=None, isolation="host")
+        probe = native_run.run(intent, work=None)
+        if probe["execution"] == "interrupted" or native_run.cut_by_deadline(probe, intent):
+            raise native_run.DeadlineExhausted("source revision probe exhausted or cancelled")
+        proc = native_run.completed(probe, text=True)
         revisions[spec["at"]] = proc.stdout.strip() if proc.returncode == 0 else None
         for path, target in selected_files(spec, base):
             if target in files:
