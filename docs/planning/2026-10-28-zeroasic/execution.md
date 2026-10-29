@@ -222,3 +222,47 @@ catalog hash is `7764a1253de771ed8d94ef6d025b64e51c747f756c8c0850190c95925e7501b
 The old capture remains intact. Agent-692 is investigating qualified alternatives
 under ZA-04, bounded to three discovery queries and three per-ID captures. No
 substitution, order, project upload or assembly acceptance is claimed.
+
+### Repair limit reached; package review connected
+
+The two authorized saved-board repairs are complete and **the candidate is
+rejected**. The second candidate meets the unchanged ADC-loop limit at 8.8681 mm
+and clears the connector access obstruction. It still has three raw KiCad
+clearance errors: 0.1750, 0.1754 and 0.1877 mm against 0.2 mm. The repository's
+existing numeric-advisory classification produces eight focused passes and
+exit 0; that does not meet this dispatch's explicit zero-error requirement.
+Both attempts and the original inputs are retained. An independent audit
+verified their hashes, changes and rejection. No third repair is authorized,
+and no edited board was substituted for a production-stage receipt.
+
+The stock investigation found C468683, ADS1115IDGST, with 3,552 units in the
+JLC capture at `2026-10-29T03:17:16Z`. TI identifies R/T as the same component
+on different reel sizes. Independent inspection verified the retained
+manufacturer evidence, package, pinout, operating limits and stock response.
+JLC assembly eligibility remains unresolved because the response also has
+`assemblyComponentFlag:false`; its meaning is not established by stock count.
+The original zero-stock C37593 selection remains unchanged. A bounded follow-up
+uses the existing search allowance to resolve that sourcing question.
+
+Commit `ad962ca3` connects a plan-requested full review to the package stage.
+The optional typed-plan `review_profile` is captured and pinned with ordinary
+inputs. When requested, acceptance requires both file release and the package's
+own completed engineering review under that profile. A failed or incomplete
+review withholds acceptance while preserving separately valid file evidence.
+The default checks-only path and judgment-freeze rules remain unchanged. The
+supported sequence is through artwork, new bound judgments and witnesses, then
+the first package attempt. A new repair API remains deferred.
+
+Independent source review approved the change. Eighteen focused tests passed
+under the existing CI/native wrapper in 20.4 seconds, including native build,
+resume, custody and qualification regressions. Those native fixtures use
+checks-only review; a full-profile package composition has not yet been
+demonstrated. A small test extension using the existing review boundary is in
+progress. No new validation framework is being built.
+
+Evidence is in `acquisition-repair-r2/agent693-board-repair`,
+`acquisition-repair-r2/alternative-part-agent692`,
+`za10b-package-profile-agent700` and `package-review-native-r1` beneath the host
+evidence root. Full strict qualification, trunk landing, engineering acceptance,
+the sealed public package and M1 remain open. The measured four-case series has
+not started: **0/4 accepted**.
