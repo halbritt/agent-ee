@@ -481,3 +481,25 @@ have direct rerun evidence; the two visual controls remain pending. Agent-697
 has finished its source assignment and its waiting native notice will be read
 at the next turn boundary. Full strict, landing and campaign acceptance remain
 open; acceptance is still **0/4**.
+
+
+### Visual source review requires two bounded corrections
+
+Agent-697's visual candidate `691e52b6` was read and its native notice explicitly
+acknowledged. The candidate is not integrated. Independent source review verified
+its pins and retained 16 pure passing tests, but blocked approval on two concrete
+boundaries: a replaced output ancestor could escape the final link check, and
+the outer imaging timeout could kill its Python supervisor before separately
+grouped render/SVG children were cleaned up. These are static call-boundary
+findings; no fresh native run or live counterexample is claimed.
+
+The worker has a ten-minute, thirty-round, source-only correction grant in its
+existing worktree. It must revalidate output ancestry and reuse existing render
+cancellation and Host stop-grace behavior, preserving the renderer, placement
+policy, shared executor guard and standalone sandbox. No new process framework
+or host-policy change is authorized. The original report and failed review stay
+retained under `visual-execution-repair-agent697`, with the correction under
+`review-followup`. Review report SHA256:
+`7b66bd8adff67800d69c065a4cfa2656b10501cc141a4fb8a6453424b7d838f3`.
+Root retains native verification and integration. The two visual controls, full
+strict gate and campaign acceptance remain open; acceptance remains **0/4**.
