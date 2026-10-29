@@ -230,18 +230,27 @@ def rules_register(root, review):
                 'ignored_checks', 'by_severity', 'constraint_classes', 'advisory_findings_count',
                 'waived', 'waived_by_severity', 'graded_unwaived')}, advisories=[], evaluated_sources={})
         if row['kind'] == 'drc':
-            constraints = [name for name in row['evidence'] if name.endswith('/drc-constraints.json')]
-            native = [name for name in row['evidence'] if name.endswith('/drc.json')]
-            if len(constraints) != 1 or len(native) != 1:
+            names = [f"work/{row['id']}/drc.json", f"work/{row['id']}/drc-constraints.json"]
+            hashes = result.get('artifact_hashes', {})
+            if (any(name not in row['evidence'] for name in names)
+                    or any(name not in hashes for name in row['evidence'])):
                 item.update(status='pending', reason='Sourced-rule evaluation evidence is unavailable')
+            elif details.get('board_sha256') != binding.get('board_sha256') or not binding.get('board_sha256'):
+                item.update(status='failed', reason='Native DRC evidence differs from the final board')
             else:
-                constraint_path = _retained_path(directory / 'review', constraints[0])
-                document = read_json(constraint_path)
+                paths = [_retained_path(directory / 'review', name) for name in names]
+                for name, path in zip(names, paths):
+                    if not path.is_file() or digest(path) != hashes[name]:
+                        raise QualificationError('Native DRC evidence identity changed: ' + name, integrity=True)
+                document = read_json(paths[1])
                 item['evaluated_sources'] = document['sources']
                 item['advisories'] = [v for v in document['violations'] if advisory_numeric(v)]
-                item['evidence'] = [_evidence(root, constraint_path)]
+                # Preserve the primary and supplemental evidence; only the canonical
+                # producer report supplies this sourced-rule evaluation.
+                item['evidence'] = [dict(path=str((directory / 'review' / name).relative_to(root)),
+                                         sha256=hashes[name]) for name in row['evidence']]
                 try:
-                    require_evaluated_limits(read_json(_retained_path(directory / 'review', native[0])), document['sources'])
+                    require_evaluated_limits(read_json(paths[0]), document['sources'])
                 except ValueError as exc:
                     item.update(status='pending', reason=str(exc))
         records.append(item)
@@ -265,21 +274,47 @@ def decision_record(root, plan, candidate, review, judgments):
     rows = review.result['checks'] if review else []
     stacks = [row for row in rows if row['kind'] == 'board_envelope'
               and row['details'].get('criterion') == 'stackup/1']
-    if len(stacks) != 1:
-        record['reason'] = 'Exactly one bound native stackup assessment is required'
+    declared = {row['id'] for row in review.scope.get('checks', [])
+                if row['kind'] == 'board_envelope' and row.get('params', {}).get('criterion') == 'stackup/1'} if review else set()
+    present = {row['id'] for row in stacks}
+    record['assessments'] = [dict(check=row['id'], execution=row['execution'], outcome=row['outcome'],
+                                  evidence=copy.deepcopy(row['evidence'])) for row in stacks]
+    if not stacks or declared - present:
+        record['reason'] = 'Bound native stackup assessment is missing'
         return record
-    row = stacks[0]
-    details = row['details']
-    record['thickness_tolerance_source'] = details.get('finished_thickness_tolerance')
-    try:
-        same = Decimal(str(details['saved']['thickness_mm'])) == Decimal(str(facts['board_thickness_mm']))
-    except (KeyError, InvalidOperation):
-        same = False
-    record['status'] = ('pass' if same and row['execution'] == 'ok' and row['outcome'] == 'pass'
-        and details.get('envelope', {}).get('sha256') == facts['envelope_sha256']
-        and details.get('board_sha256') == review.binding['board_sha256'] else 'failed')
-    if record['status'] != 'pass':
-        record['reason'] = 'Captured nominal thickness or envelope differs from native stackup evidence'
+    assessments = []
+    valid = len(present) == len(stacks) and (not declared or present == declared)
+    for row in stacks:
+        details = row['details']
+        try:
+            same = (Decimal(str(details['saved']['thickness_mm'])) == Decimal(str(facts['board_thickness_mm'])))
+        except (KeyError, InvalidOperation, TypeError):
+            same = False
+        duration = details.get('tool', {}).get('duration_s')
+        measured = type(duration) in (int, float) and Decimal(str(duration)).is_finite() and duration >= 0
+        valid &= (same and measured and row['execution'] == 'ok' and row['outcome'] == 'pass'
+                  and details.get('status') == 'pass'
+                  and details.get('schema') == 'agent-ee.envelope-judgment/1'
+                  and bool(details.get('saved', {}).get('layers'))
+                  and details.get('tool', {}).get('exit_code') == 0
+                  and bool(details.get('tool', {}).get('argv'))
+                  and details.get('envelope', {}).get('path') == plan['envelope']
+                  and details.get('envelope', {}).get('sha256') == facts['envelope_sha256']
+                  and details.get('board_sha256') == review.binding.get('board_sha256')
+                  and bool(review.binding.get('board_sha256')))
+        semantic = copy.deepcopy(details)
+        # Timing is measured metadata; tool identity, exit, saved layers, source
+        # citations and every other assessment fact must agree.
+        if isinstance(semantic.get('tool'), dict):
+            semantic['tool'].pop('duration_s', None)
+        assessments.append(semantic)
+    equivalent = all(value == assessments[0] for value in assessments)
+    record['status'] = 'pass' if valid and equivalent else 'failed'
+    if record['status'] == 'pass':
+        record['thickness_tolerance_source'] = assessments[0].get('finished_thickness_tolerance')
+    else:
+        record['reason'] = 'Native stackup assessments conflict or differ from the captured final board/envelope'
+
     return record
 
 

@@ -540,6 +540,129 @@ class JudgmentTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'failed', result)
 
 
+class FileEvidenceConsumptionTests(unittest.TestCase):
+    """2026-10-29 R5 duplicate stackup and supplemental final-plane DRC regressions."""
+    def setUp(self):
+        from types import SimpleNamespace
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.candidate = self.root / 'candidate'
+        self.candidate.mkdir()
+        self.plan = dict(envelope='envelope.json')
+        write_json(self.candidate / 'envelope.json', dict(stackup=dict(nominal_thickness_mm=1.2),
+            layer_count=2, fab_profile=dict(sha256='a' * 64), max_component_height_mm=8))
+        self.directory = self.root / 'package'
+        self.review_root = self.directory / 'review'
+        self.review_root.mkdir(parents=True)
+        self.review = SimpleNamespace(directory=self.directory, binding=dict(board_sha256='b' * 64),
+            result=dict(checks=[], artifact_hashes={}), scope=dict(checks=[]))
+
+    def stackups(self):
+        # Same envelope-judgment/1 shape as both retained R5 rows; only timing differs.
+        details = dict(schema='agent-ee.envelope-judgment/1', criterion='stackup/1', status='pass',
+            board_sha256='b' * 64, envelope=dict(path='envelope.json', sha256=digest(self.candidate/'envelope.json')),
+            saved=dict(thickness_mm='1.2', layers=[dict(name='F.Cu', kind='copper', thickness_mm='0.035')]),
+            finished_thickness_tolerance=dict(percent=10, source=dict(path='facts.txt', sha256='c' * 64)),
+            manufacturing_uncertainty=['core thickness is unqualified'], physical_layer_thickness_qualified=False,
+            tool=dict(argv=['native-probe'], exit_code=0, console_sha256='d' * 64, duration_s=.311))
+        rows = [dict(id=cid, kind='board_envelope', execution='ok', outcome='pass',
+                     details=copy.deepcopy(details), evidence=[f'work/{cid}/envelope-judgment.json'])
+                for cid in ('mapped-stackup', 'stackup')]
+        rows[1]['details']['tool']['duration_s'] = .281
+        self.review.result['checks'] = rows
+        self.review.scope['checks'] = [dict(id=r['id'], kind='board_envelope', params=dict(criterion='stackup/1')) for r in rows]
+        return rows
+
+    def test_equivalent_stackups_retain_every_identity_and_only_ignore_measured_duration(self):
+        rows = self.stackups()
+        before = copy.deepcopy(rows)
+        result = qualification.decision_record(self.root,self.plan,self.candidate,self.review,[])
+        self.assertEqual(result['status'],'pass',result)
+        self.assertEqual([r['check'] for r in result['assessments']], [r['id'] for r in rows])
+        self.assertEqual([r['evidence'] for r in result['assessments']], [r['evidence'] for r in rows])
+        self.assertEqual(rows,before)
+        self.assertEqual(result['thickness_tolerance_source'], rows[0]['details']['finished_thickness_tolerance'])
+
+    def test_missing_failed_foreign_or_semantically_conflicting_stackup_never_passes(self):
+        for change in ('missing_all','missing_mapped','thickness','envelope','board','failed','detail_status',
+                       'layers','tolerance','tool_exit','tool_identity','bad_duration','uncertainty','missing_saved','foreign_id'):
+            rows = self.stackups()
+            if change == 'missing_all': rows.clear()
+            elif change == 'missing_mapped': rows.pop(0)
+            elif change == 'thickness': rows[1]['details']['saved']['thickness_mm']='1.6'
+            elif change in ('envelope','board'):
+                if change == 'envelope': rows[1]['details']['envelope']['sha256']='e'*64
+                else: rows[1]['details']['board_sha256']='e'*64
+            elif change == 'failed': rows[1]['outcome']='defect'
+            elif change == 'detail_status': rows[1]['details']['status']='unknown'
+            elif change == 'layers': rows[1]['details']['saved']['layers'][0]['thickness_mm']='0.07'
+            elif change == 'tolerance': rows[1]['details']['finished_thickness_tolerance']['percent']=20
+            elif change == 'tool_exit': rows[1]['details']['tool']['exit_code']=1
+            elif change == 'bad_duration': rows[1]['details']['tool']['duration_s']=-1
+            elif change == 'tool_identity': rows[1]['details']['tool']['argv']=['different-probe']
+            elif change == 'uncertainty': rows[1]['details']['manufacturing_uncertainty']=[]
+            elif change == 'missing_saved': rows[1]['details'].pop('saved')
+            elif change == 'foreign_id': rows[1]['id']='foreign'
+            with self.subTest(change=change):
+                self.assertNotEqual(qualification.decision_record(self.root,self.plan,self.candidate,self.review,[])['status'],'pass')
+
+    def test_single_declared_stackup_and_absent_review_keep_existing_meaning(self):
+        rows = self.stackups()
+        self.review.result['checks'] = rows[:1]
+        self.review.scope['checks'] = self.review.scope['checks'][:1]
+        self.assertEqual(qualification.decision_record(self.root,self.plan,self.candidate,self.review,[])['status'],'pass')
+        self.assertEqual(qualification.decision_record(self.root,self.plan,self.candidate,None,[])['status'],'pending')
+
+    def drc(self):
+        native=dict(ignored_checks=[], violations=[], unconnected_items=[], schematic_parity=[])
+        sources=dict(settings=[], rules={}, rule_constraints={})
+        names=['work/drc/drc.json','work/drc/drc-constraints.json','work/drc/final-planes-0/drc.json']
+        for name,doc in zip(names,[native,dict(sources=sources,violations=[]),native]):
+            write_json(self.review_root/name,doc)
+        self.review.result['artifact_hashes']={n:digest(self.review_root/n) for n in names}
+        row=dict(id='drc',kind='drc',execution='ok',outcome='pass',details=dict(board_sha256='b'*64),evidence=names)
+        self.review.result['checks']=[row]
+        return row,names
+
+    def test_canonical_drc_consumes_sourced_limits_and_retains_supplemental_plane_evidence(self):
+        row,names=self.drc()
+        before=copy.deepcopy(row)
+        result=qualification.rules_register(self.root,self.review)[0]
+        self.assertEqual(result['status'],'pass',result)
+        self.assertEqual({x['path'] for x in result['evidence']}, {'package/review/'+n for n in names})
+        self.assertEqual(row,before)
+
+    def test_missing_unsealed_foreign_or_ignored_canonical_drc_never_passes(self):
+        for change in ('missing_primary','missing_constraints','unsealed','foreign_board','tamper_primary',
+                       'tamper_constraints','missing_file','ignored_custom_rule','ignored_sourced'):
+            row,names=self.drc()
+            if change == 'missing_primary': row['evidence'].remove(names[0])
+            elif change == 'missing_constraints': row['evidence'].remove(names[1])
+            elif change == 'unsealed': self.review.result['artifact_hashes'].pop(names[0])
+            elif change == 'foreign_board': row['details']['board_sha256']='e'*64
+            elif change == 'missing_file': (self.review_root/names[0]).unlink()
+            elif change.startswith('tamper'):
+                (self.review_root/names[0 if change=='tamper_primary' else 1]).write_bytes(b'{}')
+            else:
+                native=read_json(self.review_root/names[0]);native['ignored_checks']=[dict(key='clearance')]
+                constraints=read_json(self.review_root/names[1]);constraints['sources']['settings']=[{'setting':'board.design_settings.rules.min_clearance',
+                    'class':'manufacturer','citation':{'path':'source.txt'}}]
+                if change == 'ignored_custom_rule':
+                    native['ignored_checks']=[]
+                    constraints['sources'].update(ignored_rules=['sourced-clearance'],
+                        rules={'sourced-clearance':{'class':'manufacturer','citation':{'path':'source.txt'}}},
+                        rule_constraints={'sourced-clearance':['clearance']})
+                write_json(self.review_root/names[0],native);write_json(self.review_root/names[1],constraints)
+                self.review.result['artifact_hashes'].update({n:digest(self.review_root/n) for n in names[:2]})
+            with self.subTest(change=change):
+                if change.startswith('tamper') or change=='missing_file':
+                    with self.assertRaisesRegex(qualification.QualificationError,'evidence identity changed'):
+                        qualification.rules_register(self.root,self.review)
+                else:
+                    result=qualification.rules_register(self.root,self.review)[0]
+                    self.assertNotEqual(result['status'],'pass',result)
+                    if change in ('ignored_sourced','ignored_custom_rule'): self.assertIn('explicitly ignored',result['reason'])
+
+
 class NativeReviewQualificationTests(unittest.TestCase):
     def test_real_passing_export_checks_do_not_imply_review_or_file_release(self):
         from agent_ee.run_record import run_review
