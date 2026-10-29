@@ -553,3 +553,32 @@ No configurable profile, copied parser, public trust option or mount redesign
 is authorized. The prior failed run remains failed. Of the original 24 counted
 problems, 23 now have direct rerun evidence. Full strict, landing, accepted
 package and campaign acceptance remain open; campaign acceptance stays **0/4**.
+
+
+### All original diagnostic controls pass; full qualification is next
+
+Agent-697's exact placement-route correction `3794f9d8` passed independent
+source review and was integrated as `9f4d5656`. Its audit SHA256 is
+`60b88711ecc8099971b36f6e2aa316ae19cfa207022bcafc4b0983acffd57876`.
+The three focused native controls passed in 16.4 seconds: the captured helper
+reached the intentional renderer refusal and retained its marker, ordinary
+placement skipped rendering, and the /app route still produced real images.
+The 794 retained fixture files are under `visual-native-r2`. The earlier failed
+run remains preserved and failed.
+
+A subsequent selected strict run on
+`9f4d56566508cab6382330fbff36a621843e63e4` passed **6 modules, 149 tests, no skips**,
+actual exit 0 in 76.8 seconds. It covers candidate visuals, placement adapter,
+visual execution, custom-pad execution, footprint library and library checks.
+Evidence is in `visual-regressions-r1`. All 24 original counted diagnostic
+problems now have passing rerun evidence. This is not a full-suite pass or
+campaign acceptance. Existing CI checks, including the full suite and RC
+control/seeded gates, remain prerequisites to trunk landing.
+
+Direct owner instruction, 2026-10-29: "set a goal to continue until campaign
+acceptance is complete". The active goal now explicitly covers G4's three
+supported successes and correct refusal, current acquisition and original
+imported esp_prog M1 closure, independent verification and reproducible release
+evidence. Passing tests or landing code cannot complete that goal. The owner’s
+constraint against new generic validation infrastructure and all declared
+acceptance/custody boundaries remain in force. Current acceptance is **0/4**.
