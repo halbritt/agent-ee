@@ -305,8 +305,24 @@ def check_block_contract(path, normalized, *, clock=None, cancel_dir=None, retai
     return report
 
 
+
+def check_mechanics(path, normalized, *, clock=None, cancel_dir=None):
+    if 'mechanics' not in normalized:
+        return {'status': 'not_declared'}
+    binding = normalized.get('mechanics_binding')
+    if binding is None or binding['recipe'] != normalized['mechanics']:
+        raise JobRefusal('acquisition mechanics has no original matching binding')
+    result = _native_read(path, '_check_mechanics', {'binding': binding}, clock=clock, cancel_dir=cancel_dir)
+    if (result.get('status') not in ('pass', 'defect') or not isinstance(result.get('defects'), list)
+            or result.get('binding_sha256') != binding['binding_sha256'] or result.get('board_sha256') != digest(path)):
+        raise JobRefusal('native acquisition mechanics check is missing or stale')
+    if (result['status'] == 'pass') != (not result['defects']):
+        raise JobRefusal('inconsistent acquisition mechanics verdict')
+    return result
+
+
 def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=None, proximity=None,
-                           board=None, before=None):
+                           board=None, before=None, mechanics_binding=None):
     """Evaluate saved native geometry through the Rust placement engine (read-only).
 
     The document comes from the same builder as capture, so the role rule, the
@@ -318,7 +334,12 @@ def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=N
     if board is None:
         import pcbnew
         board = pcbnew.LoadBoard(str(path))
-    payload = placement_problem.evaluate(_describe_board(board, extract(path, board=board, before=before)),
+    facts = extract(path, board=board, before=before)
+    description = _describe_board(board, facts)
+    if mechanics_binding is not None:
+        from .acquisition_mechanics import attach
+        attach(description, mechanics_binding, facts)
+    payload = placement_problem.evaluate(description,
                                          fixed_poses=fixed_poses, edges=edges, groups=groups, rails=rails,
                                          proximity=proximity)
     done = _run_child([str(rust_executable())], clock=Clock(60), input_bytes=json.dumps(payload).encode())
@@ -531,7 +552,8 @@ def _validate_project_rules(project):
 
 
 NATIVE_READ_LABELS = {'_capture': 'capture', '_check_edges': 'edge check', '_check_locality': 'locality check',
-                      '_nets': 'net membership read', '_check_blocks': 'block contract check'}
+                      '_nets': 'net membership read', '_check_blocks': 'block contract check',
+                      '_check_mechanics': 'acquisition mechanics check'}
 BUNDLE_KEYS = frozenset(('intent', 'groups', 'rails', 'intent_contract', 'compatibility'))
 
 
@@ -677,6 +699,12 @@ def _capture_native(board_path, normalized):
         raise JobRefusal('input board changed during capture')
     if 'electrical_locality' in intent:
         _locality_grade(facts, intent['electrical_locality'])
+    mechanics = {}
+    if 'mechanics' in normalized:
+        from .acquisition_mechanics import bind, attach
+        binding = bind(normalized['mechanics'], facts)
+        attach(description, binding, facts)
+        mechanics['mechanics'] = binding
     problem, records = placement_problem.capture(
         description, normalized, dialect_checks=dialect_checks,
         locality_footprints=facts['footprints'] if 'electrical_locality' in intent else None)
@@ -684,7 +712,7 @@ def _capture_native(board_path, normalized):
     if 'block_contract' in normalized:
         from .placement_contract import bind
         strict['block_contract'] = bind(facts, normalized['block_contract'], normalized, records)
-    return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before), **strict,
+    return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before), **strict, **mechanics,
                      'pcbnew_version': facts['pcbnew_version'], 'footprints': records,
                      'native': {f['uuid']: {'ref': f['ref'], 'side': f['side'], 'locked': f['locked']}
                                 for f in description['footprints']},
@@ -1007,6 +1035,7 @@ def _placement_eligible(entry):
             and entry.get('status') == 'checked' and entry.get('engine_feasible') is True
             and entry.get('edge_intent', {}).get('status') == 'pass'
             and entry.get('locality', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
+            and entry.get('mechanics', {}).get('status', 'not_declared') in ('pass', 'not_declared')
             and entry.get('block_contract', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
             and not entry.get('engine_violations'))
 
@@ -1375,7 +1404,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         pair_layers = router_options['pair_layers']
         impedance = router_options['pair_impedance']
         matching = router_options['intra_pair_match']
-        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails', 'block_contract'}
+        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails', 'block_contract', 'mechanics'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
@@ -1429,6 +1458,10 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 raise JobRefusal('inputs.block_contract JSON: ' + str(exc)) from exc
             if not isinstance(normalized['block_contract'], dict):
                 raise JobRefusal('inputs.block_contract: expected object')
+        if 'mechanics' in config['inputs']:
+            from .acquisition_mechanics import load
+            path, _ = verified_input(config['inputs']['mechanics'], 'mechanics')
+            normalized['mechanics'] = load(path)
         report['intent_contract'] = normalized['intent_contract']
         plane_bytes = None
         plane_ids = ()
@@ -1473,6 +1506,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # during capture is watched by the bounded child runner.
         capture_cancel = None if _cancelled(job_dir) else job_dir
         problem, record = capture(board_path, normalized, clock=clock, cancel_dir=capture_cancel)
+        if 'mechanics' in normalized:
+            if 'mechanics' not in record:
+                raise JobRefusal('native capture omitted acquisition mechanics binding')
+            if (record['mechanics']['recipe'] != normalized['mechanics']
+                    or record['mechanics']['original_board_sha256'] != sha256_bytes(board_bytes)):
+                raise JobRefusal('acquisition mechanics differs from the original source capture')
+            normalized['mechanics_binding'] = record['mechanics']
         if 'block_contract' in normalized:
             if 'block_contract' not in record:
                 raise JobRefusal('native capture omitted the requested block contract binding')
@@ -1482,6 +1522,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
+                                       **({'mechanics_controller': digest(Path(__file__).with_name('acquisition_mechanics.py'))}
+                                          if 'mechanics' in normalized else {}),
                                        **({'block_contract': record['block_contract']['binding_sha256']}
                                           if 'block_contract' in normalized else {}),
                                        'intent_contract': report['intent_contract'],
@@ -1559,6 +1601,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                      clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
+                             mechanics=check_mechanics(directory / 'board.kicad_pcb', normalized, clock=clock, cancel_dir=job_dir),
                              block_contract=check_block_contract(directory / 'board.kicad_pcb', normalized,
                                                                   clock=clock, cancel_dir=job_dir),
                              locality=check_locality(directory / 'board.kicad_pcb', normalized,
@@ -1907,6 +1950,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
     block_result = check_block_contract(board, normalized, clock=clock, cancel_dir=cancel_dir)
+    mechanics_result = check_mechanics(board, normalized, clock=clock, cancel_dir=cancel_dir)
     metrics = board_metrics(board, [g for g in groups['groups']], rails=rails, proximity=intent.get('proximity'),
                             fixed_poses=intent.get('fixed_poses', []))
     metrics['edges'] = edge_intent['connectors']
@@ -1919,9 +1963,12 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     final_board_sha256 = digest(board)
     if block_result['status'] != 'not_declared' and block_result['board_sha256'] != final_board_sha256:
         problems.append('final board changed after block contract check')
+    if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
+        problems.append('final board changed after acquisition mechanics check')
     failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or block_result['status'] not in ('pass', 'info', 'not_declared')
+              or mechanics_result['status'] not in ('pass', 'not_declared')
               or impedance_result is not None and impedance_result.get('status') != 'PASS'
               or length_result is not None and length_result.get('status') != 'PASS'
               or ac_result is not None and ac_result.get('status') != 'PASS')
@@ -1936,7 +1983,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             'drc': exec_, 'opens': len(report_['unconnected_items']),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
-            'edge_intent': edge_intent, 'locality': locality, 'block_contract': block_result, 'metrics': metrics,
+            'edge_intent': edge_intent, 'locality': locality, 'block_contract': block_result, 'mechanics': mechanics_result, 'metrics': metrics,
             'group_views': group_views, 'evidence_complete': group_views['status'] == 'rendered'}
 
 
@@ -1991,6 +2038,9 @@ def execute(args, parser):
             elif args.placement_command == '_check_locality':
                 from .placement_probe import extract
                 result = _locality_grade(extract(args.board), request['intent']['electrical_locality'])
+            elif args.placement_command == '_check_mechanics':
+                result = _evaluate_board_native(args.board, mechanics_binding=request['binding'])['mechanics']
+                result.update(board_sha256=digest(args.board), binding_sha256=request['binding']['binding_sha256'])
             elif args.placement_command == '_check_blocks':
                 from .placement_probe import extract
                 from .placement_contract import grade

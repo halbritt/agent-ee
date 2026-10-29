@@ -244,6 +244,9 @@ def _document(board, *, fixed_poses, edges, groups, rails):
                              | ({'local_rect_nm': fp['occupancy_local_nm']} if 'box' in occupancy else {})),
                'copper_local_nm': fp['copper_local_nm'], 'mask_local_nm': fp['mask_local_nm'],
                'holes_local_nm': fp['holes_local_nm'], 'pads': fp['pads']}
+        if 'mechanics' in board:
+            row['source_body_local_nm'] = fp['source_body_local_nm']
+            row['access_local_nm'] = fp['access_local_nm']
         if fp['ref'] in rules:
             order, declaration = declared_edges[fp['ref']]
             seat, basis = _seat(fp, declaration, occupancy)
@@ -266,6 +269,8 @@ def _document(board, *, fixed_poses, edges, groups, rails):
                 'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups],
                 'rails': _rails(rails),
                 'weights': dict(WEIGHTS)}
+    if 'mechanics' in board:
+        document['mechanics'] = board['mechanics']
     return document, records
 
 

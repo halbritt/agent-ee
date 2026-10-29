@@ -243,3 +243,125 @@ class EngineValidatesItsInputTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AcquisitionMechanicsTests(unittest.TestCase):
+    """Original unit captures, not native/campaign placement acceptance."""
+    def setUp(self):
+        import tempfile
+        from agent_ee import acquisition_mechanics as mechanics
+        self.mechanics = mechanics
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/acquisition-qualification'
+        (self.root / 'analysis').mkdir()
+        for name in ('geometry-model.json', 'geometry_model.py'):
+            (self.root / 'analysis' / name).write_bytes((fixture / name).read_bytes())
+        (self.root / 'spec.md').write_text('Original authored CPU mechanics specification; no native board.')
+        self.requirements = {'prose':[], 'requirements':[{'id':'ACQ-MECH-2','checks':[{'id':'engineering-geometry','params':{
+            'limits': {'body_gap':{'min':.2},'body_overlap':{'max':0},'body_outside':{'max':0},
+                       'access_obstruction':{'max':1e-8}}}}]}]}
+        for key, limit in self.requirements['requirements'][0]['checks'][0]['params']['limits'].items():
+            limit.update(unit='mm' if key=='body_gap' else 'mm2', condition='nominal25C-reviewed-acquisition')
+        (self.root / 'requirement-map.json').write_text(json.dumps(self.requirements))
+        self.path = self.root / 'placement-mechanics.json'
+        self.path.write_text(json.dumps(mechanics.declaration(self.root)))
+        self.recipe = mechanics.load(self.path)
+        check = self.requirements['requirements'][0].pop('checks')
+        self.requirements['requirements'][0]['spans'] = [{'mapping':{'checks':check}}]
+        (self.root / 'requirement-map.json').write_text(json.dumps(self.requirements))
+        self.path.write_text(json.dumps(mechanics.declaration(self.root)))
+        self.recipe = mechanics.load(self.path)
+        self.facts = {'board_sha256':'a'*64,'footprints':[]}
+        self.description = board(); self.description['footprints'] = []
+        for i, ref in enumerate(self.recipe['model']['packages'], 1):
+            x,y = (i%6+1)*4*MM, (i//6+1)*5*MM
+            row = footprint(i,ref,x,y,pads=[(0,'GND')],locked=ref.startswith('J'))
+            self.description['footprints'].append(row)
+            self.facts['footprints'].append({'uuid':row['uuid'],'ref':ref,'value':ref,'fpid':'Owned:'+ref,
+                'side':'F','locked':row['locked'],'position_nm':[x,y],'rotation_deg':0,
+                'pads':[{'uuid':row['pads'][0]['uuid'],'number':'1','net':'GND','position_nm':[x,y],
+                         'rotation_deg':0,'shape':0,'size_nm':[100000,100000]}]})
+
+    def test_exact_source_bodies_access_and_native_fixed_roles_reach_both_builders(self):
+        binding = self.mechanics.bind(self.recipe,self.facts)
+        desc = self.mechanics.attach(copy.deepcopy(self.description),binding,self.facts)
+        normalized = job.normalize_intent({'fixed_poses':[]}, {'groups':[]})
+        captured, records = problem_builder.capture(desc,normalized)
+        measured = problem_builder.evaluate(desc)
+        self.assertEqual(captured, {k:v for k,v in measured.items() if k!='evaluate'})
+        j1 = next(r for r in captured['footprints'] if r['native_ref']=='J1')
+        self.assertEqual(j1['source_body_local_nm'],[-1950000,-2000000,3950000,2500000])
+        self.assertEqual(j1['access_local_nm'],[-2450000,-2500000,4450000,3000000])
+        self.assertEqual({r['native_ref'] for r in records if r['role']=='fixed_body'},{'J1','J2','J3'})
+        moved = copy.deepcopy(self.facts); moved['board_sha256']='b'*64
+        c2 = next(f for f in moved['footprints'] if f['ref']=='C2')
+        c2['position_nm'][0]+=MM; c2['pads'][0]['position_nm'][0]+=MM
+        saved = copy.deepcopy(self.description)
+        next(f for f in saved['footprints'] if f['ref']=='C2')['position_nm'][0] += MM
+        self.mechanics.attach(saved,binding,moved)
+        self.assertEqual(binding['original_board_sha256'],'a'*64)
+
+    def test_missing_duplicate_stale_owner_pad_fixed_anchor_and_model_refuse(self):
+        binding = self.mechanics.bind(self.recipe,self.facts)
+        for change in ('missing','duplicate','pad','fixed','side','model'):
+            facts=copy.deepcopy(self.facts); bound=copy.deepcopy(binding)
+            if change=='missing': facts['footprints'].pop()
+            elif change=='duplicate': facts['footprints'].append(copy.deepcopy(facts['footprints'][0]))
+            elif change=='pad': facts['footprints'][0]['pads'][0]['number']='wrong'
+            elif change=='fixed':
+                fp=next(f for f in facts['footprints'] if f['ref']=='J1')
+                fp['position_nm'][0]+=MM; fp['pads'][0]['position_nm'][0]+=MM
+            elif change=='side': facts['footprints'][0]['side']='B'
+            else: bound['recipe']['model']['packages']['C2']['size_mm'][0]=.1
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.mechanics.attach(copy.deepcopy(self.description),bound,facts)
+        unlocked=copy.deepcopy(self.facts)
+        next(f for f in unlocked['footprints'] if f['ref']=='J2')['locked']=False
+        with self.assertRaisesRegex(ValueError,'natively locked'):
+            self.mechanics.bind(self.recipe,unlocked)
+
+    def test_model_and_requirement_source_drift_cannot_be_self_qualified(self):
+        target=self.root/'analysis/geometry-model.json'; original=target.read_bytes()
+        target.write_bytes(original+b' ')
+        with self.assertRaisesRegex(ValueError,'source changed'):
+            self.mechanics.load(self.path)
+        self.path.write_text(json.dumps(self.mechanics.declaration(self.root)))
+        with self.assertRaisesRegex(ValueError,'unsupported acquisition model'):
+            self.mechanics.load(self.path)
+        target.write_bytes(original)
+        self.requirements['requirements'][0]['spans'][0]['mapping']['checks'][0]['params']['limits']['body_gap']['min']=.01
+        (self.root/'requirement-map.json').write_text(json.dumps(self.requirements))
+        self.path.write_text(json.dumps(self.mechanics.declaration(self.root)))
+        with self.assertRaisesRegex(ValueError,'requirements differ'):
+            self.mechanics.load(self.path)
+
+    def test_declared_mechanics_cannot_disappear_from_native_or_promotion_gate(self):
+        binding=self.mechanics.bind(self.recipe,self.facts)
+        normalized={'mechanics':self.recipe,'mechanics_binding':binding}
+        path=self.root/'saved.kicad_pcb';path.write_bytes(b'late saved move')
+        report={'status':'defect','defects':[{'kind':'connector_access','ref':'J1','with':'C2'}],
+                'binding_sha256':binding['binding_sha256'],'board_sha256':job.digest(path)}
+        with patch.object(job,'_native_read',return_value=report) as native:
+            result=job.check_mechanics(path,normalized)
+            self.assertEqual(native.call_args.args[1],'_check_mechanics')
+            self.assertEqual(native.call_args.args[2]['binding']['original_board_sha256'],'a'*64)
+        entry={'integrity':'preserved','placement_introduced_errors':0,'status':'checked',
+               'engine_feasible':True,'edge_intent':{'status':'pass'},'engine_violations':[],'mechanics':result}
+        self.assertFalse(job._placement_eligible(entry))
+        with self.assertRaisesRegex(job.JobRefusal,'no original matching binding'):
+            job.check_mechanics(path,{'mechanics':self.recipe})
+        with patch.object(job,'_native_read',return_value={'status':'not_declared'}):
+            with self.assertRaises(job.JobRefusal):job.check_mechanics(path,normalized)
+
+    def test_saved_pose_mismatch_and_inconsistent_native_verdict_refuse(self):
+        binding=self.mechanics.bind(self.recipe,self.facts)
+        stale=copy.deepcopy(self.description)
+        stale['footprints'][0]['position_nm'][0]+=1
+        with self.assertRaisesRegex(ValueError,'description pose/owner'):
+            self.mechanics.attach(stale,binding,self.facts)
+        path=self.root/'saved.kicad_pcb';path.write_bytes(b'late board')
+        report={'status':'pass','defects':[{'kind':'source_body_gap'}],
+                'binding_sha256':binding['binding_sha256'],'board_sha256':job.digest(path)}
+        with patch.object(job,'_native_read',return_value=report), self.assertRaisesRegex(job.JobRefusal,'inconsistent'):
+            job.check_mechanics(path,{'mechanics':self.recipe,'mechanics_binding':binding})

@@ -15,7 +15,7 @@ import shutil
 import stat
 import tempfile
 
-from . import build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +28,7 @@ CAPACITANCE = re.compile(
 REVISION_BASIS = {
     'spec.md': 'Apply only the explicit total-line capacitance bound',
     'spec-record.json': 'Recapture the actual revised UTF-8 spec bytes',
-    'requirement-map.json': 'Rebind source record and partitions; capture preparation provenance',
+    'requirement-map.json': 'Rebind source record and partitions; declare captured mechanics and preparation provenance',
     'parts.json': 'Rebind unchanged selected parts to their operative spec citation',
     'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
     'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
@@ -177,6 +177,7 @@ def _write_revision(base, revised, selected, overlay):
     declaration = _move_spans(requirement_map.map_declaration((base / 'requirement-map.json').read_bytes()), position)
     declaration['spec_record_sha256'] = spec_record.sha256(json_bytes(record))
     declaration['scope']['inputs'].append(dict(path='preparation', at='preparation'))
+    declaration['scope']['inputs'].append(dict(path='placement-mechanics.json', at='placement-mechanics.json'))
     (revised / 'requirement-map.json').write_bytes(json_bytes(declaration))
     for name in ('parts.json', 'electrical-locality.json', 'placement.json', 'analysis/electrical-intervals.json'):
         document = _source_bindings(json.loads((base / name).read_bytes()), old_spec, new_spec, position)
@@ -359,7 +360,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
         overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
-                 for module in (build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
+                 for module in (acquisition_mechanics, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
     if review_context is not None:
         recipe['review_context'] = review_context
@@ -387,7 +388,21 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         overlay_file = scratch / 'overlay.json'
         overlay_file.write_bytes(json_bytes(overlay))
         bundle.mkdir()
+        # Bind the operative typed map before sealing the source bundle. The
+        # overlay will write these exact bytes; do not append inputs after seal.
+        mechanics = acquisition_mechanics.declaration(revised)
+        operative = typed_overlay.derive_map(
+            requirement_map.map_declaration((revised / 'requirement-map.json').read_bytes()), overlay)
+        mechanics['sources']['requirement-map.json'] = spec_record.sha256(json_bytes(operative))
+        (revised / 'placement-mechanics.json').write_bytes(json_bytes(mechanics))
+        ledger_path = provenance / 'edit-ledger.json'
+        ledger = json.loads(ledger_path.read_bytes())
+        ledger['mechanics'] = dict(path='placement-mechanics.json', sha256=spec_record.sha256(json_bytes(mechanics)),
+            basis='Captured source bodies and mating columns; fresh original native identity is bound at placement capture')
+        ledger_path.write_bytes(json_bytes(ledger))
+        plan['placement']['mechanics'] = 'placement-mechanics.json'
         result = typed_overlay.prepare(revised, overlay_file, bundle / 'inputs', added_sources=sources)
+        acquisition_mechanics.load(bundle / 'inputs/placement-mechanics.json')
         (bundle / 'build-plan.json').write_bytes(json_bytes(plan))
         (bundle / 'overlay.json').write_bytes(json_bytes(overlay))
         if requirement_map.input_inventory(base) != before:

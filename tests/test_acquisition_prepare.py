@@ -110,7 +110,14 @@ class AcquisitionPreparationTests(unittest.TestCase):
             revised_parts.pop('declaration_source')
             self.assertEqual(revised_parts, original_parts)
             original_plan = json.loads(PLAN.read_bytes())
-            self.assertEqual(admitted[3]['placement'], original_plan['placement'])
+            self.assertEqual(admitted[3]['placement'],
+                             {**original_plan['placement'], 'mechanics': 'placement-mechanics.json'})
+            from agent_ee import acquisition_mechanics
+            mechanics = acquisition_mechanics.load(prepared / 'placement-mechanics.json')
+            self.assertEqual(mechanics['declaration']['sources'],
+                             acquisition_mechanics.declaration(prepared)['sources'])
+            self.assertEqual(report['inputs']['placement-mechanics.json'],
+                             spec_record.sha256((prepared / 'placement-mechanics.json').read_bytes()))
             self.assertEqual(admitted[3]['verification_timeout_s'], original_plan['verification_timeout_s'])
             self.assertFalse((prepared / 'judgments').exists())
             self.assertEqual(report['qualification'], 'unverified')

@@ -252,7 +252,7 @@ def execute(attempt, plan, previous, *, diagnostic=False):
         rules = (candidate / scope['board']).with_suffix('.kicad_dru')
         if rules.exists():
             config['inputs']['rules'] = dict(path=str(rules), sha256=digest(rules))
-        for name in ('planes', 'block_contract'):
+        for name in ('planes', 'block_contract', 'mechanics'):
             if name in placement:
                 path = candidate / placement[name]
                 config['inputs'][name] = dict(path=str(path), sha256=digest(path))

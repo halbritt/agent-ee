@@ -194,6 +194,8 @@ pub struct Footprint {
     pub rotations: Vec<i64>,
     pub occupancy: Option<Rect>,
     pub occupancy_rung: Option<String>,
+    pub source_body: Option<Rect>,
+    pub access: Option<Rect>,
     /// Copper boxes with the native clearance each item requires.
     pub copper: Vec<Copper>,
     pub holes: Vec<Copper>,
@@ -536,6 +538,22 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                     "legacy placement job schema /1 cannot carry declaration modes; capture with schema /2");
         }
     }
+    let mechanics = input.get("mechanics");
+    if let Some(m) = mechanics {
+        ensure!(m["schema"] == "agent-ee.acquisition-mechanics/1", "unsupported mechanics source");
+        ensure!(text(m, "binding_sha256")?.len() == 64 && text(m, "original_board_sha256")?.len() == 64,
+                "missing original mechanics binding");
+        ensure!(m["sources"]["analysis/geometry-model.json"] == "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4"
+                && m["sources"]["analysis/geometry_model.py"] == "fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294",
+                "unsupported mechanics model/checker");
+    }
+    let source_model: Value = if let Some(m) = mechanics {
+        use sha2::{Digest, Sha256};
+        let raw = text(m, "model_raw")?;
+        ensure!(format!("{:x}", Sha256::digest(raw.as_bytes())) == "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4",
+                "mechanics source model bytes changed");
+        serde_json::from_str(raw).context("mechanics source JSON")?
+    } else { Value::Null };
     let identity = text(input, "problem_sha256")?.to_string();
     ensure!(identity.len() == 64, "problem_sha256 must be a full SHA-256");
     let outline = Rect::parse(&input["outline"]["rect_nm"], "outline")?;
@@ -698,9 +716,34 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 "duplicate physical reference {native_ref}");
             named.push(i);
         }
+        let source_body = if mechanics.is_some() {
+            ensure!(matches!(role, Role::Movable | Role::FixedBody), "unsupported mechanics owner role");
+            let body = Rect::parse(&row["source_body_local_nm"], "source body")?;
+            let model = &source_model["packages"][native_ref.as_str()];
+            let number = |v: &Value| -> Result<i64> {
+                crate::exact::nanometres(v)?.to_i64().context("source body range")
+            };
+            let (w,h) = (number(&model["size_mm"][0])?,number(&model["size_mm"][1])?);
+            let (x,y) = (number(&model["offset_mm"][0])?,number(&model["offset_mm"][1])?);
+            ensure!(w%2==0 && h%2==0 && body == (Rect{x0:x-w/2,y0:y-h/2,x1:x+w/2,y1:y+h/2}),
+                    "source body differs from authenticated model bytes");
+            Some(body)
+        } else {
+            ensure!(row.get("source_body_local_nm").is_none() && row.get("access_local_nm").is_none(),
+                    "body/access geometry without original mechanics binding");
+            None
+        };
+        let access = match row.get("access_local_nm").filter(|v| !v.is_null()) {
+            Some(v) => Some(Rect::parse(v, "source access")?), None => None
+        };
+        if mechanics.is_some() {
+            let connector = matches!(native_ref.as_str(), "J1" | "J2" | "J3");
+            ensure!(access == if connector { source_body.map(|r| r.grown(500_000)) } else { None },
+                    "source access differs from exact connector body expansion");
+        }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
-            occupancy, occupancy_rung: rung, copper, holes, mask, escape, pads, group: None, edge,
+            occupancy, occupancy_rung: rung, source_body, access, copper, holes, mask, escape, pads, group: None, edge,
         });
     }
     let physical_reference = |reference: &str, context: &str| -> Result<usize> {
@@ -953,6 +996,69 @@ fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
     Placed { body, edge_seat, copper, holes, mask, escape, reach }
+}
+
+// Source-body mechanics is separate from courtyard/copper pairs. Recompute the
+// finite model on each trial, including fixed-fixed and aggregate access terms.
+fn body_mechanics(p: &Prepared, poses: &[Pose], mut defects: Option<&mut Vec<Value>>) -> Terms {
+    let mut t = Terms::default();
+    if !p.footprints.iter().any(|f| f.source_body.is_some()) { return t; }
+    let mut access_total = 0_i128;
+    let mut columns = Vec::new();
+    let bodies: Vec<Rect> = p.footprints.iter().zip(poses).map(|(f, pose)|
+        place_rect(&f.source_body.expect("validated mechanics coverage"), pose)).collect();
+    for a in 0..bodies.len() {
+        let x = bodies[a];
+        let outside = x.outside(&p.outline);
+        if outside > 0 {
+            t.hard += outside; t.hard_count += 1;
+            if let Some(out) = defects.as_deref_mut() {
+                out.push(json!({"kind":"source_body_outside", "ref":p.footprints[a].native_ref,
+                    "outside_nm2":outside.to_string()}));
+            }
+        }
+        for b in a+1..bodies.len() {
+            let y = bodies[b];
+            let dx = (x.x0 as i128-y.x1 as i128).max(y.x0 as i128-x.x1 as i128).max(0);
+            let dy = (x.y0 as i128-y.y1 as i128).max(y.y0 as i128-x.y1 as i128).max(0);
+            let squared = dx*dx + dy*dy;
+            if squared < 200_000_i128.pow(2) {
+                t.hard += 200_000_i128.pow(2)-squared; t.hard_count += 1;
+                if let Some(out) = defects.as_deref_mut() {
+                    out.push(json!({"kind":"source_body_gap", "ref":p.footprints[a].native_ref,
+                        "with":p.footprints[b].native_ref,"gap_squared_nm2":squared.to_string(),
+                        "minimum_nm":200000,"overlap_nm2":x.overlap(&y).to_string()}));
+                }
+            }
+        }
+        if let Some(local) = p.footprints[a].access {
+            let access = place_rect(&local, &poses[a]);
+            let overlap: i128 = bodies.iter().enumerate().filter(|(b,_)| *b != a)
+                .map(|(_,body)| access.overlap(body)).sum();
+            access_total += overlap;
+            if overlap > 0 && defects.is_some() {
+                let intruders: Vec<Value> = bodies.iter().enumerate().filter(|(b,body)|
+                    *b != a && access.overlap(body)>0).map(|(b,body)| json!({
+                        "ref":p.footprints[b].native_ref,"overlap_nm2":access.overlap(body).to_string()})).collect();
+                columns.push(json!({"ref":p.footprints[a].native_ref,"overlap_nm2":overlap.to_string(),"intruders":intruders}));
+            }
+        }
+    }
+    // The captured measurement SUMS obstruction across all three connectors.
+    if access_total > 10_000 {
+        t.hard += access_total-10_000; t.hard_count += 1;
+        if let Some(out) = defects.as_deref_mut() {
+            out.push(json!({"kind":"connector_access", "overlap_nm2":access_total.to_string(),
+                "maximum_nm2":10000,"columns":columns}));
+        }
+    }
+    t
+}
+
+fn mechanics_report(p: &Prepared, poses: &[Pose]) -> Value {
+    let mut defects = Vec::new();
+    body_mechanics(p, poses, Some(&mut defects));
+    json!({"status":if defects.is_empty(){"pass"}else{"defect"},"defects":defects})
 }
 
 fn pad_at(p: &Prepared, f: usize, pad: usize, pose: &Pose) -> (i64, i64) {
@@ -1392,6 +1498,7 @@ fn locality_terms(p: &Prepared, k: usize, poses: &[Pose]) -> Terms {
 pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
     let at: Vec<Placed> = (0..p.footprints.len()).map(|f| placed(p, f, &poses[f])).collect();
     let mut out = Vec::new();
+    body_mechanics(p, poses, Some(&mut out));
     for a in 0..at.len() {
         let fp = &p.footprints[a];
         if let (Some(rule), Some(seat)) = (&fp.edge, &at[a].edge_seat) {
@@ -1446,6 +1553,7 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
 pub fn full_evaluate(p: &Prepared, poses: &[Pose]) -> Terms {
     let at: Vec<Placed> = (0..p.footprints.len()).map(|f| placed(p, f, &poses[f])).collect();
     let mut t = Terms::default();
+    t.add(&body_mechanics(p, poses, None), 1);
     for a in 0..at.len() {
         t.add(&unary_terms(p, a, &at[a]), 1);
         for b in a + 1..at.len() {
@@ -1591,6 +1699,8 @@ impl SearchState {
             after[f] = pose;
         }
         let mut delta = Terms::default();
+        delta.add(&body_mechanics(p, &self.poses, None), -1);
+        delta.add(&body_mechanics(p, &after, None), 1);
         let old: BTreeMap<usize, Placed> = movers.iter().map(|&f| (f, placed(p, f, &self.poses[f]))).collect();
         let new: BTreeMap<usize, Placed> = movers.iter().map(|&f| (f, placed(p, f, &after[f]))).collect();
         for &f in &movers {
@@ -2265,6 +2375,7 @@ fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
         let terms = full_evaluate(p, &poses);
         out.push(json!({"terms": terms.value(), "feasible": terms.hard == 0 && terms.hard_count == 0,
                         "violations": violations(p, &poses), "poses": pose_rows(p, &poses),
+                        "mechanics": mechanics_report(p, &poses),
                         "links": link_rows(p, &poses), "link_weight": p.weights.link,
                         "group_links": group_links_report(p, &poses),
                         "pad_edge_legs": pad_edge_legs_report(p, &poses),
@@ -3302,4 +3413,105 @@ mod tests {
         assert_eq!(ev["edge_intent"]["connectors"][0]["basis"], "body:fab");
         assert_eq!(ev["edge_intent"]["connectors"][0]["nearest"], "west");
     }
+    fn source_mechanics_fixture(connector: bool, fixed_b: bool) -> Value {
+        let mut raw = input(Vec::new());
+        let mut a = fp(&uuid(1), if connector {"J1"} else {"R1"}, "fixed_body", 5_000_000, 5_000_000, "");
+        let mut b = fp(&uuid(2), "C2", if fixed_b {"fixed_body"} else {"movable"}, 7_150_000, 5_000_000, "");
+        for row in [&mut a, &mut b] {
+            row["copper_local_nm"] = json!([]); row["pads"] = json!([]);
+            row["occupancy"]["local_rect_nm"] = json!([-10000,-10000,10000,10000]);
+            row["access_local_nm"] = Value::Null;
+        }
+        a["source_body_local_nm"] = if connector {json!([-1950000,-2000000,3950000,2500000])}
+            else {json!([-850000,-450000,850000,450000])};
+        b["source_body_local_nm"] = json!([-1100000,-725000,1100000,725000]);
+        if connector {
+            a["access_local_nm"] = json!([-2450000,-2500000,4450000,3000000]);
+            a["pose"]["x_nm"] = json!(4_000_000); a["pose"]["y_nm"] = json!(5_000_000);
+            b["pose"]["x_nm"] = json!(10_000_000);
+        }
+        raw["footprints"] = json!([a,b]); raw["groups"] = json!([]);
+        raw["mechanics"] = json!({"schema":"agent-ee.acquisition-mechanics/1", "binding_sha256":"b".repeat(64),
+            "original_board_sha256":"c".repeat(64),
+            "model_raw":include_str!("../../../fixtures/acquisition-qualification/geometry-model.json"),"sources":{
+            "analysis/geometry-model.json":"0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4",
+            "analysis/geometry_model.py":"fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294"}});
+        raw
+    }
+
+    #[test]
+    fn source_body_exact_boundary_diagonal_and_fixed_fixed_obligations() {
+        let raw = source_mechanics_fixture(false, true);
+        let p = prepare(&raw).unwrap();
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f|f.initial).collect();
+        assert_eq!(full_evaluate(&p,&poses).hard_count,0);
+        poses[1].x -= 1;
+        assert!(full_evaluate(&p,&poses).hard_count>0); // Fixed-fixed is not filtered out.
+        poses[1] = Pose{x:7_070_000,y:6_335_000,q:0}; // 120/160/200 um triangle.
+        assert_eq!(full_evaluate(&p,&poses).hard_count,0);
+        poses[1].x -= 1;
+        assert!(full_evaluate(&p,&poses).hard_count>0);
+        poses[0].x = 0;
+        assert!(violations(&p,&poses).iter().any(|r|r["kind"]=="source_body_outside"));
+    }
+
+    #[test]
+    fn source_connector_intrusion_is_hard_in_trials_and_saved_coordinate_evaluation() {
+        let raw = source_mechanics_fixture(true, false);
+        let p = prepare(&raw).unwrap();
+        let poses: Vec<Pose> = p.footprints.iter().map(|f|f.initial).collect();
+        let mut state = SearchState::new(&p,poses.clone()).unwrap();
+        assert_eq!(state.totals.hard_count,0);
+        let moved = Pose{x:9_300_000,y:5_000_000,q:0}; // C2 body clears J1 by250um but enters mating column.
+        let trial = state.evaluate(&p,&[(1,moved)]).unwrap();
+        assert!(trial.delta.hard_count>0);
+        state.commit(&p,trial).unwrap();
+        assert_eq!(state.totals.hard,full_evaluate(&p,&state.poses).hard);
+        assert_eq!(state.totals.hard_count,full_evaluate(&p,&state.poses).hard_count);
+        assert_eq!(state.poses[0],poses[0]);
+        let result = evaluate_poses(&p,&json!([{uuid(2):[9_300_000,5_000_000,0]}]),0.0).unwrap();
+        assert_eq!(result["evaluations"][0]["feasible"],false);
+        let defects = result["evaluations"][0]["mechanics"]["defects"].as_array().unwrap();
+        assert!(defects.iter().any(|r|r["kind"]=="connector_access"));
+        assert!(state.evaluate(&p,&[(0,moved)]).is_err());
+    }
+
+    #[test]
+    fn source_mechanics_missing_geometry_or_changed_access_refuses() {
+        let mut raw = source_mechanics_fixture(true,false);
+        raw["footprints"][0]["access_local_nm"] = json!([-2000000,-2500000,4450000,3000000]);
+        assert!(prepare(&raw).is_err());
+        raw = source_mechanics_fixture(true,false);
+        raw["footprints"][1].as_object_mut().unwrap().remove("source_body_local_nm");
+        assert!(prepare(&raw).is_err());
+        raw = source_mechanics_fixture(true,false);
+        raw.as_object_mut().unwrap().remove("mechanics");
+        assert!(prepare(&raw).is_err());
+    }
+
+    #[test]
+    fn source_access_tolerance_is_a_global_sum_not_a_per_column_allowance() {
+        let mut raw = source_mechanics_fixture(true,false);
+        raw["outline"]["rect_nm"] = json!([0,0,60_000_000,20_000_000]);
+        raw["footprints"][1]["pose"]["x_nm"] = json!(9_549_999);
+        raw["footprints"][1]["pose"]["y_nm"] = json!(8_719_000);
+        let mut j2 = raw["footprints"][0].clone();
+        j2["uuid"] = json!(uuid(3)); j2["native_ref"] = json!("J2");
+        j2["pose"]["x_nm"] = json!(30_000_000);
+        j2["source_body_local_nm"] = json!([-1950000,-2000000,7950000,2500000]);
+        j2["access_local_nm"] = json!([-2450000,-2500000,8450000,3000000]);
+        let mut c3 = raw["footprints"][1].clone();
+        c3["uuid"] = json!(uuid(4)); c3["native_ref"] = json!("C3");
+        c3["source_body_local_nm"] = json!([-850000,-450000,850000,450000]);
+        c3["pose"]["x_nm"] = json!(39_299_999); c3["pose"]["y_nm"] = json!(8_444_000);
+        raw["footprints"].as_array_mut().unwrap().extend([j2,c3]);
+        let p = prepare(&raw).unwrap();
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f|f.initial).collect();
+        let report = mechanics_report(&p,&poses);
+        assert_eq!(report["status"],"defect");
+        assert_eq!(report["defects"][0]["overlap_nm2"],"12000");
+        poses[3].x += 2;
+        assert_eq!(mechanics_report(&p,&poses)["status"],"pass"); // Remaining6000nm2 is below the TOTAL10000nm2 limit.
+    }
+
 }
