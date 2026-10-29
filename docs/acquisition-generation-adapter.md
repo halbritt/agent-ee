@@ -159,3 +159,62 @@ one of the four private cases and establishes no G4 acceptance. Nested-stage
 namespace compatibility and full seat/package timing remain runtime unknowns;
 this one real composition, rather than an unchanged through-artwork run, is the
 useful admission experiment.
+
+## Public interface review: remaining implementation obligations
+
+Agent-701 reviewed the public interface at
+`a61c4921-6289-40b6-843c-0ad0665212ae@1`: adequate direction, with the following
+six gaps. This was a public source review, not an implementation or native
+approval. Its earlier all-dimensions-pass requirement was explicitly withdrawn.
+
+1. **Public request and refusal authority.** For this proposed acquisition mode,
+   the generator may emit only `request.json`, at most 4096 UTF-8 bytes, with
+   exactly `schema`, `brief_sha256`, and `action`. The proposed schema is
+   `agent-ee.acquisition-request/1`; the digest must equal the captured public
+   prompt; `action` is `prepare` for the first attempt and `repair` for the
+   second. The trusted parent checks exact fields/types, ordinary files, no
+   other output entries and correspondence with its own ledger. These fields
+   carry no oracle or acceptance. The generator cannot publish `refusal.json`,
+   native deliverables or qualification. Only the trusted preparer's actual
+   `PreparationRefused.report` can supply the refusal output in this mode.
+   This is a proposed new mode, not a change to existing refusal-task semantics.
+2. **Actual repair.** The trusted completion phase must connect the existing
+   campaign implementation/repair path to the prior retained candidate and
+   its public adjudicated feedback, with the case's remaining attempt/time/work
+   allowance. Calling preparation again without consuming that evidence is
+   merely another generation, not the required repair connector. A partial
+   prior build supplies only the last verifiably captured eligible candidate;
+   an absent candidate cannot be fabricated. No manual edit, hidden extra turn
+   or evaluator-derived expectation may enter the repair. The exact build-to-
+   campaign handoff is an unresolved source integration, not implemented here.
+3. **Declared public context delta.** The current task schema has no public
+   context slot. A reviewed extension may declare one canonical pinned public
+   context file/closure, disjoint from `evaluator/`, reference/oracle inputs and
+   reserved evidence paths. Only that declared delta reaches trusted preparation;
+   the common context stays frozen. Its bytes and allowlist belong in case and
+   series identities. Independent leakage review precedes freeze. No private
+   case or actual context delta is authored by this document.
+4. **Judgment-seat contract.** Briefs come only from the generated public
+   requirement map and frozen public context. Author and verifier harness/model
+   pairs must differ; neither is the private evaluator. Admission must establish
+   their existing subscription/tool routes and pin their configurations before
+   a counted case. Package review retains its existing isolated profile. Whether
+   judgment seats must additionally differ from all package-review seats is an
+   unresolved coordinator policy choice; it must be recorded before execution,
+   not silently assumed by an adapter.
+5. **Owned path domain.** Place native production at trial-owned
+   `scratch/production-k`, a sibling outside the generator's writable
+   `attempt-k` mount. Do not copy it into `previous/`. Feedback/repair copying
+   selects only allowed public candidate artifacts. The whole production tree,
+   including failures, author/verifier calls and the package, remains anchored
+   by authenticated trial/series replay. Retention size is unknown. Concrete
+   native receipt paths stay unchanged within this tree.
+6. **Enforced productive cutoff.** Preparation, native build, both judgment
+   seats and package/full review need supervised children using the existing
+   `native_run` mechanisms, original cancellation and absolute productive
+   cutoff, with owned termination/cleanup allowance inside the enclosing case.
+   Passing a timeout number in a profile is insufficient evidence that every
+   launch path honours it. In particular the reported R5 physical-seat overrun
+   must be resolved from actual launcher evidence. The final reserve remains
+   unavailable to production. No source/runtime implementation or proof of
+   this additional composition is claimed here.
