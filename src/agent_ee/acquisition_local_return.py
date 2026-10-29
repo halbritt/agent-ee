@@ -220,7 +220,7 @@ def _library_context(path):
             raise JobRefusal('local return: ambiguous original footprint identity')
         point = fp.GetPosition()
         result[identity] = dict(description='Footprint ' + fp.GetReference(),
-            position_nm=[int(point.x), int(point.y)], library=fp.GetFPID().GetLibNickname())
+            position_nm=[int(point.x), int(point.y)], library=str(fp.GetFPID().GetLibNickname()))
     return result
 
 

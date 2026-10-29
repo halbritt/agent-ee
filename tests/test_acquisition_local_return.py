@@ -59,6 +59,11 @@ class NativePad:
     def FlashLayer(self, layer): return self.IsOnLayer(layer)
 
 
+class NativeUTF8:
+    """KiCad's nickname wrapper converts to text; it is not a Python string."""
+    def __str__(self): return 'Synthetic_Lib'
+
+
 class NativeFootprint:
     def __init__(self, node):
         self.node = node
@@ -68,7 +73,7 @@ class NativeFootprint:
     def Pads(self): return [NativePad(p) for p in children(self.node, 'pad')]
     def GetPosition(self):
         return self.Pads()[0].GetPosition() if self.Pads() else NS(x=11000000, y=12000000)
-    def GetFPID(self): return NS(GetLibNickname=lambda: 'Synthetic_Lib')
+    def GetFPID(self): return NS(GetLibNickname=NativeUTF8)
 
 
 class NativeTrack:
