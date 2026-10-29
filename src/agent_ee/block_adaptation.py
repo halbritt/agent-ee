@@ -227,6 +227,8 @@ def _fresh_contract(root, source, record, scope, files, native_id):
                     names[instance['path'].rstrip('/')+original]=target
     else:
         names['/']=record['instance_path']
+        if source.get('instances'):
+            names[source['instances'][0]['uuid_path']]=record['instance_path']
         names.update({p['net_name']:record['bindings'][p['name']] for p in source['boundary_ports']})
     # New assets must retain the exact algebra/invariants, changing only captured
     # instance bindings and the fresh requirement citations required by their APIs.

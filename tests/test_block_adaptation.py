@@ -574,3 +574,109 @@ class DeferredAdaptationTests(unittest.TestCase):
                 with self.subTest(mutation=mutation),self.assertRaises(ValueError):capability(dict(instance='instance.json',netlist_check='netlist'),changed,files,root,'provenance')
             (directory/'owned.lib').write_text('.subckt r_two P N\nR_effective P N 100\n.ends r_two\n')
             with self.assertRaisesRegex(ValueError,'inventory/hash'):capability(dict(instance='instance.json',netlist_check='netlist'),result,files,root,'provenance')
+
+
+class SingleSourceOccurrenceTests(unittest.TestCase):
+    """Authored A-to-B source contracts, not native exports or role qualification."""
+    def test_nonroot_source_occurrence_rebinds_interface_and_scoped_parts(self):
+        from tests.test_parts_subset import captured_fixture
+        from tests.test_native_binding import GEN
+        from agent_ee.block_adaptation import _source, _fresh_contract
+        from agent_ee.reference_blocks import sheet_symbols
+        from agent_ee.schematic_emit import Quoted
+        source_path = '/11111111-1111-4111-8111-111111111111/'
+        target_path = '/22222222-2222-4222-8222-222222222222/'
+        foreign_path = '/33333333-3333-4333-8333-333333333333/'
+        target_unit = '44444444-4444-4444-8444-444444444444'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parts = captured_fixture(self, root)
+            directory = root / 'block'; directory.mkdir()
+            tree = parse_quoted(GEN.schematic().encode())
+            for node in list(children(tree, 'symbol')):
+                if next(p[2] for p in children(node, 'property') if p[1] == 'Reference') != 'R1':
+                    tree.remove(node)
+            resistor, = children(tree, 'symbol')
+            def occurrence(node, path):
+                for instances in children(node, 'instances'):
+                    for project in children(instances, 'project'):
+                        for entry in children(project, 'path'):
+                            entry[1] = Quoted('/' + GEN.uid('root') + path)
+            occurrence(resistor, source_path)
+            for name in ('P', 'N'):
+                tree.append(parse_quoted(('(hierarchical_label "' + name + '" (shape passive) '
+                    '(at 20 20 0) (effects (font (size 1 1))) (uuid "' + GEN.uid(name) + '"))').encode()))
+            (directory / 'source.kicad_sch').write_bytes(dump(tree))
+            parts['parts'][0]['instances'] = [dict(sheet=source_path, reference='R1')]
+            write_json(directory / 'parts.json', parts)
+            source_unit = sheet_symbols(dump(tree), source_path)['R1']['uuids']
+            interface = dict(schema='agent-ee.interface/1', allowed_edits=[],
+                components={'resistor': dict(locations=[dict(sheet=source_path, reference='R1')], symbols=['Owned:R'])},
+                terminals={'p': dict(component='resistor', pin='1')},
+                invariants=[dict(id='value', kind='value', component='resistor', equals='10k', requirement='interface',
+                    source=dict(path='requirements.md', locator='line 1')),
+                    dict(id='net', kind='named_net', terminal='p', names=['/P'], requirement='interface',
+                    source=dict(path='requirements.md', locator='line 1'))])
+            write_json(directory / 'interface.json', interface)
+            (directory / 'requirements.md').write_text('Owned source: retain R1 identity/value and bind P explicitly.\n')
+            source = dict(schema='agent-ee.block/1', id='owned-single', version='nonroot-1', role='test',
+                source=dict(repository='owned', commit='a' * 40, paths={'source.kicad_sch': 'source.kicad_sch'},
+                    license='Owned', upstream_origin='authored', upstream_license='Owned'),
+                sheet='source.kicad_sch', parts_manifest='parts.json', interface='interface.json',
+                instances=[dict(path='/source/', uuid_path=source_path, sheet='source.kicad_sch', references=['R1'])],
+                boundary_ports=[dict(name=n, net_name='/' + n, direction='passive', voltage_domain='test', current_a=None) for n in ('P', 'N')],
+                requirements=[dict(id=n, statement='Retain declared ' + n, checks=['old-' + n],
+                    source=dict(path='requirements.md', locator='line 1')) for n in ('interface', 'members')],
+                check_set=[dict(id='old-interface', kind='hardware_interface', params=dict(contract='interface.json', netlist_check='old-netlist')),
+                    dict(id='old-members', kind='parts_subset', params=dict(manifest='parts.json', netlist_check='old-netlist',
+                        requirement_id='members', reference_set=[dict(sheet=source_path, reference='R1', uuids=source_unit)]))],
+                files={p: digest(directory / p) for p in ('source.kicad_sch', 'parts.json', 'interface.json', 'requirements.md')}, runs=[])
+            write_json(directory / 'block-contract.json', block_contract(source))
+            source['files']['block-contract.json'] = digest(directory / 'block-contract.json')
+            write_json(directory / 'block.json', source)
+            admitted = _source(root, 'block')  # A is an admitted explicit single occurrence, not a composition.
+            self.assertEqual(admitted['instances'][0]['uuid_path'], source_path)
+            occurrence(resistor, target_path)
+            children(resistor, 'uuid')[0][1] = Quoted(target_unit)
+            (root / 'target.kicad_sch').write_bytes(dump(tree))
+            fresh = copy.deepcopy(interface)
+            fresh['components']['resistor']['locations'][0]['sheet'] = target_path
+            for invariant in fresh['invariants']:
+                invariant['requirement'] = 'leaf-interface'
+                invariant['source'] = dict(path='block/block.json', locator='requirements/interface')
+            fresh['invariants'][1]['names'] = ['/BOARD_P']
+            write_json(root / 'fresh-interface.json', fresh)
+            allocated = copy.deepcopy(parts)
+            allocated['parts'][0]['instances'][0]['sheet'] = target_path
+            allocated['declaration_source'] = dict(path='block/block.json', locator='requirements/members', sha256=digest(directory / 'block.json'))
+            write_json(root / 'fresh-parts.json', allocated)
+            selected = [dict(sheet=target_path, reference='R1', uuids=[target_unit])]
+            checks = [dict(id='netlist', kind='netlist'),
+                dict(id='interface', kind='hardware_interface', params=dict(contract='fresh-interface.json', netlist_check='netlist')),
+                dict(id='members', kind='parts_subset', params=dict(manifest='fresh-parts.json', netlist_check='netlist', requirement_id='leaf-members', reference_set=selected))]
+            scope = dict(schema='agent-ee.scope/3', schematic='target.kicad_sch', checks=checks,
+                baseline=dict(requirements=[dict(id='leaf-' + n, intent='acceptance', checks=[n],
+                    source=dict(path='block/block.json', locator='requirements/' + n)) for n in ('interface', 'members')]))
+            record = dict(id='leaf', block='block', sheet='target.kicad_sch', instance_path=target_path,
+                bindings={'P': '/BOARD_P', 'N': '/BOARD_N'}, requirements={n: [n] for n in ('interface', 'members')})
+            files = {str(p.relative_to(root)): digest(p) for p in root.rglob('*') if p.is_file()}
+            _fresh_contract(root, admitted, record, scope, files, 'netlist')
+            for change in ('interface-retained-A', 'interface-foreign', 'allocation-retained-A', 'allocation-foreign',
+                           'selector-occurrence', 'selector-unit', 'selector-reference', 'mpn', 'criteria'):
+                altered_interface, altered_parts, altered_scope = copy.deepcopy((fresh, allocated, scope))
+                if change.startswith('interface-'):
+                    altered_interface['components']['resistor']['locations'][0]['sheet'] = source_path if change.endswith('A') else foreign_path
+                elif change.startswith('allocation-'):
+                    altered_parts['parts'][0]['instances'][0]['sheet'] = source_path if change.endswith('A') else foreign_path
+                elif change.startswith('selector-'):
+                    selector = altered_scope['checks'][2]['params']['reference_set'][0]
+                    if change == 'selector-occurrence': selector['sheet'] = foreign_path
+                    elif change == 'selector-unit': selector['uuids'] = source_unit
+                    else: selector['reference'] = 'R9'
+                elif change == 'mpn': altered_parts['parts'][0]['mpn'] = 'FORGED'
+                else: altered_interface['invariants'][0]['equals'] = '60'
+                write_json(root / 'fresh-interface.json', altered_interface)
+                write_json(root / 'fresh-parts.json', altered_parts)
+                altered_files = {**files, 'fresh-interface.json': digest(root / 'fresh-interface.json'), 'fresh-parts.json': digest(root / 'fresh-parts.json')}
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'asset changes|allocation/identity|parameters differ'):
+                    _fresh_contract(root, admitted, record, altered_scope, altered_files, 'netlist')
