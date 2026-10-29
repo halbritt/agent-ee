@@ -503,3 +503,16 @@ retained under `visual-execution-repair-agent697`, with the correction under
 `7b66bd8adff67800d69c065a4cfa2656b10501cc141a4fb8a6453424b7d838f3`.
 Root retains native verification and integration. The two visual controls, full
 strict gate and campaign acceptance remain open; acceptance remains **0/4**.
+
+
+The focused timeout regression is committed as `d9cae1a3`, but has not run.
+It exercises blocked render and SVG children through the actual enclosing
+imaging path, shortens only the test's outer deadline, and checks owned
+PID/start identities before the enclosing executor exits. Its authored PNGs
+are process-lifecycle fixtures, not native image-quality evidence. The drafting
+reviewer hit model capacity; the coordinator reviewed the retained test and
+verified syntax of the module and embedded programs without a provider fallback.
+The worker's correction notice is now waiting for native delivery. Source
+review and native success/refusal/cleanup verification remain prerequisites to
+integration of the production patch. No native invocation ran in this review
+turn; the two visual failures remain unclosed.
