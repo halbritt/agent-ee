@@ -529,7 +529,8 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
     purpose = applicability(Path(run_dir), read_json(Path(run_dir) / 'candidate.json'))
     if purpose is not None and packet.get('purpose_review', {}).get('applicability') != purpose:
         raise ValueError('source purpose applicability differs from captured scope')
-    cancellation = Cancellation()
+    from . import native_run
+    cancellation = native_run._cancel.get() or Cancellation()
     stopped = set()
     launch_lock = Lock()
 
@@ -659,10 +660,12 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
         cancellation.cancel()
         # Queued roles still run the admission gate to retain not_run records.
         # Executor cancellation polls at 50ms; allow bounded artifact cleanup.
-        _, pending = wait(futures, timeout=2)
+        enclosing = native_run._deadline.get()
+        cleanup_wait = 2 if enclosing is None else min(2, max(0, enclosing - time.monotonic()))
+        _, pending = wait(futures, timeout=cleanup_wait)
         if pending:
             (Path(run_dir) / "cancellation-error.log").write_text(
-                "Reviewer cleanup did not settle within two seconds; inspect partial executions.\n")
+                f"Reviewer cleanup did not settle within {cleanup_wait:g} seconds; inspect partial executions.\n")
         raise
     finally:
         pool.shutdown(wait=False)

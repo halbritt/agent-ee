@@ -1,5 +1,7 @@
 """Custody and access for a build's retained run and stage records."""
 from dataclasses import dataclass
+import contextlib
+import contextvars
 import hashlib
 import os
 from pathlib import Path
@@ -123,6 +125,20 @@ def checked_review(root, report, *, host=None):
     return None
 
 
+_review_resubmissions = contextvars.ContextVar("agent_ee_build_review_resubmissions", default=1)
+
+
+@contextlib.contextmanager
+def review_resubmissions(limit):
+    """Case-owned bound; ordinary public builds retain their existing default."""
+    from .review_run import resubmission_limit
+    token = _review_resubmissions.set(resubmission_limit(limit))
+    try:
+        yield
+    finally:
+        _review_resubmissions.reset(token)
+
+
 def review_candidate(scope, directory, timeout, profile=None):
     """Use the generated acceptance scope against this actual native candidate.
 
@@ -131,7 +147,8 @@ def review_candidate(scope, directory, timeout, profile=None):
     path = scope_path(directory)
     write_scope(directory, scope)
     run_review(path, directory / 'review', timeout, checks_only=profile is None, profile=profile,
-               output_stream=sys.stderr)
+               output_stream=sys.stderr, **({} if _review_resubmissions.get() == 1 else
+                   {"max_schema_resubmissions": _review_resubmissions.get()}))
     return verify_stage_review(directory)
 
 

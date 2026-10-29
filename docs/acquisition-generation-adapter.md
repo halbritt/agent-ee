@@ -3,7 +3,7 @@
 `generation_benchmark.run_task` keeps its existing defaults. Opt-in acquisition
 uses `completion_context=PATH, expect_context=SHA256` (CLI
 `--completion-context`, `--expect-context`) and at most two attempts. The writer
-sees only public script/prompt inputs and its own scratch. It emits only bounded
+sees public script/prompt inputs, optional task `public_context`, and its own scratch. It emits only bounded
 `output/request.json`:
 
 ```json
@@ -89,12 +89,59 @@ case budget and cancellation. Parent completion cannot consume the final grading
 reserve or renew the productive clock. Raw failures stay in series custody.
 Supplier/physical acceptance remains outside these software results.
 
-The optional completion seam `public_context=PATH,
-public_context_sha256=SHA256` (fixed child flags `--public-context`,
-`--expect-public-context`) reserves the pinned public per-case protocol.
-Transport/hash/replay in `generation_benchmark` and the catalog selector are
-separately owned integrations. Until connected, supplying it explicitly refuses;
-no private evaluator logic or duplicate selector lives here. Attempt two's
-campaign repair connector also remains explicit `CompletionUnavailable`.
-Root must assemble/freeze final role context, seat policy and complete composed
-source/runtime identity before any execution. No full runtime fit is claimed.
+A task may declare one canonical task-relative `public_context` file outside
+`evaluator/` and the deliverables. Its exact `agent-ee.case-context/1` wire schema
+and label follow the selected public protocol v2. It is copied beside the prompt;
+its external task pin is carried through ledger, evaluation binding, completion
+receipt and series replay. Before any attempt, catalog identities are matched by
+the existing `acquisition_resistor.policy` against the frozen common catalogs;
+common resistor cohorts use its existing `read` qualification replay. The trusted
+child passes the exact file/hash to `acquisition_prepare.prepare`. Optional
+`resistor_context`, `resistor_context_sha256`, `resistor_source` form one complete
+group, require the ADC alternative group and exclude an explicit role group.
+There is no second selector. This integration requires the producer APIs from
+3bfcb39b or their integrated descendants.
+
+The separately requested completion-policy hash is frozen before generation in
+`completion-policy.json`, ledger, evaluation binding, completion receipt and
+series evidence. Policy bytes stay outside the public writer view. Legacy calls
+without these optional fields keep their defaults.
+
+Attempt two supports only the finite generated U2 ADDR repair. Its request has
+`action: repair`. The parent selects the fixed sibling `production-1`, verifies
+its failed completion and captured wrong V3V3 recipe, and requires an unchanged
+captured evaluation clock. On the first productive failure, an eligible retained
+prefix (at least four completed stages) is reviewed with the existing
+`build_workflow.review_build` inside the original deadline/cancellation. Its
+`accepted: false` diagnostic remains separate from package acceptance. Missing
+candidate, incomplete review, unavailable seats, missing sealed `adc-ties`
+defect or missing accepted public `ACQ-ELEC-6-TIES` finding stops repair.
+
+The existing campaign convergence function must permit repair. One fresh
+subscription implementation call (optional parent-policy `implementation`
+definition) returns `summary`, `addr_tie`, and `finding_ids`; only an attributable
+GND correction is admitted. Captured inputs remain byte-identical. No CAD edit,
+private evaluator feedback, intent retry or schema resubmission is authorized.
+A fixed child regenerates from the original pinned preparation source into fresh
+`production-2/prepared`, followed by the existing seven-stage completion with
+new judgments and package review. Complete immutable baselines, complete
+original preparation recipes (except the finite tie), first-attempt custody,
+actual writer/preflight/response and final package/native candidate identity are
+replayed before the successor is exposed. Generated history uses existing
+`convergence.advance`; it fabricates no ordinary implementation-step receipts.
+The production package verifier remains the acceptance authority.
+
+All acquisition reviews inherit the original cancellation object and cap setup,
+imaging, checks and reviewer deadlines at the original productive cutoff. The
+actual review and campaign declarations use zero schema resubmissions. Standalone
+review defaults and adjudicator inheritance remain unchanged. Attempt count is
+at most two, with at most three phase credits per attempt; the final grading
+reserve is never productive time. Private evaluator checks are withheld from the
+acquisition repair workspace. All started failures and missing records remain
+in the frozen case tree.
+
+Root must assemble and qualify the final common source cohorts, freeze the
+parent policy and composed source/runtime, and admit one public repair experiment
+before any G4 use. Full baseline equality and an actionable first diagnostic are
+eligibility checks, not assumed properties of an unmeasured target. No numeric
+case fit, source qualification, native success or G4 acceptance is claimed here.

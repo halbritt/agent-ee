@@ -61,7 +61,8 @@ def pinned_task(root, *, expect_pins=None):
     task = strict_json((root / 'task.json').read_bytes())
     refusal = isinstance(task, dict) and 'expected_refusal' in task
     exact_fields(task, ('schema', 'id', 'domain', 'difficulty', 'prompt', 'reference',
-                        'deliverables', *(['expected_refusal'] if refusal else ['rules', 'scope'])))
+                        'deliverables', *(['expected_refusal'] if refusal else ['rules', 'scope']),
+                        *(['public_context'] if 'public_context' in task else [])))
     if task['schema'] != 'agent-ee.generation-task/1':
         raise ValueError('unknown generation task schema')
     safe_id(task['id'], 'task id')
@@ -83,6 +84,14 @@ def pinned_task(root, *, expect_pins=None):
         safe_relative(path)
         if path in ('candidate.json', 'baseline.json', 'scope.json', '.generation') or path.startswith(('checks/', 'work/', '.generation/')):
             raise ValueError('reserved deliverable path')
+    if 'public_context' in task:
+        rel = task['public_context']
+        if (not isinstance(rel, str) or str(safe_relative(rel)) != rel or rel not in files
+                or rel.startswith('evaluator/') or rel in {task['prompt'], task['reference'], 'generator.py'}
+                or rel in deliverables or rel in ('task.json', 'pins.json') or rel.startswith(('prompt.md/', 'generator.py/'))
+                or (root / rel).stat().st_size > 65536):
+            raise ValueError('invalid public case-context path')
+        case_context(root / rel)
     if refusal:
         task['_refusal_contract'] = _refusal_contract(root, task, files)
         task['rules'] = [{'id': 'refusal', 'check': 'refusal', 'category': 'source_refusal',
@@ -221,6 +230,29 @@ def _refusal_identity():
     path = str(Path(sys.executable).resolve())
     return {'code': policy_files(), 'runtime': {'python': {'path': path, 'identity': fingerprint(path)}},
             'python': sys.version}
+
+
+def case_context(path):
+    """Public wire schema only; producer admits pairs against the frozen catalog."""
+    data = strict_json(Path(path).read_bytes())
+    exact_fields(data, ('schema', 'catalog_policy'))
+    if data['schema'] != 'agent-ee.case-context/1':
+        raise ValueError('unknown public case context')
+    policy = data['catalog_policy']
+    if policy is not None:
+        exact_fields(policy, ('kind', 'label', 'exclude'))
+        if (policy['kind'] != 'evaluation_exclusion' or policy['label'] !=
+                'evaluation scenario; not an observed supplier stockout' or
+                not isinstance(policy['exclude'], list) or not policy['exclude']):
+            raise ValueError('invalid evaluation exclusion')
+        pairs = set()
+        for entry in policy['exclude']:
+            exact_fields(entry, ('lcsc', 'mpn'))
+            pair = (nonempty(entry['lcsc']), nonempty(entry['mpn']))
+            if pair in pairs:
+                raise ValueError('duplicate evaluation exclusion')
+            pairs.add(pair)
+    return data
 
 
 def ratio(value):
@@ -427,6 +459,8 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
             report['binding'].update(kind='source_refusal', output_tree=output_tree)
         if generation_records is not None:
             report['binding']['generation_records'] = generation_records
+        if 'public_context' in task:
+            report['binding']['public_context_sha256'] = task['files'][task['public_context']]
         if completion is not None:
             report['binding']['completion_files'] = completion_files
         if _case is not None:
@@ -486,6 +520,8 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
     acquisition = completion_context is not None
     if acquisition != (expect_context is not None):
         raise ValueError('acquisition completion needs public context and its external pins')
+    if (completion_policy is None) != (expect_completion_policy is None) or (completion_policy is not None and not acquisition):
+        raise ValueError('completion policy needs acquisition context and external policy pin')
     if acquisition and attempts > 2:
         raise ValueError('acquisition case allows at most two complete attempts')
     phases = 3 if acquisition else 2
@@ -494,6 +530,8 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
         raise ValueError('case_timeout must be an integer >= 2')
     if type(grading_reserve) is not int or not 1 <= grading_reserve < case_timeout:
         raise ValueError('grading_reserve must be an integer in [1, case_timeout)')
+    if acquisition and type(max_work) is int and max_work > phases * attempts:
+        raise ValueError('acquisition work credits cannot exceed three per complete attempt')
     if type(max_work) is not int or max_work < phases:
         raise ValueError('max_work must admit generation/completion/grading phases')
     started = time.monotonic()
@@ -516,6 +554,11 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
               'work_started': 0, 'attempts_started': 0, 'attempt_records': [], 'status': 'running'}
     if acquisition:
         ledger['completion_context_pins'] = expect_context
+    public_pin = task['files'].get(task.get('public_context'))
+    if public_pin is not None:
+        ledger['public_context_sha256'] = public_pin
+    if expect_completion_policy is not None:
+        ledger['completion_policy_sha256'] = expect_completion_policy
     def save():
         ledger['elapsed_s'] = time.monotonic() - started
         write_json(scratch / 'trial.json', ledger)
@@ -534,10 +577,29 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
         if acquisition:
             shutil.copytree(context_path, scratch / 'completion-context')
             acquisition_completion.context(scratch / 'completion-context', expect_context)
+            if expect_completion_policy is not None:
+                acquisition_completion.seat_policy(completion_policy, expect_completion_policy)
+                shutil.copyfile(completion_policy, scratch / 'completion-policy.json')
+                completion_policy = scratch / 'completion-policy.json'
+                acquisition_completion.seat_policy(completion_policy, expect_completion_policy)
         public = scratch / 'public'
         public.mkdir()
         shutil.copyfile(task_root / task['prompt'], public / 'prompt.md')
         shutil.copyfile(generator, public / 'generator.py')
+        if public_pin is not None:
+            destination = public / task['public_context']
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(task_root / task['public_context'], destination)
+        if acquisition:
+            prepared_config, _ = acquisition_completion.context(scratch / 'completion-context', expect_context)
+            prepared_options = acquisition_completion.preparation_options(scratch / 'completion-context', prepared_config)
+            effective_public = public / task['public_context'] if public_pin else prepared_options.get('public_context')
+            effective_pin = public_pin or prepared_options.get('public_context_sha256')
+            if public_pin and 'public_context_sha256' in prepared_options and prepared_options['public_context_sha256'] != public_pin:
+                raise ValueError('task/public preparation context conflicts')
+            if effective_public is not None:
+                acquisition_completion.admit_public_context(scratch / 'completion-context', expect_context,
+                    public / 'prompt.md', effective_public, effective_pin, deadline=productive, cancel=cancel)
         ledger['generator_sha256'] = digest(public / 'generator.py')
         save()
         for index in range(attempts):
@@ -561,8 +623,10 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                     shutil.copytree(previous, work / 'previous')
                 else:
                     (work / 'previous').mkdir()
-                write_json(work / 'feedback.json', {'checks': prior['evaluation']['checks'],
-                    'missing_deliverables': prior['generation']['missing_deliverables']})
+                # Private evaluator feedback stays outside the acquisition writer view.
+                # The trusted ADDR writer receives only its verified PUBLIC diagnostic finding.
+                write_json(work / 'feedback.json', {'checks': [] if acquisition else prior['evaluation']['checks'],
+                    'missing_deliverables': [] if acquisition else prior['generation']['missing_deliverables']})
             entry['status'] = 'generating'
             save()
             record = native_run.run(native_run.Intent('generation',
@@ -582,13 +646,17 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                         entry['status'] = 'qualifying'; save()
                         completion_record = acquisition_completion.complete(public, work, scratch / f'production-{index + 1}',
                             scratch / 'completion-context', expect_context, attempt=index + 1,
-                            deadline=productive, cancel=cancel, policy=completion_policy, expect_policy=expect_completion_policy)
+                            deadline=productive, cancel=cancel, policy=completion_policy, expect_policy=expect_completion_policy,
+                            public_context=public / task['public_context'] if public_pin else None,
+                            public_context_sha256=public_pin)
                         entry['qualification_execution'] = completion_record['execution']
                         finished = time.monotonic()
                         completion_work = acquisition_completion.retain(scratch / f'completion-{index + 1}',
                             scratch / 'completion-context', expect_context, scratch / f'production-{index + 1}',
                             brief=public / 'prompt.md', attempt=index + 1, productive_deadline=productive, finished=finished,
-                            deadline=deadline, cancel=cancel)
+                            deadline=deadline, cancel=cancel,
+                            public_context=public / task['public_context'] if public_pin else None,
+                            public_context_sha256=public_pin, completion_policy_sha256=expect_completion_policy)
                 if completion_work is None:
                     # Even successful generation cannot bypass the required trusted phase.
                     record = dict(record, execution='failed')
@@ -605,7 +673,9 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                 generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
                 expect_pins=task['files']['pins.json'], execution_work=work, deadline=deadline, cancel=cancel,
                 _case={'trial': str(scratch.resolve()), 'attempt': index + 1,
-                       **({'completion_required': True, 'completion_context_pins': expect_context} if acquisition else {})}, completion_work=completion_work)
+                       **({'completion_required': True, 'completion_context_pins': expect_context} if acquisition else {}),
+                       **({'public_context_sha256': public_pin} if public_pin else {}),
+                       **({'completion_policy_sha256': expect_completion_policy} if expect_completion_policy else {})}, completion_work=completion_work)
             reports.append(path)
             ledger['evaluations'].append(str(path))
             entry.update(status='evaluated', evaluation_report=str(path))
@@ -734,7 +804,18 @@ def case_files(report, path):
         raise ValueError('exhausted or incomplete case cannot supply success')
     if case.get('completion_required') and ledger.get('completion_context_pins') != case.get('completion_context_pins'):
         raise ValueError('case public completion context differs from binding')
-    names = ['trial.json']
+    public_pin = case.get('public_context_sha256')
+    if ledger.get('public_context_sha256') != public_pin:
+        raise ValueError('case public context differs from ledger')
+    if public_pin is not None:
+        task = pinned_task(root / f"evaluation-{case['attempt']}/task", expect_pins=ledger['task_pins'])
+        if task['files'].get(task.get('public_context')) != public_pin or digest(root / 'public' / task['public_context']) != public_pin:
+            raise ValueError('case public context changed')
+    policy_pin = case.get('completion_policy_sha256')
+    if ledger.get('completion_policy_sha256') != policy_pin or (policy_pin is not None and
+            digest(root / 'completion-policy.json') != policy_pin):
+        raise ValueError('case completion policy differs from requested frozen policy')
+    names = ['trial.json'] + (['completion-policy.json'] if policy_pin is not None else [])
     for entry in entries:
         n = entry['attempt']
         names += [f'attempt-{n}/' + name for name in RECORDS]
@@ -764,6 +845,11 @@ def case_files(report, path):
     if 'completion_context_pins' in ledger:
         from .stage_receipts import tree_identity
         for entry in entries:
+            name = f"completion-{entry['attempt']}"
+            source = root / name
+            if source.is_symlink():
+                raise ValueError('non-ordinary completion root')
+            files[name + '/'] = tree_identity(source) if source.exists() else None
             name = f"production-{entry['attempt']}"
             source = root / name
             if source.is_symlink():
@@ -844,6 +930,10 @@ def replay_report(trial, report):
     task = pinned_task(trial / 'task', expect_pins=binding['task_files']['pins.json'])
     if task['files'] != binding['task_files']:
         raise ValueError('retained task differs from report binding')
+    public_pin = task['files'].get(task.get('public_context'))
+    if binding.get('public_context_sha256') != public_pin or (binding.get('case') is not None and
+            binding['case'].get('public_context_sha256') != public_pin):
+        raise ValueError('public case context replay pin mismatch')
     refusal = 'expected_refusal' in task
     if (report.get('kind') != ('source_refusal' if refusal else None)
             or binding.get('kind') != ('source_refusal' if refusal else None)):
@@ -864,8 +954,10 @@ def replay_report(trial, report):
             raise ValueError('completion evidence differs from binding')
         # Replay is not a new productive run. Production verification launches no tools.
         completion = acquisition_completion.verify(trial / 'completion', deadline=sys.float_info.max, replay=True)
-        if completion['brief_sha256'] != task['files'][task['prompt']]:
-            raise ValueError('completion public brief differs from frozen task')
+        if (completion['brief_sha256'] != task['files'][task['prompt']] or
+                completion.get('public_context_sha256') != public_pin or
+                completion.get('completion_policy_sha256') != binding.get('case', {}).get('completion_policy_sha256')):
+            raise ValueError('completion public brief/context differs from frozen task')
     generation_records = binding.get('generation_records')
     if generation_records is not None:
         if (set(generation_records) != set(RECORDS) or

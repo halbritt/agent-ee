@@ -536,7 +536,11 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         "checks": [], "reviews": [], "review_executions": [],
         "findings": [], "adjudicated": False, "limitations": [], "previous_run": previous,
         "max_schema_resubmissions": max_schema_resubmissions}
+    from . import native_run
+    enclosing_deadline = native_run._deadline.get()
     deadline = time.monotonic() + max_seconds
+    if enclosing_deadline is not None:
+        deadline = min(deadline, enclosing_deadline)
     save_result(run, result)
     try:
         if result["policy_files"] != LOADED_POLICY_FILES:
@@ -561,8 +565,10 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         from .candidate_visuals import capture_visuals
         imaging_started = time.monotonic()
         m = capture_visuals(run)
-        # Advisory imaging has its own executor guard, outside the review budget.
+        # Standalone reviews exclude imaging; an enclosing case still caps all work.
         deadline += time.monotonic() - imaging_started
+        if enclosing_deadline is not None:
+            deadline = min(deadline, enclosing_deadline)
         result.update(candidate_id=m["candidate_id"], name=m["scope"]["name"], scope=m["scope"]["scope"],
                       limitations=m["scope"].get("limitations", []),
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
