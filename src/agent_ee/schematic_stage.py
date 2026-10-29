@@ -33,7 +33,7 @@ def _sheets(schematic, child_schematics):
 
 def configuration(source_root, *, board, schematic, intent='generation/connectivity-intent.json',
                   seeds=(), layout='generation/schematic-layout.json', captures='libraries',
-                  footprints='generation/footprints.json', regeneration_intent=None,
+                  footprints='generation/footprints.json', footprint_captures=None, regeneration_intent=None,
                   child_schematics=()):
     """Scope mutable_inputs and campaign steps for the declared native sheet set.
 
@@ -47,12 +47,16 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
         _relative(path, 'schematic stage path')
     if captures != '.':
         _relative(captures, 'schematic capture root')
+    if footprint_captures is not None and footprint_captures != '.':
+        _relative(footprint_captures, 'footprint capture root')
     if len(set([board, *sheets, intent, layout, footprints, *seeds])) != len(paths) - 1:
         raise ValueError('schematic stage file paths must be distinct')
     if Path(board).suffix != '.kicad_pcb' or Path(schematic).suffix != '.kicad_sch':
         raise ValueError('schematic stage requires native board and schematic paths')
     args = ['--board', board, '--schematic', schematic, '--intent', intent, '--layout', layout,
             '--captures', captures, '--footprints', footprints]
+    if footprint_captures is not None:
+        args += ['--footprint-captures', footprint_captures]
     for child in child_schematics:
         args += ['--child-schematic', child]
     if regeneration_intent is not None:
@@ -94,9 +98,12 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
 
 
 def run(command, candidate, out, *, board, schematic, intent, layout, captures, footprints,
-        regeneration_intent=None, child_schematics=(), _execution=None):
+        footprint_captures=None, regeneration_intent=None, child_schematics=(), _execution=None):
     """Return failure with retained findings; never substitute previous native output."""
     candidate, out = Path(candidate), Path(out)
+    footprint_captures = captures if footprint_captures is None else footprint_captures
+    if footprint_captures != '.':
+        _relative(footprint_captures, 'footprint capture root')
     sheets = _sheets(schematic, child_schematics)
     out.mkdir(parents=True, exist_ok=False)
     raw = (candidate / intent).read_bytes()
@@ -142,12 +149,12 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
         return 1
     manifest = load_document(candidate / footprints)
     plan = forward_annotation.plan(candidate / board, out / 'netlist/design.xml', manifest,
-                                   candidate / captures, out / 'plan-work', _execution=_execution)
+                                   candidate / footprint_captures, out / 'plan-work', _execution=_execution)
     write_json(out / 'plan.json', plan)
     if plan['execution'] != 'ok':
         return 1
     result = forward_annotation.apply(plan, candidate / board, out / 'netlist/design.xml', manifest,
-        candidate / captures, out / 'board.kicad_pcb', out / 'apply-work', _execution=_execution)
+        candidate / footprint_captures, out / 'board.kicad_pcb', out / 'apply-work', _execution=_execution)
     write_json(out / 'annotation.json', result)
     return 0 if result['execution'] == 'ok' else 1
 
@@ -157,6 +164,7 @@ def main(argv=None):
     parser.add_argument('command', choices=('emit', 'annotate'))
     for name in ('board', 'schematic', 'intent', 'layout', 'captures', 'footprints'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--footprint-captures')
     parser.add_argument('--regeneration-intent')
     parser.add_argument('--child-schematic', action='append', default=[], dest='child_schematics')
     args = vars(parser.parse_args(argv))

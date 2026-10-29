@@ -223,6 +223,27 @@ class StepsTest(unittest.TestCase):
         for name in ('emit.sh', 'annotate.sh'):
             self.assertTrue((q.STEPS_DIR / name).is_file())
 
+    def test_legacy_annotation_uses_fixed_stage_with_separate_footprint_captures(self):
+        emitter, annotation = q.schematic_step_specs()
+        board, schematic = f'project/{q.NAME}.kicad_pcb', f'project/{q.NAME}.kicad_sch'
+        self.assertEqual(emitter['argv'], ['/bin/bash', '/tool/steps/emit.sh'])
+        self.assertEqual(emitter['writes'], {schematic: f'out/sch/{q.NAME}.kicad_sch'})
+        self.assertEqual(emitter['artifacts'], ['out/emit-receipt.json', f'out/sch/{q.NAME}.kicad_pro'])
+        self.assertEqual(emitter['timeout_s'], 600)
+        self.assertEqual([m['at'] for m in emitter['mounts']], ['/tool/steps', '/tool/agent-ee'])
+        self.assertEqual(annotation['argv'][6:8], ['agent_ee.schematic_stage', 'annotate'])
+        options = dict(zip(annotation['argv'][8::2], annotation['argv'][9::2]))
+        self.assertEqual(options, {'--board': board, '--schematic': schematic,
+            '--intent': 'generation/intent.json', '--layout': 'generation/layout.json',
+            '--captures': '.', '--footprints': 'generation/footprints.json',
+            '--footprint-captures': 'stock/footprints'})
+        self.assertEqual(annotation['writes'], {board: 'out/board.kicad_pcb'})
+        self.assertEqual(annotation['timeout_s'], 1800)
+        self.assertEqual([m['at'] for m in annotation['mounts']], ['/tool/agent-ee'])
+        self.assertEqual(annotation['adoptable_exits'], [0])
+        self.assertEqual([(s['stage'], s['step']) for s in (emitter, annotation)],
+            [('schematic', 'emit-schematic'), ('schematic', 'forward-annotate')])
+
     def test_a_declared_cpl_correction_adds_the_receipted_fab_step(self):
         from unittest import mock
         mutable = [f'project/{q.NAME}.kicad_sch', f'project/{q.NAME}.kicad_pcb']

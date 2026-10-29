@@ -601,9 +601,14 @@ def validate_scope_file(scope_path, inputs_dir):
 def schematic_step_specs(*, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
     """The schematic turn: the owned emitter on the captured IR, then forward annotation."""
     from .tool_source import snapshot
+    from .schematic_stage import configuration
     source = {'source': str(snapshot(source_root)), 'at': MOUNT_SOURCE}
     steps = {'source': str(Path(steps_dir)), 'at': MOUNT_STEPS}
     board, sch = f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'
+    annotation = configuration(source_root, board=board, schematic=sch,
+        captures='.', footprint_captures='stock/footprints', footprints='generation/footprints.json',
+        intent='generation/intent.json', layout='generation/layout.json')['implementation_steps'][1]
+    annotation['timeout_s'] = 1800
     return [
         {'schema': 'agent-ee.stage-step/1', 'stage': 'schematic', 'step': 'emit-schematic',
          'argv': ['/bin/bash', f'{MOUNT_STEPS}/emit.sh'],
@@ -612,13 +617,7 @@ def schematic_step_specs(*, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
          'writes': {sch: f'out/sch/{NAME}.kicad_sch'},
          'artifacts': ['out/emit-receipt.json', f'out/sch/{NAME}.kicad_pro'],
          'adoptable_exits': [0], 'timeout_s': 600},
-        {'schema': 'agent-ee.stage-step/1', 'stage': 'schematic', 'step': 'forward-annotate',
-         'argv': ['/bin/bash', f'{MOUNT_STEPS}/annotate.sh', NAME],
-         'mounts': [steps, source], 'source': MOUNT_SOURCE,
-         'version_argv': ['/usr/bin/kicad-cli', 'version'],
-         'writes': {board: f'out/board/{NAME}.kicad_pcb'},
-         'artifacts': ['out/netlist.xml', 'out/plan.json', 'out/apply.json'],
-         'adoptable_exits': [0], 'timeout_s': 1800},
+        annotation,
     ]
 
 

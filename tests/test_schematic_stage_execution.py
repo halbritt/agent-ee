@@ -376,6 +376,77 @@ class StageExecutionTests(unittest.TestCase):
                     '--format', 'kicadxml', '-o', str(out/'netlist/design.xml') if confined else '/work/design.xml',
                     '/candidate/'+root])
 
+    def test_annotation_resolves_separate_footprint_captures_and_shared_default(self):
+        for separate in (True, False):
+            with self.subTest(separate=separate):
+                case = self.root / ('separate' if separate else 'shared')
+                candidate = case / 'candidate'
+                (candidate / 'lib').mkdir(parents=True)
+                symbol = (ROOT / 'fixtures/generation/project/lib/Owned_Gen.kicad_sym').read_bytes()
+                (candidate / 'lib/Owned_Gen.kicad_sym').write_bytes(symbol)
+                intent = {'schema': 'agent-ee.connectivity-intent/1',
+                    'libraries': [{'name': 'OwnedGen', 'path': 'lib/Owned_Gen.kicad_sym',
+                                   'sha256': hashlib.sha256(symbol).hexdigest()}],
+                    'components': [{'id': 'r1', 'reference': 'R1', 'lib_id': 'OwnedGen:CAP',
+                                    'value': '100', 'footprint': 'OwnedFP:CAP_2PAD', 'units': [1]}],
+                    'nets': [{'id': 'ground', 'name': 'GND', 'terminals': [
+                        {'component': 'r1', 'pin': {'number': pin}} for pin in ('1', '2')]}],
+                    'no_connects': []}
+                layout = (ROOT / 'fixtures/generation/regulator.layout.json').read_bytes()
+                (candidate / 'intent.json').write_text(json.dumps(intent))
+                (candidate / 'layout.json').write_bytes(layout)
+                (candidate / 'footprints.json').write_text(json.dumps(self.manifest))
+                capture_root = candidate / 'stock/footprints' if separate else candidate
+                capture_root.mkdir(parents=True, exist_ok=True)
+                (capture_root / 'CAP_2PAD.kicad_mod').write_bytes((self.captures / 'CAP_2PAD.kicad_mod').read_bytes())
+                emission, files = schematic_stage.schematic_emitter.emit_schematic(intent,
+                    {'lib/Owned_Gen.kicad_sym': symbol}, layout)
+                self.assertEqual(emission['execution'], 'ok', emission)
+                for path, raw in files.items():
+                    (candidate / path).write_bytes(raw)
+                board = candidate / 'board.kicad_pcb'
+                board.write_bytes(self.board.read_bytes())
+                before = board.read_bytes()
+                out = case / 'out'
+                execution = context(out)
+                xml = XML.replace(b'<node ref="R1" pin="1"/></net>\n<net code="2" name="VCC">',
+                                  b'<node ref="R1" pin="1"/>')
+                def external(intent, *, work, **kw):
+                    if intent.tool != 'netlist':
+                        record = self.native(intent, work=work, **kw)
+                        if 'apply' in intent.argv:
+                            self.after['footprints'][0]['pads'][1]['net'] = 'GND'
+                        return record
+                    self.calls.append(intent)
+                    self.assertEqual(intent.isolation, 'host')
+                    Path(work).mkdir(parents=True)
+                    (Path(work) / 'design.xml').write_bytes(xml)
+                    return dict(execution='ok', exit_code=0)
+                with patch.object(native_run, 'run', external):
+                    result = schematic_stage.run('annotate', candidate, out, board='board.kicad_pcb',
+                        schematic='regulator.kicad_sch', intent='intent.json', layout='layout.json',
+                        captures='.', footprints='footprints.json', _execution=execution,
+                        **({'footprint_captures': 'stock/footprints'} if separate else {}))
+                self.assertEqual(result, 0)
+                self.assertEqual(json.loads((out / 'plan.json').read_bytes())['execution'], 'ok')
+                self.assertEqual(json.loads((out / 'annotation.json').read_bytes())['execution'], 'ok')
+                self.assertEqual((out / 'board.kicad_pcb').read_bytes(), b'authored changed board')
+                self.assertEqual(board.read_bytes(), before)
+                self.assertTrue(all(call.isolation == 'host' for call in self.calls))
+
+    def test_footprint_capture_root_refuses_escaping_paths_before_work(self):
+        for root in ('', '/outside', '../outside', 'stock/../footprints', 'stock//footprints'):
+            with self.subTest(root=root):
+                with self.assertRaisesRegex(ValueError, 'footprint capture root'):
+                    schematic_stage.configuration(ROOT / 'src', board='a.kicad_pcb',
+                        schematic='a.kicad_sch', footprint_captures=root)
+                out = self.root / ('invalid-' + str(len(root)))
+                with self.assertRaisesRegex(ValueError, 'footprint capture root'):
+                    schematic_stage.run('annotate', self.root, out, board='a.kicad_pcb',
+                        schematic='a.kicad_sch', intent='intent.json', layout='layout.json',
+                        captures='.', footprints='footprints.json', footprint_captures=root)
+                self.assertFalse(out.exists())
+
     def test_plane_children_inherit_fixed_stage_but_standalone_remains_sandboxed(self):
         from agent_ee import add_planes, outline_containment
         inputs = self.root/'plane-inputs';inputs.mkdir()
