@@ -6,6 +6,7 @@ docs/acquisition-prepare.md. All output is staged before publication.
 """
 import argparse
 import copy
+from datetime import datetime, timezone
 from decimal import Decimal, Inexact, localcontext
 import json
 import os
@@ -15,7 +16,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,8 +29,10 @@ CAPACITANCE = re.compile(
 REVISION_BASIS = {
     'spec.md': 'Apply only the explicit total-line capacitance bound',
     'spec-record.json': 'Recapture the actual revised UTF-8 spec bytes',
-    'requirement-map.json': 'Rebind source record and partitions; declare captured mechanics and preparation provenance',
-    'parts.json': 'Rebind unchanged selected parts to their operative spec citation',
+    'requirement-map.json': 'Rebind source record/partitions and source-selected stock catalog; declare mechanics and preparation provenance',
+    'parts.json': 'Rebind operative spec or source-selected purchasing/stock records without changing CAD or limits',
+    'circuit.json': 'Update only the source-selected ADC purchasing display value',
+    'component-selections.json': 'Record automatic primary/carrier purchasing selection; retain historical original',
     'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
     'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
@@ -287,11 +290,11 @@ def _archive_revision(base, revised, before, identity):
     return changed
 
 
-def _read_review_profile(path):
+def _read_context_file(path, label):
     """Read one regular context file through no-follow directory descriptors."""
     path = Path(path).absolute()
     if '..' in path.parts:
-        raise ValueError('review profile path contains traversal')
+        raise ValueError(label + ' path contains traversal')
     parent = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
         for name in path.parts[1:-1]:
@@ -304,19 +307,24 @@ def _read_review_profile(path):
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
             os.close(descriptor)
-            raise ValueError('review profile must be a regular file without link aliases')
+            raise ValueError(label + ' must be a regular file without link aliases')
         with os.fdopen(descriptor, 'rb') as stream:
             raw = stream.read()
             fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
             stamp = tuple(getattr(before, field) for field in fields)
             if stamp != tuple(getattr(os.fstat(stream.fileno()), field) for field in fields):
-                raise ValueError('review profile changed while reading')
+                raise ValueError(label + ' changed while reading')
         return raw, stamp
     finally:
         os.close(parent)
 
 
-def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verification_timeout_s=None):
+def _read_review_profile(path):
+    return _read_context_file(path, 'review profile')
+
+
+def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verification_timeout_s=None,
+            alternative_context=None, alternative_source=None, alternative_context_sha256=None):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
@@ -354,6 +362,22 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         review_context = dict(profile=dict(path=REVIEW_PROFILE, sha256=spec_record.sha256(profile_raw)),
             verification_timeout_s=dict(requested=verification_timeout_s,
                                         effective=plan.get('verification_timeout_s', 3600)))
+    alternative = None
+    if alternative_context is not None:
+        if alternative_source is None or alternative_context_sha256 is None:
+            raise ValueError('alternative context requires source root and exact context SHA-256')
+        context_raw, context_stamp = _read_context_file(alternative_context, 'alternative context')
+        if spec_record.sha256(context_raw) != alternative_context_sha256:
+            raise ValueError('alternative context hash mismatch')
+        context_doc, context_captures = acquisition_alternative_context.read(alternative_source, context_raw)
+        typed_overlay._disjoint('output', out.resolve(), {
+            'alternative source': Path(alternative_source).absolute(),
+            'alternative context': Path(alternative_context).absolute()})
+        alternative = dict(path='preparation/alternative-context.json',
+            sha256=alternative_context_sha256, files=context_doc['files'],
+            evaluation_as_of=datetime.now(timezone.utc).isoformat())
+    elif alternative_source is not None or alternative_context_sha256 is not None:
+        raise ValueError('alternative source/hash require alternative_context')
     build_plan.validate_plan(plan)
     overlay_raw, overlay, additions = _load_overlay(before, sources)
     recipe = dict(brief_sha256=spec_record.sha256(raw), plan_sha256=spec_record.sha256(plan_raw),
@@ -365,6 +389,13 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     if review_context is not None:
         recipe['review_context'] = review_context
         recipe['helpers'][profiles.__name__] = spec_record.sha256(Path(profiles.__file__).read_bytes())
+    if alternative is not None:
+        recipe['alternative_context'] = alternative
+        for module in (acquisition_alternative, acquisition_alternative_context,
+                       acquisition_alternative.assembly_readiness, acquisition_alternative.part_record,
+                       acquisition_alternative.part_selection, acquisition_alternative.parts_manifest,
+                       acquisition_alternative_context.jlc_stock_capture):
+            recipe['helpers'][module.__name__] = spec_record.sha256(Path(module.__file__).read_bytes())
     identity = spec_record.sha256(json_bytes(recipe))
     with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
         scratch = Path(scratch)
@@ -377,7 +408,33 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         (provenance / 'build-plan.original.json').write_bytes(plan_raw)
         (provenance / 'overlay.original.json').write_bytes(overlay_raw)
         (provenance / 'source-map.json').write_bytes(json_bytes(_source_map(raw, selected, original_record, record)))
+        alternative_report = None
+        if alternative is not None:
+            # The requirements stage has not produced its namespace yet. Bind
+            # this same authored citation to the actual operative spec bytes.
+            parts_path = revised / 'parts.json'
+            authored = json.loads(parts_path.read_bytes())
+            citation = authored['declaration_source']
+            if citation['path'] == 'requirements-map/spec.md':
+                if citation['sha256'] != spec_record.sha256((revised / 'spec.md').read_bytes()):
+                    raise ValueError('parts source citation differs from the operative spec')
+                citation['path'] = 'spec.md'
+                parts_path.write_bytes(json_bytes(authored))
+            (revised / alternative['path']).write_bytes(context_raw)
+            alternative_report = acquisition_alternative_context.apply(
+                revised, context_doc, context_captures, alternative['evaluation_as_of'])
+            overlay['base']['requirement_map_sha256'] = spec_record.sha256(
+                (revised / 'requirement-map.json').read_bytes())
         changed = _archive_revision(base, revised, before, identity)
+        if alternative_report is not None:
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = json.loads(ledger_path.read_bytes())
+            ledger['alternative'] = dict(selected=alternative_report['selected'], context=alternative,
+                changed=alternative_report['changed'], added=alternative_report['added'],
+                catalog=alternative_report['catalog'],
+                captured_sources={acquisition_alternative_context.AT + '/' + n: h
+                                  for n, h in context_doc['files'].items()})
+            ledger_path.write_bytes(json_bytes(ledger))
         if review_context is not None:
             (revised / REVIEW_PROFILE).write_bytes(profile_raw)
             (provenance / 'review-context.json').write_bytes(json_bytes(review_context))
@@ -415,6 +472,10 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             remaining=['Native public build and file qualification', 'Independent judgments and engineering review',
                        'Strict block-source selection and final artwork/package revalidation if strict grouping is requested',
                        'Supplier and physical validation'])
+        if alternative_report is not None:
+            report['alternative'] = dict(selected=alternative_report['selected'],
+                decision=alternative_report['decision'], catalog=alternative_report['catalog'],
+                context=alternative)
         (bundle / 'preparation.json').write_bytes(json_bytes(report))
         if review_context is not None:
             if ((bundle / 'inputs' / REVIEW_PROFILE).read_bytes() != profile_raw
@@ -422,6 +483,17 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 raise ValueError('captured review profile changed during preparation')
             if _read_review_profile(review_profile) != (profile_raw, profile_stamp):
                 raise ValueError('review profile changed during preparation')
+        if alternative is not None:
+            if _read_context_file(alternative_context, 'alternative context') != (context_raw, context_stamp):
+                raise ValueError('alternative context changed during preparation')
+            _, replay = acquisition_alternative_context.read(alternative_source, context_raw)
+            if replay != context_captures:
+                raise ValueError('alternative source changed during preparation')
+            for name, captured in context_captures.items():
+                if (bundle / 'inputs' / acquisition_alternative_context.AT / name).read_bytes() != captured:
+                    raise ValueError('captured alternative source changed before publication')
+            if (bundle / 'inputs' / alternative['path']).read_bytes() != context_raw:
+                raise ValueError('captured alternative context changed before publication')
         rename_noreplace(bundle, out)
     return report
 
@@ -434,6 +506,9 @@ def main(argv=None):
     parser.add_argument('--review-profile', type=Path, help='explicit full engineering review profile to capture')
     parser.add_argument('--verification-timeout-s', type=int,
                         help='explicit build verification budget; requires --review-profile, no automatic increase')
+    parser.add_argument('--alternative-context', type=Path, help='pinned finite acquisition carrier context JSON')
+    parser.add_argument('--alternative-source', type=Path, help='read-only root of the context file closure')
+    parser.add_argument('--alternative-context-sha256', help='exact SHA-256 of the admitted context JSON')
     parser.add_argument('--added-input', action='append', default=[], metavar='AT=DIR')
     args = parser.parse_args(argv)
     sources = {}
@@ -444,7 +519,9 @@ def main(argv=None):
         sources[key] = Path(path)
     try:
         report = prepare(args.brief, args.build_plan, args.out, added_sources=sources,
-                         review_profile=args.review_profile, verification_timeout_s=args.verification_timeout_s)
+                         review_profile=args.review_profile, verification_timeout_s=args.verification_timeout_s,
+                         alternative_context=args.alternative_context, alternative_source=args.alternative_source,
+                         alternative_context_sha256=args.alternative_context_sha256)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1

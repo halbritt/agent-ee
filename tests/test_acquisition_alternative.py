@@ -1,18 +1,22 @@
-"""Offline source tests; mutated stock rows are CPU controls, never observations."""
+"""Portable authored source contracts, never manufacturer/native qualification."""
+import contextlib
+import hashlib
+import copy
 from dataclasses import replace
 import importlib.abc
 import json
-import os
 from pathlib import Path
-import shutil
+import socket
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from agent_ee import acquisition_alternative as alternative
-from agent_ee import jlc_stock_capture, parts_manifest, requirement_map, storage
-
-CAPTURE = os.environ.get('AGENT_EE_ALTERNATIVE_DRAFT')
+from agent_ee import jlc_stock_capture, part_record, parts_manifest, requirement_map, storage
+from tests.test_jlc_stock_capture import row, search
+from tests.test_native_binding import GEN
 
 
 class NoNative(importlib.abc.MetaPathFinder):
@@ -21,36 +25,112 @@ class NoNative(importlib.abc.MetaPathFinder):
             raise AssertionError('native import forbidden: ' + fullname)
 
 
-def deny_external(event, args):
-    if event in {'subprocess.Popen', 'os.system', 'os.posix_spawn', 'os.posix_spawnp',
-                 'socket.connect', 'socket.connect_ex', 'socket.getaddrinfo'}:
-        raise AssertionError('external execution forbidden: ' + event)
+@contextlib.contextmanager
+def scoped_guard():
+    guard = NoNative()
+    sys.meta_path.insert(0, guard)
+    missing = object()
+    native_names = ('pcbnew', '_pcbnew', 'kicad', 'kipy', 'eeschema')
+    previous = {name: sys.modules.get(name, missing) for name in native_names}
+    for name in native_names:
+        sys.modules[name] = None
+    try:
+        with contextlib.ExitStack() as stack:
+            for name in ('subprocess.Popen', 'subprocess.run', 'os.system',
+                         'socket.create_connection', 'socket.getaddrinfo', 'socket.socket.connect'):
+                stack.enter_context(patch(name, side_effect=AssertionError('external operation forbidden: ' + name)))
+            yield
+    finally:
+        sys.meta_path.remove(guard)
+        for name, module in previous.items():
+            if module is missing:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
-# These guards apply to every actual producer/validator call in this module.
-sys.addaudithook(deny_external)
-sys.meta_path.insert(0, NoNative())
+def authored_fixture(root):
+    """Original ten-pin CAD and supplier/PDF *substitutions*, no vendor data."""
+    def put(path, raw):
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw if isinstance(raw, bytes) else storage.json_bytes(raw))
+        return dict(path=path, sha256=storage.digest(target))
+    name = 'TSSOP-10_3x3mm_P0.5mm'
+    symbol = GEN._definition('ADS1115IDGS', [(1, [(str(i), i * 2.54) for i in range(1, 11)])])
+    library = put('Analog_ADC.kicad_sym', ('(kicad_symbol_lib (version 20241209) (generator "authored") ' + symbol + ')').encode())
+    fp = put('Package_SO.pretty/' + name + '.kicad_mod', GEN.footprint(name, [GEN.smd(str(i), i) for i in range(1, 11)]))
+    cad = put('cad.json', dict(schema='agent-ee.footprint-libraries/1', complete=True,
+        libraries=[dict(name='Package_SO', members=[fp])]))
+    declarations = [dict(reference=ref, lib_id='Analog_ADC:ADS1115IDGS', footprint='Package_SO:' + name,
+                         assembly='smd', connector=None) for ref in ('U2', 'J1', 'J2')]
+    assignment = put('assignments.json', dict(schema='agent-ee.footprint-assignments-input/1',
+        libraries=[dict(name='Analog_ADC', **library)], components=declarations))
+    source = {**put('requirements.md', b'Authored source fixture only.\n'), 'locator':'line 1'}
+    stamp = '2026-10-18T00:00:00+00:00'
+    parts = []
+    catalogs = []
+    for lcsc, mpn, stock in [('C37593', 'ADS1115IDGSR', 50), ('C131334', 'AUTHORED-CONNECTOR', 50),
+                             ('C468683', 'ADS1115IDGST', 70)]:
+        raw = search(row(lcsc, stock, library='expand', componentModelEn=mpn,
+            componentBrandEn='Texas Instruments', componentSpecificationEn='VSSOP-10-0.5mm', firstSortName='Authored'))
+        prefix = 'original/' + lcsc
+        blob = put(prefix + '/responses/' + lcsc + '.json', raw)
+        _, parsed = jlc_stock_capture.parse_search_response(raw, lcsc)
+        catalog = dict(schema=jlc_stock_capture.SCHEMA, as_of=stamp, completed_at=stamp, stale_before=None,
+            source=dict(endpoint=jlc_stock_capture.DEFAULT_ENDPOINT, method='POST', parser=jlc_stock_capture.PARSER,
+                        request_body=jlc_stock_capture.request_body('{lcsc}').decode(), min_interval_seconds=5),
+            requests=[dict(lcsc=lcsc, fetched_at=stamp, status='found', http_status=200, reason=None,
+                response=dict(path='responses/' + lcsc + '.json', sha256=blob['sha256'], size_bytes=len(raw)))],
+            parts={lcsc:{**parsed, 'last_seen':stamp}})
+        catalogs.append(catalog)
+        catblob = put(prefix + '/catalog.json', catalog)
+        pdf = put(prefix + '/datasheet.pdf', b'%PDF-1.4\nAuthored envelope; not TI data.\n%%EOF\n')
+        url = 'https://example.org/authored-' + lcsc + '.pdf'
+        sheets = put(prefix + '/manifest.json', dict(schema='agent-ee.datasheet-capture/1', outcome='captured',
+            bindings_sha256=storage.identity([dict(id='adc', datasheet_url=url)]),
+            parts=[dict(id='adc', url=url, final_url=url, fetched_at=stamp, sha256=pdf['sha256'], path='datasheet.pdf', missing=False, reason=None)]))
+        record = part_record.prepare_record(root, lcsc, catblob, sheets, 'adc')
+        recblob = put(prefix + '/record.json', record)
+        if lcsc == 'C468683':
+            continue
+        for ref in (('U2',) if lcsc == 'C37593' else ('J1','J2')):
+            parts.append(dict(id=ref, role='authored', required=True, instances=[dict(sheet='/',reference=ref)],
+                selection_id=ref, lcsc=lcsc, mpn=mpn, manufacturer='Texas Instruments', package=record['package'], stock=stock,
+                lib_id='Analog_ADC:ADS1115IDGS', footprint='Package_SO:' + name,
+                selection=dict(kind='named',lcsc=lcsc,part_record=recblob['path'],part_record_sha256=recblob['sha256'],decision_ref=source),
+                datasheet=dict(status='captured',required=True,artifact=pdf,provenance={**sheets,'locator':'parts[id=adc]'})))
+    document = dict(schema='agent-ee.parts/1', declaration_source=source, catalog=None, selection=None,
+        cad=dict(manifest=cad,assignments=assignment,members_sha256=storage.identity(sorted([library,fp],key=lambda b:b['path']))),
+        property_fields=dict(lcsc='LCSC',mpn='MPN',manufacturer='Manufacturer'),population='native-dnp-optional-only/1',parts=parts)
+    put('parts.json',document)
+    put('circuit.json',dict(schema='agent-ee.connectivity-intent/1', libraries=[],
+        components=[dict(id=p['id'],reference=p['id'],lib_id=p['lib_id'],value=p['mpn'],footprint='',units=[1]) for p in parts],
+        nets=[],no_connects=[dict(component='U2',pin={'number':'2'})],current_a=None))
+    put('component-selections.json',[dict(reference=p['id'],lcsc=p['lcsc'],value=p['mpn']) for p in parts])
+    put('requirement-map.json',dict(requirements=[dict(checks=[dict(kind='assembly_readiness',params=dict(catalog='original/C37593/catalog.json',boards=1,max_age_hours=24))])]))
+    put('OPERATING.md', b'Authored unchanged limits.\n')
+    union = copy.deepcopy(catalogs[0]); union['requests'] += catalogs[1]['requests'] + catalogs[2]['requests']; union['parts'].update(catalogs[1]['parts']); union['parts'].update(catalogs[2]['parts'])
+    for catalog in catalogs:
+        lcsc = catalog['requests'][0]['lcsc']
+        raw = (root / 'original' / lcsc / 'responses' / (lcsc + '.json')).read_bytes()
+        if lcsc == 'C37593':
+            doc=json.loads(raw); doc['data']['componentPageInfo']['list'][0]['stockCount']=0; raw=storage.json_bytes(doc)
+            req=union['requests'][0]; req['response'].update(sha256=hashlib.sha256(raw).hexdigest(),size_bytes=len(raw))
+            _, parsed=jlc_stock_capture.parse_search_response(raw,lcsc); union['parts'][lcsc]={**parsed,'last_seen':stamp}
+        put('preparation/catalog/responses/' + lcsc + '.json',raw)
+    put('preparation/catalog/catalog.json',union)
+    put('preparation/ti/TI-ADS1115IDGST.html', b'https://www.ti.com/product/ADS1115/part-details/ADS1115IDGST OPN=ADS1115IDGSR These products are exactly the same but come in a different carrier type')
+    put('manufacturer-text/ads1115.txt', b'ADS1115IDGSR Active Production VSSOP (DGS) | 10 2500 | LARGE T&R Yes NIPDAU Level-2-260C-1 YEAR -40 to 125 BOGI\nADS1115IDGST Active Production VSSOP (DGS) | 10 250 | SMALL T&R Yes NIPDAU Level-2-260C-1 YEAR -40 to 125 BOGI\n')
+    return document
 
 
-@unittest.skipUnless(CAPTURE, 'explicit retained private capture required')
-class RetainedCaptureTests(unittest.TestCase):
+class PortableCaptureTests(unittest.TestCase):
     def setUp(self):
-        self.scratch = tempfile.TemporaryDirectory(prefix='adc-carrier-source-')
-        self.addCleanup(self.scratch.cleanup)
-        self.root = Path(self.scratch.name) / 'owned-revision'
-        self.root.mkdir()
-        draft = Path(CAPTURE)
-        originals = json.loads((draft / 'original-input-hashes.json').read_bytes())
-        for name, sha in originals.items():
-            src = draft / 'bundle' / name
-            self.assertEqual(storage.digest(src), sha)
-            dst = self.root / name
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dst)
-        shutil.copytree(draft / 'bundle/stock-derived', self.root / 'preparation/catalog')
-        shutil.copytree(draft / 'bundle/alternative-sources', self.root / 'preparation/ti')
+        self.enterContext(scoped_guard())
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.original_parts = authored_fixture(self.root)
         self.original = json.loads((self.root / 'circuit.json').read_bytes())
-        self.original_parts = json.loads((self.root / 'parts.json').read_bytes())
         self.context = self.context_for()
 
     def blob(self, path):
@@ -60,7 +140,7 @@ class RetainedCaptureTests(unittest.TestCase):
         return alternative.CapturedContext(requirement_map.input_inventory(self.root),
             self.blob('preparation/catalog/catalog.json'),
             self.blob('preparation/ti/TI-ADS1115IDGST.html'),
-            self.blob('manufacturer-text/ads1115.txt'), '2026-10-29T08:00:00+00:00')
+            self.blob('manufacturer-text/ads1115.txt'), '2026-10-18T01:00:00+00:00')
 
     def synthetic_row(self, lcsc, **changes):
         """Rebuild a *synthetic* internally consistent raw capture boundary case."""
@@ -79,13 +159,13 @@ class RetainedCaptureTests(unittest.TestCase):
         path.write_bytes(storage.json_bytes(catalog))
         self.context = self.context_for()
 
-    def test_actual_capture_chooses_alternative_and_preserves_constraints(self):
+    def test_authored_capture_chooses_alternative_and_preserves_constraints(self):
         result = alternative.revise(self.root, self.context)
         self.assertEqual(result['selected'], 'C468683')
         manifest = parts_manifest.load_manifest(self.root, 'parts.json')
         adc = next(p for p in manifest['parts'] if p['lcsc'] == 'C468683')
         self.assertEqual(adc['mpn'], 'ADS1115IDGST')
-        self.assertEqual(adc['stock'], 3552)  # retained observation, no production constant
+        self.assertEqual(adc['stock'], 70)  # retained observation, no production constant
         self.assertEqual(adc['package'], 'VSSOP-10-0.5mm')
         circuit = json.loads((self.root / 'circuit.json').read_bytes())
         for component in circuit['components']:
@@ -95,10 +175,10 @@ class RetainedCaptureTests(unittest.TestCase):
         for before, after in zip(self.original_parts['parts'], manifest['parts']):
             for field in ('instances', 'lib_id', 'footprint', 'datasheet', 'role', 'required'):
                 self.assertEqual(before[field], after[field])
-        self.assertEqual(len(json.loads((self.root / alternative.PREFIX / 'part-refs.json').read_bytes())['components']), 17)
+        self.assertEqual(len(json.loads((self.root / alternative.PREFIX / 'part-refs.json').read_bytes())['components']), 3)
         alternative.audit_selection(self.root, result)
         record = json.loads((self.root / adc['selection']['part_record']).read_bytes())
-        self.assertEqual(record['fetched_at'], '2026-10-29T03:17:16.322804+00:00')
+        self.assertEqual(record['fetched_at'], '2026-10-18T00:00:00+00:00')
         self.assertEqual(result['catalog'], self.context.catalog)
 
     def test_synthetic_primary_retained_even_with_more_alternative_stock(self):
@@ -162,3 +242,64 @@ class RetainedCaptureTests(unittest.TestCase):
         (self.root / self.context.carrier_page['path']).write_text('qualified:true')
         with self.assertRaisesRegex(ValueError, 'TI same-device'):
             alternative.revise(self.root, self.context_for())
+
+
+class GuardIsolationTests(unittest.TestCase):
+    def test_guard_restores_unrelated_interpreter_state(self):
+        before = list(sys.meta_path)
+        popen, connection = subprocess.Popen, socket.create_connection
+        with scoped_guard():
+            self.assertIsNot(subprocess.Popen, popen)
+            self.assertIsNot(socket.create_connection, connection)
+        self.assertEqual(sys.meta_path, before)
+        self.assertIs(subprocess.Popen, popen)
+        self.assertIs(socket.create_connection, connection)
+
+
+class CapturedContextTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(scoped_guard())
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        authored_fixture(self.root)
+        from agent_ee import acquisition_alternative_context
+        self.context_module = acquisition_alternative_context
+        catalog_path = 'preparation/catalog/catalog.json'
+        catalog = json.loads((self.root/catalog_path).read_bytes())
+        def put(path, doc):
+            target=self.root/path;target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes(storage.json_bytes(doc))
+            return dict(path=path,sha256=storage.digest(target))
+        parents=[]
+        for index,ids in enumerate((['C37593','C131334'],['C468683']),1):
+            doc={**catalog,'requests':[r for r in catalog['requests'] if r['lcsc'] in ids],
+                 'parts':{k:v for k,v in catalog['parts'].items() if k in ids}}
+            parents.append(put('parents/'+str(index)+'.json',doc))
+        derivation=put('parents/derivation.json',dict(kind='offline union; NOT a fresh capture',parents=[{'sha256':p['sha256']} for p in parents]))
+        def blob(path):return dict(path=path,sha256=storage.digest(self.root/path))
+        refs=dict(catalog=blob(catalog_path),carrier_page=blob('preparation/ti/TI-ADS1115IDGST.html'),
+                  ordering_text=blob('manufacturer-text/ads1115.txt'),derivation=derivation)
+        paths=[b['path'] for b in [*refs.values(),*parents]]
+        paths += ['preparation/catalog/'+r['response']['path'] for r in catalog['requests']]
+        self.context=dict(schema=acquisition_alternative_context.SCHEMA,reference='acquisition-control',
+                          files={p:storage.digest(self.root/p) for p in paths},parents=parents,**refs)
+
+    def test_finite_union_replays_exact_observations_and_copies_before_selection(self):
+        context,captures=self.context_module.read(self.root,storage.json_bytes(self.context))
+        before={p:raw for p,raw in captures.items()}
+        report=self.context_module.apply(self.root,context,captures,'2026-10-18T01:00:00+00:00')
+        self.assertEqual(report['selected'],'C468683')
+        for name,raw in before.items():
+            self.assertEqual((self.root/self.context_module.AT/name).read_bytes(),raw)
+
+    def test_unrelated_context_file_and_reset_clock_are_refused(self):
+        original=copy.deepcopy(self.context)
+        self.context['files']['OPERATING.md']=storage.digest(self.root/'OPERATING.md')
+        with self.assertRaisesRegex(ValueError,'unrelated'):
+            self.context_module.read(self.root,storage.json_bytes(self.context))
+        self.context=original
+        path=self.root/self.context['catalog']['path']
+        catalog=json.loads(path.read_bytes());catalog['completed_at']='2026-10-18T00:01:00+00:00'
+        path.write_bytes(storage.json_bytes(catalog))
+        pin=storage.digest(path);self.context['catalog']['sha256']=pin;self.context['files'][self.context['catalog']['path']]=pin
+        with self.assertRaisesRegex(ValueError,'exact conservative'):
+            self.context_module.read(self.root,storage.json_bytes(self.context))

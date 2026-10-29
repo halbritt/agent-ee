@@ -187,3 +187,64 @@ Without those retained captures, the integration cases report explicit skips;
 the brief-parser cases still run. Such skips cannot qualify the real recipe.
 `AGENT_EE_ACQUISITION_PLAN` defaults to `build.json` beside the input directory;
 set it explicitly when a test capsule relocates the plan and inputs separately.
+
+## Optional captured ADC carrier context
+
+The same public preparer can automatically retain the primary ADS1115IDGSR or
+select its source-backed ADS1115IDGST carrier alternative. Supply all three
+explicit options together:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m agent_ee.acquisition_prepare \
+  --brief /absolute/path/supported-brief.md \
+  --build-plan /absolute/path/original-captured/acquisition-release/build.json \
+  --added-input cpl=/absolute/path/captured-cpl \
+  --added-input manufacturer-text=/absolute/path/captured-manufacturer-text \
+  --alternative-context /absolute/path/reviewed-context.json \
+  --alternative-context-sha256 EXACT_CONTEXT_SHA256 \
+  --alternative-source /absolute/path/read-only-retained-context-root \
+  --out /absolute/path/fresh-output
+```
+
+Omitting the context preserves the original part choice and preparation path.
+Supplying a source/hash without a context, missing either companion option,
+a context hash mismatch or an aliased/changed context refuses without publishing.
+The original recipe admission, capacitance range, mechanics, local-return helper
+pin, review-profile/timeout context and typed accounting stay in force. No
+actual native/build operation is part of preparation.
+
+The finite `agent-ee.acquisition-alternative-context/1` document contains exactly
+`schema`, `reference` (`acquisition-control`), `files` (a 1..64 path/hash closure),
+`catalog`, `carrier_page`, `ordering_text`, `parents` (exactly two catalog blobs)
+and `derivation`. Blobs use canonical captured `{path,sha256}` references. Paths
+are relative to the explicit source root; every referenced file and raw response
+must be pinned, and unrelated extra files refuse. The reviewed context is an
+explicit evidence input, not a caller-qualified flag or a manually chosen part.
+
+The catalog must equal the ordered union of two disjoint retained parent
+captures with the same source contract: exact requests, rows and response bytes,
+earliest parent as_of and latest completed_at. Original fetch times and the
+external derivation/parent identities are retained. No new capture is made and
+no freshness clock is reset. The preparer's actual UTC evaluation anchor and
+all context/producer/helper pins enter preparation identity; normal run-bound
+stock checks remain downstream obligations. Source/context drift is rechecked
+before atomic publication.
+
+The admitted closure is copied below `preparation/alternative-context/`, with
+its exact context document at `preparation/alternative-context.json`. Source
+selection and `preparation/alternative-report.json` are produced before the
+existing typed seal. The assembly catalog path/hash is rebound without relaxing
+its authored policy. `edit-ledger.json` includes the four source-file changes,
+archived original circuit/component selections, source-capture hashes and
+selected catalog; old catalogs and historical choices stay untouched.
+When the original parts citation names the later requirements-stage namespace,
+its identical operative spec citation is first rebound to the actual `spec.md`;
+no missing namespace or generated receipt is invented. The overlay map pin and
+mechanics/typed accounting bind the revised map. Nothing is appended to inputs
+after sealing.
+
+Selection regenerates named records, full parts and purchasing-reference
+bindings through existing contracts. Fresh ordinary production/native binding,
+rating provenance, electrical/package review, supplier preview and physical
+validation remain pending. Preparation provides no G2/ZA04/G4 or assembly
+acceptance. See [the narrow carrier contract](acquisition-alternative.md).

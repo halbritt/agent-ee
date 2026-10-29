@@ -5,7 +5,7 @@ source producer for the existing acquisition family. It supports only primary
 C37593 / TI ADS1115IDGSR and carrier alternative C468683 / TI ADS1115IDGST,
 using the existing ADS1115IDGS symbol and TSSOP-10_3x3mm_P0.5mm footprint.
 It does not run preparation, native tools, a build, acquisition or a controller.
-No public preparer option is wired by this module.
+The public preparer optional context hook is documented in acquisition-prepare.md.
 
 The caller provides a complete immutable inventory of its owned **unsealed**
 revision, one captured catalog blob, one captured TI IDGST carrier-page blob,
@@ -65,42 +65,26 @@ inventory intentionally stops matching once those edits occur. Future build
 stock checks still use their actual run anchor; this producer never resets
 freshness or authorizes replay against a historical sealed run.
 
-## Serial wiring in acquisition_prepare (coordinator owned)
+## Public preparation wiring
 
-Keep `_admit`, `_load_overlay`, the original plan/inventory and fixed brief
-recipe unchanged. Add one optional captured-context argument/CLI path to the
-existing preparer, with its exact bytes and producer/helper hashes included in
-preparation identity. Do not admit the offline draft as the recipe itself.
-A missing context retains current preparer behavior.
+The existing public `acquisition_prepare.prepare` now accepts
+`alternative_context`, `alternative_source` and `alternative_context_sha256`;
+the CLI uses the corresponding hyphenated flags. All three are required together.
+`acquisition_alternative_context` validates/copies the finite reviewed closure
+and verifies the exact conservative two-parent catalog union. It performs no
+fetch or catalog discovery and copies no old generated alternative receipts.
 
-After `_write_revision` has produced the owned revision and `preparation/`
-exists, copy the admitted catalog, exact raw responses, TI page, ordering text
-and external parent/derivation provenance into a fresh directory **under
-preparation/**. Verify original immutable pins, bytes and inventory before and
-after copying. For the reviewed union retain earliest `as_of`, latest
-`completed_at`, each request/fetched_at/raw response and both original catalogs;
-never describe it as a fresh capture or one historical invocation. Copy ordering
-text under preparation too: pre-populating `manufacturer-text/` would collide
-with typed_overlay's separately admitted added-input tree.
-
-Build CapturedContext from the complete revised inventory and the captured
-blob pins, then call `revise`. Archive these four file changes against the
-original recipe, alongside capacitance changes, and retain the selector report
-under preparation. Existing `_archive_revision` has a closed REVISION_BASIS
-and will raise KeyError for new circuit/component-selection changes; root must
-add precise bases for those two files or explicitly append their original
-bytes and combined before/after hashes to the existing ledger. This module
-does not modify that owner module or manufacture an archive receipt.
-
-Update `overlay['base']['requirement_map_sha256']` after the assembly-path edit
-and before writing overlay.json, mechanics/operative-map derivation and
-`typed_overlay.prepare`. The original spec/spec-record pins and typed
-partitions do not change for purchasing selection. The existing preparation
-scope input captures the new source/decision/record files. Ensure preparation
-is declared exactly once in the map; otherwise explicitly add it before seal.
-Generate mechanics and typed accounting from this revised map, then seal using
-the existing producer. No inputs may be appended after seal. Retain every
-source change in the final preparation input inventory and identity.
+Original `_admit` and `_load_overlay` remain unchanged. After `_write_revision`,
+context bytes and all referenced raw/source/parent provenance are copied under
+preparation, and the selector runs against the complete owned revision. Exact
+context/source/helper pins and the actual evaluation anchor enter identity.
+The parts citation is rebound to its identical actual operative spec if its
+historical requirements-stage namespace does not yet exist. Archive handling
+includes circuit/component-selection changes and explicit selected catalog/source
+hashes; original files and old catalog choices remain preserved. The overlay's
+base map hash is rebound before mechanics and typed derivation/sealing. Context
+and source bytes are reread before publication, and no input is appended after
+the existing typed seal. Root alone admits any actual target execution.
 
 The normal parts stage still consumes `parts.json` and `circuit.json` from the
 plan. `parts_stage.compile_parts` and its ordinary binding-fill/native consumers
@@ -111,15 +95,15 @@ review, fresh run-bound stock, supplier preview and physical validation remain
 pending. No G2, ZA04, G4, board adoption or assembly acceptance follows from
 source tests.
 
-Focused offline tests require `AGENT_EE_ALTERNATIVE_DRAFT` naming the retained
-reviewed draft root. Without private inputs the tests skip explicitly. They
-copy only its hash-pinned original inputs and raw catalog/source evidence;
-none of its generated alternative named/parts/build receipts are transplanted.
-Synthetic boundary mutations are labeled CPU substitutions. Subprocess/network
-operations and native imports are denied throughout the tests:
+Standing tests use original authored CAD, supplier and PDF envelope fixtures;
+these are explicit CPU substitutions, never vendor observations or native proof.
+They require no host-private paths and do not skip without private inputs.
+Guards are scoped per test and restore subprocess/network functions, native
+module entries and import-finder state; no permanent audit hooks are installed.
+Real retained-capture checks remain separate private evidence outside normal
+test discovery. Neither fixture class provides campaign acceptance.
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests \
-  AGENT_EE_ALTERNATIVE_DRAFT=/absolute/private/reviewed-draft \
-  timeout 180 python3 -m unittest test_acquisition_alternative -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:.:tests \
+  timeout 180 python3 -m unittest tests.test_acquisition_alternative -v
 ```
