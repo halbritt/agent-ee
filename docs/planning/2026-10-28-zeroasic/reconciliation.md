@@ -3,6 +3,15 @@
 Read-only by coordinator subagent; no tracker mutation, code edit, native run, or acceptance claim.
 Source inspected: 9e4f241a0850e9d1e116e60727ea785609b10fc8. Live project snapshot returned 556 items. Full target issues and latest coordination comments are retained beside this report. All issue IDs, parents, state UUIDs and external identities are in selected-identities.json.
 
+## Campaign scope correction — 2026-10-29
+
+Direct owner instruction: **"remove the ESP-Prog requirements"**. The
+[campaign scope amendment](../../research/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
+limits campaign dependencies on AGENTEE-515 and other shared recovery items to
+acquisition-applicable qualification. Their broader M1/ESP-Prog obligations and
+historical status below remain separate work, not blockers for this campaign.
+No issue is declared accepted or complete by this scope change. Execution stays paused.
+
 ## Current status overrides
 
 - 512 latest comment (2026-10-28T08:32:39Z) says all six authorized retries returned and all twelve original dispatched lanes have reviewed bounded results. Older 512 body/recall saying six are stopped awaiting permission is superseded. These are no longer pending failed work to replay.
@@ -15,7 +24,7 @@ Source inspected: 9e4f241a0850e9d1e116e60727ea785609b10fc8. Live project snapsho
 
 | Local key | Tracker disposition | Recommended parent | Why / exact remaining deliverable |
 |---|---|---|---|
-| ZA-01 | New bounded child for current public reference qualification; reuse 519 as Done prerequisite | 515 | 519 implemented captured-input/runtime access and recorded legacy control, not current typed public seven-stage acceptance/strict native regression/attributable negatives/resume. Do not reopen 519 merely for expanded qualification. New child owns wiring/current reference; 515 retains final M1 acceptance. |
+| ZA-01 | New bounded child for current public reference qualification; reuse 519 as Done prerequisite | 515 | 519 implemented captured-input/runtime access and recorded legacy control, not current typed public seven-stage acceptance/strict native regression/attributable negatives/resume. Do not reopen 519 merely for expanded qualification. New child owns wiring/current acquisition reference; broader 515/M1 closure is not required by this campaign. |
 | ZA-02 | Reuse and add dated criteria to 525 | Preserve 512 | Existing 525 scope is exactly supported brief-to-input acquisition variant. Integrated 150pF docs/reproduction only; no public full board and 14 judgments absent for that variant. Require caller brief/context only, no authored intermediate JSON. |
 | ZA-03a | New child of 525, link completed 89/90 | 525 | Qualified acquisition regulator/ADC/interface entries are distinct new captured instances. Existing 89/90 delivered reusable format/adaptation, not these entries or their applicability. Require valid composition + rail/current boundary negatives. |
 | ZA-03b | New child of 525 | 525 | Automatic parameter selection and composition using 02 and qualified 03a entries is distinct from capture and existing manual preparation. Fresh native/functional checks required. |

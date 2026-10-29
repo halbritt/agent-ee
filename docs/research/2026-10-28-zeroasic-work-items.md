@@ -7,6 +7,11 @@ Context and pinned code examples: [research report](2026-10-28-zeroasic-autonomy
 were added 2026-10-28. The campaign splits ZA-03 into qualification and
 composition slices so ZA-02 can consume qualified reference entries.
 
+The direct [owner scope amendment of 2026-10-29](2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
+excludes ESP-Prog from all campaign work and acceptance dependencies. References
+to M1 below mean acquisition-applicable obligations, not closure of the broader
+recovery programme. Campaign execution remains paused.
+
 These are local proposals, not published Plane tickets or implementation
 dispatches. `ZA-01` through `ZA-11` are document identifiers. Existing item IDs
 come from the [recovery backlog](../planning/2026-10-25-recovery/backlog.md)
@@ -18,7 +23,8 @@ backlog snapshot's old blanket pause language. The telemetry-pod hold remains.
 
 P0 means a correctness or first-autonomy prerequisite; P1 means the next bounded
 extension; P2 means an experiment whose benefit remains unproved. Dependencies
-below supplement the existing recovery dependencies; they do not cancel them.
+below reuse acquisition-applicable recovery dependencies under the owner scope
+amendment; broader recovery work is not a campaign prerequisite.
 Each slice ends in observable behavior through a supported entrypoint.
 
 | Local ID | Deliverable | Priority | Existing work to extend | Local prerequisites |
@@ -34,12 +40,12 @@ Each slice ends in observable behavior through a supported entrypoint.
 | ZA-08 | Matched experiment for a bounded routing tournament | P2 | AGENTEE-513/527/516 | ZA-01, ZA-05; qualified route options |
 | ZA-09 | A DC-drop failure drives one verified copper repair | P1 | Existing DC-path work AGENTEE-13; AGENTEE-517 | ZA-01; qualified DC-path model |
 | ZA-10 | Generated candidate enters independent review and repair | P0 for engineering-complete claim | Existing campaign/review; AGENTEE-83/525 | Existing qualification contracts; ZA-02 for integrated acceptance |
-| ZA-11 | Frozen brief-to-board evaluation with intervention counts | P1 | AGENTEE-69/515/517 | ZA-02/03b/04/05/10; M1 closure for campaign acceptance |
+| ZA-11 | Frozen brief-to-board evaluation with intervention counts | P1 | AGENTEE-69/515/517 | ZA-02/03b/04/05/10; acquisition-applicable qualification for campaign acceptance |
 
 ## ZA-01 — Make the current complete build a portable reference
 
 Extend [recovery_runtime.py](../../scripts/recovery_runtime.py), the captured
-[input manifest](../../fixtures/recovery/inputs.json) and existing M1 checks.
+[input manifest](../../fixtures/recovery/inputs.json) and acquisition-applicable M1 checks.
 A full build harness already exists. The gap is a documented, wired native
 regression that a fresh operator can run with permitted input access.
 Use the existing acquisition reference; an original redistributable mini-board

@@ -2,6 +2,25 @@
 
 Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
 
+## Current scope and pause — 2026-10-29
+
+Direct owner instruction: **"remove the ESP-Prog requirements"**. The
+[amended campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
+excludes ESP-Prog from campaign deliverables, dispatches and acceptance gates.
+Only acquisition-applicable qualification, negative/resume evidence and shared
+regressions remain dependencies; broader AGENTEE-515/M1 closure is not required.
+Existing issue parentage does not import those broader acceptance obligations.
+
+Execution remains **paused**. G4 remains **0/4**, with no measured case started.
+This scope amendment authorizes plan/tracker maintenance, not a board run.
+All earlier ESP-Prog dispatches, admissions and campaign goal wording below
+are superseded. Historical outcomes, failed attempts and artifacts remain
+retained without a passing qualification or release claim. The four-case
+acquisition acceptance series and its engineering gates remain required.
+
+The following dispatch and progress sections are historical snapshots; they
+do not authorize resumed execution or restore the removed scope.
+
 ## Current progress — 2026-10-29 12:41 UTC
 
 **G4 remains 0/4; the measured series has not started.** The owner goal remains
@@ -231,7 +250,7 @@ At most two implementation builders may operate concurrently. Initial proposed s
 
 Initial read-only dispatch cap per lane: 30 minutes, at most 60 model/tool rounds, zero nested model calls and zero native jobs. Token usage unavailable from an interface remains unknown, never zero. No provider cap is claimed to be mechanically enforced by a prose assignment. Before native dispatch, record an enforcing command, one host reservation, maximum four module workers, an enclosing wall/work budget and reserved final-grading time. Calibrate once through ZA-01 and record actual values; do not invent a calibrated budget from source-only inspection.
 
-G1 consumes current reference + final saved-coordinate mutation + three qualified reference roles. G2 joins brief-only preparation and actual independent review/repair. G3 validates composition and catalog change. G4 still requires acquisition and ORIGINAL imported esp_prog, all required judgments and full review, three supported successes and one independently correct refusal, at most two complete generation attempts per case, full accounting, clean release gate and fresh independent reproduction. G5/G6 do not block G4 and have no implementation/native authorization in the initial dispatch.
+G1 consumes current reference + final saved-coordinate mutation + three qualified reference roles. G2 joins brief-only preparation and actual independent review/repair. G3 validates composition and catalog change. Under the 2026-10-29 scope amendment, G4 requires current acquisition qualification, all required judgments and full review, three supported successes and one independently correct refusal, at most two complete generation attempts per case, full accounting, clean release gate and fresh independent reproduction. Broader M1 closure is not required. G5/G6 do not block G4 and have no implementation/native authorization in the initial dispatch.
 
 The evaluator author holds exact unseen case inputs/bounds outside the writer's mutable store. Public protocol discussions must not include holdout answers. The final reproducer must have authored neither generator nor evaluator. No measured series starts until G0 admission and the case/runtime/catalog/manufacturing/model/tool/repair pins are frozen. Every attempt after admission remains in the denominator.
 

@@ -9,6 +9,18 @@ This plan turns the research into an ordered campaign with acceptance gates.
 Plane reconciliation and implementation are future execution steps. No Plane
 items were created or live statuses checked while preparing this document.
 
+## Owner scope amendment — 2026-10-29
+
+Direct owner instruction: **"remove the ESP-Prog requirements"**.
+
+ESP-Prog is excluded from this campaign's deliverables, dispatches and acceptance
+gates. G4 requires acquisition-applicable qualification under AGENTEE-515, not
+closure of that broader M1 item. Historical ESP-Prog results remain retained;
+their exclusion is not a passing qualification. This amendment supersedes older
+campaign requirements, dependencies and goal wording that include ESP-Prog.
+Acquisition engineering, negative/resume checks and the four-case acceptance
+series remain required. Campaign execution remains paused.
+
 ## Destination and success criteria
 
 The first campaign delivers autonomous preparation and engineering acceptance
@@ -49,9 +61,9 @@ The finite acceptance series is:
 
 Allow at most **two complete generation attempts per case**. All three supported
 cases must pass within that cap, and the unsupported case must refuse correctly.
-Also retain the existing M1 acquisition and **original imported esp_prog**
-qualification gates. A substitute board cannot discharge the latter. This is a
-small domain demonstration; report the sample size and supported envelope.
+Also retain the acquisition-applicable M1 qualification, attributable negative
+and resume gates. Full closure of broader M1 work is not a campaign dependency.
+This is a small domain demonstration; report the sample size and supported envelope.
 
 ## 1. Reconcile Plane, then create the campaign map
 
@@ -81,7 +93,7 @@ existing review/campaign engine.
 
 | Outcome epic | Local work | Existing items to reconcile | Epic exit evidence |
 | --- | --- | --- | --- |
-| Dependable reference and final geometry | ZA-01, ZA-05 | 512, 519, 520, 521, 479, 523, 524, 515, 526 | Current M1 release record, including acquisition, original esp_prog, attributable negatives and resume |
+| Dependable reference and final geometry | ZA-01, ZA-05 | 512, 519, 520, 521, 479, 523, 524, 515, 526 | Current acquisition qualification and release evidence, including attributable negatives and resume |
 | First brief produces an independently accepted board | ZA-03a, ZA-02, ZA-10 | 525, 89/90, 83 | Brief-only preparation followed by file release and full independent review |
 | Adaptation works without manual design edits | ZA-03b, ZA-04, ZA-11 | 525, 79, 69, 515/517 | Frozen four-case series meets the success criteria above |
 | Physical and electrical feedback repair a named failure | ZA-06, ZA-07, ZA-09 | 489, 516, 13, 517 | Each selected extension closes its own frozen failure with all affected gates passing |
@@ -110,17 +122,17 @@ against a fixed candidate before ZA-02 finishes.
 | Gate | Work and permitted parallelism | Acceptance to advance |
 | --- | --- | --- |
 | G0 — Freeze the first delivery contract | Reconcile tracker/code; inventory inputs, runtime, current failures and supported acquisition envelope. Name coordinator and independent verifier. | A versioned campaign record fixes cases, source/rule authority, evaluation custody, numeric budgets and evidence locations. Credentials/tools/inputs pass preflight. Remaining gaps have owners and dependencies. |
-| G1 — Establish dependable inputs and checks | ZA-01 current reference; ZA-05 normal-path final group gate; ZA-03a capture and qualify regulator, ADC and interface roles. Separate owners may work in parallel after shared contracts are fixed. | Acquisition reference runs through the public path; known electrical/package negatives and resume behave correctly; final native group mutation fails; qualified block entries state applicability and reject the selected incompatible boundaries. Continue existing esp_prog/finalization work toward M1. |
+| G1 — Establish dependable inputs and checks | ZA-01 current reference; ZA-05 normal-path final group gate; ZA-03a capture and qualify regulator, ADC and interface roles. Separate owners may work in parallel after shared contracts are fixed. | Acquisition reference runs through the public path; known electrical/package negatives and resume behave correctly; final native group mutation fails; qualified block entries state applicability and reject the selected incompatible boundaries. |
 | G2 — Complete the first autonomous loop | ZA-02 consumes G1's reference blocks. ZA-10 integrates actual review/repair into existing qualification, initially using a fixed candidate. Integrate both for the first brief. | A fresh run starts from the control brief, prepares every required input, completes all seven stages and meets the full supported-result contract. A functional defect that survives ERC/DRC is independently detected and repaired within budget. |
 | G3 — Prove controlled adaptation | ZA-03b parameterized composition, then ZA-04 alternative selection. Prepare ZA-11's evaluator independently. | A supported development variant and the catalog-change case regenerate affected inputs/evidence and meet the same contract. Incompatible rail/current/part cases refuse. No manual candidate edits are needed. |
-| G4 — Accept the core campaign | ZA-11 frozen four-case evaluation; close remaining M1 obligations under AGENTEE-515 on the release revision. | Three supported successes, one correct refusal, no manual design edits, complete accounting, current acquisition and original esp_prog qualification, independent verification and a reproducible release record. |
+| G4 — Accept the core campaign | ZA-11 frozen four-case evaluation; close acquisition-applicable qualification obligations under AGENTEE-515 on the release revision. | Three supported successes, one correct refusal, no manual design edits, complete accounting, current acquisition qualification, independent verification and a reproducible release record. |
 | G5 — Extend one capability at a time | ZA-06 side/mechanics, then side-changing ZA-07 repair; same-side ZA-07 needs ZA-05. ZA-09 needs a qualified DC model. Select a concrete blocked case for each. | Each extension passes its detailed positive/negative cases and preserves the core campaign's affected guarantees. Completion of G4 does not depend on these extensions. |
 | G6 — Decide whether tournament search helps | ZA-08 matched experiment after correctness and route options are qualified. | Required gates remain intact; report accepted outcomes and total cost. Keep the current policy if benefit is absent or comparison is invalid. |
 
 Preparation development may proceed once its runtime/input/acceptance contracts
-are stable while other M1 work continues. **G4 still requires full M1 closure.**
-An unresolved imported-board defect does not justify waiving that gate or
-blocking unrelated source-capture work. Record the blocked consumer precisely.
+are stable. **G4 requires acquisition-applicable qualification; full M1 closure
+is outside this campaign.** Shared implementation defects that affect acquisition
+still require correction. Record the affected acquisition consumer precisely.
 
 The first implementation dispatch should reconcile the reference harness and
 missing normal-path protection in ZA-01/05, while a separate builder qualifies
