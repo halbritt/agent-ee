@@ -259,6 +259,30 @@ class FabStageExecutionTests(unittest.TestCase):
                             native_run.run(intent, inputs=self.inputs, work=work)
                     self.assertEqual(file_tree(self.inputs), before)
 
+    def test_short_or_other_schematic_commands_do_not_select_a_private_export_project(self):
+        (self.inputs / 'board.kicad_sch').write_text('captured schematic')
+        cases = (('kicad-cli',), ('kicad-cli', 'sch'), ('kicad-cli', 'sch', 'export'),
+                 ('kicad-cli', 'sch', 'export', 'svg', '/candidate/board.kicad_sch'))
+        for number, argv in enumerate(cases):
+            work = self.root / f'short-{number}'
+            def child(intent, **kwargs):
+                expected = tuple(str(self.inputs / 'board.kicad_sch')
+                                 if arg == '/candidate/board.kicad_sch' else arg for arg in argv)
+                self.assertEqual(intent.argv, expected)
+                self.assertFalse((work / 'project').exists())
+                return {'execution': 'ok', 'exit_code': 0}
+            with self.subTest(argv=argv), native_run.using(self.execution()), \
+                    patch.object(native_run.Host, 'run', side_effect=child):
+                result = native_run.run(native_run.Intent('kicad-cli', argv),
+                    inputs=self.inputs, work=work)
+                self.assertEqual(result['exit_code'], 0)
+        for command in ('netlist', 'bom'):
+            with self.subTest(missing_design=command), native_run.using(self.execution()), \
+                    patch.object(native_run.Host, 'run', side_effect=AssertionError('must refuse')), \
+                    self.assertRaisesRegex(ValueError, 'fab export must name its captured design file'):
+                native_run.run(native_run.Intent('kicad-cli', ('kicad-cli', 'sch', 'export', command)),
+                    inputs=self.inputs, work=self.root / ('missing-' + command))
+
     def test_project_setup_consumes_child_budget_before_launch(self):
         intent = native_run.Intent('kicad-cli', ['kicad-cli', 'pcb', 'export', 'stats',
                                   '/candidate/board.kicad_pcb'], timeout=7)

@@ -400,8 +400,8 @@ class _FabStageExecution:
         design_suffix = None
         if intent.argv[:3] == ('kicad-cli', 'pcb', 'export'):
             design_suffix = '.kicad_pcb'
-        elif intent.argv[:4] in (('kicad-cli', 'sch', 'export', 'netlist'),
-                                 ('kicad-cli', 'sch', 'export', 'bom')):
+        elif (intent.argv[:3] == ('kicad-cli', 'sch', 'export')
+              and intent.argv[3:4] in (('netlist',), ('bom',))):
             design_suffix = '.kicad_sch'
         if design_suffix is not None:
             design = Path(intent.argv[-1].removeprefix('/candidate/'))
