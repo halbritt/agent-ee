@@ -696,8 +696,12 @@ class AddrPreparationTests(unittest.TestCase):
 
     def test_compiled_baseline_detects_mutation_of_each_fixed_dependency_family(self):
         out,_=self.prepare('sensitivity');_,baseline=self.compiled(out,'sensitivity')
-        paths=['adc-ties.json','analysis/electrical-intervals.json','preparation/alternative/decision.json',
-               'fixedexpected/connectivity-intent-addr-gnd.json']
+        document=json.loads((out/'inputs/parts.json').read_bytes())
+        decisions=sorted({part['selection']['decision_ref']['path'] for part in document['parts']
+                          if 'decision_ref' in part.get('selection',{})})
+        self.assertTrue(decisions);self.assertTrue(set(decisions)<=baseline['files'].keys())
+        paths=['adc-ties.json','analysis/electrical-intervals.json',
+               'fixedexpected/connectivity-intent-addr-gnd.json',*decisions]
         paths.append(next(p for p in baseline['files'] if p.endswith('.lib')))
         for index,name in enumerate(paths):
             path=out/'inputs'/name;before=path.read_bytes();path.write_bytes(before+b'\n')

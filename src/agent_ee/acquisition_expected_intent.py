@@ -3,6 +3,7 @@
 A root-pinned ordinary control receipt is trusted local admission, not
 authentication against a host able to forge both that receipt and its pin.
 """
+import copy
 from pathlib import Path
 from hashlib import sha256
 
@@ -95,7 +96,7 @@ def bind(root, plan, context_report, overlay, captured):
                  *(s['path'] for s in scope.get('stages', {}).get('subjects', {}).values())]
     if any(EXPECTED == p or EXPECTED.startswith(p + '/') or p.startswith('fixedexpected/') for p in forbidden):
         raise ValueError('expected intent cannot be a native or mutable stage path')
-    pool = typed_overlay._check_pool(typed_overlay.derive_map(declaration, overlay))
+    pool = typed_overlay._check_pool(typed_overlay.derive_map(copy.deepcopy(declaration), overlay))
     parity = {name for name, spec in pool.items() if spec['kind'] == 'netlist_parity'}
     if parity != CHECKS or any(pool[n]['params']['source'] != dict(kind='intent', path=GENERATED) for n in parity):
         raise ValueError('expected exactly the six unchanged acquisition parity source declarations')
