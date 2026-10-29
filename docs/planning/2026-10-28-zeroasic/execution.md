@@ -189,3 +189,36 @@ development remains frozen. No full-suite pass, trunk landing, M1 acceptance or
 campaign case acceptance is claimed: **0/4 cases remain accepted**. Evidence is
 retained in `acquisition-full-review-r1`, `add-planes-native-r2` and
 `prompt-transport-native-r1` beneath the host evidence root.
+
+### Actual defect repair and stock update
+
+Both existing public build/resume tests, including typed method binding and the
+default checks-only build review, passed on `58e74a43`: exit 0, two tests, 83.4
+seconds. The full strict suite has not been rerun.
+
+The geometry investigation distinguishes a measurement limitation from an actual
+design failure. Its track graph omits plane traversal and plated-pad transitions;
+the net is connected. However, the U2 ground branch travels about 14.07 mm before
+reaching the plane, already exceeding the complete 10 mm ADC bypass-loop budget
+before adding the 5.43 mm supply leg. The same retained physical investigation
+found C2 overlapping J1's access column by 0.055 mm². A coordinated small repair
+must also preserve the minimum U1/C2 body gap.
+
+The coordinator selected one documented defect/control pair under ZA-10's
+two-repair-iteration limit. Agent-693 has at most two 600-second native repair
+attempts on a disposable candidate, with the original board, source pins,
+requirements and all design limits unchanged. Its grant and replayable actions
+are retained under `acquisition-repair-r2`. This is diagnostic board work;
+external board checks cannot replace seven-stage production receipts. Agent-700
+is inspecting the smallest integration through the existing campaign and stage
+receipt interfaces. The three-preparation development cap has not been reset,
+and no fourth `acquisition_prepare` invocation was authorized.
+
+A single fresh stock capture completed in 58.4 seconds at
+`2026-10-29T03:10:37Z`. All eleven IDs were found, raw response hashes matched,
+and manufacturer, MPN and package were unchanged. **C37593, ADS1115IDGSR, now has
+zero JLCPCB stock**; the other ten selections have positive quantities. The new
+catalog hash is `7764a1253de771ed8d94ef6d025b64e51c747f756c8c0850190c95925e7501bf`.
+The old capture remains intact. Agent-692 is investigating qualified alternatives
+under ZA-04, bounded to three discovery queries and three per-ID captures. No
+substitution, order, project upload or assembly acceptance is claimed.
