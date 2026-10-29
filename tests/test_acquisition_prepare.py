@@ -468,7 +468,8 @@ class AcquisitionPreparationTests(unittest.TestCase):
                          spec_record.sha256((ROOT / 'src/agent_ee/catalog.py').read_bytes()))
 
 
-@unittest.skipUnless(os.environ.get('AGENT_EE_ADDR_CONTEXT') and PLAN.is_file() and CPL.is_dir() and TEXT.is_dir(),
+@unittest.skipUnless(all(os.environ.get(n) for n in ('AGENT_EE_ADDR_CONTEXT','AGENT_EE_ADDR_SOURCE',
+                     'AGENT_EE_ADDR_SUPPLEMENT','AGENT_EE_ADDR_POWER','AGENT_EE_ADDR_POWER620')) and PLAN.is_file() and CPL.is_dir() and TEXT.is_dir(),
                      'explicit captured acquisition ADDR source/context required')
 class AddrPreparationTests(unittest.TestCase):
     """Actual preparation and compiler calls; no native production/qualification."""
@@ -477,7 +478,9 @@ class AddrPreparationTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.brief = self.root/'brief.md'; self.brief.write_bytes(brief('125'))
         self.context = Path(os.environ['AGENT_EE_ADDR_CONTEXT'])
-        self.options = dict(added_sources={'cpl':CPL,'manufacturer-text':TEXT},
+        self.options = dict(added_sources={'cpl':CPL,'manufacturer-text':TEXT,
+            'source-supplement':Path(os.environ['AGENT_EE_ADDR_SUPPLEMENT']),
+            'power-repair':Path(os.environ['AGENT_EE_ADDR_POWER'])},
             review_profile=ROOT/'profiles/pod-review.json', alternative_context=self.context,
             alternative_source=Path(os.environ['AGENT_EE_ADDR_SOURCE']),
             alternative_context_sha256=storage.digest(self.context))
@@ -486,11 +489,42 @@ class AddrPreparationTests(unittest.TestCase):
         acquisition_prepare.prepare(self.brief,PLAN,self.seed,**self.options)
         self.replay = dict(evaluation_context=self.seed/'preparation.json',
                            evaluation_context_sha256=storage.digest(self.seed/'preparation.json'))
+        self.control_inputs=self.root/'control-inputs';shutil.copytree(self.seed/'inputs',self.control_inputs)
+        self.control_receipt,self.control = self.parts_receipt(self.control_inputs,'independent-control')
+        self.expected = self.control_receipt/'run/out/connectivity-intent.json'
+        self.fixed = dict(expected_intent=self.expected,expected_intent_sha256=storage.digest(self.expected),
+            expected_parts_receipt=self.control_receipt/'receipt.json',
+            expected_parts_receipt_sha256=storage.digest(self.control_receipt/'receipt.json'))
+
+    def parts_receipt(self,source,label):
+        # The actual pure compiler produces every intent/report byte. Only process
+        # execution and fixture-owned cache locking are simulated, never a verdict.
+        from agent_ee import native_run,parts_stage,stage_receipts,build_stages
+        plan=json.loads((self.seed/'build-plan.json').read_bytes())
+        if not (source/'requirements-map').exists():
+            stage=self.root/('requirements-'+label);stage.mkdir()
+            build_stages._requirements(plan,source,stage)
+        def respond(call):
+            if call.intent.tool=='version':return native_run.Outcome(stdout=b'Python fixture; not a native run\n')
+            report,intent=parts_stage.compile_parts(call.inputs,**plan['parts'])
+            raw=storage.json_bytes(intent);report['output_sha256']=spec_record.sha256(raw)
+            return native_run.Outcome(files={'out/connectivity-intent.json':raw,'out/report.json':storage.json_bytes(report)})
+        adapter=native_run.Recorded(respond)
+        path=self.root/('receipt-'+label)
+        with patch.dict(os.environ,AGENT_EE_TOOL_SOURCE_CACHE=str(self.root/'owned-tool-cache')), \
+                patch('fcntl.flock',lambda *args:None),native_run.using(adapter):
+            step=parts_stage.configuration(ROOT/'src',bundle='.',output='build-generated/connectivity-intent.json',**plan['parts'])
+            receipt=stage_receipts.run_step(path,source,step,dict(implementation=1,
+                source_candidate_id=stage_receipts.tree_identity(source)['sha256'],receipt_index=0))
+        self.assertEqual((receipt['status'],receipt['exit_code']),('completed',0))
+        self.assertEqual(stage_receipts.validate_receipt(path),receipt)
+        self.assertEqual(len(adapter.calls),2)
+        return path,receipt
 
     def prepare(self,name,choice='GND',**options):
         out=self.root/name
         report=acquisition_prepare.prepare(self.brief,PLAN,out,
-            **{**self.options,**self.replay,'addr_tie':choice,**options})
+            **{**self.options,**self.replay,**self.fixed,'addr_tie':choice,**options})
         return out,report
 
     def compiled(self,out,label):
@@ -502,7 +536,14 @@ class AddrPreparationTests(unittest.TestCase):
         for key in ('board','schematic'):
             path=source/template[key]; path.parent.mkdir(parents=True,exist_ok=True)
             path.write_bytes(b'Authored declared subject placeholder; no native qualification.\n')
-        files=requirement_map.input_inventory(source)
+        from agent_ee import build_stages,stage_receipts,rating_lineage
+        parts_dir,parts_receipt=self.parts_receipt(source,label)
+        stage_receipts.adopt(parts_dir,parts_receipt,source)
+        build_stages._capture_ratings(parts_dir,parts_receipt,source)
+        files={n:h for n,h in requirement_map.input_inventory(source).items() if not n.startswith('requirements-map/')}
+        if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+            evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
+            shutil.copytree(source,evidence/('compiled-inputs-'+label))
         scope,receipt=requirement_map.compile_map(raw['requirement-map.json'],raw['spec-record.json'],raw['spec.md'],
             files=files,inputs=source,obligations_raw=raw['obligations.json'])
         provenance={'spec.md':raw['spec.md'],'spec-record.json':raw['spec-record.json'],
@@ -512,6 +553,17 @@ class AddrPreparationTests(unittest.TestCase):
             baseline=compile_baseline(scope,files,captured)
         self.assertEqual(receipt['baseline_id'],baseline['baseline_id'])
         self.assertFalse(set(baseline['files']) & {template['board'],template['schematic']})
+        plan=json.loads((self.seed/'build-plan.json').read_bytes())
+        derived=build_stages._rated_scope(plan,source,scope)
+        self.assertEqual(rating_lineage.strip(derived),scope)
+        with requirement_map.compilation_inputs(source,files,provenance) as captured:
+            derived_baseline=compile_baseline(derived,files,captured)
+            self.assertEqual(compile_baseline(rating_lineage.strip(derived),files,captured),baseline)
+        if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+            evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
+            storage.write_json(evidence/('derived-'+label+'.json'),derived_baseline)
+            storage.write_json(evidence/('authored-'+label+'.json'),baseline)
+            shutil.copytree(parts_dir,evidence/('parts-receipt-'+label))
         return scope,baseline
 
     def test_actual_variants_keep_complete_baseline_parts_and_only_one_authored_terminal_delta(self):
@@ -525,7 +577,9 @@ class AddrPreparationTests(unittest.TestCase):
             evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
             for name,path in (('prepared-ground',ground),('prepared-wrong',wrong),('prepared-replay',replay)):
                 shutil.copytree(path,evidence/name)
-        pairs=[self.compiled(ground,'ground'),self.compiled(wrong,'wrong')]
+            shutil.copytree(self.control_receipt,evidence/'independent-control-receipt')
+            shutil.copyfile(self.seed/'preparation.json',evidence/'independent-control-preparation.json')
+        pairs=[self.compiled(ground,'ground'),self.compiled(wrong,'wrong'),self.compiled(replay,'replay')]
         if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
             evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
             for name,value in [('baseline-ground.json',pairs[0][1]),('baseline-wrong.json',pairs[1][1]),
@@ -533,15 +587,32 @@ class AddrPreparationTests(unittest.TestCase):
                     ('source-differences.json',changed),('preparation-ground.json',a),('preparation-wrong.json',b)]:
                 storage.write_json(evidence/name,value)
         self.assertEqual(pairs[0][1],pairs[1][1])  # COMPLETE objects, not selected fields.
+        self.assertEqual(pairs[0][1],pairs[2][1])
+        fixed='fixedexpected/connectivity-intent-addr-gnd.json'
+        self.assertEqual(pairs[0][1]['files'][fixed],storage.digest(self.expected))
+        self.assertFalse(any(n.startswith('build-generated/') for n in pairs[0][1]['files']))
+        original=json.loads((self.seed/'inputs/requirement-map.json').read_bytes())
+        old=acquisition_prepare.typed_overlay._check_pool(original)
+        for spec in pairs[0][0]['checks']:
+            if spec['kind']=='netlist_parity':
+                self.assertEqual(spec,{**old[spec['id']], 'params':{**old[spec['id']]['params'],
+                    'source':dict(kind='intent',path=fixed)}})
+        self.assertEqual(sum(c['kind']=='netlist_parity' for c in pairs[0][0]['checks']),6)
         self.assertEqual(pairs[0][0],pairs[1][0])
+        if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+            ids=[json.loads((Path(os.environ['AGENT_EE_ADDR_EVIDENCE'])/('derived-'+n+'.json')).read_bytes())['baseline_id']
+                 for n in ('ground','wrong','replay')]
+            self.assertEqual(len(set(ids)),3)
+
         self.assertEqual(changed,['circuit.json','overlay-manifest.json','preparation/addr-selection.json','preparation/edit-ledger.json'])
-        deps=[parts_manifest.dependency_closure(parts_manifest.load_manifest(p/'inputs','parts.json'),p/'inputs')
-              for p in (ground,wrong,replay)]
+        compiled_roots=[self.root/('compiler-'+n) for n in ('ground','wrong','replay')]
+        deps=[parts_manifest.dependency_closure(parts_manifest.load_manifest(p,'parts.json'),p) for p in compiled_roots]
         self.assertEqual(deps[0],deps[1]);self.assertEqual(deps[0],deps[2])
         for name in deps[0]:
-            self.assertEqual((ground/'inputs'/name).read_bytes(),(wrong/'inputs'/name).read_bytes(),name)
+            self.assertEqual((compiled_roots[0]/name).read_bytes(),(compiled_roots[1]/name).read_bytes(),name)
         plan=json.loads((ground/'build-plan.json').read_bytes())
-        produced=[parts_stage.compile_parts(p/'inputs',**plan['parts']) for p in (ground,wrong)]
+        produced=[parts_stage.compile_parts(p,**plan['parts']) for p in compiled_roots[:2]]
+        self.assertEqual(storage.json_bytes(produced[0][1]),self.expected.read_bytes())
         self.assertEqual(produced[0][0]['bindings'],produced[1][0]['bindings'])
         self.assertEqual(produced[0][0]['named_nominals'],produced[1][0]['named_nominals'])
         self.assertEqual([n for n,v in produced[0][0]['dependencies'].items() if produced[1][0]['dependencies'][n]!=v],['circuit.json'])
@@ -625,7 +696,8 @@ class AddrPreparationTests(unittest.TestCase):
 
     def test_compiled_baseline_detects_mutation_of_each_fixed_dependency_family(self):
         out,_=self.prepare('sensitivity');_,baseline=self.compiled(out,'sensitivity')
-        paths=['adc-ties.json','analysis/electrical-intervals.json','preparation/alternative/decision.json']
+        paths=['adc-ties.json','analysis/electrical-intervals.json','preparation/alternative/decision.json',
+               'fixedexpected/connectivity-intent-addr-gnd.json']
         paths.append(next(p for p in baseline['files'] if p.endswith('.lib')))
         for index,name in enumerate(paths):
             path=out/'inputs'/name;before=path.read_bytes();path.write_bytes(before+b'\n')
@@ -635,3 +707,90 @@ class AddrPreparationTests(unittest.TestCase):
                     except ValueError:pass
                     else:self.assertNotEqual(changed,baseline)
             finally:path.write_bytes(before)
+
+    def test_fixed_expected_pins_mutable_paths_and_control_context_refuse(self):
+        import copy
+        for index,opts in enumerate(({'expected_intent_sha256':'0'*64},
+                {'expected_parts_receipt_sha256':'0'*64},{'expected_parts_receipt':None},
+                {'expected_intent':self.seed/'inputs/circuit.json',
+                 'expected_intent_sha256':storage.digest(self.seed/'inputs/circuit.json')})):
+            with self.subTest(options=opts),self.assertRaises(ValueError):self.prepare('bad-fixed-'+str(index),**opts)
+            self.assertFalse((self.root/('bad-fixed-'+str(index))).exists())
+        for index,prefix in enumerate(('project','build-generated')):
+            path=self.root/prefix/'intent.json';path.parent.mkdir();path.write_bytes(self.expected.read_bytes())
+            with self.assertRaisesRegex(ValueError,'exact successful ordinary control parts output'):
+                self.prepare('mutable-'+str(index),expected_intent=path)
+            self.assertFalse((self.root/('mutable-'+str(index))).exists())
+        foreign=self.root/'foreign-control';shutil.copytree(self.control_inputs,foreign)
+        acquisition_prepare._select_addr(foreign,'V3V3')
+        retained,receipt=self.parts_receipt(foreign,'foreign-control')
+        with self.assertRaisesRegex(ValueError,'control dependency mismatch: circuit.json'):
+            self.prepare('wrong-control',expected_intent=retained/'run/out/connectivity-intent.json',
+                expected_intent_sha256=receipt['outputs']['build-generated/connectivity-intent.json'],
+                expected_parts_receipt=retained/'receipt.json',expected_parts_receipt_sha256=storage.digest(retained/'receipt.json'))
+        self.assertFalse((self.root/'wrong-control').exists())
+        report=json.loads((self.seed/'preparation.json').read_bytes())
+        report['inputs']['parts.json']='0'*64  # changed independently pinned control witness
+        changed=self.root/'different-control.json';storage.write_json(changed,report)
+        with self.assertRaisesRegex(ValueError,'different captured preparation context'):
+            self.prepare('foreign',evaluation_context=changed,evaluation_context_sha256=storage.digest(changed))
+        self.assertFalse((self.root/'foreign').exists())
+        raw=self.expected.read_bytes();self.expected.write_bytes(raw+b' ')
+        with self.assertRaisesRegex(ValueError,'expected intent hash mismatch'):self.prepare('tampered')
+        self.assertFalse((self.root/'tampered').exists());self.expected.write_bytes(raw)
+        linked=self.root/'link.json';linked.symlink_to(self.expected)
+        with self.assertRaises((ValueError,OSError)):self.prepare('linked',expected_intent=linked)
+        self.assertFalse((self.root/'linked').exists())
+        write=Path.write_bytes
+        def late_drift(path,data):
+            if path.name=='preparation.json':write(self.expected,self.expected.read_bytes()+b' ')
+            return write(path,data)
+        with patch.object(Path,'write_bytes',late_drift),self.assertRaisesRegex(ValueError,'expected intent hash mismatch'):
+            self.prepare('late-expected-drift')
+        self.assertFalse((self.root/'late-expected-drift').exists());self.expected.write_bytes(raw)
+
+    def test_fresh_thermal_source_phase_binds_admitted_text_before_overlay_copy(self):
+        from agent_ee import acquisition_power_repair as repair
+        self.assertFalse((BASE/'manufacturer-text').exists())
+        output620=self.root/'fresh620'
+        sources={**self.options['added_sources'],'power-repair':Path(os.environ['AGENT_EE_ADDR_POWER620'])}
+        acquisition_prepare.prepare(self.brief,PLAN,output620,**{**self.options,'added_sources':sources})
+        for out in (self.seed,output620):
+            with self.subTest(out=out.name):
+                inputs=out/'inputs'
+                calc=json.loads((inputs/'engineering-calculations.json').read_bytes())
+                for name,sha in repair.THERMAL_SOURCES.items():
+                    self.assertEqual(storage.digest(inputs/name),sha)
+                    self.assertEqual(calc['sources'][name],sha)
+                interval=json.loads((inputs/'analysis/electrical-intervals.json').read_bytes())
+                self.assertEqual(len(interval['assertions']),14)
+                screens=[a for a in interval['assertions'] if a['id']==repair.THERMAL_SCREEN]
+                self.assertEqual(len(screens),1);self.assertEqual(screens[0]['requirement'],'ACQ-ELEC-2-RAIL')
+                self.assertEqual(screens[0]['target'],dict(min='0 W',max='0.53447 W'))
+                question=json.loads((out/'overlay.json').read_bytes())['judgments']['judgments/acq-elec-2-source-evaluation.json']
+                self.assertTrue(set(repair.THERMAL_SOURCES)<=set(question['sources']))
+                declaration=json.loads((inputs/'requirement-map.json').read_bytes())
+                spans=[span['mapping'] for entry in declaration['requirements'] for span in entry.get('spans',[])]
+                self.assertEqual([s for s in spans if s['id']=='ACQ-ELEC-2-SOURCE-EVALUATION'],
+                    [dict(id='ACQ-ELEC-2-SOURCE-EVALUATION',judgment=dict(record='judgments/acq-elec-2-source-evaluation.json'))])
+                if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+                    evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
+                    shutil.copytree(out,evidence/('thermal-'+out.name))
+        admitted={n.removeprefix('manufacturer-text/'):sha for n,sha in repair.THERMAL_SOURCES.items()
+                  if n.startswith('manufacturer-text/')}
+        for changed in ({}, {**admitted,'tps7a20.txt':'0'*64}):
+            with self.assertRaisesRegex(ValueError,'captured TI thermal source differs'):
+                repair._thermal_sources(BASE,changed)
+
+        owned_text=self.root/'owned-text';shutil.copytree(TEXT,owned_text)
+        text=owned_text/'tps7a20.txt';write=Path.write_bytes;changed=[]
+        def drift_after_admission(path,data):
+            if path.name=='engineering-calculations.json' and not changed:
+                changed.append(True);write(text,text.read_bytes()+b' ')
+            return write(path,data)
+        additions={**self.options['added_sources'],'manufacturer-text':owned_text}
+        with patch.object(Path,'write_bytes',drift_after_admission),self.assertRaisesRegex(ValueError,'differs from the declared sha256'):
+            acquisition_prepare.prepare(self.brief,PLAN,self.root/'late-text-drift',
+                **{**self.options,'added_sources':additions})
+        self.assertTrue(changed);self.assertFalse((self.root/'late-text-drift').exists())
+        self.assertEqual(requirement_map.input_inventory(BASE),self.before)

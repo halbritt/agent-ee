@@ -484,3 +484,60 @@ vary between identical replays; compiled immutable baselines and common parts
 decision/dependency bytes must remain exactly equal. Production circuit hashes
 and explicit selection/edit lineage intentionally differ. Native functional
 rejection, seven-stage production and independent review remain separate work.
+
+
+## Fixed expected-GND intent for a new ADDR development case
+
+The optional fixed oracle is for authoring a NEW case before either candidate
+exists. Root first captures the unchanged GND control under its captured
+preparation evaluation context, using the current unchanged parts producer and
+an ordinary retained stage receipt. This requires a separate native admission;
+calling preparation does not grant or perform that capture. Old R5 output is
+not a substitute: its parts/context/producer binding differs. The control
+preparation itself uses no fixed-oracle option. Its `preparation.json` supplies
+the later independently pinned evaluation context.
+
+Supply all four new CLI options (or their matching Python keyword arguments):
+`--expected-intent`, `--expected-intent-sha256`, `--expected-parts-receipt`, and
+`--expected-parts-receipt-sha256`. The intent path must name that exact retained
+receipt's `run/out/connectivity-intent.json`; its adopted target must be
+`build-generated/connectivity-intent.json`. An explicit `--addr-tie` and the
+control evaluation context/hash are required. The complete ordinary receipt is
+replayed through the existing validator without running its tool/version probe.
+It must be completed/exit0, an ordinary current-source compile-parts declaration,
+and bind its full control input identity, output, report, current parts/circuit/
+layout/ratings dependencies and captured preparation context. The only extra
+control inputs admitted beyond the original prepared inventory are the existing
+requirements-stage source copies and, for the build path, its exact empty parts
+target placeholder. This is an explicit local root-pin trust boundary, not
+cryptographic authentication against a host that can forge the receipt and pin.
+
+Before archive/seal and after common purchasing/supplement processing, the
+preparer captures the original output bytes under the fixed immutable path
+`fixedexpected/connectivity-intent-addr-gnd.json`, alongside copied receipt/report
+provenance. It redirects exactly all six existing parity checks to that one
+intent. Their kind, predicate, multiset, netlist prerequisite, search limits,
+other parameters and requirement bindings remain unchanged. The fixed path
+cannot be a native/mutable stage subject. The existing edit ledger, recipe and
+full prepared input inventory bind the expectation, receipt identity/binding
+and control context. No validator or mutable-input exception is added.
+
+Both GND and V3V3 preparations use the same fixed expectation. The wrong ADDR
+case may fail both parity and adc-ties; the functional defect need only survive
+native ERC/DRC. The corrected generated GND intent must byte-equal the independent
+expected intent. Complete AUTHORED acceptance baselines must match across
+variants/replay. Existing `rating_lineage.strip` alone defines that authored
+view; derived rating receipts and their derived baseline IDs are recorded
+separately and may differ per run. No new normalization is permitted.
+
+Thermal source admission validates the two TI manufacturer-text pins against
+`_load_overlay`'s already admitted additive inventory before the overlay copies
+those files, while hashing the two existing PDF/manifest sources in the owned
+revision. The later typed seal revalidates/copies the additive bytes. All four
+original source identities remain in calculations and the judgment brief;
+missing/drifted bytes still refuse. This changes source availability handling,
+not the conditional25C screen or its engineering limitations.
+
+Pure fixture receipts simulate process execution while computing real parts
+intent/report bytes. They are software controls, never a native control receipt,
+a target preparation, G2 acceptance or a full campaign repair-loop proof.

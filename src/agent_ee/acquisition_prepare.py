@@ -16,7 +16,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_expected_intent, acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,7 +29,7 @@ CAPACITANCE = re.compile(
 REVISION_BASIS = {
     'spec.md': 'Apply only the explicit total-line capacitance bound',
     'spec-record.json': 'Recapture the actual revised UTF-8 spec bytes',
-    'requirement-map.json': 'Rebind source record/partitions and source-selected stock catalog; declare mechanics and preparation provenance',
+    'requirement-map.json': 'Rebind source record/partitions and stock catalog; optional independently captured fixed-GND parity oracle; declare mechanics/preparation provenance',
     'parts.json': 'Rebind operative spec or source-selected purchasing/stock records without changing CAD or limits',
     'circuit.json': 'Update the source-selected ADC purchasing display and optional finite U2 ADDR pin1 GND/V3V3 tie',
     'assembly-release-ids.json': 'Regenerate operative selected-allocation roster; archive historical choices, no supplier approval',
@@ -424,7 +424,9 @@ def _evaluation_replay(path, expected_sha):
 
 def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verification_timeout_s=None,
             alternative_context=None, alternative_source=None, alternative_context_sha256=None,
-            addr_tie=None, evaluation_context=None, evaluation_context_sha256=None):
+            addr_tie=None, evaluation_context=None, evaluation_context_sha256=None,
+            expected_intent=None, expected_intent_sha256=None, expected_parts_receipt=None,
+            expected_parts_receipt_sha256=None):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
@@ -441,6 +443,14 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         raise ValueError('evaluation context requires the same captured alternative context')
     replay = (_evaluation_replay(evaluation_context, evaluation_context_sha256)
               if evaluation_context is not None else None)
+    expected_args = (expected_intent, expected_intent_sha256, expected_parts_receipt,
+                     expected_parts_receipt_sha256)
+    if any(value is not None for value in expected_args):
+        if any(value is None for value in expected_args) or replay is None or addr_tie is None:
+            raise ValueError('fixed expected intent requires all four pins, captured control context and explicit addr_tie')
+        expectation = acquisition_expected_intent.admit(*expected_args, _read_context_file)
+    else:
+        expectation = None
     brief, out = Path(brief), Path(out).absolute()
     raw = brief.read_bytes()
     try:
@@ -492,7 +502,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
         overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
-                 for module in (acquisition_local_return, acquisition_mechanics, acquisition_source_supplement, acquisition_power_repair, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
+                 for module in (acquisition_expected_intent, acquisition_local_return, acquisition_mechanics, acquisition_source_supplement, acquisition_power_repair, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
     if review_context is not None:
         recipe['review_context'] = review_context
@@ -528,9 +538,13 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             recipe['selected_cpl_inventory'][name] = spec_record.sha256(captured)
     if addr_tie is not None:
         recipe['addr_tie'] = addr_tie
+    if expectation is not None:
+        recipe['expected_intent'] = dict(path=acquisition_expected_intent.EXPECTED, sha256=expected_intent_sha256,
+            receipt_sha256=expected_parts_receipt_sha256, receipt_identity=expectation['receipt']['identity'],
+            binding=expectation['receipt']['binding'])
     if replay is not None:
         def common(value):
-            return {k: v for k, v in value.items() if k not in ('addr_tie', 'evaluation_context')}
+            return {k: v for k, v in value.items() if k not in ('addr_tie', 'evaluation_context', 'expected_intent')}
         if common(replay[0]) != common(recipe):
             raise ValueError('preparation evaluation context differs from the captured recipe/context')
         recipe['evaluation_context'] = dict(report_sha256=evaluation_context_sha256,
@@ -614,15 +628,21 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             overlay['base']['requirement_map_sha256'] = spec_record.sha256(
                 (revised / 'requirement-map.json').read_bytes())
         # Selection evidence must not enter the common purchasing decision inventory.
+        expected_report = None
+        if expectation is not None:
+            _select_addr(revised, 'GND')  # The independent producer's control must remain the admitted GND circuit.
+            expected_report = acquisition_expected_intent.bind(revised, plan, catalog.strict_json(replay[1]), overlay, expectation)
         addr_report = _select_addr(revised, addr_tie) if addr_tie is not None else None
         if addr_report is not None:
             (provenance / 'addr-selection.json').write_bytes(json_bytes(addr_report))
         if replay is not None:
             (provenance / 'evaluation-context.json').write_bytes(replay[1])
         changed = _archive_revision(base, revised, before, identity)
-        if addr_report is not None or replay is not None:
+        if addr_report is not None or replay is not None or expected_report is not None:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = json.loads(ledger_path.read_bytes())
+            if expected_report is not None:
+                ledger['expected_intent'] = expected_report
             if addr_report is not None:
                 ledger['addr_selection'] = addr_report
             if replay is not None:
@@ -685,6 +705,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             remaining=['Native public build and file qualification', 'Independent judgments and engineering review',
                        'Strict block-source selection and final artwork/package revalidation if strict grouping is requested',
                        'Supplier and physical validation'])
+        if expected_report is not None:
+            report['expected_intent'] = expected_report
         if addr_report is not None:
             report['addr_selection'] = addr_report
         if alternative_report is not None:
@@ -727,6 +749,10 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                     raise ValueError('sealed power repair source differs from admitted capture')
         if replay is not None and _read_context_file(evaluation_context, 'preparation evaluation context') != (replay[1], replay[2]):
             raise ValueError('preparation evaluation context changed before publication')
+        if expectation is not None:
+            current = acquisition_expected_intent.admit(*expected_args, _read_context_file)
+            if current != expectation:
+                raise ValueError('expected intent or receipt changed before publication')
         rename_noreplace(bundle, out)
     return report
 
@@ -745,6 +771,10 @@ def main(argv=None):
     parser.add_argument('--addr-tie', choices=('GND','V3V3'), help='finite U2 ADDR pin1 source tie; V3V3 is a development defect')
     parser.add_argument('--evaluation-context', type=Path, help='prior preparation.json to replay the captured evaluation decision')
     parser.add_argument('--evaluation-context-sha256', help='independently retained digest of that prior preparation report')
+    parser.add_argument('--expected-intent', type=Path, help='exact output of an independently captured control parts receipt')
+    parser.add_argument('--expected-intent-sha256')
+    parser.add_argument('--expected-parts-receipt', type=Path, help='root-pinned ordinary control receipt.json')
+    parser.add_argument('--expected-parts-receipt-sha256')
     parser.add_argument('--added-input', action='append', default=[], metavar='AT=DIR')
     args = parser.parse_args(argv)
     sources = {}
@@ -759,7 +789,10 @@ def main(argv=None):
                          alternative_context=args.alternative_context, alternative_source=args.alternative_source,
                          alternative_context_sha256=args.alternative_context_sha256,
                          addr_tie=args.addr_tie, evaluation_context=args.evaluation_context,
-                         evaluation_context_sha256=args.evaluation_context_sha256)
+                         evaluation_context_sha256=args.evaluation_context_sha256,
+                         expected_intent=args.expected_intent, expected_intent_sha256=args.expected_intent_sha256,
+                         expected_parts_receipt=args.expected_parts_receipt,
+                         expected_parts_receipt_sha256=args.expected_parts_receipt_sha256)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1
