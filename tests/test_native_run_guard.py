@@ -50,7 +50,6 @@ EXEMPT = {
         'reason': 'reads repository metadata; runs no tool on a candidate and produces no evidence',
         'tool': 'git',
         'sites': {
-            ('src/agent_ee/candidate.py', 'source_manifest'),
             ('src/agent_ee/source_authority.py', 'git'),
             ('src/agent_ee/reference_blocks.py', '_git'),
             ('src/agent_ee/generate.py', 'tool_identity'),
@@ -82,7 +81,6 @@ EXEMPT = {
 APPROVED = {
     'in-sandbox router script': (None, {('src/agent_ee/kicad_route_attempt.py', ANY)}),
     'git provenance read': ('git', {
-        ('src/agent_ee/candidate.py', 'source_manifest'),
         ('src/agent_ee/source_authority.py', 'git'),
         ('src/agent_ee/reference_blocks.py', '_git'),
         ('src/agent_ee/generate.py', 'tool_identity'),

@@ -32,6 +32,49 @@ class FabStageExecutionTests(unittest.TestCase):
         execution.stage.scratch = self.root
         return execution
 
+    def test_revision_capture_selects_host_and_preserves_restrictive_adapter_limits(self):
+        from agent_ee.candidate import capture
+        from agent_ee.storage import write_json
+        execution = self.execution()
+        cancel = native_run.Cancellation()
+        deadline = time.monotonic() + 30
+        before_adapter = native_run._active.get()
+        scope = self.root/'scope.json'
+        write_json(scope, {'schema':'agent-ee.scope/1', 'inputs':[
+            {'path':str(self.inputs/'board.kicad_pcb'), 'at':'board.kicad_pcb'}]})
+        run = self.root/'capture';run.mkdir()
+        calls = []
+        def process(argv, *, timeout, cancel=None, **kwargs):
+            calls.append(list(argv))
+            self.assertIs(cancel, cancellation)
+            self.assertEqual(native_run._deadline.get(), deadline)
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, 30)
+            if argv[0] == 'git':
+                self.assertEqual(tuple(argv[-2:]), ('rev-parse','HEAD'))
+                output = b'authored-revision\n'
+            else:
+                self.assertEqual(list(argv), ['/bin/cat', str(self.inputs/'board.kicad_pcb')])
+                self.assertEqual(kwargs['cwd'], str(self.root/'ordinary-child'))
+                self.assertEqual(kwargs['env']['PYTHONPATH'], '/tool/agent-ee')
+                output = b'captured board'
+            return {'execution':'ok','exit_code':0,'returncode':0}, output, b''
+        cancellation = cancel
+        with native_run.using(execution, deadline=deadline, cancel=cancel), \
+                patch.object(native_run, 'supervise', process):
+            manifest = capture(scope, run)
+            self.assertEqual(manifest['source_revisions'], {'board.kicad_pcb':'authored-revision'})
+            self.assertEqual((run/'inputs/board.kicad_pcb').read_bytes(), b'captured board')
+            self.assertIs(native_run._active.get(), execution)
+            with self.assertRaisesRegex(ValueError, 'unsupported receipted fab child intent'):
+                native_run.run(native_run.Intent('unrelated', ['/bin/true'], isolation='host'), work=None)
+            result = native_run.run(native_run.Intent('check', ['/bin/cat','/candidate/board.kicad_pcb']),
+                inputs=self.inputs, work=self.root/'ordinary-child')
+            self.assertEqual(result.stdout, b'captured board')
+            self.assertIs(native_run._active.get(), execution)
+        self.assertEqual([a[0] for a in calls], ['git','git','/bin/cat'])
+        self.assertIs(native_run._active.get(), before_adapter)
+
     def test_fixed_entry_routes_children_and_retains_failure_without_nested_sandbox(self):
         execution = self.execution()
         work = self.root / 'work'

@@ -53,7 +53,7 @@ def source_manifest(scope, base):
         intent = native_run.Intent("source_revision",
             ["git", "-C", str(source if source.is_dir() else source.parent), "rev-parse", "HEAD"],
             timeout=None, isolation="host")
-        probe = native_run.run(intent, work=None)
+        probe = native_run.run(intent, work=None, adapter=native_run.Host())
         if probe["execution"] == "interrupted" or native_run.cut_by_deadline(probe, intent):
             raise native_run.DeadlineExhausted("source revision probe exhausted or cancelled")
         proc = native_run.completed(probe, text=True)
