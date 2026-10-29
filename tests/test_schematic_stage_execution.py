@@ -406,7 +406,9 @@ class StageExecutionTests(unittest.TestCase):
                     self.assertIsNone(captured)
                     self.assertEqual(intent.env['PYTHONPATH'], '/tool/agent-ee')
                     self.assertTrue(Path(intent.env['HOME']).is_relative_to(self.root))
-                    self.assertIn(str(inputs/'board.kicad_pcb'), intent.argv)
+                    board = (self.root/'drcTrue-project/board.kicad_pcb' if intent.tool == 'drc'
+                             else inputs/'board.kicad_pcb')
+                    self.assertIn(str(board), intent.argv)
                     self.assertFalse(any(str(arg).startswith(('/candidate/','/work/')) for arg in intent.argv))
                 else:
                     self.assertEqual(captured, inputs)
@@ -436,6 +438,36 @@ class StageExecutionTests(unittest.TestCase):
         with patch.object(add_planes, 'generate', return_value={'execution':'failed'}) as generate:
             self.assertEqual(add_planes.main(argv), 1)
             self.assertNotIn('_execution', generate.call_args.kwargs)
+
+    def test_plane_drc_preferences_are_disposable_but_board_project_rules_stay_immutable(self):
+        from agent_ee import add_planes, stage_receipts
+        inputs=self.root/'drc-originals';inputs.mkdir()
+        (inputs/'board.kicad_pcb').write_bytes(self.board.read_bytes())
+        for suffix in ('.kicad_pro','.kicad_prl','.kicad_dru'):
+            (inputs/('board'+suffix)).write_text('original '+suffix)
+        before=stage_receipts.file_tree(inputs)
+        for changed in ('.kicad_prl','.kicad_pcb','.kicad_pro','.kicad_dru','extra'):
+            with self.subTest(changed=changed):
+                work=self.root/('drc-side-effect-'+changed);observed=[]
+                def native(intent, *, work, **kwargs):
+                    target=Path(intent.argv[-1]);observed.append(target)
+                    self.assertNotEqual(target, inputs/'board.kicad_pcb')
+                    self.assertEqual(target.read_bytes(), self.board.read_bytes())
+                    self.assertEqual(target.with_suffix('.kicad_pro').read_bytes(),(inputs/'board.kicad_pro').read_bytes())
+                    self.assertEqual(target.with_suffix('.kicad_dru').read_bytes(),(inputs/'board.kicad_dru').read_bytes())
+                    modified=target.parent/'extra' if changed=='extra' else target.with_suffix(changed)
+                    modified.write_text('authored KiCad side effect')
+                    Path(work).mkdir();(Path(work)/'report.json').write_text('{}')
+                    return dict(execution='ok',exit_code=0)
+                with patch.object(native_run,'run',native):
+                    if changed=='.kicad_prl':
+                        self.assertEqual(add_planes._drc(inputs,'board.kicad_pcb',work,
+                            _execution=self.execution)['exit_code'],0)
+                        self.assertEqual(observed[0].with_suffix('.kicad_prl').read_text(),'authored KiCad side effect')
+                    else:
+                        with self.assertRaisesRegex(ValueError,'changed its private project'):
+                            add_planes._drc(inputs,'board.kicad_pcb',work,_execution=self.execution)
+                self.assertEqual(stage_receipts.file_tree(inputs),before)
 
     def test_plane_private_input_mutation_and_stage_child_failure_preserve_refusal(self):
         from agent_ee import add_planes

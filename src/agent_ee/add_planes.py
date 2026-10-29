@@ -172,11 +172,31 @@ def _drc(inputs, board, work, *, _execution=None):
     before, other = stage_receipts.file_tree(inputs)
     if other:
         raise ValueError('plane DRC inputs must be regular captured files')
-    record = dict(native_run.run(native_run.Intent('drc', native_run.drc_argv(inputs/board, work/'report.json',
+    # KiCad saves .kicad_prl preferences beside the board. Give it a disposable
+    # project, leaving the verified board/project/rules and captured inputs intact.
+    private = work.with_name(work.name+'-project')
+    if not private.is_relative_to(_execution.scratch):
+        raise ValueError('plane DRC project must stay in stage scratch')
+    private.mkdir()
+    original = inputs/board
+    for source in (original, *(original.with_suffix(suffix) for suffix in SIBLINGS)):
+        if source.is_file():
+            shutil.copyfile(source, private/source.name)
+    copied, other = stage_receipts.file_tree(private)
+    if other or any(copied.get(source.name) != before.get(str(source.relative_to(inputs)))
+                    for source in (original, *(original.with_suffix(suffix) for suffix in SIBLINGS))
+                    if source.is_file()):
+        raise ValueError('plane DRC private project copy changed')
+    record = dict(native_run.run(native_run.Intent('drc', native_run.drc_argv(private/original.name, work/'report.json',
         executable='/usr/bin/kicad-cli'), timeout=180, isolation='host',
         env=_execution.environment(inputs, work)), work=work))
     if stage_receipts.file_tree(inputs) != (before, []):
         raise ValueError('plane DRC child changed its private inputs')
+    after, other = stage_receipts.file_tree(private)
+    preferences = original.with_suffix('.kicad_prl').name
+    if other or ({name: value for name, value in after.items() if name != preferences} !=
+                 {name: value for name, value in copied.items() if name != preferences}):
+        raise ValueError('plane DRC child changed its private project')
     return record
 
 
