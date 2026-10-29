@@ -158,15 +158,57 @@ class RatingStageTests(unittest.TestCase):
                 self.assertRaises(native_run.DeadlineExhausted):
             adapter.run(intent, **kwargs)
 
-    def test_adapter_context_resets_on_success_failure_and_cancellation(self):
-        sentinel = object()
-        with native_run.using(sentinel):
-            with patch.object(binding_fill, 'main', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
-                binding_fill._stage_main(self.args)
-            self.assertIs(native_run._active.get(), sentinel)
-            with patch.object(binding_fill, 'main', return_value=1):
-                self.assertEqual(binding_fill._stage_main(self.args), 1)
-            self.assertIs(native_run._active.get(), sentinel)
+    def test_unrelated_custom_pad_qualification_keeps_adapter_and_citation_failure_restores_it(self):
+        from agent_ee.parts_manifest import qualify_manifest
+        from agent_ee.storage import identity
+        import tests.test_custom_pad_execution as custom_fixture
+        path = 'Owned.pretty/OwnedCustom.kicad_mod'
+        (self.root / path).write_text(custom_fixture.TEXT)
+        cad = read_json(self.root / 'cad.json')
+        cad['libraries'][0]['members'].append({'path': path, 'sha256': digest(self.root / path)})
+        write_json(self.root / 'cad.json', cad)
+        self.parts['cad']['manifest']['sha256'] = digest(self.root / 'cad.json')
+        members = [{'path': 'Owned.kicad_sym', 'sha256': digest(self.root / 'Owned.kicad_sym')},
+                   *cad['libraries'][0]['members']]
+        self.parts['cad']['members_sha256'] = identity(sorted(members, key=lambda m: m['path']))
+        write_json(self.root / 'parts.json', self.parts)
+        events = []
+        test = self
+        class ExistingQualification:
+            def run(self, intent, *, inputs, work, **kwargs):
+                test.assertEqual(intent.tool, 'pcbnew_script')
+                test.assertEqual(intent.isolation, 'sandbox')
+                test.assertEqual((inputs / 'OwnedCustom.kicad_mod').read_text(), custom_fixture.TEXT)
+                events.append('qualification')
+                work.mkdir()
+                write_json(work / 'footprint.json', custom_fixture.REPORT)
+                return {'execution': 'ok', 'exit_code': 0}
+        existing = ExistingQualification()
+        declared = copy.deepcopy(self.ratings)
+        for mode in ('none', 'catalog', 'cited', 'citation-failure'):
+            self.work = Path(self.enterContext(tempfile.TemporaryDirectory()))
+            events.clear()
+            self.calls.clear()
+            doc = copy.deepcopy(declared)
+            if mode == 'catalog':
+                doc.update(facts=None, extractor=None)
+            write_json(self.root / 'ratings.json', doc)
+            args = self.args[:-2] if mode == 'none' else self.args
+            def host(intent, **kwargs):
+                events.append('citation')
+                result = self.host(intent, **kwargs)
+                if mode == 'citation-failure':
+                    write_json(kwargs['work'] / 'execution.json', {'execution': 'failed', 'exit_code': 1, 'CPU_MOCK_ONLY': True})
+                    return {'execution': 'failed', 'exit_code': 1}
+                return result
+            with self.subTest(mode=mode), native_run.using(existing), patch.object(native_run.Host, 'run', side_effect=host):
+                self.assertEqual(binding_fill._stage_main(args), 1 if mode == 'citation-failure' else 0)
+                self.assertEqual(events[0], 'qualification')
+                self.assertEqual(events.count('citation'), 0 if mode in ('none', 'catalog') else 1 if mode == 'citation-failure' else 2)
+                self.assertIs(native_run._active.get(), existing)
+                # Exercise the actual qualification chain again after citation failure/return.
+                self.assertEqual(qualify_manifest(self.parts, self.root)['cad']['outcome'], 'pass')
+                self.assertEqual(events[-1], 'qualification')
         self.assertIsNone(native_run._active.get())
 
     def test_standalone_citations_keep_sandbox_and_temporary_lifetime(self):

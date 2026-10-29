@@ -1,5 +1,6 @@
 """Deterministic part properties from captured manifests and explicit component refs."""
 import argparse
+from contextlib import nullcontext
 import copy
 import hashlib
 import re
@@ -87,7 +88,7 @@ def _native_net_names(resolved, libraries):
 
 
 def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, source_migration=False, migration_only=False,
-         _rating_work=None):
+         _rating_work=None, _rating_execution=None):
     """Return new intent and evidence; supplied objects/files are never modified.
 
     part_ref is an immutable sidecar contract, not an extension to intent/1.
@@ -145,7 +146,12 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, so
     if ratings is not None:
         from . import passive_ratings
         facts, extractor, used = passive_ratings.load_sources(root, ratings)
-        verified, pdfs = passive_ratings.verify_citations(root, facts, extractor, _work=_rating_work) if facts else ({}, {})
+        if facts:
+            from . import native_run
+            with (native_run.using(_rating_execution) if _rating_execution is not None else nullcontext()):
+                verified, pdfs = passive_ratings.verify_citations(root, facts, extractor, _work=_rating_work)
+        else:
+            verified, pdfs = {}, {}
         dependencies.update(used)
         dependencies.update(pdfs)
         rating_report = {'sources_sha256': identity(ratings), 'derived': {}, 'missing': {}}
@@ -390,12 +396,11 @@ class _RatingStageExecution:
 
 
 def _stage_main(argv=None):
-    from . import native_run
-    with native_run.using(_RatingStageExecution()):
-        return main(argv, _rating_work=Path('/work/out/rating-citations'))
+    execution = _RatingStageExecution()
+    return main(argv, _rating_work=Path('/work/out/rating-citations'), _rating_execution=execution)
 
 
-def main(argv=None, *, _rating_work=None):
+def main(argv=None, *, _rating_work=None, _rating_execution=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('intent', 'manifest', 'part-refs', 'deviations', 'captures'):
         parser.add_argument('--' + name, required=True)
@@ -417,7 +422,7 @@ def main(argv=None, *, _rating_work=None):
             strict_json(read_captured(root, args.part_refs)), strict_json(read_captured(root, args.deviations)),
             captures=args.captures, source_migration=args.source_migration, migration_only=args.migration_only,
             ratings=strict_json(read_captured(root, args.ratings)) if args.ratings else None,
-            _rating_work=rating_work)
+            _rating_work=rating_work, _rating_execution=_rating_execution)
         write_json(out / 'binding-fill.json', report)
         write_json(out / 'intent.json', intent)
     except (ValueError, TypeError, KeyError, OSError) as exc:
