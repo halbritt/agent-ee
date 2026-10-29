@@ -260,9 +260,16 @@ the first package attempt. A new repair API remains deferred.
 Independent source review approved the change. Eighteen focused tests passed
 under the existing CI/native wrapper in 20.4 seconds, including native build,
 resume, custody and qualification regressions. Those native fixtures use
-checks-only review; a full-profile package composition has not yet been
-demonstrated. A small test extension using the existing review boundary is in
-progress. No new validation framework is being built.
+checks-only review. A subsequent eight-test native run on `8112bf52` passed in
+14.1 seconds and exercises full-review capture, verification and qualification
+with completed and failed scripted reviewers. The first run failed because the
+synthetic fixture omitted its scaffold scope; that failure is retained, and the
+four-line fixture correction was independently reviewed. The control's empty
+package marker is explicitly invalid, and both cases assert the real missing
+manufacturing-coverage blocker. This verifies review custody, not successful
+package production: stage inventory and runtime fingerprints are synthetic,
+and the package producer is not called. Positive combined file release remains
+covered only by pure tests. No new validation framework is being built.
 
 Evidence is in `acquisition-repair-r2/agent693-board-repair`,
 `acquisition-repair-r2/alternative-part-agent692`,
