@@ -748,3 +748,63 @@ source snapshot is frozen at `0c0dbd01`; it correctly flagged later integration
 changes and is not runtime-ready. No draft execution, new placement run, supplier
 approval or artwork acceptance is implied. The direct owner goal stays active
 through G4 and current M1 closure; acceptance is still **0/4**.
+
+### Native strict-package control passes; acquisition mechanics integrated
+
+At 2026-10-29 09:37 UTC, campaign acceptance remains **0/4**. Two separately
+admitted development controls followed the retained R1/R2 failures:
+
+- R3 exited 1 in 27.133 seconds. Requirements through schematic completed,
+  and routing produced zero native DRC errors and zero opens. The strict block
+  gate correctly returned unknown because the artificial footprint sources
+  omitted courtyard geometry. Artwork and package did not run.
+- R4 added explicit closed front courtyards to the two owned artificial
+  footprint sources, using unchanged pad bounds plus a 0.25 mm synthetic
+  margin. Existing CAD and parts producers regenerated their affected source
+  receipts. One public build on `d61456dd` completed all seven stages, exit 0
+  in 57.102 seconds. Its final saved block report passes with complete geometry
+  and no defects or unknowns. The package binds that proof and final board
+  `c9fabe2531452be4ded87a1a2079f43169dca20bb64bd90c27e2a18696c7106a`.
+  Package DRC has zero violations, opens and parity mismatches. Native lease
+  and container cleanup were verified before releasing the source freeze.
+
+R4 is a synthetic software integration control. Its legacy qualification has
+`file_release: pass`, but explicitly withholds requirement claims: all eleven
+legacy requirement coverage rows remain unknown. The checks-only review reports
+incomplete; engineering review, judgments and operational qualification were
+not assessed. Supplier and physical validation remain pending. This result
+proves the final-artwork/package bridge executes successfully; it does not
+establish acquisition, M1 or G4 acceptance. No late-group-mutation negative was
+run under that grant. Evidence: `strict-package-native-r3` and
+`strict-package-native-r4` beneath the host evidence root.
+
+Independent review approved mechanics candidate `940e8b5a`. It is integrated
+as `4de87d18`, preserving the capacitance-range helper and adding the mechanics
+helper to source identity. The actual captured-fixture preparation and adjacent
+pure checks passed 39 tests without skips. The first run's obsolete assertion
+that the placement plan remained identical failed and is retained; the revised
+assertion checks the new mechanics declaration and its sealed source hashes.
+Worker evidence separately retains 39 passing Rust tests and 13 Python tests.
+No new actual acquisition preparation or native target run occurred.
+
+Agent-697 now owns a 20-minute, source-only serial bridge patch in an isolated
+worktree. Package replay must authenticate the original mechanics recipe,
+capture and problem, the passing final placement result, and the existing
+artwork receipt's preservation of physical geometry. This reuses the existing
+package and artwork surfaces. Root retains integration and qualification.
+
+The local-return helper remains unintegrated. Its first correction closed the
+missing/suppressed DRC-coverage gap, but independent review found that rejecting
+every warning also rejects the acquisition's unchanged missing-library metadata
+in the raw helper context. Agent-693 has one 12-minute correction grant: capture
+a fresh same-input baseline and permit only the exact unchanged missing-library
+warning records, while preserving all conductive, unknown and suppression
+refusals. The existing clock bounds that baseline and at most five seed paths.
+No old failed board or rule-loading witness may serve as the baseline.
+
+The original esp_prog schematic-provenance investigation is read-only and
+bounded to eight minutes. It checks for an already retained matching schematic
+before introducing PCB-only applicability. The original routed candidate stays
+unchanged. Old preparation 3/3, saved-board repair 2/2 and supplier-query 3/3
+allowances remain exhausted. Full review, M1, frozen G4 evaluation, authoritative
+full-suite qualification, release and trunk integration remain open.
