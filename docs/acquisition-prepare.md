@@ -66,8 +66,12 @@ The new output directory contains:
   Circuit/topology, layout, groups, ratings, ADC ties and manufacturer sources
   retain their original bytes. `preparation/brief.md` preserves the raw brief.
 - `inputs/preparation/source-map.json` and `edit-ledger.json`: source and derived
-  locators, chosen capacitance, source inventories and every changed file's
-  old/new hashes. Changed original files are archived under
+  locators, chosen capacitance, source inventories and the old/new hashes for
+  the engineering revision before typed overlay preparation. The overlay then
+  derives the final typed requirement map and interval bindings;
+  `inputs/overlay-manifest.json` records that second transformation, and
+  `preparation.json.inputs` identifies every final input. Changed original files
+  are archived under
   `inputs/history/acquisition-preparation-original/`.
 - `overlay.json`, `inputs/overlay-manifest.json` and `preparation.json`: the
   actual derived overlay, typed accounting, complete input inventory, identity
