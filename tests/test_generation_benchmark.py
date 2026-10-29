@@ -768,7 +768,7 @@ class RefusalTests(unittest.TestCase):
         self.guard = patch.object(benchmark, 'evaluator_identity', side_effect=AssertionError('native probe'))
         self.guard.start(); self.addCleanup(self.guard.stop)
 
-    def evaluated(self, raw=None, *, status='ok', extra=None, directories=()):
+    def evaluated(self, raw=None, *, status='ok', extra=None, directories=(), store=None):
         from agent_ee import native_run
         self.number += 1
         work = self.root / f'writer-{self.number}'
@@ -780,7 +780,8 @@ class RefusalTests(unittest.TestCase):
         for directory in directories:
             (work / 'output' / directory).mkdir(parents=True)
         trial = self.root / f'eval-{self.number}'
-        path = evaluate(self.task, work / 'output', trial, self.root / 'store', execution_work=work)
+        path = evaluate(self.task, work / 'output', trial,
+            self.root / 'store' if store is None else store, execution_work=work)
         return path, trial
 
     def anchor(self, path):
@@ -942,19 +943,24 @@ class RefusalTests(unittest.TestCase):
     def test_complete_snapshot_census_and_raw_bytes_are_rechecked(self):
         for mutate in ('bytes', 'add-directory', 'remove-empty-directory', 'remove-extra-file'):
             path, trial = self.evaluated(extra={'extra': b'x'} if mutate == 'remove-extra-file' else None,
-                directories=('release',) if mutate == 'remove-empty-directory' else ())
+                directories=('release',) if mutate == 'remove-empty-directory' else (),
+                store=self.root / ('census-store-' + mutate))
+            report, witness = benchmark.recorded_evaluation(path)
+            self.assertEqual(witness, trial)
+            self.assertEqual(len(list((path.parent / 'trials').glob('*.json'))), 1)
             manifest, anchor = self.anchor(path)
+            rows = aggregate([path], manifest=manifest, expect_pins=anchor)['rows']
+            self.assertEqual([r['passed'] for r in rows],
+                             [int(report['result']['overall_pass'] is True)] * 2)
             snapshot = trial / 'outputs'
             if mutate == 'bytes': (snapshot / 'refusal.json').write_bytes(b'{}')
             elif mutate == 'add-directory': (snapshot / 'release').mkdir()
             elif mutate == 'remove-empty-directory': (snapshot / 'release').rmdir()
             else: (snapshot / 'extra').unlink()
             with self.subTest(mutate=mutate), self.assertRaisesRegex(ValueError, 'retained refusal output'):
+                benchmark.replay_report(trial, report)
+            with self.subTest(mutate=mutate), self.assertRaisesRegex(ValueError, 'retained refusal output'):
                 aggregate([path], manifest=manifest, expect_pins=anchor)
-            if mutate == 'bytes': (snapshot / 'refusal.json').write_bytes(self.payload)
-            elif mutate == 'add-directory': (snapshot / 'release').rmdir()
-            elif mutate == 'remove-empty-directory': (snapshot / 'release').mkdir()
-            else: (snapshot / 'extra').write_bytes(b'x')
 
     def test_replay_does_not_trust_coordinated_cached_pass(self):
         path, trial = self.evaluated(b'{}')
