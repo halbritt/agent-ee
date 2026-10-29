@@ -271,10 +271,14 @@ def currents(selected='620'):
     return output, output + Fraction('.001') + Fraction('5.25') / Fraction('21780'), low / upper
 
 
-def _thermal_sources(root):
+def _thermal_sources(root, manufacturer_text=None):
     """Exact captured TI SBVS338H bytes behind the thermal screen; drift refuses."""
     for name, expected in THERMAL_SOURCES.items():
-        if digest(Path(root) / name) != expected:
+        # Additive text is already admitted by _load_overlay, but not copied yet.
+        actual = (manufacturer_text.get(name.removeprefix('manufacturer-text/'))
+                  if manufacturer_text is not None and name.startswith('manufacturer-text/')
+                  else digest(Path(root) / name))
+        if actual != expected:
             raise ValueError('captured TI thermal source differs: ' + name)
     return dict(THERMAL_SOURCES)
 
@@ -404,7 +408,7 @@ def apply(root, overlay, captures, as_of):
     if selected == '470':
         for name in ('manufacturer/rc-series.pdf', 'manufacturer/rc-series.txt', 'manufacturer/original-manifest.json', 'derivation470.json', 'uvlo/REPORT.md', 'uvlo/independent-source-review.txt', 'uvlo/independent-native-review.txt', 'uvlo/620-failure-result.json', 'uvlo/470-proposal-result.json', 'uvlo/470-steps-result.json', 'uvlo/470-proposal-native-result.json', 'uvlo/470-steps-native-result.json', 'authority/470-timestep-update.txt'):
             calculations['sources'][AT+'/'+name] = identity_bytes(captures[name])
-    calculations['sources'].update(_thermal_sources(root))
+    calculations['sources'].update(_thermal_sources(root, overlay['added_inputs']['manufacturer-text']['files']))
     calculations_path.write_bytes(json_bytes(calculations))
     note = ('\n\nExplicit reference exception: R6 alone is now620ohm1% YAGEO RC0603FR-07620RL/C137695. '
         'R3/R4 remain2.2k. Original-reference brief bytes are preserved; power-repair/activation.txt '
