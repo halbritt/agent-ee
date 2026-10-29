@@ -362,3 +362,30 @@ schematic stage with distinct symbol and footprint capture roots. Both source
 assignments reserve native verification and integration to the coordinator;
 they add no board-generation attempts. Citation and visual execution failures,
 full qualification, trunk landing, M1 and the accepted package remain open.
+
+### Fabrication control passes; variant path remains open
+
+Agent-697's disposable-project follow-up `d677db5a` passed independent source
+review and was integrated as `d20528f7`. The original declared-fabrication
+control passed under native KiCad in 9.0 seconds. Its retained receipt is
+completed with exit 0; fabrication export, CPL and package checks pass, while
+netlist and geometry remain informational. Four disposable export copies
+contain KiCad preferences; the captured input tree has no added preferences.
+The 488 retained fixture files include the native outputs and package evidence.
+
+A three-module regression run then completed 56 tests in 107.3 seconds with
+two failures and no missing required inputs. The existing D/F1/G1 fabrication
+campaign test and all package-module tests pass. Both remaining failures are
+the receipted BOM-variant cases. A single retained diagnostic of the FULL case
+failed in 2.5 seconds and established the exact cause: schematic netlist export
+exits 0 but adds `project/cpl.kicad_prl`. All thirteen captured files, including
+the variant project file, are unchanged. The integrity guard refuses that
+addition before BOM export is reached. No project-file mutation exception is
+justified, and BOM export behavior is still unobserved in this path.
+
+Evidence is in `fab-stage-native-r2`, `fab-regressions-r1` and
+`fab-variant-diagnostic-r1` beneath the host evidence root. The next correction
+must preserve captured inputs while handling the demonstrated schematic-export
+preferences side effect. Agent-690 separately has a bounded citation-extractor
+source repair, with native verification reserved to the coordinator. The full
+gate, trunk landing and board acceptance remain open; acceptance stays **0/4**.
