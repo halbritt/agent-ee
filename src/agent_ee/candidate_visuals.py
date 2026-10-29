@@ -66,6 +66,8 @@ def produce(board, out, *, skip=False, inputs=None):
             work=out / 'native',
         )
         report['execution'] = execution
+        if enclosed:
+            _check_imaging_paths(out)
         manifest = out / 'native' / 'visuals.json'
         if execution['execution'] == 'ok' and manifest.is_file():
             report.update(read_json(manifest))
@@ -97,12 +99,20 @@ def _enclosed_imaging(board, inputs, out, relative, captured):
             raise ValueError('candidate imaging private project copy changed')
         environment = dict(os.environ, PYTHONPATH='/app', HOME=str(work / 'home'),
                            KICAD_CONFIG_HOME=str(work / 'kicad-config'))
-        command = ('from agent_ee.candidate_visuals import native; from pathlib import Path; '
-                   'import sys; native(Path(sys.argv[1]), Path(sys.argv[2]))')
-        return native_run.run(native_run.Intent('candidate_visuals',
+        _check_imaging_paths(out)
+        command = ('from agent_ee.candidate_visuals import _imaging_main; import sys; '
+                   '_imaging_main(*sys.argv[1:])')
+        execution = native_run.run(native_run.Intent('candidate_visuals',
             ['/usr/bin/python3', '-B', '-P', '-c', command, str(private / relative), str(work)],
-            timeout=180, isolation='host', env=environment), work=work)
+            timeout=180, stop_grace_s=5, isolation='host', env=environment), work=work)
+        _check_imaging_paths(out)
+        cleanup = work / 'imaging-cleanup.json'
+        if (not cleanup.is_file() or cleanup.is_symlink() or read_json(cleanup) !=
+                {'schema': 'agent-ee.candidate-imaging-cleanup/1', 'status': 'unwound'}):
+            raise ValueError('candidate imaging cleanup is unconfirmed; retain native diagnostics')
+        return execution
     finally:
+        _check_imaging_paths(out)
         after, other = file_tree(inputs)
         if out.is_relative_to(inputs):
             owned = out.relative_to(inputs).as_posix() + '/'
@@ -119,6 +129,43 @@ def _enclosed_imaging(board, inputs, out, relative, captured):
                     or {k: v for k, v in after.items() if k != preferences} !=
                        {k: v for k, v in copied.items() if k != preferences}):
                 raise ValueError('candidate imaging changed its private project')
+
+
+def _check_imaging_paths(out):
+    for path in (out, out / 'native', out / 'native/inputs'):
+        if (not path.is_dir() or path.resolve() != path
+                or any(p.is_symlink() for p in (path, *path.parents))):
+            raise ValueError('candidate imaging output ancestry changed; retain native diagnostics')
+
+
+def _imaging_main(board, root):
+    """Let TERM unwind the existing render/plot supervisors before bounded KILL."""
+    import signal
+    def terminate(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        # Reuse held_interrupt's SIGINT launch guard as well as its unwind.
+        signal.raise_signal(signal.SIGINT)
+    previous_int = signal.signal(signal.SIGINT, signal.default_int_handler)
+    previous = signal.signal(signal.SIGTERM, terminate)
+    unwound = False
+    try:
+        native(Path(board), Path(root))
+    except (KeyboardInterrupt, ValueError, OSError):
+        unwound = True
+        raise
+    else:
+        unwound = True
+    finally:
+        # render_board joins its cancelled workers; synchronous _plot/probes reap
+        # in native_run before unwinding here. No receipt after forced KILL.
+        try:
+            if unwound:
+                write_json(Path(root) / 'imaging-cleanup.json',
+                           {'schema': 'agent-ee.candidate-imaging-cleanup/1', 'status': 'unwound'})
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+            signal.signal(signal.SIGINT, previous_int)
+
 
 def capture_visuals(run_dir):
     """Attach coordinator imaging after pure input capture and scope admission."""

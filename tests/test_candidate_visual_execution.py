@@ -29,7 +29,7 @@ class VisualExecutionTests(unittest.TestCase):
         before = file_tree(self.inputs)
         out = self.inputs / 'visuals'
         def child(intent, *, work):
-            self.assertEqual((intent.isolation, intent.timeout), ('host', 180))
+            self.assertEqual((intent.isolation, intent.timeout, intent.stop_grace_s), ('host', 180, 5))
             self.assertEqual(intent.argv[:4], ('/usr/bin/python3', '-B', '-P', '-c'))
             board, output = map(Path, intent.argv[-2:])
             self.assertEqual(output, work)
@@ -44,6 +44,7 @@ class VisualExecutionTests(unittest.TestCase):
             (work / 'top.png').write_bytes(b'CPU image bytes, not native rendering')
             write_json(work / 'visuals.json', {'board_sha256': digest(board), 'status': 'available',
                 'images': [{'view': 'top', 'path': 'top.png', 'sha256': digest(work / 'top.png')}]})
+            write_json(work / 'imaging-cleanup.json', {'schema': 'agent-ee.candidate-imaging-cleanup/1', 'status': 'unwound'})
             return {'execution': 'ok', 'exit_code': 0}
         with patch.object(footprint_probe, '_enclosing_sandbox', return_value=True), \
                 patch.object(native_run, 'run', side_effect=child) as run:
@@ -91,6 +92,7 @@ class VisualExecutionTests(unittest.TestCase):
         for status, code in (('timeout', None), ('failed', 97), ('ok', 0)):
             def child(intent, *, work):
                 (work / 'stderr.log').write_text('renderer refused or incomplete')
+                write_json(work / 'imaging-cleanup.json', {'schema': 'agent-ee.candidate-imaging-cleanup/1', 'status': 'unwound'})
                 return {'execution': status, 'exit_code': code}
             with self.subTest(status=status), patch.object(footprint_probe, '_enclosing_sandbox', return_value=True), \
                     patch.object(native_run, 'run', side_effect=child):
@@ -124,3 +126,119 @@ class VisualExecutionTests(unittest.TestCase):
                 visuals.produce(self.board, self.root / 'linked')
             with self.assertRaises(FileExistsError):
                 visuals.produce(self.board, self.root)
+
+    def test_post_child_output_ancestry_replacement_refuses_before_any_manifest_read(self):
+        for name in ('output', 'native', 'private'):
+            out = self.inputs / ('visuals-' + name)
+            moved = self.root / ('moved-' + name)
+            def child(intent, *, work):
+                (work / 'stderr.log').write_text('retained moved raw failure')
+                source = {'output': out, 'native': work, 'private': work / 'inputs'}[name]
+                source.rename(moved)
+                source.symlink_to(moved, target_is_directory=True)
+                return {'execution': 'ok', 'exit_code': 0}
+            with self.subTest(name=name), patch.object(footprint_probe, '_enclosing_sandbox', return_value=True), \
+                    patch.object(native_run, 'run', side_effect=child), \
+                    patch.object(visuals, 'read_json', side_effect=AssertionError('must not follow output link')):
+                with self.assertRaisesRegex(ValueError, 'output ancestry changed'):
+                    visuals.produce(self.board, out)
+            raw = moved / ('native/stderr.log' if name == 'output' else 'stderr.log')
+            if name != 'private':
+                self.assertEqual(raw.read_text(), 'retained moved raw failure')
+            self.assertTrue(moved.is_dir())
+            self.assertFalse((moved / 'manifest.json').exists())
+            # Remove only owned fixture links so subsequent source inventories are regular.
+            {'output': out, 'native': out / 'native', 'private': out / 'native/inputs'}[name].unlink()
+
+    def test_missing_cleanup_receipt_refuses_even_if_child_exits_ok(self):
+        with patch.object(footprint_probe, '_enclosing_sandbox', return_value=True), \
+                patch.object(native_run, 'run', return_value={'execution': 'ok', 'exit_code': 0}):
+            with self.assertRaisesRegex(ValueError, 'cleanup is unconfirmed'):
+                visuals.produce(self.board, self.root / 'no-cleanup')
+
+    def test_term_unwinds_actual_render_workers_and_joins_before_cleanup_receipt(self):
+        import signal
+        import threading
+        from agent_ee import render3d, models3d
+        board = Path(__file__).resolve().parents[1] / 'fixtures/stages/empty.kicad_pcb'
+        out = self.root / 'worker-cleanup'; out.mkdir()
+        handlers, observed = {}, []
+        entered = threading.Barrier(3)
+        def register(sig, handler):
+            previous = handlers.get(sig, signal.SIG_DFL)
+            handlers[sig] = handler
+            return previous
+        def child(intent, **kwargs):
+            cancel = kwargs['cancel']; observed.append(cancel)
+            entered.wait(timeout=2)
+            self.assertTrue(cancel.cancelled.wait(timeout=2))
+            return native_run.Execution({'execution': 'interrupted', 'returncode': -9}, b'', b'')
+        def completed(futures):
+            entered.wait(timeout=2)
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+            return iter(futures)
+        def imaging(board, root):
+            render3d.render_board(board, root / 'renders', jobs=2, views=('top', 'bottom'))
+        with patch.object(signal, 'signal', side_effect=register), \
+                patch.object(signal, 'raise_signal', side_effect=lambda sig: handlers[sig](sig, None)), \
+                patch.object(visuals, 'native', side_effect=imaging), \
+                patch.object(render3d.shutil, 'which', return_value='/usr/bin/true'), \
+                patch.object(render3d, '_probe', return_value=' '.join(render3d._REQUIRED)), \
+                patch.object(models3d, 'inspect_models', return_value={'footprints': [], 'warnings': []}), \
+                patch.object(render3d.concurrent.futures, 'as_completed', side_effect=completed), \
+                patch.object(native_run, 'run', side_effect=child), \
+                patch('os.killpg', side_effect=AssertionError('no real signals')):
+            with self.assertRaises(KeyboardInterrupt):
+                visuals._imaging_main(str(board), str(out))
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(c.cancelled.is_set() for c in observed))
+        self.assertFalse(any(t.name.startswith('render3d') for t in threading.enumerate()))
+        self.assertEqual(__import__('json').loads((out / 'imaging-cleanup.json').read_text())['status'], 'unwound')
+
+    def test_term_unwinds_svg_and_outer_grace_is_bounded_without_real_signals(self):
+        import signal
+        import subprocess
+        from types import SimpleNamespace
+        handlers, sent = {}, []
+        def register(sig, handler):
+            previous = handlers.get(sig, signal.SIG_DFL); handlers[sig] = handler; return previous
+        def stop(pid, sig):
+            if pid <= 1:
+                raise ValueError('unsafe PID/PG')
+            sent.append((pid, sig))
+        def child(*args, **kwargs):
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+        out = self.root / 'svg-cleanup'; out.mkdir()
+        with patch.object(signal, 'signal', side_effect=register), \
+                patch.object(signal, 'raise_signal', side_effect=lambda sig: handlers[sig](sig, None)), \
+                patch.object(visuals, 'native', side_effect=lambda b,r: visuals._plot(b,r,'front',['F.Cu'])), \
+                patch.object(native_run, 'run', side_effect=child), patch('os.killpg', side_effect=stop):
+            with self.assertRaises(KeyboardInterrupt):
+                visuals._imaging_main(str(self.board), str(out))
+            self.assertTrue((out / 'imaging-cleanup.json').is_file())
+            proc = SimpleNamespace(pid=24680, wait=lambda **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired('mock', kw['timeout'])))
+            native_run._stop_group(proc, 5)
+            self.assertEqual(sent, [(24680, signal.SIGTERM), (24680, signal.SIGKILL)])
+            with self.assertRaisesRegex(ValueError, 'unsafe PID/PG'):
+                stop(1, signal.SIGKILL)
+
+    def test_term_respects_existing_held_interrupt_launch_window(self):
+        import signal
+        from agent_ee.executor import held_interrupt
+        handlers = {signal.SIGINT: signal.default_int_handler, signal.SIGTERM: signal.SIG_DFL}
+        def register(sig, handler):
+            previous = handlers[sig]; handlers[sig] = handler; return previous
+        def imaging(board, root):
+            with held_interrupt() as pending:
+                handlers[signal.SIGTERM](signal.SIGTERM, None)
+                self.assertEqual(pending, [signal.SIGINT])
+                # Existing supervisor can first retain the newly created handle.
+            raise KeyboardInterrupt
+        out = self.root / 'launch-window'; out.mkdir()
+        with patch.object(signal, 'signal', side_effect=register), \
+                patch.object(signal, 'getsignal', side_effect=lambda sig: handlers[sig]), \
+                patch.object(signal, 'raise_signal', side_effect=lambda sig: handlers[sig](sig, None)), \
+                patch.object(visuals, 'native', side_effect=imaging):
+            with self.assertRaises(KeyboardInterrupt):
+                visuals._imaging_main(str(self.board), str(out))
+        self.assertTrue((out / 'imaging-cleanup.json').is_file())
