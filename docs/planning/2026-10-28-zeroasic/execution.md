@@ -336,3 +336,29 @@ host evidence root. The latter retains 3,317 fixture files with hashes. Both
 native invocations have exited and admission is free. Agent-690's custom-pad
 repair remains separate. Full strict qualification and landing remain open;
 the board repair cap remains exhausted and campaign acceptance remains **0/4**.
+
+### Custom-pad native repair verified
+
+Agent-690's `4361bb16` passed independent source review and was integrated as
+`c8766548`. The existing footprint CLI now runs its native child within its
+verified enclosing sandbox. Ordinary standalone use retains the previous
+sandbox route; unknown mount layouts and changed captured inputs still refuse.
+The native pad inspector and its identity/outline validators are unchanged.
+
+The original failing custom-pad CLI case passed on `c8766548` in 1.0 seconds.
+Retained outer and child records show actual KiCad 10.0.7 execution, exit 0,
+assignment outcome `pass` and pad numbers `1` and `2`. Eleven files retain the
+captured member, native output, execution records and assignment report. A
+subsequent 77-test selection passed in 22.5 seconds with no skips, covering
+custom-pad geometry and refusal cases, library checks, footprint regressions
+and the new pure execution controls. This closes the observed custom-pad CLI
+failure; the full strict suite has not been repeated or passed.
+
+Evidence is in `custom-pad-execution-repair-agent690`, `custom-pad-native-r1`
+and `custom-pad-regressions-r1` beneath the host evidence root. Agent-697 owns
+the bounded fabrication follow-up for its disposable KiCad project copy.
+Agent-696 now owns a bounded legacy annotation repair using the existing
+schematic stage with distinct symbol and footprint capture roots. Both source
+assignments reserve native verification and integration to the coordinator;
+they add no board-generation attempts. Citation and visual execution failures,
+full qualification, trunk landing, M1 and the accepted package remain open.
