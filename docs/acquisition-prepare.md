@@ -47,9 +47,48 @@ Missing/drifted source bytes or additions stop preparation without downloading
 replacements. Manufacturing/profile and placement/verification budget settings
 come from the captured plan and source; this slice introduces no budget schema.
 
+To request the existing full engineering review at the first package attempt,
+pass an explicit subscription review profile as caller context:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m agent_ee.acquisition_prepare \
+  --brief /absolute/path/acquisition-150.md \
+  --build-plan /absolute/path/acquisition-release/build.json \
+  --added-input cpl=/absolute/path/cpl-inputs-rev3 \
+  --added-input manufacturer-text=/absolute/path/manufacturer-text \
+  --review-profile /absolute/path/pod-review.json \
+  --verification-timeout-s 3600 \
+  --out /absolute/path/new-acquisition-150-reviewed
+```
+
+The existing profile validator checks the profile without launching a provider.
+Its exact bytes are captured as `inputs/preparation/review-profile.json`, and
+the typed plan names `preparation/review-profile.json` in `review_profile`.
+The unchanged reference adoption still names the circuit recipe. This explicit
+review request grants no inherited engineering acceptance and authors no
+judgment or verifier witness. Without `--review-profile`, behavior stays as above.
+
+`--verification-timeout-s` is optional and requires `--review-profile`. It sets
+the existing build-plan field, validated as an integer from 1 through 86400.
+Omitting it retains the captured plan's 1800 seconds; there is no automatic
+increase or reset. The example explicitly requests 3600 seconds; execution still
+needs the coordinator's finite grant. Preparation performs no reviewer/tool
+admission and does not establish that the requested budget is sufficient.
+
+Profile bytes, the validator's source hash, and requested/effective timeout are
+bound into preparation identity. `inputs/preparation/review-context.json` and
+the edit ledger record this context, and the final input inventory binds the
+captured profile. Even a whitespace-only profile change invalidates preparation
+and downstream build input identity. Missing, malformed, linked or hard-linked
+profiles, linked ancestors and profile drift during preparation refuse before
+publication, leaving no partial bundle. Exact original recipe admission stays
+in force; this option cannot revise parts, geometry, stock or electrical limits.
+
 The Python interface is
 `acquisition_prepare.prepare(brief_path, build_plan_path, output_path,
 added_sources={'cpl': cpl_directory, 'manufacturer-text': text_directory})`.
+Its optional keyword arguments are `review_profile=profile_path` and
+`verification_timeout_s=3600`, with the same rules as the CLI.
 It returns the preparation report. `PreparationRefused.report` contains a
 structured unresolved/refused outcome, diagnostic code and exact UTF-8 byte
 locator. The CLI emits this JSON and exits 1 for a refused brief, exits 2 for

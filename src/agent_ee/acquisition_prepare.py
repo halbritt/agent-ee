@@ -12,13 +12,15 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import tempfile
 
-from . import build_plan, requirement_map, spec_record, storage, typed_overlay
+from . import build_plan, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = 'acquisition-control'
+REVIEW_PROFILE = 'preparation/review-profile.json'
 ADOPTION = 'Use acquisition reference acquisition-control unchanged.'
 CAPACITANCE = re.compile(
     r'Total I2C line capacitance shall be at most (?P<quantity>(?P<value>[0-9]+(?:\.[0-9]+)?)'
@@ -267,13 +269,43 @@ def _archive_revision(base, revised, before, identity):
     return changed
 
 
-def prepare(brief, plan_path, out, *, added_sources):
+def _read_review_profile(path):
+    """Read one regular context file through no-follow directory descriptors."""
+    path = Path(path).absolute()
+    if '..' in path.parts:
+        raise ValueError('review profile path contains traversal')
+    parent = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for name in path.parts[1:-1]:
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=parent)
+            os.close(parent)
+            parent = child
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                             dir_fd=parent)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            os.close(descriptor)
+            raise ValueError('review profile must be a regular file without link aliases')
+        with os.fdopen(descriptor, 'rb') as stream:
+            raw = stream.read()
+            fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+            stamp = tuple(getattr(before, field) for field in fields)
+            if stamp != tuple(getattr(os.fstat(stream.fileno()), field) for field in fields):
+                raise ValueError('review profile changed while reading')
+        return raw, stamp
+    finally:
+        os.close(parent)
+
+
+def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verification_timeout_s=None):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
     manufacturing profile and finite native budgets are retained. Additions map
     ``cpl`` and ``manufacturer-text`` to their exact captured directories. The
-    committed operating supplement is used unless explicitly supplied.
+    committed operating supplement is used unless explicitly supplied. Explicit
+    review context is captured separately from the unchanged circuit recipe.
     """
     brief, out = Path(brief), Path(out).absolute()
     raw = brief.read_bytes()
@@ -285,6 +317,26 @@ def prepare(brief, plan_path, out, *, added_sources):
     sources = {'operating-supplement': ROOT / 'fixtures/acquisition-typed/operating-supplement', **added_sources}
     plan_raw, plan, base, before = _admit(plan_path, out, sources)
     typed_overlay._disjoint('output', out.resolve(), {'brief': brief.resolve(), 'plan': Path(plan_path).resolve()})
+    if verification_timeout_s is not None and review_profile is None:
+        raise ValueError('verification_timeout_s requires review_profile')
+    plan = copy.deepcopy(plan)
+    plan.update(schema=build_plan.TYPED_SCHEMA, source='inputs', judgments='judgments')
+    plan['requirements']['obligations'] = 'obligations.json'
+    review_context = None
+    if review_profile is not None:
+        profile_raw, profile_stamp = _read_review_profile(review_profile)
+        try:
+            profiles.validate_profile(requirement_map.decode(profile_raw))
+        except (AttributeError, TypeError) as exc:
+            raise ValueError('malformed review profile') from exc
+        typed_overlay._disjoint('output', out.resolve(), {'review profile': Path(review_profile).absolute()})
+        plan['review_profile'] = REVIEW_PROFILE
+        if verification_timeout_s is not None:
+            plan['verification_timeout_s'] = verification_timeout_s
+        review_context = dict(profile=dict(path=REVIEW_PROFILE, sha256=spec_record.sha256(profile_raw)),
+            verification_timeout_s=dict(requested=verification_timeout_s,
+                                        effective=plan.get('verification_timeout_s', 3600)))
+    build_plan.validate_plan(plan)
     overlay_raw, overlay, additions = _load_overlay(before, sources)
     recipe = dict(brief_sha256=spec_record.sha256(raw), plan_sha256=spec_record.sha256(plan_raw),
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
@@ -292,6 +344,9 @@ def prepare(brief, plan_path, out, *, added_sources):
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
                  for module in (build_plan, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
+    if review_context is not None:
+        recipe['review_context'] = review_context
+        recipe['helpers'][profiles.__name__] = spec_record.sha256(Path(profiles.__file__).read_bytes())
     identity = spec_record.sha256(json_bytes(recipe))
     with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
         scratch = Path(scratch)
@@ -305,14 +360,17 @@ def prepare(brief, plan_path, out, *, added_sources):
         (provenance / 'overlay.original.json').write_bytes(overlay_raw)
         (provenance / 'source-map.json').write_bytes(json_bytes(_source_map(raw, selected, original_record, record)))
         changed = _archive_revision(base, revised, before, identity)
+        if review_context is not None:
+            (revised / REVIEW_PROFILE).write_bytes(profile_raw)
+            (provenance / 'review-context.json').write_bytes(json_bytes(review_context))
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = json.loads(ledger_path.read_bytes())
+            ledger['review_context'] = review_context
+            ledger_path.write_bytes(json_bytes(ledger))
         overlay_file = scratch / 'overlay.json'
         overlay_file.write_bytes(json_bytes(overlay))
         bundle.mkdir()
         result = typed_overlay.prepare(revised, overlay_file, bundle / 'inputs', added_sources=sources)
-        plan = copy.deepcopy(plan)
-        plan.update(schema=build_plan.TYPED_SCHEMA, source='inputs', judgments='judgments')
-        plan['requirements']['obligations'] = 'obligations.json'
-        build_plan.validate_plan(plan)
         (bundle / 'build-plan.json').write_bytes(json_bytes(plan))
         (bundle / 'overlay.json').write_bytes(json_bytes(overlay))
         if requirement_map.input_inventory(base) != before:
@@ -326,6 +384,12 @@ def prepare(brief, plan_path, out, *, added_sources):
                        'Strict block-source selection and final artwork/package revalidation if strict grouping is requested',
                        'Supplier and physical validation'])
         (bundle / 'preparation.json').write_bytes(json_bytes(report))
+        if review_context is not None:
+            if ((bundle / 'inputs' / REVIEW_PROFILE).read_bytes() != profile_raw
+                    or report['inputs'][REVIEW_PROFILE] != review_context['profile']['sha256']):
+                raise ValueError('captured review profile changed during preparation')
+            if _read_review_profile(review_profile) != (profile_raw, profile_stamp):
+                raise ValueError('review profile changed during preparation')
         rename_noreplace(bundle, out)
     return report
 
@@ -335,6 +399,9 @@ def main(argv=None):
     parser.add_argument('--brief', type=Path, required=True)
     parser.add_argument('--build-plan', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--review-profile', type=Path, help='explicit full engineering review profile to capture')
+    parser.add_argument('--verification-timeout-s', type=int,
+                        help='explicit build verification budget; requires --review-profile, no automatic increase')
     parser.add_argument('--added-input', action='append', default=[], metavar='AT=DIR')
     args = parser.parse_args(argv)
     sources = {}
@@ -344,7 +411,8 @@ def main(argv=None):
             parser.error('--added-input requires a distinct AT=DIR')
         sources[key] = Path(path)
     try:
-        report = prepare(args.brief, args.build_plan, args.out, added_sources=sources)
+        report = prepare(args.brief, args.build_plan, args.out, added_sources=sources,
+                         review_profile=args.review_profile, verification_timeout_s=args.verification_timeout_s)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1

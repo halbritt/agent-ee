@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_prepare, build_workflow, requirement_map, spec_record
+from agent_ee import acquisition_prepare, build_workflow, requirement_map, spec_record, storage
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
@@ -54,12 +54,12 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.sources = {'cpl': CPL, 'manufacturer-text': TEXT}
 
-    def prepare(self, raw, name='prepared', sources=None):
+    def prepare(self, raw, name='prepared', sources=None, **context):
         path = self.root / (name + '.md')
         path.write_bytes(raw)
         out = self.root / name
         report = acquisition_prepare.prepare(path, PLAN, out,
-            added_sources=self.sources if sources is None else sources)
+            added_sources=self.sources if sources is None else sources, **context)
         return out, report
 
     def test_changed_brief_prepares_complete_typed_source_for_public_build(self):
@@ -220,3 +220,124 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertFalse((self.root / 'late-failure').exists())
         self.assertEqual(list(self.root.glob('*.prepare-*')), [])
         self.assertEqual(requirement_map.input_inventory(BASE), before)
+
+    def profile(self):
+        path = self.root / 'profile.json'
+        path.write_bytes((ROOT / 'profiles/pod-review.json').read_bytes())
+        return path
+
+    def test_requested_review_captures_exact_bytes_and_public_build_input_identity(self):
+        profile = self.profile()
+        ordinary, old = self.prepare(brief(), 'ordinary')
+        out, report = self.prepare(brief(), 'reviewed', review_profile=profile)
+        plan = json.loads((out / 'build-plan.json').read_bytes())
+        captured = out / 'inputs' / plan['review_profile']
+        self.assertEqual(captured.read_bytes(), profile.read_bytes())
+        admitted = build_workflow.preflight_build(out / 'build-plan.json', self.root / 'native-not-run')
+        self.assertEqual(admitted[-1][plan['review_profile']], spec_record.sha256(profile.read_bytes()))
+        self.assertEqual(plan['verification_timeout_s'], 1800)
+        self.assertEqual(report['recipe']['review_context']['verification_timeout_s'],
+                         {'requested': None, 'effective': 1800})
+        self.assertEqual(report['recipe']['helpers']['agent_ee.profiles'],
+                         spec_record.sha256((ROOT / 'src/agent_ee/profiles.py').read_bytes()))
+        ledger = json.loads((out / 'inputs/preparation/edit-ledger.json').read_bytes())
+        self.assertEqual(ledger['review_context'], report['recipe']['review_context'])
+        self.assertNotEqual(report['identity'], old['identity'])
+        for name in ('spec.md', 'circuit.json', 'placement.json', 'layout.json', 'groups.json',
+                     'analysis/electrical-intervals.json', 'analysis/geometry_model.py'):
+            self.assertEqual((out / 'inputs' / name).read_bytes(), (ordinary / 'inputs' / name).read_bytes(), name)
+        self.assertFalse((out / 'inputs/judgments').exists())
+        self.assertEqual(report['qualification'], 'unverified')
+        profile.write_bytes(profile.read_bytes() + b'\n')
+        changed, second = self.prepare(brief(), 'changed-profile', review_profile=profile)
+        self.assertNotEqual(report['identity'], second['identity'])
+        other = build_workflow.preflight_build(changed / 'build-plan.json', self.root / 'also-not-run')
+        self.assertNotEqual(storage.identity(admitted[-1]), storage.identity(other[-1]))
+        self.assertFalse((self.root / 'native-not-run').exists())
+
+    def test_explicit_review_timeout_is_bounded_context_without_automatic_increase(self):
+        profile = self.profile()
+        first, a = self.prepare(brief(), 'inherited', review_profile=profile)
+        second, b = self.prepare(brief(), 'explicit', review_profile=profile, verification_timeout_s=1800)
+        third, c = self.prepare(brief(), 'longer', review_profile=profile, verification_timeout_s=3600)
+        self.assertNotEqual(a['identity'], b['identity'])
+        self.assertEqual(b['recipe']['review_context']['verification_timeout_s'],
+                         {'requested': 1800, 'effective': 1800})
+        self.assertEqual(json.loads((third / 'build-plan.json').read_bytes())['verification_timeout_s'], 3600)
+        self.assertNotEqual(b['identity'], c['identity'])
+        for index, seconds in enumerate((0, 86401, True, 1.5)):
+            with self.subTest(seconds=seconds), self.assertRaises(ValueError):
+                self.prepare(brief(), 'invalid-timeout-' + str(index), review_profile=profile,
+                             verification_timeout_s=seconds)
+            self.assertFalse((self.root / ('invalid-timeout-' + str(index))).exists())
+        with self.assertRaisesRegex(ValueError, 'review_profile'):
+            self.prepare(brief(), 'timeout-only', verification_timeout_s=3600)
+        self.assertFalse((self.root / 'timeout-only').exists())
+
+    def test_bad_or_linked_profile_refuses_without_a_bundle(self):
+        profile = self.profile()
+        missing = self.root / 'missing-profile.json'
+        file_link = self.root / 'profile-link.json'
+        file_link.symlink_to(profile)
+        folder = self.root / 'profile-folder'
+        folder.mkdir()
+        nested = folder / 'profile.json'
+        nested.write_bytes(profile.read_bytes())
+        directory_link = self.root / 'directory-link'
+        directory_link.symlink_to(folder, target_is_directory=True)
+        hard_link = self.root / 'hard-profile.json'
+        hard_target = self.root / 'hard-target.json'
+        hard_target.write_bytes(profile.read_bytes())
+        os.link(hard_target, hard_link)
+        malformed = self.root / 'malformed.json'
+        malformed.write_bytes(b'{"schema":"agent-ee.profile/1","name":"bad","reviewers":[1,2]}')
+        duplicate = self.root / 'duplicate.json'
+        duplicate.write_bytes(b'{"schema":"agent-ee.profile/1","schema":"other"}')
+        for index, path in enumerate((missing, file_link, directory_link / 'profile.json',
+                                      hard_link, malformed, duplicate, folder)):
+            with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
+                self.prepare(brief(), 'bad-profile-' + str(index), review_profile=path)
+            self.assertFalse((self.root / ('bad-profile-' + str(index))).exists())
+        self.assertEqual(list(self.root.glob('*.prepare-*')), [])
+        existing = self.root / 'existing-profile-output'
+        existing.mkdir()
+        (existing / 'sentinel').write_text('keep')
+        with self.assertRaises(ValueError):
+            self.prepare(brief(), existing.name, review_profile=profile)
+        self.assertEqual((existing / 'sentinel').read_text(), 'keep')
+
+    def test_profile_drift_at_publication_refuses_and_removes_owned_staging(self):
+        profile = self.profile()
+        write = Path.write_bytes
+        for mode in ('bytes', 'replacement', 'capture'):
+            def drift(path, raw):
+                if path.name == 'preparation.json':
+                    if mode == 'bytes':
+                        write(profile, profile.read_bytes() + b'\n')
+                    elif mode == 'replacement':
+                        replacement = self.root / 'replacement.json'
+                        write(replacement, profile.read_bytes())
+                        replacement.replace(profile)
+                    else:
+                        captured = path.parent / 'inputs/preparation/review-profile.json'
+                        write(captured, captured.read_bytes() + b'\n')
+                return write(path, raw)
+            with self.subTest(mode=mode), patch.object(Path, 'write_bytes', drift):
+                with self.assertRaisesRegex(ValueError, 'profile.*changed'):
+                    self.prepare(brief(), 'drift-' + mode, review_profile=profile)
+            self.assertFalse((self.root / ('drift-' + mode)).exists())
+            self.assertEqual(list(self.root.glob('*.prepare-*')), [])
+
+    def test_cli_accepts_explicit_review_profile_and_verification_timeout(self):
+        source = self.root / 'cli-brief.md'
+        source.write_bytes(brief())
+        profile = self.profile()
+        out = self.root / 'cli-review'
+        with contextlib.redirect_stdout(io.StringIO()):
+            status = acquisition_prepare.main(['--brief', str(source), '--build-plan', str(PLAN),
+                '--out', str(out), '--review-profile', str(profile), '--verification-timeout-s', '3600',
+                '--added-input', 'cpl=' + str(CPL), '--added-input', 'manufacturer-text=' + str(TEXT)])
+        self.assertEqual(status, 0)
+        plan = json.loads((out / 'build-plan.json').read_bytes())
+        self.assertEqual((out / 'inputs' / plan['review_profile']).read_bytes(), profile.read_bytes())
+        self.assertEqual(plan['verification_timeout_s'], 3600)
