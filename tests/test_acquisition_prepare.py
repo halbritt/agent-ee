@@ -466,3 +466,172 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertIn(cap.encode(), (inputs / 'spec.md').read_bytes())
         self.assertEqual(report['recipe']['helpers']['agent_ee.catalog'],
                          spec_record.sha256((ROOT / 'src/agent_ee/catalog.py').read_bytes()))
+
+
+@unittest.skipUnless(os.environ.get('AGENT_EE_ADDR_CONTEXT') and PLAN.is_file() and CPL.is_dir() and TEXT.is_dir(),
+                     'explicit captured acquisition ADDR source/context required')
+class AddrPreparationTests(unittest.TestCase):
+    """Actual preparation and compiler calls; no native production/qualification."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='addr-source-pure-'); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.brief = self.root/'brief.md'; self.brief.write_bytes(brief('125'))
+        self.context = Path(os.environ['AGENT_EE_ADDR_CONTEXT'])
+        self.options = dict(added_sources={'cpl':CPL,'manufacturer-text':TEXT},
+            review_profile=ROOT/'profiles/pod-review.json', alternative_context=self.context,
+            alternative_source=Path(os.environ['AGENT_EE_ADDR_SOURCE']),
+            alternative_context_sha256=storage.digest(self.context))
+        self.before = requirement_map.input_inventory(BASE)
+        self.seed = self.root/'seed'
+        acquisition_prepare.prepare(self.brief,PLAN,self.seed,**self.options)
+        self.replay = dict(evaluation_context=self.seed/'preparation.json',
+                           evaluation_context_sha256=storage.digest(self.seed/'preparation.json'))
+
+    def prepare(self,name,choice='GND',**options):
+        out=self.root/name
+        report=acquisition_prepare.prepare(self.brief,PLAN,out,
+            **{**self.options,**self.replay,'addr_tie':choice,**options})
+        return out,report
+
+    def compiled(self,out,label):
+        from agent_ee.baseline import compile_baseline
+        source=self.root/('compiler-'+label); shutil.copytree(out/'inputs',source)
+        raw={n:(source/n).read_bytes() for n in ('requirement-map.json','spec-record.json','spec.md','obligations.json')}
+        template=requirement_map.map_declaration(raw['requirement-map.json'])['scope']
+        # Declared-subject capability admission only: these are not emitted CAD.
+        for key in ('board','schematic'):
+            path=source/template[key]; path.parent.mkdir(parents=True,exist_ok=True)
+            path.write_bytes(b'Authored declared subject placeholder; no native qualification.\n')
+        files=requirement_map.input_inventory(source)
+        scope,receipt=requirement_map.compile_map(raw['requirement-map.json'],raw['spec-record.json'],raw['spec.md'],
+            files=files,inputs=source,obligations_raw=raw['obligations.json'])
+        provenance={'spec.md':raw['spec.md'],'spec-record.json':raw['spec-record.json'],
+            'requirement-map.json':raw['requirement-map.json'],'obligations.json':raw['obligations.json']}
+        files.update({'requirements-map/'+k:spec_record.sha256(v) for k,v in provenance.items()})
+        with requirement_map.compilation_inputs(source,files,provenance) as captured:
+            baseline=compile_baseline(scope,files,captured)
+        self.assertEqual(receipt['baseline_id'],baseline['baseline_id'])
+        self.assertFalse(set(baseline['files']) & {template['board'],template['schematic']})
+        return scope,baseline
+
+    def test_actual_variants_keep_complete_baseline_parts_and_only_one_authored_terminal_delta(self):
+        import copy
+        from agent_ee import parts_manifest,parts_stage
+        ground,a=self.prepare('ground'); wrong,b=self.prepare('wrong','V3V3'); replay,c=self.prepare('replay')
+        inventories=[requirement_map.input_inventory(p/'inputs') for p in (ground,wrong,replay)]
+        self.assertEqual(inventories[0].keys(),inventories[1].keys())
+        changed=sorted(n for n in inventories[0] if inventories[0][n]!=inventories[1][n])
+        if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+            evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
+            for name,path in (('prepared-ground',ground),('prepared-wrong',wrong),('prepared-replay',replay)):
+                shutil.copytree(path,evidence/name)
+        pairs=[self.compiled(ground,'ground'),self.compiled(wrong,'wrong')]
+        if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+            evidence=Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);evidence.mkdir(parents=True,exist_ok=True)
+            for name,value in [('baseline-ground.json',pairs[0][1]),('baseline-wrong.json',pairs[1][1]),
+                    ('inventory-ground.json',inventories[0]),('inventory-wrong.json',inventories[1]),
+                    ('source-differences.json',changed),('preparation-ground.json',a),('preparation-wrong.json',b)]:
+                storage.write_json(evidence/name,value)
+        self.assertEqual(pairs[0][1],pairs[1][1])  # COMPLETE objects, not selected fields.
+        self.assertEqual(pairs[0][0],pairs[1][0])
+        self.assertEqual(changed,['circuit.json','overlay-manifest.json','preparation/addr-selection.json','preparation/edit-ledger.json'])
+        deps=[parts_manifest.dependency_closure(parts_manifest.load_manifest(p/'inputs','parts.json'),p/'inputs')
+              for p in (ground,wrong,replay)]
+        self.assertEqual(deps[0],deps[1]);self.assertEqual(deps[0],deps[2])
+        for name in deps[0]:
+            self.assertEqual((ground/'inputs'/name).read_bytes(),(wrong/'inputs'/name).read_bytes(),name)
+        plan=json.loads((ground/'build-plan.json').read_bytes())
+        produced=[parts_stage.compile_parts(p/'inputs',**plan['parts']) for p in (ground,wrong)]
+        self.assertEqual(produced[0][0]['bindings'],produced[1][0]['bindings'])
+        self.assertEqual(produced[0][0]['named_nominals'],produced[1][0]['named_nominals'])
+        self.assertEqual([n for n,v in produced[0][0]['dependencies'].items() if produced[1][0]['dependencies'][n]!=v],['circuit.json'])
+        expected=copy.deepcopy(produced[0][1]);terminal={'component':'U2','pin':{'number':'1'}}
+        next(n for n in expected['nets'] if n['id']=='GND')['terminals'].remove(terminal)
+        next(n for n in expected['nets'] if n['id']=='V3V3')['terminals'].append(terminal)
+        self.assertEqual(expected,produced[1][1])
+        self.assertEqual((ground/'inputs/adc-ties.json').read_bytes(),(BASE/'adc-ties.json').read_bytes())
+        self.assertEqual(a['recipe'],c['recipe']);self.assertEqual(a['identity'],c['identity'])
+        repeated=sorted(n for n in inventories[0] if inventories[0][n]!=inventories[2][n])
+        self.assertEqual(repeated,['overlay-manifest.json'])
+        left=json.loads((ground/'inputs/overlay-manifest.json').read_bytes())
+        right=json.loads((replay/'inputs/overlay-manifest.json').read_bytes())
+        # Existing observation of the owned temporary selected-CPL directory.
+        left['derived']['added_inputs']['cpl']['source']='<owned selected-CPL path>'
+        right['derived']['added_inputs']['cpl']['source']='<owned selected-CPL path>'
+        self.assertEqual(left,right)
+        seed=json.loads((self.seed/'preparation.json').read_bytes())
+        self.assertNotIn('addr_selection',seed);self.assertNotIn('addr_tie',seed['recipe'])
+        self.assertEqual(requirement_map.input_inventory(BASE),self.before)
+
+    def test_changed_or_ambiguous_original_addr_identity_refuses_without_writes(self):
+        import copy
+        original=json.loads((BASE/'circuit.json').read_bytes());terminal={'component':'U2','pin':{'number':'1'}}
+        changes=[lambda d:d['components'].append(copy.deepcopy(next(c for c in d['components'] if c['id']=='U2'))),
+            lambda d:next(c for c in d['components'] if c['id']=='U2').update(lib_id='Other:ADC'),
+            lambda d:next(n for n in d['nets'] if n['id']=='GND')['terminals'].remove(terminal),
+            lambda d:next(n for n in d['nets'] if n['id']=='V3V3')['terminals'].append(terminal),
+            lambda d:next(n for n in d['nets'] if n['id']=='GND')['terminals'].append(terminal),
+            lambda d:d['no_connects'].append(terminal)]
+        for index,change in enumerate(changes):
+            owned=self.root/str(index);owned.mkdir();doc=copy.deepcopy(original);change(doc)
+            storage.write_json(owned/'circuit.json',doc);before=(owned/'circuit.json').read_bytes()
+            with self.subTest(index=index),self.assertRaises(ValueError):acquisition_prepare._select_addr(owned,'V3V3')
+            self.assertEqual((owned/'circuit.json').read_bytes(),before)
+        with self.assertRaisesRegex(ValueError,'addr_tie'):self.prepare('unknown','SDA')
+        self.assertFalse((self.root/'unknown').exists())
+
+    def test_context_pin_recipe_and_anchor_refusals_publish_nothing(self):
+        import copy
+        for index,options in enumerate(({'evaluation_context_sha256':'0'*64},{'evaluation_context_sha256':None},
+                {'alternative_context':None},{'review_profile':None})):
+            with self.subTest(options=options),self.assertRaises(ValueError):self.prepare('bad-'+str(index),**options)
+            self.assertFalse((self.root/('bad-'+str(index))).exists())
+        prior=json.loads((self.seed/'preparation.json').read_bytes())
+        for index,anchor in enumerate(('nonsense','2999-01-01T00:00:00+00:00','2026-10-29T03:10:37.069958+00:00')):
+            report=copy.deepcopy(prior);report['recipe']['alternative_context']['evaluation_as_of']=anchor
+            report['identity']=spec_record.sha256(storage.json_bytes(report['recipe']))
+            context=self.root/('context-'+str(index)+'.json');storage.write_json(context,report)
+            with self.subTest(anchor=anchor),self.assertRaises(ValueError):
+                self.prepare('bad-anchor-'+str(index),evaluation_context=context,evaluation_context_sha256=storage.digest(context))
+            self.assertFalse((self.root/('bad-anchor-'+str(index))).exists())
+        self.assertEqual(list(self.root.glob('*.prepare-*')),[])
+
+    def test_replayed_preparation_context_does_not_backdate_run_bound_stock_freshness(self):
+        from agent_ee import assembly_readiness as stock
+        from types import SimpleNamespace
+        from datetime import datetime,timedelta
+        out,report=self.prepare('run-time');source=out/'inputs'
+        params=acquisition_prepare.acquisition_alternative._assembly_check(json.loads((source/'requirement-map.json').read_bytes()))['params']
+        work=self.root/'stock-work';work.mkdir();run=self.root/'stock-run';run.mkdir()
+        later=(datetime.fromisoformat(report['recipe']['alternative_context']['evaluation_as_of'])+timedelta(days=2)).isoformat()
+        storage.write_json(run/'result.json',{'started_utc':later})
+        ctx=SimpleNamespace(params=params,inputs=source,context={},run_dir=run,work=work,result={'details':{}},evidence=lambda p:None)
+        actual=stock.stock_evaluation_params(ctx);self.assertEqual(actual['as_of'],later);self.assertLessEqual(actual['max_age_hours'],24)
+        catalog=json.loads((source/actual['catalog']).read_bytes())
+        info=stock._verify_jlc_capture(source,actual['catalog'],catalog)
+        with self.assertRaisesRegex(ValueError,'stale'):stock._capture_gate(info,stock.validate_params(actual),set())
+
+    def test_context_filesystem_drift_or_existing_output_preserves_originals(self):
+        context=self.root/'owned-context.json';context.write_bytes((self.seed/'preparation.json').read_bytes())
+        write=Path.write_bytes
+        def drift(path,raw):
+            if path.name=='preparation.json':write(context,context.read_bytes()+b' ')
+            return write(path,raw)
+        with patch.object(Path,'write_bytes',drift),self.assertRaisesRegex(ValueError,'context changed'):
+            self.prepare('drift',evaluation_context=context,evaluation_context_sha256=storage.digest(context))
+        self.assertFalse((self.root/'drift').exists());self.assertEqual(list(self.root.glob('*.prepare-*')),[])
+        with self.assertRaises(ValueError):self.prepare('seed','V3V3')
+        self.assertEqual(requirement_map.input_inventory(BASE),self.before)
+
+    def test_compiled_baseline_detects_mutation_of_each_fixed_dependency_family(self):
+        out,_=self.prepare('sensitivity');_,baseline=self.compiled(out,'sensitivity')
+        paths=['adc-ties.json','analysis/electrical-intervals.json','preparation/alternative/decision.json']
+        paths.append(next(p for p in baseline['files'] if p.endswith('.lib')))
+        for index,name in enumerate(paths):
+            path=out/'inputs'/name;before=path.read_bytes();path.write_bytes(before+b'\n')
+            try:
+                with self.subTest(path=name):
+                    try:_,changed=self.compiled(out,'mutated-'+str(index))
+                    except ValueError:pass
+                    else:self.assertNotEqual(changed,baseline)
+            finally:path.write_bytes(before)

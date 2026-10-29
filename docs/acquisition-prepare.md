@@ -448,3 +448,39 @@ CPL sources, calculation/model pins, original archive and edit ledger are
 regenerated before the existing typed seal. All captured dates remain unchanged;
 freshness, supplier preview, physical confirmation and new native evaluation
 remain obligations. No raw private capture is added to tracked fixtures.
+
+
+## Finite ADC ADDR development source selection
+
+`--addr-tie GND|V3V3` (API `addr_tie`) selects only authored U2 ADS1115
+pin 1, after purchasing/source-supplement decisions and before archive/seal.
+Omitting it preserves the existing GND/address0x48 recipe. Explicit GND records
+a control selection; V3V3 intentionally creates a development defect. The
+unchanged `adc-ties.json` oracle still requires GND/address0x48. Neither choice
+claims board completion or electrical acceptance. Unknown choices, ambiguous
+U2/pin/net identities and an existing output refuse. Published bundles and
+native CAD are never edited. `preparation/addr-selection.json` and the existing
+edit ledger retain exact before/after circuit hashes and the finite selection.
+
+For deterministic preparation-decision replay, pass `--evaluation-context`
+with a previously captured `preparation.json` and its independently retained
+`--evaluation-context-sha256` (API `evaluation_context` and
+`evaluation_context_sha256`). This requires the same explicit alternative
+context and exact recipe: brief, original source/plan, additions, producer and
+helpers, catalog closure, profile and verification budget. Only the finite ADDR
+choice and replay provenance may differ. The prior report must retain its
+valid recipe identity. A pin identifies trusted captured bytes; it does not
+authenticate a report fabricated by the caller. There is no free `as_of` option.
+The captured decision anchor must be valid, nonfuture and admissible against the
+unchanged catalog freshness/completion rules; incompatible or changed context
+refuses atomically. The report bytes are retained under
+`preparation/evaluation-context.json` after the common purchasing decision.
+Replay preserves a historical preparation decision, not a fresh stock claim:
+ordinary assembly review still evaluates freshness at the actual run start.
+
+Each choice needs a fresh output. Existing typed-overlay manifests retain the
+owned temporary selected-CPL source path, so that manifest's observation may
+vary between identical replays; compiled immutable baselines and common parts
+decision/dependency bytes must remain exactly equal. Production circuit hashes
+and explicit selection/edit lineage intentionally differ. Native functional
+rejection, seven-stage production and independent review remain separate work.

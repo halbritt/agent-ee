@@ -31,7 +31,7 @@ REVISION_BASIS = {
     'spec-record.json': 'Recapture the actual revised UTF-8 spec bytes',
     'requirement-map.json': 'Rebind source record/partitions and source-selected stock catalog; declare mechanics and preparation provenance',
     'parts.json': 'Rebind operative spec or source-selected purchasing/stock records without changing CAD or limits',
-    'circuit.json': 'Update only the source-selected ADC purchasing display value',
+    'circuit.json': 'Update the source-selected ADC purchasing display and optional finite U2 ADDR pin1 GND/V3V3 tie',
     'assembly-release-ids.json': 'Regenerate operative selected-allocation roster; archive historical choices, no supplier approval',
     'component-selections.json': 'Record automatic primary/carrier purchasing selection; retain historical original',
     'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
@@ -363,8 +363,68 @@ def _read_review_profile(path):
     return _read_context_file(path, 'review profile')
 
 
+def _select_addr(root, selected):
+    """One finite authored terminal move, after common purchasing/source decisions."""
+    if selected not in ('GND', 'V3V3'):
+        raise ValueError('addr_tie must be GND or V3V3')
+    path = Path(root) / 'circuit.json'
+    before = path.read_bytes()
+    circuit = catalog.strict_json(before)
+    components = [c for c in circuit['components'] if c.get('id') == 'U2' or c.get('reference') == 'U2']
+    if (circuit['schema'] != 'agent-ee.connectivity-intent/1' or len(components) != 1
+            or components[0]['id'] != 'U2' or components[0]['reference'] != 'U2'
+            or components[0]['lib_id'] != 'Analog_ADC:ADS1115IDGS'
+            or components[0]['value'] not in acquisition_alternative.ORDERABLES.values()):
+        raise ValueError('ADDR selection requires the original unique U2 ADS1115 identity')
+    nets = circuit['nets']
+    if (len({n['id'] for n in nets}) != len(nets) or len({n['name'] for n in nets}) != len(nets)):
+        raise ValueError('ADDR selection requires unique original nets')
+    targets = {name: [n for n in nets if n['id'] == name and n['name'] == name] for name in ('GND','V3V3')}
+    if any(len(value) != 1 for value in targets.values()):
+        raise ValueError('ADDR selection requires existing GND and V3V3 nets')
+    terminal = {'component':'U2', 'pin':{'number':'1'}}
+    def addr(t):
+        return t.get('component') == 'U2' and (t.get('pin', {}).get('number') == '1'
+                                                  or t.get('pin', {}).get('name') == 'ADDR')
+    occurrences = [(n, t) for n in nets for t in n['terminals'] if addr(t)]
+    if (len(occurrences) != 1 or occurrences[0][0] is not targets['GND'][0]
+            or occurrences[0][1] != terminal or any(addr(t) for t in circuit['no_connects'])):
+        raise ValueError('ADDR selection requires exactly original U2 pin1 on GND')
+    if selected == 'V3V3':
+        targets['GND'][0]['terminals'].remove(terminal)
+        targets['V3V3'][0]['terminals'].append(terminal)
+        path.write_bytes(json_bytes(circuit))
+    return dict(component='U2', pin={'number':'1'}, original_net='GND', selected_net=selected,
+        before_sha256=spec_record.sha256(before), after_sha256=storage.digest(path),
+        qualification='Source intent only; unchanged adc-ties requires GND/address0x48; V3V3 is a development defect')
+
+
+def _evaluation_replay(path, expected_sha):
+    """Replay a pinned prior preparation decision, never accept a free as_of date."""
+    raw, stamp = _read_context_file(path, 'preparation evaluation context')
+    if spec_record.sha256(raw) != expected_sha:
+        raise ValueError('preparation evaluation context hash mismatch')
+    report = catalog.strict_json(raw)
+    if not isinstance(report, dict) or not isinstance(report.get('recipe'), dict):
+        raise ValueError('expected a prior preparation report with a recipe')
+    recipe = report['recipe']
+    if (report.get('schema') != 'agent-ee.acquisition-preparation/1'
+            or report.get('outcome') != 'prepared' or report.get('reference') != REFERENCE
+            or report.get('qualification') != 'unverified'
+            or report.get('identity') != spec_record.sha256(json_bytes(recipe))
+            or not isinstance(recipe.get('alternative_context'), dict)
+            or recipe.get('addr_tie') not in (None, 'GND', 'V3V3')):
+        raise ValueError('expected a pinned compatible prior preparation report')
+    from .jlc_stock_capture import _utc
+    anchor = recipe['alternative_context']['evaluation_as_of']
+    if _utc(anchor, 'preparation evaluation anchor') > datetime.now(timezone.utc):
+        raise ValueError('preparation evaluation anchor is in the future')
+    return recipe, raw, stamp, anchor
+
+
 def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verification_timeout_s=None,
-            alternative_context=None, alternative_source=None, alternative_context_sha256=None):
+            alternative_context=None, alternative_source=None, alternative_context_sha256=None,
+            addr_tie=None, evaluation_context=None, evaluation_context_sha256=None):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
@@ -373,6 +433,14 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     committed operating supplement is used unless explicitly supplied. Explicit
     review context is captured separately from the unchanged circuit recipe.
     """
+    if addr_tie is not None and addr_tie not in ('GND', 'V3V3'):
+        raise ValueError('addr_tie must be GND or V3V3')
+    if (evaluation_context is None) != (evaluation_context_sha256 is None):
+        raise ValueError('evaluation context requires its independently retained SHA-256')
+    if evaluation_context is not None and alternative_context is None:
+        raise ValueError('evaluation context requires the same captured alternative context')
+    replay = (_evaluation_replay(evaluation_context, evaluation_context_sha256)
+              if evaluation_context is not None else None)
     brief, out = Path(brief), Path(out).absolute()
     raw = brief.read_bytes()
     try:
@@ -415,7 +483,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             'alternative context': Path(alternative_context).absolute()})
         alternative = dict(path='preparation/alternative-context.json',
             sha256=alternative_context_sha256, files=context_doc['files'],
-            evaluation_as_of=datetime.now(timezone.utc).isoformat())
+            evaluation_as_of=replay[3] if replay is not None else datetime.now(timezone.utc).isoformat())
     elif alternative_source is not None or alternative_context_sha256 is not None:
         raise ValueError('alternative source/hash require alternative_context')
     build_plan.validate_plan(plan)
@@ -458,6 +526,15 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             if name in recipe['selected_cpl_inventory']:
                 raise ValueError('R6 supplier capture would overwrite original CPL input')
             recipe['selected_cpl_inventory'][name] = spec_record.sha256(captured)
+    if addr_tie is not None:
+        recipe['addr_tie'] = addr_tie
+    if replay is not None:
+        def common(value):
+            return {k: v for k, v in value.items() if k not in ('addr_tie', 'evaluation_context')}
+        if common(replay[0]) != common(recipe):
+            raise ValueError('preparation evaluation context differs from the captured recipe/context')
+        recipe['evaluation_context'] = dict(report_sha256=evaluation_context_sha256,
+            claim='Replay of a captured preparation decision; NOT a fresh stock observation')
     identity = spec_record.sha256(json_bytes(recipe))
     with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
         scratch = Path(scratch)
@@ -536,7 +613,21 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             membership_binding = _bind_parts_membership(revised, membership_scope)
             overlay['base']['requirement_map_sha256'] = spec_record.sha256(
                 (revised / 'requirement-map.json').read_bytes())
+        # Selection evidence must not enter the common purchasing decision inventory.
+        addr_report = _select_addr(revised, addr_tie) if addr_tie is not None else None
+        if addr_report is not None:
+            (provenance / 'addr-selection.json').write_bytes(json_bytes(addr_report))
+        if replay is not None:
+            (provenance / 'evaluation-context.json').write_bytes(replay[1])
         changed = _archive_revision(base, revised, before, identity)
+        if addr_report is not None or replay is not None:
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = json.loads(ledger_path.read_bytes())
+            if addr_report is not None:
+                ledger['addr_selection'] = addr_report
+            if replay is not None:
+                ledger['evaluation_context'] = recipe['evaluation_context']
+            ledger_path.write_bytes(json_bytes(ledger))
         if repair_report is not None:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = json.loads(ledger_path.read_bytes())
@@ -594,6 +685,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             remaining=['Native public build and file qualification', 'Independent judgments and engineering review',
                        'Strict block-source selection and final artwork/package revalidation if strict grouping is requested',
                        'Supplier and physical validation'])
+        if addr_report is not None:
+            report['addr_selection'] = addr_report
         if alternative_report is not None:
             report['alternative'] = dict(selected=alternative_report['selected'],
                 decision=alternative_report['decision'], catalog=alternative_report['catalog'],
@@ -610,8 +703,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         if alternative is not None:
             if _read_context_file(alternative_context, 'alternative context') != (context_raw, context_stamp):
                 raise ValueError('alternative context changed during preparation')
-            _, replay = acquisition_alternative_context.read(alternative_source, context_raw)
-            if replay != context_captures:
+            _, current_captures = acquisition_alternative_context.read(alternative_source, context_raw)
+            if current_captures != context_captures:
                 raise ValueError('alternative source changed during preparation')
             for name, captured in context_captures.items():
                 if (bundle / 'inputs' / acquisition_alternative_context.AT / name).read_bytes() != captured:
@@ -632,6 +725,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             for name, captured in repair_captures.items():
                 if (bundle / 'inputs' / acquisition_power_repair.AT / name).read_bytes() != captured:
                     raise ValueError('sealed power repair source differs from admitted capture')
+        if replay is not None and _read_context_file(evaluation_context, 'preparation evaluation context') != (replay[1], replay[2]):
+            raise ValueError('preparation evaluation context changed before publication')
         rename_noreplace(bundle, out)
     return report
 
@@ -647,6 +742,9 @@ def main(argv=None):
     parser.add_argument('--alternative-context', type=Path, help='pinned finite acquisition carrier context JSON')
     parser.add_argument('--alternative-source', type=Path, help='read-only root of the context file closure')
     parser.add_argument('--alternative-context-sha256', help='exact SHA-256 of the admitted context JSON')
+    parser.add_argument('--addr-tie', choices=('GND','V3V3'), help='finite U2 ADDR pin1 source tie; V3V3 is a development defect')
+    parser.add_argument('--evaluation-context', type=Path, help='prior preparation.json to replay the captured evaluation decision')
+    parser.add_argument('--evaluation-context-sha256', help='independently retained digest of that prior preparation report')
     parser.add_argument('--added-input', action='append', default=[], metavar='AT=DIR')
     args = parser.parse_args(argv)
     sources = {}
@@ -659,7 +757,9 @@ def main(argv=None):
         report = prepare(args.brief, args.build_plan, args.out, added_sources=sources,
                          review_profile=args.review_profile, verification_timeout_s=args.verification_timeout_s,
                          alternative_context=args.alternative_context, alternative_source=args.alternative_source,
-                         alternative_context_sha256=args.alternative_context_sha256)
+                         alternative_context_sha256=args.alternative_context_sha256,
+                         addr_tie=args.addr_tie, evaluation_context=args.evaluation_context,
+                         evaluation_context_sha256=args.evaluation_context_sha256)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1
