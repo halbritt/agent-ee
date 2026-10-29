@@ -15,8 +15,8 @@ def read(root, raw):
     if root.resolve(strict=True) != root:
         raise ValueError('alternative source root contains an alias')
     context = strict_json(raw)
-    exact_fields(context, ('schema', 'reference', 'files', 'catalog', 'carrier_page',
-                           'ordering_text', 'parents', 'derivation'))
+    fields = ('schema', 'reference', 'files', 'catalog', 'carrier_page', 'ordering_text', 'parents', 'derivation')
+    exact_fields(context, (*fields, 'supplier_capture') if 'supplier_capture' in context else fields)
     if context['schema'] != SCHEMA or context['reference'] != 'acquisition-control':
         raise ValueError('unsupported acquisition alternative context')
     files = context['files']
@@ -28,12 +28,18 @@ def read(root, raw):
     if not isinstance(context['parents'], list) or len(context['parents']) != 2:
         raise ValueError('this context supports exactly two retained catalog parents')
     refs += context['parents']
+    if 'supplier_capture' in context:
+        from . import acquisition_selected_cpl
+        exact_fields(context['supplier_capture'], ('provenance', 'raw', 'http_response', 'receipt'))
+        refs += list(context['supplier_capture'].values())
     for blob in refs:
         parts_manifest._blob(blob)
         if files.get(blob['path']) != blob['sha256']:
             raise ValueError('context source reference is outside its pinned closure')
     try:
         _union(context, captures)
+        if 'supplier_capture' in context:
+            acquisition_selected_cpl.supplier_files(context, captures)
     except (KeyError, TypeError, UnicodeError) as exc:
         raise ValueError('malformed alternative catalog/derivation evidence') from exc
     return context, captures
@@ -52,6 +58,8 @@ def _union(context, captures):
         stale_before=None, source=parents[0]['source'], requests=[], parts={})
     needed = {b['path'] for b in context['parents']}
     needed.update(context[k]['path'] for k in ('catalog', 'carrier_page', 'ordering_text', 'derivation'))
+    if 'supplier_capture' in context:
+        needed.update(b['path'] for b in context['supplier_capture'].values())
     seen = set()
     for parent in parents:
         for request in parent['requests']:

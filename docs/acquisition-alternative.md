@@ -107,3 +107,13 @@ test discovery. Neither fixture class provides campaign acceptance.
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:.:tests \
   timeout 180 python3 -m unittest tests.test_acquisition_alternative -v
 ```
+
+Selected-part closure also runs through `acquisition_selected_cpl` before the
+public typed seal. It derives an owned `cpl` added-input revision from the original
+admitted tree plus exact captured C468683 raw/provenance evidence, replays the
+supplier parser, selects provenance for precisely the active purchasing IDs and
+regenerates the operative allocation roster with history/delta. The current
+ACQ-MECH-4 question binds that new roster and actual purchasing decision/catalog.
+Primary preference is unchanged even when alternative supplier data is supplied.
+No rotation-policy adjustment, native pad-rule change, network call, supplier
+approval or engineering acceptance follows from this source-closure operation.

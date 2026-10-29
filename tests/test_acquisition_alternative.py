@@ -303,3 +303,101 @@ class CapturedContextTests(unittest.TestCase):
         pin=storage.digest(path);self.context['catalog']['sha256']=pin;self.context['files'][self.context['catalog']['path']]=pin
         with self.assertRaisesRegex(ValueError,'exact conservative'):
             self.context_module.read(self.root,storage.json_bytes(self.context))
+
+
+class SelectedCplClosureTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(scoped_guard())
+        self.root=Path(self.enterContext(tempfile.TemporaryDirectory()))
+        authored_fixture(self.root)
+        from agent_ee import acquisition_selected_cpl as selected_cpl
+        from tests.land_pattern_fixtures import component,pad
+        self.module=selected_cpl
+        self.cpl=self.root/'cpl-source';self.cpl.mkdir()
+        self.original_roster=['C131334','C37593']
+        (self.root/'assembly-release-ids.json').write_bytes(storage.json_bytes(self.original_roster))
+        def supplier(lcsc,mpn):
+            raw=json.loads(component(lcsc,[pad('RECT',3990+i*4,3010,2,4,str(i+1),ident='g'+str(i)) for i in range(5)] +
+                [pad('RECT',4006-i*4,2990,2,4,str(i+6),ident='h'+str(i)) for i in range(5)]))
+            raw['dataStr']['head']['c_para']['Manufacturer Part']=mpn
+            return storage.json_bytes(raw)
+        self.context={};self.captures={}
+        for lcsc,mpn in [('C37593','ADS1115IDGSR'),('C131334','AUTHORED-CONNECTOR'),('C468683','ADS1115IDGST')]:
+            raw=supplier(lcsc,mpn)
+            stamp='2026-10-18T00:00:00+00:00';url='https://example.org/authored/'+lcsc
+            prov=dict(schema='agent-ee.supplier-footprint/1',format='easyeda-std-component/1',lcsc=lcsc,
+                path='cpl/supplier/'+lcsc+'.raweasy.json',sha256=hashlib.sha256(raw).hexdigest(),size_bytes=len(raw),
+                source_url=url,retrieved_at=stamp,retrieval='Authored CPU substitution, no network observation')
+            if lcsc!='C468683':
+                folder=self.cpl/'supplier';folder.mkdir(exist_ok=True)
+                (folder/(lcsc+'.raweasy.json')).write_bytes(raw)
+                (folder/(lcsc+'.provenance.json')).write_bytes(storage.json_bytes(prov))
+            else:
+                body=b'{"result":'+raw+b'}'
+                receipt=dict(outcome='captured_and_parsed',result_span_bytes=[10,10+len(raw)],
+                    requests=[dict(sha256=hashlib.sha256(body).hexdigest(),url=url,ended_at=stamp)])
+                documents={'provenance':storage.json_bytes(prov),'raw':raw,'http_response':body,'receipt':storage.json_bytes(receipt)}
+                self.context['supplier_capture']={}
+                for key,data in documents.items():
+                    self.captures[key]=data;self.context['supplier_capture'][key]=dict(path=key,sha256=hashlib.sha256(data).hexdigest())
+        self.overlay=dict(check_additions=dict(declare=[dict(kind='cpl_rotation',params=dict(export_check='export',geometry_check='geometry',
+            policy='cpl/policy.json',source_tolerance_nm='200',supplier_footprints=['cpl/supplier/'+i+'.provenance.json' for i in self.original_roster]))]),
+            judgments={'judgments/acq-mech-4-assembly-applicability.json':dict(questions=['Check assembly-release ids and applicability.'],sources=['assembly-release-ids.json','stock-assembly-release'])})
+        ctx=alternative.CapturedContext(requirement_map.input_inventory(self.root),
+            dict(path='preparation/catalog/catalog.json',sha256=storage.digest(self.root/'preparation/catalog/catalog.json')),
+            dict(path='preparation/ti/TI-ADS1115IDGST.html',sha256=storage.digest(self.root/'preparation/ti/TI-ADS1115IDGST.html')),
+            dict(path='manufacturer-text/ads1115.txt',sha256=storage.digest(self.root/'manufacturer-text/ads1115.txt')),'2026-10-18T01:00:00+00:00')
+        alternative.revise(self.root,ctx)
+
+    def test_missing_selected_supplier_refuses_instead_of_reusing_primary(self):
+        with self.assertRaisesRegex(ValueError,'exact supplier.*C468683'):
+            self.module.finalize(self.root,self.overlay,self.cpl)
+        self.assertEqual(json.loads((self.root/'assembly-release-ids.json').read_bytes()),self.original_roster)
+
+    def test_exact_capture_closes_selected_list_and_declares_roster_delta(self):
+        files=self.module.supplier_files(self.context,self.captures)
+        for path,raw in files.items():(self.cpl/path).write_bytes(raw)
+        before=copy.deepcopy(self.overlay['check_additions']['declare'][0]['params'])
+        report=self.module.finalize(self.root,self.overlay,self.cpl)
+        params=self.overlay['check_additions']['declare'][0]['params']
+        self.assertEqual(set(report['supplier_footprints']),{'C131334','C468683'})
+        self.assertEqual(report['roster']['added'],['C468683']);self.assertEqual(report['roster']['removed'],['C37593'])
+        self.assertEqual({k:v for k,v in params.items() if k!='supplier_footprints'},
+                         {k:v for k,v in before.items() if k!='supplier_footprints'})
+        self.assertNotIn('cpl/supplier/C37593.provenance.json',params['supplier_footprints'])
+        question=self.overlay['judgments']['judgments/acq-mech-4-assembly-applicability.json']
+        self.assertIn('not supplier approval',question['questions'][0])
+        self.assertTrue(any('SHA256 '+storage.digest(self.root/'assembly-release-ids.json') in x for x in question['sources']))
+
+    def test_relabelled_or_changed_supplier_capture_is_refused(self):
+        prov=json.loads(self.captures['provenance']);prov['lcsc']='C37593'
+        self.captures['provenance']=storage.json_bytes(prov)
+        with self.assertRaisesRegex(ValueError,'LCSC id differs'):
+            self.module.supplier_files(self.context,self.captures)
+
+    def test_eligible_primary_keeps_its_supplier_even_when_alternative_capture_exists(self):
+        root=self.root/'primary';root.mkdir();authored_fixture(root)
+        catpath=root/'preparation/catalog/catalog.json';catalog=json.loads(catpath.read_bytes())
+        req=next(r for r in catalog['requests'] if r['lcsc']=='C37593')
+        rawpath=catpath.parent/req['response']['path'];doc=json.loads(rawpath.read_bytes())
+        doc['data']['componentPageInfo']['list'][0]['stockCount']=10
+        rawpath.write_bytes(storage.json_bytes(doc));req['response'].update(sha256=storage.digest(rawpath),size_bytes=rawpath.stat().st_size)
+        _,parsed=jlc_stock_capture.parse_search_response(rawpath.read_bytes(),'C37593')
+        catalog['parts']['C37593']={**parsed,'last_seen':req['fetched_at']};catpath.write_bytes(storage.json_bytes(catalog))
+        def blob(path):return dict(path=path,sha256=storage.digest(root/path))
+        ctx=alternative.CapturedContext(requirement_map.input_inventory(root),blob('preparation/catalog/catalog.json'),
+            blob('preparation/ti/TI-ADS1115IDGST.html'),blob('manufacturer-text/ads1115.txt'),'2026-10-18T01:00:00+00:00')
+        self.assertEqual(alternative.revise(root,ctx)['selected'],'C37593')
+        (root/'assembly-release-ids.json').write_bytes(storage.json_bytes(self.original_roster))
+        for path,raw in self.module.supplier_files(self.context,self.captures).items():(self.cpl/path).write_bytes(raw)
+        result=self.module.finalize(root,self.overlay,self.cpl)
+        self.assertEqual(set(result['supplier_footprints']),set(self.original_roster))
+        self.assertEqual(result['roster']['added'],[]);self.assertEqual(result['roster']['removed'],[])
+
+    def test_exact_id_with_wrong_supplier_manufacturer_part_refuses(self):
+        raw=json.loads(self.captures['raw']);raw['dataStr']['head']['c_para']['Manufacturer Part']='ADS1015IDGST'
+        self.captures['raw']=storage.json_bytes(raw)
+        prov=json.loads(self.captures['provenance']);prov.update(sha256=hashlib.sha256(self.captures['raw']).hexdigest(),size_bytes=len(self.captures['raw']))
+        self.captures['provenance']=storage.json_bytes(prov)
+        with self.assertRaisesRegex(ValueError,'incompatible manufacturer part'):
+            self.module.supplier_files(self.context,self.captures)

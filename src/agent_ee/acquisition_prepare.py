@@ -16,7 +16,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +32,7 @@ REVISION_BASIS = {
     'requirement-map.json': 'Rebind source record/partitions and source-selected stock catalog; declare mechanics and preparation provenance',
     'parts.json': 'Rebind operative spec or source-selected purchasing/stock records without changing CAD or limits',
     'circuit.json': 'Update only the source-selected ADC purchasing display value',
+    'assembly-release-ids.json': 'Regenerate operative selected-allocation roster; archive historical choices, no supplier approval',
     'component-selections.json': 'Record automatic primary/carrier purchasing selection; retain historical original',
     'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
     'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
@@ -391,7 +392,11 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         recipe['helpers'][profiles.__name__] = spec_record.sha256(Path(profiles.__file__).read_bytes())
     if alternative is not None:
         recipe['alternative_context'] = alternative
-        for module in (acquisition_alternative, acquisition_alternative_context,
+        recipe['selected_cpl_inventory'] = acquisition_selected_cpl.projected_inventory(
+            additions['cpl'], context_doc, context_captures)
+        for module in (acquisition_alternative, acquisition_alternative_context, acquisition_selected_cpl,
+                       acquisition_selected_cpl.cpl_rotation, acquisition_selected_cpl.easyeda_footprint,
+                       acquisition_selected_cpl.land_pattern,
                        acquisition_alternative.assembly_readiness, acquisition_alternative.part_record,
                        acquisition_alternative.part_selection, acquisition_alternative.parts_manifest,
                        acquisition_alternative_context.jlc_stock_capture):
@@ -423,6 +428,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             (revised / alternative['path']).write_bytes(context_raw)
             alternative_report = acquisition_alternative_context.apply(
                 revised, context_doc, context_captures, alternative['evaluation_as_of'])
+            selected_cpl = scratch / 'selected-cpl'
+            acquisition_selected_cpl.materialize(sources['cpl'], selected_cpl, context_doc,
+                context_captures, recipe['selected_cpl_inventory'])
+            selected_closure = acquisition_selected_cpl.finalize(revised, overlay, selected_cpl)
+            sources['cpl'] = selected_cpl
+            overlay['added_inputs']['cpl']['files'] = recipe['selected_cpl_inventory']
             overlay['base']['requirement_map_sha256'] = spec_record.sha256(
                 (revised / 'requirement-map.json').read_bytes())
         changed = _archive_revision(base, revised, before, identity)
@@ -431,7 +442,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             ledger = json.loads(ledger_path.read_bytes())
             ledger['alternative'] = dict(selected=alternative_report['selected'], context=alternative,
                 changed=alternative_report['changed'], added=alternative_report['added'],
-                catalog=alternative_report['catalog'],
+                catalog=alternative_report['catalog'], selected_part_inputs=selected_closure,
                 captured_sources={acquisition_alternative_context.AT + '/' + n: h
                                   for n, h in context_doc['files'].items()})
             ledger_path.write_bytes(json_bytes(ledger))

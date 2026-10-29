@@ -248,3 +248,30 @@ bindings through existing contracts. Fresh ordinary production/native binding,
 rating provenance, electrical/package review, supplier preview and physical
 validation remain pending. Preparation provides no G2/ZA04/G4 or assembly
 acceptance. See [the narrow carrier contract](acquisition-alternative.md).
+
+The context may additionally contain `supplier_capture` with four blob refs:
+`provenance`, `raw`, `http_response`, `receipt`. This bounded extension is only
+for exact C468683 supplier orientation evidence. The existing supplier parser
+must validate its LCSC, package association, exact ADS1115IDGST manufacturer part,
+raw hash/size and retained HTTP result-byte span. Capture takes place separately
+under explicit admission; preparation itself remains offline. A selected part
+without exact supplier-footprint coverage refuses; primary data is never
+relabeled or reused for the alternative, and no fetch occurs implicitly.
+
+The preparer derives a fresh owned copy of the original admitted `cpl` added-input
+tree, adds the exact new raw/provenance bytes, and records the resulting full
+inventory in preparation identity. The original tree and original overlay stay
+unchanged. Before sealing, the CPL check's supplier provenance list is recomputed
+from the actual selected allocations. Every selected ID must have an exact parsed
+supplier source. Unselected historical captures remain in custody. Rotation policy,
+tolerances, polarity evidence and native pin/pad checks retain their original rules.
+Supplier coverage does not prove a native row's orientation or supplier approval.
+
+`assembly-release-ids.json` is now an operative selected purchasing-allocation
+roster, regenerated from the qualified parts manifest. Its prior bytes are archived
+under `history/acquisition-preparation-original/` when changed; the edit ledger and
+`preparation/selected-part-input-closure.json` record source/roster hashes and explicit
+added/removed IDs. The ACQ-MECH-4 applicability question names the operative roster
+hash and current purchasing decision/catalog; the old roster is labeled historical.
+It continues to require independent process/applicability judgment and expressly
+does not establish supplier approval or physical validation.
