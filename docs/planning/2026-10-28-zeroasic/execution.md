@@ -704,3 +704,47 @@ Those corrections must inform fresh candidate-specific judgments. None of the
 14 required judgment records has been accepted. Evaluator gaps and automatic
 alternative selection remain open. All original exhausted attempt limits and
 failed artifacts are preserved; campaign acceptance remains **0/4**.
+
+### Strict proof correction integrated; native control exposed input problems
+
+Agent-691 corrected the incomplete-proof boundary by retaining the actual saved
+native capture and replaying it through the existing block grader. Package
+verification requires exact complete report equality. Independent re-review
+approved `f806789b`; it and its parent were integrated as `ead3e128` and
+`b4a41a2a`. The final pure run passed 78 tests; the earlier import failure is
+retained. Actual package success remains unproven.
+
+A separate 51-file, three-part synthetic input bundle adds honest manufacturing
+coverage to the retained strict reference control. This is software composition
+evidence preparation, not an acquisition or G4 case. Two actual public build
+invocations on `b4a41a2a` failed and remain retained:
+
+- `strict-package-native-r1`: exit 1 in 1.402 seconds at requirements. The
+  coordinator copied frozen read-only directory modes into the runtime input;
+  the candidate could not create its requirements provenance directory.
+- `strict-package-native-r2`: exit 1 in 2.887 seconds after requirements and
+  parts. A fresh owned runtime copy had the same 51 content hashes and corrected
+  write permissions. The standalone netlist-export requirement had no executable
+  bound coverage: the exporter supplies data for later checks and is not itself
+  an acceptance predicate. No placement, artwork or package ran.
+
+Both jobs and their staging errors are preserved. Native admission is free.
+The two-invocation control cap is exhausted; a bounded offline correction now
+combines native-netlist evidence with its actual parts-membership obligation.
+No third native invocation is admitted by that preparation assignment.
+
+The two active implementation builders are agent-697 for source-bound body/access
+constraints and agent-693 for a bounded local ADC return operation. They have
+separate file ownership. The latter must use freshly resolved pads and unchanged
+width/clearance rules before global routing; the existing final checker still
+measures both fresh supply and return legs against 10 mm. No zero-cost plane
+edge, copied old coordinates or renewed saved-board repair is permitted.
+
+The actual original esp_prog finalization draft exposed three remaining product
+behaviors under AGENTEE-523: explicit applicability for a PCB-only article without
+a supplied schematic, source-bound formatting of the 20 undersized markings,
+and a selected process policy with individual via/pad-site dispositions. Its
+source snapshot is frozen at `0c0dbd01`; it correctly flagged later integration
+changes and is not runtime-ready. No draft execution, new placement run, supplier
+approval or artwork acceptance is implied. The direct owner goal stays active
+through G4 and current M1 closure; acceptance is still **0/4**.
