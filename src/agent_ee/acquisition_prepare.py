@@ -22,6 +22,24 @@ from .storage import json_bytes, rename_noreplace
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = 'acquisition-control'
 REVIEW_PROFILE = 'preparation/review-profile.json'
+INHERITED_REVIEW = 'ENGINEERING-REVIEW.md'
+REVIEW_SOURCE_REBINDINGS = {
+    'acq-elec-1-temperature-applicability': ('ACQ-ELEC-1', ('OPERATING.md', 'engineering-calculations.json conditions')),
+    'acq-elec-1-unqualified-conditions': ('ACQ-ELEC-1', ('OPERATING.md sequencing',)),
+    'acq-elec-3-back-power-contract': ('ACQ-ELEC-3', ('OPERATING.md', 'circuit.json')),
+    'acq-elec-4-error-evaluation': ('ACQ-ELEC-4', ('engineering-calculations.json', 'OPERATING.md')),
+    'acq-elec-5-configuration': ('ACQ-ELEC-5', ('OPERATING.md', 'engineering-calculations.json')),
+    'acq-elec-6-high-impedance-contract': ('ACQ-ELEC-6', ('OPERATING.md', 'circuit.json')),
+    'acq-mech-3-limit-rationale': ('ACQ-MECH-3', ('requirement-map.json engineering-geometry limits', 'analysis/geometry-model.json')),
+    'acq-mech-3-return-paths': ('ACQ-MECH-3', ('requirement-map.json engineering-geometry limits', 'analysis/geometry_model.py')),
+}
+INHERITED_SCOPE_DESCRIPTION = (
+    'ENGINEERING-REVIEW.md records source-based judgments, model applicability and assembly targets; '
+    'native checks and explicit model calculations verify their declared predicates on this generated candidate.')
+SOURCE_SCOPE_DESCRIPTION = (
+    'Captured calculations, models and operating instructions declare source assumptions and assembly targets; '
+    'native checks evaluate their declared predicates on this generated candidate. '
+    'Fresh candidate-bound engineering judgments remain required.')
 ADOPTION = 'Use acquisition reference acquisition-control unchanged.'
 CAPACITANCE = re.compile(
     r'Total I2C line capacitance shall be at most (?P<quantity>(?P<value>[0-9]+(?:\.[0-9]+)?)'
@@ -44,7 +62,7 @@ REVISION_BASIS = {
     'analysis/power-removal/README.md': 'Declare corrected source-only removal derivative, zero ADC minimum and retained200uA stress',
     'analysis/geometry-model.json': 'Bind exact Murata/R6 lineage and optional manufacturer-derived R1/R2 Panasonic body maxima',
     'engineering-calculations.json': 'Recompute RC operand; bind captured sources and rate-qualified ADC terms',
-    'ENGINEERING-REVIEW.md': 'Transcribe changed arithmetic and withhold inherited review credit',
+    'ENGINEERING-REVIEW.md': 'Omit inherited board testimony; retain the exact original only in the captured recipe',
 }
 
 
@@ -314,9 +332,51 @@ def _bind_parts_membership(revised, scope):
                 basis='Normal requirements compiler captures this same operative specification; no decision replaces it')
 
 
+def _refuse_inherited_review(root, original_sha256, *, allow_revision=False):
+    files = requirement_map.input_inventory(root)
+    for name, sha256 in files.items():
+        if allow_revision and name == INHERITED_REVIEW:
+            continue
+        if Path(name).name == INHERITED_REVIEW or sha256 == original_sha256:
+            raise ValueError('inherited board review must not enter generated source: ' + name)
+    return files
+
+
+def _isolate_inherited_review(base, revised, overlay, before):
+    """Helpers may transcribe the pinned recipe; fresh seats must never receive its verdict."""
+    files = _refuse_inherited_review(revised, before[INHERITED_REVIEW], allow_revision=True)
+    if INHERITED_REVIEW not in files:
+        raise ValueError('missing inherited review in the owned source revision')
+    expected = {('judgments/' + name + '.json', INHERITED_REVIEW + ' ' + section): sources
+                for name, (section, sources) in REVIEW_SOURCE_REBINDINGS.items()}
+    observed = [(name, source) for name, brief in overlay['judgments'].items()
+                for source in brief['sources'] if INHERITED_REVIEW in source]
+    if sorted(observed) != sorted(expected):
+        raise ValueError('inherited review judgment source references differ from the captured recipe')
+    path = revised / 'requirement-map.json'
+    declaration = requirement_map.map_declaration(path.read_bytes())
+    description = declaration['scope']['scope']
+    original_description = requirement_map.map_declaration((base / 'requirement-map.json').read_bytes())['scope']['scope']
+    if description != original_description or description.count(INHERITED_SCOPE_DESCRIPTION) != 1:
+        raise ValueError('inherited review scope description differs from the captured recipe')
+    declaration['scope']['scope'] = description.replace(INHERITED_SCOPE_DESCRIPTION, SOURCE_SCOPE_DESCRIPTION)
+    for name, brief in overlay['judgments'].items():
+        brief['sources'] = list(dict.fromkeys(replacement for source in brief['sources']
+            for replacement in expected.get((name, source), (source,))))
+    (revised / INHERITED_REVIEW).unlink()
+    path.write_bytes(json_bytes(declaration))
+    overlay['base']['requirement_map_sha256'] = storage.digest(path)
+
+
 def _archive_revision(base, revised, before, identity):
     changed = {}
     for name, original in before.items():
+        if name == INHERITED_REVIEW:
+            if (revised / name).exists() or (revised / 'history/acquisition-preparation-original' / name).exists():
+                raise ValueError('inherited board review was not isolated before archive')
+            changed[name] = dict(before=original, after=None, basis=REVISION_BASIS[name],
+                                 retention='Original captured recipe only; no generated or archived body')
+            continue
         digest = spec_record.sha256((revised / name).read_bytes())
         if digest == original:
             continue
@@ -692,7 +752,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             # A selected purchasing display label may change circuit bytes; the
             # authored calculation source remains captured in the original archive.
             source_files.update({'history/acquisition-preparation-original/' + n: h
-                                 for n, h in before.items() if source_files.get(n) != h})
+                                 for n, h in before.items() if n != INHERITED_REVIEW and source_files.get(n) != h})
             supplement_report = acquisition_source_supplement.apply(
                 revised, overlay, supplement_captures, source_files)
             (provenance / 'source-supplement-pins.json').write_bytes(
@@ -765,6 +825,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         if roles is not None:
             role_report=acquisition_roles.apply(revised,plan,overlay,role_doc,role_captures)
             (revised/acquisition_roles.AT/'context-input.json').write_bytes(role_raw)
+        _isolate_inherited_review(base, revised, overlay, before)
         changed = _archive_revision(base, revised, before, identity)
         if resistor_report is not None or public is not None:
             ledger_path = provenance / 'edit-ledger.json'
@@ -838,6 +899,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         ledger_path.write_bytes(json_bytes(ledger))
         plan['placement']['mechanics'] = 'placement-mechanics.json'
         result = typed_overlay.prepare(revised, overlay_file, bundle / 'inputs', added_sources=sources)
+        _refuse_inherited_review(bundle / 'inputs', before[INHERITED_REVIEW])
         acquisition_mechanics.load(bundle / 'inputs/placement-mechanics.json')
         if final_groups:
             sealed = bundle / 'inputs'

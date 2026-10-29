@@ -33,6 +33,25 @@ qualification. The existing recovery manifest pins its build plan, all 198
 source files, profile and native budgets. The preparer requires those exact bytes;
 it does not silently adopt later typed or previously prepared inputs.
 
+The pinned original `ENGINEERING-REVIEW.md` remains a mechanical recipe input,
+outside fresh reviewer mounts. After the existing source/model corrections,
+preparation removes its inherited board-verdict body from the generated source
+and omits its archival copy. The edit ledger retains the original hash and an
+explicit `after: null` omission record. The eight known judgment source references
+are rebound to operative calculations, operating instructions and model/limit
+declarations; requirement spans, checks, thresholds and model provenance remain
+unchanged. Unknown source references or scope-description text refuse before
+publication. Normal typed accounting and candidate capture bind the new source;
+no existing baseline or qualification can be reused by editing its inputs.
+
+An inherited review in a nested role payload, an archived copy, or an exact copy
+of the original body under another name also refuses. Role captures must exclude
+such board testimony **before** their own source qualification. Preparation does
+not prune or reseal admitted role payloads. Genuine source-role qualification
+records and model derivation/convergence evidence remain ordinary source inputs.
+Filtering `packet_inputs` alone would leave readable copies in `/candidate` and
+retained stage evidence, so it is not the isolation boundary.
+
 Run from the repository, with the existing source and additive captures:
 
 ```sh

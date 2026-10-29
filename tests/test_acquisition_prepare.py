@@ -84,6 +84,160 @@ class AcquisitionPreparationTests(unittest.TestCase):
             added_sources=self.sources if sources is None else sources, **context)
         return out, report
 
+    def test_prior_board_review_is_omitted_before_source_capture_with_original_custody(self):
+        from agent_ee import candidate, build_stages
+        before = requirement_map.input_inventory(BASE)
+        out, report = self.prepare(brief('100'))
+        inputs = out / 'inputs'
+        self.assertEqual(requirement_map.input_inventory(BASE), before)
+        self.assertEqual(report['changed']['ENGINEERING-REVIEW.md']['before'], before['ENGINEERING-REVIEW.md'])
+        self.assertIsNone(report['changed']['ENGINEERING-REVIEW.md']['after'])
+        ledger = storage.read_json(inputs / 'preparation/edit-ledger.json')
+        self.assertEqual(ledger['original_inventory'], before)
+        self.assertEqual(ledger['changed'], report['changed'])
+        self.assertIn('Original captured recipe only', ledger['changed']['ENGINEERING-REVIEW.md']['retention'])
+        scope = build_stages.candidate_scope({}, inputs)
+        selected = [name for entry in scope['inputs'] for _, name in candidate.selected_files(entry, inputs)]
+        self.assertEqual(set(selected), set(report['inputs']))
+        self.assertFalse(any(Path(name).name == 'ENGINEERING-REVIEW.md' for name in selected))
+        self.assertNotIn(before['ENGINEERING-REVIEW.md'], report['inputs'].values())
+        overlay = storage.read_json(out / 'overlay.json')
+        original_overlay = storage.read_json(ROOT / 'fixtures/acquisition-typed/overlay.json')
+        self.assertEqual(set(overlay['judgments']), set(original_overlay['judgments']))
+        for name, row in overlay['judgments'].items():
+            self.assertEqual(row['requirement'], original_overlay['judgments'][name]['requirement'])
+            self.assertEqual(row['questions'], original_overlay['judgments'][name]['questions'])
+            self.assertFalse(any('ENGINEERING-REVIEW.md' in source for source in row['sources']))
+        for name in ('spec.md', 'OPERATING.md', 'analysis/geometry-model.json', 'analysis/geometry_model.py',
+                     'analysis/power-startup/corners.lib', 'analysis/power-removal/corners.lib',
+                     'circuit.json', 'layout.json', 'groups.json', 'ratings.json', 'adc-ties.json'):
+            self.assertEqual((inputs / name).read_bytes(), (BASE / name).read_bytes(), name)
+        declaration = storage.read_json(inputs / 'requirement-map.json')
+        original = storage.read_json(BASE / 'requirement-map.json')
+        self.assertNotIn('ENGINEERING-REVIEW', declaration['scope']['scope'])
+        self.assertEqual(declaration['scope']['scope'].split('Captured calculations')[0],
+                         original['scope']['scope'].split('ENGINEERING-REVIEW')[0])
+        original_record = storage.read_json(BASE / 'spec-record.json')
+        record = storage.read_json(inputs / 'spec-record.json')
+        self.assertEqual(record['requirements'], original_record['requirements'])
+        self.assertEqual(record['prose'], original_record['prose'])
+        def limits(document):
+            found = {}
+            def visit(value):
+                if isinstance(value, dict):
+                    if 'id' in value and 'params' in value and 'limits' in value['params']:
+                        found[value['id']] = value['params']['limits']
+                    for child in value.values():
+                        visit(child)
+                elif isinstance(value, list):
+                    for child in value:
+                        visit(child)
+            visit(document)
+            return found
+        self.assertTrue(limits(original))
+        self.assertEqual({name: limits(declaration)[name] for name in limits(original)}, limits(original))
+        self.assertEqual(report['accounting']['obligations']['judgment'], 14)
+        self.assertEqual(report['accounting']['judgment_records_present'], [])
+
+    def test_nested_role_archived_or_renamed_prior_review_refuses_without_publication(self):
+        copied = shutil.copyfile
+        before = requirement_map.input_inventory(BASE)
+        for index, name in enumerate(('reference-roles/blocks/power/ENGINEERING-REVIEW.md',
+                'reference-roles/blocks/power/history/acquisition-preparation-original/ENGINEERING-REVIEW.md',
+                'history/acquisition-preparation-original/ENGINEERING-REVIEW.md',
+                'reference-roles/blocks/host/renamed-review.txt')):
+            def inject(src, dst, *args, **kwargs):
+                result = copied(src, dst, *args, **kwargs)
+                if Path(src) == BASE / 'ENGINEERING-REVIEW.md' and Path(dst).parent.name == 'revision':
+                    target = Path(dst).parent / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(Path(src).read_bytes())
+                return result
+            output = 'inherited-' + str(index)
+            with self.subTest(path=name), patch('shutil.copyfile', inject), self.assertRaisesRegex(
+                    ValueError, 'inherited board review must not enter generated source: ' + name):
+                self.prepare(brief('125'), output)
+            self.assertFalse((self.root / output).exists())
+        self.assertEqual(requirement_map.input_inventory(BASE), before)
+
+    @unittest.skipUnless(all(os.environ.get(name) for name in ('AGENT_EE_ADDR_CONTEXT',
+        'AGENT_EE_ADDR_SOURCE', 'AGENT_EE_ADDR_SUPPLEMENT', 'AGENT_EE_ADDR_POWER')),
+        'explicit captured model/source corrections required')
+    def test_model_correction_sources_survive_review_isolation(self):
+        sources = {**self.sources, 'source-supplement': Path(os.environ['AGENT_EE_ADDR_SUPPLEMENT']),
+                   'power-repair': Path(os.environ['AGENT_EE_ADDR_POWER'])}
+        context = Path(os.environ['AGENT_EE_ADDR_CONTEXT'])
+        originals = {name: requirement_map.input_inventory(root) for name, root in sources.items()}
+        out, report = self.prepare(brief('125'), sources=sources, final_groups=True,
+            alternative_context=context, alternative_context_sha256=storage.digest(context),
+            alternative_source=Path(os.environ['AGENT_EE_ADDR_SOURCE']))
+        inputs = out / 'inputs'
+        self.assertFalse(any(Path(name).name == 'ENGINEERING-REVIEW.md' for name in report['inputs']))
+        for name in ('source-supplement', 'power-repair'):
+            self.assertEqual(requirement_map.input_inventory(inputs / name), originals[name])
+            self.assertEqual(requirement_map.input_inventory(sources[name]), originals[name])
+        ledger = storage.read_json(inputs / 'preparation/edit-ledger.json')
+        self.assertIn('source_supplement', ledger)
+        self.assertIn('power_repair', report)
+        calculations = storage.read_json(inputs / 'engineering-calculations.json')
+        self.assertIn('adc_applicability', calculations)
+        self.assertIn('128SPS', calculations['adc_applicability']['operating'])
+        self.assertTrue(any('power-repair/' in name for name in calculations['sources']))
+        self.assertEqual(report['accounting']['obligations']['judgment'], 14)
+        self.assertEqual((inputs / 'analysis/geometry_model.py').read_bytes(),
+                         (BASE / 'analysis/geometry_model.py').read_bytes())
+
+    def test_unknown_missing_or_duplicate_review_source_reference_refuses(self):
+        path = ROOT / 'fixtures/acquisition-typed/overlay.json'
+        original = storage.read_json(path)
+        read = Path.read_bytes
+        key = 'judgments/acq-elec-1-temperature-applicability.json'
+        for index, change in enumerate(('unknown', 'missing', 'duplicate')):
+            overlay = json.loads(json.dumps(original))
+            sources = overlay['judgments'][key]['sources']
+            inherited = next(source for source in sources if 'ENGINEERING-REVIEW.md' in source)
+            if change == 'unknown':
+                sources[sources.index(inherited)] += ' unknown-section'
+            elif change == 'missing':
+                sources.remove(inherited)
+            else:
+                sources.append(inherited)
+            def changed_read(target):
+                return storage.json_bytes(overlay) if target == path else read(target)
+            output = 'unknown-citation-' + str(index)
+            with self.subTest(change=change), patch.object(Path, 'read_bytes', changed_read), self.assertRaisesRegex(
+                    ValueError, 'inherited review judgment source references differ'):
+                self.prepare(brief('125'), output)
+            self.assertFalse((self.root / output).exists())
+
+    def test_unknown_scope_description_refuses_even_when_known_sentence_remains(self):
+        write = Path.write_bytes
+        for index, append in enumerate((False, True)):
+            def changed_write(path, raw):
+                if path.name == 'requirement-map.json' and path.parent.name == 'revision':
+                    document = json.loads(raw)
+                    document['scope']['scope'] = ((document['scope']['scope'] if append else '') +
+                                                  ' Unexpected inherited board judgment description')
+                    raw = storage.json_bytes(document)
+                return write(path, raw)
+            output = 'unknown-description-' + str(index)
+            with self.subTest(append=append), patch.object(Path, 'write_bytes', changed_write), self.assertRaisesRegex(
+                    ValueError, 'inherited review scope description differs'):
+                self.prepare(brief('125'), output)
+            self.assertFalse((self.root / output).exists())
+
+    def test_late_review_copy_cannot_publish_a_source_bundle(self):
+        copytree = shutil.copytree
+        def late_copy(src, dst, *args, **kwargs):
+            result = copytree(src, dst, *args, **kwargs)
+            if Path(src).name == 'revision':
+                (Path(dst) / 'ENGINEERING-REVIEW.md').write_bytes((BASE / 'ENGINEERING-REVIEW.md').read_bytes())
+            return result
+        with patch('shutil.copytree', late_copy), self.assertRaisesRegex(
+                ValueError, 'inherited board review must not enter generated source: ENGINEERING-REVIEW.md'):
+            self.prepare(brief('125'), 'late-review-copy')
+        self.assertFalse((self.root / 'late-review-copy').exists())
+
     def test_final_groups_opt_in_seals_admitted_source_and_mechanics_map(self):
         from agent_ee import acquisition_mechanics, block_source_stage, placement_contract
         out, report = self.prepare(brief('125'), final_groups=True)
