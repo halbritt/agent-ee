@@ -92,7 +92,7 @@ def verify_retained(out):
         raise QualificationError(str(exc), integrity=True) from exc
 
 
-def checked_review(root, report):
+def checked_review(root, report, *, host=None):
     candidates = list(reversed(report['completed']))
     if len(report['completed']) == len(STAGES) - 1:
         for attempt in reversed(report['attempts']):
@@ -107,7 +107,7 @@ def checked_review(root, report):
         if not (review / 'result.json').exists():
             continue
         result_sha256 = digest(review / 'result.json')
-        result = verify_stage_review(directory)
+        result = verify_stage_review(directory, **({} if host is None else {'host': host}))
         if digest(review / 'result.json') != result_sha256:
             raise QualificationError('Ordinary review changed during verification', integrity=True)
         manifest = read_json(review / 'candidate.json')
@@ -136,13 +136,13 @@ def review_candidate(scope, directory, timeout, profile=None):
 
 
 
-def verify_stage_review(directory):
-    return verify(directory / 'review')
+def verify_stage_review(directory, *, host=None):
+    return verify(directory / 'review', **({} if host is None else {'host': host}))
 
 
-def verify_review(review):
+def verify_review(review, *, host=None):
     """Recheck the selected review before publishing an assessment."""
-    if (verify_stage_review(review.directory) != review.result
+    if (verify_stage_review(review.directory, **({} if host is None else {'host': host})) != review.result
             or digest(review.directory / 'review/result.json') != review.result_sha256):
         raise QualificationError('Ordinary review evidence changed during assessment', integrity=True)
 

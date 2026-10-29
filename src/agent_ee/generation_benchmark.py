@@ -284,7 +284,7 @@ def publish_report(store, report):
 
 
 def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', timeout=120,
-             expect_pins=None, execution_work=None, deadline=None, cancel=None, _case=None):
+             expect_pins=None, execution_work=None, deadline=None, cancel=None, _case=None, completion_work=None):
     """Evaluate one retained output; generator result.json claims are never read."""
     from .checks import run_checks
     if type(timeout) is not int or timeout < 1:
@@ -311,6 +311,23 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         task = pinned_task(task_root, expect_pins=expect_pins)
         checkpoint()
         refusal = 'expected_refusal' in task
+        completion = None
+        if completion_work is not None:
+            from . import acquisition_completion
+            completion = acquisition_completion.verify(completion_work, deadline=deadline, cancel=cancel)
+            if (completion['brief_sha256'] != task['files'][task['prompt']] or
+                    (_case is not None and (completion['attempt'] != _case['attempt']
+                     or completion['context_pins'] != _case.get('completion_context_pins')))):
+                raise ValueError('completion differs from current public brief/attempt')
+            if completion['execution'] == 'ok':
+                outputs = Path(completion['outputs'])
+            else:
+                outputs = trial.parent / (trial.name + '-no-completion-output')
+                outputs.mkdir(exist_ok=False)
+                generation_execution = 'failed'
+        if _case is not None and _case.get('completion_required') and completion is None:
+            outputs = trial.parent / (trial.name + '-no-completion-output')
+            outputs.mkdir(exist_ok=False)
         observed, output_error = output_files(outputs)
         output_tree = {'files': observed, 'entries': _output_entries(outputs)} if refusal and output_error is None else None
         if output_error:
@@ -332,8 +349,14 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
                 shutil.copyfile(source, generation / name)
             generation_records = tree_files(generation)
             generation_execution = executor_outcome(generation)
-            if output_error:
+            if output_error or (completion is not None and completion['execution'] != 'ok') or (
+                    _case is not None and _case.get('completion_required') and completion is None):
                 generation_execution = 'failed'
+        if completion is not None:
+            shutil.copytree(completion_work, trial / 'completion')
+            completion_files = tree_files(trial / 'completion')
+            if tree_files(completion_work) != completion_files:
+                raise ValueError('completion records changed during capture')
         checkpoint()
         shutil.copytree(task_root, trial / 'task')
         if pinned_task(trial / 'task')['files'] != task['files']:
@@ -404,6 +427,8 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
             report['binding'].update(kind='source_refusal', output_tree=output_tree)
         if generation_records is not None:
             report['binding']['generation_records'] = generation_records
+        if completion is not None:
+            report['binding']['completion_files'] = completion_files
         if _case is not None:
             report['binding']['case'] = _case
         checkpoint()
@@ -445,7 +470,8 @@ def combined_result(generation_execution, scoring):
 
 
 def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, expect_pins=None,
-             case_timeout=None, grading_reserve=None, max_work=None, cancel=None):
+             case_timeout=None, grading_reserve=None, max_work=None, cancel=None,
+             completion_context=None, expect_context=None):
     """One finite case; a work credit admits one generation subtree or grading phase.
 
     The generation sandbox's PID namespace contains its child preparation/build/review.
@@ -457,32 +483,47 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
         raise ValueError('timeout must be a positive integer')
     case_timeout = 2 * attempts * timeout if case_timeout is None else case_timeout
     grading_reserve = timeout if grading_reserve is None else grading_reserve
-    max_work = 2 * attempts if max_work is None else max_work
+    acquisition = completion_context is not None
+    if acquisition != (expect_context is not None):
+        raise ValueError('acquisition completion needs public context and its external pins')
+    if acquisition and attempts > 2:
+        raise ValueError('acquisition case allows at most two complete attempts')
+    phases = 3 if acquisition else 2
+    max_work = phases * attempts if max_work is None else max_work
     if type(case_timeout) is not int or case_timeout < 2:
         raise ValueError('case_timeout must be an integer >= 2')
     if type(grading_reserve) is not int or not 1 <= grading_reserve < case_timeout:
         raise ValueError('grading_reserve must be an integer in [1, case_timeout)')
-    if type(max_work) is not int or max_work < 2:
-        raise ValueError('max_work must be an integer >= 2')
+    if type(max_work) is not int or max_work < phases:
+        raise ValueError('max_work must admit generation/completion/grading phases')
     started = time.monotonic()
     deadline, productive = started + case_timeout, started + case_timeout - grading_reserve
     cancel = cancel if cancel is not None else native_run.Cancellation()
     task_root, scratch = Path(task_root), Path(scratch)
     task = pinned_task(task_root, expect_pins=expect_pins)
+    if acquisition:
+        from . import acquisition_completion
+        context_path = Path(completion_context).absolute()
+        task_path = task_root.resolve()
+        if context_path.resolve() == task_path or task_path in context_path.resolve().parents or context_path.resolve() in task_path.parents:
+            raise ValueError('public completion context must be separate from the private task')
+        acquisition_completion.context(context_path, expect_context)
     scratch.mkdir(parents=True, exist_ok=False)
     ledger = {'schema': 'agent-ee.generation-trial/1', 'generator_sha256': None, 'evaluations': [],
               'task_pins': task['files']['pins.json'], 'limits': {'attempts': attempts, 'timeout_s': timeout,
               'case_timeout_s': case_timeout, 'grading_reserve_s': grading_reserve, 'max_work': max_work},
               'started': started, 'deadline': deadline, 'productive_deadline': productive,
               'work_started': 0, 'attempts_started': 0, 'attempt_records': [], 'status': 'running'}
+    if acquisition:
+        ledger['completion_context_pins'] = expect_context
     def save():
         ledger['elapsed_s'] = time.monotonic() - started
         write_json(scratch / 'trial.json', ledger)
     def admit(phase):
         if cancel.cancelled.is_set():
             raise native_run.DeadlineExhausted('case cancelled')
-        limit = productive if phase == 'generation' else deadline
-        if time.monotonic() >= limit or ledger['work_started'] >= max_work - (phase == 'generation'):
+        limit = deadline if phase == 'grading' else productive
+        if time.monotonic() >= limit or ledger['work_started'] >= max_work - (phase != 'grading'):
             raise native_run.DeadlineExhausted('case ' + phase + ' time/work exhausted')
         ledger['work_started'] += 1
         save()  # No refund after a failed launch, timeout, or missing output.
@@ -490,6 +531,9 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
     try:
         if cancel.cancelled.is_set() or time.monotonic() >= productive:
             raise native_run.DeadlineExhausted('case stopped before public preparation')
+        if acquisition:
+            shutil.copytree(context_path, scratch / 'completion-context')
+            acquisition_completion.context(scratch / 'completion-context', expect_context)
         public = scratch / 'public'
         public.mkdir()
         shutil.copyfile(task_root / task['prompt'], public / 'prompt.md')
@@ -499,7 +543,7 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
         for index in range(attempts):
             # Keep the last work credit and final wall reserve for grading.
             if (cancel.cancelled.is_set() or time.monotonic() >= productive or
-                    ledger['work_started'] >= max_work - 1):
+                    ledger['work_started'] >= max_work - (phases - 1)):
                 ledger['status'] = 'cancelled' if cancel.cancelled.is_set() else 'budget_exhausted'
                 break
             entry = {'attempt': index + 1, 'status': 'preparing', 'evaluation_report': None,
@@ -513,7 +557,7 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
             (work / 'output').mkdir()
             if previous is not None:
                 prior = strict_json(reports[-1].read_bytes())
-                if previous.exists() and prior['generation']['output_error'] is None:
+                if not acquisition and previous.exists() and prior['generation']['output_error'] is None:
                     shutil.copytree(previous, work / 'previous')
                 else:
                     (work / 'previous').mkdir()
@@ -525,6 +569,29 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                 ['/usr/bin/python3', '/candidate/generator.py', '/candidate/prompt.md', '/work/output'],
                 timeout=timeout), inputs=public, work=work, deadline=productive, cancel=cancel)
             entry['generation_execution'] = record['execution']
+            completion_work = None
+            if acquisition:
+                entry['qualification_execution'] = 'not_run'
+                if record['execution'] == 'ok':
+                    try:
+                        admit('completion')
+                    except native_run.DeadlineExhausted:
+                        # Preserve grading for this admitted attempt; no late production.
+                        pass
+                    else:
+                        entry['status'] = 'qualifying'; save()
+                        completion_record = acquisition_completion.complete(public, work, scratch / f'production-{index + 1}',
+                            scratch / 'completion-context', expect_context, attempt=index + 1,
+                            deadline=productive, cancel=cancel)
+                        entry['qualification_execution'] = completion_record['execution']
+                        finished = time.monotonic()
+                        completion_work = acquisition_completion.retain(scratch / f'completion-{index + 1}',
+                            scratch / 'completion-context', expect_context, scratch / f'production-{index + 1}',
+                            brief=public / 'prompt.md', attempt=index + 1, productive_deadline=productive, finished=finished,
+                            deadline=deadline, cancel=cancel)
+                if completion_work is None:
+                    # Even successful generation cannot bypass the required trusted phase.
+                    record = dict(record, execution='failed')
             entry['status'] = 'grading'
             save()
             # Cancellation retains the generation attempt without claiming an evaluation.
@@ -537,7 +604,8 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
             path = evaluate(task_root, work / 'output', scratch / f'evaluation-{index + 1}', store,
                 generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
                 expect_pins=task['files']['pins.json'], execution_work=work, deadline=deadline, cancel=cancel,
-                _case={'trial': str(scratch.resolve()), 'attempt': index + 1})
+                _case={'trial': str(scratch.resolve()), 'attempt': index + 1,
+                       **({'completion_required': True, 'completion_context_pins': expect_context} if acquisition else {})}, completion_work=completion_work)
             reports.append(path)
             ledger['evaluations'].append(str(path))
             entry.update(status='evaluated', evaluation_report=str(path))
@@ -568,6 +636,10 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
             record_path = scratch / f"attempt-{entry['attempt']}" / 'execution.json'
             if entry['generation_execution'] is None and record_path.is_file() and not record_path.is_symlink():
                 entry['generation_execution'] = strict_json(record_path.read_bytes()).get('execution')
+            if acquisition:
+                partial = scratch / f"completion-{entry['attempt']}" / 'execution.json'
+                if partial.is_file() and not partial.is_symlink():
+                    entry['qualification_execution'] = strict_json(partial.read_bytes()).get('execution')
         if ledger['status'] == 'completed' and (time.monotonic() >= deadline or cancel.cancelled.is_set()):
             ledger['status'] = 'budget_exhausted' if time.monotonic() >= deadline else 'cancelled'
         save()
@@ -660,11 +732,15 @@ def case_files(report, path):
     if report['result']['overall_pass'] is True and (ledger['status'] != 'completed' or
             ledger['elapsed_s'] >= ledger['limits']['case_timeout_s']):
         raise ValueError('exhausted or incomplete case cannot supply success')
+    if case.get('completion_required') and ledger.get('completion_context_pins') != case.get('completion_context_pins'):
+        raise ValueError('case public completion context differs from binding')
     names = ['trial.json']
     for entry in entries:
         n = entry['attempt']
         names += [f'attempt-{n}/' + name for name in RECORDS]
         names += [f'evaluation-{n}/evaluation.json']
+        if 'completion_context_pins' in ledger:
+            names += [f'completion-{n}/' + name for name in (*RECORDS, 'receipt.json')]
         if report.get('kind') == 'source_refusal' and entry['evaluation_report'] is not None:
             evaluation = root / f'evaluation-{n}'
             prior_path = Path(entry['evaluation_report']).resolve()
@@ -685,6 +761,15 @@ def case_files(report, path):
         if source.exists() and (not source.is_file() or source.stat().st_nlink != 1):
             raise ValueError('non-ordinary case record')
         files[name] = digest(source) if source.is_file() else None
+    if 'completion_context_pins' in ledger:
+        from .stage_receipts import tree_identity
+        for entry in entries:
+            name = f"production-{entry['attempt']}"
+            source = root / name
+            if source.is_symlink():
+                raise ValueError('non-ordinary production root')
+            files[name + '/'] = tree_identity(source) if source.exists() else None
+        files['completion-context/'] = tree_files(root / 'completion-context')
     return files
 
 
@@ -772,14 +857,29 @@ def replay_report(trial, report):
         raise ValueError('invalid generation outcome')
     if output_error is not None and (execution != 'failed' or selected):
         raise ValueError('unsafe outputs cannot provide evidence')
+    completion = None
+    if 'completion_files' in binding:
+        from . import acquisition_completion
+        if tree_files(trial / 'completion') != binding['completion_files']:
+            raise ValueError('completion evidence differs from binding')
+        # Replay is not a new productive run. Production verification launches no tools.
+        completion = acquisition_completion.verify(trial / 'completion', deadline=sys.float_info.max, replay=True)
+        if completion['brief_sha256'] != task['files'][task['prompt']]:
+            raise ValueError('completion public brief differs from frozen task')
     generation_records = binding.get('generation_records')
     if generation_records is not None:
         if (set(generation_records) != set(RECORDS) or
                 tree_files(trial / 'generation') != generation_records):
             raise ValueError('executor records differ from binding')
         observed_execution = executor_outcome(trial / 'generation')
-        if execution != ('failed' if output_error else observed_execution):
+        completion_failed = (completion is not None and completion['execution'] != 'ok') or (
+            binding.get('case', {}).get('completion_required') and completion is None)
+        if execution != ('failed' if output_error or completion_failed else observed_execution):
             raise ValueError('generation claim contradicts retained executor')
+    if completion is not None and completion['execution'] == 'ok':
+        current = tree_files(completion['outputs'])
+        if selected != {k: v for k, v in current.items() if k in task['deliverables']}:
+            raise ValueError('evaluated deliverables differ from production package')
     missing = [] if output_error else sorted(set(task['deliverables']) - set(selected))
     checks = []
     capture_error = None
@@ -876,6 +976,8 @@ def main(argv=None):
     run.add_argument('--grading-reserve', type=int, help='final seconds unavailable to generation (default: timeout)')
     run.add_argument('--max-work', type=int, help='case phase admissions: generation subtree or grading (default: 2*attempts)')
     run.add_argument('--expect-pins', help='externally retained SHA-256 of task pins.json')
+    run.add_argument('--completion-context', help='trusted pinned public acquisition context, separate from private task')
+    run.add_argument('--expect-context', help='externally retained SHA-256 of public context pins.json')
     split = sub.add_parser('split')
     split.add_argument('--exclusions', required=True)
     split.add_argument('--seed', default='0')
@@ -893,7 +995,8 @@ def main(argv=None):
         result = [str(p) for p in run_task(args.task, args.generator, args.scratch, args.store,
                                          attempts=args.attempts, timeout=args.timeout,
                                          expect_pins=args.expect_pins, case_timeout=args.case_timeout,
-                                         grading_reserve=args.grading_reserve, max_work=args.max_work)]
+                                         grading_reserve=args.grading_reserve, max_work=args.max_work,
+                                         completion_context=args.completion_context, expect_context=args.expect_context)]
     elif args.command == 'split':
         result = split_tasks(args.tasks, strict_json(Path(args.exclusions).read_bytes()), seed=args.seed)
     elif args.command == 'freeze':

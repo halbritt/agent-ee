@@ -501,7 +501,7 @@ def _methods(root, review):
             for row in review.result['checks']]
 
 
-def _assess(out):
+def _assess(out, *, persist=True, host=None):
     root = Path(out).resolve()
     try:
         report = retained_run.snapshot(root)
@@ -516,7 +516,7 @@ def _assess(out):
         accounting = retained_run.accounting(root, report)['requirements']
         _bind_receipt(root, receipt, plan, provisional=not any(row['stage'] == 'scaffold' for row in report['completed']),
                       accounting=accounting)
-    review = retained_run.checked_review(root, report)
+    review = retained_run.checked_review(root, report, **({} if host is None else {'host': host}))
     rows = review.result['checks'] if review else []
     package = next((row for row in report['completed'] if row['stage'] == 'package'), None)
     dimensions = {name: _dimension() for name in DIMENSIONS}
@@ -654,14 +654,14 @@ def _assess(out):
     if retained_run.snapshot(root) != report:
         raise QualificationError('Build evidence changed during qualification assessment', integrity=True)
     if review is not None:
-        retained_run.verify_review(review)
-    return retained_run.write_qualification(root, record)
+        retained_run.verify_review(review, **({} if host is None else {'host': host}))
+    return retained_run.write_qualification(root, record) if persist else record
 
 
-def assess(out):
+def assess(out, *, persist=True, host=None):
     """Regenerate a root record from verified completed stages, never from old qualification."""
     try:
-        return _assess(out)
+        return _assess(out, persist=persist, host=host)
     except QualificationError:
         raise
     except (ValueError, OSError, KeyError, TypeError) as exc:
