@@ -89,3 +89,56 @@ Both source candidates await coordinator integration; neither is a completed cam
 Host evidence root: `/home/halbritt/.local/share/agent-ee/zeroasic-20261028-agent688/`. It retains launch commands/results, dispatch text, session routes, tracker snapshots, module membership readback, lane reports, failed-run artifacts and native delivery acknowledgements. These are operational artifacts, not a release package. Exact task input access is supplied by the captured-input manifest and retained runtime receipts; no private inputs are copied into public documentation. Later dispatches and outcomes are recorded in Plane and this evidence root; the dated snapshot above does not authorize another native attempt.
 
 Next: review the corrected drivers, finish independent source review and corrections, and select a bounded namespace discriminator under a fresh grant. Any resulting runtime repair must preserve the outer sandbox and receive appropriate verification before another calibration. The first full calibration, final saved-coordinate controls, role qualification and G2-G4 acceptance remain outstanding. Keep incomplete gates and provider failures explicit. No generated-board or campaign completion is claimed by this execution record.
+
+## Product progress at 2026-10-28 19:25 PDT
+
+The owner's direct correction was: `"validation infrastructure" is what concerns me.`
+The coordinator froze additional controller, runtime-profile and generic harness
+development. Work now targets the public acquisition path and demonstrated
+production failures. The earlier driver work above is historical, not the next
+delivery task.
+
+The brief preparation interface at `82f87fb4`, with documentation correction
+`b13c0d2b`, produced captured 100 pF control and 150 pF development inputs.
+Its 45 pure tests passed. The real control then completed requirements, parts,
+scaffold, schematic, placement-routing and artwork in 335.7 seconds through the
+existing public build command. The final board is
+`0b55ccae56c9e907b5c1dc0728f7323840140816578ed6568f827a0d48d4fdbc`.
+Retained final-artwork DRC reports zero errors, zero unconnected items and 17
+library-footprint warnings. Artwork cleared 19 silkscreen warnings. Group and
+electrical-locality evidence binds the pre-artwork board; final group acceptance
+and the package stage remain open.
+
+The control exited 1 after those stages because qualification treated two normal
+retained router aliases as build inputs. The narrow fix was independently reviewed
+and integrated as `020cc848`; 13 pure regression tests passed. Assessment with the
+fix reached unaccepted, unassessed dimensions on the retained real run. A coordinator
+preview unexpectedly rewrote root qualification; the original failure record was
+restored byte-identical against its previously recorded SHA-256. The preview and
+incident are retained separately. This does not replace the original failed run
+or constitute another generation attempt.
+
+The full strict run at `87b85d6f` finished with exit 1: 369 modules, 6514 tests,
+48 problems and no missing-input tests. Both RC controls passed; the wrapper also
+reported a separate failed cleanup observation and exit 74. Two concrete test
+assumptions were repaired in `fc8c384a`, independently reviewed, and passed all
+three focused native tests. A reproduced existing plane test retained the exact
+stderr digest from the full run: the plane child cannot create a nested sandbox
+namespace. Agent-697 owns a bounded repair to that stage execution path; host
+policy is unchanged. No full-suite pass is claimed.
+
+The existing full-review engine is now connected to `build review --profile`
+in `07319088`, following independent source review and 13 focused pure tests.
+Diagnostic review remains `accepted:false` and cannot grant file release.
+Live validation is pending: the host has KiCad 10.0.7 and the requested subscription
+harnesses, but the generated geometry check pins a different Python binary from
+the container. That pin has not been changed. No new review bridge or provider
+fallback is authorized by a failed compatibility check.
+
+These changes are composed in the isolated campaign branch, not landed on main.
+The four-case acceptance series has not started and remains **0/4 accepted**.
+Full engineering review, candidate judgments, package qualification and both M1
+targets remain open. Evidence is under the host root above in
+`acquisition-control-build-r1`, `test-assumptions-native-r1`,
+`add-planes-existing-test-r1`, `za10a-implementation-agent700` and
+`host-review-doctor-r1`.
