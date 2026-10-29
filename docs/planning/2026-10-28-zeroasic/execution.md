@@ -241,8 +241,12 @@ on different reel sizes. Independent inspection verified the retained
 manufacturer evidence, package, pinout, operating limits and stock response.
 JLC assembly eligibility remains unresolved because the response also has
 `assemblyComponentFlag:false`; its meaning is not established by stock count.
-The original zero-stock C37593 selection remains unchanged. A bounded follow-up
-uses the existing search allowance to resolve that sourcing question.
+The original zero-stock C37593 selection remains unchanged. The follow-up
+exhausted the original three-query allowance without finding a primary field
+definition. The same flag tuple appears on all eleven fresh rows and the
+historical original ADC, so it does not establish a candidate-specific ban.
+Immediate order-specific assembly eligibility remains unknown; no further
+search, substitution, procurement or project upload was selected.
 
 Commit `ad962ca3` connects a plan-requested full review to the package stage.
 The optional typed-plan `review_profile` is captured and pinned with ordinary
