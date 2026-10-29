@@ -1,0 +1,242 @@
+"""Bounded C3.2 -> U2.3 front-copper seed, inside accepted placement only.
+
+No placement, routing controller, or acceptance decision lives here. The caller
+owns the placement clock/CANCEL and invokes route() on the returned directory.
+"""
+import hashlib
+import json
+import math
+from pathlib import Path
+import shutil
+import uuid
+
+from .placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
+from .storage import write_json
+from .symbol_library import children, parse_sexpr
+
+FILES = ('board.kicad_pcb', 'board.kicad_pro', 'board.kicad_dru')
+WIDTH_NM = 250_000
+CLEARANCE_MM = 0.2
+
+
+def _sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _capture(directory):
+    directory = Path(directory).absolute()
+    if directory.resolve() != directory or not directory.is_dir():
+        raise JobRefusal('local return: source directory aliases are unsupported')
+    captured = {}
+    for name in FILES:
+        path = directory / name
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise JobRefusal(f'local return: source alias/non-file {name}')
+        captured[name] = path.read_bytes() if path.exists() else None
+    if any(captured[name] is None for name in FILES[:2]):
+        raise JobRefusal('local return: board and project are required')
+    return captured
+
+
+def _identity(captured):
+    return {name: None if data is None else _sha(data) for name, data in captured.items()}
+
+
+def _endpoints(path, *, seed=None):
+    """One read-only pcbnew load; identities and coordinates are never imported."""
+    import pcbnew as k
+    board = k.LoadBoard(str(path))
+    if board is None:
+        raise JobRefusal('local return: native board load failed')
+    result = []
+    for ref, number in (('C3', '2'), ('U2', '3')):
+        fps = [fp for fp in board.GetFootprints() if fp.GetReference() == ref]
+        if len(fps) != 1:
+            raise JobRefusal(f'local return: missing/ambiguous footprint {ref}')
+        fp = fps[0]
+        pads = [p for p in fp.Pads() if p.GetNumber() == number]
+        if len(pads) != 1:
+            raise JobRefusal(f'local return: missing/ambiguous pad {ref}.{number}')
+        pad = pads[0]
+        copper = [l for l in board.GetEnabledLayers().CuStack() if pad.IsOnLayer(l) and pad.FlashLayer(l)]
+        if fp.GetLayer() != k.F_Cu or copper != [k.F_Cu] or pad.GetAttribute() != k.PAD_ATTRIB_SMD:
+            raise JobRefusal(f'local return: {ref}.{number} must be a front-only SMD pad')
+        if pad.GetNetname() != 'GND' or pad.GetNetCode() <= 0:
+            raise JobRefusal(f'local return: {ref}.{number} must have actual GND net')
+        pos = pad.GetPosition()
+        result.append(dict(ref=ref, number=number, footprint_uuid=fp.m_Uuid.AsString(),
+                           pad_uuid=pad.m_Uuid.AsString(), net='GND', net_code=pad.GetNetCode(),
+                           position_nm=[int(pos.x), int(pos.y)], layer='F.Cu'))
+    identities = [p[key] for p in result for key in ('footprint_uuid', 'pad_uuid')]
+    if len(set(identities)) != 4 or any(not value for value in identities):
+        raise JobRefusal('local return: missing/ambiguous endpoint native identities')
+    if result[0]['net_code'] != result[1]['net_code']:
+        raise JobRefusal('local return: endpoint net/identity mismatch')
+    if result[0]['position_nm'] == result[1]['position_nm']:
+        raise JobRefusal('local return: coincident endpoints unsupported')
+    if seed is not None:
+        points, identities = seed
+        tracks = list(board.GetTracks())
+        for identity, a, b in zip(identities, points, points[1:]):
+            found = [t for t in tracks if t.m_Uuid.AsString() == identity]
+            if len(found) != 1:
+                raise JobRefusal('local return: saved native seed identity missing/ambiguous')
+            track = found[0]
+            if (track.GetClass() != 'PCB_TRACK' or track.GetLayer() != k.F_Cu
+                    or track.GetNetname() != 'GND' or track.GetNetCode() != result[0]['net_code']
+                    or int(track.GetWidth()) != WIDTH_NM
+                    or [int(track.GetStart().x), int(track.GetStart().y)] != list(a)
+                    or [int(track.GetEnd().x), int(track.GetEnd().y)] != list(b)):
+                raise JobRefusal('local return: saved native seed geometry/net changed')
+    return result
+
+
+def _paths(a, b):
+    """At most five endpoint-derived paths. No search, obstacles, or old poses."""
+    x, y = a
+    u, v = b
+    dx, dy = u - x, v - y
+    d = min(abs(dx), abs(dy))
+    sx, sy = (1 if dx >= 0 else -1), (1 if dy >= 0 else -1)
+    proposals = ((a, b), (a, (u, y), b), (a, (x, v), b),
+                 (a, (x + sx*d, y + sy*d), b), (a, (u - sx*d, v - sy*d), b))
+    result = []
+    for proposal in proposals:
+        path = []
+        for p in proposal:
+            p = tuple(p)
+            if not path or path[-1] != p:
+                path.append(p)
+        if path not in result:
+            result.append(path)
+    return result
+
+
+def _mm(nm):
+    sign = '-' if nm < 0 else ''
+    whole, part = divmod(abs(nm), 1_000_000)
+    return f'{sign}{whole}.{part:06d}'
+
+
+def _seed(data, path):
+    tree = parse_sexpr(data)
+    if tree[0] != 'kicad_pcb' or children(tree, 'version') != [['version', '20260206']]:
+        raise JobRefusal('local return: requires pinned KiCad 10 saved-board version 20260206')
+    # Root closing token is found only after the complete shared parser accepted
+    # the document. Leave every original byte, including comments, untouched.
+    end = data.rstrip().rfind(b')')
+    ids, segments = [], []
+    for a, b in zip(path, path[1:]):
+        identity = str(uuid.uuid4())
+        ids.append(identity)
+        segments.append(f'\n (segment (start {_mm(a[0])} {_mm(a[1])}) '
+                        f'(end {_mm(b[0])} {_mm(b[1])}) (width 0.25) '
+                        f'(layer "F.Cu") (net "GND") (uuid "{identity}"))\n'.encode())
+    output = data[:end] + b''.join(segments) + data[end:]
+    after = parse_sexpr(output)
+    added = after[-len(ids):]
+    if after[:-len(ids)] != tree:
+        raise JobRefusal('local return: write scope changed original board nodes')
+    if any(n[0] != 'segment' for n in added):
+        raise JobRefusal('local return: write scope is not segments only')
+    return output, ids
+
+
+def _legal(report):
+    if not isinstance(report, dict) or any(not isinstance(report.get(k), list)
+                                          for k in ('violations', 'unconnected_items')):
+        raise JobRefusal('local return: unknown native DRC evaluations')
+    for violation in report['violations']:
+        if (not isinstance(violation, dict) or not isinstance(violation.get('type'), str)
+                or violation.get('severity') not in ('error', 'warning')):
+            raise JobRefusal('local return: unknown native DRC violation')
+    # Opens are deliberately retained, not used as a pre-route clearance grade.
+    return not any(v['severity'] == 'error' or 'clearance' in v['type']
+                   for v in report['violations'])
+
+
+def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=None):
+    """Return a complete checked seed directory; refuse without adopting a trial.
+
+    expected_inputs must bind all FILES to SHA256 (None for absent rules), from
+    the accepted placement input custody. destination must be new and outside
+    candidate_dir. Every attempted board/report remains there, including failure.
+    The existing placement clock and CANCEL propagate without an extra grant.
+    """
+    _check_stop(clock, cancel_dir)
+    source = Path(candidate_dir).absolute()
+    destination = Path(destination).absolute()
+    if destination.resolve() != destination or destination.exists() or destination.is_relative_to(source):
+        raise JobRefusal('local return: output exists/aliases/overlaps source')
+    captured = _capture(source)
+    identities = _identity(captured)
+    if identities != expected_inputs:
+        raise JobRefusal('local return: source/input identity mismatch')
+    helper = Path(__file__)
+    helper_hash = _sha(helper.read_bytes())
+    destination.mkdir(parents=True)
+    record = dict(schema='agent-ee.acquisition-local-return/1', status='running',
+                  inputs=identities, helper_sha256=helper_hash, trials=[],
+                  width_nm=WIDTH_NM, clearance_mm=CLEARANCE_MM,
+                  acceptance_assessed=False, final_geometry_required='fresh supply + return <= 10 mm',
+                  router_copper_policy='preserve_existing', owned_copper_retries=False)
+
+    def custody():
+        _check_stop(clock, cancel_dir)
+        if _identity(_capture(source)) != identities or _sha(helper.read_bytes()) != helper_hash:
+            raise JobRefusal('local return: source/input drift')
+
+    try:
+        project = json.loads(captured['board.kicad_pro'])
+        rules = project['board']['design_settings']['rules']
+        if rules['min_clearance'] != CLEARANCE_MM or not 0 < rules['min_track_width'] <= WIDTH_NM / 1e6:
+            raise JobRefusal('local return: requires 0.2 mm native minimum clearance and <=0.25 mm minimum width')
+        endpoints = _endpoints(source / FILES[0])
+        record['endpoints'] = endpoints
+        custody()
+        if captured['board.kicad_dru'] is not None:
+            proof = destination / 'rule-loading'
+            record['rule_loading'] = verify_rule_loading(source / FILES[0], proof, clock=clock, cancel_dir=cancel_dir)
+            custody()
+        for index, path in enumerate(_paths(*(p['position_nm'] for p in endpoints))):
+            custody()
+            trial_dir = destination / f'trial-{index + 1}'
+            trial_dir.mkdir()
+            board, ids = _seed(captured[FILES[0]], path)
+            for name, data in captured.items():
+                if data is not None:
+                    (trial_dir / name).write_bytes(board if name == FILES[0] else data)
+            trial = dict(path_nm=path, segment_uuids=ids, board_sha256=_sha(board), status='checking',
+                         trace_length_mm=sum(math.dist(a, b) for a, b in zip(path, path[1:])) / 1e6)
+            record['trials'].append(trial)
+            write_json(destination / 'record.json', record)
+            if _endpoints(trial_dir / FILES[0], seed=(path, ids)) != endpoints:
+                raise JobRefusal('local return: saved native endpoint identity/geometry changed')
+            report, execution = drc(trial_dir / FILES[0], trial_dir, clock=clock, cancel_dir=cancel_dir)
+            trial['execution'] = execution
+            legal = _legal(report)
+            trial['unconnected_count'] = len(report['unconnected_items'])
+            trial['status'] = 'clearance_pass' if legal else 'rejected'
+            custody()
+            expected_trial = {**captured, FILES[0]: board}
+            if _capture(trial_dir) != expected_trial:
+                raise JobRefusal('local return: trial/input drift during native checks')
+            if not legal:
+                write_json(destination / 'record.json', record)
+                continue
+            pending = destination / '.accepted'
+            shutil.copytree(trial_dir, pending)
+            custody()
+            if _capture(pending) != expected_trial:
+                raise JobRefusal('local return: adoption/input drift')
+            record.update(status='seeded', selected_trial=index + 1, output=str(destination / 'accepted'),
+                          output_inputs=_identity(expected_trial))
+            write_json(destination / 'record.json', record)
+            custody()
+            pending.rename(destination / 'accepted')
+            return record
+        raise JobRefusal('local return: all endpoint-derived proposals failed native clearance; see record.json')
+    except (JobRefusal, JobStopped, OSError, ValueError, KeyError, TypeError) as exc:
+        record.update(status='stopped' if isinstance(exc, JobStopped) else 'refused', reason=str(exc))
+        write_json(destination / 'record.json', record)
+        raise

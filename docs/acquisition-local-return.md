@@ -1,0 +1,102 @@
+# Acquisition ADC pre-route return seed
+
+`agent_ee.acquisition_local_return.produce` is a narrow placement-lifecycle
+operation for the captured acquisition recipe. It connects fresh native C3 pad
+2 to fresh native U2 pad 3 on F.Cu using 0.25 mm tracks. It changes no original
+board bytes, component poses, pad geometry, library identifiers, existing
+copper, project, or custom rules. It requires the pinned KiCad 10 saved-board
+version 20260206 and the captured project's 0.2 mm minimum clearance. The caller
+retains the existing exact acquisition recipe admission; this helper is not a
+recipe registry. Missing/ambiguous endpoints, non-GND endpoints, non-front-only
+pads, and unsupported source formats are refused. It does not move components
+or bridge planes.
+
+The operation is source preparation for a later global route. It does not
+establish final engineering or manufacturing acceptance. The unchanged final
+engineering model must find actual trace paths for **both** fresh supply and
+return legs and measure their sum at most 10 mm. Missing paths remain failures.
+No old supply measurement or old return allowance enters this operation.
+
+## Interface and custody
+
+```python
+from agent_ee.acquisition_local_return import produce
+
+seed = produce(
+    accepted_placement_directory, new_evidence_directory,
+    expected_inputs={
+        'board.kicad_pcb': accepted_placement_board_sha256,
+        'board.kicad_pro': captured_project_sha256,
+        'board.kicad_dru': captured_rules_sha256_or_None,
+    },
+    clock=existing_placement_clock,
+    cancel_dir=existing_placement_job_directory,
+)
+route_input = seed['output']  # complete board/project/optional rules directory
+```
+
+The caller supplies hashes from the accepted placement and captured input
+custody; it must not bless changed bytes by recapturing them after a discrepancy.
+The operation binds these hashes and its own helper source hash in `record.json`,
+checks them again around native work and before adoption, and reloads the saved
+native seed to prove exact new UUIDs, net codes, front layer, endpoints and width.
+The complete original S-expression tree remains intact; only new root segments
+are appended, with new UUIDs. Source and destination aliases, existing output,
+and an output inside the source directory are refused.
+
+Up to five unique paths are tried in fixed order: direct, two orthogonal, and
+two 45-degree-plus-axis paths, derived solely from current integer-nanometre pad
+centres. Each trial retains the proposed board and raw native DRC report/log.
+Native rule-loading proof is reused when custom rules exist. The existing
+placement DRC runner owns subprocess cancellation and deadline handling. Every
+native DRC error and every clearance finding refuses that proposal. Other known
+warnings remain recorded. Unconnected pre-route nets are retained and counted;
+they are not clearance failures. Malformed or unavailable DRC never establishes
+a pass. Exhausting the finite proposals refuses without an `accepted` directory.
+The operation has no separate clock, retry budget, or resumable repair identity.
+All trials consume the caller's admitted placement budget.
+
+A complete checked copy is published under `accepted/` only after custody and
+native checks. Failure evidence remains under the new evidence directory. Never
+reuse a failed destination. A `seeded` record is a production-operation receipt,
+not a stage receipt, qualification, judgment, or release decision.
+
+## Minimal integration owned by root / agent-697
+
+This patch deliberately does not edit `build_plan.py`, `build_stages.py`,
+`placement_job.py`, or `acquisition_prepare.py`.
+
+1. Thread one explicit recipe-scoped boolean `acquisition_local_return` through
+   the existing prepared plan / placement configuration. Default false; true is
+   admitted only with the existing exact acquisition recipe identity. Bind it,
+   the helper source, and its receipt into existing plan/job custody. This is an
+   explicit production change, not inherited qualification.
+2. In `placement_job._execute_job`, inside the per-candidate routing loop just
+   before the current `route(selected['directory'], ...)` call, invoke `produce`
+   for an eligible accepted placement only, using the existing outer `clock` and
+   job directory for CANCEL. Use a fresh evidence path tied to the current
+   `suffix`, such as `job_dir / ('local-return-' + suffix)`. A failed operation
+   retains the refusal and cannot fall through to an unseeded acquisition route.
+   Do not apply it to exploratory diagnostic placements.
+3. Leave the original selected placement immutable. Pass `seed['output']` to
+   `route`; retain both original placement identity and seeded input identity
+   explicitly in the routing trial/checkpoint, along with the `record.json`
+   hash. Use a copied selected entry pointing at the seed directory/board/hash
+   where final checks require the actual routed input. Preserve the original
+   placement score and qualification records.
+4. Existing `route` detects seed tracks and selects `preserve_existing`
+   (`--protect existing`). This protects the accepted return. It also makes
+   `owned_copper` false: current owned-copper feedback retries are unavailable.
+   Do not turn them on by pretending the seed input was track-free.
+5. Keep existing final raw DRC, opens/parity, pose/rule preservation and full
+   declared engineering geometry checks. Verify the seed survived the actual
+   router output; a routing completion is insufficient.
+
+The native production proof requires a later root admission on a new,
+source-bound development identity with a finite budget covering up to five
+pre-route checks and the existing global route. Existing prep 3/3 and saved-board
+repair 2/2 are exhausted and remain unchanged. No real target preparation,
+KiCad, routing, render, provider call, or acceptance run is performed by this
+source patch. Pure tests exercise custody, candidate derivation, endpoint
+resolution, preservation, collision refusal and stop propagation using explicit
+native-loader/DRC test doubles. They do not prove native geometry legality.
