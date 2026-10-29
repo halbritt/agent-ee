@@ -90,9 +90,15 @@ def verify_citations(root, facts, extractor):
     results, pages, dependencies = {}, {}, {}
     with tempfile.TemporaryDirectory(prefix='agent-ee-ratings-') as scratch:
         version = dict(native_run.run(native_run.Intent('probe', [EXTRACTOR, '-v'], timeout=60), inputs=root, work=Path(scratch) / 'version'))
-        lines = (Path(scratch) / 'version/console.log').read_text(errors='replace').splitlines()
+        console = (Path(scratch) / 'version/console.log').read_text(errors='replace')
+        lines = console.splitlines()
         if version['execution'] != 'ok' or not lines or lines[0] != extractor['version']:
-            raise ValueError('installed pdftotext version unavailable or differs from the declaration')
+            case = ('probe_failed' if version['execution'] != 'ok'
+                    else 'empty_version' if not lines else 'version_mismatch')
+            raise ValueError(
+                'installed pdftotext version unavailable or differs from the declaration'
+                f'; {case}; record={version!r}; expected={extractor["version"]!r}'
+                f'; observed={lines[:1]!r}; console={console!r}')
         for index, fact in enumerate(facts):
             source = fact['source']
             if hashlib.sha256(read_captured(root, source['path'])).hexdigest() != source['sha256']:
