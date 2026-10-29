@@ -2,7 +2,58 @@
 
 Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
 
-## Current progress — 2026-10-29 11:02 UTC
+## Current progress — 2026-10-29 12:41 UTC
+
+**G4 remains 0/4; the measured series has not started.** The owner goal remains
+active. G2 development R2 is closed incomplete, with no package attempt. Its
+six public stages completed on `5f7919c6` in 335.168 seconds, producing board
+`74a883fd`. The separate checks-only review executed all 39 checks successfully
+(38 pass and one informational result), including zero native errors, opens and
+parity findings. Independent review of the 14 authored judgments nevertheless
+returned 12 dissents and two concurrences. Checks alone did not establish
+engineering acceptance. All 7,732 files and the producer's `latest` symlink
+are inventoried without modification in the external R2 closure manifest
+`bf3579d7`; disposition `a736b117` forbids resuming R2 after source/input changes.
+
+The dissent exposed incorrect capacitor-corner prose, incomplete source
+provenance and unsupported application of ADC data-sheet conditions. Seven
+corrected drafts are mechanically admissible but await new witnesses; five
+retain unresolved findings. Newly captured exact Murata documentation supports
+the existing C4/C5 maximum dimensions, independently reviewed as `cb28812e`.
+Exact Samsung bias and ESR curves are now captured, but remain typical data.
+The unchanged 128-SPS ADC clause requires an honest error evaluation; it does
+not state a guaranteed total-accuracy ceiling. A bounded independent engineering
+review is checking the proposed sensitivity corners and claim limits before
+fresh producer inputs and a new run. No requirement, source condition or
+manufacturer guarantee is silently extended. Supplier and physical obligations
+remain separate and unperformed.
+
+The custom-SMD via-clearance repair is integrated through `6577f4ef` after
+independent source/native review `e5bf871b`. The integrated source, tests and
+documentation match the tested worker byte-for-byte. Its 13 native tests and
+actual 565-vertex pad controls passed. The original routed ESP board still has
+12 real clearance defects across 1,848 assessed pairs under the unchanged
+0.1 mm engineering policy; unsupported geometry is now empty. This is a
+qualified check capability, not a repaired or accepted board.
+
+For original ESP, both prior limited reroutes remain failed and retained. One
+new native preparation of its actual selected, unrouted public materialization
+completed in 4.536 seconds. Independent audit `13396fc0` confirms only the
+authorized metadata and 20 text-size changes, unchanged electrical partitions,
+and exact schematic/project custody. Prepared PCB `3f64e6dd` has no copper,
+46 expected opens and 242 warnings. A single fresh public placement/routing
+operation is admitted: fixed original connector and mark poses, 13 movable
+functional components, two seeds, shortlist one, 1,200-second job budget and
+zero retries. Final full schematic parity, all-site DFM, grouping and readable
+artwork must apply to its actual resulting board. No M1 acceptance is claimed.
+
+Evidence is under `g2-acquisition-fresh-r2/` and `esp-original-native-r1/` in
+the host campaign root. The full strict gate, actual full engineering review,
+remaining M1 operations, private G4 evaluation, reproducible release and trunk
+landing/cleanup remain open. This snapshot supersedes the progress statements
+below while preserving their failed-attempt history.
+
+## Earlier progress — 2026-10-29 11:02 UTC
 
 The goal remains active. **G4 is 0/4 and no measured case has started.** This
 snapshot supersedes the earlier progress summaries without replacing failures.
