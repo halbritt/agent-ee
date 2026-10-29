@@ -71,13 +71,15 @@ identify the file and supplied/required kinds for bounded output resubmission.
 The existing Bubblewrap mounts protect `/candidate` and separate initial
 reviewers. `/evidence/work` and `/evidence/checks` expose completed native results
 read-only, and `/evidence/packet.json` is the complete review packet. Each
-reviewer has its own writable `/work`. A packet whose JSON exceeds 400,000
-characters would overrun harness input limits (Codex refuses turns over 1,048,576
-characters). An `investigate` reviewer or adjudicator then gets that packet with
+reviewer has its own writable `/work`. The inline packet target is 400,000
+characters, leaving room for instructions and other evidence (Codex refuses
+turns over 1,048,576 characters). For larger packets, an `investigate` reviewer
+or adjudicator gets that packet with
 identity and the smaller sections inline and its largest sections replaced by
 JSON-pointer references, with item indexes, into the mounted file. The prompt
 states the file and packet hashes. Findings and initial reviews stay inline for
-the adjudicator. A `fixed_packet` reviewer has no tools, so it always receives
+the adjudicator; the packet target does not bound the entire prompt. A
+`fixed_packet` reviewer has no tools, so it always receives
 the complete packet inline. The adjudicator also gets
 previous experiment directories read-only under `/experiments/<role>`. No new
 hermetic tool environment is built: system tools, libraries and networking are
