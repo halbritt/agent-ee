@@ -40,11 +40,12 @@ class FabStageExecutionTests(unittest.TestCase):
         def child(intent, **kwargs):
             self.assertEqual(intent.isolation, 'host')
             self.assertEqual(intent.argv[-3:], ('-o', str(work / 'out/report.json'),
-                                               str(self.inputs / 'board.kicad_pcb')))
+                                               str(work / 'project/board.kicad_pcb')))
             self.assertEqual(intent.cwd, str(work))
             self.assertEqual(intent.env['KICAD_CONFIG_HOME'], str(work / 'kicad-config'))
             self.assertEqual(intent.env['PYTHONPATH'], '/tool/agent-ee')
-            self.assertEqual(kwargs['timeout'], 7)
+            self.assertGreater(kwargs['timeout'], 0)
+            self.assertLessEqual(kwargs['timeout'], 7)
             self.assertEqual(kwargs['mounts'], ())
             (work / 'stderr.log').write_text('native failure retained')
             return {'execution': 'failed', 'exit_code': 42}
@@ -123,3 +124,92 @@ class FabStageExecutionTests(unittest.TestCase):
             native_run.run(native_run.Intent('check', ['/bin/true']), inputs=self.inputs,
                            work=self.root / 'normal')
             sandbox.assert_called_once()
+
+    def test_pcb_exports_use_fresh_exact_projects_and_only_disposable_preferences_can_change(self):
+        from agent_ee.stage_receipts import file_tree
+        for suffix in ('.kicad_pro', '.kicad_dru', '.kicad_prl', '.kicad_sch'):
+            (self.inputs / ('board' + suffix)).write_text('captured ' + suffix)
+        (self.inputs / 'collateral').mkdir()
+        (self.inputs / 'collateral/child.kicad_sch').write_text('captured hierarchy')
+        before = file_tree(self.inputs)
+        execution = self.execution()
+        # Rewriting the exact preferences file is allowed only in each copy.
+        # Every design/collateral mutation and unrelated addition still refuses.
+        for i, changed in enumerate(('.kicad_prl', '.kicad_prl', '.kicad_pcb', '.kicad_pro',
+                '.kicad_dru', '.kicad_sch', 'extra', 'collateral/child.kicad_sch',
+                'remove-board', 'remove-preferences', 'linked-preferences')):
+            work = self.root / ('export-' + str(i))
+            def child(intent, **kwargs):
+                board = Path(intent.argv[-1]); project = work / 'project'
+                self.assertEqual(board, project / 'board.kicad_pcb')
+                self.assertEqual(file_tree(project), before)
+                self.assertEqual(intent.env['KICAD10_SYMBOL_DIR'], str(self.inputs / 'stock/symbols'))
+                self.assertEqual(intent.argv[-2], str(work / 'out/stats.json'))
+                if changed == 'remove-board':
+                    board.unlink()
+                elif changed == 'remove-preferences':
+                    board.with_suffix('.kicad_prl').unlink()
+                elif changed == 'linked-preferences':
+                    board.with_suffix('.kicad_prl').unlink()
+                    board.with_suffix('.kicad_prl').symlink_to(self.baseline)
+                else:
+                    target = board.with_suffix(changed) if changed.startswith('.') else project / changed
+                    target.write_text('authored native side effect')
+                (work / 'stderr.log').write_text('retained child diagnostic')
+                return {'execution': 'ok', 'exit_code': 0}
+            with self.subTest(changed=changed), native_run.using(execution), \
+                    patch.object(native_run.Host, 'run', side_effect=child):
+                intent = native_run.Intent('kicad-cli', ['kicad-cli', 'pcb', 'export', 'stats',
+                    '-o', '/work/out/stats.json', '/candidate/board.kicad_pcb'])
+                if changed == '.kicad_prl':
+                    self.assertEqual(native_run.run(intent, inputs=self.inputs, work=work)['exit_code'], 0)
+                else:
+                    with self.assertRaisesRegex(CheckError, 'changed its private project'):
+                        native_run.run(intent, inputs=self.inputs, work=work)
+                self.assertEqual(file_tree(self.inputs), before)
+                self.assertEqual((work / 'stderr.log').read_text(), 'retained child diagnostic')
+
+    def test_new_preferences_stay_in_copy_and_captured_additions_still_refuse(self):
+        from agent_ee.stage_receipts import file_tree
+        before = file_tree(self.inputs)
+        for captured in (False, True):
+            work = self.root / ('preferences-' + str(captured))
+            def child(intent, **kwargs):
+                board = Path(intent.argv[-1])
+                (self.inputs / 'board.kicad_prl' if captured else board.with_suffix('.kicad_prl')).write_text(
+                    'authored preferences')
+                return {'execution': 'ok', 'exit_code': 0}
+            with self.subTest(captured=captured), native_run.using(self.execution()), \
+                    patch.object(native_run.Host, 'run', side_effect=child):
+                intent = native_run.Intent('kicad-cli', ['kicad-cli', 'pcb', 'export', 'pos',
+                    '-o', '/work/out/pos.csv', '/candidate/board.kicad_pcb'])
+                if captured:
+                    with self.assertRaisesRegex(CheckError, 'changed its captured inputs'):
+                        native_run.run(intent, inputs=self.inputs, work=work)
+                else:
+                    self.assertEqual(native_run.run(intent, inputs=self.inputs, work=work)['exit_code'], 0)
+                    self.assertEqual(file_tree(self.inputs), before)
+                    self.assertTrue((work / 'project/board.kicad_prl').is_file())
+
+    def test_project_setup_consumes_child_budget_before_launch(self):
+        intent = native_run.Intent('kicad-cli', ['kicad-cli', 'pcb', 'export', 'stats',
+                                  '/candidate/board.kicad_pcb'], timeout=7)
+        with native_run.using(self.execution()), patch.object(native_run.Host, 'run') as host, \
+                patch.object(fab_stage.time, 'monotonic', side_effect=[100, 108]):
+            with self.assertRaises(native_run.DeadlineExhausted):
+                native_run.run(intent, inputs=self.inputs, work=self.root / 'spent')
+            host.assert_not_called()
+
+    def test_changed_copy_is_refused_before_native_launch(self):
+        copytree = fab_stage.shutil.copytree
+        def changed(source, target, **kwargs):
+            result = copytree(source, target, **kwargs)
+            (Path(target) / 'board.kicad_pcb').write_bytes(b'changed during copy')
+            return result
+        with native_run.using(self.execution()), patch.object(fab_stage.shutil, 'copytree', changed), \
+                patch.object(native_run.Host, 'run') as host:
+            with self.assertRaisesRegex(CheckError, 'private project copy changed'):
+                native_run.run(native_run.Intent('kicad-cli', ['kicad-cli', 'pcb', 'export', 'stats',
+                    '/candidate/board.kicad_pcb']), inputs=self.inputs, work=self.root / 'bad-copy')
+            host.assert_not_called()
+        self.assertEqual((self.inputs / 'board.kicad_pcb').read_bytes(), b'captured board')

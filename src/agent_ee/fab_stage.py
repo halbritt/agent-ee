@@ -394,13 +394,30 @@ class _FabStageExecution:
                 else:
                     records.append(digest(path))
             return records
+        started = time.monotonic()
         before = identity()
+        child_inputs, project, copied, preferences = inputs, None, None, None
+        if intent.argv[:3] == ('kicad-cli', 'pcb', 'export'):
+            board = Path(intent.argv[-1].removeprefix('/candidate/'))
+            if (not intent.argv[-1].startswith('/candidate/') or board.suffix != '.kicad_pcb'
+                    or not (inputs / board).resolve().is_relative_to(inputs)
+                    or board.as_posix() not in before[0]):
+                raise ValueError('fab PCB export must name its captured board')
+            # KiCad writes project preferences beside the board. Each export
+            # gets fresh captured collateral, never another child's preferences.
+            project = work / 'project'
+            shutil.copytree(inputs, project, symlinks=True)
+            copied, other = file_tree(project)
+            if other or copied != before[0]:
+                raise CheckError('malformed', 'fab private project copy changed')
+            child_inputs = project
+            preferences = board.with_suffix('.kicad_prl').as_posix()
         def concrete(arg):
             if arg == native_run.BASELINE_AT:
                 if baseline is None:
                     raise ValueError('fab child baseline was not captured')
                 return str(baseline)
-            for virtual, actual in (('/candidate', inputs), ('/work', work)):
+            for virtual, actual in (('/candidate', child_inputs), ('/work', work)):
                 if arg == virtual or arg.startswith(virtual + '/'):
                     path = actual / arg.removeprefix(virtual).lstrip('/')
                     if not path.resolve().is_relative_to(actual):
@@ -414,11 +431,22 @@ class _FabStageExecution:
         try:
             # Host here means no second namespace: the enclosing receipted
             # bwrap still owns the readonly source, network and PID boundary.
-            return native_run.Host().run(child, inputs=None, work=work, timeout=timeout,
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= native_run.LAUNCH_FLOOR_S:
+                raise native_run.DeadlineExhausted('fab child setup exhausted its deadline')
+            return native_run.Host().run(child, inputs=None, work=work, timeout=remaining,
                                          mounts=(), cancel=cancel)
         finally:
             if identity() != before:
                 raise CheckError('malformed', 'fab child changed its captured inputs')
+            if project is not None:
+                after, other = file_tree(project)
+                pref = project / preferences
+                if (other or (pref.exists() and not pref.is_file())
+                        or (preferences in copied and preferences not in after)
+                        or {k: v for k, v in after.items() if k != preferences} !=
+                           {k: v for k, v in copied.items() if k != preferences}):
+                    raise CheckError('malformed', 'fab child changed its private project')
 
 
 def _stage_main(argv=None):
