@@ -277,3 +277,32 @@ Evidence is in `acquisition-repair-r2/agent693-board-repair`,
 evidence root. Full strict qualification, trunk landing, engineering acceptance,
 the sealed public package and M1 remain open. The measured four-case series has
 not started: **0/4 accepted**.
+
+### Existing failure diagnostic after the repairs
+
+One run of the existing strict runner selected the 18 modules covering the 44
+previously unresolved problems. On `44c5d067`, it completed 365 tests in 328.6
+seconds with exit 1 and 24 counted problems; no required inputs were missing.
+All 20 formerly failing plane cases have explicit passing results. This is a
+selected diagnostic, not a full strict-suite pass. The fabrication module's
+invalid result remains a failure even though its process header says exit 0.
+
+The current fabrication netlist and geometry stderr hashes match the retained
+Bubblewrap namespace denial. Agent-697 has submitted a bounded repair to run
+those children inside the existing receipted stage confinement; independent
+source review and native verification remain pending. Standalone sandboxing,
+fabrication checks and host policy must stay unchanged.
+
+A separate two-test diagnostic on `bd10ab31` retained the custom-pad CLI's
+structured failure and used the existing rating-test retention hook. It failed
+as expected in 2.1 seconds. Custom-pad loading also has a confirmed nested
+namespace denial; agent-690 owns a bounded repair to that existing call path.
+The rating evidence proves only failure of its `pdftotext` version guard. Legacy
+forward annotation fails during planning before apply, but its lower child
+diagnostics were not retained. Those two causes remain unresolved.
+
+Records are in `existing-failures-diagnostic-r1`, `child-failure-diagnostics-r1`,
+`fab-stage-execution-repair-agent697` and `custom-pad-execution-repair-agent690`
+beneath the host evidence root. Original failures remain retained. Full strict
+qualification and trunk landing remain open, and no board or campaign acceptance
+follows from this test progress.
