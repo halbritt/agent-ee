@@ -124,8 +124,10 @@ common `id`, `domain`, `difficulty`, `prompt`, `reference` and `deliverables`.
 It replaces `scope` and `rules` with:
 
 ```json
-"deliverables": ["refusal.json"],
-"expected_refusal": {"contract": "evaluator/refusal-contract.json"}
+{
+  "deliverables": ["refusal.json"],
+  "expected_refusal": {"contract": "evaluator/refusal-contract.json"}
+}
 ```
 
 The contract is private, canonical task-relative, under `evaluator/`, and pinned

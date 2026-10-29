@@ -710,7 +710,7 @@ For a common frozen context reused across public brief cases, only the new
 150 pF cohorts also permit this finite source declaration:
 
 ```json
-"bus_capacitance_pf": {"from": "public-brief", "policy": "acquisition-150pf-v5"}
+{"bus_capacitance_pf": {"from": "public-brief", "policy": "acquisition-150pf-v5"}}
 ```
 
 `read()` first replays that cohort's captured policy and actual native source
