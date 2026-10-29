@@ -426,7 +426,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             alternative_context=None, alternative_source=None, alternative_context_sha256=None,
             addr_tie=None, evaluation_context=None, evaluation_context_sha256=None,
             expected_intent=None, expected_intent_sha256=None, expected_parts_receipt=None,
-            expected_parts_receipt_sha256=None, final_groups=False):
+            expected_parts_receipt_sha256=None, final_groups=False,
+            role_context=None, role_context_sha256=None, role_source=None):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
@@ -435,6 +436,9 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     committed operating supplement is used unless explicitly supplied. Explicit
     review context is captured separately from the unchanged circuit recipe.
     """
+    if any(v is not None for v in (role_context,role_context_sha256,role_source)) and any(
+            v is None for v in (role_context,role_context_sha256,role_source)):
+        raise ValueError('role context requires source root and exact context SHA-256')
     if type(final_groups) is not bool:
         raise ValueError('final_groups must be an explicit boolean')
     if addr_tie is not None and addr_tie not in ('GND', 'V3V3'):
@@ -499,6 +503,19 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     elif alternative_source is not None or alternative_context_sha256 is not None:
         raise ValueError('alternative source/hash require alternative_context')
     build_plan.validate_plan(plan)
+    roles = None
+    role_args=(role_context,role_context_sha256,role_source)
+    if any(v is not None for v in role_args):
+        if any(v is None for v in role_args):
+            raise ValueError('role context requires source root and exact context SHA-256')
+        from . import acquisition_roles, tool_source
+        role_raw,role_stamp=_read_context_file(role_context,'role context')
+        if spec_record.sha256(role_raw)!=role_context_sha256:
+            raise ValueError('role context hash mismatch')
+        typed_overlay._disjoint('output',out.resolve(),{'role source':Path(role_source).resolve(),'role context':Path(role_context).resolve()})
+        role_doc,role_captures,role_reports=acquisition_roles.read(role_source,role_raw,selected['value'])
+        roles=dict(context_sha256=role_context_sha256,files=role_doc['files'],application=role_doc['application'],
+            producer_source_sha256=storage.identity(tool_source._files(Path(__file__).parent)))
     overlay_raw, overlay, additions = _load_overlay(before, sources)
     recipe = dict(brief_sha256=spec_record.sha256(raw), plan_sha256=spec_record.sha256(plan_raw),
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
@@ -506,6 +523,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
                  for module in (acquisition_expected_intent, acquisition_local_return, acquisition_mechanics, acquisition_source_supplement, acquisition_power_repair, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
+    if roles is not None:
+        recipe['roles']=roles
     if review_context is not None:
         recipe['review_context'] = review_context
         recipe['helpers'][profiles.__name__] = spec_record.sha256(Path(profiles.__file__).read_bytes())
@@ -658,7 +677,15 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             overlay['base']['requirement_map_sha256'] = storage.digest(revised / 'requirement-map.json')
             plan['placement']['block_source'] = group_path
             block_source_stage.admit(revised, plan, requirement_map.input_inventory(revised))
+        role_report=None
+        if roles is not None:
+            role_report=acquisition_roles.apply(revised,plan,overlay,role_doc,role_captures)
+            (revised/acquisition_roles.AT/'context-input.json').write_bytes(role_raw)
         changed = _archive_revision(base, revised, before, identity)
+        if role_report is not None:
+            ledger_path=provenance/'edit-ledger.json'
+            ledger=json.loads(ledger_path.read_bytes());ledger['roles']=role_report
+            ledger_path.write_bytes(json_bytes(ledger))
         if final_groups:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = json.loads(ledger_path.read_bytes())
@@ -749,6 +776,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 context=alternative)
         if repair_report is not None:
             report['power_repair'] = repair_report
+        if role_report is not None:
+            report['roles']=role_report
         (bundle / 'preparation.json').write_bytes(json_bytes(report))
         if review_context is not None:
             if ((bundle / 'inputs' / REVIEW_PROFILE).read_bytes() != profile_raw
@@ -787,6 +816,14 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             current = acquisition_expected_intent.admit(*expected_args, _read_context_file)
             if current != expectation:
                 raise ValueError('expected intent or receipt changed before publication')
+        if roles is not None:
+            if _read_context_file(role_context,'role context')!=(role_raw,role_stamp):
+                raise ValueError('role context changed during preparation')
+            if acquisition_roles.read(role_source,role_raw,selected['value'])!=(role_doc,role_captures,role_reports):
+                raise ValueError('role source qualification changed during preparation')
+            for name,raw_capture in role_captures.items():
+                if (bundle/'inputs'/acquisition_roles.AT/name).read_bytes()!=raw_capture:
+                    raise ValueError('sealed role capture differs from admitted source')
         rename_noreplace(bundle, out)
     return report
 
@@ -797,6 +834,9 @@ def main(argv=None):
     parser.add_argument('--build-plan', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--review-profile', type=Path, help='explicit full engineering review profile to capture')
+    parser.add_argument('--role-context',type=Path,help='pinned finite acquisition v4 role context JSON')
+    parser.add_argument('--role-context-sha256')
+    parser.add_argument('--role-source',type=Path,help='root of immutable role context files')
     parser.add_argument('--final-groups', action='store_true', help='derive strict final-group source from the captured acquisition allocation')
     parser.add_argument('--verification-timeout-s', type=int,
                         help='explicit build verification budget; requires --review-profile, no automatic increase')
@@ -828,7 +868,8 @@ def main(argv=None):
                          expected_intent=args.expected_intent, expected_intent_sha256=args.expected_intent_sha256,
                          expected_parts_receipt=args.expected_parts_receipt,
                          expected_parts_receipt_sha256=args.expected_parts_receipt_sha256,
-                         final_groups=args.final_groups)
+                         final_groups=args.final_groups,role_context=args.role_context,
+                         role_context_sha256=args.role_context_sha256,role_source=args.role_source)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1

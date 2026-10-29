@@ -282,6 +282,33 @@ def envelope_sources(scope, files, inputs):
             for row in derived]
 
 
+def block_sources(scope, files, inputs):
+    """Derived immutable block rows use the same accounting as envelope fields."""
+    paths = scope.get('block_instances', [])
+    if not isinstance(paths, list) or any(not isinstance(p,str) for p in paths) or paths != sorted(set(paths)):
+        raise ValueError('block_instances must name unique captured instance records')
+    from .block_adaptation import _instance, baseline_rows
+    rows = []
+    for path in paths:
+        safe_relative(text(path))
+        if inputs is None or path not in files or digest(Path(inputs)/path) != files[path]:
+            raise ValueError('block instance record must be captured unchanged')
+        record, source = _instance(inputs, path)
+        dependencies=[record['block']+'/block.json',*[record['block']+'/'+p for p in source['files']]]
+        if 'composition' in record:dependencies.append(record['composition']['path'])
+        if any(p not in files or digest(Path(inputs)/p)!=files[p] for p in dependencies):
+            raise ValueError('block dependency must be captured unchanged')
+        bound = baseline_rows(record, source)
+        bound.append(dict(id=record['id']+'-boundary', statement='Preserve selected source identities and pin connectivity',
+            source=dict(path=path, locator='bindings'), checks=[record['id']+'-provenance'], intent='acceptance'))
+        rows += [dict(id=r['id'], text=r['statement'], locator=r['source']['locator'],
+            text_sha256=sha256(r['statement'].encode()), baseline={k:r[k] for k in ('id','statement','source','intent')}) for r in bound]
+    ids = [r['id'] for r in rows]
+    if len(ids) != len(set(ids)):
+        raise ValueError('duplicate block requirement identity')
+    return rows
+
+
 def load_obligations(raw, record, spec_raw):
     """Authored obligation kinds bound to byte-complete partitions of every captured clause.
 
@@ -378,7 +405,7 @@ def bind_receipt(receipt, spec_raw, *, source_hashes, accounting, provisional=Fa
     if any(receipt.get(field) != pin for field, pin in source_hashes.items()):
         raise ValueError('Requirement receipt differs from captured source inputs')
     fields = ('id', 'parent_id', 'mode', 'mapping', 'locator', 'text_sha256', 'obligation',
-              'obligation_text_sha256', 'bound_ids')
+              'obligation_text_sha256', 'bound_ids', 'source')
     expected_rows = {row['id']: {key: row.get(key) for key in fields} for row in accounting}
     actual_rows = {row['id']: {key: row.get(key) for key in fields} for row in receipt['requirements']}
     if len(actual_rows) != len(receipt['requirements']) or actual_rows != expected_rows:
@@ -435,7 +462,9 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
     if not typed and obligations is not None:
         refuse('obligations_unexpected', 'obligations', f'{SCHEMA} cannot bind obligations; author {SCHEMA_2}')
     sources = list(record['requirements'])
-    derived = envelope_sources(declaration['scope'], files, inputs)
+    derived = envelope_sources(declaration['scope'], files, inputs) + block_sources(declaration['scope'], files, inputs)
+    if len({r['id'] for r in derived}) != len(derived):
+        raise ValueError('duplicate derived envelope/block requirement identity')
     collisions = {r['id'] for r in sources} & {r['id'] for r in derived}
     if collisions:
         refuse('duplicate_source', sorted(collisions)[0], 'spec and envelope requirement IDs collide')
@@ -461,6 +490,9 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
     for entry in mapping.values():
         if disposition(entry, context=entry in prose_entries, typed=typed) == 'checks':
             add_checks(entry, checks)
+    if scope.get('block_instances') and scope.get('stages'):
+        order=scope['stages']['order']
+        checks.sort(key=lambda c:order.index(c['stage']))
     limitations = scope.setdefault('limitations', [])
     if not isinstance(limitations, list) or any(not isinstance(s, str) or not s.strip() for s in limitations):
         raise ValueError('scope limitations must be a list of nonempty strings')

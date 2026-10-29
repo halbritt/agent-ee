@@ -30,7 +30,11 @@ SPAN_MODES = ('checks', 'limitation', 'bench', 'operational', 'judgment', 'conte
 
 def load_overlay(raw):
     overlay = requirement_map.decode(raw)
-    exact_keys(overlay, 'schema name base obligations mappings judgments derived_files added_inputs check_additions')
+    exact_keys(overlay, 'schema name base obligations mappings judgments derived_files added_inputs check_additions' +
+               (' block_requirements' if 'block_requirements' in overlay else ''))
+    if 'block_requirements' in overlay and (not isinstance(overlay['block_requirements'], dict) or any(
+            not isinstance(v,list) or not v or len(v)!=len(set(v)) for v in overlay['block_requirements'].values())):
+        raise ValueError('block_requirements needs nonempty unique check lists')
     if overlay['schema'] != SCHEMA:
         raise ValueError(f'expected {SCHEMA}')
     text(overlay['name'])
@@ -208,6 +212,12 @@ def derive_map(declaration, overlay):
             spans = [{'byte_start': s['byte_start'], 'byte_end': s['byte_end'],
                       'mapping': _mapping(entry['id'], s, pool)} for s in replacement['spans']]
             derived[section][index] = {'id': entry['id'], 'spans': spans}
+    for rid, check_ids in overlay.get('block_requirements', {}).items():
+        if rid in {e['id'] for e in derived['requirements']+derived['prose']}:
+            raise ValueError('block requirement shadows an existing source ID: '+rid)
+        if any(cid not in pool for cid in check_ids):
+            raise ValueError('block requirement names an undeclared fresh check')
+        derived['requirements'].append(dict(id=rid, checks=[copy.deepcopy(pool[cid]) for cid in check_ids]))
     return derived
 
 

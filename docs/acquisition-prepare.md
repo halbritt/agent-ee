@@ -579,3 +579,49 @@ verification, full engineering review, supplier and physical obligations remain.
 This option composes with the finite ADDR/fixed-expectation context. The same
 option and final source must be used for the independently captured control and
 both later candidates; source changes invalidate the old producer receipt.
+
+### Explicit v4 acquisition roles
+
+`--role-context CONTEXT.json --role-context-sha256 SHA256 --role-source ROOT`
+opts into the finite three-role consumer. All three arguments are required. The
+context schema is `agent-ee.acquisition-role-context/1`, with `reference` equal to
+`acquisition-control`, a complete `files` path/SHA256 closure, and exactly the keys
+`acq-tps7a2033-power`, `acq-ads1115-two-channel`, and `acq-jst-ph-i2c` in `roles`.
+Each role entry has `block`, `block_sha256`, `composition` and `report` blob pins,
+plus `run_locations` and `repository_locations` for the existing source verifier.
+The files closure contains the entire immutable blocks, their metadata, composition
+plans and exact source reports. Original run records stay in their retained lanes.
+
+`host_observation` supplies the coordinator's independently admitted
+`policy_files` and `runtime_files` observation through the existing verifier host
+API. This producer does not probe native tools or silently invent an observation.
+The policy observation must equal current source rules; this option cannot waive
+implementation drift. The observation and all context bytes are pinned into preparation identity.
+`reference_blocks.validate_block` replays actual declared source runs and must
+return the exact pinned verified report; a report or status flag by itself cannot
+qualify an input. The original v4 captures with `runs: []` therefore refuse until
+the coordinator supplies fresh immutable metadata binding their actual qualified
+run. Historical files must remain preserved.
+
+`application` explicitly contains `j2_external_load_a: 0`,
+`j2_external_drive: false`, `bus_capacitance_pf: 100`, and `temperature_c: 25`.
+This version refuses another bus bound, load, drive or temperature. In particular,
+a 150 pF ordinary recipe remains supported without roles; v4's captured 100 pF
+role contract does not automatically expand to that variant. Supplier/physical
+obligations and the existing engineering judgments remain mandatory.
+
+Before the typed seal the consumer captures `reference-roles/`, emits three
+ordinary composition instance records and fresh interface/membership/model/layout
+check declarations, and maps every source and all six deferred rows. Source
+conditions remain captured and appear in `reference-roles/admission.json`.
+The two existing source-evaluation/return-path judgment briefs cite this admission;
+no historical judgment is copied. The optional `scope.block_instances` and overlay
+`block_requirements` transport use the existing derived-source accounting; missing,
+extra, colliding or post-seal rows refuse. Existing spec-span obligations remain.
+
+Root provenance is limited to one explicit root source with no hierarchical
+boundary ports and an exact captured membership selector. Each role compares its
+selected references and all unit UUIDs; the union of all selected roles must equal
+the complete fresh native physical inventory. Outside parts and overlaps refuse.
+Ordinary child composition retains its whole-occurrence behavior. A successful
+source preparation is not native role, board, engineering, assembly or G4 acceptance.

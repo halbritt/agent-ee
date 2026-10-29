@@ -43,6 +43,7 @@ def _source(root, block, composition=None):
     if composition is not None:
         from .block_composition import validate
         plan = _read(_local(root, composition))
+        record['_captured_boundary_ports'] = copy.deepcopy(record['boundary_ports'])
         record['boundary_ports'] = validate(plan, record)
         record['_composition'] = plan
         return record
@@ -72,7 +73,7 @@ def _instance(root, rel):
     if not isinstance(record['instance_path'], str) or not record['instance_path'].startswith('/') or not record['instance_path'].endswith('/'):
         raise ValueError('instance_path must be a native sheet UUID path')
     segments = record['instance_path'].strip('/').split('/')
-    if not all(str(uuid.UUID(s)) == s for s in segments):
+    if record['instance_path'] != '/' and not all(str(uuid.UUID(s)) == s for s in segments):
         raise ValueError('instance_path requires canonical UUIDs')
     composition = record.get('composition')
     if composition is not None:
@@ -85,6 +86,10 @@ def _instance(root, rel):
     if (record['block_id'], record['version'], record['sha256']) != (
             source['id'], source['version'], source['files'][source['sheet']]):
         raise ValueError('block identity differs from instance record')
+    if record['instance_path'] == '/' and not (composition is not None
+            and len(source.get('instances', [])) == 1 and source['instances'][0]['uuid_path'] == '/'
+            and source.get('_captured_boundary_ports') == []):
+        raise ValueError('root composition requires one explicit root source without hierarchical boundary ports')
     bindings = record['bindings']
     if not isinstance(bindings, dict) or set(bindings) != {p['name'] for p in source['boundary_ports']}:
         raise ValueError('every boundary port needs exactly one immutable binding')
@@ -202,6 +207,7 @@ def _fresh_contract(root, source, record, scope, files, native_id):
         raise ValueError('distinct declared check contracts cannot collapse into one check')
     block_path = str(PurePosixPath(record['block'])/'block.json')
     names.update({p:str(PurePosixPath(record['block'])/p) for p in source['files']})
+    names.update({'/candidate/'+p:'/candidate/'+str(PurePosixPath(record['block'])/p) for p in source['files']})
     if '_composition' in source:
         plan=source['_composition']
         if record.get('schema') == 'agent-ee.flat-block-instance/1':
@@ -265,12 +271,18 @@ def _fresh_contract(root, source, record, scope, files, native_id):
             observed['manifest']=expected['manifest']
         if original['kind'] == 'active_spice':
             expected['contract'] = params['contract']  # A version token, never an asset path.
-        asset_fields = {'hardware_interface':('contract',), 'interval_assertions':('assertions',)}.get(original['kind'], ())
+        asset_fields = {'hardware_interface':('contract',), 'interval_assertions':('assertions',), 'topology_rules':('rules',)}.get(original['kind'], ())
         for field in asset_fields:
             before=_read(_local(root,str(PurePosixPath(record['block'])/params[field])))
             after=_read(_local(root,observed[field]))
             before=(_interface_addresses(before,names,requirements) if field=='contract'
                     else _rebound(before,names,requirements,checks))
+            if field=='rules':
+                owners=[r for r in source['requirements'] if old in r['checks']]
+                if len(owners)!=1:
+                    raise ValueError('rules require one exact captured requirement')
+                for row in before['rules']:
+                    row['requirement']=requirements[owners[0]['id']]
             if field=='contract':
                 for row in before['invariants']:
                     rid=row['requirement']
@@ -278,7 +290,7 @@ def _fresh_contract(root, source, record, scope, files, native_id):
                     observed_source=next((i['source'] for i in after['invariants'] if i['id']==row['id']),{})
                     if 'sha256' in observed_source:
                         row['source']['sha256']=digest(_local(root,block_path))
-            else:
+            elif field == 'assertions':
                 before['requirement_sources']={requirements[r['id']]:dict(path=block_path,
                     locator='requirements/'+r['id'],sha256=digest(_local(root,block_path)))
                     for r in source['requirements'] if requirements[r['id']] in before.get('requirement_sources',{})}
@@ -292,6 +304,14 @@ def _fresh_contract(root, source, record, scope, files, native_id):
         requirement=next(r for r in source['requirements'] if old in r['checks'])
         if descriptor['status'] != 'supported' or (_requirement_intent(source,requirement)=='acceptance' and not descriptor['can_evaluate_bound']):
             raise ValueError('fresh declared check has no executable acceptance coverage: '+str(descriptor['unsupported_reasons']))
+
+
+def baseline_rows(record, source):
+    """Fresh requirements sourced to the immutable captured block, never old passes."""
+    return [dict(id=record['id']+'-'+r['id'], statement=r['statement'],
+        source=dict(path=str(PurePosixPath(record['block'])/'block.json'), locator='requirements/'+r['id']),
+        checks=copy.deepcopy(record['requirements'][r['id']]), intent=_requirement_intent(source,r))
+        for r in source['requirements']]
 
 
 def capability(params, scope, files, inputs, check_id):
@@ -325,14 +345,12 @@ def capability(params, scope, files, inputs, check_id):
         if (not isinstance(checks, list) or not checks or len(checks) != len(set(checks)) or
                 any(c not in {s['id'] for s in specs if s['kind'] != 'block_provenance'} for c in checks)):
             raise ValueError('block requirements require fresh board checks other than provenance')
-        expected = {'id': record['id'] + '-' + req['id'], 'statement': req['statement'],
-            'source': {'path': str(PurePosixPath(record['block']) / 'block.json'),
-                       'locator': 'requirements/' + req['id']}, 'checks': checks}
-        if scope.get('schema') == 'agent-ee.scope/3':
-            expected['intent'] = _requirement_intent(source, req)
-            if expected['intent'] == 'informational' and any(
-                    next(s['kind'] for s in specs if s['id'] == c) != 'netlist' for c in checks):
-                raise ValueError('native source requirement must map to fresh native netlist checks')
+        expected = next(r for r in baseline_rows(record, source) if r['id'] == record['id']+'-'+req['id'])
+        if expected.get('intent') == 'informational' and any(
+                next(s['kind'] for s in specs if s['id'] == c) != 'netlist' for c in checks):
+            raise ValueError('native source requirement must map to fresh native netlist checks')
+        if scope.get('schema') != 'agent-ee.scope/3':
+            expected.pop('intent')
         if expected not in requirements:
             raise ValueError('block requirement mapping differs from board baseline')
     _fresh_contract(inputs, source, record, scope, files, params['netlist_check'])
@@ -536,6 +554,30 @@ def _export(ctx, label, schematic, extra_ro=()):
     return read_native_inventory(work / 'design.xml')
 
 
+def root_membership(source):
+    sets=[c['params']['reference_set'] for c in source.get('check_set',[]) if c['kind']=='parts_subset' and 'reference_set' in c['params']]
+    if len(sets)!=1:
+        raise ValueError('root composition requires one captured exact membership contract')
+    from .parts_subset import reference_set
+    return reference_set(sets[0])
+
+
+def root_coverage(inputs, scope, actual):
+    """No root physical component is hidden outside the selected block union."""
+    rows=[]
+    for path in scope.get('block_instances',[]):
+        record,source=_instance(inputs,path)
+        if record['instance_path']!='/':
+            raise ValueError('root role scope cannot mix child occurrences')
+        rows += root_membership(source)
+    keys=[(r['sheet'],r['reference']) for r in rows]
+    if not rows or len(set(keys))!=len(keys):
+        raise ValueError('root role reference sets must be disjoint')
+    observed={(c['sheet'],ref):sorted(c['uuid'].split()) for ref,c in actual['components'].items()}
+    if observed != {(r['sheet'],r['reference']):r['uuids'] for r in rows}:
+        raise ValueError('root role union differs from the complete native physical inventory')
+
+
 def check_block_provenance(ctx):
     from .checks import CheckError, parse_xml_netlist
     from .datasheet_facts import prerequisite
@@ -570,56 +612,64 @@ def check_block_provenance(ctx):
             selected = models(ctx.inputs / record['block'], composition,
                 lambda i, path: _export(ctx, 'source-' + str(i),
                     '/candidate/' + str(PurePosixPath(record['block']) / path)))
-            component_changes, net_changes = compare(selected, actual, occurrence, record['bindings'])
+            if record['instance_path']=='/':
+                root_coverage(ctx.inputs, ctx.scope, actual)
+            component_changes, net_changes = compare(selected, actual, occurrence, record['bindings'],
+                reference_set=root_membership(block) if record['instance_path']=='/' else None)
         ports = hierarchy_ports((ctx.inputs / record['sheet']).read_bytes())
-        parent_path = '/' + '/'.join(record['instance_path'].strip('/').split('/')[:-1])
-        parent_path = parent_path.rstrip('/') + '/'
-        parent = next(s for s in sheets if s['path'] == parent_path)
-        sheet_uuid = record['instance_path'].strip('/').split('/')[-1]
-        symbol = next(n for n in children(parent['tree'], 'sheet') if field(n, 'uuid', 1) == [sheet_uuid])
-        pins = {}
-        for pin in children(symbol, 'pin'):
-            if len(pin) < 3 or pin[1] in pins:
-                raise ValueError('duplicate or malformed parent boundary pin')
-            pins[pin[1]] = pin[2]
-        boundary = []
-        for p in block['boundary_ports']:
-            present = ports.get(p['name']) == pins.get(p['name']) == p['direction']
-            boundary.append({'port': p['name'], 'expected_net': record['bindings'][p['name']],
-                'status': 'pending' if present else 'violation',
-                'reason': '' if present else 'child port or parent pin missing or direction changed'})
-        extra = (set(ports) | set(pins)) - {p['name'] for p in block['boundary_ports']}
-        if extra:
-            boundary += [{'port': p, 'status': 'violation', 'reason': 'undeclared boundary port'} for p in sorted(extra)]
-        # Observe the actual native net at each remaining child port, including
-        # disconnected or moved labels. A shadow sheet cannot supply this witness.
-        probe_root = ctx.work / 'probe-inputs'
-        probe_root.mkdir()
-        for sheet in sheets:
-            dst = probe_root / sheet['file']
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ctx.inputs / sheet['file'], dst)
-            ctx.evidence('probe-inputs/' + sheet['file'])
-        raw, anchors = _probe_sheet((ctx.inputs / record['sheet']).read_bytes(), occurrence,
-                                    PurePosixPath(ctx.scope['schematic']).stem)
-        (probe_root / record['sheet']).write_bytes(raw)
-        probed = _export(ctx, 'boundary', '/probe/' + ctx.scope['schematic'], [(probe_root, '/probe')])
-        probes = {ref: c for ref, c in probed['components'].items()
-                  if c['sheet'] == occurrence['path'] and c['uuid'] in anchors.values()}
-        if len(probes) != len(anchors) or _physical(probed, probes) != _physical(actual):
-            raise ValueError('boundary probes did not preserve the native physical graph')
-        by_uuid = {c['uuid']: ref for ref, c in probes.items()}
-        for port in boundary:
-            if port['status'] != 'pending':
-                continue
-            ref = by_uuid[anchors[port['port']]]
-            nid = probed['memberships'].get((ref, '1'))
-            net = probed['nets'].get(nid)
-            name = net['name'] if net else None
-            connected = net is not None and any(r not in probes for r, _ in net['terminals'])
-            port.update(observed_net=name, probe_uuid=anchors[port['port']],
-                status='satisfied' if connected and name == port['expected_net'] else 'violation',
-                reason='' if connected and name == port['expected_net'] else 'boundary binding missing or rebound')
+        if record['instance_path'] == '/':
+            if ports:
+                raise ValueError('root composition cannot contain hierarchical boundary ports')
+            boundary = []
+        else:
+            parent_path = '/' + '/'.join(record['instance_path'].strip('/').split('/')[:-1])
+            parent_path = parent_path.rstrip('/') + '/'
+            parent = next(s for s in sheets if s['path'] == parent_path)
+            sheet_uuid = record['instance_path'].strip('/').split('/')[-1]
+            symbol = next(n for n in children(parent['tree'], 'sheet') if field(n, 'uuid', 1) == [sheet_uuid])
+            pins = {}
+            for pin in children(symbol, 'pin'):
+                if len(pin) < 3 or pin[1] in pins:
+                    raise ValueError('duplicate or malformed parent boundary pin')
+                pins[pin[1]] = pin[2]
+            boundary = []
+            for p in block['boundary_ports']:
+                present = ports.get(p['name']) == pins.get(p['name']) == p['direction']
+                boundary.append({'port': p['name'], 'expected_net': record['bindings'][p['name']],
+                    'status': 'pending' if present else 'violation',
+                    'reason': '' if present else 'child port or parent pin missing or direction changed'})
+            extra = (set(ports) | set(pins)) - {p['name'] for p in block['boundary_ports']}
+            if extra:
+                boundary += [{'port': p, 'status': 'violation', 'reason': 'undeclared boundary port'} for p in sorted(extra)]
+            # Observe the actual native net at each remaining child port, including
+            # disconnected or moved labels. A shadow sheet cannot supply this witness.
+            probe_root = ctx.work / 'probe-inputs'
+            probe_root.mkdir()
+            for sheet in sheets:
+                dst = probe_root / sheet['file']
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ctx.inputs / sheet['file'], dst)
+                ctx.evidence('probe-inputs/' + sheet['file'])
+            raw, anchors = _probe_sheet((ctx.inputs / record['sheet']).read_bytes(), occurrence,
+                                        PurePosixPath(ctx.scope['schematic']).stem)
+            (probe_root / record['sheet']).write_bytes(raw)
+            probed = _export(ctx, 'boundary', '/probe/' + ctx.scope['schematic'], [(probe_root, '/probe')])
+            probes = {ref: c for ref, c in probed['components'].items()
+                      if c['sheet'] == occurrence['path'] and c['uuid'] in anchors.values()}
+            if len(probes) != len(anchors) or _physical(probed, probes) != _physical(actual):
+                raise ValueError('boundary probes did not preserve the native physical graph')
+            by_uuid = {c['uuid']: ref for ref, c in probes.items()}
+            for port in boundary:
+                if port['status'] != 'pending':
+                    continue
+                ref = by_uuid[anchors[port['port']]]
+                nid = probed['memberships'].get((ref, '1'))
+                net = probed['nets'].get(nid)
+                name = net['name'] if net else None
+                connected = net is not None and any(r not in probes for r, _ in net['terminals'])
+                port.update(observed_net=name, probe_uuid=anchors[port['port']],
+                    status='satisfied' if connected and name == port['expected_net'] else 'violation',
+                    reason='' if connected and name == port['expected_net'] else 'boundary binding missing or rebound')
         report = {'schema': 'agent-ee.block-provenance/1', 'candidate_id': ctx.manifest['candidate_id'],
             'instance': record, 'component_changes': component_changes, 'net_changes': net_changes,
             'boundary': boundary, 'same_bytes': digest(ctx.inputs / record['sheet']) ==

@@ -253,7 +253,7 @@ def emit(selected, plan, occurrence, project):
     return ('\n'.join(format_sexpr(tree)) + '\n').encode()
 
 
-def compare(selected, actual, occurrence, bindings):
+def compare(selected, actual, occurrence, bindings, *, reference_set=None):
     """Exact selected physical inventory and all-pin topology; no informational drift."""
     keys = ('reference', 'uuid', 'lib_id', 'value', 'datasheet', 'footprint', 'populated',
             'on_board', 'in_bom', 'pins', 'units', 'pin_metadata', 'properties', 'library_pins')
@@ -268,7 +268,18 @@ def compare(selected, actual, occurrence, bindings):
         expected[ref] = physical(item['native'])
         expected[ref]['reference'] = ref
         expected_nets.update({(ref, pin): bindings[net] for pin, net in item['nets'].items()})
-    observed = {ref: physical(c) for ref, c in actual['components'].items() if c['sheet'] == occurrence['path']}
+    selected_scope = None
+    if reference_set is not None:
+        from .parts_subset import reference_set as canonical_scope
+        selected_scope = {r['reference']:r for r in canonical_scope(reference_set)}
+        if set(selected_scope) != set(expected) or occurrence['path'] != '/' or any(r['sheet']!='/' for r in selected_scope.values()):
+            raise ValueError('root reference_set must exactly match every selected source reference')
+        for ref,row in selected_scope.items():
+            current = actual['components'].get(ref)
+            if current is None or sorted(current['uuid'].split()) != row['uuids']:
+                raise ValueError('root selected physical unit identity differs: '+ref)
+    observed = {ref: physical(c) for ref, c in actual['components'].items()
+                if c['sheet'] == occurrence['path'] and (selected_scope is None or ref in selected_scope)}
     component_changes = [{'reference': ref, 'severity': 'defect', 'before': expected.get(ref), 'after': observed.get(ref)}
                          for ref in sorted(expected.keys() | observed.keys()) if expected.get(ref) != observed.get(ref)]
     net_changes = no_connect_changes(selected, actual, occurrence['tree'],
