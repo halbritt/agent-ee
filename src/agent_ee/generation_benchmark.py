@@ -1,5 +1,6 @@
 """Frozen, offline generation trials over the ordinary candidate/check pipeline."""
 import argparse
+import hashlib
 import shutil
 import stat
 import subprocess
@@ -58,8 +59,9 @@ def pinned_task(root, *, expect_pins=None):
             k: v for k, v in files.items() if k != 'pins.json'}:
         raise ValueError('task-file hash mismatch')
     task = strict_json((root / 'task.json').read_bytes())
+    refusal = isinstance(task, dict) and 'expected_refusal' in task
     exact_fields(task, ('schema', 'id', 'domain', 'difficulty', 'prompt', 'reference',
-                        'deliverables', 'rules', 'scope'))
+                        'deliverables', *(['expected_refusal'] if refusal else ['rules', 'scope'])))
     if task['schema'] != 'agent-ee.generation-task/1':
         raise ValueError('unknown generation task schema')
     safe_id(task['id'], 'task id')
@@ -81,48 +83,54 @@ def pinned_task(root, *, expect_pins=None):
         safe_relative(path)
         if path in ('candidate.json', 'baseline.json', 'scope.json', '.generation') or path.startswith(('checks/', 'work/', '.generation/')):
             raise ValueError('reserved deliverable path')
-    scope = task['scope']
-    if scope['schema'] not in ('agent-ee.scope/2', 'agent-ee.scope/3') or scope['inputs']:
-        raise ValueError('benchmark scope must use scope/2 or scope/3 and empty inputs')
-    # All immutable inputs live under evaluator/. The writer supplies only declared files.
-    evaluator = {k.removeprefix('evaluator/'): v for k, v in files.items() if k.startswith('evaluator/')}
-    if any(p == '.generation' or p.startswith('.generation/') for p in evaluator):
-        raise ValueError('reserved generation evidence path')
-    if set(evaluator) & set(deliverables):
-        raise ValueError('deliverable overlaps evaluator input')
-    for key in ('schematic', 'board'):
-        if key in scope and scope[key] not in deliverables:
-            raise ValueError('native subject must be a declared deliverable')
-    compile_baseline(scope, {**evaluator, **dict.fromkeys(deliverables, '0' * 64)}, root / 'evaluator')
-    checks = {c['id'] for c in scope['checks']}
-    rules = task['rules']
-    if not isinstance(rules, list) or not rules:
-        raise ValueError('expected scoring rules')
-    ids, traced = set(), set()
-    requirements = {r['id']: set(r['checks']) for r in scope['baseline']['requirements']}
-    for rule in rules:
-        exact_fields(rule, ('id', 'check', 'category', 'critical', 'weight', 'source_criteria', 'deliverables'))
-        safe_id(rule['id'], 'rule id')
-        if rule['id'] in ids or rule['check'] not in checks:
-            raise ValueError('duplicate rule or undeclared check')
-        ids.add(rule['id'])
-        nonempty(rule['category'])
-        if type(rule['critical']) is not bool or type(rule['weight']) is not int or rule['weight'] < 1:
-            raise ValueError('expected boolean critical and positive integer weight')
-        if (not isinstance(rule['source_criteria'], list) or not rule['source_criteria'] or
-                len(set(rule['source_criteria'])) != len(rule['source_criteria'])):
-            raise ValueError('expected unique source criteria')
-        for rid in rule['source_criteria']:
-            if rid not in requirements or rule['check'] not in requirements[rid]:
-                raise ValueError('scoring rule does not trace to baseline criterion')
-            traced.add(rid)
-        if (not isinstance(rule['deliverables'], list) or not rule['deliverables'] or
-                not set(rule['deliverables']) <= set(deliverables)):
-            raise ValueError('rule must name required deliverables')
-    if traced != set(requirements):
-        raise ValueError('uncovered acceptance criterion or check')
-    if set().union(*(set(r['deliverables']) for r in rules)) != set(deliverables):
-        raise ValueError('unscored deliverable')
+    if refusal:
+        task['_refusal_contract'] = _refusal_contract(root, task, files)
+        task['rules'] = [{'id': 'refusal', 'check': 'refusal', 'category': 'source_refusal',
+                          'critical': True, 'weight': 1, 'source_criteria': ['unsupported_clause'],
+                          'deliverables': ['refusal.json']}]
+    else:
+        scope = task['scope']
+        if scope['schema'] not in ('agent-ee.scope/2', 'agent-ee.scope/3') or scope['inputs']:
+            raise ValueError('benchmark scope must use scope/2 or scope/3 and empty inputs')
+        # All immutable inputs live under evaluator/. The writer supplies only declared files.
+        evaluator = {k.removeprefix('evaluator/'): v for k, v in files.items() if k.startswith('evaluator/')}
+        if any(p == '.generation' or p.startswith('.generation/') for p in evaluator):
+            raise ValueError('reserved generation evidence path')
+        if set(evaluator) & set(deliverables):
+            raise ValueError('deliverable overlaps evaluator input')
+        for key in ('schematic', 'board'):
+            if key in scope and scope[key] not in deliverables:
+                raise ValueError('native subject must be a declared deliverable')
+        compile_baseline(scope, {**evaluator, **dict.fromkeys(deliverables, '0' * 64)}, root / 'evaluator')
+        checks = {c['id'] for c in scope['checks']}
+        rules = task['rules']
+        if not isinstance(rules, list) or not rules:
+            raise ValueError('expected scoring rules')
+        ids, traced = set(), set()
+        requirements = {r['id']: set(r['checks']) for r in scope['baseline']['requirements']}
+        for rule in rules:
+            exact_fields(rule, ('id', 'check', 'category', 'critical', 'weight', 'source_criteria', 'deliverables'))
+            safe_id(rule['id'], 'rule id')
+            if rule['id'] in ids or rule['check'] not in checks:
+                raise ValueError('duplicate rule or undeclared check')
+            ids.add(rule['id'])
+            nonempty(rule['category'])
+            if type(rule['critical']) is not bool or type(rule['weight']) is not int or rule['weight'] < 1:
+                raise ValueError('expected boolean critical and positive integer weight')
+            if (not isinstance(rule['source_criteria'], list) or not rule['source_criteria'] or
+                    len(set(rule['source_criteria'])) != len(rule['source_criteria'])):
+                raise ValueError('expected unique source criteria')
+            for rid in rule['source_criteria']:
+                if rid not in requirements or rule['check'] not in requirements[rid]:
+                    raise ValueError('scoring rule does not trace to baseline criterion')
+                traced.add(rid)
+            if (not isinstance(rule['deliverables'], list) or not rule['deliverables'] or
+                    not set(rule['deliverables']) <= set(deliverables)):
+                raise ValueError('rule must name required deliverables')
+        if traced != set(requirements):
+            raise ValueError('uncovered acceptance criterion or check')
+        if set().union(*(set(r['deliverables']) for r in rules)) != set(deliverables):
+            raise ValueError('unscored deliverable')
     task['files'] = files
     # Existing placement/UUID-insensitive structural projection, deliberately conservative.
     kind = {'.kicad_sch': 'schematic', '.kicad_pcb': 'board'}.get(Path(task['reference']).suffix)
@@ -131,6 +139,88 @@ def pinned_task(root, *, expect_pins=None):
     node, _ = read_side((root / task['reference']).read_bytes(), kind, None)
     task['fingerprint'] = summarize(node, kind)['hashes']['structural']
     return task
+
+
+def _refusal_contract(root, task, files):
+    """Validate an independently authored oracle, without asking the producer."""
+    if task['deliverables'] != ['refusal.json']:
+        raise ValueError('expected-refusal task requires only refusal.json')
+    exact_fields(task['expected_refusal'], ('contract',))
+    path = task['expected_refusal']['contract']
+    if (str(safe_relative(path)) != path or not path.startswith('evaluator/')
+            or path not in files):
+        raise ValueError('expected private pinned refusal contract')
+    contract = strict_json((root / path).read_bytes())
+    exact_fields(contract, ('outcome', 'code', 'brief_sha256', 'byte_start', 'byte_end',
+                            'clause_sha256', 'context_files'))
+    raw = (root / task['prompt']).read_bytes()
+    raw.decode('utf-8')
+    start, end = contract['byte_start'], contract['byte_end']
+    if (contract['outcome'] != 'unresolved' or contract['code'] != 'unsupported_clause'
+            or contract['brief_sha256'] != files[task['prompt']]
+            or type(start) is not int or type(end) is not int or not 0 <= start < end <= len(raw)):
+        raise ValueError('invalid expected unsupported-clause contract')
+    # Validate the frozen locator only; this never classifies a clause as unsupported.
+    offset, spans = 0, []
+    for line in raw.decode('utf-8').splitlines(keepends=True):
+        content = line.strip()
+        begin = offset + len(line[:len(line) - len(line.lstrip())].encode('utf-8'))
+        if content:
+            spans.append((begin, begin + len(content.encode('utf-8'))))
+        offset += len(line.encode('utf-8'))
+    if ((start, end) not in spans or hashlib.sha256(raw[start:end]).hexdigest() != contract['clause_sha256']):
+        raise ValueError('refusal clause span/hash must name a complete UTF-8 clause')
+    context = contract['context_files']
+    if not isinstance(context, dict) or not context:
+        raise ValueError('expected nonempty frozen refusal capability context')
+    for name, sha in context.items():
+        if (str(safe_relative(name)) != name or not name.startswith('evaluator/')
+                or name == path or name not in files or files[name] != sha
+                or (root / name).stat().st_size == 0):
+            raise ValueError('refusal context must match private task pins')
+    return contract
+
+
+def _output_entries(root):
+    """Complete ordinary entry census, including empty directories."""
+    root = Path(root)
+    if not root.exists() and not root.is_symlink():
+        return {}
+    tree_files(root)
+    entries = {}
+    for path in sorted(root.rglob('*')):
+        mode = path.lstat().st_mode
+        if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            raise NonOrdinaryTree('non-ordinary output entry')
+        entries[path.relative_to(root).as_posix()] = 'directory' if stat.S_ISDIR(mode) else 'file'
+    return entries
+
+
+def _refusal_check(task, snapshot, output_tree):
+    valid = False
+    if (output_tree['entries'] == {'refusal.json': 'file'}
+            and set(output_tree['files']) == {'refusal.json'}):
+        contract = task['_refusal_contract']
+        raw = (snapshot.parent / 'task' / task['prompt']).read_bytes()
+        expected = {'outcome': contract['outcome'], 'brief_sha256': contract['brief_sha256'],
+                    'findings': [{'code': contract['code'],
+                        'message': 'unsupported or ambiguous brief clause: ' +
+                            raw[contract['byte_start']:contract['byte_end']].decode('utf-8'),
+                        'byte_start': contract['byte_start'], 'byte_end': contract['byte_end']}]}
+        try:
+            actual = strict_json((snapshot / 'refusal.json').read_bytes())
+        except ValueError:
+            actual = None
+        # Compare canonical JSON too: booleans/floats must not alias integer offsets.
+        valid = json_bytes(actual) == json_bytes(expected)
+    return {'id': 'refusal', 'kind': 'source_refusal', 'execution': 'ok',
+            'outcome': 'pass' if valid else 'defect'}
+
+
+def _refusal_identity():
+    path = str(Path(sys.executable).resolve())
+    return {'code': policy_files(), 'runtime': {'python': {'path': path, 'identity': fingerprint(path)}},
+            'python': sys.version}
 
 
 def ratio(value):
@@ -210,7 +300,7 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
                 raise native_run.DeadlineExhausted('evaluation deadline exhausted')
         def observe_identity():
             try:
-                return evaluator_identity()
+                return _refusal_identity() if 'expected_refusal' in task else evaluator_identity()
             except subprocess.TimeoutExpired:
                 checkpoint()
                 raise
@@ -220,7 +310,9 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         task_root, outputs, trial = Path(task_root), Path(outputs), Path(trial)
         task = pinned_task(task_root, expect_pins=expect_pins)
         checkpoint()
+        refusal = 'expected_refusal' in task
         observed, output_error = output_files(outputs)
+        output_tree = {'files': observed, 'entries': _output_entries(outputs)} if refusal and output_error is None else None
         if output_error:
             generation_execution = 'failed'
         missing = [] if output_error else sorted(set(task['deliverables']) - set(observed))
@@ -248,7 +340,20 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
             raise ValueError('task changed during capture')
         checks = []
         capture_error = None
-        if not missing and output_error is None:
+        if refusal and output_error is None:
+            snapshot = trial / 'outputs'
+            snapshot.mkdir()
+            for rel, kind in output_tree['entries'].items():
+                checkpoint()
+                dest = snapshot / rel
+                if kind == 'directory':
+                    dest.mkdir()
+                else:
+                    shutil.copyfile(outputs / rel, dest, follow_symlinks=False)
+            if (tree_files(snapshot) != observed or _output_entries(snapshot) != output_tree['entries']):
+                raise ValueError('complete refusal output changed during capture')
+            checks = [_refusal_check(task, snapshot, output_tree)]
+        if not refusal and not missing and output_error is None:
             inputs = trial / 'evaluation-inputs'
             shutil.copytree(task_root / 'evaluator', inputs)
             if generation_records is not None:
@@ -279,7 +384,8 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         checkpoint()
         current, current_error = output_files(outputs)
         if (pinned_task(task_root)['files'] != task['files'] or
-                (current, current_error) != (observed, output_error)):
+                (current, current_error) != (observed, output_error) or
+                (refusal and output_error is None and _output_entries(outputs) != output_tree['entries'])):
             raise ValueError('task or output changed during evaluation')
         if observe_identity() != environment:
             raise ValueError('evaluator runtime changed during evaluation')
@@ -293,6 +399,9 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
                   'evaluation': {'capture_error': capture_error,
                                  'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')} for c in checks]},
                   'scoring': score(task['rules'], checks, missing)}
+        if refusal:
+            report['kind'] = 'source_refusal'
+            report['binding'].update(kind='source_refusal', output_tree=output_tree)
         if generation_records is not None:
             report['binding']['generation_records'] = generation_records
         if _case is not None:
@@ -556,6 +665,18 @@ def case_files(report, path):
         n = entry['attempt']
         names += [f'attempt-{n}/' + name for name in RECORDS]
         names += [f'evaluation-{n}/evaluation.json']
+        if report.get('kind') == 'source_refusal' and entry['evaluation_report'] is not None:
+            evaluation = root / f'evaluation-{n}'
+            prior_path = Path(entry['evaluation_report']).resolve()
+            receipt = strict_json((evaluation / 'evaluation.json').read_bytes())
+            if receipt != {'schema': 'agent-ee.generation-evaluation-record/1',
+                           'report': str(prior_path), 'report_sha256': digest(prior_path)}:
+                raise ValueError('case refusal evaluation differs from its receipt')
+            prior_report = strict_json(prior_path.read_bytes())
+            if (prior_path.parent.name != identity(prior_report['binding'])
+                    or prior_report['binding']['task_files'] != report['binding']['task_files']):
+                raise ValueError('case refusal task or identity differs from selected report')
+            replay_report(evaluation, prior_report)
     files = {}
     for name in names:
         source = root / name
@@ -638,6 +759,10 @@ def replay_report(trial, report):
     task = pinned_task(trial / 'task', expect_pins=binding['task_files']['pins.json'])
     if task['files'] != binding['task_files']:
         raise ValueError('retained task differs from report binding')
+    refusal = 'expected_refusal' in task
+    if (report.get('kind') != ('source_refusal' if refusal else None)
+            or binding.get('kind') != ('source_refusal' if refusal else None)):
+        raise ValueError('report kind differs from task contract')
     selected = binding['outputs']
     if not set(selected) <= set(task['deliverables']):
         raise ValueError('unexpected bound outputs')
@@ -658,7 +783,20 @@ def replay_report(trial, report):
     missing = [] if output_error else sorted(set(task['deliverables']) - set(selected))
     checks = []
     capture_error = None
-    if not missing and output_error is None:
+    if refusal:
+        if (trial / 'run').exists():
+            raise ValueError('source refusal cannot claim native run evidence')
+        output_tree = binding['output_tree']
+        if output_error is None:
+            snapshot = trial / 'outputs'
+            if (tree_files(snapshot) != output_tree['files']
+                    or _output_entries(snapshot) != output_tree['entries']
+                    or selected != {k: v for k, v in output_tree['files'].items() if k in task['deliverables']}):
+                raise ValueError('complete retained refusal output differs from binding')
+            checks = [_refusal_check(task, snapshot, output_tree)]
+        elif output_tree is not None:
+            raise ValueError('unsafe refusal output cannot provide a snapshot')
+    if not refusal and not missing and output_error is None:
         inputs = tree_files(trial / 'evaluation-inputs')
         expected_inputs = {k.removeprefix('evaluator/'): v for k, v in task['files'].items()
                            if k.startswith('evaluator/')}
@@ -703,18 +841,22 @@ def aggregate(paths, *, manifest=None, expect_pins=None):
     if len({r['task'] for r in reports}) != len(reports):
         raise ValueError('aggregate requires one selected attempt per task')
     rows = []
-    for dimension in ('domain', 'difficulty'):
-        for value in sorted({r[dimension] for r in reports}):
-            group = [r for r in reports if r[dimension] == value]
-            categories = sorted({c for r in group for c in r['scoring']['categories']})
-            rows.append({'dimension': dimension, 'value': value,
-                         **average_scores([r['scoring'] for r in group]),
-                         'categories': {c: average_scores([r['scoring']['categories'][c] for r in group
-                                                          if c in r['scoring']['categories']]) for c in categories},
-                         'passed': sum(r['result']['overall_pass'] is True for r in group),
-                         'failed': sum(r['result']['overall_pass'] is False for r in group),
-                         'unknown': sum(r['result']['overall_pass'] is None for r in group),
-                         'generation_failed': sum(r['generation']['execution'] == 'failed' for r in group)})
+    for kind in sorted({r.get('kind', 'native_design') for r in reports}):
+        kind_reports = [r for r in reports if r.get('kind', 'native_design') == kind]
+        for dimension in ('domain', 'difficulty'):
+            for value in sorted({r[dimension] for r in kind_reports}):
+                group = [r for r in kind_reports if r[dimension] == value]
+                categories = sorted({c for r in group for c in r['scoring']['categories']})
+                rows.append({'dimension': dimension, 'value': value,
+                             **average_scores([r['scoring'] for r in group]),
+                             'categories': {c: average_scores([r['scoring']['categories'][c] for r in group
+                                                              if c in r['scoring']['categories']]) for c in categories},
+                             'passed': sum(r['result']['overall_pass'] is True for r in group),
+                             'failed': sum(r['result']['overall_pass'] is False for r in group),
+                             'unknown': sum(r['result']['overall_pass'] is None for r in group),
+                             'generation_failed': sum(r['generation']['execution'] == 'failed' for r in group)})
+                if any(r.get('kind') == 'source_refusal' for r in reports):
+                    rows[-1]['kind'] = kind
     # Unanchored summaries are local consistency checks only; label them so they cannot
     # be mistaken for an externally authenticated series.
     return {'schema': 'agent-ee.generation-summary/1',

@@ -117,6 +117,95 @@ directory but are never copied into repair inputs. Unsafe entries are not read
 or hashed; the report binds the rejection class. Unexpected harness exceptions
 propagate; they cannot become passes.
 
+## Source-bound expected refusals
+
+An opt-in variant of the existing `agent-ee.generation-task/1` uses the same
+common `id`, `domain`, `difficulty`, `prompt`, `reference` and `deliverables`.
+It replaces `scope` and `rules` with:
+
+```json
+"deliverables": ["refusal.json"],
+"expected_refusal": {"contract": "evaluator/refusal-contract.json"}
+```
+
+The contract is private, canonical task-relative, under `evaluator/`, and pinned
+by the ordinary task pins. Native reference grouping stays mandatory; this
+variant does not invent a reference board or infer a design pass. Old readers
+reject this additional task variant; ordinary native tasks/reports retain their
+existing fields and grading behavior.
+
+The independently authored private JSON contract has exactly these fields:
+
+- `outcome`: exactly `unresolved`;
+- `code`: exactly `unsupported_clause`;
+- `brief_sha256`: SHA-256 of the exact public `prompt.md` bytes;
+- `byte_start`, `byte_end`: strict integer UTF-8 byte offsets selecting one
+  complete, nonblank, trimmed clause line, excluding indentation/trailing space;
+- `clause_sha256`: SHA-256 of those exact selected bytes;
+- `context_files`: a nonempty map of canonical `evaluator/` file paths to their
+  pinned SHA-256 values. Each file must be nonempty and distinct from the contract.
+
+Task authors freeze the unsupported clause and applicable capability/source
+context **independently before execution**. The evaluator validates these
+bindings and never calls the producer's `parse_brief` to choose an expectation.
+The contract does not prove its curator chose a substantively unsupported
+request: independent task review and external pin custody remain necessary.
+No private case, task library or answer corpus is added by this interface.
+
+The sole permissible ordinary output tree is the one file `refusal.json`.
+Its exact JSON fields are `outcome`, `brief_sha256`, and one-element `findings`.
+That finding has exactly `code`, `message`, `byte_start`, `byte_end`; its message
+must equal `unsupported or ambiguous brief clause: ` followed by the frozen
+UTF-8 clause. Offset booleans/floats, generic reasons, invented clauses, unknown
+fields, extra findings, wrong hashes/codes/outcomes and preparation/release
+claims fail. JSON whitespace/key order are immaterial. This matches the existing
+`acquisition_prepare.PreparationRefused` report, including the brief digest
+added by `prepare`. Unsupported clause is **unresolved**, not an assertion of
+physical impossibility.
+
+A producer adapter may catch that specific `PreparationRefused`, publish the
+response and intentionally exit0 to complete its requested transaction. This
+feature adds no adapter or transport. The existing preparation CLI exits1 for
+this outcome; that nonzero execution still fails overall even with a correct
+response. Arbitrary crash, timeout, unavailable execution or missing output
+cannot become successful refusal. Missing outputs still count, every begun
+attempt remains in its case ledger, and the campaign still explicitly selects
+`--attempts 2`. Correct source refusal is never board completion.
+
+Refusal evaluation uses local evaluator source/Python identities and no native
+runtime probes or native candidate/check seal. One fixed critical source-refusal
+criterion uses the existing exact score machinery. Reports explicitly carry
+`kind: source_refusal`; they provide no board verdict. Source-only or mixed
+aggregate rows carry `kind` and separate `source_refusal` from `native_design`
+before domain/difficulty grouping. Native-only summaries keep their old row shape.
+
+For this branch, `evaluation-N/outputs/` retains **every ordinary file and
+directory**, including empty `release/` or `prepared/` directories and extra
+files. Any such extra entry fails; it is retained as failure evidence. The
+report binding's `output_tree` contains all file hashes and the complete
+relative entry/type census. Capture checks the copied snapshot and rechecks
+the original output; replay rechecks the entire retained tree and recomputes
+the grade from raw bytes and the pinned private contract. Unsafe links,
+hardlinks or special entries retain the existing rejection class and original
+attempt output; they are never followed/copied or accepted as evidence.
+
+The existing evaluation receipts, exclusive report publication, externally
+pinned `freeze` and authenticated series replay apply. `evidence_sha256` is
+null for source refusal because it has no native seal; this is accepted only
+through the explicit refusal replay branch. Direct caller-only generation
+claims remain diagnostic and cannot freeze. Case verification also replays
+every retained evaluated refusal attempt against its receipt, including earlier
+failed/missing-output attempts, so deleting extra output or empty directories
+from an earlier refusal snapshot is detected. Cached passes, coordinated local
+report rewrites contradicting raw evidence, and mutations after external freeze
+are refused. Without independent task/series anchors, coordinated local
+re-authoring remains outside the diagnostic consistency guarantee.
+
+Pure public-fixture success is neither native/G4 qualification nor campaign,
+board, manufacturing or release acceptance. Live generation, private task
+selection, native case/descendant containment proof and independent engineering
+review remain separately authorized work.
+
 ## Enclosing case budget
 
 `run` and `run_task` use one monotonic case clock across setup, generation,
@@ -191,7 +280,7 @@ case is incomplete/exhausted/late. Historical reports without case bindings keep
 the previous entry shape and verification; no prior evidence is rewritten.
 Aggregation still counts one selected report per task, while the case ledger
 retains the attempt denominator and selection history. It does not turn missing
-reports into success or implement unsupported-refusal evaluation.
+reports into success. Expected-refusal evaluation below uses the same enclosing budget.
 
 For example, a root-authorized invocation can add these options to the ordinary
 `run` command, retaining its task/generator/source/runtime pins:
@@ -285,7 +374,13 @@ replace the independently retained digest is outside this threat model.
 
 Legacy `aggregate` without either flag remains a diagnostic local consistency
 check with its existing verdicts. It has no authenticity claim and still permits
-coordinated local resealing and re-stratification. Authentication is mandatory
+coordinated local resealing and re-stratification. A self-consistent local attack
+must also rewrite the mutable case ledger's status, task pins and selected
+report paths where those claims change; partial forgeries can be caught by the
+case-ledger guard before the external-anchor check. The adversarial native
+fixtures retain both that early refusal and the fully rebound diagnostic attack
+before proving the independently retained series still rejects it.
+Authentication is mandatory
 at the explicit `freeze` boundary and when consuming a frozen series, rather
 than silently changing existing diagnostic pass/fail/unknown results. Unknown
 scores remain unknown even when their evidence is authenticated. Older trials

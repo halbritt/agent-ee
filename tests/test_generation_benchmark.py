@@ -728,6 +728,370 @@ class CaptureIdentityBudgetTests(unittest.TestCase):
                 self.assertIsNone(self.calls[-1]['deadline'])
 
 
+class RefusalTests(unittest.TestCase):
+    """Public authored cases: oracle frozen independently of producer parsing."""
+    def setUp(self):
+        from agent_ee import acquisition_prepare
+        from agent_ee.storage import json_bytes
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.task = self.root / 'task'; self.task.mkdir()
+        (self.task / 'evaluator').mkdir()
+        shutil.copyfile(FIXTURE / 'reference.kicad_sch', self.task / 'reference.kicad_sch')
+        self.clause = 'Add a café status display.'
+        self.raw = ('Use acquisition reference acquisition-control unchanged.\n'
+            'Total I2C line capacitance shall be at most 150 pF per line, including board, host and cable.\n'
+            '  ' + self.clause + '\r\n').encode()
+        (self.task / 'prompt.md').write_bytes(self.raw)
+        (self.task / 'evaluator/capability.py').write_bytes(Path(acquisition_prepare.__file__).read_bytes())
+        start = self.raw.index(self.clause.encode())
+        self.contract = {'outcome': 'unresolved', 'code': 'unsupported_clause',
+            'brief_sha256': benchmark.hashlib.sha256(self.raw).hexdigest(),
+            'byte_start': start, 'byte_end': start + len(self.clause.encode()),
+            'clause_sha256': benchmark.hashlib.sha256(self.clause.encode()).hexdigest(),
+            'context_files': {'evaluator/capability.py': digest(self.task / 'evaluator/capability.py')}}
+        self.contract_path = self.task / 'evaluator/refusal-contract.json'
+        write_json(self.contract_path, self.contract)
+        write_json(self.task / 'task.json', {'schema': 'agent-ee.generation-task/1',
+            'id': 'public-refusal', 'domain': 'public-source', 'difficulty': 'public',
+            'prompt': 'prompt.md', 'reference': 'reference.kicad_sch', 'deliverables': ['refusal.json'],
+            'expected_refusal': {'contract': 'evaluator/refusal-contract.json'}})
+        repin(self.task)
+        # The positive response comes from the actual producer, not the oracle.
+        with self.assertRaises(acquisition_prepare.PreparationRefused) as caught:
+            acquisition_prepare.prepare(self.task / 'prompt.md', self.root / 'absent-plan',
+                self.root / 'never-prepared', added_sources={})
+        self.response = caught.exception.report
+        self.assertFalse((self.root / 'never-prepared').exists())
+        self.payload = json_bytes(self.response)
+        self.number = 0
+        self.guard = patch.object(benchmark, 'evaluator_identity', side_effect=AssertionError('native probe'))
+        self.guard.start(); self.addCleanup(self.guard.stop)
+
+    def evaluated(self, raw=None, *, status='ok', extra=None, directories=()):
+        from agent_ee import native_run
+        self.number += 1
+        work = self.root / f'writer-{self.number}'
+        files = {} if raw is False else {'output/refusal.json': self.payload if raw is None else raw}
+        files.update({'output/' + k: v for k, v in (extra or {}).items()})
+        native_run.run(native_run.Intent('generation', ['authored-public-response'], isolation='host'),
+            work=work, adapter=native_run.Recorded(lambda call: native_run.Outcome(
+                execution=status, exit_code=0 if status == 'ok' else 23, files=files)))
+        for directory in directories:
+            (work / 'output' / directory).mkdir(parents=True)
+        trial = self.root / f'eval-{self.number}'
+        path = evaluate(self.task, work / 'output', trial, self.root / 'store', execution_work=work)
+        return path, trial
+
+    def anchor(self, path):
+        target = self.root / f'series-{self.number}.json'
+        write_json(target, benchmark.freeze_series([path], {'public-refusal': digest(self.task / 'pins.json')}))
+        return target, digest(target)
+
+    def test_real_public_producer_refusal_replays_freezes_and_is_never_a_design_pass(self):
+        from agent_ee import acquisition_prepare
+        with patch.object(acquisition_prepare, 'parse_brief', side_effect=AssertionError('producer oracle forbidden')):
+            path, trial = self.evaluated()
+            report = read_json(path)
+            self.assertTrue(report['result']['overall_pass'])
+            self.assertEqual(report['kind'], 'source_refusal')
+            self.assertEqual(report['evaluation']['checks'], [
+                {'id': 'refusal', 'kind': 'source_refusal', 'execution': 'ok', 'outcome': 'pass'}])
+            self.assertFalse((trial / 'run').exists())
+            self.assertEqual(read_json(trial / 'outputs/refusal.json'), self.response)
+            manifest, anchor = self.anchor(path)
+            self.assertIsNone(read_json(manifest)['evaluations'][0]['evidence_sha256'])
+            rows = aggregate([path], manifest=manifest, expect_pins=anchor)['rows']
+            self.assertEqual([r['passed'] for r in rows], [1, 1])
+            self.assertEqual({r['kind'] for r in rows}, {'source_refusal'})
+            self.assertEqual({r['tasks'] for r in rows}, {1})
+
+    def test_second_public_utf8_clause_with_unicode_line_boundary_uses_frozen_bytes(self):
+        from agent_ee import acquisition_prepare
+        from agent_ee.storage import json_bytes
+        clause = 'Require a π-shaped custom display with a different byte length.'
+        raw = ('Use acquisition reference acquisition-control unchanged.\u2028\t' + clause + '\n').encode()
+        (self.task / 'prompt.md').write_bytes(raw)
+        start = raw.index(clause.encode())
+        self.contract.update(brief_sha256=benchmark.hashlib.sha256(raw).hexdigest(), byte_start=start,
+            byte_end=start+len(clause.encode()), clause_sha256=benchmark.hashlib.sha256(clause.encode()).hexdigest())
+        write_json(self.contract_path, self.contract); repin(self.task)
+        with self.assertRaises(acquisition_prepare.PreparationRefused) as caught:
+            acquisition_prepare.prepare(self.task / 'prompt.md', self.root / 'absent-plan',
+                self.root / 'no-bundle', added_sources={})
+        response = caught.exception.report
+        with patch.object(acquisition_prepare, 'parse_brief', side_effect=AssertionError('no producer oracle')):
+            path, _ = self.evaluated(json_bytes(response))
+            self.assertTrue(read_json(path)['result']['overall_pass'])
+            manifest, anchor = self.anchor(path)
+            self.assertEqual([r['passed'] for r in aggregate([path], manifest=manifest, expect_pins=anchor)['rows']], [1,1])
+        self.assertFalse((self.root / 'no-bundle').exists())
+
+    def test_wrong_generic_extra_and_malformed_responses_fail_independent_oracle(self):
+        from agent_ee.storage import json_bytes
+        import copy
+        mutations = [lambda r: r.update(outcome='refused'), lambda r: r.update(outcome='prepared'),
+            lambda r: r.update(outcome='unavailable'), lambda r: r.update(brief_sha256='0'*64),
+            lambda r: r['findings'][0].update(code='unavailable'),
+            lambda r: r['findings'][0].update(message='cannot comply'),
+            lambda r: r['findings'][0].update(message='unsupported or ambiguous brief clause: invented'),
+            lambda r: r['findings'][0].update(byte_start=self.contract['byte_start']+1),
+            lambda r: r['findings'][0].update(byte_end=float(self.contract['byte_end'])),
+            lambda r: r['findings'][0].update(byte_start=True),
+            lambda r: r['findings'].append(dict(r['findings'][0])),
+            lambda r: r.update(findings=[]), lambda r: r.update(prepared=True),
+            lambda r: r.update(release={}), lambda r: r.update(context_files=self.contract['context_files'])]
+        for mutate in mutations:
+            response = copy.deepcopy(self.response); mutate(response)
+            with self.subTest(mutate=mutate):
+                path, trial = self.evaluated(json_bytes(response))
+                self.assertFalse(read_json(path)['result']['overall_pass'])
+                self.assertEqual([r['failed'] for r in aggregate([path])['rows']], [1, 1])
+        for raw in (b'{}', b'null', b'not JSON', b'\xff', b'{"outcome":1,"outcome":2}'):
+            with self.subTest(raw=raw):
+                path, _ = self.evaluated(raw)
+                self.assertFalse(read_json(path)['result']['overall_pass'])
+
+    def test_refusal_with_any_file_or_empty_directory_is_retained_and_fails(self):
+        for extra, directories in (({'board.kicad_pcb': b'board'}, ()),
+                ({'package/release.zip': b'package'}, ()), ({'extra.txt': b'extra'}, ()),
+                ({}, ('release',)), ({}, ('prepared',)), ({}, ('other/empty',))):
+            with self.subTest(extra=extra, directories=directories):
+                path, trial = self.evaluated(extra=extra, directories=directories)
+                report = read_json(path)
+                self.assertFalse(report['result']['overall_pass'])
+                self.assertEqual(tree_files(trial / 'outputs'), report['binding']['output_tree']['files'])
+                for directory in directories:
+                    self.assertTrue((trial / 'outputs' / directory).is_dir())
+                self.assertEqual([r['failed'] for r in aggregate([path])['rows']], [1, 1])
+
+    def test_missing_nonzero_and_timeout_keep_denominator_despite_valid_response(self):
+        for raw, status in ((False, 'ok'), (None, 'failed'), (None, 'timeout')):
+            with self.subTest(status=status, missing=raw is False):
+                path, _ = self.evaluated(raw, status=status)
+                report = read_json(path)
+                self.assertFalse(report['result']['overall_pass'])
+                if raw is False:
+                    self.assertEqual(report['generation']['missing_deliverables'], ['refusal.json'])
+                    self.assertFalse(report['scoring']['overall_pass'])
+                else:
+                    self.assertTrue(report['scoring']['overall_pass'])
+                    self.assertEqual(report['generation']['execution'], 'failed')
+                self.assertEqual([r['tasks'] for r in aggregate([path])['rows']], [1, 1])
+
+    def test_unsafe_links_and_special_entries_cannot_supply_refusal_evidence(self):
+        import os
+        for kind in ('symlink', 'hardlink', 'fifo'):
+            work = self.root / kind; work.mkdir(); output = work / 'output'; output.mkdir()
+            if kind == 'symlink':
+                (output / 'refusal.json').symlink_to(self.task / 'prompt.md')
+            elif kind == 'hardlink':
+                (output / 'ordinary').write_bytes(self.payload)
+                os.link(output / 'ordinary', output / 'refusal.json')
+            else:
+                os.mkfifo(output / 'refusal.json')
+            with self.subTest(kind=kind):
+                path = evaluate(self.task, output, self.root / ('eval-' + kind), self.root / 'store')
+                report = read_json(path)
+                self.assertFalse(report['result']['overall_pass'])
+                self.assertEqual(report['generation']['output_error'], 'non_ordinary_output')
+                self.assertIsNone(report['binding']['output_tree'])
+                aggregate([path])
+
+    def test_private_contract_pins_spans_and_capability_context_are_required(self):
+        import copy
+        before = self.contract_path.read_bytes(); anchor = digest(self.task / 'pins.json')
+        cases = [dict(context_files={}), dict(context_files={'evaluator/capability.py':'0'*64}),
+            dict(context_files={'prompt.md':digest(self.task / 'prompt.md')}),
+            dict(code='invented'), dict(outcome='refused'), dict(brief_sha256='0'*64),
+            dict(clause_sha256='0'*64), dict(byte_start=True), dict(byte_end=len(self.raw)+1),
+            dict(byte_start=self.raw.index('é'.encode())+1)]
+        for changes in cases:
+            changed = copy.deepcopy(self.contract); changed.update(changes)
+            write_json(self.contract_path, changed); repin(self.task)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                pinned_task(self.task)
+        self.contract_path.write_bytes(before); repin(self.task)
+        self.assertEqual(digest(self.task / 'pins.json'), anchor)
+        context = self.task / 'evaluator/capability.py'; original = context.read_bytes()
+        context.write_bytes(b'')
+        empty_context = dict(self.contract, context_files={'evaluator/capability.py':digest(context)})
+        write_json(self.contract_path, empty_context); repin(self.task)
+        with self.assertRaisesRegex(ValueError, 'refusal context'):
+            pinned_task(self.task)
+        context.write_bytes(original); self.contract_path.write_bytes(before); repin(self.task)
+        context.write_bytes(original+b'\n')
+        with self.assertRaisesRegex(ValueError, 'task-file hash'):
+            pinned_task(self.task)
+        self.contract['context_files']['evaluator/capability.py'] = digest(context)
+        write_json(self.contract_path, self.contract); repin(self.task)
+        with self.assertRaisesRegex(ValueError, 'external pins'):
+            pinned_task(self.task, expect_pins=anchor)
+
+    def test_refusal_variant_refuses_native_scoring_or_another_output_contract(self):
+        original = (self.task / 'task.json').read_bytes()
+        for changes in ({'scope':{}}, {'rules':[]}, {'deliverables':['refusal.json','board.kicad_pcb']},
+                {'expected_refusal':{'contract':'prompt.md'}},
+                {'expected_refusal':{'contract':'evaluator/../prompt.md'}}):
+            task = benchmark.strict_json(original); task.update(changes)
+            write_json(self.task / 'task.json', task); repin(self.task)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                pinned_task(self.task)
+        (self.task / 'task.json').write_bytes(original); repin(self.task)
+
+    def test_complete_snapshot_census_and_raw_bytes_are_rechecked(self):
+        for mutate in ('bytes', 'add-directory', 'remove-empty-directory', 'remove-extra-file'):
+            path, trial = self.evaluated(extra={'extra': b'x'} if mutate == 'remove-extra-file' else None,
+                directories=('release',) if mutate == 'remove-empty-directory' else ())
+            manifest, anchor = self.anchor(path)
+            snapshot = trial / 'outputs'
+            if mutate == 'bytes': (snapshot / 'refusal.json').write_bytes(b'{}')
+            elif mutate == 'add-directory': (snapshot / 'release').mkdir()
+            elif mutate == 'remove-empty-directory': (snapshot / 'release').rmdir()
+            else: (snapshot / 'extra').unlink()
+            with self.subTest(mutate=mutate), self.assertRaisesRegex(ValueError, 'retained refusal output'):
+                aggregate([path], manifest=manifest, expect_pins=anchor)
+            if mutate == 'bytes': (snapshot / 'refusal.json').write_bytes(self.payload)
+            elif mutate == 'add-directory': (snapshot / 'release').rmdir()
+            elif mutate == 'remove-empty-directory': (snapshot / 'release').mkdir()
+            else: (snapshot / 'extra').write_bytes(b'x')
+
+    def test_replay_does_not_trust_coordinated_cached_pass(self):
+        path, trial = self.evaluated(b'{}')
+        report = read_json(path)
+        report['evaluation']['checks'][0]['outcome'] = 'pass'
+        report['scoring'] = score(pinned_task(self.task)['rules'], report['evaluation']['checks'])
+        report['result'] = benchmark.combined_result('ok', report['scoring'])
+        path.unlink(); forged = publish_report(self.root / 'store', report)
+        receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
+                   'report': str(forged.resolve()), 'report_sha256': digest(forged)}
+        write_json(trial / 'evaluation.json', receipt)
+        records = forged.parent / 'trials'; records.mkdir(exist_ok=True)
+        write_json(records / 'forged.json', {'trial': str(trial.resolve()), **receipt})
+        with self.assertRaisesRegex(ValueError, 'retained evidence'):
+            aggregate([forged])
+
+    def test_run_task_retries_missing_output_without_leaking_private_contract(self):
+        from agent_ee import native_run
+        calls = []
+        def writer(call):
+            calls.append(call)
+            self.assertEqual(sorted(p.name for p in call.inputs.iterdir()), ['generator.py', 'prompt.md'])
+            self.assertEqual((call.inputs / 'prompt.md').read_bytes(), self.raw)
+            if len(calls) == 1:
+                return native_run.Outcome()
+            feedback = read_json(call.work / 'feedback.json')
+            self.assertEqual(set(feedback), {'checks', 'missing_deliverables'})
+            self.assertEqual(feedback['missing_deliverables'], ['refusal.json'])
+            self.assertNotIn('context_files', repr(feedback))
+            return native_run.Outcome(files={'output/refusal.json': self.payload})
+        generator = self.root / 'generator.py'; generator.write_text('public authored boundary only')
+        with native_run.using(native_run.Recorded(writer)):
+            paths = run_task(self.task, generator, self.root / 'case', self.root / 'store',
+                attempts=2, timeout=30, case_timeout=100, grading_reserve=20)
+        self.assertEqual(len(paths), 2)
+        self.assertFalse(read_json(paths[0])['result']['overall_pass'])
+        self.assertTrue(read_json(paths[1])['result']['overall_pass'])
+        ledger = read_json(self.root / 'case/trial.json')
+        self.assertEqual((ledger['attempts_started'], ledger['work_started'], ledger['status']), (2,4,'completed'))
+        manifest, anchor = self.anchor(paths[-1])
+        self.assertEqual([r['passed'] for r in aggregate([paths[-1]], manifest=manifest, expect_pins=anchor)['rows']], [1,1])
+        earlier = self.root / 'case/evaluation-1/outputs'
+        (earlier / 'release').mkdir()
+        with self.assertRaises(ValueError):
+            aggregate([paths[-1]], manifest=manifest, expect_pins=anchor)
+        (earlier / 'release').rmdir()
+        (self.root / 'case/attempt-1/stderr.log').write_bytes(b'changed earlier failure')
+        with self.assertRaises(ValueError):
+            aggregate([paths[-1]], manifest=manifest, expect_pins=anchor)
+
+    def test_refusal_cannot_bypass_case_work_exhaustion_or_cancelled_grading(self):
+        from agent_ee import native_run
+        generator = self.root / 'generator.py'; generator.write_text('public boundary')
+        adapter = native_run.Recorded(lambda call: native_run.Outcome(execution='failed', exit_code=23,
+            files={'output/refusal.json':self.payload}))
+        with native_run.using(adapter):
+            paths = run_task(self.task, generator, self.root / 'exhausted', self.root / 'store',
+                attempts=2, timeout=30, case_timeout=100, grading_reserve=20, max_work=2)
+        ledger = read_json(self.root / 'exhausted/trial.json')
+        self.assertEqual((ledger['status'], ledger['attempts_started'], ledger['work_started']),
+                         ('budget_exhausted',1,2))
+        self.assertTrue(read_json(paths[0])['scoring']['overall_pass'])
+        self.assertFalse(read_json(paths[0])['result']['overall_pass'])
+        cancel = native_run.Cancellation(); cancel.cancel()
+        with self.assertRaises(benchmark.native_run.DeadlineExhausted):
+            evaluate(self.task, self.root / 'exhausted/attempt-1/output', self.root / 'cancelled-eval',
+                self.root / 'store', cancel=cancel)
+        self.assertFalse((self.root / 'cancelled-eval').exists())
+        path, trial = self.evaluated()
+        with self.assertRaisesRegex(ValueError, 'external task pins'):
+            benchmark.freeze_series([path], {'public-refusal':'0'*64})
+        diagnostic = evaluate(self.task, trial / 'outputs', self.root / 'diagnostic', self.root / 'store')
+        with self.assertRaisesRegex(ValueError, 'retained executor'):
+            benchmark.freeze_series([diagnostic], {'public-refusal':digest(self.task / 'pins.json')})
+
+    def test_reserved_refusal_grading_cannot_renew_original_case_deadline(self):
+        from agent_ee import native_run
+        clock = [1000.0]; observations = []
+        generator = self.root / 'generator.py'; generator.write_text('public boundary')
+        def writer(call):
+            self.assertEqual(call.timeout, 80)
+            clock[0] += call.timeout
+            return native_run.Outcome(execution='timeout', exit_code=None,
+                files={'output/refusal.json': self.payload})
+        def identity():
+            observations.append((clock[0], native_run._deadline.get()))
+            clock[0] += 12
+            return {'authored':'source identity boundary'}
+        with patch('time.monotonic', lambda: clock[0]), \
+                patch.object(benchmark, '_refusal_identity', identity), native_run.using(native_run.Recorded(writer)):
+            paths = run_task(self.task, generator, self.root / 'late-case', self.root / 'store',
+                attempts=2, timeout=100, case_timeout=100, grading_reserve=20)
+        self.assertEqual(paths, [])
+        self.assertEqual(observations, [(1080,1100),(1092,1100)])
+        ledger = read_json(self.root / 'late-case/trial.json')
+        self.assertEqual((ledger['status'],ledger['attempts_started'],ledger['work_started']), ('budget_exhausted',1,2))
+        self.assertEqual(ledger['attempt_records'][0]['generation_execution'], 'timeout')
+        self.assertIsNone(ledger['attempt_records'][0]['evaluation_report'])
+        self.assertTrue((self.root / 'late-case/evaluation-1/outputs/refusal.json').is_file())
+        self.assertFalse((self.root / 'late-case/attempt-2').exists())
+
+    def test_retained_private_context_mutation_and_repin_cannot_cross_external_custody(self):
+        path, trial = self.evaluated()
+        manifest, anchor = self.anchor(path)
+        context = trial / 'task/evaluator/capability.py'
+        context.write_bytes(context.read_bytes()+b'changed source context')
+        with self.assertRaises(ValueError):
+            aggregate([path], manifest=manifest, expect_pins=anchor)
+        contract = read_json(trial / 'task/evaluator/refusal-contract.json')
+        contract['context_files']['evaluator/capability.py'] = digest(context)
+        write_json(trial / 'task/evaluator/refusal-contract.json', contract); repin(trial / 'task')
+        with self.assertRaises(ValueError):
+            aggregate([path], manifest=manifest, expect_pins=anchor)
+
+    def test_refusal_and_native_rows_remain_separate_with_legacy_native_shape(self):
+        from agent_ee import native_run
+        refusal, _ = self.evaluated()
+        work = self.root / 'native-writer'
+        native_run.run(native_run.Intent('generation', ['authored-native-missing'], isolation='host'),
+            work=work, adapter=native_run.Recorded())
+        with patch.object(benchmark, 'evaluator_identity', return_value={'authored':'native identity'}):
+            native = evaluate(FIXTURE, work / 'output', self.root / 'native-eval',
+                self.root / 'store', execution_work=work)
+        self.assertNotIn('kind', read_json(native))
+        self.assertEqual(len(aggregate([native])['rows']), 2)
+        self.assertTrue(all('kind' not in r for r in aggregate([native])['rows']))
+        manifest = self.root / 'mixed-series.json'
+        write_json(manifest, benchmark.freeze_series([native, refusal], {
+            'original-series':digest(FIXTURE / 'pins.json'), 'public-refusal':digest(self.task / 'pins.json')}))
+        rows = aggregate([native, refusal], manifest=manifest, expect_pins=digest(manifest))['rows']
+        self.assertEqual({r['kind'] for r in rows}, {'native_design', 'source_refusal'})
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            self.assertEqual(row['tasks'], 1)
+            self.assertEqual(row['passed'], int(row['kind'] == 'source_refusal'))
+
+
 class NativeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
