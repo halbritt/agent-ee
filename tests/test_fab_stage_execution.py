@@ -191,6 +191,31 @@ class FabStageExecutionTests(unittest.TestCase):
                     self.assertEqual(file_tree(self.inputs), before)
                     self.assertTrue((work / 'project/board.kicad_prl').is_file())
 
+    def test_schematic_exports_keep_variant_project_exact_and_preferences_disposable(self):
+        from agent_ee.stage_receipts import file_tree
+        (self.inputs / 'board.kicad_sch').write_text('captured schematic')
+        (self.inputs / 'board.kicad_pro').write_text('captured variant project')
+        before = file_tree(self.inputs)
+        for command in ('netlist', 'bom'):
+            for changed in ('.kicad_prl', '.kicad_pro'):
+                work = self.root / (command + changed)
+                def child(intent, **kwargs):
+                    design = Path(intent.argv[-1])
+                    self.assertEqual(design, work / 'project/board.kicad_sch')
+                    self.assertEqual(file_tree(work / 'project'), before)
+                    design.with_suffix(changed).write_text('native side effect')
+                    return {'execution': 'ok', 'exit_code': 0}
+                with self.subTest(command=command, changed=changed), native_run.using(self.execution()), \
+                        patch.object(native_run.Host, 'run', side_effect=child):
+                    intent = native_run.Intent('kicad-cli', ['kicad-cli', 'sch', 'export', command,
+                        '-o', '/work/out/result', '/candidate/board.kicad_sch'])
+                    if changed == '.kicad_prl':
+                        self.assertEqual(native_run.run(intent, inputs=self.inputs, work=work)['exit_code'], 0)
+                    else:
+                        with self.assertRaisesRegex(CheckError, 'changed its private project'):
+                            native_run.run(intent, inputs=self.inputs, work=work)
+                    self.assertEqual(file_tree(self.inputs), before)
+
     def test_project_setup_consumes_child_budget_before_launch(self):
         intent = native_run.Intent('kicad-cli', ['kicad-cli', 'pcb', 'export', 'stats',
                                   '/candidate/board.kicad_pcb'], timeout=7)

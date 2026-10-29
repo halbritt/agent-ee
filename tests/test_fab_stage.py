@@ -365,7 +365,11 @@ class NativeBomVariantStageTests(unittest.TestCase):
         self.assertEqual(receipt['details']['bom_variant_export'], manifest['bom_variant'])
         commands = {c['label']: c for c in receipt['commands']}
         self.assertEqual(commands['export-fab']['argv'], step['argv'])
-        self.assertEqual(commands['bom']['argv'][-3:], ['--variant', 'FULL', '/candidate/project/cpl.kicad_sch'])
+        self.assertEqual(commands['bom']['argv'][-3:-1], ['--variant', 'FULL'])
+        bom_input = Path(commands['bom']['argv'][-1])
+        self.assertEqual(bom_input, Path('/work/out/checks/work/fab/steps/bom/project/project/cpl.kicad_sch'))
+        self.assertEqual(digest(receipt_dir / 'run' / bom_input.relative_to('/work')),
+                         digest(self.inputs / 'project/cpl.kicad_sch'))
         self.assertEqual((commands['bom']['within'], commands['bom']['exit_code']), ('export-fab', 0))
         self.assertTrue((self.root / 'full' / commands['bom']['execution_record']).is_file())
         self.assertNotIn('--variant', commands['pos']['argv'])

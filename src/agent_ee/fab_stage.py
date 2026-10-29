@@ -397,13 +397,19 @@ class _FabStageExecution:
         started = time.monotonic()
         before = identity()
         child_inputs, project, copied, preferences = inputs, None, None, None
+        design_suffix = None
         if intent.argv[:3] == ('kicad-cli', 'pcb', 'export'):
-            board = Path(intent.argv[-1].removeprefix('/candidate/'))
-            if (not intent.argv[-1].startswith('/candidate/') or board.suffix != '.kicad_pcb'
-                    or not (inputs / board).resolve().is_relative_to(inputs)
-                    or board.as_posix() not in before[0]):
-                raise ValueError('fab PCB export must name its captured board')
-            # KiCad writes project preferences beside the board. Each export
+            design_suffix = '.kicad_pcb'
+        elif intent.argv[:4] in (('kicad-cli', 'sch', 'export', 'netlist'),
+                                 ('kicad-cli', 'sch', 'export', 'bom')):
+            design_suffix = '.kicad_sch'
+        if design_suffix is not None:
+            design = Path(intent.argv[-1].removeprefix('/candidate/'))
+            if (not intent.argv[-1].startswith('/candidate/') or design.suffix != design_suffix
+                    or not (inputs / design).resolve().is_relative_to(inputs)
+                    or design.as_posix() not in before[0]):
+                raise ValueError('fab export must name its captured design file')
+            # KiCad writes project preferences beside the design. Each export
             # gets fresh captured collateral, never another child's preferences.
             project = work / 'project'
             shutil.copytree(inputs, project, symlinks=True)
@@ -411,7 +417,7 @@ class _FabStageExecution:
             if other or copied != before[0]:
                 raise CheckError('malformed', 'fab private project copy changed')
             child_inputs = project
-            preferences = board.with_suffix('.kicad_prl').as_posix()
+            preferences = design.with_suffix('.kicad_prl').as_posix()
         def concrete(arg):
             if arg == native_run.BASELINE_AT:
                 if baseline is None:
