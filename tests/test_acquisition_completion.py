@@ -97,6 +97,26 @@ class AcquisitionBoundaryTests(benchmark_tests.RefusalTests):
         self.assertIn('only bounded request.json',(self.root/'trial/completion-1/stderr.log').read_text())
         self.assertTrue((self.root/'trial/attempt-1/output/refusal.json').exists())
 
+    def test_unavailable_completion_is_graded_and_replayed_as_a_counted_failure(self):
+        def unavailable(call):
+            if call.intent.tool == 'acquisition_completion':
+                return native_run.Outcome(execution='unavailable')
+            return self.child(call)
+        self.adapter.responder = unavailable
+        path, = self.run_acquisition()
+        self.assertFalse(read_json(path)['result']['overall_pass'])
+        receipt = read_json(self.root/'trial/completion-1/receipt.json')
+        self.assertEqual(receipt['execution'], 'failed')
+        self.assertEqual(read_json(self.root/'trial/completion-1/execution.json')['execution'], 'unavailable')
+        ledger = read_json(self.root/'trial/trial.json')
+        self.assertEqual((ledger['work_started'], ledger['attempts_started'], ledger['status']), (3, 1, 'attempts_exhausted'))
+        self.assertFalse(benchmark.recorded_report(path)['result']['overall_pass'])
+        manifest = self.root/'frozen.json'
+        write_json(manifest, benchmark.freeze_series([path], {'public-refusal': digest(self.task/'pins.json')}))
+        rows = benchmark.aggregate([path], manifest=manifest, expect_pins=digest(manifest))['rows']
+        self.assertTrue(rows)
+        self.assertTrue(all(row['failed'] == 1 for row in rows))
+
     def test_context_repinning_or_private_task_alias_refuses_before_generation(self):
         (self.public/'profile.json').write_text('changed');self.repin_context()
         with self.assertRaisesRegex(ValueError,'external public context pins'):self.run_acquisition()
