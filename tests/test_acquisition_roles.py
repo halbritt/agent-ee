@@ -352,3 +352,73 @@ class CohortTests(unittest.TestCase):
                 with self.assertRaises(ValueError):roles.cohort(altered,captures,125)
         doc,captures=self.context(('4','4','4'),copy.deepcopy(roles.BRIEF_CAPACITANCE))
         with self.assertRaises(ValueError):roles.cohort(doc,captures,100)
+
+
+class ProducerBoundaryTests(unittest.TestCase):
+    def test_public_parser_decimal_reaches_role_admission_and_preserves_json_strictness(self):
+        from decimal import Decimal
+        from agent_ee.acquisition_prepare import ADOPTION, parse_brief
+        helper=CohortTests()
+        for spelling,canonical in (('100','100'),('00100.0','100'),('125.50','125.5'),('150.0','150')):
+            parsed=parse_brief((ADOPTION+'\nTotal I2C line capacitance shall be at most '+spelling+' pF per line, including board, host and cable.\n').encode())['value']
+            self.assertIs(type(parsed),Decimal)
+            for versions in (('5','5','5'),('5','6','5')):
+                for operand in (canonical,copy.deepcopy(roles.BRIEF_CAPACITANCE)):
+                    with self.subTest(spelling=spelling,versions=versions,operand=operand):
+                        doc,captures=helper.context(versions,operand)
+                        result=roles.cohort(doc,captures,parsed)
+                        self.assertEqual(result['declared_bus_capacitance_pf'],canonical)
+                        bound=roles.bind_application(doc,parsed,envelope='150')
+                        self.assertEqual(bound['application']['bus_capacitance_pf'],canonical)
+            # Keep JSON operands canonical even when the public parser accepts
+            # padded prose. The Python Decimal is allowed only as brief input.
+            for operand in (Decimal(canonical),canonical+'.0' if '.' not in canonical else '125.50'):
+                doc,captures=helper.context(capacitance=operand)
+                with self.subTest(json_operand=operand),self.assertRaises(ValueError):roles.cohort(doc,captures,parsed)
+        for value in (Decimal('NaN'),Decimal('sNaN'),Decimal('Infinity'),Decimal('99'),Decimal('151'),Decimal('125.12345678901234567890123456789'),True,125.0):
+            doc,captures=helper.context(capacitance=copy.deepcopy(roles.BRIEF_CAPACITANCE))
+            with self.subTest(invalid_brief=value),self.assertRaises(ValueError):roles.cohort(doc,captures,value)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);doc,captures,*_=authored(self,root)
+            for p,b in captures.items():
+                target=root/'context'/p;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(b)
+            parsed=parse_brief((ADOPTION+'\nTotal I2C line capacitance shall be at most 100.0 pF per line, including board, host and cable.\n').encode())['value']
+            with self.assertRaisesRegex(ValueError,'qualified role requires its exact declared source runs'):
+                roles.read(root/'context',storage.json_bytes(doc),parsed)
+
+    def test_preseal_source_and_operative_carrier_mismatch_refuses_both_directions(self):
+        from hashlib import sha256
+        identities={'C22548':dict(lcsc='C22548',mpn='RC0603FR-071KL',manufacturer='YAGEO'),
+                    'C118155':dict(lcsc='C118155',mpn='ERJ3EKF1001V',manufacturer='PANASONIC')}
+        for source_id,operative_id,property_drift in (('C22548','C118155',False),('C118155','C22548',False),
+                ('C22548','C22548',False),('C118155','C118155',False),('C22548','C22548',True)):
+            with self.subTest(source=source_id,operative=operative_id,property_drift=property_drift),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);doc,captures,overlay,*_=authored(self,root)
+                operative=strict_json((root/'parts.json').read_bytes())
+                for row in operative['parts']:
+                    if row['id'] in ('R1','R2'):row.update(identities[operative_id])
+                if property_drift:operative['property_fields']['manufacturer']='Maker'
+                storage.write_json(root/'parts.json',operative)
+                for rid,entry in doc['roles'].items():
+                    path=entry['block']+'/block.json';record=strict_json(captures[path])
+                    record['version']='6' if rid=='acq-ads1115-two-channel' and source_id=='C118155' else '5'
+                    if rid=='acq-ads1115-two-channel':
+                        pp=entry['block']+'/'+record['parts_manifest'];parts=strict_json(captures[pp])
+                        for row in parts['parts']:
+                            if row['id'] in ('R1','R2'):row.update(identities[source_id])
+                        captures[pp]=storage.json_bytes(parts);record['files'][record['parts_manifest']]=sha256(captures[pp]).hexdigest()
+                    contract=entry['block']+'/block-contract.json';captures[contract]=storage.json_bytes(block_contract(record));record['files']['block-contract.json']=sha256(captures[contract]).hexdigest()
+                    captures[path]=storage.json_bytes(record);entry['block_sha256']=sha256(captures[path]).hexdigest()
+                doc['files']={p:sha256(raw).hexdigest() for p,raw in captures.items()}
+                if source_id!=operative_id or property_drift:
+                    with self.assertRaisesRegex(ValueError,'operative role (purchasing allocation|property fields) differ'):
+                        roles.apply(root,dict(parts={'manifest':'parts.json'}),overlay,doc,captures)
+                    self.assertFalse((root/roles.AT/'admission.json').exists())
+                    self.assertNotIn('block_requirements',overlay)
+                else:
+                    report=roles.apply(root,dict(parts={'manifest':'parts.json'}),overlay,doc,captures)
+                    self.assertTrue((root/roles.AT/'admission.json').exists())
+                    fresh=next(c for c in overlay['check_additions']['declare'] if c['kind']=='parts_subset' and c['id'].startswith('analog-'))
+                    selected=strict_json((root/fresh['params']['manifest']).read_bytes())
+                    self.assertEqual({p['lcsc'] for p in selected['parts'] if p['id'] in ('R1','R2')},{operative_id})
+                    self.assertEqual(report['capacitance_admission']['versions'],['5','6' if source_id=='C118155' else '5','5'])

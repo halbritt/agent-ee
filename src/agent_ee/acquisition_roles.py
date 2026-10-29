@@ -1,5 +1,6 @@
 """Finite acquisition role admission and pre-seal fresh-check production."""
 import copy
+from decimal import Decimal
 from pathlib import Path
 
 from . import block_adaptation, block_composition, parts_manifest, reference_blocks, requirement_map, storage
@@ -29,9 +30,18 @@ def _capacitance(value):
     return text
 
 
+def _brief_capacitance(value):
+    """The public parser returns Decimal; JSON operands remain canonical text."""
+    if type(value) is Decimal:
+        if not value.is_finite():
+            raise ValueError('brief capacitance must be finite')
+        value=decimal_text(value)
+    return _capacitance(value)
+
+
 def application(document, capacitance, *, envelope='100'):
     exact_fields(document, ('j2_external_load_a','j2_external_drive','bus_capacitance_pf','temperature_c'))
-    brief = _capacitance(capacitance)
+    brief = _brief_capacitance(capacitance)
     operand=document['bus_capacitance_pf']
     declared = brief if envelope=='150' and operand==BRIEF_CAPACITANCE else _capacitance(operand)
     if (type(document['j2_external_load_a']) not in (int,float) or document['j2_external_load_a'] != 0
@@ -213,6 +223,10 @@ def apply(root, plan, overlay, doc, captures):
                     rewritten=copy.deepcopy(operative_parts)
                     rewritten['parts']=[p for p in rewritten['parts'] if p['id'] in ROLES[rid][1]]
                     if {p['id'] for p in rewritten['parts']}!=ROLES[rid][1]:raise ValueError('operative role purchasing allocation differs')
+                    if original['property_fields']!=rewritten['property_fields']:
+                        raise ValueError('operative role property fields differ: '+rid)
+                    if block_adaptation._part_allocations(original,{})!=block_adaptation._part_allocations(rewritten,{}):
+                        raise ValueError('operative role purchasing allocation differs: '+rid)
                     assignments=strict_json((root/operative_parts['cad']['assignments']['path']).read_bytes())
                     assignments['components']=[c for c in assignments['components'] if c['reference'] in ROLES[rid][1]]
                     assignment_path=AT+'/fresh/'+ident+'/assignments.json';storage.write_json(root/assignment_path,assignments)
