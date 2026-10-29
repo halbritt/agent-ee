@@ -619,11 +619,16 @@ def failed_assessment(out, report, reason, *, typed, integrity=False):
         summary=dict(pending_required=[], assessment_error=reason)))
 
 
-def assess_review(out, result, selection):
-    """A diagnostic checks-only review cannot grant a build or package claim."""
+def assess_review(out, result, selection, *, engineering=False):
+    """A diagnostic review cannot grant a build or package claim.
+
+    A full (profiled) review also projects its actual engineering outcome,
+    bound to the selected candidate; file release stays unassessed."""
     root = Path(out)
     dimensions = {name: _dimension() for name in DIMENSIONS}
     review = retained_run.diagnostic_review(root, result, selection)
     dimensions['checks'] = checks_dimension(root, review)
+    if engineering:
+        dimensions['engineering_review'] = _review_dimension(root, review)
     return retained_run.write_qualification(root, _record(selection.get('qualification_mode', 'legacy'), dimensions,
         methods=_methods(root, review), rules=rules_register(root, review)))

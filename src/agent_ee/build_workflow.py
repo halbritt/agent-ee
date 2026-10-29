@@ -47,9 +47,14 @@ def _runtime():
                 kicad_version=version.stdout.strip(), pcbnew_version=pcbnew.Version(), pcbnew_sha256=digest(extension))
 
 
-def review_build(run, out, *, max_seconds=900):
-    """Fresh checks without adopting a candidate or accepting a package."""
+def review_build(run, out, *, max_seconds=900, profile=None):
+    """Fresh checks, and with a profile the ordinary full review, without adopting
+    a candidate or accepting a package."""
     run, out = Path(run).resolve(), Path(out).resolve()
+    if profile is not None:
+        profile = Path(profile).resolve()
+        if not profile.is_file():
+            raise ValueError('build review profile must be an existing agent-ee.profile/1 file')
     if out == run or run in out.parents:
         raise ValueError('build review output must be outside the retained build')
     if type(max_seconds) is not int or not 1 <= max_seconds <= 86400:
@@ -72,7 +77,8 @@ def review_build(run, out, *, max_seconds=900):
         write_json(source, selection)
         bound_scope = build_stages.candidate_scope(scope, candidate)
         bound_scope['inputs'].append(dict(path=str(source), at='build-review/source.json'))
-        result = retained_run.review_candidate(bound_scope, out, max_seconds)
+        result = retained_run.review_candidate(bound_scope, out, max_seconds,
+                                               profile=None if profile is None else str(profile))
         if retained_run.review_source(run).selection != selection:
             raise ValueError('retained build changed during diagnostic verification')
         summary = dict(schema='agent-ee.build-review/1', accepted=False,
@@ -80,7 +86,9 @@ def review_build(run, out, *, max_seconds=900):
             source=selection, review=str(out / 'review'),
             checks=[{key: row[key] for key in ('id', 'execution', 'outcome')} for row in result['checks']],
             limitations=result['limitations'])
-        qualified = qualification.assess_review(out, result, selection)
+        if profile is not None:
+            summary['review_profile'] = str(profile)
+        qualified = qualification.assess_review(out, result, selection, engineering=profile is not None)
         summary['qualification'] = qualification.summary(out, qualified)
         write_json(out / 'report.json', summary)
         return summary
@@ -273,12 +281,17 @@ def configure_parser(parser):
     command.add_argument('run', type=Path)
     command.add_argument('--out', type=Path, required=True)
     command.add_argument('--max-seconds', type=int, default=900)
+    command.add_argument('--profile', type=Path,
+                         help='explicit agent-ee.profile/1; also run its isolated reviewers and adjudicator')
 
 
 def execute(args):
     if args.build_command == 'review':
-        report = review_build(args.run, args.out, max_seconds=args.max_seconds)
-        print(json.dumps({key: report[key] for key in ('accepted', 'outcome', 'candidate_id', 'review')}, indent=2))
+        report = review_build(args.run, args.out, max_seconds=args.max_seconds, profile=args.profile)
+        shown = {key: report[key] for key in ('accepted', 'outcome', 'candidate_id', 'review')}
+        if args.profile is not None:
+            shown['engineering_review'] = report['qualification']['dimensions']['engineering_review']
+        print(json.dumps(shown, indent=2))
         return 0 if report['outcome'] == 'criteria_satisfied' else 1
     report = run(args.plan, args.out, resume=args.resume, through=args.through)
     print(json.dumps({key: report[key] for key in ('status', 'accepted', 'candidate')} |

@@ -123,11 +123,15 @@ def checked_review(root, report):
     return None
 
 
-def review_candidate(scope, directory, timeout):
-    """Use the generated acceptance scope against this actual native candidate."""
+def review_candidate(scope, directory, timeout, profile=None):
+    """Use the generated acceptance scope against this actual native candidate.
+
+    Without a profile this is the checks-only review; with one, the ordinary
+    isolated reviewers and adjudicator also run."""
     path = scope_path(directory)
     write_scope(directory, scope)
-    run_review(path, directory / 'review', timeout, checks_only=True, output_stream=sys.stderr)
+    run_review(path, directory / 'review', timeout, checks_only=profile is None, profile=profile,
+               output_stream=sys.stderr)
     return verify_stage_review(directory)
 
 

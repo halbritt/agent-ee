@@ -151,6 +151,19 @@ incomplete review, even when every declared check passes. Inspect the individual
 checks and unresolved requirements in `report.json` and `review/report.json`.
 Successful evidence verification alone does not accept a manufacturing package.
 
+With `--profile PROFILE`, `build review` also runs the profile's isolated
+reviewers and fresh adjudicator through the ordinary full review against the
+same selected candidate and generated scope. The profile is an explicit input;
+reviewers use only the routes it declares, and a launch, authentication or
+quota failure leaves that execution failed rather than switching route.
+`qualification.json` then projects `engineering_review` from that review:
+`pass` for `criteria_satisfied`, `failed` for `defects_or_unresolved`, bound to
+the selected board hash, scope hash and stage. A failed or missing reviewer,
+missing adjudication or any other incomplete outcome stays `not_assessed`.
+The report still says `accepted:false` and `file_release` stays
+`not_assessed`; the retained build is unchanged. Without `--profile` the
+command is the checks-only review described above.
+
 ## Qualification and current claims
 
 Each new run writes `qualification.json` (`agent-ee.qualification/1`) at the
