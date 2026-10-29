@@ -432,3 +432,33 @@ and ordinary-placement skip policy. No generic validation framework is authorize
 Campaign acceptance remains **0/4**. Main is unchanged. The board repair cap is
 exhausted, the alternate ADC's assembly eligibility is unresolved, and full-suite
 qualification, trunk integration, an accepted public package and M1 remain open.
+
+
+### Citation repair passes native propagation and selected regressions
+
+Independent re-review approved agent-690's scope correction `35638486`; the
+combined citation repair was integrated as `d5a59a46` and `aebd08a4`. The two
+original native propagation tests passed on `aebd08a4a47a31a834bccdd8e6b519d3b4244323`
+in 5.3 seconds. Their retained records show successful pdftotext version and PDF
+extraction inside the existing receipted sandbox. The test assertions cover the
+separate bound intent and propagation through native symbols, board fields and
+receipt-backed assembly checks. The 355 retained receipt files are fixture
+evidence, not the campaign board's engineering acceptance.
+
+The first selected regression invocation completed all 72 tests without skips,
+then exited 1 because the coordinator had omitted the summary output's parent
+directory. That failed invocation is retained in `rating-regressions-r1` and
+has not been regraded. With the output directory created, the same three-module
+selection on unchanged source exited 0 in 28.9 seconds: **72 tests, no skips**.
+Evidence is in `rating-native-r1` and `rating-regressions-r2` beneath the host
+evidence root. This closes the observed citation execution failure; full-suite
+qualification remains open.
+
+A source-and-log reconciliation leaves five original counted problems without
+fresh rerun evidence: two generator fabrication controls, one generator BOM
+variant control, and the two visual controls assigned to agent-697. The generator
+BOM test still expects the old virtual input path; its correction must preserve
+the full variant checks and verify the actual copied schematic's identity.
+This list is a remaining verification queue, not proof that only five defects
+exist. Campaign acceptance remains **0/4**, main is unchanged, and the board,
+supplier, full-gate and integration limits above still apply.
