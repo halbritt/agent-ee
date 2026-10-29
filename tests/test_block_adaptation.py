@@ -467,7 +467,9 @@ class DeferredAdaptationTests(unittest.TestCase):
             record['check_set'][1]=dict(id='old-later',kind='interval_assertions',params=dict(assertions='assertions.json'))
             write_json(directory/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(directory/'block-contract.json');write_json(directory/'block.json',record)
             current=copy.deepcopy(source)
-            current['parameters']['v']['requirement']='filter-later';current['assertions'][0]['requirement']='filter-later'
+            for parameter in current['parameters'].values():
+                parameter['requirement']='filter-later'
+            current['assertions'][0]['requirement']='filter-later'
             current['requirement_sources']={'filter-later':dict(path='blocks/rc/block.json',locator='requirements/later',sha256=digest(directory/'block.json'))}
             write_json(root/'fresh-assertions.json',current)
             scope['checks'][2]=dict(id='later',kind='interval_assertions',params=dict(assertions='fresh-assertions.json'))
@@ -478,23 +480,97 @@ class DeferredAdaptationTests(unittest.TestCase):
             current['assertions'][0]['rhs']='9 V';write_json(root/'fresh-assertions.json',current);files['fresh-assertions.json']=digest(root/'fresh-assertions.json')
             with self.assertRaisesRegex(ValueError,'asset changes'):capability(dict(instance='instance.json',netlist_check='netlist'),result,files,root,'provenance')
 
-    def test_fresh_membership_contract_replays_real_parts_and_authored_unit_scope(self):
+    def test_fresh_membership_contract_replays_scoped_and_legacy_whole_inventory(self):
         from tests.test_parts_subset import captured_fixture
-        from tests.test_native_binding import native_graph
+        from tests.test_native_binding import native_graph,GEN
+        from agent_ee.block_adaptation import _fresh_contract
+        for scoped in (True,False):
+            with self.subTest(scoped=scoped),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);document=captured_fixture(self,root);(root/'block').mkdir()
+                tree=parse_quoted(GEN.schematic().encode())
+                for node in list(children(tree,'symbol')):
+                    if next(p[2] for p in children(node,'property') if p[1]=='Reference') != 'R1':
+                        tree.remove(node)
+                (root/'binding.kicad_sch').write_bytes(dump(tree))
+                write_json(root/'block/parts.json',document)
+                original_params=dict(manifest='parts.json',netlist_check='old-netlist',requirement_id='members')
+                params=dict(manifest='fresh-parts.json',netlist_check='netlist',requirement_id='filter-members')
+                if scoped:
+                    selected=[dict(sheet=c['sheet'],reference=r,uuids=sorted(c['uuid'].split())) for r,c in sorted(native_graph()['components'].items()) if r=='R1']
+                    original_params['reference_set']=selected;params['reference_set']=copy.deepcopy(selected)
+                source=dict(files={'parts.json':digest(root/'block/parts.json')},requirements=[dict(id='members',statement='Exact allocated parts',checks=['old-parts'])],boundary_ports=[],
+                    check_set=[dict(id='old-parts',kind='parts_subset',params=original_params)])
+                write_json(root/'block/block.json',source)
+                document['declaration_source']=dict(path='block/block.json',locator='requirements/members',sha256=digest(root/'block/block.json'))
+                write_json(root/'fresh-parts.json',document)
+                record=dict(id='filter',block='block',sheet='binding.kicad_sch',instance_path='/',bindings={},requirements={'members':['new-parts']})
+                scope=dict(schema='agent-ee.scope/3',checks=[dict(id='netlist',kind='netlist'),dict(id='new-parts',kind='parts_subset',params=params)],
+                    baseline=dict(requirements=[dict(id='filter-members',intent='acceptance',statement='Exact allocated parts',source=dict(path='block/block.json',locator='requirements/members'),checks=['new-parts'])]))
+                files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+                _fresh_contract(root,source,record,scope,files,'netlist')
+                self.assertEqual('reference_set' in params,scoped)
+                document['parts'][0]['mpn']='FORGED';write_json(root/'fresh-parts.json',document);files['fresh-parts.json']=digest(root/'fresh-parts.json')
+                with self.assertRaisesRegex(ValueError,'allocation/identity'):_fresh_contract(root,source,record,scope,files,'netlist')
+
+    def test_differing_provided_package_is_not_a_legacy_omission(self):
+        from tests.test_acquisition_alternative import authored_fixture
         from agent_ee.block_adaptation import _fresh_contract
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);document=captured_fixture(self,root);(root/'block').mkdir()
+            root=Path(tmp);authored_fixture(root);(root/'block').mkdir()
+            document=read_json(root/'parts.json')
+            self.assertTrue(all('package' in p for p in document['parts']))
             write_json(root/'block/parts.json',document)
-            source=dict(files={'parts.json':digest(root/'block/parts.json')},requirements=[dict(id='members',statement='Exact allocated parts',checks=['old-parts'])],boundary_ports=[],
-                check_set=[dict(id='old-parts',kind='parts_subset',params=dict(manifest='parts.json',netlist_check='old-netlist',requirement_id='members',reference_set=[dict(sheet='/',reference='R1',uuids=native_graph()['components']['R1']['uuid'].split())]))])
+            source=dict(files={'parts.json':digest(root/'block/parts.json')},boundary_ports=[],
+                requirements=[dict(id='members',statement='Preserve exact purchasing identity',checks=['old-parts'])],
+                check_set=[dict(id='old-parts',kind='parts_subset',params=dict(manifest='parts.json',netlist_check='old-netlist',requirement_id='members',reference_set=[]))])
             write_json(root/'block/block.json',source)
-            document['declaration_source']=dict(path='block/block.json',locator='requirements/members',sha256=digest(root/'block/block.json'))
+            document['parts'][0]['package']='DIFFERENT-PROVIDED-PACKAGE'
             write_json(root/'fresh-parts.json',document)
-            record=dict(id='filter',block='block',sheet='binding.kicad_sch',instance_path='/',bindings={},requirements={'members':['new-parts']})
-            params=dict(manifest='fresh-parts.json',netlist_check='netlist',requirement_id='filter-members',reference_set=source['check_set'][0]['params']['reference_set'])
-            scope=dict(schema='agent-ee.scope/3',checks=[dict(id='netlist',kind='netlist'),dict(id='new-parts',kind='parts_subset',params=params)],
-                baseline=dict(requirements=[dict(id='filter-members',intent='acceptance',statement='Exact allocated parts',source=dict(path='block/block.json',locator='requirements/members'),checks=['new-parts'])]))
+            record=dict(id='filter',block='block',sheet='not-evaluated.kicad_sch',instance_path='/',bindings={},requirements={'members':['new-parts']})
+            scope=dict(checks=[dict(id='netlist',kind='netlist'),dict(id='new-parts',kind='parts_subset',params=dict(manifest='fresh-parts.json',netlist_check='netlist',requirement_id='filter-members',reference_set=[]))])
             files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
-            _fresh_contract(root,source,record,scope,files,'netlist')
-            document['parts'][0]['mpn']='FORGED';write_json(root/'fresh-parts.json',document);files['fresh-parts.json']=digest(root/'fresh-parts.json')
             with self.assertRaisesRegex(ValueError,'allocation/identity'):_fresh_contract(root,source,record,scope,files,'netlist')
+
+
+    def test_reference_renumbering_cannot_change_purchasing_or_carrier_identity(self):
+        from agent_ee.block_adaptation import _part_allocations,_rebound
+        part=dict(id='U1',role='U1',required=True,lib_id='Owned:Device',footprint='Owned:Device',lcsc='C1',
+            mpn='U1',manufacturer='U1',package='U1',instances=[dict(sheet='/',reference='U1')])
+        names={'U1':'U11','/':'/00000000-0000-4000-8000-000000000001/','Owned:Device':'Block_61:Device'}
+        row=_part_allocations(dict(parts=[part]),names)[0]
+        self.assertEqual({k:row[k] for k in ('id','role','mpn','manufacturer','package','footprint')},
+                         {k:part[k] for k in ('id','role','mpn','manufacturer','package','footprint')})
+        self.assertEqual(row['instances'],[dict(sheet=names['/'],reference='U11')])
+        self.assertEqual(row['lib_id'],'Block_61:Device')
+        literals=dict(value='U1',equals='U1',subcircuit='U1',pin_map={'1':'U1'})
+        self.assertEqual(_rebound(literals,names,{},{}),literals)
+
+    def test_deferred_active_spice_keeps_literal_contract_and_captured_models(self):
+        from agent_ee.block_adaptation import capability
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);scope,request,record=self.prepared(root);directory=root/'blocks/rc'
+            (directory/'owned.lib').write_text('.subckt r_two P N\nR_effective P N 10k\n.ends r_two\n')
+            record['files']['owned.lib']=digest(directory/'owned.lib')
+            base=read_json(REPO/'fixtures/active-spice/control.scope.json')['checks'][1]['params']
+            params=copy.deepcopy(base)
+            params.update(netlist_check='netlist',model_files=['owned.lib'],ground_net='/GND',
+                active_parts={'R1':dict(model_file='owned.lib',subcircuit='r_two',pin_map={'1':'P','2':'N'})})
+            params['sources']=[copy.deepcopy(params['sources'][0])]
+            params['analyses']=params['analyses'][:1]
+            for measurement in params['analyses'][0]['measurements']:
+                measurement['positive_net']='/OUT';measurement['negative_net']='/GND'
+            record['check_set'][1]=dict(id='old-later',kind='active_spice',params=params)
+            write_json(directory/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(directory/'block-contract.json');write_json(directory/'block.json',record)
+            current=copy.deepcopy(params);current['model_files']=['blocks/rc/owned.lib'];current['active_parts']['R1']['model_file']='blocks/rc/owned.lib'
+            scope['checks'][2]=dict(id='later',kind='active_spice',params=current)
+            result=instantiate(root,scope,request)
+            self.assertEqual(result['checks'][2]['params']['contract'],'active-spice/1')
+            files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+            for mutation in ('token','model','bounds'):
+                changed=copy.deepcopy(result);actual=changed['checks'][2]['params']
+                if mutation=='token':actual['contract']='active-spice/2'
+                elif mutation=='model':actual['model_files']=['other.lib']
+                else:actual['analyses'][0]['measurements'][0]['max']=999
+                with self.subTest(mutation=mutation),self.assertRaises(ValueError):capability(dict(instance='instance.json',netlist_check='netlist'),changed,files,root,'provenance')
+            (directory/'owned.lib').write_text('.subckt r_two P N\nR_effective P N 100\n.ends r_two\n')
+            with self.assertRaisesRegex(ValueError,'inventory/hash'):capability(dict(instance='instance.json',netlist_check='netlist'),result,files,root,'provenance')

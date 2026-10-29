@@ -21,8 +21,12 @@ BINDINGS = {'CAN+': 'CANH', 'CAN-': 'CANL', 'TXD': 'TX', 'RXD': 'RX',
             'S': 'GND', '+5V': '+5V', '+3V3': '+3V3', 'GND': 'GND'}
 
 
-def prepare(root):
-    shutil.copytree(CAN / 'block', root / 'block')
+def prepare(root, *, topology=False):
+    if topology:
+        from tests.block_topology_fixture import derive_topology_fixture
+        derive_topology_fixture(CAN/'block',root/'block')
+    else:
+        shutil.copytree(CAN/'block',root/'block')
     shutil.copyfile(CAN / 'composition.json', root / 'composition.json')
     # Real seven-pin board interface, accounting for all external CAN/power nets.
     data = Path('/usr/share/kicad/symbols/Connector_Generic.kicad_sym').read_bytes()
@@ -49,7 +53,7 @@ class FlatComposeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-flat-can-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.intent, self.requests, self.bindings, self.libraries = prepare(self.root)
+        self.intent, self.requests, self.bindings, self.libraries = prepare(self.root,topology=True)
 
     def compose(self):
         return block_adaptation.compose_flat(self.root, self.intent, self.requests, self.bindings,
@@ -178,6 +182,8 @@ class FlatComposeTests(unittest.TestCase):
         scope['baseline']['requirements'].append({'id': 'can-provenance',
             'statement': 'Record source differences; preserve declared boundary bindings.',
             'source': {'path': 'instance.json', 'locator': 'bindings'}, 'checks': ['provenance'], 'intent': 'acceptance'})
+        from tests.block_topology_fixture import assert_topology_acceptance
+        assert_topology_acceptance(self.root,scope)
         write_json(self.root / 'scope.json', scope)
 
     def check(self, name='run'):
@@ -384,3 +390,72 @@ class DeferredFlatContractTests(unittest.TestCase):
         write_json(self.root/'block/block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(self.root/'block/block-contract.json');write_json(self.root/'block/block.json',record)
         with self.assertRaisesRegex(ValueError,'pending cannot be dropped'):self.compose()
         self.assertFalse((self.root/'project').exists())
+
+class TopologyFixtureTransitionTests(unittest.TestCase):
+    """CPU source-contract controls; root separately runs the native regressions."""
+    def test_archived_pending_refuses_flat_and_hierarchical_without_publishing(self):
+        from tests.test_block_adaptation import fixture
+        for mode in ('flat','hierarchical'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)
+                if mode=='flat':
+                    intent,requests,bindings,libraries=prepare(root)
+                    before=copy.deepcopy(intent)
+                    with self.assertRaisesRegex(ValueError,'pending cannot be dropped'):
+                        block_adaptation.compose_flat(root,intent,requests,bindings,captured_libraries=libraries)
+                    self.assertEqual(intent,before)
+                    self.assertFalse((root/'project/flat.kicad_sch').exists())
+                else:
+                    scope,request=fixture(root)
+                    shutil.copytree(CAN/'block',root/'block')
+                    shutil.copyfile(CAN/'composition.json',root/'composition.json')
+                    request.update(block='block',composition='composition.json')
+                    source=read_json(root/'block/block.json')
+                    request['requirements']={r['id']:r['checks'] for r in source['requirements']}
+                    before=(root/request['sheet']).read_bytes()
+                    with self.assertRaisesRegex(ValueError,'pending cannot be dropped'):
+                        block_adaptation.instantiate(root,scope,request)
+                    self.assertEqual((root/request['sheet']).read_bytes(),before)
+                self.assertFalse((root/'instance.json').exists())
+
+    def test_versioned_lineage_and_joint_contract_without_rewriting_archive(self):
+        from tests.block_topology_fixture import derive_topology_fixture,assert_topology_acceptance,LINEAGE,VERSION
+        from agent_ee.storage import digest
+        before={str(p.relative_to(CAN)):digest(p) for p in CAN.rglob('*') if p.is_file()}
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);record=derive_topology_fixture(CAN/'block',root/'block')
+            original=read_json(CAN/'block/block.json');lineage=read_json(root/'block'/LINEAGE)
+            self.assertEqual(record['version'],VERSION)
+            self.assertEqual(lineage['original_pending'],original['pending_requirements'][0])
+            self.assertEqual(record['runs'],original['runs'])
+            self.assertEqual(record['check_set'],original['check_set'])
+            self.assertEqual(record['boundary_ports'],original['boundary_ports'])
+            scope=dict(checks=[dict(id='interface',kind='hardware_interface'),dict(id='provenance',kind='block_provenance')],
+                baseline=dict(requirements=[dict(intent='acceptance',checks=['interface']),dict(intent='acceptance',checks=['provenance'])]))
+            assert_topology_acceptance(root,scope)
+            for check in ('interface','provenance'):
+                bad=copy.deepcopy(scope);bad['baseline']['requirements']=[r for r in bad['baseline']['requirements'] if check not in r['checks']]
+                with self.assertRaisesRegex(ValueError,'both fresh acceptance'):assert_topology_acceptance(root,bad)
+        self.assertEqual(before,{str(p.relative_to(CAN)):digest(p) for p in CAN.rglob('*') if p.is_file()})
+
+    def test_flat_and_hierarchical_fresh_contracts_are_executable_source_contracts(self):
+        from tests.test_block_composition import compose
+        from tests.block_topology_fixture import derive_topology_fixture,assert_topology_acceptance
+        from unittest.mock import patch
+        from agent_ee.storage import digest
+        for mode in ('flat','hierarchical'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp:
+                base=Path(tmp)
+                if mode=='flat':
+                    obj=FlatComposeTests('test_can_block_flat');obj.root=base
+                    obj.intent,obj.requests,obj.bindings,obj.libraries=prepare(base,topology=True)
+                    result=obj.compose();obj.prepare_checks(result);root=base
+                else:
+                    source=base/'source';source.mkdir();derive_topology_fixture(CAN/'block',source/'block')
+                    shutil.copyfile(CAN/'composition.json',source/'composition.json')
+                    root=base/'prepared'
+                    with patch.object(compose,'ROOT',source):compose.prepare(root)
+                scope=read_json(root/'scope.json');assert_topology_acceptance(root,scope)
+                files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+                result=block_adaptation.capability(dict(instance='instance.json',netlist_check='netlist'),scope,files,root,'provenance')
+                self.assertIn('block-boundary:CAN+',result['predicates'])

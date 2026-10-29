@@ -135,7 +135,20 @@ class NativeCompositionTests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         cls.root = Path(cls.temp.name)
         cls.prepared = cls.root / 'prepared'
-        compose.prepare(cls.prepared)
+        from tests.block_topology_fixture import derive_topology_fixture
+        cls.topology_source=cls.root/'topology-source';cls.topology_source.mkdir()
+        derive_topology_fixture(FIXTURE/'block',cls.topology_source/'block')
+        shutil.copyfile(FIXTURE/'composition.json',cls.topology_source/'composition.json')
+        cls.prepare_topology(cls.prepared)
+
+    @classmethod
+    def prepare_topology(cls,destination):
+        from unittest.mock import patch
+        from tests.block_topology_fixture import assert_topology_acceptance
+        with patch.object(compose,'ROOT',cls.topology_source):
+            result=compose.prepare(destination)
+        assert_topology_acceptance(destination,read_json(result))
+        return result
 
     def setUp(self):
         self.work = self.root / self._testMethodName
@@ -178,7 +191,7 @@ class NativeCompositionTests(unittest.TestCase):
 
     def test_deterministic_emission_receipt_and_provenance_mapping(self):
         other = self.work / 'other'
-        compose.prepare(other)
+        self.prepare_topology(other)
         for path in ('project/can.kicad_sch', 'instance.json', 'composition.json'):
             self.assertEqual((other / path).read_bytes(), (self.candidate / path).read_bytes())
         record = read_json(other / 'instance.json')

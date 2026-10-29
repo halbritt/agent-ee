@@ -786,9 +786,11 @@ class ExactRoleCoverageTests(unittest.TestCase):
         document=dict(property_fields=dict(lcsc='LCSC',mpn='MPN',manufacturer='Manufacturer'),parts=[dict(id=r,required=True,instances=[dict(sheet='/',reference=r)],lib_id=c['lib_id'],footprint=c['footprint'],lcsc='C1',mpn='fixture',manufacturer='Owned') for r,c in graph['components'].items()])
         report=compare_inventory(document,graph,[],reference_scope=self.selected)
         report.update(manifest_sha256='b'*64,native_xml_sha256=digest(self.xml))
-        self.record=dict(sheet='source.kicad_sch',parts_manifest='parts.json',files={'parts.json':'b'*64},instances=[dict(sheet='source.kicad_sch',uuid_path='/',references=sorted(members))])
+        write_json(inputs/'parts.json',document)
+        checksum=digest(inputs/'parts.json');report['manifest_sha256']=checksum
+        self.record=dict(sheet='source.kicad_sch',parts_manifest='parts.json',files={'parts.json':checksum,'source.kicad_sch':digest(inputs/'source.kicad_sch')},instances=[dict(sheet='source.kicad_sch',uuid_path='/',references=sorted(members))])
         self.ref=dict(files={'source.kicad_sch':'source.kicad_sch','parts.json':'parts.json'})
-        self.manifest=dict(scope=dict(schematic='source.kicad_sch',checks=[dict(id='native',kind='netlist'),dict(id='parts',kind='parts_subset',params=dict(manifest='parts.json',netlist_check='native',reference_set=self.selected))]))
+        self.manifest=dict(files=dict(self.record['files']),scope=dict(schematic='source.kicad_sch',checks=[dict(id='native',kind='netlist'),dict(id='parts',kind='parts_subset',params=dict(manifest='parts.json',netlist_check='native',reference_set=self.selected))]))
         self.checks=dict(native=dict(execution='ok',details=dict(schematic_files=['source.kicad_sch'])),parts=dict(execution='ok',outcome='pass',details=dict(report=report,evaluated_predicates=[PREDICATE])))
 
     def test_exact_rows_not_any_passing_same_sheet_or_shortened_selector(self):
@@ -814,6 +816,8 @@ class ExactRoleCoverageTests(unittest.TestCase):
     def test_source_membership_requirement_credits_only_exact_role_parts_proof(self):
         from agent_ee.reference_blocks import _membership_requirement,_parts_coverage
         requirement=dict(id='membership',checks=['parts'],verification_phase='source')
+        import copy
+        self.record['check_set']=[copy.deepcopy(self.manifest['scope']['checks'][1])]
         exact=set(_parts_coverage(self.root,self.manifest,self.ref,self.record,self.checks))
         specs=self.manifest['scope']['checks']
         self.assertTrue(_membership_requirement(self.record,requirement,specs,exact))
@@ -836,3 +840,69 @@ class ExactRoleCoverageTests(unittest.TestCase):
         self.assertTrue(_native_requirement_coverage(self.root,self.manifest,self.ref,record,req,self.checks))
         self.checks['interface']['details']['invariants'][0]['actual']['components']['part'].update(reference='U2',uuid=UUIDS['U2'])
         self.assertFalse(_native_requirement_coverage(self.root,self.manifest,self.ref,record,req,self.checks))
+
+
+    def source_interface_fixture(self):
+        from tests.test_block_no_connects import UUIDS
+        import copy
+        contract=dict(schema='agent-ee.interface/1',components={'part':dict(locations=[dict(sheet='/',reference='U1')],symbols=['Owned:Package5'])},terminals={},allowed_edits=[],
+            invariants=[dict(id='present',kind='component',component='part',populated=True,requirement='role',source=dict(path='source.kicad_sch',locator='U1')),
+                        dict(id='fixed-value',kind='value',component='part',equals='Package5',requirement='role',source=dict(path='source.kicad_sch',locator='U1'))])
+        write_json(self.root/'inputs/interfaceA.json',contract)
+        self.record['files']['interfaceA.json']=digest(self.root/'inputs/interfaceA.json')
+        self.ref['files']['interfaceA.json']='interfaceA.json';self.manifest['files']['interfaceA.json']=self.record['files']['interfaceA.json']
+        spec=dict(id='interface',kind='hardware_interface',params=dict(contract='interfaceA.json',netlist_check='native'))
+        self.record['check_set']=[copy.deepcopy(spec)];self.manifest['scope']['checks'].append(spec)
+        witnesses=[dict(id=row['id'],status='satisfied',expected=dict(requirement='role'),actual=dict(components={'part':dict(sheet='/',reference='U1',uuid=UUIDS['U1'])})) for row in contract['invariants']]
+        self.checks['interface']=dict(details=dict(invariants=witnesses))
+        return contract,dict(id='role',checks=['interface'])
+
+    def test_source_interface_cannot_switch_to_weaker_asset_while_original_is_present(self):
+        from agent_ee.reference_blocks import _native_requirement_coverage,_source_checks_match
+        contract,requirement=self.source_interface_fixture()
+        self.assertTrue(_source_checks_match(self.root,self.manifest,self.ref,self.record,requirement))
+        self.assertTrue(_native_requirement_coverage(self.root,self.manifest,self.ref,self.record,requirement,self.checks))
+        original=digest(self.root/'inputs/interfaceA.json')
+        contract['invariants']=contract['invariants'][:1]
+        write_json(self.root/'inputs/interfaceB.json',contract)
+        self.manifest['files']['interfaceB.json']=digest(self.root/'inputs/interfaceB.json')
+        self.manifest['scope']['checks'][-1]['params']['contract']='interfaceB.json'
+        self.checks['interface']['details']['invariants']=self.checks['interface']['details']['invariants'][:1]
+        self.assertEqual(digest(self.root/'inputs/interfaceA.json'),original)
+        self.assertFalse(_source_checks_match(self.root,self.manifest,self.ref,self.record,requirement))
+        self.assertFalse(_native_requirement_coverage(self.root,self.manifest,self.ref,self.record,requirement,self.checks))
+
+    def test_declared_hardware_requirement_cannot_become_even_exact_parts_credit(self):
+        import copy
+        from agent_ee.reference_blocks import _source_checks_match,_membership_requirement,_parts_coverage
+        _,requirement=self.source_interface_fixture()
+        self.manifest['scope']['checks'][-1]=dict(id='interface',kind='parts_subset',params=copy.deepcopy(self.manifest['scope']['checks'][1]['params']))
+        self.manifest['scope']['checks'][-1]['params']['requirement_id']='role'
+        self.checks['interface']=copy.deepcopy(self.checks['parts'])
+        exact=set(_parts_coverage(self.root,self.manifest,self.ref,self.record,self.checks))
+        self.assertIn('interface',exact)  # Actual selected membership is valid; declared semantics still differ.
+        self.assertFalse(_source_checks_match(self.root,self.manifest,self.ref,self.record,requirement))
+        self.assertFalse(_membership_requirement(self.record,requirement,self.manifest['scope']['checks'],exact))
+
+    def test_source_membership_params_asset_and_requirement_link_are_bound(self):
+        import copy
+        from agent_ee.reference_blocks import _source_checks_match
+        spec=self.manifest['scope']['checks'][1]
+        spec['params']['requirement_id']='membership'
+        self.record['check_set']=[copy.deepcopy(spec)]
+        requirement=dict(id='membership',checks=['parts'])
+        self.assertTrue(_source_checks_match(self.root,self.manifest,self.ref,self.record,requirement))
+        for mutation in ('selector','requirement','asset'):
+            manifest=copy.deepcopy(self.manifest)
+            params=manifest['scope']['checks'][1]['params']
+            if mutation=='selector':params['reference_set']=params['reference_set'][:1]
+            elif mutation=='requirement':params['requirement_id']='unrelated'
+            else:params['manifest']='other-parts.json'
+            with self.subTest(mutation=mutation):self.assertFalse(_source_checks_match(self.root,manifest,self.ref,self.record,requirement))
+
+    def test_historical_no_check_set_keeps_hardware_semantics_without_membership_upgrade(self):
+        from agent_ee.reference_blocks import _source_checks_match,_native_requirement_coverage,_membership_requirement
+        _,requirement=self.source_interface_fixture();self.record.pop('check_set')
+        self.assertTrue(_source_checks_match(self.root,self.manifest,self.ref,self.record,requirement))
+        self.assertTrue(_native_requirement_coverage(self.root,self.manifest,self.ref,self.record,requirement,self.checks))
+        self.assertFalse(_membership_requirement(self.record,dict(id='membership',checks=['parts']),self.manifest['scope']['checks'],{'parts'}))

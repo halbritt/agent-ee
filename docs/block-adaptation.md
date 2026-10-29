@@ -365,3 +365,11 @@ consumer must verify the selected context, including zero external J2 load and n
 external drive, against the source-bound power/rail/bus conditions before seal.
 Return-path and engineering judgments remain existing qualification obligations;
 there is no `judgment` check kind, and a check template is not a judgment result.
+
+Standing CAN topology regressions derive `1-topology-regression-2` in owned test
+setup, preserving the archived block byte-for-byte and its exact historical
+`pod-can-standalone` capability blocker in hashed lineage. The new fixture requires
+both the fresh interface acceptance and separate generated two-source provenance
+acceptance. Its topology/native assertions remain mandatory; this fixture does
+not establish electrical, supplier, physical or reference qualification. The
+archived pending version still refuses through both ordinary adaptation paths.

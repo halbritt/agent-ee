@@ -500,11 +500,51 @@ def _native_block_subject(run, manifest, ref, record, native_id, checks):
     return occurrences, symbols, exact
 
 
+def _source_checks_match(run, manifest, ref, record, requirement):
+    """Source credit uses the captured checker and assets, not a substituted run check."""
+    if 'check_set' not in record:
+        # Historical records retain their hardware-interface coverage rules.
+        # They cannot acquire the new membership shortcut without a declaration.
+        return True
+    declared = {c['id']:c for c in record['check_set']}
+    actual = {c['id']:c for c in manifest['scope']['checks']}
+    for cid in requirement['checks']:
+        template, check = declared.get(cid), actual.get(cid)
+        if template is None or check is None or check['kind'] != template['kind']:
+            return False
+        expected = copy.deepcopy(template['params'])
+        assets = []
+        field = {'hardware_interface':'contract', 'parts_subset':'manifest'}.get(template['kind'])
+        if field is not None:
+            source = expected[field]
+            if source not in record['files'] or source not in ref['files']:
+                return False
+            expected[field] = ref['files'][source]
+            assets.append((source, expected[field]))
+        if template['kind'] == 'hardware_interface' and 'qualification_record' in expected:
+            source = expected['qualification_record']['path']
+            if source not in record['files'] or source not in ref['files']:
+                return False
+            expected['qualification_record']['path'] = ref['files'][source]
+            assets.append((source, ref['files'][source]))
+        if (template['kind'] == 'parts_subset' and expected.get('requirement_id') != requirement['id']):
+            return False
+        if expected != check.get('params', {}):
+            return False
+        for source, target in assets:
+            if (manifest['files'].get(target) != record['files'][source]
+                    or digest(run / 'inputs' / target) != record['files'][source]):
+                return False
+    return True
+
+
 def _native_requirement_coverage(run, manifest, ref, record, req, checks):
     """Recognize qualified native interface witnesses for this block instance."""
     from .hardware_interface import load_contract_unverified
 
     specs = {c['id']: c for c in manifest['scope']['checks']}
+    if not _source_checks_match(run, manifest, ref, record, req):
+        return False
     if 'layout' in record or any(specs[c]['kind'] != 'hardware_interface' for c in req['checks']):
         return False
     for cid in req['checks']:
@@ -577,8 +617,9 @@ def _parts_coverage(run, manifest, ref, record, checks):
 
 def _membership_requirement(record, requirement, specs, exact_parts):
     kinds = {c['id']:c['kind'] for c in specs}
+    declared = {c['id']:c['kind'] for c in record.get('check_set', [])}
     return ('instances' in record and requirement.get('verification_phase','source') == 'source'
-            and bool(requirement['checks']) and all(c in exact_parts and kinds.get(c) == 'parts_subset'
+            and bool(requirement['checks']) and all(c in exact_parts and kinds.get(c) == declared.get(c) == 'parts_subset'
                                                     for c in requirement['checks']))
 
 
@@ -632,6 +673,8 @@ def validate_block(directory, run_locations=None, *, repository_locations=None, 
                 for req in record['requirements']:
                     if req.get('verification_phase','source') == 'adaptation':
                         continue
+                    if not _source_checks_match(run, manifest, ref, record, req):
+                        continue
                     bound = requirements.get(req['id'])
                     if bound is None or bound.get('intent', 'acceptance') != 'acceptance':
                         continue
@@ -680,7 +723,7 @@ def validate_block(directory, run_locations=None, *, repository_locations=None, 
                 limitations=['Provenance only; adaptations require fresh board checks.',
                              'Declared parts membership is not owner approval, live availability or hardware acceptance.',
                              'Run references do not establish a containing campaign\'s current escalation state.',
-                             'Only native hardware-interface requirement subjects are qualified; '
+                             'Only source-phase native hardware-interface and exact declared membership subjects are qualified; '
                              'other check families and optional layouts remain unverified.'])
 
 

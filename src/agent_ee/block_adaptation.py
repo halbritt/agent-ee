@@ -129,7 +129,9 @@ def _rebound(value, names, requirements, checks):
         result = {}
         for key, item in value.items():
             target = names.get(key,key)
-            if key in ('requirement','requirement_id'):
+            if key in ('mpn','manufacturer','package','footprint','value','equals','subcircuit','pin_map'):
+                result[target] = copy.deepcopy(item)
+            elif key in ('requirement','requirement_id'):
                 result[target] = requirements.get(item,item)
             elif key.endswith('_check'):
                 result[target] = checks.get(item,item)
@@ -143,6 +145,40 @@ def _rebound(value, names, requirements, checks):
     if isinstance(value, list):
         return [_rebound(v,names,requirements,checks) for v in value]
     return names.get(value,value) if isinstance(value,str) else value
+
+
+def _interface_addresses(document, names, requirements):
+    """Rebind physical addresses, retaining logical terminal/invariant identities."""
+    result=copy.deepcopy(document)
+    for component in result['components'].values():
+        component['locations']=[dict(sheet=names.get(p['sheet'],p['sheet']),
+            reference=names.get(p['reference'],p['reference'])) for p in component['locations']]
+        component['symbols']=[names.get(symbol,symbol) for symbol in component['symbols']]
+    for row in result['invariants']:
+        row['requirement']=requirements.get(row['requirement'],row['requirement'])
+        if 'names' in row:
+            row['names']=[names.get(net,net) for net in row['names']]
+        if 'io_map' in row:
+            row['io_map']['path']=names.get(row['io_map']['path'],row['io_map']['path'])
+    if 'qualification_record' in result:
+        result['qualification_record']['path']=names.get(result['qualification_record']['path'],result['qualification_record']['path'])
+    return result
+
+
+def _part_allocations(document, names):
+    # Purchasing identity and logical IDs are literal. Only CAD library aliases
+    # and physical instance addresses change when the adapter renumbers a part.
+    fields=('id','role','required','lib_id','footprint','lcsc','mpn','manufacturer','instances')
+    rows=[]
+    for part in document['parts']:
+        row={key:copy.deepcopy(part[key]) for key in fields}
+        row['lib_id']=names.get(part['lib_id'],part['lib_id'])
+        row['instances']=[dict(sheet=names.get(i['sheet'],i['sheet']),
+                               reference=names.get(i['reference'],i['reference'])) for i in part['instances']]
+        if 'package' in part:
+            row['package']=part['package']
+        rows.append(row)
+    return sorted(rows,key=lambda r:r['id'])
 
 
 def _fresh_contract(root, source, record, scope, files, native_id):
@@ -179,7 +215,16 @@ def _fresh_contract(root, source, record, scope, files, native_id):
             for old, delivered in occurrence['references'].items():
                 names[old]=record.get('references',{}).get(delivered,delivered)
         for port in plan['ports']:
-            names[port['net_name']]=record.get('native_bindings',record['bindings'])[port['name']]
+            target=record.get('native_bindings',record['bindings'])[port['name']]
+            names[port['net_name']]=target
+            names['/'+port['net_name'].lstrip('/')]=target
+        for occurrence in plan['sources']:
+            instance=next(i for i in source['instances'] if i['sheet']==occurrence['sheet'] and i['uuid_path']==occurrence['uuid_path'])
+            for original, port in occurrence['nets'].items():
+                target=record.get('native_bindings',record['bindings'])[port]
+                names[original]=target
+                if original.startswith('/'):
+                    names[instance['path'].rstrip('/')+original]=target
     else:
         names['/']=record['instance_path']
         names.update({p['net_name']:record['bindings'][p['name']] for p in source['boundary_ports']})
@@ -200,37 +245,37 @@ def _fresh_contract(root, source, record, scope, files, native_id):
             from .reference_blocks import sheet_symbols
             source_parts=load_manifest(root,str(PurePosixPath(record['block'])/params['manifest']))
             board_parts=load_manifest(root,observed['manifest'])
-            fields=('id','role','required','lib_id','footprint','lcsc','mpn','manufacturer','package','instances')
-            def allocation(document, rebound):
-                rows=[{key:part[key] for key in fields} for part in document['parts']]
-                if rebound:
-                    rows=_rebound(rows,names,requirements,checks)
-                return sorted(rows,key=lambda r:r['id'])
             if (source_parts['property_fields'] != board_parts['property_fields']
-                    or allocation(source_parts,True) != allocation(board_parts,False)):
+                    or _part_allocations(source_parts,names) != _part_allocations(board_parts,{})):
                 raise ValueError('fresh membership changes captured allocation/identity contract')
-            if 'reference_set' not in params:
-                raise ValueError('role membership template requires exact reference_set')
-            authored=sheet_symbols(_local(root,record['sheet']).read_bytes(),record['instance_path'])
-            expected['reference_set']=[]
-            for row in params['reference_set']:
-                reference=names.get(row['reference'],row['reference'])
-                if reference not in authored:
-                    raise ValueError('adapted membership reference absent from authored current sheet')
-                expected['reference_set'].append(dict(sheet=record['instance_path'],reference=reference,
-                    uuids=sorted(authored[reference]['uuids'])))
-            expected['reference_set'].sort(key=lambda r:(r['sheet'],r['reference']))
+            if 'reference_set' in params:
+                from .parts_subset import reference_set
+                selected=reference_set(params['reference_set'])
+                authored=sheet_symbols(_local(root,record['sheet']).read_bytes(),record['instance_path'])
+                expected['reference_set']=[]
+                for row in selected:
+                    reference=names.get(row['reference'],row['reference'])
+                    if reference not in authored:
+                        raise ValueError('adapted membership reference absent from authored current sheet')
+                    expected['reference_set'].append(dict(sheet=record['instance_path'],reference=reference,
+                        uuids=sorted(authored[reference]['uuids'])))
+                expected['reference_set'].sort(key=lambda r:(r['sheet'],r['reference']))
             observed['manifest']=expected['manifest']
-        for field in ('contract','assertions'):
-            if field not in params:
-                continue
+        if original['kind'] == 'active_spice':
+            expected['contract'] = params['contract']  # A version token, never an asset path.
+        asset_fields = {'hardware_interface':('contract',), 'interval_assertions':('assertions',)}.get(original['kind'], ())
+        for field in asset_fields:
             before=_read(_local(root,str(PurePosixPath(record['block'])/params[field])))
             after=_read(_local(root,observed[field]))
-            before=_rebound(before,names,requirements,checks)
+            before=(_interface_addresses(before,names,requirements) if field=='contract'
+                    else _rebound(before,names,requirements,checks))
             if field=='contract':
                 for row in before['invariants']:
                     rid=row['requirement']
-                    row['source']=dict(path=block_path,locator='requirements/'+rid.removeprefix(record['id']+'-'),sha256=digest(_local(root,block_path)))
+                    row['source']=dict(path=block_path,locator='requirements/'+rid.removeprefix(record['id']+'-'))
+                    observed_source=next((i['source'] for i in after['invariants'] if i['id']==row['id']),{})
+                    if 'sha256' in observed_source:
+                        row['source']['sha256']=digest(_local(root,block_path))
             else:
                 before['requirement_sources']={requirements[r['id']]:dict(path=block_path,
                     locator='requirements/'+r['id'],sha256=digest(_local(root,block_path)))
@@ -244,7 +289,7 @@ def _fresh_contract(root, source, record, scope, files, native_id):
         descriptor=describe_check(actual,check_specs=scope['checks'],files=files,scope=scope,inputs=root)
         requirement=next(r for r in source['requirements'] if old in r['checks'])
         if descriptor['status'] != 'supported' or (_requirement_intent(source,requirement)=='acceptance' and not descriptor['can_evaluate_bound']):
-            raise ValueError('fresh declared check has no executable acceptance coverage')
+            raise ValueError('fresh declared check has no executable acceptance coverage: '+str(descriptor['unsupported_reasons']))
 
 
 def capability(params, scope, files, inputs, check_id):
