@@ -424,17 +424,20 @@ def _native_custom_geometry(data, footprint, *, _native_geometry=None):
         if _native_geometry is not None:
             report = _native_geometry(data, footprint)
         else:
-            with tempfile.TemporaryDirectory(prefix='agent-ee-custom-pad-') as tmp:
-                root = Path(tmp)
-                inputs = root / 'inputs'
-                inputs.mkdir()
-                (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
-                execution = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m',
-                    'agent_ee.footprint_probe', footprint['name']], timeout=60), inputs=inputs, work=root / 'work'))
-                if execution['execution'] != 'ok':
-                    console = (root / 'work' / 'console.log').read_text(errors='replace')[-2000:]
-                    raise FootprintError('native custom-pad load failed: ' + console)
-                report = json.loads((root / 'work' / 'footprint.json').read_bytes())
+            from .footprint_probe import _enclosed_geometry
+            report = _enclosed_geometry(data, footprint)
+            if report is None:
+                with tempfile.TemporaryDirectory(prefix='agent-ee-custom-pad-') as tmp:
+                    root = Path(tmp)
+                    inputs = root / 'inputs'
+                    inputs.mkdir()
+                    (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
+                    execution = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m',
+                        'agent_ee.footprint_probe', footprint['name']], timeout=60), inputs=inputs, work=root / 'work'))
+                    if execution['execution'] != 'ok':
+                        console = (root / 'work' / 'console.log').read_text(errors='replace')[-2000:]
+                        raise FootprintError('native custom-pad load failed: ' + console)
+                    report = json.loads((root / 'work' / 'footprint.json').read_bytes())
         native = report['pads']
         if Counter(map(identity, native)) != Counter(map(identity, footprint['pads'])):
             raise FootprintError('native pad identity differs from captured footprint')
