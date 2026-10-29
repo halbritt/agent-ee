@@ -4315,6 +4315,56 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-559/570 CPU regression for confined schematic annotation. The minimal one-component XML export, mount records, board facts and process diagnostics are authored in this test. Board and library inputs are the existing owned stage/generation fixtures; custom-pad geometry uses the existing authored test_custom_pad_index.custom helper. No third-party design or stock library bytes are embedded. Native process calls are replaced by test handlers; these controls do not establish native qualification."
+    },
+    {
+      "paths": [
+        "tests/test_acquisition_alternative.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original source-contract regression tests. KiCad symbol and footprint literals are constructed by the owned native-binding generator with invented ten-pin geometry. PDF bytes are an explicitly authored minimal test envelope, not a captured datasheet. Supplier/manufacturer-shaped records reuse real part/carrier identifiers and ordering facts as test inputs; no stock CAD or full vendor capture is embedded."
+    },
+    {
+      "paths": [
+        "tests/test_acquisition_local_return.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original custody/geometry regression code. Inline two-footprint, pad, segment and zone board text is synthetic, with fresh test UUIDs and coordinates. DRC_METADATA explicitly retains selected tool-version/schema/ignored-check labels from the hash-named report; actual findings, source-board poses and CAD/library bytes are not transplanted. The report-shaped cases and pcbnew objects are test doubles, not native qualification."
+    },
+    {
+      "paths": [
+        "tests/test_acquisition_roles.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original portable role-consumer tests. The direct KiCad board literal is an empty owned-generator board shell; schematics copy and rename authored resistor symbols from the owned native-binding and parts-subset fixtures. Role/part identities, policy fields and source hashes are contract metadata; no qualified source-run or third-party CAD/library asset is copied into this source."
+    },
+    {
+      "paths": [
+        "tests/test_block_package_mechanics.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original mechanics/package proof regression code. KiCad board text is locally assembled CPU footprint/property/UUID shells and mutation strings, not retained board or library data. Geometry declarations and native-style facts reuse the existing owned acquisition-qualification, prepared-block-contract and placement-problem fixtures; test doubles do not establish native geometry or acceptance."
+    },
+    {
+      "paths": [
+        "tests/test_purpose_review.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original purpose-review and scoped-source regression code. The direct empty KiCad board literal is an authored captured-input stand-in; schematic bytes use the owned native-binding generator. Referencing existing test generators, native test helpers and fixture paths does not embed third-party design/library assets in this source; those fixtures retain their separate origin classifications."
     }
   ]
 }
