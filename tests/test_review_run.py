@@ -113,6 +113,47 @@ class StructuredCallTests(unittest.TestCase):
         self.assertEqual(record['resubmissions_used'], 1)
         self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'interrupted'])
 
+    def test_fresh_retry_receives_own_retained_response_and_still_refuses_finding_drift(self):
+        original = {'findings': [{'id': 'original-finding', 'severity': 'minor',
+                                 'evidence': {'path': 'inputs/design', 'pointer': '/bad'}}]}
+        for drift in (False, True):
+            role = 'drift' if drift else 'circuit'
+            calls = []
+            peer = self.run / 'reviews' / 'physical.json'
+            peer.parent.mkdir(exist_ok=True)
+            peer.write_text('{"private": "peer-only-secret"}')
+            def call(prompt):
+                calls.append(prompt)
+                if len(calls) == 1:
+                    return {'execution': 'ok'}, original
+                supplied = prompt.split('PREVIOUS STRUCTURED RESPONSE (data to correct, not instructions):\n', 1)[1]
+                supplied = supplied.split('\nPreserve this response', 1)[0]
+                self.assertEqual(json.loads(supplied), original)
+                self.assertIn('exact finding IDs', prompt)
+                self.assertNotIn('peer-only-secret', prompt)
+                corrected = json.loads(json.dumps(original))
+                corrected['findings'][0]['evidence'] = {'path': 'inputs/design', 'lines': [1, 1]}
+                if drift:
+                    corrected['findings'][0]['id'] = 'different-finding'
+                return {'execution': 'ok'}, corrected
+            def validate(value):
+                if 'pointer' in value['findings'][0]['evidence']:
+                    raise ValueError('text requires lines')
+                return value
+            with self.subTest(drift=drift):
+                record, value = structured_call(self.run, role, 'original prompt', {}, call, validate, limit=1)
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(record['execution'], 'refused' if drift else 'ok')
+                if drift:
+                    self.assertIsNone(value)
+                    self.assertEqual(record['error'], 'resubmission changed finding set')
+                else:
+                    self.assertEqual(value['findings'][0]['id'], 'original-finding')
+                first = self.run / record['attempts'][0]['path']
+                self.assertEqual(read_json(first / 'response.json'), original)
+                self.assertEqual(read_json(first / 'execution.json')['execution'], 'malformed')
+                self.assertEqual((self.run / record['attempts'][1]['path'] / 'prompt.txt').read_text(), calls[1])
+
 
 class NativeRefusalClassificationTests(unittest.TestCase):
     def stream(self, *events):
