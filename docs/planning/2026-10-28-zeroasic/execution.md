@@ -516,3 +516,40 @@ The worker's correction notice is now waiting for native delivery. Source
 review and native success/refusal/cleanup verification remain prerequisites to
 integration of the production patch. No native invocation ran in this review
 turn; the two visual failures remain unclosed.
+
+
+### Native visual success and cleanup pass; captured placement route remains
+
+The corrected visual source `5bd99b05` passed independent re-review and was
+integrated through `662767d9`. Audit SHA256 is
+`35af829c3d7832150f04c69906f48dedee338738e09f9140569a341cbe82dc3a`.
+The audit was corrected to note that render_board re-raises KeyboardInterrupt
+after cleanup; it does not proceed to SVG plotting after renderer interruption.
+
+The four-control native run on `662767d9e4a62050c5d284dedd478f2aca56a464`
+exited 1 in 32.3 seconds: three controls passed and one failed. Real placement
+rendering through the enclosing /app route retained four candidate-bound
+images. Ordinary placement skipped rendering. The new timeout control also
+passed both phases: blocked real render/SVG child processes were gone before
+the enclosing executor exited, with no owned PID/start identities remaining.
+The shortened outer test deadline was eight seconds; recorded durations were
+8.164 seconds for the render phase and 8.064 for SVG. The SVG phase used authored
+PNG data only to reach the process-lifecycle boundary. This does not establish
+image quality or determinism. All 846 fixture files and raw failed evidence
+are retained under `visual-native-r1` beneath the host evidence root.
+
+The remaining explicit-refusal control imports the captured helper source from
+`/placement-tool`, not `/app`. Its outer executor completed, but the imaging
+route still attempted nested Bubblewrap and received the original namespace
+denial before reaching the deliberate renderer refusal. Its marker assertion
+correctly failed. An independent read-only review confirmed the exact route
+and its read-only `/placement-tool` and `/placement-request` mounts.
+
+Agent-697 has a ten-minute, thirty-round, source-only follow-up to recognize
+that exact existing placement view using the same parser and require both
+extra mounts read-only. Default custom-pad recognition stays /app-only. The
+imaging child must use the captured /placement-tool source for this route.
+No configurable profile, copied parser, public trust option or mount redesign
+is authorized. The prior failed run remains failed. Of the original 24 counted
+problems, 23 now have direct rerun evidence. Full strict, landing, accepted
+package and campaign acceptance remain open; campaign acceptance stays **0/4**.
