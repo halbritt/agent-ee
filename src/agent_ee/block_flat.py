@@ -127,7 +127,7 @@ def _component(item, instance, ref):
 
 
 def compose(root, intent, blocks, bindings, captured_libraries):
-    from .block_adaptation import _source, _local, _path
+    from .block_adaptation import _source, _local, _path, _mapping
     from .block_composition import native_models
     from .findings import safe_id
     _validate_flat_intent(intent)
@@ -149,10 +149,7 @@ def compose(root, intent, blocks, bindings, captured_libraries):
         source = _source(root, request['block'], request['composition'])
         plan = source['_composition']
         mapping = request['requirements']
-        if (not isinstance(mapping, dict) or set(mapping) != {r['id'] for r in source['requirements']}
-                or any(not isinstance(checks, list) or not checks or any(not isinstance(c, str) or not c for c in checks)
-                       for checks in mapping.values())):
-            raise ValueError('every source requirement needs a fresh check mapping')
+        _mapping(source, mapping)
         bound = bindings[ident]; _bindings(plan, bound)
         references = _references(plan, request['reference_ranges'])
         ranges = request['reference_ranges']
@@ -211,7 +208,7 @@ def compose(root, intent, blocks, bindings, captured_libraries):
 
 def read_instance(root, record):
     """Validate immutable flat mapping; current design remains free to differ."""
-    from .block_adaptation import _local, _path, _source
+    from .block_adaptation import _local, _path, _source, _mapping
     from .findings import safe_id
     exact_keys(record, 'schema id block block_id version sha256 sheet instance_path bindings requirements '
                'composition reference_ranges references source_parts native_bindings')
@@ -240,8 +237,7 @@ def read_instance(root, record):
         if native[port] not in (name, '/' + name):
             raise ValueError('native binding differs from flat label naming')
     _bindings(plan, native)
-    if not isinstance(record['requirements'], dict) or set(record['requirements']) != {r['id'] for r in source['requirements']}:
-        raise ValueError('every block requirement needs a board check mapping')
+    _mapping(source, record['requirements'])
     return record, source
 
 

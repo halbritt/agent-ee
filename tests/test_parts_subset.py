@@ -552,3 +552,71 @@ class NativePartsPipelineTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ExactReferenceSetTests(unittest.TestCase):
+    def fixture(self):
+        import copy, uuid
+        document,graph=comparison_fixture()
+        original=graph['components']['R1'];graph['components']={}
+        parts=[]
+        for i in range(1,18):
+            ref='R'+str(i);component=copy.deepcopy(original)
+            component.update(reference=ref,uuid=str(uuid.UUID(int=i)))
+            graph['components'][ref]=component
+            part=copy.deepcopy(document['parts'][0]);part.update(id=ref,instances=[dict(sheet='/',reference=ref)])
+            parts.append(part)
+        document['parts']=parts
+        return document,graph
+
+    def selector(self,graph,refs):
+        return [dict(sheet=graph['components'][r]['sheet'],reference=r,uuids=sorted(graph['components'][r]['uuid'].split())) for r in sorted(refs)]
+
+    def test_three_exact_roles_keep_full_seventeen_component_inventory(self):
+        import copy
+        from agent_ee.parts_subset import compare_inventory
+        full,graph=self.fixture()
+        for a,b in ((1,8),(8,15),(15,18)):
+            refs={'R'+str(i) for i in range(a,b)}
+            document=copy.deepcopy(full);document['parts']=[p for p in full['parts'] if p['id'] in refs]
+            scope=self.selector(graph,refs)
+            report=compare_inventory(document,graph,[],reference_scope=scope)
+            self.assertEqual(report['outcome'],'pass')
+            self.assertEqual(report['counts']['native'],17)
+            self.assertEqual(report['counts']['selected_native'],b-a)
+            self.assertEqual(len(report['native_inventory']['components']),17)
+            self.assertEqual(len(report['outside_reference_set']),17-(b-a))
+            self.assertEqual(compare_inventory(document,graph,[])['outcome'],'defect')
+
+    def test_selected_absence_uuid_identity_dnp_and_provenance_still_refuse(self):
+        import copy,uuid
+        from agent_ee.parts_subset import compare_inventory
+        full,graph=self.fixture();document=copy.deepcopy(full);document['parts']=document['parts'][:1]
+        scope=self.selector(graph,['R1'])
+        for kind in ('missing','uuid','footprint','identity','dnp','occurrence','multiunit'):
+            changed=copy.deepcopy(graph)
+            if kind=='missing':changed['components'].pop('R1')
+            elif kind=='uuid':changed['components']['R1']['uuid']=str(uuid.UUID(int=90))
+            elif kind=='footprint':changed['components']['R1']['footprint']='Wrong:Other'
+            elif kind=='identity':changed['components']['R1']['properties']['MPN']='wrong'
+            elif kind=='dnp':changed['components']['R1']['populated']=False
+            elif kind=='occurrence':changed['components']['R1']['sheet']='/'+str(uuid.UUID(int=90))+'/'
+            else:changed['components']['R1']['uuid']+=' '+str(uuid.UUID(int=91))
+            with self.subTest(kind=kind):self.assertEqual(compare_inventory(document,changed,[],reference_scope=scope)['outcome'],'defect')
+        report=compare_inventory(document,graph,[],[dict(part_id='R1',reason='missing')],reference_scope=scope)
+        self.assertEqual(report['outcome'],'unknown')
+        graph['components']['R1']['uuid']+=' '+str(uuid.UUID(int=91))
+        self.assertEqual(compare_inventory(document,graph,[],reference_scope=self.selector(graph,['R1']))['outcome'],'pass')
+
+    def test_selector_is_exact_not_inferred_from_manifest_or_observed_rows(self):
+        import copy
+        from agent_ee.parts_subset import compare_inventory,reference_set,report_scope_matches
+        full,graph=self.fixture();scope=self.selector(graph,['R1']);document=copy.deepcopy(full);document['parts']=document['parts'][:1]
+        for selected in ([],scope+scope,[dict(scope[0],sheet='/alias/')],[dict(scope[0],uuids=[])], [dict(scope[0],uuids=scope[0]['uuids']*2)]):
+            with self.subTest(selected=selected),self.assertRaises(ValueError):reference_set(selected)
+        with self.assertRaisesRegex(ValueError,'exactly'):compare_inventory(full,graph,[],reference_scope=scope)
+        report=compare_inventory(document,graph,[],reference_scope=scope)
+        other=self.selector(graph,['R2']);report['reference_set']=other
+        from agent_ee.storage import identity
+        report['reference_set_sha256']=identity(other)
+        self.assertFalse(report_scope_matches(report,other))

@@ -315,3 +315,53 @@ auto-unconnected singleton and `+no_connect` witness before native admission.
 These tests do not qualify KiCad export behavior or an acquisition role. The retained acquisition
 source capture and its open obligations are described in
 [the source record](qualification/acquisition-block-source-2026-10-28.md).
+
+## Exact role membership and deferred requirements
+
+`parts_subset` optionally accepts `reference_set`: a sorted, nonempty list of
+`{"sheet":"/native/occurrence/","reference":"U1","uuids":["unit-uuid"]}`.
+Occurrence segments and every placed-unit UUID must be canonical UUIDs. Root
+occurrence is `/`. The complete manifest declaration must equal this set;
+all selected units must match the native export. The report retains the full
+native inventory/hash and sheet census, and reports selected and outside counts
+separately. Outside components are outside this predicate, not qualified.
+Omitting the parameter preserves whole-inventory grading, including unexpected
+populated components. Ambiguous global parsing or exporter omissions still block.
+
+Explicit-instance reference blocks require exact real-manifest membership and
+exact passing native rows for every declared occurrence/reference/unit. A source
+membership requirement can be credited only by those independently checked scoped
+parts results. A full-board manifest, one matching row or a different role cannot
+supply that credit. Both source membership and interface requirements still need
+a complete, ordinarily reviewed and sealed passing run. No such acquisition run
+is created by these changes.
+
+A requirement may declare `verification_phase` as `source` or `adaptation`;
+absence means `source`. Source qualification reports adaptation requirements as
+`mandatory_on_adaptation` / `not_evaluated`, never covered. They retain nonempty
+check contracts, captured source citations and explicit conditions. Ordinary
+pending requirements still prevent source qualification. Adapting a block with
+legacy pending requirements refuses; authors need a new version with recorded
+explicit dispositions. Historical versions are not rewritten or promoted.
+
+Every flat and hierarchical instance mapping must name the exact union of source
+and adaptation IDs, with nonempty unique fresh check lists. Adaptation requirements
+always have acceptance intent and require scope/3 executable coverage. Readers
+and the existing provenance capability repeat these checks. Declared check
+families and parameters must survive rebinding of captured reference, occurrence,
+net and source-file identities. Interface/interval assets must preserve their
+invariants/algebra and bind the current requirement ID and block source locator.
+Fresh scoped parts manifests must preserve allocation and part identity and use
+unit UUIDs from the authored current sheet. Checker names alone, unrelated ERC,
+netlist-only or provenance checks do not discharge deferred obligations. Existing
+capability/baseline compilation remains authoritative; no source run result is
+copied into board evidence.
+
+This transports immutable conditions; it does not decide whether a new application
+satisfies them. The finite acquisition role consumer remains a separate missing
+edge. `acquisition_prepare` still accepts its original strict interface and does
+not consume these roles. Its unknown role-selection inputs remain refused. A later
+consumer must verify the selected context, including zero external J2 load and no
+external drive, against the source-bound power/rail/bus conditions before seal.
+Return-path and engineering judgments remain existing qualification obligations;
+there is no `judgment` check kind, and a check template is not a judgment result.

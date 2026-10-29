@@ -97,9 +97,7 @@ def _instance(root, rel):
         canonical = [p['name'] for p in source['_composition']['ports'] if p['alias_of'] is None]
         if len({bindings[p] for p in canonical}) != len(canonical):
             raise ValueError('composition bindings cannot merge distinct source nets')
-    mapping = record['requirements']
-    if not isinstance(mapping, dict) or set(mapping) != {r['id'] for r in source['requirements']}:
-        raise ValueError('every block requirement needs a board check mapping')
+    _mapping(source, record['requirements'])
     return record, source
 
 
@@ -107,11 +105,146 @@ def _requirement_intent(source, requirement):
     # A captured netlist-only source requirement is informational by contract.
     # Preserve this distinction when composing a block; it cannot become a
     # synthetic acceptance witness just because it was instantiated.
+    if requirement.get('verification_phase') == 'adaptation':
+        return 'acceptance'
     if '_composition' in source:
         kinds = {c['id']: c['kind'] for c in source.get('check_set', [])}
         if requirement['checks'] and all(kinds.get(c) == 'netlist' for c in requirement['checks']):
             return 'informational'
     return 'acceptance'
+
+
+def _mapping(source, mapping):
+    if (source.get('pending_requirements') or not isinstance(mapping, dict)
+            or set(mapping) != {r['id'] for r in source['requirements']}):
+        raise ValueError('every source and adaptation requirement needs a complete fresh check mapping; pending cannot be dropped')
+    for checks in mapping.values():
+        if (not isinstance(checks, list) or not checks or any(not isinstance(c,str) or not c for c in checks)
+                or len(set(checks)) != len(checks)):
+            raise ValueError('requirement mappings require nonempty unique check IDs')
+
+
+def _rebound(value, names, requirements, checks):
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            target = names.get(key,key)
+            if key in ('requirement','requirement_id'):
+                result[target] = requirements.get(item,item)
+            elif key.endswith('_check'):
+                result[target] = checks.get(item,item)
+            elif key == 'requirement_sources':
+                result[target] = {requirements.get(r,r):_rebound(v,names,requirements,checks) for r,v in item.items()}
+            else:
+                result[target] = _rebound(item,names,requirements,checks)
+        if len(result) != len(value):
+            raise ValueError('ambiguous rebinding aliases')
+        return result
+    if isinstance(value, list):
+        return [_rebound(v,names,requirements,checks) for v in value]
+    return names.get(value,value) if isinstance(value,str) else value
+
+
+def _fresh_contract(root, source, record, scope, files, native_id):
+    """Replay declared criteria under the adapter's captured subject bindings."""
+    declared = {c['id']:c for c in source.get('check_set', [])}
+    if not declared:
+        return  # Historical blocks without templates keep their existing semantics.
+    targets = {c['id']:c for c in scope['checks']}
+    requirements = {r['id']:record['id']+'-'+r['id'] for r in source['requirements']}
+    names = {}
+    checks = {}
+    for req in source['requirements']:
+        old, fresh = req['checks'], record['requirements'][req['id']]
+        if len(old) != len(fresh):
+            raise ValueError('fresh mapping must preserve every declared check contract')
+        for before, after in zip(old,fresh):
+            if before not in declared or (before in checks and checks[before] != after):
+                raise ValueError('source check contract missing or ambiguously mapped')
+            checks[before] = after
+    if len(set(checks.values())) != len(checks):
+        raise ValueError('distinct declared check contracts cannot collapse into one check')
+    block_path = str(PurePosixPath(record['block'])/'block.json')
+    names.update({p:str(PurePosixPath(record['block'])/p) for p in source['files']})
+    if '_composition' in source:
+        plan=source['_composition']
+        if record.get('schema') == 'agent-ee.flat-block-instance/1':
+            from .block_flat import _library_id
+            from .reference_blocks import sheet_symbols
+            for occurrence in plan['sources']:
+                for symbol in sheet_symbols((_local(root,record['block'])/occurrence['sheet']).read_bytes(),occurrence['uuid_path']).values():
+                    names[symbol['lib_id']]=_library_id(record['id'],symbol['lib_id'])
+        for occurrence in plan['sources']:
+            names[occurrence['uuid_path']]=record['instance_path']
+            for old, delivered in occurrence['references'].items():
+                names[old]=record.get('references',{}).get(delivered,delivered)
+        for port in plan['ports']:
+            names[port['net_name']]=record.get('native_bindings',record['bindings'])[port['name']]
+    else:
+        names['/']=record['instance_path']
+        names.update({p['net_name']:record['bindings'][p['name']] for p in source['boundary_ports']})
+    # New assets must retain the exact algebra/invariants, changing only captured
+    # instance bindings and the fresh requirement citations required by their APIs.
+    for old, fresh in list(checks.items()):
+        original, actual = declared[old], targets.get(fresh,{})
+        if actual.get('kind') != original['kind'] or actual.get('kind') == 'block_provenance':
+            raise ValueError('fresh check family differs from declared source contract')
+        params=copy.deepcopy(original['params'])
+        if 'netlist_check' in params:
+            if checks.get(params['netlist_check'],native_id) != native_id:
+                raise ValueError('declared netlist prerequisite mapping differs')
+            checks[params['netlist_check']]=native_id
+        expected=_rebound(params,names,requirements,checks);observed=copy.deepcopy(actual.get('params',{}))
+        if original['kind'] == 'parts_subset':
+            from .parts_manifest import load_manifest
+            from .reference_blocks import sheet_symbols
+            source_parts=load_manifest(root,str(PurePosixPath(record['block'])/params['manifest']))
+            board_parts=load_manifest(root,observed['manifest'])
+            fields=('id','role','required','lib_id','footprint','lcsc','mpn','manufacturer','package','instances')
+            def allocation(document, rebound):
+                rows=[{key:part[key] for key in fields} for part in document['parts']]
+                if rebound:
+                    rows=_rebound(rows,names,requirements,checks)
+                return sorted(rows,key=lambda r:r['id'])
+            if (source_parts['property_fields'] != board_parts['property_fields']
+                    or allocation(source_parts,True) != allocation(board_parts,False)):
+                raise ValueError('fresh membership changes captured allocation/identity contract')
+            if 'reference_set' not in params:
+                raise ValueError('role membership template requires exact reference_set')
+            authored=sheet_symbols(_local(root,record['sheet']).read_bytes(),record['instance_path'])
+            expected['reference_set']=[]
+            for row in params['reference_set']:
+                reference=names.get(row['reference'],row['reference'])
+                if reference not in authored:
+                    raise ValueError('adapted membership reference absent from authored current sheet')
+                expected['reference_set'].append(dict(sheet=record['instance_path'],reference=reference,
+                    uuids=sorted(authored[reference]['uuids'])))
+            expected['reference_set'].sort(key=lambda r:(r['sheet'],r['reference']))
+            observed['manifest']=expected['manifest']
+        for field in ('contract','assertions'):
+            if field not in params:
+                continue
+            before=_read(_local(root,str(PurePosixPath(record['block'])/params[field])))
+            after=_read(_local(root,observed[field]))
+            before=_rebound(before,names,requirements,checks)
+            if field=='contract':
+                for row in before['invariants']:
+                    rid=row['requirement']
+                    row['source']=dict(path=block_path,locator='requirements/'+rid.removeprefix(record['id']+'-'),sha256=digest(_local(root,block_path)))
+            else:
+                before['requirement_sources']={requirements[r['id']]:dict(path=block_path,
+                    locator='requirements/'+r['id'],sha256=digest(_local(root,block_path)))
+                    for r in source['requirements'] if requirements[r['id']] in before.get('requirement_sources',{})}
+            if before != after:
+                raise ValueError('fresh check asset changes declared criteria/source/conditions')
+            observed[field]=expected[field]
+        if observed != expected:
+            raise ValueError('fresh check parameters differ from rebound declared criteria')
+        from .capabilities import describe_check
+        descriptor=describe_check(actual,check_specs=scope['checks'],files=files,scope=scope,inputs=root)
+        requirement=next(r for r in source['requirements'] if old in r['checks'])
+        if descriptor['status'] != 'supported' or (_requirement_intent(source,requirement)=='acceptance' and not descriptor['can_evaluate_bound']):
+            raise ValueError('fresh declared check has no executable acceptance coverage')
 
 
 def capability(params, scope, files, inputs, check_id):
@@ -120,6 +253,8 @@ def capability(params, scope, files, inputs, check_id):
     if inputs is None or rel not in files:
         raise ValueError('instance record must be captured')
     record, source = _instance(inputs, rel)
+    if any(r.get('verification_phase') == 'adaptation' for r in source['requirements']) and scope.get('schema') != 'agent-ee.scope/3':
+        raise ValueError('adaptation-phase requirements require fresh executable scope/3 acceptance')
     if 'composition' in record and scope.get('schema') != 'agent-ee.scope/3':
         raise ValueError('selected-reference composition requires scope/3')
     dependencies = [rel, str(PurePosixPath(record['block']) / 'block.json')]
@@ -153,6 +288,7 @@ def capability(params, scope, files, inputs, check_id):
                 raise ValueError('native source requirement must map to fresh native netlist checks')
         if expected not in requirements:
             raise ValueError('block requirement mapping differs from board baseline')
+    _fresh_contract(inputs, source, record, scope, files, params['netlist_check'])
     predicates = ['block-boundary:' + p['name'] for p in source['boundary_ports']]
     if '_composition' in source:
         predicates += (['block-flat:component-adaptations', 'block-flat:pin-net-adaptations']
@@ -174,6 +310,7 @@ def instantiate(root, scope, request):
     if scope.get('schema') not in ('agent-ee.scope/2', 'agent-ee.scope/3'):
         raise ValueError('block instances require an immutable scope/2 or scope/3 baseline')
     source = _source(root, request['block'], request.get('composition'))
+    _mapping(source, request['requirements'])
     if 'composition' in request and scope['schema'] != 'agent-ee.scope/3':
         raise ValueError('selected-reference composition requires scope/3')
     sheet = _local(root, request['sheet'])

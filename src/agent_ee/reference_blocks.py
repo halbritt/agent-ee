@@ -160,6 +160,9 @@ def _optional_structure(record):
         bound = {c for req in record['requirements'] for c in req['checks']}
         if bound != ids:
             raise ValueError('every check-set check must trace to a block requirement')
+    for req in record['requirements']:
+        if req.get('verification_phase') == 'adaptation' and not set(req['checks']) <= {c['id'] for c in record.get('check_set', [])}:
+            raise ValueError('adaptation requirements need complete declared fresh-check contracts')
     ids = {r['id'] for r in record['requirements']}
     if 'pending_requirements' in record:
         _list(record['pending_requirements'])
@@ -253,9 +256,13 @@ def _structure(record):
         raise ValueError('missing block requirements')
     ids = set()
     for req in record['requirements']:
-        _object(req, ('id', 'statement', 'checks'), ('source', 'conditions'))
+        _object(req, ('id', 'statement', 'checks'), ('source', 'conditions', 'verification_phase'))
         _text(req['id'])
         _text(req['statement'])
+        if req.get('verification_phase', 'source') not in ('source', 'adaptation'):
+            raise ValueError('unknown requirement verification_phase')
+        if req.get('verification_phase') == 'adaptation' and not {'source', 'conditions'} <= req.keys():
+            raise ValueError('adaptation requirement needs captured source and explicit conditions')
         if 'source' in req:
             _source(req['source'], files)
         if 'conditions' in req:
@@ -371,6 +378,16 @@ def _reference_set(root, record, parts):
             used.add(('symbol', symbols[ref]['lib_id']))
             if symbols[ref]['footprint']:
                 used.add(('footprint', symbols[ref]['footprint']))
+    if parts['schema'] != DRAFT_PARTS:
+        declared = {(i['sheet'], i['reference']) for p in parts['parts'] for i in p['instances']}
+        expected = {(sheet, ref) for ref, (sheet, _) in members.items()}
+        if declared != expected:
+            raise ValueError('real parts manifest must exactly cover block instance references')
+        for part in parts['parts']:
+            for instance in part['instances']:
+                symbol = members[instance['reference']][1]
+                if part['lib_id'] != symbol['lib_id'] or part['footprint'] != symbol['footprint']:
+                    raise ValueError('parts CAD identity differs from captured block reference')
     if 'libraries' in record and {(l['kind'], l['lib_id']) for l in record['libraries']} != used:
         raise ValueError('library inventory differs from the reference set symbols and footprints')
     if parts['schema'] == DRAFT_PARTS:
@@ -436,6 +453,33 @@ def _native_block_subject(run, manifest, ref, record, native_id, checks):
             uuid, = field(child, 'uuid', 1)
             walk(child_path, instance + uuid + '/')
     walk(scope['schematic'], '/')
+    exact = None
+    if 'instances' in record:
+        # Reconstruct every selected unit from each actual captured occurrence.
+        hierarchy = {}
+        def inventory(path, occurrence):
+            hierarchy.setdefault(path, set()).add(occurrence)
+            ast = parse_sexpr((run / 'inputs' / path).read_bytes())
+            for child in children(ast, 'sheet'):
+                props = {p[1]:p[2] for p in children(child,'property')}
+                target = posixpath.normpath((PurePosixPath(path).parent / props['Sheetfile']).as_posix())
+                inventory(target, occurrence + field(child,'uuid',1)[0] + '/')
+        inventory(scope['schematic'], '/')
+        exact = []
+        for instance in record['instances']:
+            captured = ref['files'][instance['sheet']]
+            path = instance['uuid_path']
+            if (path not in hierarchy.get(captured, set()) or captured not in files
+                    or captured not in native.get('details',{}).get('schematic_files',[])):
+                return None
+            members = sheet_symbols((run / 'inputs' / captured).read_bytes(), path)
+            for reference in instance['references']:
+                if reference not in members:
+                    return None
+                exact.append(dict(sheet=path, reference=reference, uuids=sorted(members[reference]['uuids'])))
+        from .parts_subset import reference_set
+        exact = reference_set(sorted(exact, key=lambda r:(r['sheet'],r['reference'])))
+        occurrences = {r['sheet'] for r in exact}
     symbols = {field(symbol, 'uuid', 1)[0]
                for symbol in children(parse_sexpr((run / 'inputs' / sheet).read_bytes()), 'symbol')}
     xml = ET.parse(run / 'work' / native_id / 'design.xml')
@@ -444,7 +488,16 @@ def _native_block_subject(run, manifest, ref, record, native_id, checks):
     exported = {node.get('tstamps') for node in xml.findall('./design/sheet')}
     if not occurrences or not occurrences <= exported:
         return None
-    return occurrences, symbols
+    if exact is not None:
+        from .native_netlist import read_native_inventory
+        graph = read_native_inventory(run / 'work' / native_id / 'design.xml')
+        for row in exact:
+            component = graph['components'].get(row['reference'])
+            if (component is None or component['sheet'] != row['sheet']
+                    or sorted(component['uuid'].split()) != row['uuids']):
+                return None
+        symbols = {u for r in exact for u in r['uuids']}
+    return occurrences, symbols, exact
 
 
 def _native_requirement_coverage(run, manifest, ref, record, req, checks):
@@ -461,18 +514,21 @@ def _native_requirement_coverage(run, manifest, ref, record, req, checks):
         subject = _native_block_subject(run, manifest, ref, record, native_id, checks)
         if subject is None:
             return False
-        occurrences, symbols = subject
+        occurrences, symbols, exact = subject
         contract = load_contract_unverified(run / 'inputs', params['contract'])
         expected = {i['id'] for i in contract['invariants'] if i['requirement'] == req['id']}
         witnesses = [i for i in checks[cid]['details']['invariants']
                      if i['expected']['requirement'] == req['id']]
         if not expected or {i['id'] for i in witnesses} != expected:
             return False
+        selected = {(r['sheet'],r['reference']):r['uuids'] for r in exact} if exact is not None else None
         for witness in witnesses:
             components = witness['actual'].get('components', {})
             if (witness['status'] != 'satisfied' or not components or
-                    any(not n or n.get('sheet') not in occurrences or n.get('uuid') not in symbols
+                    any(not n or n.get('sheet') not in occurrences or not n.get('uuid') or not set(n.get('uuid','').split()) <= symbols
                         for n in components.values())):
+                return False
+            if selected is not None and any(selected.get((n.get('sheet'),n.get('reference'))) != sorted(n.get('uuid','').split()) for n in components.values()):
                 return False
     return True
 
@@ -497,13 +553,33 @@ def _parts_coverage(run, manifest, ref, record, checks):
         subject = _native_block_subject(run, manifest, ref, record, native_id, checks)
         if subject is None:
             continue
-        occurrences, symbols = subject
+        occurrences, symbols, exact = subject
         if report.get('native_xml_sha256') != digest(run / 'work' / native_id / 'design.xml'):
+            continue
+        if exact is not None:
+            from .storage import identity
+            if (spec['params'].get('reference_set') != exact or report.get('reference_set') != exact
+                    or report.get('reference_set_sha256') != identity(exact)):
+                continue
+            expected = {(r['sheet'],r['reference'],tuple(r['uuids'])) for r in exact}
+            observed = {(r.get('sheet'),r.get('reference'),tuple(sorted(r.get('uuid','').split())))
+                        for r in report.get('matches',[]) if r.get('status') == 'pass'}
+            if observed == expected and len(report.get('matches',[])) == len(expected):
+                covered.append(spec['id'])
+            continue
+        if 'reference_set' in spec['params']:
             continue
         if any(m.get('status') == 'pass' and m.get('sheet') in occurrences and m.get('uuid') in symbols
                for m in report.get('matches', [])):
             covered.append(spec['id'])
     return covered
+
+
+def _membership_requirement(record, requirement, specs, exact_parts):
+    kinds = {c['id']:c['kind'] for c in specs}
+    return ('instances' in record and requirement.get('verification_phase','source') == 'source'
+            and bool(requirement['checks']) and all(c in exact_parts and kinds.get(c) == 'parts_subset'
+                                                    for c in requirement['checks']))
 
 
 def validate_block(directory, run_locations=None, *, repository_locations=None, host=None):
@@ -549,10 +625,13 @@ def validate_block(directory, run_locations=None, *, repository_locations=None, 
                 verify_evidence(run, result['checks'], required=True)
                 requirements = {r['id']: r for r in baseline['requirements']}
                 checks = {c['id']: c for c in result['checks']}
+                exact_parts = set(_parts_coverage(run, manifest, ref, record, checks))
                 parts_evidence.extend(dict(run_id=rid, check_id=cid,
                     manifest_sha256=record['files'][record['parts_manifest']])
-                    for cid in _parts_coverage(run, manifest, ref, record, checks))
+                    for cid in sorted(exact_parts))
                 for req in record['requirements']:
+                    if req.get('verification_phase','source') == 'adaptation':
+                        continue
                     bound = requirements.get(req['id'])
                     if bound is None or bound.get('intent', 'acceptance') != 'acceptance':
                         continue
@@ -566,9 +645,10 @@ def validate_block(directory, run_locations=None, *, repository_locations=None, 
                                     dict(path=ref['files'][source['path']], locator=source['locator']))
                         if bound.get('source') != expected:
                             raise ValueError('block requirement source differs from baseline')
+                    membership = _membership_requirement(record, req, manifest['scope']['checks'], exact_parts)
                     if all(checks.get(c, {}).get('execution') == 'ok' and
-                           checks[c]['outcome'] == 'pass' for c in req['checks']) and _native_requirement_coverage(
-                               run, manifest, ref, record, req, checks):
+                           checks[c]['outcome'] == 'pass' for c in req['checks']) and (membership or _native_requirement_coverage(
+                               run, manifest, ref, record, req, checks)):
                         covered.add(req['id'])
             runs.append(dict(run_id=rid, status='passing' if passing else 'unverified'))
     # Detect mutation at the read boundary; trusted-local consistency, not a
@@ -582,15 +662,19 @@ def validate_block(directory, run_locations=None, *, repository_locations=None, 
     unresolved = [l['kind'] + ':' + l['lib_id'] for l in record.get('libraries', [])
                   if l['origin'] == 'unresolved' or l['sha256'] is None]
     draft_parts = _read(root / record['parts_manifest'])['schema'] == DRAFT_PARTS
-    complete = (declared and not pending and not unresolved and not draft_parts and
+    source_ids = {r['id'] for r in record['requirements'] if r.get('verification_phase','source') == 'source'}
+    deferred = [dict(requirement=r['id'], status='mandatory_on_adaptation', evaluation='not_evaluated',
+                     source=r['source'], conditions=r['conditions'], checks=r['checks'])
+                for r in record['requirements'] if r.get('verification_phase') == 'adaptation']
+    complete = (bool(source_ids) and declared and not pending and not unresolved and not draft_parts and
                 all(c['status'] == 'verified' for c in citations))
     return dict(schema='agent-ee.block-report/1', block_id=record['id'],
-                status='verified' if complete and parts_evidence and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
-                pending_requirements=pending, unresolved_libraries=unresolved, draft_parts=draft_parts,
+                status='verified' if complete and parts_evidence and runs and all(r['status'] == 'passing' for r in runs) and covered == source_ids else 'unverified',
+                pending_requirements=pending, deferred_requirements=deferred, unresolved_libraries=unresolved, draft_parts=draft_parts,
                 external_sources=citations,
                 covered_requirements=sorted(covered), runs=runs,
                 parts_membership=dict(status='verified' if parts_evidence else 'unverified', evidence=parts_evidence),
-                missing_requirements=sorted({r['id'] for r in record['requirements']} - covered),
+                missing_requirements=sorted(source_ids - covered),
                 undeclared_ports=[p['name'] for p in record['boundary_ports']
                                   if p['current_a'] is None or p['voltage_domain'] is None],
                 limitations=['Provenance only; adaptations require fresh board checks.',

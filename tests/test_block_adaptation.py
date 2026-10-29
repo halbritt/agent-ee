@@ -395,3 +395,106 @@ class NativeAdaptationTests(unittest.TestCase):
                     check_block_provenance(ctx)
                 self.assertNotEqual(ctx.result['outcome'], 'pass')
                 xml.write_bytes(original)
+
+
+class DeferredAdaptationTests(unittest.TestCase):
+    def prepared(self,root):
+        scope,request=fixture(root);directory=root/'blocks/rc';record=read_json(directory/'block.json')
+        (directory/'requirements.md').write_text('Source-only RC response contract; deferred check must run at25C on every new board.')
+        record['files']['requirements.md']=digest(directory/'requirements.md')
+        record['requirements'].append(dict(id='later',statement='The board response at2ms shall be within the declared bounds',
+            source=dict(path='requirements.md',locator='line1'),conditions=['25C'],verification_phase='adaptation',checks=['old-later']))
+        later=copy.deepcopy(scope['checks'][1]);later['id']='later'
+        later['params']['measurements']=[dict(name='vout_2ms',at_ms=2,min=.8,max=.9)]
+        scope['checks'].append(later)
+        record['check_set']=[dict(id='old-response',kind='rc_transient',params=copy.deepcopy(scope['checks'][1]['params'])),
+                             dict(id='old-later',kind='rc_transient',params=copy.deepcopy(later['params']))]
+        request['requirements']['later']=['later']
+        write_json(directory/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(directory/'block-contract.json');write_json(directory/'block.json',record)
+        return scope,request,record
+
+    def test_source_and_deferred_both_enter_fresh_acceptance_with_exact_criteria(self):
+        from agent_ee.block_adaptation import capability,_instance
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);scope,request,record=self.prepared(root)
+            result=instantiate(root,scope,request)
+            self.assertEqual({r['id'] for r in result['baseline']['requirements']},{'native','filter-response','filter-later','filter-boundary'})
+            self.assertEqual(next(r for r in result['baseline']['requirements'] if r['id']=='filter-later')['intent'],'acceptance')
+            files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+            capability(dict(instance='instance.json',netlist_check='netlist'),result,files,root,'provenance')
+            for mutate in ('family','limit','informational','mapping'):
+                changed=copy.deepcopy(result)
+                if mutate=='family':changed['checks'][2]=dict(id='later',kind='netlist',params={})
+                elif mutate=='limit':changed['checks'][2]['params']['measurements'][0]['max']=5
+                elif mutate=='informational':next(r for r in changed['baseline']['requirements'] if r['id']=='filter-later')['intent']='informational'
+                else:next(r for r in changed['baseline']['requirements'] if r['id']=='filter-later')['checks']=['netlist']
+                with self.subTest(mutate=mutate),self.assertRaises(ValueError):capability(dict(instance='instance.json',netlist_check='netlist'),changed,files,root,'provenance')
+            instance=read_json(root/'instance.json');instance['requirements'].pop('later');write_json(root/'instance.json',instance)
+            with self.assertRaisesRegex(ValueError,'every source and adaptation'):_instance(root,'instance.json')
+
+    def test_bad_union_and_legacy_pending_refuse_before_any_child_write(self):
+        for change in ('missing','extra','duplicate','pending'):
+            with self.subTest(change=change),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);scope,request,record=self.prepared(root);before=(root/request['sheet']).read_bytes()
+                if change=='missing':request['requirements'].pop('later')
+                elif change=='extra':request['requirements']['invented']=['later']
+                elif change=='duplicate':request['requirements']['later']=['later','later']
+                else:
+                    record['pending_requirements']=[dict(id='unresolved',statement='Unknown constraint',source=dict(path='requirements.md',locator='line1'),conditions=['25C'],blocked_by='missing source')]
+                    directory=root/'blocks/rc';write_json(directory/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(directory/'block-contract.json');write_json(directory/'block.json',record)
+                with self.assertRaises(ValueError):instantiate(root,scope,request)
+                self.assertEqual((root/request['sheet']).read_bytes(),before)
+                self.assertFalse((root/'instance.json').exists())
+
+    def test_check_and_requirement_ids_can_overlap_without_losing_fresh_source_binding(self):
+        from agent_ee.block_adaptation import _rebound
+        value=dict(requirement='thermal',requirement_id='thermal',netlist_check='thermal',requirement_sources={'thermal':dict(path='original.md',locator='line1')})
+        result=_rebound(value,{'original.md':'block/original.md'},{'thermal':'instance-thermal'},{'thermal':'fresh-thermal-check'})
+        self.assertEqual(result['requirement'],'instance-thermal')
+        self.assertEqual(result['requirement_id'],'instance-thermal')
+        self.assertEqual(result['netlist_check'],'fresh-thermal-check')
+        self.assertEqual(set(result['requirement_sources']),{'instance-thermal'})
+
+    def test_declared_interval_asset_algebra_and_current_requirement_citation_both_survive(self):
+        from agent_ee.storage import identity
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);scope,request,record=self.prepared(root);directory=root/'blocks/rc'
+            source=dict(schema='agent-ee.interval-assertions/1',correlation='shared-symbol/independent-parameters',
+                parameters={'v':dict(source='declared',requirement='later',unit='V',min='3.2 V',max='3.4 V'), 'limit':dict(source='declared',requirement='later',unit='V',nominal='3.5 V')},
+                assertions=[dict(id='rail',requirement='later',lhs='v',op='<=',rhs='limit',unit='V')],
+                requirement_sources={'later':dict(path='requirements.md',locator='line1',sha256=digest(directory/'requirements.md'))})
+            write_json(directory/'assertions.json',source);record['files']['assertions.json']=digest(directory/'assertions.json')
+            record['check_set'][1]=dict(id='old-later',kind='interval_assertions',params=dict(assertions='assertions.json'))
+            write_json(directory/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(directory/'block-contract.json');write_json(directory/'block.json',record)
+            current=copy.deepcopy(source)
+            current['parameters']['v']['requirement']='filter-later';current['assertions'][0]['requirement']='filter-later'
+            current['requirement_sources']={'filter-later':dict(path='blocks/rc/block.json',locator='requirements/later',sha256=digest(directory/'block.json'))}
+            write_json(root/'fresh-assertions.json',current)
+            scope['checks'][2]=dict(id='later',kind='interval_assertions',params=dict(assertions='fresh-assertions.json'))
+            result=instantiate(root,scope,request)
+            self.assertEqual(next(r for r in result['baseline']['requirements'] if r['id']=='filter-later')['intent'],'acceptance')
+            from agent_ee.block_adaptation import capability
+            files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+            current['assertions'][0]['rhs']='9 V';write_json(root/'fresh-assertions.json',current);files['fresh-assertions.json']=digest(root/'fresh-assertions.json')
+            with self.assertRaisesRegex(ValueError,'asset changes'):capability(dict(instance='instance.json',netlist_check='netlist'),result,files,root,'provenance')
+
+    def test_fresh_membership_contract_replays_real_parts_and_authored_unit_scope(self):
+        from tests.test_parts_subset import captured_fixture
+        from tests.test_native_binding import native_graph
+        from agent_ee.block_adaptation import _fresh_contract
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);document=captured_fixture(self,root);(root/'block').mkdir()
+            write_json(root/'block/parts.json',document)
+            source=dict(files={'parts.json':digest(root/'block/parts.json')},requirements=[dict(id='members',statement='Exact allocated parts',checks=['old-parts'])],boundary_ports=[],
+                check_set=[dict(id='old-parts',kind='parts_subset',params=dict(manifest='parts.json',netlist_check='old-netlist',requirement_id='members',reference_set=[dict(sheet='/',reference='R1',uuids=native_graph()['components']['R1']['uuid'].split())]))])
+            write_json(root/'block/block.json',source)
+            document['declaration_source']=dict(path='block/block.json',locator='requirements/members',sha256=digest(root/'block/block.json'))
+            write_json(root/'fresh-parts.json',document)
+            record=dict(id='filter',block='block',sheet='binding.kicad_sch',instance_path='/',bindings={},requirements={'members':['new-parts']})
+            params=dict(manifest='fresh-parts.json',netlist_check='netlist',requirement_id='filter-members',reference_set=source['check_set'][0]['params']['reference_set'])
+            scope=dict(schema='agent-ee.scope/3',checks=[dict(id='netlist',kind='netlist'),dict(id='new-parts',kind='parts_subset',params=params)],
+                baseline=dict(requirements=[dict(id='filter-members',intent='acceptance',statement='Exact allocated parts',source=dict(path='block/block.json',locator='requirements/members'),checks=['new-parts'])]))
+            files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+            _fresh_contract(root,source,record,scope,files,'netlist')
+            document['parts'][0]['mpn']='FORGED';write_json(root/'fresh-parts.json',document);files['fresh-parts.json']=digest(root/'fresh-parts.json')
+            with self.assertRaisesRegex(ValueError,'allocation/identity'):_fresh_contract(root,source,record,scope,files,'netlist')

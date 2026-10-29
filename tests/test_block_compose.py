@@ -310,3 +310,77 @@ class FlatComposeTests(unittest.TestCase):
         self.assertEqual({tuple(c['terminal']) for c in results['provenance']['details']['net_changes']},
                          {('R100', '1'), ('R100', '2')})
         self.assertEqual(results['interface']['outcome'], 'defect', results['interface'])
+
+
+class DeferredFlatContractTests(unittest.TestCase):
+    """Authored XML replaces only export; no native/candidate qualification."""
+    def setUp(self):
+        from tests.test_block_no_connects import source_fixture
+        from agent_ee.reference_blocks import block_contract
+        from agent_ee.storage import digest
+        self.root=Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.sheet,self.xml=source_fixture();root=self.root;directory=root/'block';directory.mkdir()
+        (directory/'source.kicad_sch').write_bytes(self.sheet)
+        (directory/'requirements.md').write_text('Preserve abstract fixture topology; evaluate new board response at25C.')
+        parts=dict(schema='agent-ee.block-parts/1',source='Authored CPU fixture',catalog=None,
+            parts=[dict(instance='/',reference=ref,lib_id='Owned:Package'+str(n),value='Package'+str(n),footprint='Owned:Package',lcsc=None,mpn=None,manufacturer=None,populated=True,catalog=None) for ref,n in [('U1',5),('U2',10)]])
+        write_json(directory/'parts.json',parts)
+        record=dict(schema='agent-ee.block/1',id='owned',version='fresh-contract',role='test',source=dict(repository='authored',commit='a'*40,paths={'source.kicad_sch':'source.kicad_sch'},license='Owned',upstream_origin='authored',upstream_license='Owned'),sheet='source.kicad_sch',parts_manifest='parts.json',boundary_ports=[],
+            instances=[dict(path='/',uuid_path='/',sheet='source.kicad_sch',references=['U1','U2'])],runs=[],
+            requirements=[dict(id='native',statement='Export the source',checks=['old-netlist']),
+                dict(id='later',statement='Evaluate the response',checks=['old-response'],verification_phase='adaptation',source=dict(path='requirements.md',locator='line1'),conditions=['25C'])],
+            check_set=[dict(id='old-netlist',kind='netlist',params={}),dict(id='old-response',kind='rc_transient',params=dict(netlist_check='old-netlist',input_net='SIGNAL',output_net='SIGNAL',ground_net='GND',measurements=[dict(name='vout',at_ms=1,min=.6,max=.7)]))],
+            files={p:digest(directory/p) for p in ('source.kicad_sch','parts.json','requirements.md')})
+        write_json(directory/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(directory/'block-contract.json');write_json(directory/'block.json',record)
+        self.source=record
+        plan=dict(schema='agent-ee.block-composition/1',sources=[dict(sheet='source.kicad_sch',uuid_path='/',sha256=digest(directory/'source.kicad_sch'),references={'U1':'U1','U2':'U2'},nets={'/COMMON':'SIGNAL'},reason='authored')],
+            ports=[dict(name='SIGNAL',net_name='SIGNAL',direction='passive',voltage_domain='test',current_a=None,alias_of=None,reason='authored')],reason='authored')
+        write_json(root/'composition.json',plan)
+        self.intent=dict(schema='agent-ee.connectivity-intent/1',libraries=[],components=[],nets=[],no_connects=[])
+        self.request=dict(id='pair',block='block',composition='composition.json',reference_ranges={'U':[11,12]},sheet='project/flat.kicad_sch',requirements={'native':['netlist'],'later':['response']})
+
+    def compose(self,request=None):
+        from unittest.mock import patch
+        def export(intent,*,inputs,work,**kwargs):
+            (work/'design.xml').write_bytes(self.xml)
+            return dict(execution='ok',exit_code=0)
+        with patch('agent_ee.native_run.run',side_effect=export):
+            return block_adaptation.compose_flat(self.root,self.intent,[request or self.request],{'pair':{'SIGNAL':'signal'}},captured_libraries={})
+
+    def test_flat_producer_reader_and_capability_keep_deferred_acceptance_and_bound_criteria(self):
+        from agent_ee.storage import digest
+        from agent_ee.block_flat import read_instance
+        result=self.compose();record=result['block_instances'][0]
+        self.assertEqual(record['references'],{'U1':'U11','U2':'U12'})
+        write_json(self.root/'instance.json',record);read_instance(self.root,record)
+        (self.root/'project').mkdir();(self.root/record['sheet']).write_bytes(self.sheet)
+        source=block_adaptation._source(self.root,'block','composition.json')
+        requirements=[dict(id='pair-'+r['id'],intent=block_adaptation._requirement_intent(source,r),statement=r['statement'],source=dict(path='block/block.json',locator='requirements/'+r['id']),checks=record['requirements'][r['id']]) for r in source['requirements']]
+        params=copy.deepcopy(source['check_set'][1]['params']);params.update(netlist_check='netlist',input_net='/signal',output_net='/signal')
+        scope=dict(schema='agent-ee.scope/3',schematic=record['sheet'],checks=[dict(id='netlist',kind='netlist'),dict(id='response',kind='rc_transient',params=params),dict(id='provenance',kind='block_provenance',params=dict(instance='instance.json',netlist_check='netlist'))],baseline=dict(requirements=requirements))
+        files={str(p.relative_to(self.root)):digest(p) for p in self.root.rglob('*') if p.is_file()}
+        block_adaptation.capability(dict(instance='instance.json',netlist_check='netlist'),scope,files,self.root,'provenance')
+        self.assertEqual(requirements[0]['intent'],'informational');self.assertEqual(requirements[1]['intent'],'acceptance')
+        for change in ('missing-baseline','family','criteria','informational'):
+            changed=copy.deepcopy(scope)
+            if change=='missing-baseline':changed['baseline']['requirements'].pop()
+            elif change=='family':changed['checks'][1]=dict(id='response',kind='erc',params={})
+            elif change=='criteria':changed['checks'][1]['params']['measurements'][0]['max']=9
+            else:changed['baseline']['requirements'][1]['intent']='informational'
+            with self.subTest(change=change),self.assertRaises(ValueError):block_adaptation.capability(dict(instance='instance.json',netlist_check='netlist'),changed,files,self.root,'provenance')
+        changed=copy.deepcopy(record);changed['requirements'].pop('later')
+        with self.assertRaisesRegex(ValueError,'every source and adaptation'):read_instance(self.root,changed)
+
+    def test_flat_missing_unknown_duplicate_and_legacy_pending_never_publish(self):
+        from agent_ee.reference_blocks import block_contract
+        from agent_ee.storage import digest
+        for change in ('missing','extra','duplicate'):
+            request=copy.deepcopy(self.request)
+            if change=='missing':request['requirements'].pop('later')
+            elif change=='extra':request['requirements']['unknown']=['response']
+            else:request['requirements']['later']=['response','response']
+            with self.subTest(change=change),self.assertRaises(ValueError):self.compose(request)
+        record=self.source;record['pending_requirements']=[dict(id='unresolved',statement='Unresolved',source=dict(path='requirements.md',locator='line1'),conditions=['25C'],blocked_by='Missing')]
+        write_json(self.root/'block/block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(self.root/'block/block-contract.json');write_json(self.root/'block/block.json',record)
+        with self.assertRaisesRegex(ValueError,'pending cannot be dropped'):self.compose()
+        self.assertFalse((self.root/'project').exists())

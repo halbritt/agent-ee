@@ -716,3 +716,123 @@ class NativeReferenceBlockTests(unittest.TestCase):
         report = validate_block(payload, {result['run_id']:run}, host=self.host)
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['undeclared_ports'], ['IN'])
+
+
+class RequirementPhaseTests(unittest.TestCase):
+    def test_deferred_phase_is_reported_as_mandatory_not_source_coverage(self):
+        import copy
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);record=block(root)
+            (root/'requirements.md').write_text('A later board must evaluate this response at25C.')
+            record['files']['requirements.md']=digest(root/'requirements.md')
+            record['requirements'].append(dict(id='later',statement='Fresh board response shall be evaluated',checks=['later-check'],
+                source=dict(path='requirements.md',locator='line1'),conditions=['25C'],verification_phase='adaptation'))
+            record['check_set']=[dict(id='ports',kind='netlist',params={}),dict(id='later-check',kind='rc_transient',params={})]
+            write_json(root/'block-contract.json',block_contract(record));record['files']['block-contract.json']=digest(root/'block-contract.json');write_json(root/'block.json',record)
+            report=validate_block(root)
+            self.assertEqual(report['deferred_requirements'],[dict(requirement='later',status='mandatory_on_adaptation',evaluation='not_evaluated',
+                source=dict(path='requirements.md',locator='line1'),conditions=['25C'],checks=['later-check'])])
+            self.assertNotIn('later',report['covered_requirements']);self.assertNotIn('later',report['missing_requirements'])
+            self.assertEqual(report['missing_requirements'],['R-port'])
+            from agent_ee.reference_blocks import _structure
+            for change in ('phase','source','conditions','checks'):
+                changed=copy.deepcopy(record);req=changed['requirements'][1]
+                if change=='phase':req['verification_phase']='later-maybe'
+                elif change=='checks':req['checks']=[]
+                else:req.pop(change)
+                with self.subTest(change=change),self.assertRaises(ValueError):_structure(changed)
+
+    def test_real_manifest_cannot_expand_or_shorten_explicit_role(self):
+        from agent_ee.reference_blocks import _reference_set,sheet_symbols
+        from tests.test_block_adaptation import fixture
+        import copy
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);scope,request=fixture(root);directory=root/'blocks/rc'
+            symbols=sheet_symbols((directory/'rc.kicad_sch').read_bytes(),'/')
+            reference=sorted(symbols)[0]
+            record=dict(sheet='rc.kicad_sch',instances=[dict(sheet='rc.kicad_sch',uuid_path='/',references=[reference])])
+            part=dict(instances=[dict(sheet='/',reference=reference)],lib_id=symbols[reference]['lib_id'],footprint=symbols[reference]['footprint'])
+            document=dict(schema='agent-ee.parts/1',parts=[part]);_reference_set(directory,record,document)
+            for mode in ('extra','missing','wrong-occurrence','wrong-library'):
+                changed=copy.deepcopy(document)
+                if mode=='extra':changed['parts'].append(dict(part,instances=[dict(sheet='/',reference='R999')]))
+                elif mode=='missing':changed['parts']=[]
+                elif mode=='wrong-occurrence':changed['parts'][0]['instances'][0]['sheet']='/other/'
+                else:changed['parts'][0]['lib_id']='Other:Part'
+                with self.subTest(mode=mode),self.assertRaises(ValueError):_reference_set(directory,record,changed)
+
+
+class ExactRoleCoverageTests(unittest.TestCase):
+    """Author-written XML and report substitutions, never actual native proof."""
+    def setUp(self):
+        import json
+        from xml.etree import ElementTree as ET
+        from tests.test_block_no_connects import source_fixture
+        from agent_ee.native_netlist import read_native_inventory
+        from agent_ee.parts_subset import compare_inventory
+        from agent_ee.parts_manifest import PREDICATE
+        from agent_ee.reference_blocks import sheet_symbols
+        self.root=Path(self.enterContext(tempfile.TemporaryDirectory()))
+        inputs=self.root/'inputs';inputs.mkdir();work=self.root/'work/native';work.mkdir(parents=True)
+        sheet,xml=source_fixture();(inputs/'source.kicad_sch').write_bytes(sheet)
+        tree=ET.fromstring(xml)
+        for c in tree.findall('./components/comp'):
+            for k,v in [('LCSC','C1'),('MPN','fixture'),('Manufacturer','Owned')]:ET.SubElement(c,'property',name=k,value=v)
+        self.xml=work/'design.xml';ET.ElementTree(tree).write(self.xml)
+        graph=read_native_inventory(self.xml)
+        self.graph=graph
+        members=sheet_symbols(sheet,'/')
+        self.selected=[dict(sheet='/',reference=r,uuids=sorted(members[r]['uuids'])) for r in sorted(members)]
+        document=dict(property_fields=dict(lcsc='LCSC',mpn='MPN',manufacturer='Manufacturer'),parts=[dict(id=r,required=True,instances=[dict(sheet='/',reference=r)],lib_id=c['lib_id'],footprint=c['footprint'],lcsc='C1',mpn='fixture',manufacturer='Owned') for r,c in graph['components'].items()])
+        report=compare_inventory(document,graph,[],reference_scope=self.selected)
+        report.update(manifest_sha256='b'*64,native_xml_sha256=digest(self.xml))
+        self.record=dict(sheet='source.kicad_sch',parts_manifest='parts.json',files={'parts.json':'b'*64},instances=[dict(sheet='source.kicad_sch',uuid_path='/',references=sorted(members))])
+        self.ref=dict(files={'source.kicad_sch':'source.kicad_sch','parts.json':'parts.json'})
+        self.manifest=dict(scope=dict(schematic='source.kicad_sch',checks=[dict(id='native',kind='netlist'),dict(id='parts',kind='parts_subset',params=dict(manifest='parts.json',netlist_check='native',reference_set=self.selected))]))
+        self.checks=dict(native=dict(execution='ok',details=dict(schematic_files=['source.kicad_sch'])),parts=dict(execution='ok',outcome='pass',details=dict(report=report,evaluated_predicates=[PREDICATE])))
+
+    def test_exact_rows_not_any_passing_same_sheet_or_shortened_selector(self):
+        import copy
+        from agent_ee.reference_blocks import _parts_coverage
+        self.assertEqual(_parts_coverage(self.root,self.manifest,self.ref,self.record,self.checks),['parts'])
+        for change in ('one-row','unrelated-reference','wrong-uuid','shortened-selector','missing-second-instance'):
+            manifest,record,checks=copy.deepcopy((self.manifest,self.record,self.checks))
+            if change=='one-row':checks['parts']['details']['report']['matches'].pop()
+            elif change=='unrelated-reference':checks['parts']['details']['report']['matches'][0]['reference']='U999'
+            elif change=='wrong-uuid':checks['parts']['details']['report']['matches'][0]['uuid']='00000000-0000-4000-8000-000000000099'
+            elif change=='shortened-selector':manifest['scope']['checks'][1]['params']['reference_set']=self.selected[:1]
+            else:record['instances'].append(dict(sheet='source.kicad_sch',uuid_path='/00000000-0000-4000-8000-000000000099/',references=['U999']))
+            with self.subTest(change=change):self.assertEqual(_parts_coverage(self.root,manifest,self.ref,record,checks),[])
+
+    def test_actual_export_uuid_and_occurrence_must_match_authored_source(self):
+        from xml.etree import ElementTree as ET
+        from agent_ee.reference_blocks import _native_block_subject
+        self.assertIsNotNone(_native_block_subject(self.root,self.manifest,self.ref,self.record,'native',self.checks))
+        tree=ET.parse(self.xml);tree.find('./components/comp/tstamps').text='00000000-0000-4000-8000-000000000099';tree.write(self.xml)
+        self.assertIsNone(_native_block_subject(self.root,self.manifest,self.ref,self.record,'native',self.checks))
+
+    def test_source_membership_requirement_credits_only_exact_role_parts_proof(self):
+        from agent_ee.reference_blocks import _membership_requirement,_parts_coverage
+        requirement=dict(id='membership',checks=['parts'],verification_phase='source')
+        exact=set(_parts_coverage(self.root,self.manifest,self.ref,self.record,self.checks))
+        specs=self.manifest['scope']['checks']
+        self.assertTrue(_membership_requirement(self.record,requirement,specs,exact))
+        self.assertFalse(_membership_requirement(self.record,requirement,specs,set()))
+        self.assertFalse(_membership_requirement(self.record,dict(requirement,verification_phase='adaptation'),specs,exact))
+        self.assertFalse(_membership_requirement({k:v for k,v in self.record.items() if k!='instances'},requirement,specs,exact))
+        self.assertFalse(_membership_requirement(self.record,dict(requirement,checks=['native']),specs,{'native'}))
+
+    def test_interface_witness_cannot_borrow_unrelated_same_sheet_component(self):
+        from agent_ee.reference_blocks import _native_requirement_coverage
+        from tests.test_block_no_connects import UUIDS
+        # Scope this role to U1 alone; U2 remains in the intact export.
+        record=dict(self.record,instances=[dict(sheet='source.kicad_sch',uuid_path='/',references=['U1'])])
+        contract=dict(schema='agent-ee.interface/1',components={'part':dict(locations=[dict(sheet='/',reference='U1')],symbols=['Owned:Package5'])},terminals={},allowed_edits=[],
+            invariants=[dict(id='present',kind='component',component='part',populated=True,requirement='role',source=dict(path='source.kicad_sch',locator='U1'))])
+        write_json(self.root/'inputs/interface.json',contract)
+        self.manifest['scope']['checks'].append(dict(id='interface',kind='hardware_interface',params=dict(contract='interface.json',netlist_check='native')))
+        req=dict(id='role',checks=['interface'])
+        self.checks['interface']=dict(details=dict(invariants=[dict(id='present',status='satisfied',expected=dict(requirement='role'),actual=dict(components={'part':dict(sheet='/',reference='U1',uuid=UUIDS['U1'])}))]))
+        self.assertTrue(_native_requirement_coverage(self.root,self.manifest,self.ref,record,req,self.checks))
+        self.checks['interface']['details']['invariants'][0]['actual']['components']['part'].update(reference='U2',uuid=UUIDS['U2'])
+        self.assertFalse(_native_requirement_coverage(self.root,self.manifest,self.ref,record,req,self.checks))
