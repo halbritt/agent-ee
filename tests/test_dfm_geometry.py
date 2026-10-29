@@ -591,6 +591,34 @@ class CustomSmdCoverageTests(unittest.TestCase):
                 json.dumps(contours,separators=(',',':')).encode()).hexdigest())})
         return target
 
+    def test_standard_only_dfm_facts_avoid_full_source_reader(self):
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        from agent_ee import geometry_probe
+        empty=lambda:NS(Simplify=lambda:None,OutlineCount=lambda:0,Area=lambda:0)
+        sdk=NS(SHAPE_POLY_SET=empty,F_Cu=0,B_Cu=2,ERROR_INSIDE=0)
+        board=NS(GetDesignSettings=lambda:NS(m_MaxError=5000,GetBoardThickness=lambda:1600000),
+                 GetEnabledLayers=lambda:NS(CuStack=lambda:[0,2]),GetLayerName=lambda l:{0:'F.Cu',2:'B.Cu'}[l],
+                 GetFootprints=lambda:[],GetTracks=lambda:[],GetDrawings=lambda:[],Zones=lambda:[])
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('sys.modules',pcbnew=sdk):
+            path=Path(tmp)/'large.kicad_pcb'
+            path.write_bytes(b'(kicad_pcb (general (thickness 1.6)))'+b' '*(32*1024*1024+1))
+            with patch('agent_ee.placement_probe._custom_pad_nodes',side_effect=AssertionError('full source parsed')):
+                result=geometry_probe.dfm_facts(board,str(path))
+            self.assertEqual(result['board_thickness_nm'],1600000)
+            self.assertEqual(result['pads'],[])
+
+    def test_unreadable_custom_source_retains_explained_refusal(self):
+        from agent_ee.geometry_probe import _custom_source_nodes
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('sys.modules',pcbnew=SimpleNamespace()):
+            path=Path(tmp)/'bad.kicad_pcb';path.write_bytes(b'(')
+            nodes,error=_custom_source_nodes(path)
+            self.assertEqual(nodes,{})
+            self.assertIn('LibraryError',error)
+            self.assertIn('expected one complete',error)
+
     def test_default_native_fixture_constructs_complete_board_and_rejects_malformed_input(self):
         # Only the SDK is doubled: exercise the actual fixture builder/parser.
         from types import SimpleNamespace as NS
@@ -708,7 +736,14 @@ class NativeCustomSmdTests(unittest.TestCase):
             self.assertEqual(pad['custom_copper']['status'],'qualified',pad['custom_copper'])
             layer=pad['copper_layers'][0];contour=pad['polygons_nm'][layer][0]
             xs=[p[0] for p in contour];ys=[p[1] for p in contour]
-            self.assertEqual(sorted((max(xs)-min(xs),max(ys)-min(ys))),[1000000,3500000])
+            error=before['max_error_nm']
+            nominal={(0,False):(19500000,19500000,23000000,20500000),
+                     (90,False):(19500000,17000000,20500000,20500000),
+                     (180,True):(17000000,19500000,20500000,20500000)}[(angle,back)]
+            self.assertEqual([min(xs),min(ys),max(xs),max(ys)],
+                             [nominal[0]-error,nominal[1]-error,nominal[2]+error,nominal[3]+error])
+            self.assertEqual(pad['copper_layers'],['B.Cu' if back else 'F.Cu'])
+            self.assertTrue(pad['custom_copper']['layers'][layer]['whole_shape_covered'])
             # A native-copper interior far outside the nominal 1x1 anchor.
             samples=[(min(xs)+(max(xs)-min(xs))*i//10,min(ys)+(max(ys)-min(ys))*j//10)
                      for i in range(1,10) for j in range(1,10)]
@@ -718,9 +753,18 @@ class NativeCustomSmdTests(unittest.TestCase):
             self.assertEqual((result['execution'],result['status'],result['checked']),('ok','defect',1),result)
 
     def test_native_straight_edge_gap_099999_1_100001(self):
-        for x,status in ((23399999,'defect'),(23400000,'pass'),(23400001,'pass')):
-            path=self.fixture(self.root/str(x));self.place_via(path,(x,20000000))
-            _,result=self.evaluate_saved(path,'gap')
+        for gap,status in ((99999,'defect'),(100000,'pass'),(100001,'pass'),('nominal','defect')):
+            path=self.fixture(self.root/str(gap))
+            before=self.probe(path,'before');contour=before['pads'][0]['polygons_nm']['F.Cu'][0]
+            right=max(p[0] for p in contour)
+            vertical=[(a,b) for a,b in zip(contour,contour[1:]+contour[:1]) if a[0]==b[0]==right and a[1]!=b[1]]
+            a,b=max(vertical,key=lambda pair:abs(pair[1][1]-pair[0][1]))
+            point=(23400000,20000000) if gap=='nominal' else (right+300000+gap,(a[1]+b[1])//2)
+            write_json(path.parent/'control.json',dict(native_edge_nm=[a,b],via_radius_nm=300000,
+                requested_outward_gap_nm=gap,via_position_nm=point,
+                nominal_case_is_conservative_false_positive=gap=='nominal'))
+            self.place_via(path,point);facts,result=self.evaluate_saved(path,'gap')
+            self.assertEqual(facts['vias'][0]['width_nm'],600000)
             self.assertEqual((result['execution'],result['status']),('ok',status),result)
 
     def test_existing_standard_smd_native_polygons_still_measure(self):
@@ -733,6 +777,26 @@ class NativeCustomSmdTests(unittest.TestCase):
         self.assertEqual(facts['pads'][0]['shape'],'RECTANGLE')
         self.assertNotIn('custom_copper',facts['pads'][0])
         self.assertEqual((result['execution'],result['status']),('ok','pass'),result)
+
+    def test_native_large_standard_board_and_bounded_custom_source_refusal(self):
+        import pcbnew as k
+        for custom in (False,True):
+            path=self.fixture(self.root/('large-custom' if custom else 'large-standard'))
+            if not custom:
+                b=k.LoadBoard(str(path));p=next(p for f in b.GetFootprints() for p in f.Pads())
+                p.SetShape(k.PAD_SHAPE_RECTANGLE);p.SetSize(k.VECTOR2I(1000000,1000000));k.SaveBoard(str(path),b,True)
+            # Valid native source over the unchanged shared parser's 32 MiB limit.
+            with path.open('ab') as stream: stream.write(b' '*(32*1024*1024+1))
+            facts=self.probe(path,'large')
+            self.assertEqual(len(facts['pads']),1)
+            if custom:
+                witness=facts['pads'][0]['custom_copper']
+                self.assertEqual(witness['status'],'unsupported')
+                self.assertIn('LibraryError',witness['reason'])
+                self.assertIn('32 MiB',witness['reason'])
+            else:
+                self.assertEqual(facts['pads'][0]['shape'],'RECTANGLE')
+                self.assertNotIn('custom_copper',facts['pads'][0])
 
     def test_native_hole_and_unsupported_source_are_not_qualified(self):
         # A slit polygon encodes an interior hole; copied Unfracture must expose it.

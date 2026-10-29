@@ -201,3 +201,16 @@ Outward polygon approximation can conservatively report a close approach; it
 cannot justify replacing full copper with the anchor or an inscribed shape.
 Native regressions and saved read-only target facts are qualification evidence,
 not supplier/process/physical or M1/G4 acceptance.
+
+Saved-board custom-source lookup is lazy: standard-only native boards do not
+enter the full bounded source parser. When a native CUSTOM pad requires source
+and that bounded lookup fails, its unsupported witness records the exception
+type and reason. Parser limits are unchanged.
+
+Native outward approximation can expand even a straight custom-copper edge by
+the captured maximum error. Native boundary regressions therefore derive the
+full-radius via position from the saved outward contour, then test gaps of
+99,999 / 100,000 / 100,001 nm. A nominal physical-edge placement remains an
+explicit conservative false-positive control; no inward approximation or
+threshold adjustment is used. Transformed controls retain exact native bounds,
+front/back layer identity and whole-shape coverage.

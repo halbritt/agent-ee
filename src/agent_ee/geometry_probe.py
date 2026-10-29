@@ -343,6 +343,15 @@ def _custom_copper(pad, node, layers, polygons, topology, max_error):
     return result
 
 
+def _custom_source_nodes(board_path):
+    """One bounded source lookup, only after a native CUSTOM pad needs it."""
+    from .placement_probe import _custom_pad_nodes
+    try:
+        return _custom_pad_nodes(Path(board_path).read_bytes()), None
+    except (OSError, ValueError, RuntimeError) as exc:
+        return {}, f'custom source unavailable: {type(exc).__name__}: {exc}'
+
+
 def dfm_facts(board, board_path):
     import pcbnew
     settings = board.GetDesignSettings()
@@ -357,8 +366,7 @@ def dfm_facts(board, board_path):
         facts["board_thickness_problem"] = thickness_problem
         facts["native_thickness_default_nm"] = int(settings.GetBoardThickness())
 
-    from .placement_probe import _custom_pad_nodes
-    custom_nodes = _custom_pad_nodes(Path(board_path).read_bytes())
+    custom_nodes, custom_source_error = None, None
     pads, courtyards = [], []
     for fp in board.GetFootprints():
         side = board.GetLayerName(fp.GetLayer())
@@ -381,8 +389,15 @@ def dfm_facts(board, board_path):
                 "drill_nm": nm(pad_vec(pad, pad.GetDrillSize)),
                 "copper_layers": layers, "polygons_nm": polygons, "polygon_topology": topology})
             if pads[-1]['shape'] == 'CUSTOM':
-                pads[-1]['custom_copper'] = _custom_copper(pad, custom_nodes.get(pad.m_Uuid.AsString()),
-                    layers, polygons, topology, max_error)
+                if custom_nodes is None:
+                    custom_nodes, custom_source_error = _custom_source_nodes(board_path)
+                if custom_source_error is not None:
+                    pads[-1]['custom_copper'] = dict(schema=CUSTOM_COPPER_SCHEMA, status='unsupported',
+                        pad_uuid=pad.m_Uuid.AsString(), footprint_uuid=fp.m_Uuid.AsString(),
+                        reason=custom_source_error)
+                else:
+                    pads[-1]['custom_copper'] = _custom_copper(pad, custom_nodes.get(pad.m_Uuid.AsString()),
+                        layers, polygons, topology, max_error)
         fp.BuildCourtyardCaches()
         courtyard_layer = pcbnew.B_CrtYd if fp.GetLayer() == pcbnew.B_Cu else pcbnew.F_CrtYd
         contours, holes = outlines(fp.GetCourtyard(courtyard_layer))
