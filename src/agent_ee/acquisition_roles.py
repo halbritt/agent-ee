@@ -1,10 +1,9 @@
-"""Finite acquisition v4 role admission and pre-seal fresh-check production."""
+"""Finite acquisition role admission and pre-seal fresh-check production."""
 import copy
-from decimal import Decimal
 from pathlib import Path
 
 from . import block_adaptation, block_composition, parts_manifest, reference_blocks, requirement_map, storage
-from .catalog import exact_fields, strict_json
+from .catalog import decimal_number, decimal_text, exact_fields, strict_json
 
 SCHEMA = 'agent-ee.acquisition-role-context/1'
 AT = 'reference-roles'
@@ -13,13 +12,83 @@ ROLES = {'acq-tps7a2033-power': ('power', {'U1','J1','D1','C1','C2','R5','R6'}),
          'acq-jst-ph-i2c': ('host', {'J2','R3','R4'})}
 
 
-def application(document, capacitance):
+POLICY_PATH = 'roles/adaptation-policy-150.json'
+POLICY_RAW = (Path(__file__).with_name('data')/'acquisition-role-policy-150.json').read_bytes()
+POLICY = strict_json(POLICY_RAW)
+BRIEF_CAPACITANCE = {'from':'public-brief','policy':POLICY['id']}
+COHORTS = {('4','4','4'): '100', ('5','5','5'): '150', ('5','6','5'): '150'}
+
+
+def _capacitance(value):
+    if type(value) not in (int, str):
+        raise ValueError('capacitance requires canonical integer or decimal text')
+    text = str(value)
+    number = decimal_number(text)
+    if decimal_text(number) != text or not 100 <= number <= 150:
+        raise ValueError('capacitance must be canonical within100..150pF')
+    return text
+
+
+def application(document, capacitance, *, envelope='100'):
     exact_fields(document, ('j2_external_load_a','j2_external_drive','bus_capacitance_pf','temperature_c'))
+    brief = _capacitance(capacitance)
+    operand=document['bus_capacitance_pf']
+    declared = brief if envelope=='150' and operand==BRIEF_CAPACITANCE else _capacitance(operand)
     if (type(document['j2_external_load_a']) not in (int,float) or document['j2_external_load_a'] != 0
-            or document['j2_external_drive'] is not False or document['temperature_c'] != 25
-            or Decimal(str(document['bus_capacitance_pf'])) != Decimal(100)
-            or Decimal(str(capacitance)) != Decimal(100)):
-        raise ValueError('v4 roles require nominal25C, exact100pF, J2 zero external load and no external drive')
+            or document['j2_external_drive'] is not False or type(document['temperature_c']) is not int
+            or document['temperature_c'] != 25 or declared != brief
+            or envelope not in ('100','150') or (envelope == '100' and declared != '100')):
+        raise ValueError('role application requires nominal25C, matching admitted capacitance, J2 zero external load and no external drive')
+    return declared
+
+
+def cohort(doc, captures, capacitance):
+    """Admit only the three finite source/policy cohorts, before run replay."""
+    records={rid:strict_json(captures[entry['block']+'/block.json']) for rid,entry in doc['roles'].items()}
+    versions=tuple(records[rid]['version'] for rid in ROLES)
+    if versions not in COHORTS:
+        raise ValueError('unsupported acquisition role cohort')
+    envelope=COHORTS[versions]
+    declared=application(doc['application'],capacitance,envelope=envelope)
+    prefixes=[entry['block'] for entry in doc['roles'].values()]
+    if any(a==b or a.startswith(b+'/') or b.startswith(a+'/') for i,a in enumerate(prefixes) for b in prefixes[i+1:]):
+        raise ValueError('role block prefixes must be disjoint')
+    for field in ('composition','report'):
+        if len({e[field]['path'] for e in doc['roles'].values()}) != 3:
+            raise ValueError('role compositions and reports must be isolated')
+    if envelope=='150':
+        from hashlib import sha256
+        policy_ref=dict(path=POLICY_PATH,sha256=sha256(POLICY_RAW).hexdigest())
+        for rid,record in records.items():
+            prefix=doc['roles'][rid]['block']+'/'
+            if captures.get(prefix+POLICY_PATH) != POLICY_RAW:
+                raise ValueError('role adaptation policy differs from admitted captured policy')
+            app=strict_json(captures[prefix+'roles/'+rid+'/application-contract.json'])
+            if app.get('adaptation_policy') != policy_ref or app['selected_boundary']['i2c_line_capacitance'] != dict(max='150',unit='pF',selection='conservative engineering adaptation envelope',source=policy_ref):
+                raise ValueError('role application boundary differs from captured150 policy')
+            expected=copy.deepcopy(POLICY['base_allocations'][rid])
+            if rid=='acq-ads1115-two-channel' and record['version']=='6':
+                for row in expected:
+                    if row['id'] in ('R1','R2'):
+                        row.update({k:POLICY['alternate_analog'][k] for k in ('manufacturer','mpn','lcsc')})
+            member_fields=('id','lcsc','manufacturer','mpn','lib_id','footprint')
+            members=sorted(({k:m[k] for k in member_fields} for m in app.get('members',[])),key=lambda m:m['id'])
+            if members != [{k:m[k] for k in member_fields} for m in expected]:
+                raise ValueError('role application members differ from selected policy allocations')
+            cap_limits=[v for v in app.get('limits',[]) if v.get('id')=='i2c-capacitance']
+            if len(cap_limits)!=1 or cap_limits[0].get('max')!='150' or cap_limits[0].get('source')!=policy_ref:
+                raise ValueError('role capacitance limit must cite the admitted150 policy')
+            actual=block_adaptation._part_allocations(strict_json(captures[prefix+record['parts_manifest']]),{})
+            if actual != expected:
+                raise ValueError('role selected allocations differ from finite admitted variant')
+            if rid=='acq-jst-ph-i2c':
+                check=next(c for c in record['check_set'] if c['id']=='i2c-bus-envelope-intervals')
+                template=strict_json(captures[prefix+check['params']['assertions']]);template.pop('requirement_sources')
+                if template != POLICY['host_interval_template']:
+                    raise ValueError('host role template differs from conservative150 policy')
+    return dict(versions=list(versions),declared_bus_capacitance_pf=declared,
+        host_role_envelope_capacitance_pf=envelope,host_role_envelope='conservative upper bound; not a physical minimum',
+        policy='legacy-v4-100-only' if envelope=='100' else POLICY['id'])
 
 
 def read(root, raw, capacitance):
@@ -30,11 +99,13 @@ def read(root, raw, capacitance):
     doc=strict_json(raw)
     exact_fields(doc, ('schema','reference','files','roles','application','host_observation'))
     if doc['schema']!=SCHEMA or doc['reference']!='acquisition-control' or not isinstance(doc['roles'],dict) or set(doc['roles'])!=set(ROLES):
-        raise ValueError('role context must select exactly the three acquisition v4 roles')
-    application(doc['application'],capacitance)
+        raise ValueError('role context must select exactly the three acquisition roles')
     if not isinstance(doc['files'],dict) or not 1<=len(doc['files'])<=4096:
         raise ValueError('role context needs a finite captured closure')
+    for entry in doc['roles'].values():
+        exact_fields(entry,('block','block_sha256','composition','report','run_locations','repository_locations'))
     captures={p:parts_manifest._read_blob(root,dict(path=p,sha256=h)) for p,h in doc['files'].items()}
+    admission=cohort(doc,captures,capacitance)
     # Supplied observations use the existing verifier's host API. The coordinator
     # must independently admit this pinned observation; this code never probes CAD.
     exact_fields(doc['host_observation'],('policy_files','runtime_files'))
@@ -45,7 +116,7 @@ def read(root, raw, capacitance):
     for rid,entry in doc['roles'].items():
         exact_fields(entry,('block','block_sha256','composition','report','run_locations','repository_locations'))
         path=entry['block']; record=strict_json(captures[path+'/block.json'])
-        if storage.digest(root/path/'block.json')!=entry['block_sha256'] or record['id']!=rid or record['version']!='4':
+        if storage.digest(root/path/'block.json')!=entry['block_sha256'] or record['id']!=rid:
             raise ValueError('role block identity/version differs')
         needed.add(path+'/block.json'); needed.update(path+'/'+n for n in record['files'])
         parts_manifest._blob(entry['composition']); parts_manifest._blob(entry['report'])
@@ -75,12 +146,24 @@ def read(root, raw, capacitance):
         raise ValueError('role reference sets must be disjoint and own all17 physical parts')
     if needed!=set(captures):
         raise ValueError('role closure has missing or unrelated files')
-    return doc,captures,reports
+    return bind_application(doc,capacitance,envelope=admission['host_role_envelope_capacitance_pf']),captures,reports
+
+
+def bind_application(doc, capacitance, *, envelope):
+    """Keep the source template and its exact public-brief-derived application."""
+    declared=application(doc['application'],capacitance,envelope=envelope)
+    bound=copy.deepcopy(doc)
+    if doc['application']['bus_capacitance_pf']==BRIEF_CAPACITANCE:
+        bound['application_binding']=dict(source_application=copy.deepcopy(doc['application']),
+            capacitance_source='public-brief',policy=POLICY['id'])
+        bound['application']['bus_capacitance_pf']=declared
+    return bound
 
 
 def apply(root, plan, overlay, doc, captures):
     """Produce immutable role records/assets and typed derived rows before seal."""
     root=Path(root)
+    versions=tuple(strict_json(captures[doc['roles'][rid]['block']+'/block.json'])['version'] for rid in ROLES)
     for path,raw in captures.items():
         target=root/AT/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(raw)
     storage.write_json(root/AT/'context.json',doc)
@@ -106,7 +189,7 @@ def apply(root, plan, overlay, doc, captures):
         requirements={r['id']:ident+'-'+r['id'] for r in source['requirements']}
         checks={c['id']:ident+'-'+c['id'] for c in source['check_set']}
         checks.update(netlist='netlist',drc='drc')
-        record=dict(schema='agent-ee.block-instance/1',id=ident,block=block,block_id=rid,version='4',
+        record=dict(schema='agent-ee.block-instance/1',id=ident,block=block,block_id=rid,version=source['version'],
             sha256=source['files'][source['sheet']],sheet=declaration['scope']['schematic'],instance_path='/',bindings=bindings,
             requirements={r['id']:[checks[c] for c in r['checks']] for r in source['requirements']},
             composition=dict(path=composition,sha256=storage.digest(root/composition),emitted_sha256=source['files'][source['sheet']]))
@@ -154,12 +237,17 @@ def apply(root, plan, overlay, doc, captures):
     storage.write_json(root/'requirement-map.json',declaration)
     overlay['base']['requirement_map_sha256']=storage.digest(root/'requirement-map.json')
     overlay['block_requirements']=mappings
-    report=dict(application=doc['application'],conditions=conditions,instances=sorted(instances),requirements=sorted(mappings),
+    report=dict(application=doc['application'],capacitance_admission=dict(
+        declared_bus_capacitance_pf=_capacitance(doc['application']['bus_capacitance_pf']),
+        host_role_envelope_capacitance_pf=COHORTS[versions],versions=list(versions),
+        policy='legacy-v4-100-only' if COHORTS[versions]=='100' else POLICY['id'],
+        envelope_meaning='conservative upper bound; not a physical minimum'),conditions=conditions,instances=sorted(instances),requirements=sorted(mappings),
         remaining=['Fresh native all17 union/UUID and role checks','Fresh engineering judgments','Supplier and physical validation'])
+    if 'application_binding' in doc:report['application_binding']=doc['application_binding']
     storage.write_json(root/AT/'admission.json',report)
-    for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation'):
+    for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation','acq-elec-5-host-bus-contract'):
         brief=overlay['judgments'].get('judgments/'+key+'.json')
         if brief is None:raise ValueError('role consumer requires existing fresh engineering judgments')
         brief['sources'].append(AT+'/admission.json')
-        brief['questions'].append('Evaluate the current board against reference-roles/admission.json and its captured role conditions; no source qualification or R5 judgment discharges this fresh obligation.')
+        brief['questions'].append('Evaluate the current board against reference-roles/admission.json: distinguish declared_bus_capacitance_pf in the fresh full-board checks from host_role_envelope_capacitance_pf, the conservative role upper bound. Preserve captured conditions; no source qualification or R5 judgment discharges this fresh obligation.')
     return report

@@ -645,7 +645,7 @@ Before the typed seal the consumer captures `reference-roles/`, emits three
 ordinary composition instance records and fresh interface/membership/model/layout
 check declarations, and maps every source and all six deferred rows. Source
 conditions remain captured and appear in `reference-roles/admission.json`.
-The two existing source-evaluation/return-path judgment briefs cite this admission;
+The existing source-evaluation, return-path and host-bus judgment briefs cite this admission;
 no historical judgment is copied. The optional `scope.block_instances` and overlay
 `block_requirements` transport use the existing derived-source accounting; missing,
 extra, colliding or post-seal rows refuse. Existing spec-span obligations remain.
@@ -656,3 +656,70 @@ selected references and all unit UUIDs; the union of all selected roles must equ
 the complete fresh native physical inventory. Outside parts and overlaps refuse.
 Ordinary child composition retains its whole-occurrence behavior. A successful
 source preparation is not native role, board, engineering, assembly or G4 acceptance.
+
+
+### Finite v5/v6 capacitance cohorts
+
+Role contexts now admit only these ordered `(power, analog, host)` version sets:
+
+| Cohort | Declared capacitance | R1 and R2 | Host role operand |
+| --- | --- | --- | --- |
+| `(4,4,4)` | exactly 100 pF | original captured allocations | 100 pF |
+| `(5,5,5)` | 100 through 150 pF | C22548 | conservative 150 pF |
+| `(5,6,5)` | 100 through 150 pF | both C118155, PANASONIC ERJ3EKF1001V | conservative 150 pF |
+
+The existing role context options and schema remain unchanged. For the new
+cohorts, each block captures the exact bytes of
+`roles/adaptation-policy-150.json`, matching the installed
+`data/acquisition-role-policy-150.json`. Its own application contract cites this
+policy and its 150 pF boundary. The finite policy retains every original selected
+allocation except the two explicitly admitted analog resistors in revision 6.
+Revision 6 must be genuinely recaptured and independently source-qualified; a
+caller cannot select it by renaming revision 5 or by setting a qualified flag.
+Different versions across roles are permitted only in the listed cohort.
+
+The selected application capacitance must equal the parsed brief exactly.
+Literal context values are canonical integer/decimal text in 100..150; booleans, floats, exponents,
+nonfinite values and excess precision refuse. Nominal temperature is integer
+25 C; zero external J2 load and no external drive remain mandatory. The original
+specification's 100 pF statement and R5's closed-incomplete evidence stay in
+lineage. The new envelope cites delegated engineering adaptation policy, not a
+manufacturer rating or a rewritten historical requirement.
+
+For positive pullup resistance, `.8473*R*C` increases with capacitance. The host
+role keeps the unchanged four interval equations with a fixed conservative
+150 pF operand (worst rise 282.40509 ns against 300 ns); the full-board interval
+continues to use the exact declared capacitance, including interior values such
+as 125 pF. This imposes no physical minimum capacitance. Both operands are labeled
+in `reference-roles/admission.json` and supplied to the fresh host-bus judgment.
+All six deferred rows, existing checks and fourteen judgments remain required.
+The exact parts matcher, all17 physical union/UUID check and supplier/physical
+obligations are unchanged.
+
+Block, composition and report paths must be isolated for each role. A new analog
+source may coexist with the exact qualified v5 power/host captures even though
+its source repository and native schematic differ; only each block's own
+application contract is tested against the common policy. Every capture and its
+actual run/report still must pass the ordinary source verifier. All source code
+and data must be integrated and frozen before qualification because
+`policy_files()` remains exact. Unverified v5 captures with empty runs refuse;
+these source changes and CPU tests confer no native or engineering acceptance.
+
+
+For a common frozen context reused across public brief cases, only the new
+150 pF cohorts also permit this finite source declaration:
+
+```json
+"bus_capacitance_pf": {"from": "public-brief", "policy": "acquisition-150pf-v5"}
+```
+
+`read()` first replays that cohort's captured policy and actual native source
+qualification, then returns an explicitly derived document whose application
+contains the canonical brief capacitance. `application_binding` preserves the
+original source application and records the public-brief binding. The public
+preparer retains the original context bytes separately in `context-input.json`;
+`context.json` and `admission.json` carry the derived application. Both primary
+and alternate role closures can therefore stay byte-identical across cases.
+This declaration cannot supply a different bound, another policy or extra fields;
+v4 refuses it. Literal mismatches still refuse. No qualification, stock clock or
+source observation is regenerated by this binding.

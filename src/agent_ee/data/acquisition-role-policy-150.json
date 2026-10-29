@@ -1,0 +1,449 @@
+{
+  "alternate_analog": {
+    "lcsc": "C118155",
+    "manufacturer": "PANASONIC",
+    "mpn": "ERJ3EKF1001V",
+    "references": [
+      "R1",
+      "R2"
+    ],
+    "version": "6"
+  },
+  "authority": "Delegated engineering adaptation policy adopted by coordinator agent-706 on 2026-10-29; not an owner specification, manufacturer guarantee or qualification receipt",
+  "base_allocations": {
+    "acq-ads1115-two-channel": [
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "id": "C3",
+        "instances": [
+          {
+            "reference": "C3",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C14663",
+        "lib_id": "Device:C",
+        "manufacturer": "YAGEO",
+        "mpn": "CC0603KRX7R9BB104",
+        "package": "0603",
+        "required": true,
+        "role": "analog/C3"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "id": "C4",
+        "instances": [
+          {
+            "reference": "C4",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C85973",
+        "lib_id": "Device:C",
+        "manufacturer": "Murata Electronics",
+        "mpn": "GRM1885C1H103JA01D",
+        "package": "0603",
+        "required": true,
+        "role": "analog/C4"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "id": "C5",
+        "instances": [
+          {
+            "reference": "C5",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C85973",
+        "lib_id": "Device:C",
+        "manufacturer": "Murata Electronics",
+        "mpn": "GRM1885C1H103JA01D",
+        "package": "0603",
+        "required": true,
+        "role": "analog/C5"
+      },
+      {
+        "footprint": "Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical",
+        "id": "J3",
+        "instances": [
+          {
+            "reference": "J3",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C131334",
+        "lib_id": "Connector_Generic:Conn_01x04",
+        "manufacturer": "JST",
+        "mpn": "B4B-PH-K-S(LF)(SN)",
+        "package": "Plugin,P=2mm",
+        "required": true,
+        "role": "analog/J3"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "id": "R1",
+        "instances": [
+          {
+            "reference": "R1",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C22548",
+        "lib_id": "Device:R",
+        "manufacturer": "YAGEO",
+        "mpn": "RC0603FR-071KL",
+        "package": "0603",
+        "required": true,
+        "role": "analog/R1"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "id": "R2",
+        "instances": [
+          {
+            "reference": "R2",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C22548",
+        "lib_id": "Device:R",
+        "manufacturer": "YAGEO",
+        "mpn": "RC0603FR-071KL",
+        "package": "0603",
+        "required": true,
+        "role": "analog/R2"
+      },
+      {
+        "footprint": "Package_SO:TSSOP-10_3x3mm_P0.5mm",
+        "id": "U2",
+        "instances": [
+          {
+            "reference": "U2",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C468683",
+        "lib_id": "Analog_ADC:ADS1115IDGS",
+        "manufacturer": "Texas Instruments",
+        "mpn": "ADS1115IDGST",
+        "package": "VSSOP-10-0.5mm",
+        "required": true,
+        "role": "analog/U2"
+      }
+    ],
+    "acq-jst-ph-i2c": [
+      {
+        "footprint": "Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical",
+        "id": "J2",
+        "instances": [
+          {
+            "reference": "J2",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C131334",
+        "lib_id": "Connector_Generic:Conn_01x04",
+        "manufacturer": "JST",
+        "mpn": "B4B-PH-K-S(LF)(SN)",
+        "package": "Plugin,P=2mm",
+        "required": true,
+        "role": "host/J2"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "id": "R3",
+        "instances": [
+          {
+            "reference": "R3",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C114662",
+        "lib_id": "Device:R",
+        "manufacturer": "YAGEO",
+        "mpn": "RC0603FR-072K2L",
+        "package": "0603",
+        "required": true,
+        "role": "host/R3"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "id": "R4",
+        "instances": [
+          {
+            "reference": "R4",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C114662",
+        "lib_id": "Device:R",
+        "manufacturer": "YAGEO",
+        "mpn": "RC0603FR-072K2L",
+        "package": "0603",
+        "required": true,
+        "role": "host/R4"
+      }
+    ],
+    "acq-tps7a2033-power": [
+      {
+        "footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "id": "C1",
+        "instances": [
+          {
+            "reference": "C1",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C15850",
+        "lib_id": "Device:C",
+        "manufacturer": "Samsung Electro-Mechanics",
+        "mpn": "CL21A106KAYNNNE",
+        "package": "0805",
+        "required": true,
+        "role": "power/C1"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "id": "C2",
+        "instances": [
+          {
+            "reference": "C2",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C15850",
+        "lib_id": "Device:C",
+        "manufacturer": "Samsung Electro-Mechanics",
+        "mpn": "CL21A106KAYNNNE",
+        "package": "0805",
+        "required": true,
+        "role": "power/C2"
+      },
+      {
+        "footprint": "Diode_SMD:D_SOD-123",
+        "id": "D1",
+        "instances": [
+          {
+            "reference": "D1",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C83152",
+        "lib_id": "Device:D_Schottky",
+        "manufacturer": "Diodes Incorporated",
+        "mpn": "BAT46W-7-F",
+        "package": "SOD-123",
+        "required": true,
+        "role": "power/D1"
+      },
+      {
+        "footprint": "Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical",
+        "id": "J1",
+        "instances": [
+          {
+            "reference": "J1",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C131337",
+        "lib_id": "Connector_Generic:Conn_01x02",
+        "manufacturer": "JST",
+        "mpn": "B2B-PH-K-S(LF)(SN)",
+        "package": "Plugin,P=2mm",
+        "required": true,
+        "role": "power/J1"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "id": "R5",
+        "instances": [
+          {
+            "reference": "R5",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C114065",
+        "lib_id": "Device:R",
+        "manufacturer": "YAGEO",
+        "mpn": "RC0603FR-0722KL",
+        "package": "0603",
+        "required": true,
+        "role": "power/R5"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "id": "R6",
+        "instances": [
+          {
+            "reference": "R6",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C114669",
+        "lib_id": "Device:R",
+        "manufacturer": "YAGEO",
+        "mpn": "RC0603FR-07470RL",
+        "package": "0603",
+        "required": true,
+        "role": "power/R6"
+      },
+      {
+        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+        "id": "U1",
+        "instances": [
+          {
+            "reference": "U1",
+            "sheet": "/"
+          }
+        ],
+        "lcsc": "C2862740",
+        "lib_id": "Regulator_Linear:TPS7A20xxxDBV",
+        "manufacturer": "Texas Instruments",
+        "mpn": "TPS7A2033PDBVR",
+        "package": "SOT-23-5",
+        "required": true,
+        "role": "power/U1"
+      }
+    ]
+  },
+  "cohorts": [
+    [
+      "5",
+      "5",
+      "5"
+    ],
+    [
+      "5",
+      "6",
+      "5"
+    ]
+  ],
+  "conditions": {
+    "j2_external_drive": false,
+    "j2_external_load_a": 0,
+    "temperature_c": 25
+  },
+  "declared_capacitance_pf": {
+    "max": "150",
+    "min": "100"
+  },
+  "host_interval_template": {
+    "assertions": [
+      {
+        "id": "i2c-rise",
+        "lhs": ".8473*pullup_r*bus_c",
+        "op": "<=",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "rhs": "rise_limit",
+        "unit": "s"
+      },
+      {
+        "id": "i2c-sink",
+        "lhs": "rail/pullup_r",
+        "op": "<=",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "rhs": "sink_limit",
+        "unit": "A"
+      },
+      {
+        "id": "i2c-high",
+        "lhs": "rail_low-pullup_r*combined_leak-.7*rail_high",
+        "op": ">=",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "rhs": "zero_v",
+        "unit": "V"
+      },
+      {
+        "id": "i2c-low",
+        "lhs": ".3*rail_low-sink_vol",
+        "op": ">=",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "rhs": "zero_v",
+        "unit": "V"
+      }
+    ],
+    "correlation": "shared-symbol/independent-parameters",
+    "parameters": {
+      "bus_c": {
+        "max": "150e-12 F",
+        "min": "150e-12 F",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "F"
+      },
+      "combined_leak": {
+        "max": "20e-6 A",
+        "min": "20e-6 A",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "A"
+      },
+      "pullup_r": {
+        "max": "2222 ohm",
+        "min": "2178 ohm",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "ohm"
+      },
+      "rail": {
+        "max": "3.366 V",
+        "min": "3.234 V",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "V"
+      },
+      "rail_high": {
+        "max": "3.366 V",
+        "min": "3.366 V",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "V"
+      },
+      "rail_low": {
+        "max": "3.234 V",
+        "min": "3.234 V",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "V"
+      },
+      "rise_limit": {
+        "max": "300e-9 s",
+        "min": "300e-9 s",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "s"
+      },
+      "sink_limit": {
+        "max": ".003 A",
+        "min": ".003 A",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "A"
+      },
+      "sink_vol": {
+        "max": ".4 V",
+        "min": ".4 V",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "V"
+      },
+      "zero_v": {
+        "max": "0 V",
+        "min": "0 V",
+        "requirement": "acq-jst-ph-i2c-i2c-bus-envelope",
+        "source": "declared",
+        "unit": "V"
+      }
+    },
+    "schema": "agent-ee.interval-assertions/1"
+  },
+  "host_role_envelope_pf": "150",
+  "id": "acquisition-150pf-v5",
+  "reason": "Only the RC rise assertion depends on positive bus capacitance: .8473*2222*150e-12 = 282.40509 ns <= 300 ns. The role uses a conservative upper bound, not a physical minimum; full-board checks retain exact declared capacitance. All six deferred obligations and fourteen existing judgments remain mandatory.",
+  "v4_application_sha256": {
+    "acq-ads1115-two-channel": "309307609c3a24c231019f92ea54d81a5819773bb8f666ded58295a3407ec92c",
+    "acq-jst-ph-i2c": "9fbcfec7804daee2b57404a6b971709699b48045ac52bb8f3fddd6156a2d8166",
+    "acq-tps7a2033-power": "94a9218ea10e715ed7c88ff12a1dba078bede2d3990c1914122d06c9cdf6da43"
+  }
+}

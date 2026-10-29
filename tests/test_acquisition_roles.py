@@ -61,7 +61,7 @@ def authored(test, root):
     overlay=copy.deepcopy(helper.overlay)
     overlay['mappings']['POD-AC-3']['spans'][0]['checks'].insert(0,'netlist')
     overlay['base']['requirement_map_sha256']=storage.digest(root/'requirement-map.json')
-    for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation'):
+    for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation','acq-elec-5-host-bus-contract'):
         # Reuse the existing authored judgment obligation for this software test.
         overlay['judgments']['judgments/'+key+'.json']=copy.deepcopy(next(iter(overlay['judgments'].values())))
     raw={n:(root/n).read_bytes() for n in requirement_map.input_inventory(root)}
@@ -146,7 +146,7 @@ class ConsumerTests(unittest.TestCase):
             rule_path.write_bytes(saved)
             # The two production judgment names above are fixture aliases only;
             # retain the POD fixture's actual authored judgment during its seal.
-            for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation'):
+            for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation','acq-elec-5-host-bus-contract'):
                 overlay['judgments'].pop('judgments/'+key+'.json')
             overlay_path=Path(tmp)/'overlay.json';storage.write_json(overlay_path,overlay)
             sealed=Path(tmp)/'sealed'
@@ -195,12 +195,14 @@ class ConsumerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'complete native'):block_adaptation.root_coverage(root,scope,changed)
 
     def test_unqualified_and_incompatible_context_cannot_publish(self):
-        for change in ('unqualified','missing-role','load','drive','bus'):
+        for change in ('unqualified','missing-role','load','drive','bus','source-drift'):
             with self.subTest(change=change),tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp);doc,captures,*_=authored(self,root)
                 for p,b in captures.items():
                     target=root/'context'/p;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(b)
-                if change=='missing-role':doc['roles'].pop(next(iter(doc['roles'])))
+                if change=='source-drift':
+                    path=next(iter(captures));(root/'context'/path).write_bytes(captures[path]+b' ')
+                elif change=='missing-role':doc['roles'].pop(next(iter(doc['roles'])))
                 elif change=='load':doc['application']['j2_external_load_a']=.001
                 elif change=='drive':doc['application']['j2_external_drive']=True
                 elif change=='bus':doc['application']['bus_capacitance_pf']=150
@@ -211,3 +213,142 @@ class ConsumerTests(unittest.TestCase):
         for args in (dict(role_context='missing'),dict(role_source='missing'),dict(role_context_sha256='a'*64)):
             with self.subTest(args=args),self.assertRaisesRegex(ValueError,'source root and exact context'):
                 prepare(None,None,None,added_sources={},**args)
+
+
+class CohortTests(unittest.TestCase):
+    def context(self, versions=('5','5','5'), capacitance=125):
+        doc=dict(roles={},application=dict(j2_external_load_a=0,j2_external_drive=False,temperature_c=25,bus_capacitance_pf=capacitance))
+        captures={}
+        from hashlib import sha256
+        pref=dict(path=roles.POLICY_PATH,sha256=sha256(roles.POLICY_RAW).hexdigest())
+        for (rid,(_,members)),version in zip(roles.ROLES.items(),versions):
+            prefix='blocks-v'+version+'/'+rid
+            doc['roles'][rid]=dict(block=prefix,composition=dict(path='compositions-v'+version+'/'+rid+'.json'),report=dict(path='reports-v'+version+'/'+rid+'.json'))
+            app=dict(adaptation_policy=pref,selected_boundary=dict(i2c_line_capacitance=dict(max='150',unit='pF',selection='conservative engineering adaptation envelope',source=pref)))
+            captures[prefix+'/'+roles.POLICY_PATH]=roles.POLICY_RAW
+            captures[prefix+'/roles/'+rid+'/application-contract.json']=storage.json_bytes(app)
+            parts=copy.deepcopy(roles.POLICY['base_allocations'][rid])
+            if version=='6':
+                for row in parts:
+                    if row['id'] in ('R1','R2'):row.update(manufacturer='PANASONIC',mpn='ERJ3EKF1001V',lcsc='C118155')
+            app['members']=[{k:m[k] for k in ('id','lcsc','manufacturer','mpn','lib_id','footprint')} for m in parts]
+            app['limits']=[dict(id='i2c-capacitance',max='150',source=pref)]
+            captures[prefix+'/roles/'+rid+'/application-contract.json']=storage.json_bytes(app)
+            captures[prefix+'/parts.json']=storage.json_bytes(dict(parts=parts))
+            checks=[]
+            if rid=='acq-jst-ph-i2c':
+                model=copy.deepcopy(roles.POLICY['host_interval_template']);model['requirement_sources']={}
+                captures[prefix+'/interval.json']=storage.json_bytes(model)
+                checks=[dict(id='i2c-bus-envelope-intervals',params=dict(assertions='interval.json'))]
+            captures[prefix+'/block.json']=storage.json_bytes(dict(version=version,parts_manifest='parts.json',check_set=checks))
+        return doc,captures
+
+    def test_finite_base_and_alternate_cohorts_preserve_exact_selected_allocations(self):
+        for versions in (('5','5','5'),('5','6','5')):
+            for value in (100,125,150,'125.5'):
+                with self.subTest(versions=versions,value=value):
+                    doc,captures=self.context(versions,value)
+                    result=roles.cohort(doc,captures,value)
+                    self.assertEqual(result['versions'],list(versions))
+                    self.assertEqual(result['declared_bus_capacitance_pf'],str(value))
+                    self.assertEqual(result['host_role_envelope_capacitance_pf'],'150')
+        doc,captures=self.context(('4','4','4'),100)
+        self.assertEqual(roles.cohort(doc,captures,100)['host_role_envelope_capacitance_pf'],'100')
+        with self.assertRaises(ValueError):roles.cohort(doc,captures,150)
+        for versions in (('4','6','4'),('5','4','5'),('6','6','6'),('5','6','4')):
+            doc,captures=self.context(versions)
+            with self.subTest(versions=versions),self.assertRaises(ValueError):roles.cohort(doc,captures,125)
+
+    def test_numeric_context_and_j2_are_strict_and_equal_to_brief(self):
+        for value in (True,100.0,'1e2','NaN','100.0','99','151','125.12345678901234567890123456789'):
+            doc,captures=self.context(capacitance=value)
+            with self.subTest(value=value),self.assertRaises(ValueError):roles.cohort(doc,captures,125)
+        for field,value in (('temperature_c',25.0),('temperature_c',True),('j2_external_load_a',False),('j2_external_load_a',.001),('j2_external_drive',0),('j2_external_drive',True)):
+            doc,captures=self.context();doc['application'][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):roles.cohort(doc,captures,125)
+        doc,captures=self.context()
+        with self.assertRaises(ValueError):roles.cohort(doc,captures,100)
+
+    def test_stale_template_mixed_policy_source_and_one_resistor_changes_refuse(self):
+        for change in ('template','policy','boundary','member','limit-source','part','provided-package','overlap','report'):
+            doc,captures=self.context(('5','6','5'))
+            rid='acq-jst-ph-i2c';prefix=doc['roles'][rid]['block']+'/'
+            if change=='template':
+                model=strict_json(captures[prefix+'interval.json']);model['parameters']['bus_c']['max']='100e-12 F';captures[prefix+'interval.json']=storage.json_bytes(model)
+            elif change=='policy':captures[prefix+roles.POLICY_PATH]+=b' '
+            elif change=='boundary':
+                path=prefix+'roles/'+rid+'/application-contract.json';app=strict_json(captures[path]);app['selected_boundary']['i2c_line_capacitance']['max']='200';captures[path]=storage.json_bytes(app)
+            elif change in ('member','limit-source'):
+                path=prefix+'roles/'+rid+'/application-contract.json';app=strict_json(captures[path])
+                if change=='member':app['members'][0]['lcsc']='C22548'
+                else:app['limits'][0]['source']={'path':'spec.md','locator':'old100pF'}
+                captures[path]=storage.json_bytes(app)
+            elif change in ('part','provided-package'):
+
+                path=doc['roles']['acq-ads1115-two-channel']['block']+'/parts.json';parts=strict_json(captures[path]);row=next(r for r in parts['parts'] if r['id']=='R2');row['lcsc' if change=='part' else 'package']='C22548' if change=='part' else '0805';captures[path]=storage.json_bytes(parts)
+            elif change=='overlap':doc['roles'][rid]['block']=doc['roles']['acq-tps7a2033-power']['block']
+            else:doc['roles'][rid]['report']['path']=doc['roles']['acq-tps7a2033-power']['report']['path']
+            with self.subTest(change=change),self.assertRaises(ValueError):roles.cohort(doc,captures,125)
+
+    def test_authored_v5_transport_propagates_versions_and_labels_judgment_context(self):
+        # Source-only authored graphs exercise the existing typed APIs. They do
+        # not have native runs and cannot pass read() qualification admission.
+        from hashlib import sha256
+        for value in (100,125,150):
+            with self.subTest(value=value),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)/'base';root.mkdir();doc,captures,overlay,_,record,spec,_=authored(self,root)
+                doc['application']['bus_capacitance_pf']=value
+                for entry in doc['roles'].values():
+                    path=entry['block']+'/block.json';source=strict_json(captures[path]);source['version']='5'
+                    contract=entry['block']+'/block-contract.json';captures[contract]=storage.json_bytes(block_contract(source))
+                    source['files']['block-contract.json']=sha256(captures[contract]).hexdigest()
+                    captures[path]=storage.json_bytes(source);entry['block_sha256']=sha256(captures[path]).hexdigest()
+                doc['files']={p:sha256(raw).hexdigest() for p,raw in captures.items()}
+                report=roles.apply(root,dict(parts={'manifest':'parts.json'}),overlay,doc,captures)
+                self.assertEqual(report['capacitance_admission']['declared_bus_capacitance_pf'],str(value))
+                self.assertEqual(report['capacitance_admission']['host_role_envelope_capacitance_pf'],'150')
+                for path in report['instances']:self.assertEqual(strict_json((root/path).read_bytes())['version'],'5')
+                host=overlay['judgments']['judgments/acq-elec-5-host-bus-contract.json']
+                self.assertIn(roles.AT+'/admission.json',host['sources'])
+                self.assertTrue(any('declared_bus_capacitance_pf' in q and 'host_role_envelope_capacitance_pf' in q for q in host['questions']))
+                derived=typed_overlay.derive_map(requirement_map.map_declaration((root/'requirement-map.json').read_bytes()),overlay)
+                obligations=requirement_map.load_obligations(storage.json_bytes(typed_overlay.derive_obligations(record,spec,overlay)),record,spec)
+                scope,_=requirement_map.account_requirements(derived,record,spec,files=requirement_map.input_inventory(root),inputs=root,obligations=obligations)
+                for path in report['instances']:
+                    ident=strict_json((root/path).read_bytes())['id']
+                    block_adaptation.capability(dict(instance=path,netlist_check='netlist'),scope,requirement_map.input_inventory(root),root,ident+'-provenance')
+
+                for key in ('acq-mech-3-return-paths','acq-elec-2-source-evaluation','acq-elec-5-host-bus-contract'):
+                    overlay['judgments'].pop('judgments/'+key+'.json')
+                overlay_path=root.parent/('overlay-'+str(value)+'.json');storage.write_json(overlay_path,overlay)
+                sealed=root.parent/('sealed-'+str(value))
+                typed_overlay.prepare(root,overlay_path,sealed,added_sources={})
+                compiled,_=requirement_map.compile_map((sealed/'requirement-map.json').read_bytes(),
+                    (sealed/'spec-record.json').read_bytes(),(sealed/'spec.md').read_bytes(),
+                    files=requirement_map.input_inventory(sealed),inputs=sealed,obligations_raw=(sealed/'obligations.json').read_bytes())
+                self.assertEqual(compiled['block_instances'],report['instances'])
+
+    def test_inactive_sibling_application_does_not_override_own_role_policy(self):
+        doc,captures=self.context(('5','6','5'))
+        for rid,entry in doc['roles'].items():
+            for sibling in roles.ROLES:
+                if sibling!=rid:captures[entry['block']+'/roles/'+sibling+'/application-contract.json']=b'{"inactive_historical_context":true}\n'
+        self.assertEqual(roles.cohort(doc,captures,125)['versions'],['5','6','5'])
+
+
+    def test_common_policy_template_binds_exactly_to_each_public_brief(self):
+        for versions in (('5','5','5'),('5','6','5')):
+            doc,captures=self.context(versions,copy.deepcopy(roles.BRIEF_CAPACITANCE))
+            original=storage.json_bytes(doc)
+            for value in (100,125,150):
+                result=roles.cohort(doc,captures,value)
+                bound=roles.bind_application(doc,value,envelope=result['host_role_envelope_capacitance_pf'])
+                self.assertEqual(bound['application']['bus_capacitance_pf'],str(value))
+                self.assertEqual(bound['application_binding']['source_application'],doc['application'])
+                self.assertEqual(storage.json_bytes(doc),original)
+                self.assertNotEqual(storage.json_bytes(bound),original)
+            for wrong in ({'from':'public-brief','policy':'other'},{**roles.BRIEF_CAPACITANCE,'max':200}):
+                altered=copy.deepcopy(doc);altered['application']['bus_capacitance_pf']=wrong
+                with self.assertRaises(ValueError):roles.cohort(altered,captures,125)
+        doc,captures=self.context(('4','4','4'),copy.deepcopy(roles.BRIEF_CAPACITANCE))
+        with self.assertRaises(ValueError):roles.cohort(doc,captures,100)
