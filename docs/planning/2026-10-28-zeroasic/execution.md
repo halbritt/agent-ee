@@ -2,6 +2,69 @@
 
 Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
 
+## Current progress — 2026-10-29 10:36 UTC
+
+The owner's goal remains active through actual G4 acceptance. **Acceptance is
+0/4; the measured series has not started.** The following supersedes older
+snapshots below without replacing their retained failures.
+
+The integration branch contains the approved source body/access planner and
+strict mechanics package replay. Review found and corrected a rejection of
+declared-fixed but unlocked components. The corrected package bridge is
+integrated as `1c95e254` and `4c9bdc26`. The first new runtime build failed
+before native tests because a Rust test's included geometry fixture was absent
+from the container build context. Correction `9f763aea` copies and hashes that
+fixture in the build receipt. The next build passed all 119 Rust tests; 127
+selected Python checks, including native placement, routing, cancellation and
+same-identity resume, passed. The complete invocation exited 0 in 304.864 seconds.
+This is source/runtime qualification, not an actual target or full strict pass.
+
+An actual local-return producer control on a retained pre-route acquisition
+board exposed a native UTF8-wrapper/string mismatch hidden by its test double.
+Independently approved correction `ebbaef83` converts that native value to
+text. The next control exited 0 in 3.278 seconds: native DRC rejected two
+shorting/mask-bridge proposals, then accepted a 3.825 mm seed with unchanged
+library warnings. Native preservation passed for that seed and refused the
+unseeded original. All rejected boards and reports remain. The selected board
+still has 36 unconnected items because this control performed no routing;
+it is not a target improvement or accepted package.
+
+The automatic ADC carrier selector and existing public preparer wiring are
+implemented but remain blocked from integration. Earlier private-fixture skips
+and permanent test guards were corrected. Review of `d2acebac` then found the
+selected C468683 lacks its own supplier footprint in the CPL declaration and
+the operative assembly roster still names the previous part/catalog. Agent-692
+owns that precise input correction and one bounded source capture through the
+existing supplier producer. No stock freshness, orientation or assembly
+predicate is waived. A fresh G2 run will stop at artwork for all 14 candidate
+judgments and independent witnesses before its first package attempt.
+
+For original esp_prog, the attributable legacy schematic was found and
+converted through installed eeschema's GUI. Independent review confirmed all
+16 functional identities and 24 electrical net partitions. The first usable
+native parity check exposed 35 metadata findings. A separately authorized
+derivative corrected the CON2 footprint assignment, synchronized captured
+metadata and automatic net names, and marked the five known noncomponent
+footprints board-only. Its native parity reports zero findings and zero opens;
+255 physical/artwork/library warnings remain. That derivative is undergoing
+independent custody review; original sources, project and selected board are
+unchanged. This is not original M1 acceptance.
+
+The bounded text-size producer and receipt replay are independently approved
+and integrated as `2c245951`. All 30 selected checks passed in the supported
+native environment, including the previously blocked native import test.
+Actual esp_prog text-size repair, final artwork, selected process-policy site
+assessment and the remaining M1 operational checks are still open. Existing
+DFM and router clearance capabilities can support the process-policy work;
+no captured filled/capped supplier entitlement has been established.
+
+Current evidence is retained beneath the host campaign root in
+`mechanics-runtime-native-r1`, `mechanics-runtime-native-r2`,
+`local-return-native-r1`, `local-return-native-r2`,
+`acquisition-alternative-producer-agent692/`, and `esp-original-native-r1/`.
+Full strict qualification, the private four-case evaluator, release evidence,
+trunk integration and owned-worktree cleanup remain required before completion.
+
 ## Direct authority
 
 Owner, directly to agent-688, 2026-10-28:
