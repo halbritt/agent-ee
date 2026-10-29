@@ -61,6 +61,72 @@ class CompositionContractTests(unittest.TestCase):
             self.assertFalse((root / request['record']).exists())
 
 
+class CompositionNoConnectTests(unittest.TestCase):
+    """2026-10-29 P0 bare native library-NC needs a localized geometric witness."""
+    def classify(self, extra=None, *, native_type='no_connect', source_type='no_connect',
+                 hidden=False, suffix=False, graph_change=None, source_change=None):
+        from tests.test_hardware_interface import no_connect_probe, no_connect_marker, generator
+        from agent_ee.block_composition import _no_connect_status
+        base=no_connect_probe(hidden).replace('(symbol "Probe_1_1" (pin no_connect',
+            '(symbol "Probe_1_1" (pin '+source_type)
+        if source_change:base=source_change(base)
+        if extra is None:extra=no_connect_marker(120,50,'composition-nc')
+        tree=parse_quoted((base[:-2]+extra+')\n').encode())
+        graph=dict(components={'PROBE':dict(pins=['1'],uuid=generator.uid('PROBE'),
+            pin_metadata={'1':dict(electrical_type=native_type)})},
+            memberships={('PROBE','1'):'nc'},nets={'nc':dict(terminals=(('PROBE','1'),),
+                auto_unconnected_singleton=True,no_connect_marker=suffix)})
+        if graph_change:graph_change(graph)
+        before=copy.deepcopy(graph)
+        result=_no_connect_status(tree,graph,'PROBE','1')
+        self.assertEqual(graph,before)  # Do not relabel the global native marker bit.
+        return result
+
+    def test_bare_library_nc_requires_its_matching_explicit_isolated_source_marker(self):
+        for hidden in (False,True):
+            with self.subTest(hidden=hidden):self.assertEqual(self.classify(hidden=hidden)[0],'disconnected')
+        self.assertEqual(self.classify(native_type='output',source_type='output',suffix=True)[0],'disconnected')
+
+    def test_ordinary_unsuffixed_and_native_source_type_mismatch_refuse(self):
+        cases=[('output','output',False),('passive','passive',False),
+               ('no_connect','output',False),('output','no_connect',False),
+               ('no_connect','output',True),('output','no_connect',True),(None,'no_connect',False)]
+        for native,source,suffix in cases:
+            with self.subTest(native=native,source=source,suffix=suffix):
+                self.assertEqual(self.classify(native_type=native,source_type=source,suffix=suffix)[0],'violation')
+
+    def test_marker_geometry_and_unique_source_point_remain_required(self):
+        from tests.test_hardware_interface import no_connect_marker,global_label,wire
+        marker=no_connect_marker(120,50,'composition-nc')
+        cases={'absent':'','offset':no_connect_marker(120.0001,50,'off'),
+            'duplicate':marker+no_connect_marker(120,50,'duplicate'),
+            'near wire':marker+wire((120.01,50),(130,50),'near'),
+            'on pin wire':marker+wire((120,50),(130,50),'on'),
+            'on pin label':marker+global_label('TEST',120,50,'label'),
+            'local label':marker+'(label "L" (at 120 50 0) (effects (font (size 1 1))) (uuid "local-label"))',
+            'unsupported':marker+'(rule_area (polyline (pts (xy 0 0) (xy 1 1))))'}
+        for hidden in (False,True):
+            for name,extra in cases.items():
+                with self.subTest(hidden=hidden,case=name):
+                    self.assertNotEqual(self.classify(extra,hidden=hidden)[0],'disconnected')
+        self.assertEqual(self.classify(graph_change=lambda g:g['components']['PROBE'].update(uuid='foreign'))[0],'unknown')
+        self.assertEqual(self.classify(source_change=lambda b:b.replace('(at 120 50 0)', '(at 120 50 45)',1))[0],'unknown')
+        def duplicate(base):
+            tree=parse_quoted(base.encode())
+            probe=next(n for n in children(tree,'symbol') if any(p[1:3]==['Reference','PROBE'] for p in children(n,'property')))
+            tree.append(copy.deepcopy(probe))
+            return '\n'.join(format_sexpr(tree))+'\n'
+        self.assertEqual(self.classify(source_change=duplicate)[0],'unknown')
+
+    def test_connected_missing_or_nonautomatic_native_membership_refuses_before_alternate_witness(self):
+        changes=[lambda g:g['nets']['nc'].update(terminals=(('PROBE','1'),('OTHER','2'))),
+                 lambda g:g['components']['PROBE'].update(pins=[]),
+                 lambda g:g['memberships'].clear(),
+                 lambda g:g['nets']['nc'].update(auto_unconnected_singleton=False)]
+        for change in changes:
+            with self.subTest(change=change):self.assertEqual(self.classify(graph_change=change)[0],'violation')
+
+
 class NativeCompositionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

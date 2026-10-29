@@ -82,13 +82,20 @@ def _no_connect_status(tree, graph, reference, pin):
         return 'violation', 'native export connects the declared no-connect pin'
     if not net['auto_unconnected_singleton']:
         return 'violation', 'native export lacks an auto-unconnected singleton'
-    if not net['no_connect_marker']:
-        return 'violation', 'native export lacks the explicit no-connect marker witness'
     geometry, problems = sheet_items(tree)
     targets = [item for item in geometry if item['kind'] == 'pin' and item['number'] == pin
                and field(item['node'], 'uuid', 1) == [comp['uuid']]]
     if len(targets) != 1:
         return 'unknown', 'no-connect pin has no unique captured source point'
+    native_type = comp.get('pin_metadata', {}).get(pin, {}).get('electrical_type')
+    source_type = targets[0]['pin']['type']
+    if native_type != source_type:
+        return 'violation', 'native and captured source no-connect pin types differ'
+    # Bare native no_connect is a library type, not a global marker bit.
+    # Only the matching captured library-NC path may use the source marker
+    # and strict isolation below as its localized alternate witness.
+    if not net['no_connect_marker'] and not (native_type == source_type == 'no_connect'):
+        return 'violation', 'native export lacks the explicit no-connect marker witness'
     markers = [item for item in geometry if item['kind'] == 'no_connect'
                and item['shape'][0] == targets[0]['shape'][0]]
     if len(markers) != 1:
