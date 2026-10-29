@@ -496,6 +496,7 @@ def _assess(out):
     rules = rules_register(root, review)
     judgments, decision, blockers = [], {}, []
     demonstrated_failure = False
+    group_evidence = []
     if typed:
         dimensions['operational'] = _operational(report)
         if 'judgments' in plan:
@@ -531,6 +532,12 @@ def _assess(out):
                         raise QualificationError('Legacy package has no unambiguous manufacturing envelope/parts binding')
                     gate_plan = dict(envelope=review.scope['envelope']['path'],
                         parts=dict(manifest=memberships.pop()), placement={})
+                from . import block_package
+                group_binding = block_package.verify_package(root, candidate, review.scope, gate_plan, marker,
+                                                             review.binding['board_sha256'])
+                if group_binding is not None:
+                    artwork = retained_run.completed_stage(root, 'artwork', report)
+                    group_evidence = [_evidence(root, artwork.directory / block_package.PROOF)]
                 manufacturing_coverage(gate_plan, review.scope, receipt['requirements'])
                 artifacts = package_artifacts(review.result, review.scope, candidate)
                 native = {name: pin for name, pin in _inventory(candidate).items()
@@ -596,7 +603,7 @@ def _assess(out):
             for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation')))
     if package is not None:
         dimensions['file_release'] = _dimension('failed' if demonstrated_failure else 'pending' if blockers else 'pass',
-            binding=review.binding if review else None, evidence=[_evidence(root, marker_path)],
+            binding=review.binding if review else None, evidence=[_evidence(root, marker_path), *group_evidence],
             reason='; '.join(blockers) if blockers else None)
     elif report['status'] == 'failed' and report.get('attempts') and report['attempts'][-1]['stage'] == 'package':
         dimensions['file_release'] = _dimension('failed', reason=report.get('reason'))

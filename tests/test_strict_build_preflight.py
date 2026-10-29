@@ -1,4 +1,4 @@
-"""Strict package admission must refuse before runtime work or retained writes."""
+"""Strict package admission reaches runtime; incomplete retained proof still refuses release."""
 import json
 from pathlib import Path
 import tempfile
@@ -28,21 +28,21 @@ def source_plan(root, *, typed=True, strict=True):
 
 
 class StrictBuildPreflightTests(unittest.TestCase):
-    def test_default_package_refuses_fresh_and_resume_without_runtime_or_writes(self):
+    def test_default_strict_package_reaches_runtime_without_writing_before_probe(self):
         for typed in (False, True):
             with self.subTest(typed=typed), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 plan = source_plan(root, typed=typed)
                 out = root / 'build'
                 # Native runtime is an external boundary. Any probe here is already too late.
-                with patch.object(build_workflow, '_runtime', side_effect=AssertionError('runtime probed')):
-                    with self.assertRaisesRegex(ValueError, 'strict block contract package acceptance requires final artwork revalidation'):
+                with patch.object(build_workflow, '_runtime', side_effect=RuntimeError('native runtime boundary')):
+                    with self.assertRaisesRegex(RuntimeError, 'native runtime boundary'):
                         build_workflow.run(plan, out)
                     self.assertFalse(out.exists())
                     out.mkdir()
                     (out / 'retained-sentinel').write_bytes(b'unchanged retained build')
                     before = {p.name: p.read_bytes() for p in out.iterdir()}
-                    with self.assertRaisesRegex(ValueError, 'strict block contract package acceptance requires final artwork revalidation'):
+                    with self.assertRaisesRegex(RuntimeError, 'native runtime boundary'):
                         build_workflow.run(plan, out, resume=True)
                     self.assertEqual({p.name: p.read_bytes() for p in out.iterdir()}, before)
 

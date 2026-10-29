@@ -194,7 +194,7 @@ class PreparedBlockContractTests(unittest.TestCase):
         with self.assertRaisesRegex(placement_job.JobRefusal, 'ambiguous footprint identity'):
             placement_contract.bind(capture, contract, normalized, records)
 
-    def test_build_admits_a_captured_contract_and_refuses_unimplemented_package_bridge(self):
+    def test_build_admits_contract_but_package_without_retained_basis_refuses(self):
         from agent_ee import build_plan, build_stages
         plan = dict(schema=build_plan.SCHEMA, source='inputs', envelope='envelope.json',
             requirements=dict(map='map.json', record='record.json', spec='spec.md'),
@@ -209,3 +209,187 @@ class PreparedBlockContractTests(unittest.TestCase):
         plan['placement']['block_contract'] = '../not-captured.json'
         with self.assertRaises(ValueError):
             build_plan.validate_plan(plan)
+
+
+class FinalArtworkBlockProofTests(unittest.TestCase):
+    """Sealed CPU custody + real evaluator; fresh native process is the only replaced boundary."""
+    def setUp(self):
+        import shutil
+        from agent_ee import retained_run, native_run
+        from agent_ee.storage import canonical, digest, identity, write_json
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.facts, contract, _, self.records = fixture()
+        self.facts['pcbnew_version'] = 'CPU fixture, not native calibration'
+        source = self.root / 'source'; source.mkdir()
+        board = b'original authored CPU bytes, not KiCad'
+        self.facts['board_sha256'] = hashlib.sha256(board).hexdigest()
+        contract['allocation']['board_sha256'] = self.facts['board_sha256']
+        contract['eligibility']['sources']['board_sha256'] = self.facts['board_sha256']
+        for name, raw in {'board.kicad_pcb': board, 'board.kicad_pro': b'{}',
+                          'contract.json': canonical(contract), 'intent.json': b'{}',
+                          'groups.json': canonical({'groups':[dict(name='device',anchor='U1',refs=['U1','C1'])]}),
+                          'locality.json':canonical(contract['relationships'])}.items():
+            (source/name).write_bytes(raw)
+        self.plan = {'placement':dict(block_contract='contract.json',intent='intent.json',groups='groups.json')}
+        self.scope = dict(board='board.kicad_pcb',checks=[dict(kind='placement',params=dict(
+            criterion='electrical-locality/1',locality='locality.json'))])
+        self.report = retained_run.initialize(self.root,dict(plan_sha256='a'*64,
+            source=retained_run._inventory(source),runtime={}))
+        previous = source
+        for stage in retained_run.STAGES[:5]:
+            attempt = retained_run.begin_stage(self.root,stage)
+            candidate = attempt.capture(previous)
+            if stage == 'placement-routing':
+                normalized = placement_job.normalize_intent({}, {'groups':[dict(name='device',anchor='U1',refs=['U1','C1'])]},
+                    locality=contract['relationships'],board_sha256=self.facts['board_sha256'],
+                    groups_sha256=digest(candidate/'groups.json'))
+                binding = placement_contract.bind(self.facts,contract,normalized,self.records)
+                write_json(attempt.directory/'placement-config.json',dict(inputs={key:dict(path=str(candidate/name),
+                    sha256=digest(candidate/name)) for key,name in dict(board='board.kicad_pcb',
+                    project='board.kicad_pro',intent='intent.json',groups='groups.json',
+                    locality='locality.json',block_contract='contract.json').items()}))
+                write_json(attempt.directory/'placement/capture.json',dict(block_contract=binding,
+                    facts_sha256=placement_job.sha256_bytes(canonical(self.facts)),
+                    board_sha256=self.facts['board_sha256'],pcbnew_version=self.facts['pcbnew_version']))
+                # Actual build adoption overwrites this config path; original basis must use schematic.
+                (candidate/'board.kicad_pcb').write_bytes(b'routed CPU bytes')
+            retained_run.record_completion(self.root,self.report,attempt,candidate)
+            retained_run.write_report(self.root,self.report);previous=candidate
+        self.artwork = retained_run.begin_stage(self.root,'artwork')
+        self.candidate = self.artwork.capture(previous)
+        self.saved = deepcopy(self.facts)
+
+    def reader(self, call):
+        import json
+        from agent_ee import native_run
+        self.assertEqual(call.intent.argv[-2], '_check_blocks')
+        path = Path(call.intent.argv[-1])
+        facts = deepcopy(self.saved); facts['board_sha256'] = placement_job.digest(path)
+        report = placement_contract.grade(facts,json.loads(call.intent.stdin)['binding'])
+        return native_run.Outcome(stdout=json.dumps(report).encode())
+
+    def seal(self):
+        from agent_ee import block_package, retained_run, native_run
+        with native_run.using(native_run.Recorded(self.reader)):
+            block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
+        retained_run.record_completion(self.root,self.report,self.artwork,self.candidate)
+        retained_run.write_report(self.root,self.report)
+
+    def test_saved_artwork_proof_preserves_original_basis_and_binds_both_artwork_branches(self):
+        from agent_ee import block_package
+        from agent_ee.storage import digest
+        # Finishing changes bytes only; both branch outputs must use their actual saved digest.
+        for branch in ('repaired','no_movable_fields'):
+            with self.subTest(branch=branch):
+                (self.candidate/'board.kicad_pcb').write_bytes(branch.encode())
+                from agent_ee import native_run
+                with native_run.using(native_run.Recorded(self.reader)):
+                    block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
+                from agent_ee.storage import read_json
+                proof=read_json(self.artwork.directory/block_package.PROOF)
+                self.assertEqual(proof['report']['board_sha256'],digest(self.candidate/'board.kicad_pcb'))
+                self.assertEqual(proof['report']['original_board_sha256'],self.facts['board_sha256'])
+                self.assertEqual(proof['report']['status'],'pass')
+        self.seal()
+        binding=block_package.verify(self.root,self.candidate,self.scope,self.plan)
+        self.assertEqual(binding['board_sha256'],digest(self.candidate/'board.kicad_pcb'))
+        self.assertEqual(block_package.verify(None,None,None,{'placement':{}}),None)
+        self.assertIsNone(block_package.produce(None,None,None,None,{}))
+
+    def test_final_coordinate_defect_and_required_unknown_refuse_with_retained_report(self):
+        from agent_ee import block_package, native_run
+        from agent_ee.storage import read_json
+        for case in ('coordinate','membership','unknown'):
+            self.saved=deepcopy(self.facts)
+            if case=='coordinate':
+                for pad in self.saved['footprints'][1]['pads']:
+                    pad['position_nm'][0] += 10*MM
+            elif case=='membership':
+                self.saved['footprints'].pop()
+            else:
+                self.saved['footprints'][1]['pads'][1].pop('copper_centroid_offset_nm')
+            with self.subTest(case=case), native_run.using(native_run.Recorded(self.reader)):
+                with self.assertRaisesRegex(ValueError,'defects or required unknowns'):
+                    block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
+            proof=read_json(self.artwork.directory/block_package.PROOF)
+            self.assertNotEqual(proof['report']['status'],'pass')
+
+    def test_missing_or_changed_proof_and_candidate_bytes_cannot_release(self):
+        from agent_ee import block_package, retained_run
+        from agent_ee.storage import read_json, write_json, identity
+        self.seal()
+        path=self.artwork.directory/block_package.PROOF
+        original=path.read_bytes()
+        for case in ('missing','board','report','binding','groups','policy','declaration'):
+            with self.subTest(case=case):
+                if case=='missing':path.unlink()
+                elif case=='board':(self.candidate/'board.kicad_pcb').write_bytes(b'after proof edit')
+                elif case=='declaration':
+                    proof=read_json(path)
+                    (self.candidate/'groups.json').write_bytes(b'changed authored groups')
+                    proof['final_files']['groups.json']=placement_job.digest(self.candidate/'groups.json')
+                    write_json(path,proof)
+                else:
+                    proof=read_json(path)
+                    if case=='report':proof['report']['original_board_sha256']='b'*64
+                    else:proof['basis'][case+'_sha256']='b'*64
+                    proof['report_sha256']=identity(proof['report']);write_json(path,proof)
+                # Resealing models forged custody: semantic validation must still refuse.
+                self.report['completed'][-1]['tree']=retained_run.tree_identity(self.artwork.directory)
+                retained_run.write_report(self.root,self.report)
+                with self.assertRaisesRegex((ValueError,KeyError),'proof is missing|proof identity differs'):
+                    block_package.verify(self.root,self.candidate,self.scope,self.plan)
+                path.write_bytes(original)
+                schematic=retained_run.completed_stage(self.root,'schematic')
+                (self.candidate/'groups.json').write_bytes((schematic.candidate/'groups.json').read_bytes())
+                (self.candidate/'board.kicad_pcb').write_bytes(b'routed CPU bytes')
+                self.report['completed'][-1]['tree']=retained_run.tree_identity(self.artwork.directory)
+                retained_run.write_report(self.root,self.report)
+
+    def test_original_capture_policy_contract_groups_and_source_route_cannot_be_rebound(self):
+        from agent_ee import block_package, retained_run
+        from agent_ee.storage import read_json, write_json
+        self.seal()
+        placement=retained_run.completed_stage(self.root,'placement-routing')
+        original=read_json(placement.directory/'placement/capture.json')
+        for case in ('missing','policy','contract','groups','source_route'):
+            changed=deepcopy(original)
+            if case=='missing':del changed['block_contract']
+            elif case=='source_route':self.plan['placement']['block_source']='never-produced.json'
+            else:changed['block_contract'][case+'_sha256' if case!='contract' else 'contract']='changed'
+            write_json(placement.directory/'placement/capture.json',changed)
+            self.report['completed'][4]['tree']=retained_run.tree_identity(placement.directory)
+            retained_run.write_report(self.root,self.report)
+            with self.subTest(case=case),self.assertRaises((ValueError,KeyError,TypeError,placement_job.JobRefusal)):
+                block_package.verify(self.root,self.candidate,self.scope,self.plan)
+            self.plan['placement'].pop('block_source',None)
+
+
+    def test_qualification_requires_matching_package_marker_and_reviewed_saved_board(self):
+        from agent_ee import block_package
+        self.seal()
+        binding=block_package.verify(self.root,self.candidate,self.scope,self.plan)
+        self.assertEqual(block_package.verify_package(self.root,self.candidate,self.scope,self.plan,
+            {'block_contract':binding},binding['board_sha256']),binding)
+        for marker,board in (({},binding['board_sha256']),({'block_contract':dict(binding,policy_sha256='b'*64)},
+                             binding['board_sha256']),({'block_contract':binding},'b'*64)):
+            with self.subTest(marker=marker,board=board),self.assertRaisesRegex(ValueError,'final review/marker'):
+                block_package.verify_package(self.root,self.candidate,self.scope,self.plan,marker,board)
+
+    def test_fresh_native_child_failure_never_seals_a_final_group_proof(self):
+        from agent_ee import block_package, native_run
+        with native_run.using(native_run.Recorded(lambda call:native_run.Outcome(exit_code=2,stderr=b'CPU failure control'))):
+            with self.assertRaisesRegex(placement_job.JobRefusal,'native block contract check failed'):
+                block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
+        self.assertFalse((self.artwork.directory/block_package.PROOF).exists())
+
+
+    def test_timeout_and_build_cancel_refuse_without_final_group_publication(self):
+        from agent_ee import block_package, native_run
+        for case in ('timeout','cancel'):
+            if case=='cancel':(self.root/'CANCEL').touch()
+            outcome=native_run.Outcome(exit_code=None,execution='timeout')
+            with self.subTest(case=case),native_run.using(native_run.Recorded(lambda call:outcome)):
+                with self.assertRaisesRegex(ValueError,'native read stopped: '+('deadline' if case=='timeout' else 'cancelled')):
+                    block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
+            self.assertFalse((self.artwork.directory/block_package.PROOF).exists())

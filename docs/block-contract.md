@@ -206,16 +206,10 @@ strict path. Advisory-only `info` keeps its existing meaning; it is not an
 independent qualitative engineering judgment. Missing pin coverage remains
 unknown. A later board change invalidates the saved result.
 
-This is a source/CPU-tested vertical slice. Native calibration, the real public
-control/mutation and independent acceptance remain required. Strict build
-admission permits a diagnostic target through `artwork`, subject to the missing
-generated-board binding above. Requests targeting `package`, including default-
-target resumes, refuse after source preflight and before runtime probes, output
-creation, retained-run writes or judgment freezing. The package-stage guard
-remains as defense in depth: final artwork/package contract revalidation is not
-yet implemented.
-The placement report cannot qualify different artwork bytes. The existing
-file-only package behavior for plans without this input remains unchanged.
+This remains a source/CPU-tested bridge. Native calibration and the real public
+control/mutation remain required. The placement report cannot qualify different
+artwork bytes. Plans without a strict declaration keep their existing file-only
+package behavior.
 
 ## Boardless source producer (Slice A; diagnostic only)
 
@@ -246,11 +240,44 @@ is compared before routed output adoption. Repeated fixed/silk labels keep the
 UUID projection; no native labels are edited. Source/runtime changes refuse
 resume, and a partial producer is not a completed stage.
 
-Slice A leaves the authored requirement map and baseline unchanged. It neither
-adds nor requires a `block-contract/1` check criterion. Both strict input forms
-still refuse package/default/resume-to-package before runtime, output creation
-or judgment freeze; the stage guard also remains. Through-artwork is diagnostic
-and `accepted:false`. Slice B must introduce its real final-artwork criterion
-and matching coverage in a NEW captured map/run. No late check insertion or
-resume upgrade can qualify an A build. Native feasibility, composition, timing,
-final-artwork/package grading and engineering acceptance remain unqualified.
+The authored requirement map and baseline stay unchanged: this producer does not
+add a check criterion or upgrade captured coverage. Diagnostic checkpoints remain
+`accepted:false`. Package release additionally requires the stage-owned final
+saved-board proof below, plus every existing manufacturing, review and judgment
+gate. A previously completed artwork stage without that proof cannot resume to
+strict package release; start a new captured run under the implemented source.
+
+## Final artwork and package binding
+
+After either successful artwork branch (`repaired` or `no_movable_fields`), the
+stage calls the existing bounded fresh `placement_job.check_block_contract`
+reader on the actual saved board. It retains `block-contract-final.json` beside
+the artwork candidate, including the full evaluator report and its advisories,
+original-basis identities, checking policy and exact final candidate inventory.
+Defects or required unknowns fail the stage; there is no separate acceptance
+boolean or substitute geometry predicate.
+
+Original normalization is reconstructed from the sealed schematic candidate,
+with the original board/project/present rules or explicit rules absence and
+captured intent/groups/locality/contract pins checked against placement config.
+The config board path may now contain routed bytes and is never read as the
+original. For boardless source, the fixed schematic producer and adoption chain
+are independently verified against that schematic candidate; its binding must
+equal the sealed placement capture. Native-bound declarations retain their exact
+original board identity. Complete role allocation, fixed UUID aliases, effective
+locality and policy use the existing binding validator unchanged.
+
+Package checks the completed artwork proof before freezing judgments and again
+at production, then binds it to the reviewed board and accepted-package marker.
+Qualification/resume independently replay the original basis, proof structure,
+policy, declaration bytes, full final candidate custody, marker and reviewed
+board identity. Missing, incomplete, stale or wrong-board evidence refuses strict
+release. The proof is linked in file-release evidence so advisories remain
+inspectable. Unsupported placement inputs that cannot reproduce normalization
+(such as a separately supplied group-rails input) refuse explicitly. Standalone
+package production without its retained run also refuses. Review profiles,
+manufacturing coverage and engineering judgment requirements remain separate.
+
+CPU controls establish these source/custody contracts only. Native feasibility,
+actual saved-coordinate grading, package operation, ZA-05/M1/G4 and manufacturing
+or engineering acceptance still require independent native evidence.

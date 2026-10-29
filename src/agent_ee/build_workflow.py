@@ -113,9 +113,6 @@ def run(plan_path, out, *, resume=False, through='package'):
     if through not in STAGES:
         raise ValueError('unknown build stage')
     plan_path, out, plan_raw, plan, source, source_files = preflight_build(plan_path, out)
-    if through == 'package' and {'block_contract', 'block_source'} & plan['placement'].keys():
-        raise ValueError('strict block contract package acceptance requires final artwork revalidation; '
-                         'use --through artwork; package bridge is not implemented')
     pin = dict(plan_sha256=hashlib.sha256(plan_raw).hexdigest(), source=source_files, runtime=_runtime())
     binding = identity(pin)
     if resume:
@@ -187,6 +184,9 @@ def run(plan_path, out, *, resume=False, through='package'):
                                               status='running', identity=binding))
                 retained_run.write_report(out, report)
                 before = tree_identity(previous)
+                if stage == 'package':
+                    from . import block_package
+                    block_package.verify(out, previous, retained_run.scope(out).document, plan)
                 if stage == 'package' and plan['schema'] == TYPED_SCHEMA:
                     qualification.freeze_judgments(source, previous, plan, directory)
                     path = directory / 'judgment-inventory.json'

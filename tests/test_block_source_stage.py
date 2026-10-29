@@ -91,13 +91,13 @@ class BlockSourceTests(unittest.TestCase):
         write_json(source/'groups.json',{'groups':[dict(name='device',anchor='U1',refs=['U1','C1'])]})
         return path,source
 
-    def test_strict_source_package_and_resume_refuse_before_runtime_and_writes(self):
+    def test_strict_source_package_admission_reaches_runtime_but_standalone_package_refuses(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);path,source=self._plan_files(root);out=root/'run'
             for resume in (False,True):
                 if resume:out.mkdir();(out/'sentinel').write_bytes(b'unchanged')
-                with patch.object(build_workflow,'_runtime',side_effect=AssertionError('runtime probed')):
-                    with self.assertRaisesRegex(ValueError,'requires final artwork revalidation'):
+                with patch.object(build_workflow,'_runtime',side_effect=RuntimeError('native runtime boundary')):
+                    with self.assertRaisesRegex(RuntimeError,'native runtime boundary'):
                         build_workflow.run(path,out,resume=resume)
                 self.assertEqual(out.exists(),resume)
                 if resume:self.assertEqual((out/'sentinel').read_bytes(),b'unchanged')
@@ -135,6 +135,7 @@ class ProducerTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.candidate=self.root/'candidate';self.candidate.mkdir()
         self.source,self.facts,self.records=source_fixture()
+        self.facts['pcbnew_version']='CPU fixture; no native calibration'
         self.names=dict(board='board.kicad_pcb',project='board.kicad_pro',rules=None,
                         source='source.json',intent='intent.json',groups='groups.json',locality='locality.json')
         for name,raw in {'board.kicad_pcb':b'CPU bytes; NOT a native board', 'board.kicad_pro':b'{}',
@@ -153,6 +154,7 @@ class ProducerTests(unittest.TestCase):
         normalized=request['normalized']
         binding=contract.bind(self.facts,normalized['block_contract'],normalized,self.records)
         record=dict(schema='agent-ee.placement-job-capture/1',block_contract=binding,
+                    board_sha256=self.facts['board_sha256'],pcbnew_version=self.facts['pcbnew_version'],
                     facts_sha256=job.sha256_bytes(canonical(self.facts)))
         return native_run.Outcome(stdout=json.dumps(dict(problem={'schema':job.INPUT_SCHEMA},record=record)).encode())
 
@@ -273,6 +275,32 @@ class ProducerTests(unittest.TestCase):
             with self.subTest(target=target),self.assertRaisesRegex(ValueError,'changed|no longer matches|differs'):
                 stage.verify(root,consumer,self.scope,self.plan)
             path.write_bytes(original)
+        # Continue the actual sealed producer/adoption chain into original-basis replay and artwork proof.
+        from agent_ee import block_package
+        placement=retained_run.begin_stage(root,'placement-routing')
+        placed=placement.capture(candidate)
+        config=dict(inputs={key:dict(path=str(placed/name),sha256=digest(placed/name))
+            for key,name in dict(board='board.kicad_pcb',project='board.kicad_pro',intent='intent.json',
+                groups='groups.json',locality='locality.json',block_contract=stage.DIRECTORY+'/contract.json').items()})
+        write_json(placement.directory/'placement-config.json',config)
+        write_json(placement.directory/'placement/capture.json',dict(block_contract=expected,
+            board_sha256=self.facts['board_sha256'],pcbnew_version=self.facts['pcbnew_version'],
+            facts_sha256=job.sha256_bytes(canonical(self.facts))))
+        (placed/'board.kicad_pcb').write_bytes(b'CPU routed bytes, original config path overwritten')
+        retained_run.record_completion(root,report,placement,placed);retained_run.write_report(root,report)
+        artwork=retained_run.begin_stage(root,'artwork');final=artwork.capture(placed)
+        def final_read(call):
+            facts=deepcopy(self.facts);facts['board_sha256']=digest(final/'board.kicad_pcb')
+            result=contract.grade(facts,json.loads(call.intent.stdin)['binding'])
+            return native_run.Outcome(stdout=json.dumps(result).encode())
+        with native_run.using(native_run.Recorded(final_read)):
+            block_package.produce(root,final,artwork.directory,self.scope,self.plan)
+        retained_run.record_completion(root,report,artwork,final);retained_run.write_report(root,report)
+        bound=block_package.verify(root,final,self.scope,self.plan)
+        self.assertEqual(bound['board_sha256'],digest(final/'board.kicad_pcb'))
+        self.assertEqual(read_json(artwork.directory/block_package.PROOF)['basis']['source_kind'],'block_source')
+        # The final board differs: source verification must keep using the sealed schematic.
+        with self.assertRaises(ValueError):stage.verify(root,final,self.scope,self.plan)
         receipt_file=attempt.directory/'receipts/3/receipt.json'
         broken=read_json(receipt_file);broken['status']='failed';write_json(receipt_file,broken)
         with self.assertRaisesRegex(retained_run.QualificationError,'completed stage identity changed'):

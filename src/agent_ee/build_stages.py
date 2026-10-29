@@ -129,15 +129,23 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
 
 
 
-def _package(plan, candidate, stage_dir, scope, accounting, profile=None):
-    if {'block_contract', 'block_source'} & plan['placement'].keys():
-        raise ValueError('strict block contract package acceptance requires final artwork revalidation; '
-                         'use --through artwork; package bridge is not implemented')
+def _package(plan, candidate, stage_dir, scope, accounting, profile=None, *, out=None):
+    from . import block_package
+    if block_package.declared(plan) and out is None:
+        raise ValueError('strict block contract package acceptance requires final artwork revalidation from its retained run')
+    group_proof = block_package.verify(out, candidate, scope, plan)
     qualification.manufacturing_coverage(plan, scope, accounting)
     result = retained_run.review_candidate(candidate_scope(scope, candidate), stage_dir,
                                            plan.get('verification_timeout_s', 3600), profile=profile)
     artifacts = qualification.package_artifacts(result, scope, candidate)
     extra = {}
+    if group_proof is not None:
+        manifest = read_json(stage_dir / 'review/candidate.json')
+        if manifest['files'].get(scope['board']) != group_proof['board_sha256']:
+            raise ValueError('strict group proof differs from reviewed package board')
+        if block_package.verify(out, candidate, scope, plan) != group_proof:
+            raise ValueError('strict group proof changed during package review')
+        extra['block_contract'] = group_proof
     if plan['schema'] == TYPED_SCHEMA:
         extra['judgment_inventory_sha256'] = digest(stage_dir / 'judgment-inventory.json')
     write_json(stage_dir / 'accepted-package.json', dict(artifacts=artifacts,
@@ -273,8 +281,10 @@ def execute(attempt, plan, previous, *, diagnostic=False):
         shutil.copyfile(native, candidate / scope['board'])
     elif stage == 'artwork':
         _artwork(candidate, directory, scope['board'])
+        from . import block_package
+        block_package.produce(out, candidate, directory, scope, plan)
     elif stage == 'package':
         profile = (str(retained_run.retained_path(out, 'source/' + plan['review_profile']))
                    if 'review_profile' in plan else None)
-        _package(plan, candidate, directory, scope, retained_run.accounting(out)['requirements'], profile)
+        _package(plan, candidate, directory, scope, retained_run.accounting(out)['requirements'], profile, out=out)
     return candidate
