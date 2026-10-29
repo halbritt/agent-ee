@@ -88,13 +88,13 @@ def evidence_schema(run_dir, packet, role):
     segment = r'[A-Za-z0-9_-][A-Za-z0-9_.-]*'
     branch = json.loads(json.dumps(EVIDENCE_SCHEMA['items']['anyOf'][1]))
     branch['properties']['path']['pattern'] = (
-        '^review-work/' + re.escape(role) + '/experiments/(?:' + segment + '/)*' + segment + r'$(?![\s\S])')
+        '^review-work/' + re.escape(role) + '/experiments/(?:' + segment + '/)*' + segment + '$')
     branches.append(branch)
     return {'type': 'array', 'items': {'anyOf': branches}, '$defs': definitions}
 
 
 def literal_path_set(paths):
-    """A finite literal trie with an ECMAScript absolute-end assertion."""
+    """A finite literal trie with the non-multiline ECMAScript end anchor."""
     def escaped(char):
         if char in r'\.^$|?*+()[]{}':
             return '\\' + char
@@ -118,8 +118,8 @@ def literal_path_set(paths):
         for char in path:
             node = node.setdefault(char, {})
         node[None] = {}
-    # Unlike $, this assertion cannot match before a final newline.
-    return {'anyOf': [dict(type='string', pattern='^' + render(trie) + r'(?![\s\S])',
+    # ECMAScript $, without the m flag, requires the actual end of input.
+    return {'anyOf': [dict(type='string', pattern='^' + render(trie) + '$',
                           minLength=min(map(len, paths)), maxLength=max(map(len, paths)))]}
 
 

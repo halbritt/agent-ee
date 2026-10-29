@@ -14,6 +14,19 @@ from agent_ee.storage import digest, read_json, write_json
 from tests import test_findings as fixture
 
 
+def ecma_search(pattern, text):
+    """Emulate only ECMAScript's final-$ behavior in these flag-free patterns.
+
+    Python $ also matches before a final LF; ECMAScript $ without m does not.
+    This is a test adapter for that dialect difference, not a provider probe.
+    """
+    if pattern.endswith('$'):
+        backslashes = len(pattern[:-1]) - len(pattern[:-1].rstrip('\\'))
+        if backslashes % 2 == 0:
+            pattern = pattern[:-1] + r'\Z'
+    return re.search(pattern, text)
+
+
 class CitationLocatorTests(unittest.TestCase):
     setUp = fixture.FindingsTests.setUp
     _review = fixture.FindingsTests._review
@@ -50,7 +63,7 @@ class CitationLocatorTests(unittest.TestCase):
             if 'const' in node:
                 return path == node['const']
             if 'pattern' in node:
-                return re.search(node['pattern'], path) is not None
+                return ecma_search(node['pattern'], path) is not None
             return True  # The old unrestricted path shape, used only by the red control.
 
         def fits(citation, schema):
@@ -173,7 +186,7 @@ class CitationLocatorTests(unittest.TestCase):
                     patterns = outgoing['$defs'][ref['$ref'].removeprefix('#/$defs/')]['anyOf']
                     for row in inventory:
                         path = row['path']
-                        if any(p['minLength'] <= len(path) <= p['maxLength'] and re.search(p['pattern'], path)
+                        if any(p['minLength'] <= len(path) <= p['maxLength'] and ecma_search(p['pattern'], path)
                                for p in patterns):
                             paths.add(path)
             return paths
@@ -190,11 +203,11 @@ class CitationLocatorTests(unittest.TestCase):
                  'inputs/a{1,2}.txt', 'inputs/a\\b.txt', 'inputs/µ space.txt', 'inputs/a.txt']
         shape = literal_path_set(paths)
         def accepts(path):
-            return any(p['minLength'] <= len(path) <= p['maxLength'] and re.search(p['pattern'], path)
+            return any(p['minLength'] <= len(path) <= p['maxLength'] and ecma_search(p['pattern'], path)
                        for p in shape['anyOf'])
         for path in paths:
             self.assertTrue(accepts(path), path)
-            for suffix in ('\n', '\r\n', '/../../escape', '.unknown'):
+            for suffix in ('\n', '\r', '\r\n', '\u2028', '\u2029', '/../../escape', '.unknown'):
                 self.assertFalse(accepts(path + suffix), path + repr(suffix))
         for unknown in ('inputs/a0.txt', 'inputs/a11.json', 'inputs/ab.txt', 'inputs/a.txt/../a.txt',
                         '/inputs/a.txt', 'inputs/unknown.txt', 'inputs/./a.txt', 'inputs/a.txt\x00'):
