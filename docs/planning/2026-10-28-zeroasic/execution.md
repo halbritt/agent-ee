@@ -2,7 +2,7 @@
 
 Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
 
-## Current scope and pause — 2026-10-29
+## Current scope and resumption — 2026-10-29
 
 Direct owner instruction: **"remove the ESP-Prog requirements"**. The
 [amended campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
@@ -11,15 +11,18 @@ Only acquisition-applicable qualification, negative/resume evidence and shared
 regressions remain dependencies; broader AGENTEE-515/M1 closure is not required.
 Existing issue parentage does not import those broader acceptance obligations.
 
-Execution remains **paused**. G4 remains **0/4**, with no measured case started.
-This scope amendment authorizes plan/tracker maintenance, not a board run.
+The owner subsequently instructed **"do that and then resume work"**. Execution
+resumes under the amended acquisition-only scope after the plan/tracker update.
+G4 remains **0/4**, with no measured case started. The next acquisition work is
+source-binding and power-removal model correction, followed by a fresh supported
+generation run, independent review and packaging under bounded dispatches.
 All earlier ESP-Prog dispatches, admissions and campaign goal wording below
 are superseded. Historical outcomes, failed attempts and artifacts remain
 retained without a passing qualification or release claim. The four-case
 acquisition acceptance series and its engineering gates remain required.
 
 The following dispatch and progress sections are historical snapshots; they
-do not authorize resumed execution or restore the removed scope.
+do not authorize replaying exhausted attempts or restore the removed scope.
 
 ## Current progress — 2026-10-29 12:41 UTC
 

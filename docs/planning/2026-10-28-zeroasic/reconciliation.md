@@ -10,7 +10,8 @@ Direct owner instruction: **"remove the ESP-Prog requirements"**. The
 limits campaign dependencies on AGENTEE-515 and other shared recovery items to
 acquisition-applicable qualification. Their broader M1/ESP-Prog obligations and
 historical status below remain separate work, not blockers for this campaign.
-No issue is declared accepted or complete by this scope change. Execution stays paused.
+No issue is declared accepted or complete by this scope change. The owner's
+subsequent instruction to resume applies to this amended campaign scope.
 
 ## Current status overrides
 

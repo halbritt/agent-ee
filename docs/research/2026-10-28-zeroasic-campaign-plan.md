@@ -19,7 +19,8 @@ closure of that broader M1 item. Historical ESP-Prog results remain retained;
 their exclusion is not a passing qualification. This amendment supersedes older
 campaign requirements, dependencies and goal wording that include ESP-Prog.
 Acquisition engineering, negative/resume checks and the four-case acceptance
-series remain required. Campaign execution remains paused.
+series remain required. The owner subsequently instructed **"do that and then
+resume work"** on 2026-10-29, authorizing execution under this amended scope.
 
 ## Destination and success criteria
 
