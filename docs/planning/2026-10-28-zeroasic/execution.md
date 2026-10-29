@@ -647,3 +647,60 @@ It is not adopted into a run and does not prove automatic selection, assembly
 eligibility or a fresh accepted board. Supplier/physical statuses remain
 pending. Old preparation, stock-query and saved-board repair limits remain
 exhausted. G4 is unstarted and campaign acceptance remains **0/4**.
+
+### Preparation inputs integrated; final geometry remains the critical path
+
+The public acquisition preparer now captures an explicitly supplied review
+profile, including its exact bytes and requested/effective verification timeout,
+in the preparation identity. Agent-693's `4036c58a` passed independent source
+review and was integrated as `fd93d85c`. The corrected adjacent pure run passed
+23 tests without skips in 6.52 seconds. Its earlier failed invocation remains
+retained. No actual acquisition preparation or full review ran under this grant.
+
+The same preparer now supports finite decimal capacitance bounds throughout
+100–150 pF, integrated as `014f91e6` from `e3ef1595`. One scalar drives the
+captured specification, interval operand, calculation, operating text and
+source mappings. The existing checker permits 28 canonical coefficient digits;
+excess precision refuses instead of rounding. The fixed 2222 ohm worst-case
+pullup and 300 ns limit are unchanged. The upper bound is 282.40509 ns under
+the captured RC model. This is arithmetic applicability, not waveform evidence.
+Independent source review approved the patch; 27 pure tests passed without
+skips, and integrated source/helper hashes match the tested candidate. Public
+development values are 100, 125 and 150 pF. The independent unseen case has
+not been selected or disclosed. Evidence is in
+`preparation-capacitance-range-agent693` beneath the host evidence root.
+
+Independent review blocked strict package candidate `16a9cb0b`: its report
+validator accepted matching identities and a pass status even when membership,
+roles, blocks and relationship measurements were absent. Rehashing the incomplete
+report and its artwork custody could bypass the boundary. Agent-691 has a
+15-minute correction grant with at most two pure test commands. The candidate
+is not integrated. Actual native positive and attributable final-coordinate
+negative evidence remain required after the correction.
+
+The placement input audit found that the acquisition's source body and access
+models do not reach the actual Rust placement job. Agent-697 now owns a bounded
+source patch to carry those models through existing capture, search and saved
+coordinate evaluation: exact 0.2 mm Euclidean body gap, in-board bodies and
+connector access columns expanded by the existing 0.5 mm rule. Native locked
+J1/J2/J3, courtyard/copper occupancy, grouping and electrical locality remain
+required. This is a production constraint change, with no new controller or
+general validation framework. Its 40-minute grant permits four focused CPU
+test commands and no actual target preparation, KiCad/router or model execution.
+The separate ADC routed-loop failure still requires a production correction.
+
+Agent-695 completed the independent original esp_prog outcome audit. It
+confirmed the exact selected `875d0bd2` candidate and retained raw native
+results; it did not accept artwork, grouping or assembly. The next offline
+assignment prepares actual-candidate inputs for the existing campaign and
+routed-artwork producer. It grants no second placement job and does not
+transfer historical artwork evidence to this board.
+
+The judgment source audit also corrected inherited narrative claims: TPS7A20
+DBV thermal resistance is 187.1 degrees C/W, while 201.4 belongs to YCK; the
+16.5 mV rail allowance consumes the remaining two-percent budget; and the
+connector's mounting-height description is not a dimensioned mated drawing.
+Those corrections must inform fresh candidate-specific judgments. None of the
+14 required judgment records has been accepted. Evaluator gaps and automatic
+alternative selection remain open. All original exhausted attempt limits and
+failed artifacts are preserved; campaign acceptance remains **0/4**.
