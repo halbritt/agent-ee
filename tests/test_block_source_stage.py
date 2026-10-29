@@ -291,7 +291,9 @@ class ProducerTests(unittest.TestCase):
         artwork=retained_run.begin_stage(root,'artwork');final=artwork.capture(placed)
         def final_read(call):
             facts=deepcopy(self.facts);facts['board_sha256']=digest(final/'board.kicad_pcb')
-            result=contract.grade(facts,json.loads(call.intent.stdin)['binding'])
+            request=json.loads(call.intent.stdin)
+            result=contract.grade(facts,request['binding'])
+            if request.get('retain_capture') is True:result['saved_capture']=facts
             return native_run.Outcome(stdout=json.dumps(result).encode())
         with native_run.using(native_run.Recorded(final_read)):
             block_package.produce(root,final,artwork.directory,self.scope,self.plan)

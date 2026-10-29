@@ -252,7 +252,7 @@ strict package release; start a new captured run under the implemented source.
 After either successful artwork branch (`repaired` or `no_movable_fields`), the
 stage calls the existing bounded fresh `placement_job.check_block_contract`
 reader on the actual saved board. It retains `block-contract-final.json` beside
-the artwork candidate, including the full evaluator report and its advisories,
+the artwork candidate, including the actual saved capture, full evaluator report and its advisories,
 original-basis identities, checking policy and exact final candidate inventory.
 Defects or required unknowns fail the stage; there is no separate acceptance
 boolean or substitute geometry predicate.
@@ -269,6 +269,11 @@ locality and policy use the existing binding validator unchanged.
 
 Package checks the completed artwork proof before freezing judgments and again
 at production, then binds it to the reviewed board and accepted-package marker.
+The fresh-reader parent and retained verification replay the existing grade
+function on those saved facts and require exact report equality, including complete
+membership, roles, blocks, measurements, fixed poses and advisories. Matching hashes
+and a passing status cannot substitute for coverage. Standalone callers retain
+the existing report format unless they explicitly request the retained capture.
 Qualification/resume independently replay the original basis, proof structure,
 policy, declaration bytes, full final candidate custody, marker and reviewed
 board identity. Missing, incomplete, stale or wrong-board evidence refuses strict

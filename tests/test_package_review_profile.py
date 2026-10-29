@@ -78,10 +78,10 @@ class PlanProfileTests(unittest.TestCase):
                                   capture=lambda previous: previous)
         with mock.patch.object(retained_run, 'scope', return_value=SimpleNamespace(document={})), \
                 mock.patch.object(retained_run, 'accounting', return_value=dict(requirements=[])), \
-                mock.patch.object(build_stages, '_package', lambda *args: calls.append(args[5:])):
+                mock.patch.object(build_stages, '_package', lambda *args, out=None: calls.append((args[5:], out))):
             for plan in (typed(), typed(review_profile='review/profile.json')):
                 build_stages.execute(attempt, plan, self.root / 'candidate')
-        self.assertEqual(calls, [(None,), (str(out / 'source/review/profile.json'),)])
+        self.assertEqual(calls, [((None,), out), ((str(out / 'source/review/profile.json'),), out)])
         reviewed = []
         with mock.patch.object(retained_run, 'review_candidate',
                                lambda scope, directory, timeout, profile=None: reviewed.append(profile) or {}), \

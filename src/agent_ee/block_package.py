@@ -1,7 +1,7 @@
 """Final saved-board block evidence owned by the artwork and package stages."""
 from pathlib import Path
 
-from . import block_source_stage, placement_job, retained_run
+from . import block_source_stage, placement_contract, placement_job, retained_run
 from .catalog import strict_json
 from .run_record import policy_files
 from .storage import digest, identity, read_json, write_json
@@ -100,6 +100,7 @@ def _validate(proof, normalized, basis, files, board):
             or report.get('reference_aliases') != binding['references']
             or any(not isinstance(report.get(key), list) for key in ('defects', 'unknown', 'advisories'))):
         raise ValueError('strict final artwork proof identity differs')
+    placement_contract.verify_saved_report(report, binding)
     if report.get('status') not in ('pass', 'info') or report['defects'] or report['unknown']:
         raise ValueError('strict final artwork groups contain defects or required unknowns')
 
@@ -111,7 +112,7 @@ def produce(out, candidate, directory, scope, plan):
     files = input_inventory(candidate)
     try:
         report = placement_job.check_block_contract(candidate / scope['board'], normalized,
-            clock=placement_job.Clock(60), cancel_dir=Path(out))
+            clock=placement_job.Clock(60), cancel_dir=Path(out), retain_capture=True)
     except placement_job.JobStopped as exc:
         raise ValueError('strict final artwork native read stopped: ' + exc.status) from exc
     proof = dict(basis=basis, final_files=files, report=report, report_sha256=identity(report))

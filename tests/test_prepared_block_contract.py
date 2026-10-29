@@ -265,7 +265,10 @@ class FinalArtworkBlockProofTests(unittest.TestCase):
         self.assertEqual(call.intent.argv[-2], '_check_blocks')
         path = Path(call.intent.argv[-1])
         facts = deepcopy(self.saved); facts['board_sha256'] = placement_job.digest(path)
-        report = placement_contract.grade(facts,json.loads(call.intent.stdin)['binding'])
+        request = json.loads(call.intent.stdin)
+        report = placement_contract.grade(facts,request['binding'])
+        if request.get('retain_capture') is True:
+            report['saved_capture'] = facts
         return native_run.Outcome(stdout=json.dumps(report).encode())
 
     def seal(self):
@@ -393,3 +396,72 @@ class FinalArtworkBlockProofTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'native read stopped: '+('deadline' if case=='timeout' else 'cancelled')):
                     block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
             self.assertFalse((self.artwork.directory/block_package.PROOF).exists())
+
+
+    def test_rehashed_incomplete_coverage_cannot_requalify_resealed_artwork(self):
+        from agent_ee import block_package, retained_run
+        from agent_ee.storage import identity, read_json, write_json
+        self.seal()
+        path=self.artwork.directory/block_package.PROOF
+        original=read_json(path)
+        fields=('membership','roles','blocks','relationships','eligibility_sha256',
+                'plan_sha256','measurement_source','routing_obligations','pose_constraints','saved_capture')
+        for field in fields:
+            changed=deepcopy(original);changed['report'].pop(field)
+            changed['report_sha256']=identity(changed['report'])
+            write_json(path,changed)
+            self.report['completed'][-1]['tree']=retained_run.tree_identity(self.artwork.directory)
+            retained_run.write_report(self.root,self.report)
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'saved capture|coverage differs'):
+                block_package.verify_package(self.root,self.candidate,self.scope,self.plan,{},
+                                             placement_job.digest(self.candidate/'board.kicad_pcb'))
+        # The reviewer's exact attack: selected identities and pass survive, all coverage removed.
+        changed=deepcopy(original)
+        for field in fields[:-1]:changed['report'].pop(field)
+        changed['report_sha256']=identity(changed['report']);write_json(path,changed)
+        self.report['completed'][-1]['tree']=retained_run.tree_identity(self.artwork.directory)
+        retained_run.write_report(self.root,self.report)
+        with self.assertRaisesRegex(ValueError,'coverage differs'):
+            block_package.verify(self.root,self.candidate,self.scope,self.plan)
+
+    def test_malformed_fresh_child_capture_and_measurement_coverage_refuse_publication(self):
+        import json
+        from agent_ee import block_package,native_run
+        for case in ('missing_capture','malformed_capture','roles','blocks','relationships','membership',
+                     'duplicate_relationship','wrong_endpoint','changed_measurement'):
+            def malformed(call):
+                outcome=self.reader(call);report=json.loads(outcome.stdout)
+                if case=='missing_capture':del report['saved_capture']
+                elif case=='malformed_capture':report['saved_capture']['footprints']=None
+                elif case in ('roles','blocks','relationships'):report[case]=[]
+                elif case=='membership':report['membership']['roles'].pop('TP1')
+                elif case=='duplicate_relationship':report['relationships'].append(deepcopy(report['relationships'][0]))
+                elif case=='wrong_endpoint':report['relationships'][0]['to']['pad']='invented'
+                else:report['relationships'][0]['distance_squared_nm2']=0
+                return native_run.Outcome(stdout=json.dumps(report).encode())
+            with self.subTest(case=case),native_run.using(native_run.Recorded(malformed)):
+                with self.assertRaisesRegex(placement_job.JobRefusal,'saved capture|coverage differs'):
+                    block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
+            self.assertFalse((self.artwork.directory/block_package.PROOF).exists())
+
+
+    def test_native_child_capture_output_is_opt_in_and_replays_the_existing_grade(self):
+        import contextlib,io,json
+        from types import SimpleNamespace
+        from agent_ee import block_package,placement_probe
+        normalized,_=block_package.original_basis(self.root,self.scope,self.plan)
+        binding=normalized['block_contract_binding']
+        saved=deepcopy(self.saved);saved['board_sha256']=placement_job.digest(self.candidate/'board.kicad_pcb')
+        for retain in (False,True):
+            request={'binding':binding}
+            if retain:request['retain_capture']=True
+            output=io.StringIO()
+            # extract is the native read boundary inside the real child dispatch; no pcbnew imported.
+            with self.subTest(retain=retain),patch.object(placement_probe,'extract',return_value=saved), \
+                    patch('sys.stdin',io.StringIO(json.dumps(request))),contextlib.redirect_stdout(output):
+                status=placement_job.execute(SimpleNamespace(placement_command='_check_blocks',board='CPU native boundary'),None)
+            self.assertEqual(status,0)
+            report=json.loads(output.getvalue())
+            self.assertEqual('saved_capture' in report,retain)
+            if retain:placement_contract.verify_saved_report(report,binding)
+            else:self.assertEqual(report,placement_contract.grade(saved,binding))

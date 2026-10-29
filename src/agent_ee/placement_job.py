@@ -277,7 +277,7 @@ def _locality_grade(facts, document):
     return result
 
 
-def check_block_contract(path, normalized, *, clock=None, cancel_dir=None):
+def check_block_contract(path, normalized, *, clock=None, cancel_dir=None, retain_capture=False):
     """Require strict block evidence only when the caller declared that contract."""
     from .storage import identity
     normalized = _bundle(normalized)
@@ -287,7 +287,10 @@ def check_block_contract(path, normalized, *, clock=None, cancel_dir=None):
     if (binding is None or binding['groups_sha256'] != identity(normalized['groups'])
             or identity(binding['contract']) != identity(normalized['block_contract'])):
         raise JobRefusal('block contract has no matching original capture binding')
-    report = _native_read(path, '_check_blocks', {'binding': binding}, clock=clock, cancel_dir=cancel_dir)
+    request = {'binding': binding}
+    if retain_capture:
+        request['retain_capture'] = True
+    report = _native_read(path, '_check_blocks', request, clock=clock, cancel_dir=cancel_dir)
     if (report.get('schema') != 'agent-ee.block-contract-report/1'
             or report.get('status') not in ('pass', 'info', 'defect', 'unknown')
             or report.get('binding_sha256') != binding['binding_sha256']
@@ -296,6 +299,9 @@ def check_block_contract(path, normalized, *, clock=None, cancel_dir=None):
             or report.get('board_sha256') != digest(path)
             or any(not isinstance(report.get(k), list) for k in ('defects', 'unknown', 'advisories'))):
         raise JobRefusal('native block contract check returned missing or invalid output')
+    if retain_capture:
+        from .placement_contract import verify_saved_report
+        verify_saved_report(report, binding)
     return report
 
 
@@ -1988,7 +1994,10 @@ def execute(args, parser):
             elif args.placement_command == '_check_blocks':
                 from .placement_probe import extract
                 from .placement_contract import grade
-                result = grade(extract(args.board), request['binding'])
+                saved = extract(args.board)
+                result = grade(saved, request['binding'])
+                if request.get('retain_capture') is True:
+                    result['saved_capture'] = saved
             else:
                 result = _check_edge_intent_native(args.board, request['intent'])
         except JobRefusal as exc:

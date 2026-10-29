@@ -69,6 +69,19 @@ def grade(saved_capture, binding):
                 groups_sha256=binding['groups_sha256'], reference_aliases=binding['references'])
 
 
+def verify_saved_report(report, binding):
+    """Replay the saved native facts; hashes/status alone do not prove coverage."""
+    if not isinstance(report, dict) or not isinstance(report.get('saved_capture'), dict):
+        raise JobRefusal('block contract saved capture is missing or malformed')
+    try:
+        expected = grade(report['saved_capture'], binding)
+        matches = identity({key: value for key, value in report.items() if key != 'saved_capture'}) == identity(expected)
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise JobRefusal('block contract saved capture cannot be replayed: ' + str(exc)) from exc
+    if not matches:
+        raise JobRefusal('block contract report coverage differs from saved capture replay')
+
+
 SOURCE_SCHEMA = 'agent-ee.block-contract-source/1'
 
 
