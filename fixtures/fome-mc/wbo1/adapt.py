@@ -1,7 +1,8 @@
 """Fixture writer: instantiate wbo1, then apply the declared wbo2 parameters.
 
-This is a bounded regression fixture, not a general schematic adapter. The
-ordinary block_adaptation check grades the resulting candidate independently.
+This is a bounded regression fixture. Legacy block admission refuses unresolved
+pending requirements. The separate native probe characterizes topology without
+claiming that the captured block can be instantiated or qualified.
 """
 import argparse
 import copy
@@ -107,8 +108,8 @@ def adapt_sheet(raw, parameters):
     return dump(tree)
 
 
-def prepare(out, *, straps=True):
-    """Prepare a new scratch candidate through the public instantiation seam."""
+def _scaffold(out):
+    """Owned fixture scaffolding; never qualifies the captured pending block."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     shutil.copytree(HERE / 'blocks/wbo1', out / 'blocks/wbo1')
@@ -132,7 +133,39 @@ def prepare(out, *, straps=True):
         bindings={p['name']: p['net_name'] for p in target['boundary_ports']},
         requirements={'wbo1-native': ['erc', 'netlist'], 'wbo1-interface': ['adapted-interface']},
         record='instance.json', provenance_check='provenance', netlist_check='netlist')
+    return out, project, scope, request
+
+
+def prepare(out, *, straps=True):
+    """Legacy public admission: pending electrical requirements must refuse."""
+    out, project, scope, request = _scaffold(out)
     scope = instantiate(out, scope, request)
+    return _finish(out, project, scope, straps)
+
+
+def prepare_native_probe(out, *, straps=True):
+    """Characterize native topology only, without claiming block adaptation."""
+    out, project, scope, request = _scaffold(out)
+    source = read_json(out / 'blocks/wbo1/block.json')
+    (project / 'wbo2.kicad_sch').write_bytes((out / 'blocks/wbo1' / source['sheet']).read_bytes())
+    scope['inputs'] = [i for i in scope['inputs'] if i['at'] != 'instance.json']
+    scope['baseline']['requirements'].append(dict(id='probe-erc',statement='Fresh native ERC of the regenerated topology only.',
+        source=dict(path='COVERAGE.md',locator='Unknown coverage'),checks=['erc'],intent='acceptance'))
+    scope['baseline']['requirements'].append(dict(id='wbo2-wbo1-interface',
+        statement='Characterize regenerated channel topology; pending function and CAN-ID obligations remain unassessed.',
+        source=dict(path='blocks/wbo1/block.json', locator='requirements/wbo1-interface'), checks=['adapted-interface'], intent='acceptance'))
+    scope['limitations'].append('Native topology characterization only; block adaptation is refused by its unchanged pending requirements. No source/adaptation qualification.')
+    historical=(out/'COVERAGE.md').read_bytes()
+    (out/'coverage-legacy.md').write_bytes(historical)
+    (out/'COVERAGE.md').write_bytes(b'Current native probe: no block-provenance admission or qualification. All pending requirements remain unassessed. The legacy fixture description below is retained history.\n\n'+historical)
+    scope['inputs'].append(dict(path='coverage-legacy.md',at='coverage-legacy.md'))
+    write_json(out / 'probe-coverage.json', dict(kind='unqualified native topology characterization',
+        pending_requirements=source['pending_requirements'], evaluation='not_evaluated'))
+    scope['inputs'].append(dict(path='probe-coverage.json', at='probe-coverage.json'))
+    return _finish(out, project, scope, straps)
+
+
+def _finish(out, project, scope, straps):
     parameters = copy.deepcopy(read_json(HERE / 'wbo1-to-wbo2.json')['parameters'])
     if not straps:
         parameters['straps'] = []

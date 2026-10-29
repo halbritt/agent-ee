@@ -274,8 +274,68 @@ class NativeReviewScopeTests(unittest.TestCase):
                 validate_block(block, {self.result['run_id']: self.run_dir})
 
 
+def prepare_psu_native_probe(test, root):
+    """Test-only assembly after explicitly refusing the pending legacy capture."""
+    gen = generator()
+    board = root / 'board'
+    board.mkdir()
+    (board / 'fome-mc-psu.kicad_sch').write_text(gen.root_schematic('psu.kicad_sch'))
+    (board / gen.STUB_FILE).write_text(gen.stub_schematic())
+    (board / 'fome-mc-psu.kicad_pcb').write_text(gen.board())
+    (board / 'fome-mc-psu.kicad_pro').write_text(gen.project())
+    (board / 'psu.kicad_sch').write_text('(kicad_sch (version 20250114) (generator "eeschema") '
+                                        '(uuid "8f0d1f6e-0c1b-4f3a-9a52-6d7f3b2f1a01") (paper "A4") (lib_symbols))\n')
+    shutil.copytree(BLOCK, root / 'blocks/psu')
+    (root / 'requirements.md').write_text('PSU native topology probe only. Eight pending electrical requirements stay unassessed; no block is admitted.\n')
+    record = read_json(BLOCK / 'block.json')
+    scope = {'schema': 'agent-ee.scope/2', 'name': 'PSU native topology probe', 'scope': 'Unqualified owned topology characterization',
+             'schematic': 'board/fome-mc-psu.kicad_sch', 'board': 'board/fome-mc-psu.kicad_pcb',
+             'inputs': [{'path': 'board', 'at': 'board'}, {'path': 'blocks', 'at': 'blocks'},
+                        {'path': 'requirements.md', 'at': 'requirements.md'},
+                        {'path': 'probe-coverage.json', 'at': 'probe-coverage.json'}],
+             'requirements': ['requirements.md'],
+             'mutable_inputs': ['board/fome-mc-psu.kicad_sch', 'board/psu.kicad_sch'],
+             'checks': [{'id': 'erc', 'kind': 'erc'}, {'id': 'netlist', 'kind': 'netlist'}],
+             'baseline': {'requirements': [{'id': 'native', 'statement': 'Export the owned topology probe natively',
+                                            'source': {'path': 'requirements.md', 'locator': 'board'},
+                                            'checks': ['erc','netlist']}],
+                          'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}}
+    # The board binds every port to the net the pinned design names it.
+    request = {'id': 'psu1', 'block': 'blocks/psu', 'sheet': 'board/psu.kicad_sch',
+               'instance_path': '/' + gen.PSU_SHEET_UUID + '/',
+               'bindings': {p['name']: p['net_name'] for p in record['boundary_ports']},
+               'requirements': {'psu-native': ['erc', 'netlist'], 'psu-interface': ['netlist']},
+               'record': 'instance.json', 'provenance_check': 'provenance', 'netlist_check': 'netlist'}
+    from agent_ee.block_adaptation import instantiate
+    with test.assertRaisesRegex(ValueError,'pending cannot be dropped'):
+        instantiate(root, scope, request)
+    test.assertFalse((root/'instance.json').exists())
+    # Direct owned sheet assembly characterizes native topology only. It
+    # deliberately creates no block instance, fresh mapping or qualification.
+    (board/'psu.kicad_sch').write_bytes((BLOCK/record['sheet']).read_bytes())
+    write_json(root/'probe-coverage.json',dict(evaluation='not_evaluated',
+        pending_requirements=record['pending_requirements']))
+    scope['limitations']=['Native topology probe only. Pending PSU electrical requirements remain unassessed; block adaptation is refused.']
+    return scope,record
+
+
+class LegacyAdaptationAdmissionTests(unittest.TestCase):
+    def test_pending_psu_is_retained_and_native_probe_is_not_block_admission(self):
+        from agent_ee.baseline import compile_baseline
+        from agent_ee.requirement_map import input_inventory
+        original=tree(BLOCK)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);scope,record=prepare_psu_native_probe(self,root)
+            self.assertEqual(tree(root/'blocks/psu'),original)
+            self.assertEqual(len(record['pending_requirements']),8)
+            self.assertEqual(read_json(root/'probe-coverage.json')['pending_requirements'],record['pending_requirements'])
+            self.assertFalse((root/'instance.json').exists())
+            self.assertEqual({c['id'] for c in scope['checks']},{'erc','netlist'})
+            self.assertTrue(compile_baseline(scope,input_inventory(root),root))
+
+
 class AdaptationSmokeTests(unittest.TestCase):
-    """block_adaptation instantiates the PSU block on the owned standalone board."""
+    """Native topology probes; the pending PSU block itself is not admitted."""
 
     def setUp(self):
         from tests.toolchain import require_toolchain
@@ -283,38 +343,7 @@ class AdaptationSmokeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-106-adapt-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        gen = generator()
-        board = self.root / 'board'
-        board.mkdir()
-        (board / 'fome-mc-psu.kicad_sch').write_text(gen.root_schematic('psu.kicad_sch'))
-        (board / gen.STUB_FILE).write_text(gen.stub_schematic())
-        (board / 'fome-mc-psu.kicad_pcb').write_text(gen.board())
-        (board / 'fome-mc-psu.kicad_pro').write_text(gen.project())
-        (board / 'psu.kicad_sch').write_text('(kicad_sch (version 20250114) (generator "eeschema") '
-                                            '(uuid "8f0d1f6e-0c1b-4f3a-9a52-6d7f3b2f1a01") (paper "A4") (lib_symbols))\n')
-        shutil.copytree(BLOCK, self.root / 'blocks/psu')
-        (self.root / 'requirements.md').write_text('Adapted PSU board: fresh native checks only.\n')
-        self.record = read_json(BLOCK / 'block.json')
-        scope = {'schema': 'agent-ee.scope/2', 'name': 'PSU adaptation smoke', 'scope': 'Owned board',
-                 'schematic': 'board/fome-mc-psu.kicad_sch', 'board': 'board/fome-mc-psu.kicad_pcb',
-                 'inputs': [{'path': 'board', 'at': 'board'}, {'path': 'blocks', 'at': 'blocks'},
-                            {'path': 'requirements.md', 'at': 'requirements.md'},
-                            {'path': 'instance.json', 'at': 'instance.json'}],
-                 'requirements': ['requirements.md'],
-                 'mutable_inputs': ['board/fome-mc-psu.kicad_sch', 'board/psu.kicad_sch'],
-                 'checks': [{'id': 'erc', 'kind': 'erc'}, {'id': 'netlist', 'kind': 'netlist'}],
-                 'baseline': {'requirements': [{'id': 'native', 'statement': 'Export the adapted board natively',
-                                                'source': {'path': 'requirements.md', 'locator': 'board'},
-                                                'checks': ['netlist']}],
-                              'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}}
-        # The board binds every port to the net the pinned design names it.
-        request = {'id': 'psu1', 'block': 'blocks/psu', 'sheet': 'board/psu.kicad_sch',
-                   'instance_path': '/' + gen.PSU_SHEET_UUID + '/',
-                   'bindings': {p['name']: p['net_name'] for p in self.record['boundary_ports']},
-                   'requirements': {'psu-native': ['erc', 'netlist'], 'psu-interface': ['netlist']},
-                   'record': 'instance.json', 'provenance_check': 'provenance', 'netlist_check': 'netlist'}
-        from agent_ee.block_adaptation import instantiate
-        self.scope = instantiate(self.root, scope, request)
+        self.scope,self.record=prepare_psu_native_probe(self,self.root)
 
     def run_candidate(self, name, mutate=None):
         from agent_ee.candidate import capture
@@ -327,18 +356,19 @@ class AdaptationSmokeTests(unittest.TestCase):
         capture(self.root / 'scope.json', run)
         return {c['id']: c for c in run_checks(run, time.monotonic() + 300)}
 
-    def test_instance_is_byte_exact_with_bound_boundary_and_fresh_checks(self):
+    def test_native_copy_keeps_boundary_nets_without_admitting_pending_block(self):
         self.assertEqual((self.root / 'board/psu.kicad_sch').read_bytes(), (BLOCK / 'sheets/psu.kicad_sch').read_bytes())
-        mapped = {r['id']: r['checks'] for r in self.scope['baseline']['requirements']}
-        self.assertEqual((mapped['psu1-psu-native'], mapped['psu1-boundary']), (['erc', 'netlist'], ['provenance']))
         checks = self.run_candidate('run1')
-        provenance = checks['provenance']
-        self.assertEqual((provenance['execution'], provenance['outcome']), ('ok', 'pass'), provenance['summary'])
-        self.assertTrue(provenance['details']['same_bytes'])
-        ports = {p['port']: p for p in provenance['details']['boundary']}
-        self.assertEqual(set(ports), {p['name'] for p in self.record['boundary_ports']})
-        self.assertTrue(all(p['status'] == 'satisfied' for p in ports.values()), ports)
+        self.assertNotIn('provenance',checks)
+        from agent_ee.native_netlist import read_native_inventory
+        graph=read_native_inventory(self.root/'run1/work/netlist/design.xml')
+        members={ref for ref,c in graph['components'].items() if c['sheet']=='/'+generator().PSU_SHEET_UUID+'/'}
+        self.assertTrue(members)
+        for port in self.record['boundary_ports']:
+            connected=[n for n in graph['nets'].values() if n['name']==port['net_name'] and any(ref in members for ref,pin in n['terminals'])]
+            self.assertTrue(connected,port['name'])
         self.assertEqual((checks['erc']['execution'], checks['erc']['outcome']), ('ok', 'pass'), checks['erc'])
+        self.assertEqual(read_json(self.root/'probe-coverage.json')['pending_requirements'],self.record['pending_requirements'])
 
     def test_adapted_feedback_divider_is_a_recorded_change(self):
         # Retune the buck divider (R6 68k -> 75k), an adaptation parameter of the block.
@@ -349,13 +379,18 @@ class AdaptationSmokeTests(unittest.TestCase):
             start = text.rindex('(symbol\n', 0, at)
             symbol = text[start:text.index('\n\t)\n', at)]
             path.write_text(text.replace(symbol, symbol.replace('"68k"', '"75k"'), 1))
-        checks = self.run_candidate('run2', retune)
-        provenance = checks['provenance']
-        self.assertEqual(provenance['execution'], 'ok', provenance['summary'])
-        self.assertFalse(provenance['details']['same_bytes'])
-        changed = [c for c in provenance['details']['component_changes']
-                   if (c['before'] or {}).get('value') != (c['after'] or {}).get('value')]
-        self.assertEqual([(c['before']['value'], c['after']['value']) for c in changed], [('68k', '75k')])
+        from agent_ee.native_netlist import read_native_inventory
+        self.run_candidate('control')
+        before=read_native_inventory(self.root/'control/work/netlist/design.xml')
+        self.run_candidate('run2', retune)
+        after=read_native_inventory(self.root/'run2/work/netlist/design.xml')
+        changed=[(c['value'],after['components'][ref]['value']) for ref,c in before['components'].items()
+                 if c['value']!=after['components'][ref]['value']]
+        self.assertEqual(changed,[('68k','75k')])
+        self.assertEqual({r:{k:v for k,v in c.items() if k not in ('value','properties','locator')} for r,c in before['components'].items()},
+                         {r:{k:v for k,v in c.items() if k not in ('value','properties','locator')} for r,c in after['components'].items()})
+        self.assertEqual(sorted((n['name'],sorted(n['terminals'])) for n in before['nets'].values()),
+                         sorted((n['name'],sorted(n['terminals'])) for n in after['nets'].values()))
 
 
 if __name__ == '__main__':

@@ -119,6 +119,33 @@ class CaptureTests(unittest.TestCase):
             writer.adapt_sheet(writer.dump(tree), params)
 
 
+class LegacyAdmissionTests(unittest.TestCase):
+    def test_pending_capture_refuses_legacy_admission_without_publishing_instance(self):
+        for straps in (False,True):
+            with self.subTest(straps=straps),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)/'candidate'
+                with self.assertRaisesRegex(ValueError,'pending cannot be dropped'):writer.prepare(root,straps=straps)
+                self.assertFalse((root/'instance.json').exists())
+                self.assertFalse((root/'scope.json').exists())
+                self.assertEqual(read_json(root/'blocks/wbo1/block.json'),read_json(FIXTURE/'blocks/wbo1/block.json'))
+
+    def test_probe_preserves_both_pending_rows_and_exact_topology_scope(self):
+        from agent_ee.baseline import compile_baseline
+        from agent_ee.requirement_map import input_inventory
+        original=read_json(FIXTURE/'blocks/wbo1/block.json')
+        for straps in (False,True):
+            with self.subTest(straps=straps),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)/'probe';scope=writer.prepare_native_probe(root,straps=straps)
+                coverage=read_json(root/'probe-coverage.json')
+                self.assertEqual(coverage['pending_requirements'],original['pending_requirements'])
+                self.assertEqual(coverage['evaluation'],'not_evaluated')
+                self.assertEqual(read_json(root/'blocks/wbo1/block.json'),original)
+                self.assertEqual({c['id'] for c in scope['checks']},{'erc','netlist','adapted-interface'})
+                self.assertFalse((root/'instance.json').exists())
+                self.assertEqual((root/'coverage-legacy.md').read_bytes(),(FIXTURE/'COVERAGE.md').read_bytes())
+                self.assertTrue(compile_baseline(scope,input_inventory(root),root))
+
+
 class NativeWidebandTests(unittest.TestCase):
     def setUp(self):
         require_toolchain(native=True)
@@ -146,23 +173,24 @@ class NativeWidebandTests(unittest.TestCase):
         self.assertEqual(graph['components']['U302']['pins']['15'], 'GND')
         self.assertEqual(load_baseline(run), read_json(FIXTURE / 'expected-baseline.json'))
 
-    def test_native_regenerated_wbo2_through_block_adaptation(self):
+    def test_native_regenerated_wbo2_topology_with_pending_block_unadmitted(self):
         for straps in (False, True):
             with self.subTest(straps=straps):
                 candidate = self.root / ('strapped' if straps else 'without-straps')
-                writer.prepare(candidate, straps=straps)
+                writer.prepare_native_probe(candidate, straps=straps)
                 _, checks = self.checks(candidate / 'scope.json', candidate / 'run')
                 self.assertEqual((checks['netlist']['execution'], checks['netlist']['outcome']), ('ok', 'info'), checks['netlist']['summary'])
-                self.assertEqual((checks['provenance']['execution'], checks['provenance']['outcome']), ('ok', 'pass'), checks['provenance']['summary'])
+                self.assertNotIn('provenance',checks)  # Pending block is never admitted by this probe.
                 self.assertEqual((checks['adapted-interface']['execution'], checks['adapted-interface']['outcome']), ('ok', 'pass'), checks['adapted-interface']['summary'])
-                self.assertFalse(checks['provenance']['details']['same_bytes'])
+                self.assertNotEqual((candidate/'project/wbo2.kicad_sch').read_bytes(),(FIXTURE/'blocks/wbo1/sheets/wbo1.kicad_sch').read_bytes())
                 graph = native_projection(candidate / 'run/work/netlist/design.xml', '/' + writer.INSTANCE_UUID + '/')
                 target = read_json(FIXTURE / 'blocks/wbo2/connectivity.json')
                 differences = compare_connectivity(adapt_connectivity(graph, dict(reference_offset=0, renames=[], straps=[])), target)
                 expected = [] if straps else read_json(FIXTURE / 'wbo1-to-wbo2.json')['expected_without_straps']
                 self.assertEqual(differences, expected)
                 self.assertEqual(validate_block(candidate / 'blocks/wbo1')['status'], 'unverified')
-                self.assertEqual(len(checks['provenance']['details']['boundary']), 10)
+                from agent_ee.reference_blocks import hierarchy_ports
+                self.assertEqual(len(hierarchy_ports((candidate/'project/wbo2.kicad_sch').read_bytes())),10)
 
 
 if __name__ == '__main__':
