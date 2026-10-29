@@ -49,12 +49,47 @@ two 45-degree-plus-axis paths, derived solely from current integer-nanometre pad
 centres. Each trial retains the proposed board and raw native DRC report/log.
 Native rule-loading proof is reused when custom rules exist. The existing
 placement DRC runner owns subprocess cancellation and deadline handling. Every
-native DRC error and every clearance finding refuses that proposal. Other known
-warnings remain recorded. Unconnected pre-route nets are retained and counted;
+native DRC violation, warning, exclusion or parity finding refuses that proposal.
+Unconnected pre-route nets are retained and counted;
 they are not clearance failures. Malformed or unavailable DRC never establishes
 a pass. Exhausting the finite proposals refuses without an `accepted` directory.
 The operation has no separate clock, retry budget, or resumable repair identity.
 All trials consume the caller's admitted placement budget.
+
+The coverage gate requires `$schema=https://schemas.kicad.org/drc.v1.json`,
+KiCad `10.0.7`, millimetre units, and exactly the included severities `error`,
+`warning`, `exclusion`. Missing/malformed ignored-check metadata is a refusal,
+even with an empty violation list. Ignored entries need unique keys and nonempty
+descriptions. Every ignored key outside the existing `dc_rail.NONCONDUCTIVE_IGNORES`
+set is refused, including clearance, track width, copper edge, short and keepout
+checks. Sharing that finite category set does **not** borrow the DC model's
+ideal contacts or establish a full DRC/placement/parity pass.
+
+Applicability here comes from the operation's proven write scope and separate
+placement/final gates, not from an example report having those defaults:
+
+- `missing_courtyard`: no footprint or courtyard changes; the caller must already
+  have accepted placement/body/access checks. The trace operation cannot claim
+  that an absent courtyard was evaluated or that body placement is accepted.
+- `footprint_filters_mismatch` and `footprint_type_mismatch`: library identities,
+  footprint metadata and all pads stay byte-identical. These symbol/package
+  metadata predicates do not evaluate the added trace's clearance or width.
+  Final schematic parity remains a separate obligation.
+- `track_not_centered_on_via`: no vias are created/moved. New endpoints are actual
+  pad centres or the finite path's exact corners. Via-centering preference does
+  not suppress native conductive clearance/width/open checks; final trace length
+  uses actual saved geometry, without a zero-cost via/plane shortcut.
+- `tuning_profile_track_geometries`: this producer adds only plain segments,
+  with no tuning profile or tuning operation. Existing geometry is unchanged.
+
+The captured project must have absent or empty `rule_severities` and
+`drc_exclusions`. Nonempty overrides are refused even when they would make a
+check stricter. Malformed/null values are refused. Captured custom rules may
+not carry any `(severity ...)` override. The existing native rule-loading
+witness still applies. This finite no-suppression prerequisite preserves the
+authored project and rules exactly; it never clears exclusions or rewrites
+severities. Report exclusions are refused in every finding category, including
+pre-route opens. An arbitrary warning type cannot be treated as a clean result.
 
 A complete checked copy is published under `accepted/` only after custody and
 native checks. Failure evidence remains under the new evidence directory. Never

@@ -2,6 +2,7 @@
 
 These tests do not establish native clearance, source qualification, or G4.
 """
+import copy
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -13,6 +14,29 @@ from unittest.mock import patch
 from agent_ee import acquisition_local_return as local
 from agent_ee.placement_job import Clock, JobRefusal, JobStopped
 from agent_ee.symbol_library import children, parse_sexpr
+
+
+# Selected actual KiCad 10.0.7 metadata from retained ESP raw DRC SHA
+# 65640609a4ca36db1c203620f4e44116c0788e481b9ee4ce6417a01a6f41ce8d.
+# Its findings are not transplanted and its ignore policy is not acceptance.
+DRC_METADATA = {
+    '$schema': 'https://schemas.kicad.org/drc.v1.json',
+    'kicad_version': '10.0.7', 'coordinate_units': 'mm',
+    'included_severities': ['error', 'warning', 'exclusion'],
+    'ignored_checks': [
+        {'description': 'Footprint has no courtyard defined', 'key': 'missing_courtyard'},
+        {'description': 'Track endpoint not centered on via', 'key': 'track_not_centered_on_via'},
+        {'description': 'Tuning profile track geometries', 'key': 'tuning_profile_track_geometries'},
+        {'description': "Footprint doesn't match symbol's footprint filters", 'key': 'footprint_filters_mismatch'},
+        {'description': "Footprint component type doesn't match footprint pads", 'key': 'footprint_type_mismatch'},
+    ],
+}
+
+
+def native_report(violations=None):
+    return dict(copy.deepcopy(DRC_METADATA), violations=violations or [], schematic_parity=[],
+                unconnected_items=[dict(type='unconnected_items', description='synthetic pre-route open',
+                                        severity='error', items=[{'uuid': 'open-pad'}])])
 
 
 def field(node, key):
@@ -90,7 +114,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
 
     def clear_drc(self, board, directory, **kwargs):
         local._check_stop(kwargs['clock'], kwargs['cancel_dir'])
-        data = dict(violations=[], unconnected_items=[{'expected_pre_route_open': True}])
+        data = native_report()
         (directory / 'drc.json').write_text(json.dumps(data))
         return data, dict(exit_code=0, report_sha256=local._sha((directory / 'drc.json').read_bytes()))
 
@@ -114,6 +138,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         self.assertEqual(record['endpoints'][0]['pad_uuid'], 'fresh-C-pad')
         self.assertEqual(record['endpoints'][1]['net_code'], 7)
         self.assertEqual(record['trials'][0]['unconnected_count'], 1)
+        self.assertEqual(record['trials'][0]['coverage']['ignored_checks'], DRC_METADATA['ignored_checks'])
         self.assertEqual((result.with_suffix('.kicad_pro')).read_bytes(), (self.source / local.FILES[1]).read_bytes())
         for segment in added:
             self.assertEqual(children(segment, 'width'), [['width', '0.25']])
@@ -142,7 +167,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         def collision_then_clear(board, directory, **kwargs):
             data, receipt = self.clear_drc(board, directory, **kwargs)
             if not calls:
-                data['violations'] = [dict(type='clearance', severity='error', description='synthetic obstacle')]
+                data['violations'] = [dict(type='clearance', severity='error', description='synthetic obstacle', items=[{'uuid': 'obstacle'}])]
                 (directory / 'drc.json').write_text(json.dumps(data))
             calls.append(directory)
             return data, receipt
@@ -153,9 +178,38 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         self.assertNotEqual(record['trials'][0]['path_nm'], record['trials'][1]['path_nm'])
 
     def test_all_collisions_or_unknown_drc_never_publish(self):
-        for index, report in enumerate((dict(violations=[dict(type='clearance', severity='error')], unconnected_items=[]),
-                                        dict(violations=[dict(type='edge_clearance', severity='warning')], unconnected_items=[]),
-                                        {}, dict(violations=[dict(type='new', severity='unknown')], unconnected_items=[]))):
+        reports = [native_report([dict(type='clearance', severity='error', description='collision', items=[])]),
+                   native_report([dict(type='edge_clearance', severity='warning', description='edge', items=[])]),
+                   native_report([dict(type='unfamiliar_warning', severity='warning', description='unknown', items=[])])]
+        for key in ('$schema', 'included_severities', 'ignored_checks'):
+            report = native_report()
+            del report[key]
+            reports.append(report)
+        for value in (None, {}, ['clearance'], [{'key': 'clearance'}],
+                      [{'key': 'clearance', 'description': 3}],
+                      [{'key': 'clearance', 'description': 'Electrical clearance disabled'}],
+                      [{'key': 'edge_clearance', 'description': 'Board edge disabled'}],
+                      [{'key': 'track_width', 'description': 'Width disabled'}],
+                      [{'key': 'unexpected_check', 'description': 'Unqualified ignore'}]):
+            report = native_report()
+            report['ignored_checks'] = value
+            reports.append(report)
+        for key, value in (('$schema', 'unknown-schema'), ('kicad_version', '10.0.6'),
+                           ('coordinate_units', 'in'), ('unconnected_items', ['malformed']),
+                           ('unconnected_items', [dict(type='clearance', severity='error', description='misclassified', items=[])]),
+                           ('ignored_checks', [DRC_METADATA['ignored_checks'][0]] * 2)):
+            report = native_report()
+            report[key] = value
+            reports.append(report)
+        for severities in (['warning', 'exclusion'], ['error', 'warning'], ['error', 'warning', {}]):
+            report = native_report()
+            report['included_severities'] = severities
+            reports.append(report)
+        for category in ('violations', 'unconnected_items', 'schematic_parity'):
+            report = native_report()
+            report[category] = [dict(type='clearance', severity='exclusion', description='excluded', items=[])]
+            reports.append(report)
+        for index, report in enumerate(reports):
             with self.subTest(index=index):
                 self.output = self.root / f'bad-drc-{index}'
                 self.drc.side_effect = lambda *a, **k: (report, {'exit_code': 0})
@@ -164,6 +218,43 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
                 record = json.loads((self.output / 'record.json').read_text())
                 self.assertEqual(record['status'], 'refused')
                 self.assertLessEqual(len(record['trials']), 5)
+
+    def test_explicit_empty_authored_policy_preserves_bytes_with_real_default_metadata(self):
+        path = self.source / local.FILES[1]
+        project = json.loads(path.read_bytes())
+        project['board']['design_settings'].update(rule_severities={}, drc_exclusions=[])
+        data = json.dumps(project, indent=3).encode()
+        path.write_bytes(data)
+        record = self.run_seed()
+        self.assertEqual(path.read_bytes(), data)
+        self.assertEqual((Path(record['output']) / local.FILES[1]).read_bytes(), data)
+        self.assertEqual(record['trials'][0]['coverage']['ignored_checks'], DRC_METADATA['ignored_checks'])
+        self.assertEqual(record['trials'][0]['unconnected_count'], 1)
+
+    def test_authored_suppressions_refuse_without_rewriting_project_or_rules(self):
+        original = (self.source / local.FILES[1]).read_bytes()
+        for index, (key, value) in enumerate((('rule_severities', {'clearance': 'ignore'}),
+                                             ('rule_severities', {'clearance': 'warning'}),
+                                             ('rule_severities', []), ('rule_severities', None),
+                                             ('drc_exclusions', ['native-exclusion']),
+                                             ('drc_exclusions', {}), ('drc_exclusions', None))):
+            with self.subTest(key=key, value=value):
+                project = json.loads(original)
+                project['board']['design_settings'][key] = value
+                data = json.dumps(project).encode()
+                (self.source / local.FILES[1]).write_bytes(data)
+                self.output = self.root / f'suppression-{index}'
+                with self.assertRaisesRegex(JobRefusal, 'severity overrides/exclusions'): self.run_seed()
+                self.assertEqual((self.source / local.FILES[1]).read_bytes(), data)
+                self.assertFalse((self.output / 'accepted').exists())
+        (self.source / local.FILES[1]).write_bytes(original)
+        for severity in ('ignore', 'warning'):
+            self.output = self.root / ('custom-' + severity)
+            rules = f'(version 1)\n(rule "suppressed" (severity {severity}) (constraint clearance (min 0.2)))\n'.encode()
+            (self.source / local.FILES[2]).write_bytes(rules)
+            with self.assertRaisesRegex(JobRefusal, 'custom-rule severity'): self.run_seed()
+            self.assertEqual((self.source / local.FILES[2]).read_bytes(), rules)
+            self.assertFalse((self.output / 'accepted').exists())
 
     def test_deadline_and_cancel_propagate_without_partial_adoption(self):
         cancel = self.root / 'cancel'

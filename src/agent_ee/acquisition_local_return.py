@@ -11,6 +11,8 @@ import shutil
 import uuid
 
 from .placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
+from .dc_rail import NONCONDUCTIVE_IGNORES
+from .net_constraints import rule_forms, template_rules
 from .storage import write_json
 from .symbol_library import children, parse_sexpr
 
@@ -142,17 +144,61 @@ def _seed(data, path):
     return output, ids
 
 
+def _no_suppression(captured):
+    settings = json.loads(captured['board.kicad_pro'])['board']['design_settings']
+    if (not isinstance(settings.get('rule_severities', {}), dict)
+            or settings.get('rule_severities', {})
+            or not isinstance(settings.get('drc_exclusions', []), list)
+            or settings.get('drc_exclusions', [])):
+        raise JobRefusal('local return: authored DRC severity overrides/exclusions unsupported')
+    raw = captured['board.kicad_dru']
+    if raw is not None:
+        template_rules(raw, allow_generated=True)
+        if any(children(node, 'severity') for node in rule_forms(raw, native=True)[1:]):
+            raise JobRefusal('local return: authored custom-rule severity overrides unsupported')
+
+
 def _legal(report):
-    if not isinstance(report, dict) or any(not isinstance(report.get(k), list)
-                                          for k in ('violations', 'unconnected_items')):
-        raise JobRefusal('local return: unknown native DRC evaluations')
-    for violation in report['violations']:
-        if (not isinstance(violation, dict) or not isinstance(violation.get('type'), str)
-                or violation.get('severity') not in ('error', 'warning')):
-            raise JobRefusal('local return: unknown native DRC violation')
-    # Opens are deliberately retained, not used as a pre-route clearance grade.
-    return not any(v['severity'] == 'error' or 'clearance' in v['type']
-                   for v in report['violations'])
+    if (not isinstance(report, dict)
+            or report.get('$schema') != 'https://schemas.kicad.org/drc.v1.json'
+            or report.get('kicad_version') != '10.0.7'
+            or report.get('coordinate_units') != 'mm'):
+        raise JobRefusal('local return: unknown native DRC schema/version/units')
+    severities = report.get('included_severities')
+    if (not isinstance(severities, list) or any(not isinstance(s, str) for s in severities)
+            or len(severities) != 3 or set(severities) != {'error', 'warning', 'exclusion'}):
+        raise JobRefusal('local return: incomplete native DRC severity coverage')
+    ignored = report.get('ignored_checks')
+    if (not isinstance(ignored, list) or any(not isinstance(c, dict)
+            or set(c) != {'key', 'description'} or not isinstance(c['key'], str)
+            or not isinstance(c['description'], str) or not c['description'].strip()
+            for c in ignored)):
+        raise JobRefusal('local return: malformed/missing native DRC ignored-check metadata')
+    keys = [c['key'] for c in ignored]
+    if len(keys) != len(set(keys)) or not set(keys) <= NONCONDUCTIVE_IGNORES:
+        raise JobRefusal('local return: required/unknown native DRC check ignored')
+    # These defaults concern unchanged footprint metadata, via centering and
+    # tuning profiles; this operation adds only plain pad-centre trace segments.
+    # They cannot suppress clearance/width/edge/short checks. See applicability
+    # in docs/acquisition-local-return.md; no full placement/parity pass implied.
+    for category in ('violations', 'unconnected_items', 'schematic_parity'):
+        records = report.get(category)
+        if not isinstance(records, list):
+            raise JobRefusal('local return: unknown native DRC evaluations')
+        for finding in records:
+            if (not isinstance(finding, dict) or not isinstance(finding.get('type'), str)
+                    or not finding['type'].strip() or not isinstance(finding.get('description'), str)
+                    or finding.get('severity') not in ('error', 'warning', 'exclusion')
+                    or not isinstance(finding.get('items'), list)
+                    or any(not isinstance(item, dict) or not isinstance(item.get('uuid'), str)
+                           or not item['uuid'].strip() for item in finding['items'])):
+                raise JobRefusal('local return: malformed native DRC finding')
+            if category == 'unconnected_items' and finding['type'] != 'unconnected_items':
+                raise JobRefusal('local return: non-open finding in native pre-route open inventory')
+            if finding['severity'] == 'exclusion':
+                raise JobRefusal('local return: excluded native DRC finding')
+    # Only pre-route opens are allowed. Unknown warnings cannot become passes.
+    return not report['violations'] and not report['schematic_parity']
 
 
 def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=None):
@@ -187,6 +233,7 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
             raise JobRefusal('local return: source/input drift')
 
     try:
+        _no_suppression(captured)
         project = json.loads(captured['board.kicad_pro'])
         rules = project['board']['design_settings']['rules']
         if rules['min_clearance'] != CLEARANCE_MM or not 0 < rules['min_track_width'] <= WIDTH_NM / 1e6:
@@ -215,6 +262,8 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
             report, execution = drc(trial_dir / FILES[0], trial_dir, clock=clock, cancel_dir=cancel_dir)
             trial['execution'] = execution
             legal = _legal(report)
+            trial['coverage'] = {k: report[k] for k in
+                ('$schema', 'kicad_version', 'included_severities', 'ignored_checks')}
             trial['unconnected_count'] = len(report['unconnected_items'])
             trial['status'] = 'clearance_pass' if legal else 'rejected'
             custody()
