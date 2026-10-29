@@ -52,6 +52,72 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual(before, tree_identity(self.root / 'stages'))
         self.assertEqual(read_json(self.root / 'qualification.json'), result)
 
+    def typed_checkpoint(self):
+        self.complete_control(typed=True)
+        self.report['completed'].pop()  # No package or native evidence in this custody fixture.
+        self.report.update(status='checkpoint', candidate=self.report['completed'][-1]['candidate'])
+        plan = read_json(self.root / 'build-plan.json')
+        plan['judgments'] = 'judgments'
+        write_json(self.root / 'build-plan.json', plan)
+        self.report['inputs']['plan_sha256'] = digest(self.root / 'build-plan.json')
+        self.report['identity'] = identity(self.report['inputs'])
+        self.save()
+
+    def test_artwork_checkpoint_preserves_normal_retained_router_aliases(self):
+        # The real acquisition control failed on these two output aliases after artwork.
+        self.typed_checkpoint()
+        stage = self.report['completed'][4]
+        directory = self.root / stage['directory']
+        links = []
+        for route in ('placement/route-a1', 'placement/route-a1/repair-dangling_net'):
+            job = directory / route / 'out/runs/acquisition/placement-job'
+            (job / 'attempt').mkdir(parents=True)
+            (job / 'attempt/report.json').write_text('synthetic retained router output')
+            link = job / 'latest'
+            link.symlink_to('attempt', target_is_directory=True)
+            links.append(link)
+        stage['tree'] = tree_identity(directory)
+        self.save()
+        before = tree_identity(self.root / 'stages')
+        result = qualification.assess(self.root)
+        self.assertFalse(result['accepted'])
+        self.assertEqual(result['dimensions']['file_release']['status'], 'not_assessed')
+        self.assertEqual(read_json(self.root / 'build-report.json')['status'], 'checkpoint')
+        self.assertEqual(tree_identity(self.root / 'stages'), before)
+        self.assertTrue(all(link.is_symlink() and os.readlink(link) == 'attempt' for link in links))
+        # Source/candidate inventories still refuse the same kind of alias.
+        candidate = self.root / stage['candidate']
+        (candidate / 'alias').symlink_to('missing', target_is_directory=True)
+        stage['tree'] = tree_identity(directory)
+        self.save()
+        with self.assertRaisesRegex(qualification.QualificationError, 'build inputs contain links or special files'):
+            qualification.assess(self.root)
+
+    def test_pre_package_nested_files_and_linked_judgment_directories_still_refuse(self):
+        self.typed_checkpoint()
+        stage = self.report['completed'][4]
+        directory = self.root / stage['directory']
+        target = self.root / 'editable-judgments-not-offered'
+        target.mkdir()
+        cases = [('judgments/draft.json', False), ('product/inputs/judgments/draft.json', False),
+                 ('judgments', True), ('candidate/judgments', True)]
+        for relative, linked in cases:
+            path = directory / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if linked:
+                path.symlink_to(target, target_is_directory=True)
+            else:
+                path.write_text('editable judgment must not enter a pre-package stage')
+            stage['tree'] = tree_identity(directory)
+            self.save()
+            with self.subTest(path=relative), self.assertRaisesRegex(
+                    qualification.QualificationError, 'pre-package stage contains editable judgments'):
+                qualification.assess(self.root)
+            path.unlink()
+            # Remove empty authored directories before trying a directory alias at that name.
+            if path.parent != directory and not any(path.parent.iterdir()):
+                path.parent.rmdir()
+
     def test_altered_or_unsealed_stage_never_produces_qualification(self):
         (self.root / self.report['completed'][0]['directory'] / 'scope.json').write_text('{}')
         with self.assertRaisesRegex(qualification.QualificationError, 'stage identity changed'):

@@ -12,7 +12,7 @@ import shutil
 from . import build_plan, requirement_map, retained_run
 from .retained_run import QualificationError, retained_path as _retained_path
 from .catalog import strict_json
-from .stage_receipts import _relative
+from .stage_receipts import _relative, file_tree
 from .storage import digest, read_json, write_json
 
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
@@ -489,8 +489,13 @@ def _assess(out):
                     continue
                 directory = _retained_path(root, stage['directory'])
                 prefix = plan['judgments'] + '/'
-                if any(name.startswith(prefix) or '/' + prefix in name for name in _inventory(directory)):
+                # Retained tool outputs may contain router aliases. Inspect their
+                # names without following links; source/candidate admission stays strict.
+                files, other = file_tree(directory)
+                if any(name == plan['judgments'] or name.endswith('/' + plan['judgments'])
+                       or name.startswith(prefix) or '/' + prefix in name for name in (*files, *other)):
                     raise QualificationError('pre-package stage contains editable judgments')
+                _inventory(_retained_path(root, stage['candidate']))
     if package is not None:
         directory = _retained_path(root, package['directory'])
         candidate = _retained_path(root, package['candidate'])
