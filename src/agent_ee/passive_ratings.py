@@ -6,6 +6,7 @@ pinned pdftotext verifies on the selected (AGENTEE-237) datasheet source.
 Contradictory, rejected or unselected sources refuse; an absent rating stays
 missing so ``assembly:passive-ratings`` keeps reporting it.
 """
+from contextlib import nullcontext
 import hashlib
 import re
 import tempfile
@@ -81,14 +82,17 @@ def load_sources(root, declaration):
     return document['facts'], declaration['extractor'], {declaration['facts']['path']: declaration['facts']['sha256']}
 
 
-def verify_citations(root, facts, extractor):
+def verify_citations(root, facts, extractor, *, _work=None):
     """Fact id -> (status, reason) and PDF dependencies from the pinned pdftotext in the existing sandbox."""
     from .datasheet_facts import EXTRACTOR, page_support, split_pages, value_in_quote, verify_extractor
     from . import native_run
     from .parts_manifest import read_captured
     verify_extractor(extractor)
     results, pages, dependencies = {}, {}, {}
-    with tempfile.TemporaryDirectory(prefix='agent-ee-ratings-') as scratch:
+    if _work is not None:
+        Path(_work).mkdir(parents=True, exist_ok=True)
+    with (tempfile.TemporaryDirectory(prefix='agent-ee-ratings-') if _work is None
+          else nullcontext(_work)) as scratch:
         version = dict(native_run.run(native_run.Intent('probe', [EXTRACTOR, '-v'], timeout=60), inputs=root, work=Path(scratch) / 'version'))
         console = (Path(scratch) / 'version/console.log').read_text(errors='replace')
         lines = console.splitlines()

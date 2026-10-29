@@ -2,6 +2,8 @@
 import argparse
 import copy
 import hashlib
+import re
+import time
 from pathlib import Path
 
 from .datasheet_selection import datasheet
@@ -84,7 +86,8 @@ def _native_net_names(resolved, libraries):
     return {n['id']: ('' if n['id'] in global_nets else '/') + n['name'] for n in resolved['nets']}
 
 
-def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, source_migration=False, migration_only=False):
+def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, source_migration=False, migration_only=False,
+         _rating_work=None):
     """Return new intent and evidence; supplied objects/files are never modified.
 
     part_ref is an immutable sidecar contract, not an extension to intent/1.
@@ -142,7 +145,7 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None, so
     if ratings is not None:
         from . import passive_ratings
         facts, extractor, used = passive_ratings.load_sources(root, ratings)
-        verified, pdfs = passive_ratings.verify_citations(root, facts, extractor) if facts else ({}, {})
+        verified, pdfs = passive_ratings.verify_citations(root, facts, extractor, _work=_rating_work) if facts else ({}, {})
         dependencies.update(used)
         dependencies.update(pdfs)
         rating_report = {'sources_sha256': identity(ratings), 'derived': {}, 'missing': {}}
@@ -319,7 +322,8 @@ def configuration(source_root, *, intent, manifest, part_refs, deviations, captu
         raise ValueError('binding source cannot be the read intent')
     return validate_step({'schema': 'agent-ee.stage-step/1', 'stage': 'schematic', 'step': 'binding-fill',
         'argv': ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
-                 '-m', 'agent_ee.binding_fill', '--intent', intent, '--manifest', manifest,
+                 '-c', 'from agent_ee.binding_fill import _stage_main; raise SystemExit(_stage_main())',
+                 '--intent', intent, '--manifest', manifest,
                  '--part-refs', part_refs, '--deviations', deviations, '--captures', captures,
                  *(['--ratings', ratings] if ratings is not None else []),
                  *(['--source-migration'] if source_migration else []),
@@ -327,11 +331,71 @@ def configuration(source_root, *, intent, manifest, part_refs, deviations, captu
         'mounts': [{'source': str(snapshot(source_root)), 'at': '/tool/agent-ee'}],
         'source': '/tool/agent-ee', 'version_argv': ['/usr/bin/python3', '--version'],
         'inputs': sorted({manifest, part_refs, deviations, *extra, *dependencies} | ({intent} - {output})),
-        'writes': {output: 'out/intent.json'}, 'artifacts': ['out/binding-fill.json'],
+        'writes': {output: 'out/intent.json'},
+        'artifacts': ['out/binding-fill.json'] + (['out/rating-citations'] if ratings is not None else []),
         'adoptable_exits': [0], 'timeout_s': 600 if source_migration else 120})
 
 
-def main(argv=None):
+class _RatingStageExecution:
+    """Only pdftotext children of the fixed receipted binding-fill stage."""
+    def __init__(self):
+        from .forward_annotation import _StageExecution
+        self.stage = _StageExecution()
+
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel,
+            on_line=None, on_launch=None, on_tick=None, **callbacks):
+        from dataclasses import replace
+        from . import native_run
+        from .datasheet_facts import EXTRACTOR
+        from .executor import SANDBOX_PATH
+        started = time.monotonic()
+        if (intent.tool != 'probe' or intent.isolation != 'sandbox' or intent.network
+                or intent.stdin is not None or intent.env is not None or intent.cwd is not None
+                or intent.remount_ro or intent.log_bytes is not None or intent.skip_visuals is not None
+                or intent.stop_grace_s is not None or intent.merge_stderr or mounts or callbacks
+                or any(v is not None for v in (on_line, on_launch, on_tick))):
+            raise ValueError('unsupported binding-fill rating child intent')
+        inputs, work = Path(inputs), Path(work)
+        scratch = Path('/work/out/rating-citations')
+        if (inputs != Path('/candidate') or inputs.resolve() != inputs
+                or work.parent != scratch or work.resolve() != work
+                or scratch.resolve() != scratch):
+            raise ValueError('rating child requires fixed candidate and citation scratch')
+        argv = intent.argv
+        captured = None
+        if argv == (EXTRACTOR, '-v') and work.name == 'version':
+            concrete = argv
+        elif (len(argv) == 4 and argv[:2] == (EXTRACTOR, '-layout')
+                and argv[2].startswith('/candidate/') and argv[3] == '/work/document.txt'
+                and re.fullmatch(r'pdf-(0|[1-9][0-9]*)', work.name)):
+            captured = _path(argv[2].removeprefix('/candidate/'))
+            before = hashlib.sha256(read_captured(inputs, captured)).hexdigest()
+            concrete = (EXTRACTOR, '-layout', str(inputs / captured), str(work / 'document.txt'))
+        else:
+            raise ValueError('unsupported binding-fill pdftotext argv or work path')
+        env = self.stage.environment(inputs, work)
+        env.update(PATH=SANDBOX_PATH, LANG='C.UTF-8')
+        try:
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= native_run.LAUNCH_FLOOR_S:
+                raise native_run.DeadlineExhausted('rating child setup exhausted its deadline')
+            child = replace(intent, argv=concrete, timeout=remaining, isolation='host', env=env, cwd=str(work))
+            # Host here is still inside the verified receipted sandbox; never a
+            # standalone fallback or a new namespace/policy option.
+            return native_run.Host().run(child, inputs=None, work=work, timeout=remaining,
+                                         mounts=(), cancel=cancel)
+        finally:
+            if captured is not None and hashlib.sha256(read_captured(inputs, captured)).hexdigest() != before:
+                raise ValueError('rating child changed its captured PDF')
+
+
+def _stage_main(argv=None):
+    from . import native_run
+    with native_run.using(_RatingStageExecution()):
+        return main(argv, _rating_work=Path('/work/out/rating-citations'))
+
+
+def main(argv=None, *, _rating_work=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('intent', 'manifest', 'part-refs', 'deviations', 'captures'):
         parser.add_argument('--' + name, required=True)
@@ -344,10 +408,16 @@ def main(argv=None):
     root, out = Path('/candidate'), Path('/work/out')
     out.mkdir(exist_ok=False)
     try:
+        rating_work = _rating_work if args.ratings else None
+        if rating_work is not None:
+            Path(rating_work).mkdir(exist_ok=False)
+            write_json(Path(rating_work) / 'request.json', {'declaration': args.ratings,
+                'sha256': hashlib.sha256(read_captured(root, args.ratings)).hexdigest()})
         intent, report = fill(root, read_captured(root, args.intent), load_manifest(root, args.manifest),
             strict_json(read_captured(root, args.part_refs)), strict_json(read_captured(root, args.deviations)),
             captures=args.captures, source_migration=args.source_migration, migration_only=args.migration_only,
-            ratings=strict_json(read_captured(root, args.ratings)) if args.ratings else None)
+            ratings=strict_json(read_captured(root, args.ratings)) if args.ratings else None,
+            _rating_work=rating_work)
         write_json(out / 'binding-fill.json', report)
         write_json(out / 'intent.json', intent)
     except (ValueError, TypeError, KeyError, OSError) as exc:
