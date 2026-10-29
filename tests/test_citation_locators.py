@@ -37,14 +37,26 @@ class CitationLocatorTests(unittest.TestCase):
         retained = read_json(Path(__file__).parent / 'fixtures/reviewer-citations/r2-response.json')
         bad = retained['findings'][0]['evidence'][0]
 
+        definitions = {}
+        def accepts_path(path, node):
+            if '$ref' in node:
+                return accepts_path(path, definitions[node['$ref'].removeprefix('#/$defs/')])
+            if 'anyOf' in node:
+                return any(accepts_path(path, branch) for branch in node['anyOf'])
+            if 'enum' in node:
+                return path in node['enum']
+            if 'const' in node:
+                return path == node['const']
+            if 'pattern' in node:
+                return re.fullmatch(node['pattern'], path) is not None
+            return True  # The old unrestricted path shape, used only by the red control.
+
         def fits(citation, schema):
             for branch in schema['items']['anyOf']:
                 if set(citation) != set(branch['required']):
                     continue
                 path = branch['properties']['path']
-                if 'enum' in path and citation['path'] not in path['enum']:
-                    continue
-                if 'pattern' in path and not re.fullmatch(path['pattern'], citation['path']):
+                if not accepts_path(citation['path'], path):
                     continue
                 return True
             return False
@@ -53,7 +65,10 @@ class CitationLocatorTests(unittest.TestCase):
         seen = {}
         counts = {}
         def transport(run, role, definition, prompt, schema, timeout, **kwargs):
-            outgoing = strict_schema(schema)['properties']['findings']['items']['properties']['evidence']
+            nonlocal definitions
+            strict = strict_schema(schema)
+            definitions = strict['$defs']
+            outgoing = strict['properties']['findings']['items']['properties']['evidence']
             if role in seen:
                 self.assertEqual(seen[role], outgoing)
             seen[role] = outgoing
@@ -90,6 +105,79 @@ class CitationLocatorTests(unittest.TestCase):
             first = read_json(self.run_dir / record['attempts'][0]['path'] / 'response.json')
             self.assertEqual(first['findings'], retained['findings'])
             self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
+
+    def test_large_inventory_is_shared_once_in_complete_outgoing_schemas(self):
+        from agent_ee.harnesses import strict_schema
+        from agent_ee.reviewers import adjudicator_call
+        expected = set()
+        for number in range(900):
+            path = 'work/rc_transient/' + 'retained-source-' * 3 + str(number) + '.txt'
+            data = '{"v": 1}\n' if number < 480 else '<export/>\n' if number < 500 else 'Native text\n'
+            (self.run_dir / path).write_text(data)
+            expected.add(path)
+        packet = build_packet(self.run_dir, [self.erc_check, self.rc_check], self.run_id)
+        seen = set()
+        def enum_nodes(node):
+            if isinstance(node, dict):
+                if 'enum' in node:
+                    yield node['enum']
+                for child in node.values():
+                    yield from enum_nodes(child)
+            elif isinstance(node, list):
+                for child in node:
+                    yield from enum_nodes(child)
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            outgoing = strict_schema(schema)
+            groups = list(enum_nodes(outgoing))
+            self.assertLessEqual(sum(map(len, groups)), 1000)
+            paths = [path for value in outgoing['$defs'].values() for path in value['enum']]
+            self.assertEqual(len(paths), len(set(paths)))
+            self.assertTrue(expected <= set(paths))
+            self.assertTrue(all(len(value['enum']) <= 250 for value in outgoing['$defs'].values()))
+            key = 'decisions' if role == 'adjudicator' else 'findings'
+            evidence = outgoing['properties'][key]['items']['properties']['evidence']
+            for branch in evidence['items']['anyOf']:
+                for ref in branch['properties']['path'].get('anyOf', []):
+                    self.assertIn(ref['$ref'].removeprefix('#/$defs/'), outgoing['$defs'])
+            seen.add(role)
+            if role == 'adjudicator':
+                return {'execution': 'ok'}, dict(schema='agent-ee.decisions/2', candidate_id=packet['candidate_id'],
+                                                run_id=packet['run_id'], decisions=[])
+            return {'execution': 'ok'}, {**self._review(role=role, findings=[]), 'schema': 'agent-ee.review/2',
+                **{key: packet[key] for key in ('candidate_id', 'run_id', 'packet_sha256')}}
+        with patch('agent_ee.reviewers.reviewer_call', side_effect=transport):
+            reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30)
+            execution, decisions = adjudicator_call(self.run_dir, packet, [], reviews, time.monotonic() + 30)
+        self.assertEqual(len(reviews), 2, records)
+        self.assertEqual(execution['execution'], 'ok')
+        self.assertEqual(seen, {'circuit', 'physical', 'adjudicator'})
+
+    def test_over_enum_limit_keeps_exact_constant_paths_and_format_binding(self):
+        from agent_ee.reviewers import REVIEW_SCHEMA, bind_evidence_schema
+        from agent_ee.harnesses import strict_schema
+        inventory = [dict(path=f'inputs/s{i}.txt', locator_kinds=['lines']) for i in range(1100)]
+        inventory.append(dict(path='inputs/document.txt', locator_kinds=['pointer', 'lines']))
+        schema = copy.deepcopy(REVIEW_SCHEMA)
+        bind_evidence_schema(schema, 'findings', self.run_dir, dict(citation_files=inventory), 'circuit')
+        outgoing = strict_schema(schema)
+        constants = [p['const'] for definition in outgoing['$defs'].values() for p in definition['anyOf']]
+        self.assertEqual(set(constants), {row['path'] for row in inventory})
+        self.assertEqual(len(constants), len(set(constants)))
+        self.assertTrue(all(len(d['anyOf']) <= 250 for d in outgoing['$defs'].values()))
+        branches = outgoing['properties']['findings']['items']['properties']['evidence']['items']['anyOf']
+        def allowed(fields):
+            paths = set()
+            for branch in branches:
+                if set(branch['required']) - {'path', 'locator'} != fields:
+                    continue
+                for ref in branch['properties']['path'].get('anyOf', []):
+                    paths.update(p['const'] for p in outgoing['$defs'][ref['$ref'].removeprefix('#/$defs/')]['anyOf'])
+            return paths
+        self.assertIn('inputs/s0.txt', allowed({'lines'}))
+        self.assertNotIn('inputs/s0.txt', allowed({'pointer'}))
+        self.assertNotIn('inputs/unknown.txt', allowed({'lines'}))
+        self.assertEqual(allowed({'pointer'}), {'inputs/document.txt'})
+        self.assertEqual(allowed({'pointer', 'lines'}), {'inputs/document.txt'})
 
     def test_byte_formats_and_kind_diagnostics(self):
         exp = self.run_dir / 'review-work/circuit/experiments'

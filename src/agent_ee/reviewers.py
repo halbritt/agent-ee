@@ -56,13 +56,32 @@ def evidence_schema(run_dir, packet, role):
                 rel = path.relative_to(run).as_posix()
                 validate_citation_path(rel, run)
                 inventory.append(dict(path=rel, **citation_format(read_captured(run, rel))))
+    # Partition by exact membership so each path occurs in only one enum, even
+    # though JSON/XML paths support both structural and line citations.
+    memberships = {}
+    for row in inventory:
+        kinds = tuple(sorted(row['locator_kinds']))
+        if row['path'] in memberships and memberships[row['path']] != kinds:
+            raise ValueError('citation inventory has conflicting byte formats')
+        memberships[row['path']] = kinds
+    groups = {}
+    for path, kinds in sorted(memberships.items()):
+        if kinds:
+            groups.setdefault(kinds, []).append(path)
+    definitions, references = {}, {}
+    for number, (kinds, paths) in enumerate(sorted(groups.items())):
+        references[kinds] = []
+        for offset in range(0, len(paths), 250):
+            name = f'citation_paths_{number}_{offset // 250}'
+            definitions[name] = {'type': 'string', 'enum': paths[offset:offset + 250]}
+            references[kinds].append({'$ref': '#/$defs/' + name})
     branches = []
     for original in EVIDENCE_SCHEMA['items']['anyOf']:
         fields = set(original['required']) - {'path', 'locator'}
-        paths = sorted({row['path'] for row in inventory if fields <= set(row['locator_kinds'])})
-        if paths:
+        refs = [ref for kinds, refs in references.items() if fields <= set(kinds) for ref in refs]
+        if refs:
             branch = json.loads(json.dumps(original))
-            branch['properties']['path']['enum'] = paths
+            branch['properties']['path'] = {'anyOf': refs}
             branches.append(branch)
     # New experiments are not in the frozen inventory. Require UTF-8 line evidence;
     # canonical segments prevent this branch becoming an inputs/peer escape hatch.
@@ -71,7 +90,48 @@ def evidence_schema(run_dir, packet, role):
     branch['properties']['path']['pattern'] = (
         '^review-work/' + re.escape(role) + '/experiments/(?:' + segment + '/)*' + segment + '$')
     branches.append(branch)
-    return {'type': 'array', 'items': {'anyOf': branches}}
+    return {'type': 'array', 'items': {'anyOf': branches}, '$defs': definitions}
+
+
+def bind_evidence_schema(schema, collection, run_dir, packet, role):
+    evidence = evidence_schema(run_dir, packet, role)
+    schema['$defs'] = evidence.pop('$defs')
+    schema['properties'][collection]['items']['properties']['evidence'] = evidence
+    # Count the complete producer schema, including identity/finding enums.
+    def enums(node):
+        if isinstance(node, dict):
+            if 'enum' in node:
+                yield node['enum']
+            for value in node.values():
+                yield from enums(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from enums(value)
+    values = list(enums(schema))
+    if sum(len(group) for group in values) > 1000:
+        # Large existing packets can have >1000 distinct files. Exact constants
+        # preserve the same finite sets without duplicating paths or widening them.
+        for name, definition in schema['$defs'].items():
+            schema['$defs'][name] = {'anyOf': [{'type': 'string', 'const': path} for path in definition['enum']]}
+        values = list(enums(schema))
+        if sum(len(group) for group in values) > 1000:
+            raise ValueError('complete citation producer schema exceeds 1000 non-path enum values')
+    if any(len(group) > 250 and sum(len(v) for v in group if isinstance(v, str)) > 15000 for group in values):
+        raise ValueError('complete citation producer schema exceeds per-enum string limit')
+    def strings(node):
+        if isinstance(node, dict):
+            yield from node.get('properties', {})
+            yield from node.get('$defs', {})
+            yield from (v for v in node.get('enum', []) if isinstance(v, str))
+            if isinstance(node.get('const'), str):
+                yield node['const']
+            for child in node.values():
+                yield from strings(child)
+        elif isinstance(node, list):
+            for child in node:
+                yield from strings(child)
+    if sum(map(len, strings(schema))) > 120000:
+        raise ValueError('complete citation producer schema exceeds 120000 string characters')
 CITATION_INSTRUCTIONS = (
     "Every evidence citation MUST include path, a nonempty descriptive locator, and at least one structured field: "
     "pointer (RFC 6901 JSON pointer, e.g. /details/violations; escape ~ as ~0 and / as ~1 in keys), "
@@ -461,7 +521,6 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
                 "mechanism, severity, assessment, evidence and reasoning. Empty findings is valid.\n" + note + "PACKET:\n"
                 + json.dumps(value))
             schema = json.loads(json.dumps(REVIEW_SCHEMA))
-            schema['properties']['findings']['items']['properties']['evidence'] = evidence_schema(run_dir, packet, role)
             for key, expected in {"schema": REVIEW_VERSION, "role": role,
                     "candidate_id": packet["candidate_id"], "run_id": packet["run_id"],
                     "packet_sha256": packet["packet_sha256"]}.items():
@@ -473,6 +532,7 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
                 from .rf_review import ASSESSMENT_KEY, assessment_schema
                 schema["properties"][ASSESSMENT_KEY] = assessment_schema(packet["rf_review"]["binding_sha256"])
                 schema["required"].append(ASSESSMENT_KEY)
+            bind_evidence_schema(schema, 'findings', run_dir, packet, role)
             # Admission and failure publication share one lock. Admitted calls may
             # settle after a peer fails; queued calls cannot restart that harness.
             with launch_lock:
@@ -609,12 +669,12 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
         "material RF concerns stay deferred until evidence resolves them.\n" + note +
         json.dumps({"packet": value, "findings": findings, "initial_reviews": reviews}))
     schema = json.loads(json.dumps(DECISIONS_SCHEMA))
-    schema['properties']['decisions']['items']['properties']['evidence'] = evidence_schema(run_dir, packet, 'adjudicator')
     for key, expected in {"schema": DECISIONS_VERSION, "candidate_id": packet["candidate_id"],
                           "run_id": packet["run_id"]}.items():
         schema["properties"][key] = {"type": "string", "enum": [expected]}
     if findings:
         schema["properties"]["decisions"]["items"]["properties"]["finding_id"]["enum"] = [f["id"] for f in findings]
+    bind_evidence_schema(schema, 'decisions', run_dir, packet, 'adjudicator')
     prompt = workspace_instructions("adjudicator") + CITATION_INSTRUCTIONS + (brief(purpose) if purpose is not None else '') + prompt
     from .findings import adjudicate
     from .review_run import structured_call
