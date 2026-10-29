@@ -49,8 +49,9 @@ two 45-degree-plus-axis paths, derived solely from current integer-nanometre pad
 centres. Each trial retains the proposed board and raw native DRC report/log.
 Native rule-loading proof is reused when custom rules exist. The existing
 placement DRC runner owns subprocess cancellation and deadline handling. Every
-native DRC violation, warning, exclusion or parity finding refuses that proposal.
-Unconnected pre-route nets are retained and counted;
+native conductive/unknown finding, exclusion or parity finding refuses the
+proposal. The sole library-warning exception requires a fresh exact baseline
+match as described below. Unconnected pre-route nets are retained and counted;
 they are not clearance failures. Malformed or unavailable DRC never establishes
 a pass. Exhausting the finite proposals refuses without an `accepted` directory.
 The operation has no separate clock, retry budget, or resumable repair identity.
@@ -91,6 +92,37 @@ authored project and rules exactly; it never clears exclusions or rewrites
 severities. Report exclusions are refused in every finding category, including
 pre-route opens. An arbitrary warning type cannot be treated as a clean result.
 
+Before generating paths, the operation obtains **one fresh native DRC baseline**
+on a private byte-identical copy of the same accepted-placement board, project
+and rules, using the same DRC runner, environment, outer clock and CANCEL. There
+is no baseline argument, caller qualification, historical baseline reuse, new
+clock, or extra retry. This adds one baseline to the existing at-most-five path
+checks; the existing custom-rule loading witness is separate and unchanged.
+
+The baseline must satisfy the same full coverage/no-suppression gate. The only
+permitted baseline violation records are `lib_footprint_issues` at WARNING
+severity, with the exact diagnostic form `The current configuration does not
+include the footprint library 'NAME'`. Each item must resolve to the fresh
+original native footprint UUID, reference, exact position and library nickname.
+Other library diagnostic forms, unbound items, conductive or unknown warnings,
+errors and exclusions refuse. This exception records immutable missing-library
+metadata; it does not declare the affected library configuration repaired.
+
+Each trial must preserve the **identical complete-record multiset** of those
+warnings, comparing full JSON records including diagnostics, severity, item
+UUID/reference/position and any extra record fields. Record order may change;
+internal record content and multiplicities may not. A new, changed, missing or
+duplicated record rejects the proposal. Counts alone and a type-only waiver
+cannot pass. No conductive/unknown warning is carried, even from the baseline.
+
+`baseline/` retains the original copied inputs and raw native report/log;
+`record.json` binds exact input board and report hashes plus execution receipt.
+Every trial similarly binds its exact board/report hashes and records full
+added/missing warning records on mismatch. Baseline inputs/report are checked
+again around trials and before adoption. The original source remains immutable.
+Native raw findings and byte preservation establish custody; the operation still
+does not claim final routing, library health, parity or engineering acceptance.
+
 A complete checked copy is published under `accepted/` only after custody and
 native checks. Failure evidence remains under the new evidence directory. Never
 reuse a failed destination. A `seeded` record is a production-operation receipt,
@@ -128,8 +160,8 @@ This patch deliberately does not edit `build_plan.py`, `build_stages.py`,
    router output; a routing completion is insufficient.
 
 The native production proof requires a later root admission on a new,
-source-bound development identity with a finite budget covering up to five
-pre-route checks and the existing global route. Existing prep 3/3 and saved-board
+source-bound development identity with a finite budget covering one fresh baseline and up to five
+pre-route path checks and the existing global route. Existing prep 3/3 and saved-board
 repair 2/2 are exhausted and remain unchanged. No real target preparation,
 KiCad, routing, render, provider call, or acceptance run is performed by this
 source patch. Pure tests exercise custody, candidate derivation, endpoint

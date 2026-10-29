@@ -65,6 +65,9 @@ class NativeFootprint:
     def GetReference(self): return field(self.node, 'reference')
     def GetLayer(self): return int(field(self.node, 'layer'))
     def Pads(self): return [NativePad(p) for p in children(self.node, 'pad')]
+    def GetPosition(self):
+        return self.Pads()[0].GetPosition() if self.Pads() else NS(x=11000000, y=12000000)
+    def GetFPID(self): return NS(GetLibNickname=lambda: 'Synthetic_Lib')
 
 
 class NativeTrack:
@@ -112,11 +115,14 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         self.drc = self.enterContext(patch.object(local, 'drc', side_effect=self.clear_drc))
         self.output = self.root / 'output'
 
+    def drc_result(self, data, directory):
+        (directory / 'drc.json').write_text(json.dumps(data))
+        return data, dict(exit_code=0, report_sha256=local._sha((directory / 'drc.json').read_bytes()))
+
     def clear_drc(self, board, directory, **kwargs):
         local._check_stop(kwargs['clock'], kwargs['cancel_dir'])
         data = native_report()
-        (directory / 'drc.json').write_text(json.dumps(data))
-        return data, dict(exit_code=0, report_sha256=local._sha((directory / 'drc.json').read_bytes()))
+        return self.drc_result(data, directory)
 
     def run_seed(self, **kwargs):
         args = dict(expected_inputs=local._identity(local._capture(self.source)), clock=Clock(30))
@@ -166,11 +172,11 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         calls = []
         def collision_then_clear(board, directory, **kwargs):
             data, receipt = self.clear_drc(board, directory, **kwargs)
-            if not calls:
+            if directory.name == 'trial-1':
                 data['violations'] = [dict(type='clearance', severity='error', description='synthetic obstacle', items=[{'uuid': 'obstacle'}])]
                 (directory / 'drc.json').write_text(json.dumps(data))
             calls.append(directory)
-            return data, receipt
+            return self.drc_result(data, directory)
         self.drc.side_effect = collision_then_clear
         record = self.run_seed()
         self.assertEqual([t['status'] for t in record['trials']], ['rejected', 'clearance_pass'])
@@ -212,12 +218,116 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         for index, report in enumerate(reports):
             with self.subTest(index=index):
                 self.output = self.root / f'bad-drc-{index}'
-                self.drc.side_effect = lambda *a, **k: (report, {'exit_code': 0})
+                self.drc.side_effect = lambda board, directory, **k: self.drc_result(report, directory)
                 with self.assertRaises(JobRefusal): self.run_seed()
                 self.assertFalse((self.output / 'accepted').exists())
                 record = json.loads((self.output / 'record.json').read_text())
                 self.assertEqual(record['status'], 'refused')
                 self.assertLessEqual(len(record['trials']), 5)
+
+    def library_warnings(self):
+        return [dict(type='lib_footprint_issues', severity='warning',
+            description="The current configuration does not include the footprint library 'Synthetic_Lib'",
+            items=[dict(description='Footprint ' + fp.GetReference(), uuid=fp.m_Uuid.AsString(),
+                        pos=dict(x=fp.GetPosition().x / 1e6, y=fp.GetPosition().y / 1e6))])
+            for fp in load_board(self.source / local.FILES[0]).GetFootprints()]
+
+    def test_fresh_baseline_carries_identical_actual_format_library_multiset(self):
+        # 17 synthetic current footprints; actual missing-library diagnostic/item
+        # shapes, no old candidate UUIDs/positions or witness errors transplanted.
+        additions = b''.join(f'(footprint (reference "L{i}") (uuid "new-L{i}") (layer 0))'.encode()
+                             for i in range(15))
+        board = self.board.rstrip()[:-1] + additions + b')'
+        (self.source / local.FILES[0]).write_bytes(board)
+        warnings = self.library_warnings()
+        seen = []
+        def reports(board_path, directory, **kwargs):
+            seen.append(directory.name)
+            data = native_report(list(reversed(warnings)) if directory.name != 'baseline' else warnings)
+            return self.drc_result(data, directory)
+        self.drc.side_effect = reports
+        record = self.run_seed()
+        self.assertEqual(seen, ['baseline', 'trial-1'])
+        self.assertEqual(record['baseline']['library_warning_count'], 17)
+        self.assertEqual(record['baseline']['board_sha256'], local._sha(board))
+        for directory, receipt in ((self.output / 'baseline', record['baseline']),
+                                   (self.output / 'trial-1', record['trials'][0])):
+            self.assertEqual(receipt['report_sha256'], local._sha((directory / 'drc.json').read_bytes()))
+        self.assertEqual((self.output / 'baseline' / local.FILES[0]).read_bytes(), board)
+        self.assertEqual((self.source / local.FILES[0]).read_bytes(), board)
+
+    def test_library_multiset_add_remove_duplicate_or_change_refuses(self):
+        warnings = self.library_warnings()
+        variants = [warnings[:-1], warnings + [warnings[0]], []]
+        for key, value in (('description', 'changed diagnostic'), ('severity', 'error'),
+                           ('type', 'clearance')):
+            changed = copy.deepcopy(warnings)
+            changed[0][key] = value
+            variants.append(changed)
+        for key, value in (('uuid', 'other-native-uuid'), ('description', 'Footprint other'),
+                           ('pos', {'x': 999, 'y': 999})):
+            changed = copy.deepcopy(warnings)
+            changed[0]['items'][0][key] = value
+            variants.append(changed)
+        for index, modified in enumerate(variants):
+            with self.subTest(index=index):
+                self.output = self.root / f'multiset-{index}'
+                def reports(board, directory, **kwargs):
+                    data = native_report(warnings if directory.name == 'baseline' else modified)
+                    return self.drc_result(data, directory)
+                self.drc.side_effect = reports
+                with self.assertRaises(JobRefusal): self.run_seed()
+                self.assertFalse((self.output / 'accepted').exists())
+                record = json.loads((self.output / 'record.json').read_text())
+                self.assertEqual(len(record['trials']), 5)
+
+    def test_missing_or_duplicate_baseline_records_do_not_match_full_trial(self):
+        warnings = self.library_warnings()
+        for index, baseline in enumerate(([], warnings[:-1], warnings + [warnings[0]])):
+            with self.subTest(index=index):
+                self.output = self.root / f'baseline-count-{index}'
+                def reports(board, directory, **kwargs):
+                    return self.drc_result(native_report(baseline if directory.name == 'baseline' else warnings), directory)
+                self.drc.side_effect = reports
+                with self.assertRaises(JobRefusal): self.run_seed()
+                self.assertFalse((self.output / 'accepted').exists())
+                record = json.loads((self.output / 'record.json').read_text())
+                self.assertEqual(len(record['trials']), 5)
+                self.assertTrue(any(record['trials'][0]['warning_difference'].values()))
+
+    def test_baseline_board_or_report_drift_during_trial_refuses(self):
+        for name in (local.FILES[0], 'drc.json'):
+            with self.subTest(name=name):
+                self.output = self.root / ('baseline-drift-' + name)
+                def reports(board, directory, **kwargs):
+                    result = self.clear_drc(board, directory, **kwargs)
+                    if directory.name == 'trial-1':
+                        p = directory.parent / 'baseline' / name
+                        p.write_bytes(p.read_bytes() + b'\n')
+                    return result
+                self.drc.side_effect = reports
+                with self.assertRaisesRegex(JobRefusal, 'baseline/input or report drift'): self.run_seed()
+                self.assertFalse((self.output / 'accepted').exists())
+
+    def test_unbound_or_forbidden_fresh_baseline_refuses_before_proposals(self):
+        base = self.library_warnings()
+        cases = []
+        for field, value in (('description', 'different library issue'), ('severity', 'error'),
+                             ('severity', 'exclusion'), ('type', 'clearance'), ('type', 'unknown_warning')):
+            changed = copy.deepcopy(base)
+            changed[0][field] = value
+            cases.append(changed)
+        changed = copy.deepcopy(base)
+        changed[0]['items'][0]['uuid'] = 'old-board-uuid'
+        cases.append(changed)
+        for index, warnings in enumerate(cases):
+            with self.subTest(index=index):
+                self.output = self.root / f'baseline-bad-{index}'
+                self.drc.side_effect = lambda board, directory, **k: self.drc_result(native_report(warnings), directory)
+                with self.assertRaises(JobRefusal): self.run_seed()
+                record = json.loads((self.output / 'record.json').read_text())
+                self.assertEqual(record['trials'], [])
+                self.assertFalse((self.output / 'accepted').exists())
 
     def test_explicit_empty_authored_policy_preserves_bytes_with_real_default_metadata(self):
         path = self.source / local.FILES[1]
@@ -320,7 +430,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
             raise JobRefusal('native DRC did not complete (exit 1)')
         self.drc.side_effect = failed
         with self.assertRaisesRegex(JobRefusal, 'exit 1'): self.run_seed()
-        self.assertTrue((self.output / 'trial-1' / 'drc.log').is_file())
+        self.assertTrue((self.output / 'baseline' / 'drc.log').is_file())
         self.assertFalse((self.output / 'accepted').exists())
 
     def test_custom_rule_staging_owns_new_directory_and_preserves_captured_rules(self):

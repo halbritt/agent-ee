@@ -3,9 +3,11 @@
 No placement, routing controller, or acceptance decision lives here. The caller
 owns the placement clock/CANCEL and invokes route() on the returned directory.
 """
+from collections import Counter
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import shutil
 import uuid
@@ -13,8 +15,8 @@ import uuid
 from .placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
 from .dc_rail import NONCONDUCTIVE_IGNORES
 from .net_constraints import rule_forms, template_rules
-from .storage import write_json
-from .symbol_library import children, parse_sexpr
+from .storage import canonical, write_json
+from .symbol_library import children, nanometres, parse_sexpr
 
 FILES = ('board.kicad_pcb', 'board.kicad_pro', 'board.kicad_dru')
 WIDTH_NM = 250_000
@@ -197,8 +199,58 @@ def _legal(report):
                 raise JobRefusal('local return: non-open finding in native pre-route open inventory')
             if finding['severity'] == 'exclusion':
                 raise JobRefusal('local return: excluded native DRC finding')
-    # Only pre-route opens are allowed. Unknown warnings cannot become passes.
-    return not report['violations'] and not report['schematic_parity']
+    # The fresh unseeded baseline admits only library metadata warnings. Trials
+    # must also match that baseline's complete record multiset in produce().
+    return (all(v['type'] == 'lib_footprint_issues' and v['severity'] == 'warning'
+                for v in report['violations']) and not report['schematic_parity'])
+
+
+def _library_context(path):
+    import pcbnew as k
+    board = k.LoadBoard(str(path))
+    if board is None:
+        raise JobRefusal('local return: native library context load failed')
+    result = {}
+    for fp in board.GetFootprints():
+        identity = fp.m_Uuid.AsString()
+        if identity in result:
+            raise JobRefusal('local return: ambiguous original footprint identity')
+        point = fp.GetPosition()
+        result[identity] = dict(description='Footprint ' + fp.GetReference(),
+            position_nm=[int(point.x), int(point.y)], library=fp.GetFPID().GetLibNickname())
+    return result
+
+
+def _bound_library_warnings(report, context):
+    for warning in report['violations']:
+        match = re.fullmatch(r"The current configuration does not include the footprint library '([^'\r\n]+)'",
+                             warning['description'])
+        items = warning['items']
+        if match is None or len(items) != 1:
+            raise JobRefusal('local return: unrecognized baseline library diagnostic')
+        item = items[0]
+        original = context.get(item['uuid'])
+        position = item.get('pos')
+        if (original is None or item.get('description') != original['description']
+                or match[1] != original['library'] or not isinstance(position, dict)
+                or set(position) != {'x', 'y'}
+                or [nanometres(str(position[k])) for k in ('x', 'y')] != original['position_nm']):
+            raise JobRefusal('local return: baseline library warning is not bound to original footprint')
+
+
+def _raw_report(directory, report, execution):
+    path = directory / 'drc.json'
+    if not path.is_file():
+        raise JobRefusal('local return: native DRC raw report missing')
+    raw = path.read_bytes()
+    sha = _sha(raw)
+    if json.loads(raw) != report or execution.get('report_sha256') != sha or execution.get('exit_code') != 0:
+        raise JobRefusal('local return: native DRC report/receipt identity mismatch')
+    return sha
+
+
+def _warnings(report):
+    return Counter(canonical(v) for v in report['violations'])
 
 
 def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=None):
@@ -245,8 +297,31 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
             proof = destination / 'rule-loading'
             record['rule_loading'] = verify_rule_loading(source / FILES[0], proof, clock=clock, cancel_dir=cancel_dir)
             custody()
+        baseline_dir = destination / 'baseline'
+        baseline_dir.mkdir()
+        for name, data in captured.items():
+            if data is not None:
+                (baseline_dir / name).write_bytes(data)
+        record['baseline'] = dict(status='checking', inputs=identities, board_sha256=identities[FILES[0]])
+        write_json(destination / 'record.json', record)
+        baseline, baseline_execution = drc(baseline_dir / FILES[0], baseline_dir,
+                                           clock=clock, cancel_dir=cancel_dir)
+        baseline_sha = _raw_report(baseline_dir, baseline, baseline_execution)
+        if not _legal(baseline):
+            raise JobRefusal('local return: fresh baseline has forbidden native DRC findings')
+        context = _library_context(source / FILES[0])
+        _bound_library_warnings(baseline, context)
+        warnings = _warnings(baseline)
+        record['baseline'].update(status='checked', execution=baseline_execution,
+            report_sha256=baseline_sha, library_warning_count=sum(warnings.values()))
+        custody()
+        if _capture(baseline_dir) != captured:
+            raise JobRefusal('local return: baseline/input drift during native checks')
         for index, path in enumerate(_paths(*(p['position_nm'] for p in endpoints))):
             custody()
+            if (_capture(baseline_dir) != captured
+                    or _sha((baseline_dir / 'drc.json').read_bytes()) != baseline_sha):
+                raise JobRefusal('local return: baseline/input or report drift')
             trial_dir = destination / f'trial-{index + 1}'
             trial_dir.mkdir()
             board, ids = _seed(captured[FILES[0]], path)
@@ -261,12 +336,22 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
                 raise JobRefusal('local return: saved native endpoint identity/geometry changed')
             report, execution = drc(trial_dir / FILES[0], trial_dir, clock=clock, cancel_dir=cancel_dir)
             trial['execution'] = execution
+            trial['report_sha256'] = _raw_report(trial_dir, report, execution)
             legal = _legal(report)
+            current_warnings = _warnings(report)
+            if current_warnings != warnings:
+                legal = False
+                trial['warning_difference'] = dict(
+                    missing=[json.loads(v) for v in (warnings - current_warnings).elements()],
+                    added=[json.loads(v) for v in (current_warnings - warnings).elements()])
             trial['coverage'] = {k: report[k] for k in
                 ('$schema', 'kicad_version', 'included_severities', 'ignored_checks')}
             trial['unconnected_count'] = len(report['unconnected_items'])
             trial['status'] = 'clearance_pass' if legal else 'rejected'
             custody()
+            if (_capture(baseline_dir) != captured
+                    or _sha((baseline_dir / 'drc.json').read_bytes()) != baseline_sha):
+                raise JobRefusal('local return: baseline/input or report drift')
             expected_trial = {**captured, FILES[0]: board}
             if _capture(trial_dir) != expected_trial:
                 raise JobRefusal('local return: trial/input drift during native checks')
@@ -282,6 +367,9 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
                           output_inputs=_identity(expected_trial))
             write_json(destination / 'record.json', record)
             custody()
+            if (_capture(baseline_dir) != captured
+                    or _sha((baseline_dir / 'drc.json').read_bytes()) != baseline_sha):
+                raise JobRefusal('local return: baseline/input or report drift before adoption')
             pending.rename(destination / 'accepted')
             return record
         raise JobRefusal('local return: all endpoint-derived proposals failed native clearance; see record.json')
