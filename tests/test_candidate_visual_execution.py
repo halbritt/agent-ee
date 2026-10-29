@@ -40,6 +40,8 @@ class VisualExecutionTests(unittest.TestCase):
             self.assertEqual(intent.env['HOME'], str(work / 'home'))
             self.assertEqual(intent.env['KICAD_CONFIG_HOME'], str(work / 'kicad-config'))
             self.assertEqual(intent.env['PYTHONPATH'], '/app')
+            self.assertTrue(Path(intent.env['HOME']).is_dir())
+            self.assertTrue(Path(intent.env['KICAD_CONFIG_HOME']).is_dir())
             board.with_suffix('.kicad_prl').write_text('owned disposable preferences')
             (work / 'top.png').write_bytes(b'CPU image bytes, not native rendering')
             write_json(work / 'visuals.json', {'board_sha256': digest(board), 'status': 'available',

@@ -88,6 +88,8 @@ def _enclosed_imaging(board, inputs, out, relative, captured):
     work = out / 'native'
     private = work / 'inputs'
     private.mkdir(parents=True)
+    (work / 'home').mkdir()
+    (work / 'kicad-config').mkdir()
     copied = None
     try:
         for rel in captured:
