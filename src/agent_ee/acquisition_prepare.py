@@ -1,0 +1,359 @@
+"""Prepare the captured acquisition recipe from an explicit capacitance-only brief.
+
+This source producer runs no native tools and grants no engineering acceptance.
+The supported reference, prose grammar and unchanged inputs are documented in
+docs/acquisition-prepare.md. All output is staged before publication.
+"""
+import argparse
+import copy
+from decimal import Decimal
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import tempfile
+
+from . import build_plan, requirement_map, spec_record, storage, typed_overlay
+from .storage import json_bytes, rename_noreplace
+
+ROOT = Path(__file__).resolve().parents[2]
+REFERENCE = 'acquisition-control'
+ADOPTION = 'Use acquisition reference acquisition-control unchanged.'
+CAPACITANCE = re.compile(
+    r'Total I2C line capacitance shall be at most (?P<quantity>(?P<value>[0-9]+(?:\.[0-9]+)?)'
+    r'\s+pF) per line, including board, host and cable\.')
+REVISION_BASIS = {
+    'spec.md': 'Apply only the explicit total-line capacitance bound',
+    'spec-record.json': 'Recapture the actual revised UTF-8 spec bytes',
+    'requirement-map.json': 'Rebind source record and partitions; capture preparation provenance',
+    'parts.json': 'Rebind unchanged selected parts to their operative spec citation',
+    'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
+    'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
+    'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
+    'OPERATING.md': 'Apply selected total bus capacitance to operating instructions',
+    'engineering-calculations.json': 'Recompute the retained RC model with the selected operand',
+    'ENGINEERING-REVIEW.md': 'Transcribe changed arithmetic and withhold inherited review credit',
+}
+
+
+class PreparationRefused(ValueError):
+    """A source-bound unresolved or incompatible brief; no bundle was published."""
+
+    def __init__(self, code, message, *, start=0, end=0, outcome='unresolved'):
+        super().__init__(message)
+        self.report = dict(outcome=outcome, findings=[dict(
+            code=code, message=message, byte_start=start, byte_end=end)])
+
+
+def parse_brief(raw):
+    """Consume every nonblank line; never infer adoption or discard material text."""
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeError as exc:
+        raise PreparationRefused('encoding', 'brief must be UTF-8', start=exc.start, end=exc.end) from exc
+    adoption, bounds, offset = [], [], 0
+    for line in text.splitlines(keepends=True):
+        content = line.strip()
+        start = offset + len(line[:len(line) - len(line.lstrip())].encode())
+        end = start + len(content.encode())
+        offset += len(line.encode())
+        if not content:
+            continue
+        if content == ADOPTION:
+            adoption.append([start, end])
+        elif match := CAPACITANCE.fullmatch(content):
+            bounds.append(dict(value=Decimal(match['value']), quantity=match['quantity'], span=[start, end]))
+        else:
+            raise PreparationRefused('unsupported_clause', 'unsupported or ambiguous brief clause: ' + content,
+                                     start=start, end=end)
+    if not adoption:
+        raise PreparationRefused('missing_reference_adoption', 'explicit named reference adoption is required')
+    if len(adoption) != 1:
+        raise PreparationRefused('duplicate_reference_adoption', 'reference adoption must occur exactly once')
+    if not bounds:
+        raise PreparationRefused('missing_capacitance', 'total line capacitance including board, host and cable is required')
+    if len(bounds) != 1:
+        code = 'contradictory_capacitance' if len({b['value'] for b in bounds}) > 1 else 'duplicate_capacitance'
+        raise PreparationRefused(code, 'supply exactly one total-line capacitance bound',
+                                 start=bounds[0]['span'][0], end=bounds[-1]['span'][1], outcome='refused')
+    selected = bounds[0]
+    if selected['value'] not in (Decimal(100), Decimal(150)):
+        raise PreparationRefused('unsupported_fixed_recipe_bound',
+            'this captured fixed-pullup recipe supports only control 100 pF or variant 150 pF; '
+            'no alternative part or broader model applicability is inferred',
+            start=selected['span'][0], end=selected['span'][1], outcome='refused')
+    return dict(selected, adoption_span=adoption[0])
+
+
+def _render_spec(raw, quantity):
+    marker = b'at most 100 pF total line capacitance'
+    if raw.count(marker) != 1:
+        raise ValueError('captured capacitance clause differs from this recipe')
+    start = raw.index(marker) + len(b'at most ')
+    end = start + len(b'100 pF')
+    replacement = quantity.encode('utf-8')
+    revised = raw[:start] + replacement + raw[end:]
+
+    def position(byte):
+        if byte <= start:
+            return byte
+        if byte >= end:
+            return byte + len(replacement) - (end - start)
+        raise ValueError('a source partition splits the replaced capacitance quantity')
+    return revised, position
+
+
+def _move_spans(document, position):
+    """Move declared byte endpoints, preserving all other authored policy."""
+    if isinstance(document, list):
+        return [_move_spans(row, position) for row in document]
+    if not isinstance(document, dict):
+        return document
+    result = {key: _move_spans(value, position) for key, value in document.items()}
+    for key in ('byte_start', 'byte_end'):
+        if key in result:
+            result[key] = position(result[key])
+    return result
+
+
+def _source_bindings(document, old_spec, new_spec, position):
+    """Rebind only citations to this spec, not arbitrary matching digest strings."""
+    if isinstance(document, list):
+        return [_source_bindings(row, old_spec, new_spec, position) for row in document]
+    if not isinstance(document, dict):
+        return document
+    result = {key: _source_bindings(value, old_spec, new_spec, position) for key, value in document.items()}
+    if result.get('path') in ('spec.md', 'requirements-map/spec.md'):
+        if result.get('sha256') != spec_record.sha256(old_spec):
+            raise ValueError('operative spec citation does not bind the captured original')
+        result['sha256'] = spec_record.sha256(new_spec)
+        locator = result.get('locator')
+        if isinstance(locator, str) and locator.startswith('{'):
+            result['locator'] = json.dumps(_move_spans(json.loads(locator), position), sort_keys=True)
+    records = result.get('source_records', {})
+    if 'spec.md' in records:
+        if records['spec.md'] != old_spec.decode():
+            raise ValueError('embedded spec differs from captured original')
+        records['spec.md'] = new_spec.decode()
+    return result
+
+
+def _revise_overlay(overlay, position, capacitance):
+    revised = _move_spans(overlay, position)
+    for brief in revised['judgments'].values():
+        brief['span'] = [position(byte) for byte in brief['span']]
+        brief['sources'] = [re.sub(r'spec\.md bytes (\d+):(\d+)',
+            lambda m: f'spec.md bytes {position(int(m[1]))}:{position(int(m[2]))}', source)
+            for source in brief['sources']]
+    host = revised['judgments']['judgments/acq-elec-5-host-bus-contract.json']
+    host['questions'] = [question.replace('100 pF', capacitance + ' pF') for question in host['questions']]
+    return revised
+
+
+def _write_revision(base, revised, selected, overlay):
+    old_spec = (base / 'spec.md').read_bytes()
+    new_spec, position = _render_spec(old_spec, selected['quantity'])
+    old_record = spec_record.verify((base / 'spec-record.json').read_bytes(), old_spec)
+    record = spec_record.capture(new_spec, old_record['ids']['prefix'], old_record['ids']['codes'])
+    (revised / 'spec.md').write_bytes(new_spec)
+    (revised / 'spec-record.json').write_bytes(json_bytes(record))
+    declaration = _move_spans(requirement_map.map_declaration((base / 'requirement-map.json').read_bytes()), position)
+    declaration['spec_record_sha256'] = spec_record.sha256(json_bytes(record))
+    declaration['scope']['inputs'].append(dict(path='preparation', at='preparation'))
+    (revised / 'requirement-map.json').write_bytes(json_bytes(declaration))
+    for name in ('parts.json', 'electrical-locality.json', 'placement.json', 'analysis/electrical-intervals.json'):
+        document = _source_bindings(json.loads((base / name).read_bytes()), old_spec, new_spec, position)
+        if name.startswith('analysis/'):
+            cap = format(selected['value'].normalize(), 'f')
+            document['parameters']['bus_c'].update(min=cap + 'e-12 F', max=cap + 'e-12 F')
+        (revised / name).write_bytes(json_bytes(document))
+    capacitance = format(selected['value'].normalize(), 'f')
+    operating = (base / 'OPERATING.md').read_text()
+    if operating.count('100 pF per line') != 1:
+        raise ValueError('captured operating capacitance instruction differs from this recipe')
+    (revised / 'OPERATING.md').write_text(operating.replace('100 pF per line', selected['quantity'] + ' per line'))
+    rise = Decimal('.8473') * Decimal('2222') * selected['value'] * Decimal('1e-12')
+    calculations = json.loads((base / 'engineering-calculations.json').read_bytes())
+    calculations['values']['i2c_rise_time'] = dict(value=str(rise), unit='s',
+        basis=f'Captured 30..70 percent RC model, total {capacitance} pF, Rmax 2222 ohm; not a waveform measurement')
+    calculations['sources'] = {('spec.md' if sha == spec_record.sha256(old_spec) else path):
+        (spec_record.sha256(new_spec) if sha == spec_record.sha256(old_spec) else sha)
+        for path, sha in calculations['sources'].items()}
+    (revised / 'engineering-calculations.json').write_bytes(json_bytes(calculations))
+    review = (base / 'ENGINEERING-REVIEW.md').read_text()
+    if review.count('At100pF') != 1 or review.count('188.27ns') != 1:
+        raise ValueError('captured engineering narrative differs from this recipe')
+    review = review.replace('At100pF', f'At{capacitance}pF').replace('188.27ns', f'{rise * Decimal("1e9"):f}ns')
+    (revised / 'ENGINEERING-REVIEW.md').write_text(
+        'Preparation transcription only: this inherited narrative is not independent review, judgment or acceptance.\n\n' + review)
+    overlay = _revise_overlay(overlay, position, capacitance)
+    overlay['base'] = dict(spec_sha256=spec_record.sha256(new_spec),
+        spec_record_sha256=spec_record.sha256((revised / 'spec-record.json').read_bytes()),
+        requirement_map_sha256=spec_record.sha256((revised / 'requirement-map.json').read_bytes()))
+    return overlay, old_record, record
+
+
+def _admit(plan_path, out, added_sources):
+    plan_path, out = Path(plan_path).resolve(), Path(out).absolute()
+    plan_raw = plan_path.read_bytes()
+    plan = build_plan.validate_plan(requirement_map.decode(plan_raw))
+    base = (plan_path.parent / plan['source']).resolve()
+    manifest = json.loads((ROOT / 'fixtures/recovery/inputs.json').read_bytes())['files']
+    if spec_record.sha256(plan_raw) != manifest['build/acquisition-release/build.json']['sha256']:
+        raise ValueError('build plan differs from the captured acquisition-control recipe')
+    files = requirement_map.input_inventory(base)
+    expected = {name.removeprefix('build/acquisition-release/inputs/'): pin['sha256']
+                for name, pin in manifest.items() if name.startswith('build/acquisition-release/inputs/')}
+    if files != expected:
+        raise ValueError('acquisition-control inputs differ from the captured recovery inventory')
+    if os.path.lexists(out):
+        raise ValueError(f'{out} exists')
+    trees = dict(base=base, **{key: Path(path).resolve() for key, path in added_sources.items()})
+    typed_overlay._disjoint('output', out.resolve(), trees)
+    if not out.parent.is_dir():
+        raise ValueError('output parent must already exist')
+    return plan_raw, plan, base, files
+
+
+def _load_overlay(before, sources):
+    raw = (ROOT / 'fixtures/acquisition-typed/overlay.json').read_bytes()
+    overlay = typed_overlay.load_overlay(raw)
+    for filename, key in [('spec.md', 'spec_sha256'), ('spec-record.json', 'spec_record_sha256'),
+                          ('requirement-map.json', 'requirement_map_sha256')]:
+        if before[filename] != overlay['base'][key]:
+            raise ValueError(f'{filename}: captured base differs from the selected typed overlay')
+    if sources.keys() != overlay['added_inputs'].keys():
+        raise ValueError('added inputs must supply exactly cpl, manufacturer-text and operating-supplement')
+    additions = {key: requirement_map.input_inventory(path) for key, path in sources.items()}
+    for key, files in additions.items():
+        if files != overlay['added_inputs'][key]['files']:
+            raise ValueError(f'{key}: additive capture differs from the typed overlay inventory')
+    return raw, overlay, additions
+
+
+def _source_map(raw, selected, original_record, record):
+    originals = {r['id']: r for r in original_record['requirements'] + original_record['prose']}
+    supplement = (ROOT / 'fixtures/acquisition-typed/operating-supplement/ADS1115-OPERATING.md').read_bytes()
+    old_bound = b'100 pF capacitance'
+    start = supplement.index(old_bound)
+    return dict(reference=REFERENCE, brief_sha256=spec_record.sha256(raw),
+        original_spec=original_record['spec'], derived_spec=record['spec'],
+        adoption_span=selected['adoption_span'], capacitance_span=selected['span'],
+        capacitance_pf=format(selected['value'].normalize(), 'f'),
+        changed_requirement='ACQ-ELEC-5', fields=['analysis/electrical-intervals.json#/parameters/bus_c'],
+        operating_supplement=dict(path='operating-supplement/ADS1115-OPERATING.md',
+            sha256=spec_record.sha256(supplement), byte_start=start, byte_end=start + len(old_bound),
+            status='superseded_bound' if selected['value'] == 150 else 'retained_bound',
+            preservation='Power-up and conversion timing/sequence instructions remain in force'),
+        requirements=[dict(id=r['id'], original=originals[r['id']]['locator'],
+                           derived=r['locator'], text_sha256=r['text_sha256'])
+                      for r in record['requirements'] + record['prose']])
+
+
+def _archive_revision(base, revised, before, identity):
+    changed = {}
+    for name, original in before.items():
+        digest = spec_record.sha256((revised / name).read_bytes())
+        if digest == original:
+            continue
+        changed[name] = dict(before=original, after=digest, basis=REVISION_BASIS[name])
+        target = revised / 'history/acquisition-preparation-original' / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(base / name, target)
+    (revised / 'preparation/edit-ledger.json').write_bytes(json_bytes(dict(
+        identity=identity, original_inventory=before, changed=changed,
+        qualification='unverified; preparation only, no native work or independent engineering review')))
+    return changed
+
+
+def prepare(brief, plan_path, out, *, added_sources):
+    """Publish a complete typed source bundle for the captured acquisition recipe.
+
+    ``plan_path`` is the existing captured build plan; its source directory,
+    manufacturing profile and finite native budgets are retained. Additions map
+    ``cpl`` and ``manufacturer-text`` to their exact captured directories. The
+    committed operating supplement is used unless explicitly supplied.
+    """
+    brief, out = Path(brief), Path(out).absolute()
+    raw = brief.read_bytes()
+    try:
+        selected = parse_brief(raw)
+    except PreparationRefused as exc:
+        exc.report['brief_sha256'] = spec_record.sha256(raw)
+        raise
+    sources = {'operating-supplement': ROOT / 'fixtures/acquisition-typed/operating-supplement', **added_sources}
+    plan_raw, plan, base, before = _admit(plan_path, out, sources)
+    typed_overlay._disjoint('output', out.resolve(), {'brief': brief.resolve(), 'plan': Path(plan_path).resolve()})
+    overlay_raw, overlay, additions = _load_overlay(before, sources)
+    recipe = dict(brief_sha256=spec_record.sha256(raw), plan_sha256=spec_record.sha256(plan_raw),
+        source_inventory_sha256=spec_record.sha256(json_bytes(before)),
+        overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
+        helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
+                 for module in (build_plan, requirement_map, spec_record, storage, typed_overlay)},
+        additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
+    identity = spec_record.sha256(json_bytes(recipe))
+    with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
+        scratch = Path(scratch)
+        revised, bundle = scratch / 'revision', scratch / 'bundle'
+        shutil.copytree(base, revised)
+        overlay, original_record, record = _write_revision(base, revised, selected, overlay)
+        provenance = revised / 'preparation'
+        provenance.mkdir()
+        (provenance / 'brief.md').write_bytes(raw)
+        (provenance / 'build-plan.original.json').write_bytes(plan_raw)
+        (provenance / 'overlay.original.json').write_bytes(overlay_raw)
+        (provenance / 'source-map.json').write_bytes(json_bytes(_source_map(raw, selected, original_record, record)))
+        changed = _archive_revision(base, revised, before, identity)
+        overlay_file = scratch / 'overlay.json'
+        overlay_file.write_bytes(json_bytes(overlay))
+        bundle.mkdir()
+        result = typed_overlay.prepare(revised, overlay_file, bundle / 'inputs', added_sources=sources)
+        plan = copy.deepcopy(plan)
+        plan.update(schema=build_plan.TYPED_SCHEMA, source='inputs', judgments='judgments')
+        plan['requirements']['obligations'] = 'obligations.json'
+        build_plan.validate_plan(plan)
+        (bundle / 'build-plan.json').write_bytes(json_bytes(plan))
+        (bundle / 'overlay.json').write_bytes(json_bytes(overlay))
+        if requirement_map.input_inventory(base) != before:
+            raise ValueError('original source changed during preparation')
+        report = dict(schema='agent-ee.acquisition-preparation/1', outcome='prepared',
+            identity=identity, recipe=recipe, reference=REFERENCE, qualification='unverified',
+            brief_sha256=spec_record.sha256(raw), changed=changed,
+            accounting=result['manifest']['accounting'],
+            inputs=requirement_map.input_inventory(bundle / 'inputs'),
+            remaining=['Native public build and file qualification', 'Independent judgments and engineering review',
+                       'Strict block-source selection and final artwork/package revalidation if strict grouping is requested',
+                       'Supplier and physical validation'])
+        (bundle / 'preparation.json').write_bytes(json_bytes(report))
+        rename_noreplace(bundle, out)
+    return report
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--brief', type=Path, required=True)
+    parser.add_argument('--build-plan', type=Path, required=True)
+    parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--added-input', action='append', default=[], metavar='AT=DIR')
+    args = parser.parse_args(argv)
+    sources = {}
+    for value in args.added_input:
+        key, sep, path = value.partition('=')
+        if not sep or not key or not path or key in sources:
+            parser.error('--added-input requires a distinct AT=DIR')
+        sources[key] = Path(path)
+    try:
+        report = prepare(args.brief, args.build_plan, args.out, added_sources=sources)
+    except PreparationRefused as exc:
+        print(json.dumps(exc.report, ensure_ascii=False))
+        return 1
+    except (ValueError, OSError) as exc:
+        print(json.dumps(dict(outcome='unavailable', findings=[dict(code='source_preparation', message=str(exc))])))
+        return 2
+    print(json.dumps({key: report[key] for key in ('outcome', 'identity', 'qualification')}))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

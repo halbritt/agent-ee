@@ -1,5 +1,9 @@
 # Captured engineering build
 
+For the bounded acquisition control/150 pF source recipe, start with the
+[acquisition brief preparer](acquisition-prepare.md). It generates the typed
+inputs consumed here; preparation does not supply native or engineering evidence.
+
 `agent-ee build run` composes the existing requirements, parts, native scaffold,
 schematic, placement/routing, artwork and final package producers. The public path is
 being qualified. Fresh execution establishes the captured requirements, parts,

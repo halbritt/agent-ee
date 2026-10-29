@@ -1,5 +1,9 @@
 # Preparing the acquisition interface variant for AGENTEE-525
 
+The supported [acquisition brief preparer](../acquisition-prepare.md) now owns
+this source revision procedure. The transcript and results below retain the
+historical preparation evidence and its original acceptance boundary.
+
 This procedure prepares one changed interface brief using the existing captured
 acquisition templates, `spec_record`, `typed_overlay` and `interval_assertions`.
 It adds no production producer or validator. The
