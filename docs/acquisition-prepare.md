@@ -554,10 +554,34 @@ physical references, with member anchors J1/J3/J2. Each connector remains in its
 existing group; explicit fixed/shared allocation lists are empty. Existing native
 connector locks and mechanics checks still apply. Eligibility retains the
 existing all-front mechanics contract, and the nominal stackup stays 1.2 mm.
-The complete operative locality document and citations are copied unchanged:
-five obligations contain eight physical pad legs, each bounded by the existing
-3 mm requirement. One existing `same-face-only` template is selected per leg.
-No new radius, clearance, geometry limit or qualified-role claim is introduced.
+The original five locality obligations and their eight 3 mm physical pad legs
+remain unchanged. Ten additional named `single-leg` relationships capture
+coordinator root706's engineering placement choices adopted 2026-10-29:
+
+| Pad pair | Native net | Maximum |
+| --- | --- | --- |
+| J1.1 to D1.2 | /VIN | 5 mm |
+| D1.1 to U1.1 | /VIN_PROTECTED | 5 mm |
+| R5.1 to C1.1 | /VIN_PROTECTED | 3 mm |
+| R6.1 to C2.1 | /V3V3 | 3 mm |
+| J3.1 to R1.1 | /ANALOG0_IN | 5 mm |
+| J3.3 to R2.1 | /ANALOG1_IN | 5 mm |
+| R1.2 to U2.4 | /ANALOG0 | 3 mm |
+| R2.2 to U2.5 | /ANALOG1 | 3 mm |
+| R3.2 to J2.2 | /SDA | 5 mm |
+| R4.2 to J2.3 | /SCL | 5 mm |
+
+These additions are coordinator engineering choices, not owner or datasheet
+mandates. `preparation/final-group-engineering.txt` captures attribution and the
+exact single-quantity quotes, such as `J1.1 to D1.2 pad distance shall be at most
+5 mm.` Each pair has both a top-level citation and a captured-source provenance
+citation. All 18 legs must classify as hard; advisory downgrades refuse. The
+producer requires complete coverage of all 17 electrical members, and updates
+both operative locality copies before sealing. One existing `same-face-only`
+template is selected per leg. No universal radius, clearance relaxation or
+qualified-role claim is introduced. Native search, packing and routing remain
+unverified. The same additive choices must precede the fresh control, wrong
+variant and repaired case freeze; old published runs are unchanged.
 
 Before sealing, the producer verifies exact membership/anchors and selected
 physical instances, resolves physical pin/net identities against the captured
@@ -579,6 +603,13 @@ verification, full engineering review, supplier and physical obligations remain.
 This option composes with the finite ADDR/fixed-expectation context. The same
 option and final source must be used for the independently captured control and
 both later candidates; source changes invalidate the old producer receipt.
+
+The complete 17-member pure grading regression requires
+`AGENT_EE_GROUP_FACTS=/absolute/path/retained/placement-probe.json` from the
+acquisition control. It transforms four footprint fact records into the reviewed
+constructive geometry, exercises full `judge`/`check_complete` and retains the
+original eight-leg unknown control. This authored fact transform is not a saved
+board, native DRC, search convergence or routing result.
 
 ### Explicit v4 acquisition roles
 

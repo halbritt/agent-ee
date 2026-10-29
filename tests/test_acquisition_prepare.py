@@ -103,8 +103,10 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertEqual(source['relationships'], json.loads((inputs / 'electrical-locality.json').read_bytes()))
         pairs = [(o['id'], r, o[r]) for o in source['relationships']['obligations']
                  for r in ('supply','return','leg') if r in o]
-        self.assertEqual(len(pairs), 8)
-        self.assertTrue(all(p['max_distance_nm'] == 3000000 for _,_,p in pairs))
+        self.assertEqual(len(pairs), 18)
+        self.assertTrue(all(p['max_distance_nm'] == 3000000 for _,_,p in pairs[:8]))
+        from agent_ee import locality_provenance
+        self.assertTrue(all(locality_provenance.classify(p, source['relationships']['source_records'])['enforcement'] == 'hard' for _,_,p in pairs))
         self.assertEqual(source['templates'], [dict(relationship=i, role=r, template='same-face-only') for i,r,_ in pairs])
         self.assertNotIn('board_sha256', source['allocation'])
         self.assertNotIn('board_sha256', source['eligibility']['sources'])
@@ -129,6 +131,9 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertNotIn('block_source', json.loads((legacy / 'build-plan.json').read_bytes())['placement'])
         self.assertNotIn(path, old['inputs'])
         self.assertNotEqual(old['identity'], report['identity'])
+        original = json.loads((legacy / 'inputs/electrical-locality.json').read_bytes())
+        self.assertEqual(source['relationships']['obligations'][:5], original['obligations'])
+        self.assertEqual((inputs / 'spec.md').read_bytes(), (legacy / 'inputs/spec.md').read_bytes())
         for name in ('groups.json','circuit.json','layout.json','adc-ties.json'):
             self.assertEqual((inputs / name).read_bytes(), (legacy / 'inputs' / name).read_bytes())
 
@@ -212,6 +217,81 @@ class AcquisitionPreparationTests(unittest.TestCase):
         with patch('shutil.copytree', drift_copy), self.assertRaisesRegex(ValueError, 'sealed acquisition final-group source differs'):
             self.prepare(brief('100'), name='typed-copy-drift', final_groups=True)
         self.assertFalse((self.root / 'typed-copy-drift').exists())
+
+    @unittest.skipUnless(os.environ.get('AGENT_EE_GROUP_FACTS'), 'explicit retained acquisition native facts required')
+    def test_all_eighteen_legs_grade_complete_and_original_eight_remain_unknown(self):
+        import copy
+        from agent_ee import acquisition_block_source, block_contract, placement_contract, locality_provenance
+        out, _ = self.prepare(brief('100'), final_groups=True)
+        root = out / 'inputs'
+        plan = json.loads((out / 'build-plan.json').read_bytes())
+        source = json.loads((root / acquisition_block_source.PATH).read_bytes())
+        facts = json.loads(Path(os.environ['AGENT_EE_GROUP_FACTS']).read_bytes())
+        self.assertEqual(len(facts['footprints']), 17)
+        # Authored pure transform of retained native facts, not a saved board or routing proof.
+        targets = {'D1':(106600000,123300000,180), 'R6':(109700000,120400000,180),
+                   'R1':(121900000,109800000,-90), 'C4':(123500000,110250000,90)}
+        for fp in facts['footprints']:
+            if fp['ref'] not in targets:
+                continue
+            x,y,angle = targets[fp['ref']]
+            ox,oy = fp['position_nm']
+            turns = int((angle - fp['rotation_deg']) / 90) % 4
+            def move(point):
+                dx,dy = point[0]-ox,point[1]-oy
+                for _ in range(turns): dx,dy = dy,-dx
+                return [x+dx,y+dy]
+            for pad in fp['pads']:
+                pad['position_nm'] = move(pad['position_nm'])
+                pad['rotation_deg'] = (pad['rotation_deg'] + 90*turns) % 360
+            for side in fp['courtyards'].values():
+                side['polygons'] = [[move(point) for point in poly] for poly in side.get('polygons',[])]
+                for primitive in side.get('primitives',[]):
+                    for key in ('start','end','center'):
+                        if key in primitive: primitive[key] = move(primitive[key])
+            fp['position_nm'],fp['rotation_deg'] = [x,y],angle
+        facts['board_sha256'] = storage.identity(facts)
+        facts['pcbnew_version'] = 'Pure transformed retained facts; no saved native board'
+        contract = placement_contract.materialize_source(source, facts['board_sha256'])
+        full = block_contract.judge(facts, contract, original_capture=facts)
+        complete = block_contract.check_complete(facts, contract)
+        for result in (full, complete):
+            self.assertEqual(result['status'], 'pass', result)
+            self.assertEqual(result['unknown'], [])
+            self.assertEqual(result['defects'], [])
+            self.assertEqual(result['advisories'], [])
+            self.assertEqual(len(result['relationships']), 18)
+        old = copy.deepcopy(contract)
+        old['relationships']['obligations'] = old['relationships']['obligations'][:5]
+        old['templates'] = old['templates'][:8]
+        for result in (block_contract.judge(facts, old, original_capture=facts), block_contract.check_complete(facts, old)):
+            self.assertEqual(result['status'], 'unknown')
+            missing = {u['block']:u['references'] for u in result['unknown'] if u['kind']=='block_pin_relationships_missing'}
+            self.assertEqual(missing, {'power':['D1','J1','R5','R6'], 'analog':['J3','R1','R2'], 'host':['J2','R3','R4']})
+        original = (root / 'electrical-locality.json').read_bytes()
+        placement_raw = (root / 'placement.json').read_bytes()
+        for alteration in ('missing-top-citation','unqualified-quote','wrong-bound','missing-leg'):
+            locality = json.loads(original)
+            pair = locality['obligations'][5]['leg']
+            if alteration == 'missing-top-citation': del pair['citation']
+            if alteration == 'unqualified-quote':
+                pair['citation'] = pair['provenance']['citation']['quote'] = 'J1 pin 1 to D1 pin 2 <= 5 mm.'
+                locality['source_records'][acquisition_block_source.ENGINEERING_PATH] = pair['citation']
+                pair['provenance']['citation']['sha256'] = spec_record.sha256(pair['citation'].encode())
+                self.assertNotEqual(locality_provenance.classify(pair, locality['source_records'])['enforcement'], 'hard')
+            if alteration == 'wrong-bound': pair['max_distance_nm'] += 1
+            if alteration == 'missing-leg': locality['obligations'].pop()
+            placement = json.loads(placement_raw); placement['electrical_locality'] = locality
+            storage.write_json(root / 'electrical-locality.json', locality)
+            storage.write_json(root / 'placement.json', placement)
+            with self.subTest(alteration=alteration), self.assertRaises(ValueError):
+                acquisition_block_source.derive(root, plan)
+        (root / 'electrical-locality.json').write_bytes(original)
+        (root / 'placement.json').write_bytes(placement_raw)
+        if os.environ.get('AGENT_EE_ADDR_EVIDENCE'):
+            retained = Path(os.environ['AGENT_EE_ADDR_EVIDENCE']);retained.mkdir(exist_ok=True, parents=True)
+            for name,record in (('full-18-judge.json',full),('full-18-check-complete.json',complete),('authored-17-facts.json',facts)):
+                storage.write_json(retained / name, record)
 
     def test_changed_brief_prepares_complete_typed_source_for_public_build(self):
         with tempfile.TemporaryDirectory() as tmp:

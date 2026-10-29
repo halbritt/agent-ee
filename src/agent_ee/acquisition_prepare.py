@@ -34,8 +34,8 @@ REVISION_BASIS = {
     'circuit.json': 'Update the source-selected ADC purchasing display and optional finite U2 ADDR pin1 GND/V3V3 tie',
     'assembly-release-ids.json': 'Regenerate operative selected-allocation roster; archive historical choices, no supplier approval',
     'component-selections.json': 'Record automatic primary/carrier purchasing selection; retain historical original',
-    'electrical-locality.json': 'Rebind unchanged locality citations and embedded spec',
-    'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
+    'electrical-locality.json': 'Rebind citations/spec; optional root706 engineering final-group additions preserve original eight legs',
+    'placement.json': 'Rebind embedded locality and optional root706 final-group additions; preserve geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
     'OPERATING.md': 'Apply selected total bus capacitance and source-qualified ADC applicability labels',
     'analysis/power-startup/corners.lib': 'Explicit R6+1% adverse626.2ohm; all other original corner values retained',
@@ -562,10 +562,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     if final_groups:
         from . import acquisition_block_source
         recipe['final_groups'] = dict(path=acquisition_block_source.PATH,
+            engineering_source=dict(path=acquisition_block_source.ENGINEERING_PATH,
+                sha256=spec_record.sha256(acquisition_block_source.engineering_text())),
             qualification='unverified; existing acquisition allocation and constraints only')
         for module in (acquisition_block_source, acquisition_block_source.connectivity_ir,
                        acquisition_block_source.electrical_locality, acquisition_block_source.parts_manifest,
-                       acquisition_block_source.placement_contract):
+                       acquisition_block_source.placement_contract, acquisition_block_source.locality_provenance):
             recipe['helpers'][module.__name__] = storage.digest(Path(module.__file__))
     if expectation is not None:
         recipe['expected_intent'] = dict(path=acquisition_expected_intent.EXPECTED, sha256=expected_intent_sha256,
@@ -668,6 +670,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             (provenance / 'evaluation-context.json').write_bytes(replay[1])
         if final_groups:
             from . import block_source_stage
+            acquisition_block_source.apply(revised, plan)
             group_source = acquisition_block_source.derive(revised, plan)
             group_path = acquisition_block_source.PATH
             (revised / group_path).write_bytes(json_bytes(group_source))
