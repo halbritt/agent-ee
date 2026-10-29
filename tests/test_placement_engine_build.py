@@ -21,6 +21,7 @@ class PlacementEngineBuildTest(unittest.TestCase):
         self.root = Path(temporary.name)
         for name in ('crates/placement-engine/Cargo.toml', 'crates/placement-engine/Cargo.lock',
                      'crates/placement-engine/src/main.rs', 'src/agent_ee/data/jlcpcb-locality.json',
+                     'fixtures/acquisition-qualification/geometry-model.json',
                      'scripts/build_placement_engine.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +51,7 @@ class PlacementEngineBuildTest(unittest.TestCase):
     def test_source_resource_lock_binary_and_compiler_drift_are_refused(self):
         for name in ('crates/placement-engine/src/main.rs', 'crates/placement-engine/Cargo.lock',
                      'src/agent_ee/data/jlcpcb-locality.json', 'scripts/build_placement_engine.py',
+                     'fixtures/acquisition-qualification/geometry-model.json',
                      'installed/agent-ee-placement'):
             with self.subTest(name=name):
                 path = self.root / name

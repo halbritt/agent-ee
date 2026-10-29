@@ -27,6 +27,7 @@ def sha(path):
 def sources(root):
     paths = [CRATE / 'Cargo.toml', CRATE / 'Cargo.lock',
              Path('src/agent_ee/data/jlcpcb-locality.json'),
+             Path('fixtures/acquisition-qualification/geometry-model.json'),
              Path('scripts/build_placement_engine.py')]
     paths += [p.relative_to(root) for p in (root / CRATE / 'src').rglob('*') if p.is_file()]
     if not any(p.suffix == '.rs' for p in paths):
