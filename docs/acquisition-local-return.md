@@ -50,8 +50,10 @@ centres. Each trial retains the proposed board and raw native DRC report/log.
 Native rule-loading proof is reused when custom rules exist. The existing
 placement DRC runner owns subprocess cancellation and deadline handling. Every
 native conductive/unknown finding, exclusion or parity finding refuses the
-proposal. The sole library-warning exception requires a fresh exact baseline
-match as described below. Unconnected pre-route nets are retained and counted;
+proposal. The library-warning exception requires a fresh exact baseline
+match as described below. Warning-only `silk_overlap` and `silk_over_copper`
+findings are retained separately for the required later artwork stage; this
+pre-route operation cannot establish artwork acceptance. Unconnected pre-route nets are retained and counted;
 they are not clearance failures. Malformed or unavailable DRC never establishes
 a pass. Exhausting the finite proposals refuses without an `accepted` directory.
 The operation has no separate clock, retry budget, or resumable repair identity.
@@ -99,8 +101,8 @@ is no baseline argument, caller qualification, historical baseline reuse, new
 clock, or extra retry. This adds one baseline to the existing at-most-five path
 checks; the existing custom-rule loading witness is separate and unchanged.
 
-The baseline must satisfy the same full coverage/no-suppression gate. The only
-permitted baseline violation records are `lib_footprint_issues` at WARNING
+The baseline must satisfy the same full coverage/no-suppression gate. Apart from
+the two deferred artwork warning types, permitted baseline records are `lib_footprint_issues` at WARNING
 severity, with the exact diagnostic form `The current configuration does not
 include the footprint library 'NAME'`. Each item must resolve to the fresh
 original native footprint UUID, reference, exact position and library nickname.
@@ -119,7 +121,9 @@ cannot pass. No conductive/unknown warning is carried, even from the baseline.
 `record.json` binds exact input board and report hashes plus execution receipt.
 Every trial similarly binds its exact board/report hashes and records full
 added/missing warning records on mismatch. Baseline inputs/report are checked
-again around trials and before adoption. The original source remains immutable.
+again around trials and before adoption. Raw reports must be ordinary unaliased
+files. Selected trial and copied reports are rehashed before publication; a
+changed report cannot survive behind a stale receipt hash. The original source remains immutable.
 Native raw findings and byte preservation establish custody; the operation still
 does not claim final routing, library health, parity or engineering acceptance.
 
@@ -128,36 +132,35 @@ native checks. Failure evidence remains under the new evidence directory. Never
 reuse a failed destination. A `seeded` record is a production-operation receipt,
 not a stage receipt, qualification, judgment, or release decision.
 
-## Minimal integration owned by root / agent-697
+## Placement integration
 
-This patch deliberately does not edit `build_plan.py`, `build_stages.py`,
-`placement_job.py`, or `acquisition_prepare.py`.
+The existing `mechanics` declaration admits only the captured acquisition model
+and checker. That declaration enables this operation automatically; there is no
+second caller-qualified boolean. Preparation and the placement checkpoint bind
+the helper source hash. Jobs without the declaration retain their existing path.
 
-1. Thread one explicit recipe-scoped boolean `acquisition_local_return` through
-   the existing prepared plan / placement configuration. Default false; true is
-   admitted only with the existing exact acquisition recipe identity. Bind it,
-   the helper source, and its receipt into existing plan/job custody. This is an
-   explicit production change, not inherited qualification.
-2. In `placement_job._execute_job`, inside the per-candidate routing loop just
-   before the current `route(selected['directory'], ...)` call, invoke `produce`
-   for an eligible accepted placement only, using the existing outer `clock` and
-   job directory for CANCEL. Use a fresh evidence path tied to the current
-   `suffix`, such as `job_dir / ('local-return-' + suffix)`. A failed operation
-   retains the refusal and cannot fall through to an unseeded acquisition route.
-   Do not apply it to exploratory diagnostic placements.
-3. Leave the original selected placement immutable. Pass `seed['output']` to
-   `route`; retain both original placement identity and seeded input identity
-   explicitly in the routing trial/checkpoint, along with the `record.json`
-   hash. Use a copied selected entry pointing at the seed directory/board/hash
-   where final checks require the actual routed input. Preserve the original
-   placement score and qualification records.
-4. Existing `route` detects seed tracks and selects `preserve_existing`
-   (`--protect existing`). This protects the accepted return. It also makes
-   `owned_copper` false: current owned-copper feedback retries are unavailable.
-   Do not turn them on by pretending the seed input was track-free.
-5. Keep existing final raw DRC, opens/parity, pose/rule preservation and full
-   declared engineering geometry checks. Verify the seed survived the actual
-   router output; a routing completion is insufficient.
+Inside `_execute_job`, an eligible placement with a passing, matching mechanics
+result enters `produce` before global routing. Its fresh `local-return-SUFFIX`
+directory retains the operation. The baseline and proposals consume the existing
+candidate's equal share of the remaining job deadline, with the same CANCEL
+directory. Only the unspent share goes to global routing. Refusal aborts that
+job without an unseeded fallback or exploratory-placement seed.
+
+The original placement stays immutable. Global routing consumes the accepted
+seed directory, detects existing copper, and selects `preserve_existing`
+(`--protect existing`), disabling owned-copper feedback retries. Existing final
+checks retain their original placement/rule/geometry basis. `verify_seed` then
+reloads the final board and requires every exact seed UUID, segment endpoint,
+width, layer and net plus the original native endpoint identities to survive.
+It also verifies the retained seed/report/operation receipt. The routing trial
+and final result retain original, seed and final board identities separately.
+
+Only warning-severity overlap of silk with silk or copper is deferred to the
+existing required artwork stage. Both types already occur on actual acquisition
+placements before artwork; added tracks may create additional cosmetic overlap.
+All such records are retained, including differences. No text/footprint is
+modified by the seed operation. An error, exclusion, unknown warning or any
+conductive finding still refuses, and final artwork/package gates remain intact.
 
 The native production proof requires a later root admission on a new,
 source-bound development identity with a finite budget covering one fresh baseline and up to five

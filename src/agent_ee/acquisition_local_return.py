@@ -7,9 +7,11 @@ from collections import Counter
 import hashlib
 import json
 import math
+import os
 import re
 from pathlib import Path
 import shutil
+import stat
 import uuid
 
 from .placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
@@ -21,6 +23,7 @@ from .symbol_library import children, nanometres, parse_sexpr
 FILES = ('board.kicad_pcb', 'board.kicad_pro', 'board.kicad_dru')
 WIDTH_NM = 250_000
 CLEARANCE_MM = 0.2
+DEFERRED_ARTWORK = frozenset(('silk_overlap', 'silk_over_copper'))
 
 
 def _sha(data):
@@ -201,7 +204,7 @@ def _legal(report):
                 raise JobRefusal('local return: excluded native DRC finding')
     # The fresh unseeded baseline admits only library metadata warnings. Trials
     # must also match that baseline's complete record multiset in produce().
-    return (all(v['type'] == 'lib_footprint_issues' and v['severity'] == 'warning'
+    return (all(v['type'] in DEFERRED_ARTWORK | {'lib_footprint_issues'} and v['severity'] == 'warning'
                 for v in report['violations']) and not report['schematic_parity'])
 
 
@@ -223,6 +226,8 @@ def _library_context(path):
 
 def _bound_library_warnings(report, context):
     for warning in report['violations']:
+        if warning['type'] in DEFERRED_ARTWORK:
+            continue
         match = re.fullmatch(r"The current configuration does not include the footprint library '([^'\r\n]+)'",
                              warning['description'])
         items = warning['items']
@@ -238,11 +243,27 @@ def _bound_library_warnings(report, context):
             raise JobRefusal('local return: baseline library warning is not bound to original footprint')
 
 
-def _raw_report(directory, report, execution):
+def _report_bytes(directory):
     path = directory / 'drc.json'
-    if not path.is_file():
-        raise JobRefusal('local return: native DRC raw report missing')
-    raw = path.read_bytes()
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                raise JobRefusal('local return: native DRC report must be an unaliased regular file')
+            raw = stream.read()
+            fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+            stamp = tuple(getattr(before, key) for key in fields)
+            if any(tuple(getattr(s, key) for key in fields) != stamp for s in
+                   (os.fstat(stream.fileno()), path.stat(follow_symlinks=False))):
+                raise JobRefusal('local return: native DRC report changed during read')
+            return raw
+    except OSError as exc:
+        raise JobRefusal('local return: native DRC report missing or aliased') from exc
+
+
+def _raw_report(directory, report, execution):
+    raw = _report_bytes(directory)
     sha = _sha(raw)
     if json.loads(raw) != report or execution.get('report_sha256') != sha or execution.get('exit_code') != 0:
         raise JobRefusal('local return: native DRC report/receipt identity mismatch')
@@ -250,7 +271,11 @@ def _raw_report(directory, report, execution):
 
 
 def _warnings(report):
-    return Counter(canonical(v) for v in report['violations'])
+    return Counter(canonical(v) for v in report['violations'] if v['type'] == 'lib_footprint_issues')
+
+
+def _artwork(report):
+    return [v for v in report['violations'] if v['type'] in DEFERRED_ARTWORK]
 
 
 def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=None):
@@ -313,14 +338,15 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
         _bound_library_warnings(baseline, context)
         warnings = _warnings(baseline)
         record['baseline'].update(status='checked', execution=baseline_execution,
-            report_sha256=baseline_sha, library_warning_count=sum(warnings.values()))
+            report_sha256=baseline_sha, library_warning_count=sum(warnings.values()),
+            deferred_artwork=_artwork(baseline))
         custody()
         if _capture(baseline_dir) != captured:
             raise JobRefusal('local return: baseline/input drift during native checks')
         for index, path in enumerate(_paths(*(p['position_nm'] for p in endpoints))):
             custody()
             if (_capture(baseline_dir) != captured
-                    or _sha((baseline_dir / 'drc.json').read_bytes()) != baseline_sha):
+                    or _sha(_report_bytes(baseline_dir)) != baseline_sha):
                 raise JobRefusal('local return: baseline/input or report drift')
             trial_dir = destination / f'trial-{index + 1}'
             trial_dir.mkdir()
@@ -347,10 +373,11 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
             trial['coverage'] = {k: report[k] for k in
                 ('$schema', 'kicad_version', 'included_severities', 'ignored_checks')}
             trial['unconnected_count'] = len(report['unconnected_items'])
+            trial['deferred_artwork'] = _artwork(report)
             trial['status'] = 'clearance_pass' if legal else 'rejected'
             custody()
             if (_capture(baseline_dir) != captured
-                    or _sha((baseline_dir / 'drc.json').read_bytes()) != baseline_sha):
+                    or _sha(_report_bytes(baseline_dir)) != baseline_sha):
                 raise JobRefusal('local return: baseline/input or report drift')
             expected_trial = {**captured, FILES[0]: board}
             if _capture(trial_dir) != expected_trial:
@@ -359,17 +386,24 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
                 write_json(destination / 'record.json', record)
                 continue
             pending = destination / '.accepted'
+            if _sha(_report_bytes(trial_dir)) != trial['report_sha256']:
+                raise JobRefusal('local return: selected trial report changed before adoption')
             shutil.copytree(trial_dir, pending)
             custody()
-            if _capture(pending) != expected_trial:
+            if (_capture(pending) != expected_trial
+                    or _sha(_report_bytes(pending)) != trial['report_sha256']
+                    or _sha(_report_bytes(trial_dir)) != trial['report_sha256']):
                 raise JobRefusal('local return: adoption/input drift')
             record.update(status='seeded', selected_trial=index + 1, output=str(destination / 'accepted'),
                           output_inputs=_identity(expected_trial))
             write_json(destination / 'record.json', record)
             custody()
             if (_capture(baseline_dir) != captured
-                    or _sha((baseline_dir / 'drc.json').read_bytes()) != baseline_sha):
+                    or _sha(_report_bytes(baseline_dir)) != baseline_sha):
                 raise JobRefusal('local return: baseline/input or report drift before adoption')
+            if (_sha(_report_bytes(pending)) != trial['report_sha256']
+                    or _sha(_report_bytes(trial_dir)) != trial['report_sha256']):
+                raise JobRefusal('local return: selected report drift before adoption')
             pending.rename(destination / 'accepted')
             return record
         raise JobRefusal('local return: all endpoint-derived proposals failed native clearance; see record.json')
@@ -377,3 +411,30 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
         record.update(status='stopped' if isinstance(exc, JobStopped) else 'refused', reason=str(exc))
         write_json(destination / 'record.json', record)
         raise
+
+
+def verify_seed(board, record, *, clock, cancel_dir=None):
+    """Reload the routed result and require the exact original seed to survive."""
+    _check_stop(clock, cancel_dir)
+    source = Path(record['output'])
+    receipt = source.parent / 'record.json'
+    receipt_bytes = receipt.read_bytes()
+    if (receipt.is_symlink() or record.get('status') != 'seeded'
+            or canonical(json.loads(receipt_bytes)) != canonical(record)
+            or _identity(_capture(source)) != record['output_inputs']):
+        raise JobRefusal('local return: retained seed or operation record changed')
+    trial = record['trials'][record['selected_trial'] - 1]
+    if _sha(_report_bytes(source)) != trial['report_sha256']:
+        raise JobRefusal('local return: retained seed report changed')
+    board = Path(board)
+    before = _sha(board.read_bytes())
+    endpoints = _endpoints(board, seed=(trial['path_nm'], trial['segment_uuids']))
+    _check_stop(clock, cancel_dir)
+    if (endpoints != record['endpoints'] or _sha(board.read_bytes()) != before
+            or receipt.read_bytes() != receipt_bytes
+            or _identity(_capture(source)) != record['output_inputs']
+            or _sha(_report_bytes(source)) != trial['report_sha256']):
+        raise JobRefusal('local return: final endpoint/board identity changed')
+    return dict(status='pass', board_sha256=before, record_sha256=_sha(receipt_bytes),
+                seed_board_sha256=record['output_inputs'][FILES[0]],
+                segment_uuids=trial['segment_uuids'], acceptance_assessed=False)

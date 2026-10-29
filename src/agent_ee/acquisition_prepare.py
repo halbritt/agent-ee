@@ -15,7 +15,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -360,7 +360,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
         overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
-                 for module in (acquisition_mechanics, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
+                 for module in (acquisition_local_return, acquisition_mechanics, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
     if review_context is not None:
         recipe['review_context'] = review_context

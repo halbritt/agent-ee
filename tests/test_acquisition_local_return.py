@@ -5,6 +5,7 @@ These tests do not establish native clearance, source qualification, or G4.
 import copy
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace as NS
 import tempfile
@@ -224,6 +225,79 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
                 record = json.loads((self.output / 'record.json').read_text())
                 self.assertEqual(record['status'], 'refused')
                 self.assertLessEqual(len(record['trials']), 5)
+
+    def test_pre_artwork_warnings_are_retained_without_conductive_waiver(self):
+        artwork = [dict(type=kind, severity='warning', description='synthetic silk conflict',
+                        items=[{'uuid': 'synthetic-field'}]) for kind in sorted(local.DEFERRED_ARTWORK)]
+        def reports(board, directory, **kwargs):
+            warnings = self.library_warnings() + artwork
+            if directory.name != 'baseline':
+                warnings += [dict(artwork[1], description='new silk over added copper')]
+            return self.drc_result(native_report(warnings), directory)
+        self.drc.side_effect = reports
+        record = self.run_seed()
+        self.assertEqual(record['baseline']['deferred_artwork'], artwork)
+        self.assertEqual(len(record['trials'][0]['deferred_artwork']), 3)
+        self.assertFalse(record['acceptance_assessed'])
+        for severity in ('error', 'exclusion'):
+            with self.subTest(severity=severity):
+                self.output = self.root / ('fatal-silk-' + severity)
+                self.drc.side_effect = lambda b, d, **k: self.drc_result(
+                    native_report([dict(artwork[0], severity=severity)]), d)
+                with self.assertRaises(JobRefusal): self.run_seed()
+
+    def test_raw_reports_cannot_be_symlinks_or_hardlinks(self):
+        for phase in ('baseline', 'trial-1'):
+            for kind in ('symlink', 'hardlink'):
+                with self.subTest(phase=phase, kind=kind):
+                    self.output = self.root / (phase + '-' + kind)
+                    def reports(board, directory, **kwargs):
+                        data, execution = self.clear_drc(board, directory, **kwargs)
+                        if directory.name == phase:
+                            path = directory / 'drc.json'
+                            other = directory / 'aliased-report.json'
+                            path.rename(other)
+                            if kind == 'symlink': path.symlink_to(other)
+                            else: os.link(other, path)
+                        return data, execution
+                    self.drc.side_effect = reports
+                    with self.assertRaisesRegex(JobRefusal, 'aliased|unaliased'): self.run_seed()
+                    self.assertFalse((self.output / 'accepted').exists())
+
+    def test_selected_report_drift_around_copy_prevents_adoption(self):
+        original_copy = local.shutil.copytree
+        for which in ('trial', 'pending'):
+            with self.subTest(which=which):
+                self.output = self.root / ('copy-drift-' + which)
+                def copy_then_change(source, destination, **kwargs):
+                    result = original_copy(source, destination, **kwargs)
+                    path = Path(source if which == 'trial' else destination) / 'drc.json'
+                    path.write_bytes(path.read_bytes() + b'\n')
+                    return result
+                with patch.object(local.shutil, 'copytree', side_effect=copy_then_change):
+                    with self.assertRaisesRegex(JobRefusal, 'adoption/input drift'): self.run_seed()
+                self.assertFalse((self.output / 'accepted').exists())
+
+    def test_post_route_seed_must_survive_with_same_endpoints_and_retained_report(self):
+        record = self.run_seed()
+        seeded = Path(record['output']) / local.FILES[0]
+        routed = self.root / 'routed.kicad_pcb'
+        original = seeded.read_bytes()
+        routed.write_bytes(original)
+        result = local.verify_seed(routed, record, clock=Clock(10))
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual(result['board_sha256'], local._sha(original))
+        for data in (original.replace(b'(width 0.25)', b'(width 0.20)'),
+                     original.replace(record['trials'][0]['segment_uuids'][0].encode(), b'changed-id'),
+                     original.replace(b'(at 34000000 41500000)', b'(at 34000001 41500000)')):
+            with self.subTest(data=data):
+                routed.write_bytes(data)
+                with self.assertRaises(JobRefusal): local.verify_seed(routed, record, clock=Clock(10))
+        routed.write_bytes(original)
+        raw = seeded.parent / 'drc.json'
+        raw.write_bytes(raw.read_bytes() + b'\n')
+        with self.assertRaisesRegex(JobRefusal, 'seed report changed'):
+            local.verify_seed(routed, record, clock=Clock(10))
 
     def library_warnings(self):
         return [dict(type='lib_footprint_issues', severity='warning',

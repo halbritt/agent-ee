@@ -1524,6 +1524,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                        'controller': digest(Path(__file__)),
                                        **({'mechanics_controller': digest(Path(__file__).with_name('acquisition_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
+                                       **({'acquisition_local_return': digest(Path(__file__).with_name('acquisition_local_return.py'))}
+                                          if 'mechanics' in normalized else {}),
                                        **({'block_contract': record['block_contract']['binding_sha256']}
                                           if 'block_contract' in normalized else {}),
                                        'intent_contract': report['intent_contract'],
@@ -1659,7 +1661,29 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         report['routing_trials'].append(trial)
         with clock.phase('export'):
             _check_stop(clock, job_dir)
-            routed = route(selected['directory'], job_dir / f'route-{suffix}', config['router']['checkout'],
+            route_input = selected['directory']
+            local_seed = None
+            if 'mechanics' in normalized:
+                # This finite mechanics declaration admits only the captured
+                # acquisition recipe. Never seed an exploratory/invalid pose.
+                if (not _placement_eligible(selected)
+                        or selected.get('mechanics', {}).get('status') != 'pass'
+                        or selected['mechanics'].get('binding_sha256') != normalized['mechanics_binding']['binding_sha256']
+                        or selected['mechanics'].get('board_sha256') != selected['board_sha256']):
+                    raise JobRefusal('acquisition local return requires an eligible placement')
+                from . import acquisition_local_return
+                seed_clock = Clock(min(budget, clock.remaining()))
+                local_seed = acquisition_local_return.produce(route_input, job_dir / f'local-return-{suffix}',
+                    expected_inputs={'board.kicad_pcb': selected['board_sha256'],
+                                     'board.kicad_pro': sha256_bytes(project_bytes),
+                                     'board.kicad_dru': sha256_bytes(rules_bytes) if rules_bytes is not None else None},
+                    clock=seed_clock, cancel_dir=job_dir)
+                route_input = local_seed['output']
+                trial['local_return'] = acquisition_local_return.verify_seed(
+                    Path(route_input) / 'board.kicad_pcb', local_seed, clock=seed_clock, cancel_dir=job_dir)
+                budget = min(seed_clock.remaining(), clock.remaining())
+                _check_stop(seed_clock, job_dir)
+            routed = route(route_input, job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=config['router'].get('grid_step_mm'),
@@ -1678,6 +1702,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
                                            length_match=length_match, ac_match=ac_match,
                                            input_board=board_path, input_board_sha256=sha256_bytes(board_bytes))
+            if local_seed is not None and report['final'].get('board'):
+                seed_check = acquisition_local_return.verify_seed(
+                    report['final']['board'], local_seed, clock=clock, cancel_dir=job_dir)
+                if (routed.get('copper_policy') != 'preserve_existing'
+                        or seed_check['board_sha256'] != report['final'].get('board_sha256')):
+                    raise JobRefusal('acquisition route did not preserve the checked local return')
+                report['final']['local_return'] = seed_check
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
