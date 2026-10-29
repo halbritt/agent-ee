@@ -60,6 +60,28 @@ class EnclosingViewTests(unittest.TestCase):
             with self.subTest(view=view), self.assertRaisesRegex(ValueError, 'fixed executor sandbox'):
                 self.verify(view)
 
+    def test_private_placement_branch_requires_exact_readonly_mounts_and_source(self):
+        valid = mount_view([('/placement-tool','ro','ext4'),('/placement-request','ro','ext4')])
+        with patch.object(footprint_probe, '__file__', '/placement-tool/agent_ee/footprint_probe.py'), \
+                patch.object(Path, 'read_text', return_value=valid):
+            self.assertFalse(footprint_probe._enclosing_sandbox())
+            self.assertTrue(footprint_probe._enclosing_sandbox(_placement=True))
+        invalid = [mount_view(), mount_view([('/placement-tool','ro','ext4')]),
+                   mount_view([('/placement-request','ro','ext4')]),
+                   valid.replace('/placement-tool ro','/placement-tool rw'),
+                   valid.replace('/placement-request ro','/placement-request rw'),
+                   valid.replace('/app ro','/app rw'),
+                   valid.replace('/candidate ro','/candidate rw'),
+                   valid + '\n99 0 0:1 / /unknown ro - ext4 fixture ro']
+        for view in invalid:
+            with self.subTest(view=view), patch.object(footprint_probe, '__file__', '/placement-tool/agent_ee/footprint_probe.py'), \
+                    patch.object(Path, 'read_text', return_value=view), self.assertRaisesRegex(ValueError, 'fixed executor sandbox'):
+                footprint_probe._enclosing_sandbox(_placement=True)
+        for source in ('/placement-request/agent_ee/footprint_probe.py', '/elsewhere/agent_ee/footprint_probe.py'):
+            with self.subTest(source=source), patch.object(footprint_probe, '__file__', source), \
+                    patch.object(Path, 'read_text', side_effect=AssertionError('ordinary import mount read')):
+                self.assertFalse(footprint_probe._enclosing_sandbox(_placement=True))
+
 
 class CustomPadExecutionTests(unittest.TestCase):
     def setUp(self):

@@ -8,14 +8,16 @@ import tempfile
 from .geometry_probe import box_nm, pad_attribute, pad_vec
 
 
-def _enclosing_sandbox():
-    """Recognize only the executor's fixed /app filesystem view.
+def _enclosing_sandbox(*, _placement=False):
+    """Recognize the fixed /app view, with an exact private placement opt-in.
 
     The trusted executor owns PID/network isolation and mount-source identity.
     As with the private schematic-stage probe, an unknown mount view refuses
     supervised children. Ordinary standalone imports keep the sandbox default.
     """
-    if Path(__file__).resolve() != Path('/app/agent_ee/footprint_probe.py'):
+    source = Path(__file__).resolve()
+    placement = _placement and source == Path('/placement-tool/agent_ee/footprint_probe.py')
+    if source != Path('/app/agent_ee/footprint_probe.py') and not placement:
         return False
     try:
         mounts, ids = {}, set()
@@ -40,6 +42,9 @@ def _enclosing_sandbox():
         readonly = ('/candidate', '/app', '/usr', '/etc', '/lib', '/lib64',
                     '/bin', '/sbin', '/evidence')
         required = {'/candidate': 'ro', '/app': 'ro', '/work': 'rw', '/usr': 'ro', '/etc': 'ro'}
+        if placement:
+            readonly += ('/placement-tool', '/placement-request')
+            required.update({'/placement-tool': 'ro', '/placement-request': 'ro'})
         special = {'/': 'tmpfs', '/proc': 'proc', '/dev': 'tmpfs', '/tmp': 'tmpfs',
                    '/dev/pts': 'devpts', '/dev/shm': 'tmpfs', '/dev/mqueue': 'mqueue'}
         devices = {'/dev/' + name for name in ('null', 'zero', 'full', 'random', 'urandom', 'tty')}

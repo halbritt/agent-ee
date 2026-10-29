@@ -35,9 +35,13 @@ def produce(board, out, *, skip=False, inputs=None):
         raise FileExistsError(out)
     enclosed, captured = False, None
     if not skip:
-        from .footprint_probe import _enclosing_sandbox
-        enclosed = _enclosing_sandbox()
+        from . import footprint_probe
+        enclosed = footprint_probe._enclosing_sandbox(_placement=True)
         if enclosed:
+            source_root = Path(footprint_probe.__file__).resolve().parents[1]
+            if (source_root not in (Path('/app'), Path('/placement-tool'))
+                    or Path(__file__).resolve() != source_root / 'agent_ee/candidate_visuals.py'):
+                raise ValueError('candidate imaging requires its exact captured source')
             from .stage_receipts import file_tree
             if any(p.is_symlink() for path in (requested_board, requested_inputs, requested_out)
                    for p in (path, *path.parents)):
@@ -83,7 +87,7 @@ def produce(board, out, *, skip=False, inputs=None):
 
 
 def _enclosed_imaging(board, inputs, out, relative, captured):
-    """One supervised imaging child within the already verified /app executor."""
+    """One supervised imaging child within the verified executor and captured source."""
     from .stage_receipts import file_tree
     work = out / 'native'
     private = work / 'inputs'
@@ -99,7 +103,7 @@ def _enclosed_imaging(board, inputs, out, relative, captured):
         copied, other = file_tree(private)
         if other or copied != captured or digest(private / relative) != digest(board):
             raise ValueError('candidate imaging private project copy changed')
-        environment = dict(os.environ, PYTHONPATH='/app', HOME=str(work / 'home'),
+        environment = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]), HOME=str(work / 'home'),
                            KICAD_CONFIG_HOME=str(work / 'kicad-config'))
         _check_imaging_paths(out)
         command = ('from agent_ee.candidate_visuals import _imaging_main; import sys; '

@@ -24,6 +24,8 @@ class VisualExecutionTests(unittest.TestCase):
         (self.inputs / 'models').mkdir()
         (self.inputs / 'models/owned.wrl').write_text('captured model')
         self.enterContext(patch.dict(os.environ, AGENT_EE_SKIP_VISUALS='0'))
+        self.enterContext(patch.object(visuals, '__file__', '/app/agent_ee/candidate_visuals.py'))
+        self.enterContext(patch.object(footprint_probe, '__file__', '/app/agent_ee/footprint_probe.py'))
 
     def test_enclosed_child_copies_adjacent_assets_without_recursing_into_output(self):
         before = file_tree(self.inputs)
@@ -108,7 +110,8 @@ class VisualExecutionTests(unittest.TestCase):
         with patch.object(footprint_probe, '_enclosing_sandbox', side_effect=AssertionError('skip guard')), \
                 patch.object(native_run, 'run', side_effect=AssertionError('skip launch')):
             self.assertEqual(visuals.produce(self.board, self.root / 'skip', skip=True)['status'], 'skipped')
-        with native_run.using(native_run.Recorded(lambda call: native_run.Outcome(execution='failed'))) as adapter:
+        with patch.object(footprint_probe, '_enclosing_sandbox', return_value=False), \
+                native_run.using(native_run.Recorded(lambda call: native_run.Outcome(execution='failed'))) as adapter:
             visuals.produce(self.board, self.root / 'standalone')
         self.assertEqual(adapter.calls[0].intent.isolation, 'sandbox')
         self.assertEqual(adapter.calls[0].intent.argv,
@@ -244,3 +247,31 @@ class VisualExecutionTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 visuals._imaging_main(str(self.board), str(out))
         self.assertTrue((out / 'imaging-cleanup.json').is_file())
+
+    def test_placement_imaging_uses_the_same_captured_source(self):
+        from tests.test_custom_pad_execution import mount_view
+        original = Path.read_text
+        view = mount_view([('/placement-tool','ro','ext4'),('/placement-request','ro','ext4')])
+        def read(path, *args, **kwargs):
+            return view if str(path) == '/proc/self/mountinfo' else original(path, *args, **kwargs)
+        def child(intent, *, work):
+            self.assertEqual(intent.env['PYTHONPATH'], '/placement-tool')
+            self.assertEqual((intent.timeout, intent.stop_grace_s), (180, 5))
+            self.assertTrue(Path(intent.env['HOME']).is_dir())
+            self.assertTrue(Path(intent.env['KICAD_CONFIG_HOME']).is_dir())
+            write_json(work / 'imaging-cleanup.json', {'schema':'agent-ee.candidate-imaging-cleanup/1','status':'unwound'})
+            (work / 'stderr.log').write_text('CPU refusal97, not a native trial')
+            return {'execution':'failed','exit_code':97}
+        with patch.object(visuals, '__file__', '/placement-tool/agent_ee/candidate_visuals.py'), \
+                patch.object(footprint_probe, '__file__', '/placement-tool/agent_ee/footprint_probe.py'), \
+                patch.object(Path, 'read_text', read), patch.object(native_run, 'run', side_effect=child):
+            report = visuals.produce(self.board, self.inputs / 'placement-visuals')
+        self.assertEqual((report['status'], report['execution']['exit_code']), ('unavailable',97))
+
+    def test_misplaced_imaging_source_refuses_an_enclosed_launch(self):
+        for source in ('/elsewhere/agent_ee/candidate_visuals.py', '/placement-tool/agent_ee/candidate_visuals.py'):
+            with self.subTest(source=source), patch.object(visuals, '__file__', source), \
+                    patch.object(footprint_probe, '_enclosing_sandbox', return_value=True), \
+                    patch.object(native_run, 'run', side_effect=AssertionError('misplaced source launch')):
+                with self.assertRaisesRegex(ValueError, 'exact captured source'):
+                    visuals.produce(self.board, self.root / 'misplaced')
