@@ -88,9 +88,39 @@ def evidence_schema(run_dir, packet, role):
     segment = r'[A-Za-z0-9_-][A-Za-z0-9_.-]*'
     branch = json.loads(json.dumps(EVIDENCE_SCHEMA['items']['anyOf'][1]))
     branch['properties']['path']['pattern'] = (
-        '^review-work/' + re.escape(role) + '/experiments/(?:' + segment + '/)*' + segment + '$')
+        '^review-work/' + re.escape(role) + '/experiments/(?:' + segment + '/)*' + segment + r'$(?![\s\S])')
     branches.append(branch)
     return {'type': 'array', 'items': {'anyOf': branches}, '$defs': definitions}
+
+
+def literal_path_set(paths):
+    """A finite literal trie with an ECMAScript absolute-end assertion."""
+    def escaped(char):
+        if char in r'\.^$|?*+()[]{}':
+            return '\\' + char
+        if ord(char) < 32 or char in '\u2028\u2029':
+            return f'\\u{ord(char):04x}'
+        return char
+
+    def render(node):
+        prefix = ''
+        while len(node) == 1 and None not in node:
+            char, node = next(iter(node.items()))
+            prefix += escaped(char)
+        choices = [''] if None in node else []
+        choices.extend(escaped(char) + render(child) for char, child in sorted(
+            ((char, child) for char, child in node.items() if char is not None)))
+        return prefix + (choices[0] if len(choices) == 1 else '(?:' + '|'.join(choices) + ')')
+
+    trie = {}
+    for path in paths:
+        node = trie
+        for char in path:
+            node = node.setdefault(char, {})
+        node[None] = {}
+    # Unlike $, this assertion cannot match before a final newline.
+    return {'anyOf': [dict(type='string', pattern='^' + render(trie) + r'(?![\s\S])',
+                          minLength=min(map(len, paths)), maxLength=max(map(len, paths)))]}
 
 
 def bind_evidence_schema(schema, collection, run_dir, packet, role):
@@ -108,11 +138,24 @@ def bind_evidence_schema(schema, collection, run_dir, packet, role):
             for value in node:
                 yield from enums(value)
     values = list(enums(schema))
-    if sum(len(group) for group in values) > 1000:
-        # Large existing packets can have >1000 distinct files. Exact constants
-        # preserve the same finite sets without duplicating paths or widening them.
+    from .harnesses import strict_schema
+    def wire_size(value):
+        return len(json.dumps(value, separators=(',', ':')).encode('utf-8'))
+    if (sum(len(group) for group in values) > 1000
+            or max(wire_size(schema), wire_size(strict_schema(schema))) >= 120 * 1024):
+        # const objects also exceed the host's single-argv limit for real packets.
+        # A factored finite regex retains every literal with less wire overhead.
+        groups, redirects = {}, {}
         for name, definition in schema['$defs'].items():
-            schema['$defs'][name] = {'anyOf': [{'type': 'string', 'const': path} for path in definition['enum']]}
+            # Names encode the membership group followed by its enum-chunk index.
+            group = name.rsplit('_', 1)[0]
+            groups.setdefault(group, []).extend(definition['enum'])
+            redirects['#/$defs/' + name] = '#/$defs/' + group
+        schema['$defs'] = {group: literal_path_set(paths) for group, paths in groups.items()}
+        for branch in evidence['items']['anyOf']:
+            path = branch['properties']['path']
+            if 'anyOf' in path:
+                path['anyOf'] = [{'$ref': ref} for ref in dict.fromkeys(redirects[r['$ref']] for r in path['anyOf'])]
         values = list(enums(schema))
         if sum(len(group) for group in values) > 1000:
             raise ValueError('complete citation producer schema exceeds 1000 non-path enum values')
@@ -132,6 +175,8 @@ def bind_evidence_schema(schema, collection, run_dir, packet, role):
                 yield from strings(child)
     if sum(map(len, strings(schema))) > 120000:
         raise ValueError('complete citation producer schema exceeds 120000 string characters')
+    if max(wire_size(schema), wire_size(strict_schema(schema))) >= 120 * 1024:
+        raise ValueError('complete citation producer schema exceeds 120 KiB transport limit')
 CITATION_INSTRUCTIONS = (
     "Every evidence citation MUST include path, a nonempty descriptive locator, and at least one structured field: "
     "pointer (RFC 6901 JSON pointer, e.g. /details/violations; escape ~ as ~0 and / as ~1 in keys), "

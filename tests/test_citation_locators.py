@@ -39,6 +39,8 @@ class CitationLocatorTests(unittest.TestCase):
 
         definitions = {}
         def accepts_path(path, node):
+            if not node.get('minLength', 0) <= len(path) <= node.get('maxLength', len(path)):
+                return False
             if '$ref' in node:
                 return accepts_path(path, definitions[node['$ref'].removeprefix('#/$defs/')])
             if 'anyOf' in node:
@@ -48,7 +50,7 @@ class CitationLocatorTests(unittest.TestCase):
             if 'const' in node:
                 return path == node['const']
             if 'pattern' in node:
-                return re.fullmatch(node['pattern'], path) is not None
+                return re.search(node['pattern'], path) is not None
             return True  # The old unrestricted path shape, used only by the red control.
 
         def fits(citation, schema):
@@ -89,7 +91,8 @@ class CitationLocatorTests(unittest.TestCase):
                 self.assertFalse(fits(dict(path=path, locator='Scratch evidence', pointer='/v'), outgoing))
             for path in ['inputs/unknown.txt', 'review-work/peer/experiments/notes.txt',
                          f'review-work/{role}/experiments/../../inputs/spec.md',
-                         f'review-work/{role}/experiments/./notes.txt', '/inputs/spec.md']:
+                         f'review-work/{role}/experiments/./notes.txt', '/inputs/spec.md',
+                         f'review-work/{role}/experiments/notes.txt\n']:
                 self.assertFalse(fits(dict(path=path, locator='Escape', lines=[1, 1]), outgoing))
             response = {**copy.deepcopy(retained), **{k: packet[k] for k in
                         ('candidate_id', 'run_id', 'packet_sha256')}, 'role': role}
@@ -152,7 +155,7 @@ class CitationLocatorTests(unittest.TestCase):
         self.assertEqual(execution['execution'], 'ok')
         self.assertEqual(seen, {'circuit', 'physical', 'adjudicator'})
 
-    def test_over_enum_limit_keeps_exact_constant_paths_and_format_binding(self):
+    def test_over_enum_limit_keeps_exact_literal_paths_and_format_binding(self):
         from agent_ee.reviewers import REVIEW_SCHEMA, bind_evidence_schema
         from agent_ee.harnesses import strict_schema
         inventory = [dict(path=f'inputs/s{i}.txt', locator_kinds=['lines']) for i in range(1100)]
@@ -160,10 +163,6 @@ class CitationLocatorTests(unittest.TestCase):
         schema = copy.deepcopy(REVIEW_SCHEMA)
         bind_evidence_schema(schema, 'findings', self.run_dir, dict(citation_files=inventory), 'circuit')
         outgoing = strict_schema(schema)
-        constants = [p['const'] for definition in outgoing['$defs'].values() for p in definition['anyOf']]
-        self.assertEqual(set(constants), {row['path'] for row in inventory})
-        self.assertEqual(len(constants), len(set(constants)))
-        self.assertTrue(all(len(d['anyOf']) <= 250 for d in outgoing['$defs'].values()))
         branches = outgoing['properties']['findings']['items']['properties']['evidence']['items']['anyOf']
         def allowed(fields):
             paths = set()
@@ -171,13 +170,35 @@ class CitationLocatorTests(unittest.TestCase):
                 if set(branch['required']) - {'path', 'locator'} != fields:
                     continue
                 for ref in branch['properties']['path'].get('anyOf', []):
-                    paths.update(p['const'] for p in outgoing['$defs'][ref['$ref'].removeprefix('#/$defs/')]['anyOf'])
+                    patterns = outgoing['$defs'][ref['$ref'].removeprefix('#/$defs/')]['anyOf']
+                    for row in inventory:
+                        path = row['path']
+                        if any(p['minLength'] <= len(path) <= p['maxLength'] and re.search(p['pattern'], path)
+                               for p in patterns):
+                            paths.add(path)
             return paths
+        self.assertEqual(allowed({'lines'}), {row['path'] for row in inventory})
         self.assertIn('inputs/s0.txt', allowed({'lines'}))
         self.assertNotIn('inputs/s0.txt', allowed({'pointer'}))
         self.assertNotIn('inputs/unknown.txt', allowed({'lines'}))
         self.assertEqual(allowed({'pointer'}), {'inputs/document.txt'})
         self.assertEqual(allowed({'pointer', 'lines'}), {'inputs/document.txt'})
+
+    def test_compact_literal_regex_escapes_and_rejects_newline_and_traversal(self):
+        from agent_ee.reviewers import literal_path_set
+        paths = ['inputs/a[0].txt', 'inputs/a(1)+$.json', 'inputs/a?.txt', 'inputs/a|b^.txt',
+                 'inputs/a{1,2}.txt', 'inputs/a\\b.txt', 'inputs/µ space.txt', 'inputs/a.txt']
+        shape = literal_path_set(paths)
+        def accepts(path):
+            return any(p['minLength'] <= len(path) <= p['maxLength'] and re.search(p['pattern'], path)
+                       for p in shape['anyOf'])
+        for path in paths:
+            self.assertTrue(accepts(path), path)
+            for suffix in ('\n', '\r\n', '/../../escape', '.unknown'):
+                self.assertFalse(accepts(path + suffix), path + repr(suffix))
+        for unknown in ('inputs/a0.txt', 'inputs/a11.json', 'inputs/ab.txt', 'inputs/a.txt/../a.txt',
+                        '/inputs/a.txt', 'inputs/unknown.txt', 'inputs/./a.txt', 'inputs/a.txt\x00'):
+            self.assertFalse(accepts(unknown), unknown)
 
     def test_byte_formats_and_kind_diagnostics(self):
         exp = self.run_dir / 'review-work/circuit/experiments'
