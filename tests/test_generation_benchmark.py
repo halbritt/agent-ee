@@ -806,7 +806,14 @@ class NativeTests(unittest.TestCase):
         report['scoring'] = score(pinned_task(FIXTURE)['rules'], checks)
         report['result'] = benchmark.combined_result('ok', report['scoring'])
         forged = self.republish(path, trial, report)
-        # The diagnostic path still demonstrates the local reseal attack.
+        with self.assertRaisesRegex(ValueError, 'case cannot supply success'):
+            aggregate([forged])
+        # The attacker also owns the local case ledger; the external anchor does not.
+        ledger_path = trial.parent / 'trial.json'
+        ledger = read_json(ledger_path)
+        self.assertEqual(ledger['status'], 'attempts_exhausted')
+        ledger['status'] = 'completed'
+        write_json(ledger_path, ledger)
         self.assertEqual([r['passed'] for r in aggregate([forged])['rows']], [1, 1])
         with self.assertRaisesRegex(ValueError, 'external series'):
             aggregate([forged], manifest=manifest, expect_pins=anchor)
@@ -834,6 +841,16 @@ class NativeTests(unittest.TestCase):
         report.update(domain=task['domain'], difficulty=task['difficulty'])
         report['binding']['task_files'] = tree_files(trial / 'task')
         forged = self.republish(path, trial, report)
+        with self.assertRaisesRegex(ValueError, 'case attempt ledger'):
+            aggregate([forged])
+        # Complete the local rebind rather than mistaking an early refusal for anchor coverage.
+        ledger_path = trial.parent / 'trial.json'
+        ledger = read_json(ledger_path)
+        index = report['binding']['case']['attempt'] - 1
+        ledger['task_pins'] = report['binding']['task_files']['pins.json']
+        ledger['evaluations'][index] = str(forged.resolve())
+        ledger['attempt_records'][index]['evaluation_report'] = str(forged.resolve())
+        write_json(ledger_path, ledger)
         self.assertEqual({r['value'] for r in aggregate([forged])['rows']},
                          {'forged-domain', 'forged-difficulty'})
         with self.assertRaisesRegex(ValueError, 'external series'):
