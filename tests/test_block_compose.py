@@ -438,24 +438,86 @@ class TopologyFixtureTransitionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'both fresh acceptance'):assert_topology_acceptance(root,bad)
         self.assertEqual(before,{str(p.relative_to(CAN)):digest(p) for p in CAN.rglob('*') if p.is_file()})
 
-    def test_flat_and_hierarchical_fresh_contracts_are_executable_source_contracts(self):
-        from tests.test_block_composition import compose
-        from tests.block_topology_fixture import derive_topology_fixture,assert_topology_acceptance
-        from unittest.mock import patch
+    def test_authored_flat_and_hierarchical_can_contracts_preserve_declared_criteria(self):
+        # Authored contract inputs only: no producer, export, instance receipt or
+        # native success is substituted. Native regression classes exercise those.
+        from tests.block_topology_fixture import derive_topology_fixture, assert_topology_acceptance
         from agent_ee.storage import digest
-        for mode in ('flat','hierarchical'):
-            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp:
-                base=Path(tmp)
-                if mode=='flat':
-                    obj=FlatComposeTests('test_can_block_flat');obj.root=base
-                    obj.intent,obj.requests,obj.bindings,obj.libraries=prepare(base,topology=True)
-                    result=obj.compose();obj.prepare_checks(result);root=base
-                else:
-                    source=base/'source';source.mkdir();derive_topology_fixture(CAN/'block',source/'block')
-                    shutil.copyfile(CAN/'composition.json',source/'composition.json')
-                    root=base/'prepared'
-                    with patch.object(compose,'ROOT',source):compose.prepare(root)
-                scope=read_json(root/'scope.json');assert_topology_acceptance(root,scope)
-                files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
-                result=block_adaptation.capability(dict(instance='instance.json',netlist_check='netlist'),scope,files,root,'provenance')
-                self.assertIn('block-boundary:CAN+',result['predicates'])
+        modes = {
+            'flat': dict(schema='agent-ee.flat-block-instance/1', path='/',
+                references={'C308': 'C100', 'D4': 'D100', 'R9': 'R100', 'U307': 'U100'},
+                bindings=dict(BINDINGS),
+                nets={'/CAN+': '/CANH', '/CAN-': '/CANL', '/wbo1/CAN_TX': '/TX',
+                      '/wbo1/CAN_RX': '/RX', '+3V3_WBO1': '/+3V3', '+5V': '/+5V', 'GND': '/GND'},
+                symbols={'Device:C': 'Block_63616e_446576696365:C',
+                    'Device:D_TVS_x2_AAC': 'Block_63616e_446576696365:D_TVS_x2_AAC',
+                    'Device:R_Small': 'Block_63616e_446576696365:R_Small',
+                    'Interface_CAN_LIN:TJA1051T-3': 'Block_63616e_496e746572666163655f43414e5f4c494e:TJA1051T-3'}),
+            'hierarchical': dict(schema='agent-ee.block-instance/1',
+                path='/10adcb05-d59b-4149-a90d-a3957511e398/',
+                references={r: r for r in ('C308', 'D4', 'R9', 'U307')},
+                bindings={'CAN+': '/CAN+', 'CAN-': '/CAN-', 'TXD': '/TXD', 'RXD': '/RXD',
+                          'S': 'GND', '+5V': '+5V', '+3V3': '+3V3', 'GND': 'GND'},
+                nets={'/wbo1/CAN_TX': '/TXD', '/wbo1/CAN_RX': '/RXD', '+3V3_WBO1': '+3V3'},
+                symbols={})}
+        for mode, expected in modes.items():
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                derive_topology_fixture(CAN / 'block', root / 'block')
+                shutil.copyfile(CAN / 'composition.json', root / 'composition.json')
+                source = block_adaptation._source(root, 'block', 'composition.json')
+                record = dict(schema=expected['schema'], id='can', block='block',
+                    instance_path=expected['path'], references=expected['references'],
+                    bindings=expected['bindings'],
+                    requirements={r['id']: r['checks'] for r in source['requirements']})
+                if mode == 'flat':
+                    record['native_bindings'] = {port: '/' + net for port, net in BINDINGS.items()}
+                contract = read_json(root / 'block/interface.json')
+                for ref, component in contract['components'].items():
+                    component['locations'] = [{'sheet': expected['path'], 'reference': expected['references'][ref]}]
+                    component['symbols'] = [expected['symbols'].get(symbol, symbol) for symbol in component['symbols']]
+                for invariant in contract['invariants']:
+                    invariant['requirement'] = 'can-pod-can-interface'
+                    invariant['source'] = dict(path='block/block.json', locator='requirements/pod-can-interface')
+                    if 'names' in invariant:
+                        invariant['names'] = [expected['nets'].get(name, name) for name in invariant['names']]
+                write_json(root / 'interface.json', contract)
+                # The descriptor requires a captured schematic path, not native
+                # output. This empty authored subject makes no topology claim.
+                (root / 'authored-contract.kicad_sch').write_text(
+                    '(kicad_sch (version 20250114) (generator \"contract-test\") '
+                    '(uuid \"4290ea74-5de6-4430-b859-a1c4eb058eb3\") (lib_symbols))\n')
+                scope = dict(schema='agent-ee.scope/3', schematic='authored-contract.kicad_sch',
+                    checks=copy.deepcopy(source['check_set']),
+                    baseline=dict(requirements=[dict(id='can-' + r['id'], statement=r['statement'],
+                        source=dict(path='block/block.json', locator='requirements/' + r['id']),
+                        checks=r['checks'], intent=block_adaptation._requirement_intent(source, r))
+                        for r in source['requirements']]))
+                scope['checks'].append(dict(id='provenance', kind='block_provenance',
+                    params=dict(instance='instance.json', netlist_check='netlist')))
+                scope['baseline']['requirements'].append(dict(id='can-provenance', intent='acceptance',
+                    statement='The eventual native producer must preserve selected two-source provenance',
+                    source=dict(path='block/lineage/pod-can-standalone.json', locator='required'),
+                    checks=['provenance']))
+                assert_topology_acceptance(root, scope)
+                files = {str(p.relative_to(root)): digest(p) for p in root.rglob('*') if p.is_file()}
+                block_adaptation._fresh_contract(root, source, record, scope, files, 'netlist')
+                # Rehash each changed authored input: immutable-file presence alone
+                # must not credit different criteria, physical addresses or sources.
+                for change in ('value', 'occurrence', 'reference', 'symbol', 'net', 'source'):
+                    altered = copy.deepcopy(contract)
+                    if change == 'value':
+                        next(i for i in altered['invariants'] if i['id'] == 'R9-value')['equals'] = '60'
+                    elif change in ('occurrence', 'reference', 'symbol'):
+                        component = altered['components']['U307']
+                        if change == 'occurrence': component['locations'][0]['sheet'] = '/00000000-0000-4000-8000-000000000001/'
+                        elif change == 'reference': component['locations'][0]['reference'] = 'U999'
+                        else: component['symbols'] = ['Interface_CAN_LIN:TJA1050']
+                    elif change == 'net':
+                        next(i for i in altered['invariants'] if i['id'] == 'U307-5-net')['names'] = ['+5V']
+                    else:
+                        altered['invariants'][0]['source']['locator'] = 'requirements/unrelated'
+                    write_json(root / 'interface.json', altered)
+                    changed_files = dict(files, **{'interface.json': digest(root / 'interface.json')})
+                    with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'asset changes'):
+                        block_adaptation._fresh_contract(root, source, record, scope, changed_files, 'netlist')
