@@ -65,11 +65,15 @@ def run(board, work):
     return read_json(path)
 
 
-def sandboxed(inputs, board, work):
-    """Read captured board bytes in the existing networkless executor."""
+def sandboxed(inputs, board, work, *, _execution=None):
+    """Read captured board bytes; fixed-stage children inherit the outer boundary."""
     from . import native_run
-    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.outline_containment',
-        '/candidate/' + str(board), '-o', '/work/copper-containment.json'], timeout=120), inputs=inputs, work=work))
+    if _execution is None:
+        record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.outline_containment',
+            '/candidate/' + str(board), '-o', '/work/copper-containment.json'], timeout=120), inputs=inputs, work=work))
+    else:
+        record = _execution._probe(inputs, work, ['-m', 'agent_ee.outline_containment',
+            str(Path(inputs)/board), '-o', str(Path(work)/'copper-containment.json')], 120)
     # Keep the complete receipt while leaving packet excerpt space for later checks.
     (Path(work) / 'execution.json').write_bytes(canonical(record) + b'\n')
     if record['execution'] != 'ok' or record['exit_code'] != 0:

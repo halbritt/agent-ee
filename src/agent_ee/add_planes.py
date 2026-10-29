@@ -93,8 +93,10 @@ def step(source_root, *, board, plan, phase=None, report=None):
     if len({board, plan, report}) != 3:
         raise ValueError('plane board, plan and producer report paths must be distinct')
     return stage_receipts.validate_step(dict(schema='agent-ee.stage-step/1', step='add-planes', stage='routing',
-        argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P', '-m',
-              'agent_ee.add_planes', '--board', board, '--plan', plan, *_phase_argv(phase)],
+        argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
+              '-c', 'from agent_ee.add_planes import _stage_main; import sys; '
+              'raise SystemExit(_stage_main(sys.argv[1:]))',
+              '--board', board, '--plan', plan, *_phase_argv(phase)],
         mounts=[dict(source=str(snapshot(source_root)), at='/tool/agent-ee')], source='/tool/agent-ee',
         version_argv=['/usr/bin/kicad-cli', 'version'],
         writes={board:'out/board.kicad_pcb', report:'out/planes.json'},
@@ -134,16 +136,22 @@ def splice_zones(original, generated, planned):
     return benchmark.replace_spans(original, edits)
 
 
-def _child(inputs, work, argv, timeout=180):
-    record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.add_planes_probe', *argv], timeout=timeout), inputs=inputs, work=work))
+def _child(inputs, work, argv, timeout=180, *, _execution=None):
+    if _execution is None:
+        record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.add_planes_probe', *argv], timeout=timeout), inputs=inputs, work=work))
+    else:
+        concrete = [str(Path(inputs) / arg.removeprefix('/candidate/')) if arg.startswith('/candidate/')
+                    else str(Path(work) / arg.removeprefix('/work/')) if arg.startswith('/work/')
+                    else arg for arg in argv]
+        record = _execution._probe(inputs, work, ['-m', 'agent_ee.add_planes_probe', *concrete], timeout)
     if record['execution'] != 'ok' or record['exit_code'] != 0:
         raise ValueError(f'native plane child {record["execution"]} exit {record["exit_code"]}: ' +
                          (work/'console.log').read_text(errors='replace')[-2000:])
     return record
 
 
-def _verify_inputs(candidate, board, plan, generated, out):
-    root = out/'verify-input'
+def _verify_inputs(candidate, board, plan, generated, out, *, name='verify-input'):
+    root = out/name
     for rel in [board, plan, *(str(Path(board).with_suffix(s)) for s in SIBLINGS)]:
         source = candidate/rel
         if not source.exists():
@@ -153,6 +161,23 @@ def _verify_inputs(candidate, board, plan, generated, out):
         shutil.copyfile(source, target)
     (root/board).write_text(generated, encoding='utf-8')
     return root
+
+
+def _drc(inputs, board, work, *, _execution=None):
+    if _execution is None:
+        return dict(native_run.run(native_run.drc('/candidate/'+board, '/work/report.json', timeout=180,
+                                                 executable='/usr/bin/kicad-cli'), inputs=inputs, work=work))
+    if not inputs.is_relative_to(_execution.scratch) or not work.is_relative_to(_execution.scratch):
+        raise ValueError('plane DRC paths must stay in stage scratch')
+    before, other = stage_receipts.file_tree(inputs)
+    if other:
+        raise ValueError('plane DRC inputs must be regular captured files')
+    record = dict(native_run.run(native_run.Intent('drc', native_run.drc_argv(inputs/board, work/'report.json',
+        executable='/usr/bin/kicad-cli'), timeout=180, isolation='host',
+        env=_execution.environment(inputs, work)), work=work))
+    if stage_receipts.file_tree(inputs) != (before, []):
+        raise ValueError('plane DRC child changed its private inputs')
+    return record
 
 
 def _planned_zone_errors(checks, planned, always_ids=(), sources=None):
@@ -259,8 +284,10 @@ def wholly_unconnected(zone_errors, zones, always_ids, phase=None, saved_board_s
     return deferred
 
 
-def generate(candidate, board, plan_path, out, *, phase=None):
+def generate(candidate, board, plan_path, out, *, phase=None, _execution=None):
     candidate, out = Path(candidate).resolve(), Path(out).absolute()
+    if _execution is not None and out != _execution.scratch:
+        raise ValueError('receipted plane output must be the fixed stage scratch')
     for path in (board, plan_path):
         stage_receipts._relative(path, 'plane input')
     plan = validate_plan(strict_json((candidate/plan_path).read_bytes()))
@@ -273,19 +300,22 @@ def generate(candidate, board, plan_path, out, *, phase=None):
                   board_before=hashlib.sha256(original).hexdigest(), planned_zone_ids=zone_ids(plan), findings=[],
                   phase=phase, deferred_connectivity=[])
     try:
-        _child(candidate, out/'native', ['apply', '/candidate/'+board, '/candidate/'+plan_path, '/work/board.kicad_pcb'])
+        inputs = candidate if _execution is None else _verify_inputs(
+            candidate, board, plan_path, original.decode('utf-8'), out, name='native-input')
+        _child(inputs, out/'native', ['apply', '/candidate/'+board, '/candidate/'+plan_path, '/work/board.kicad_pcb'],
+               _execution=_execution)
         raw = (out/'native/board.kicad_pcb').read_text(encoding='utf-8')
         proposed = splice_zones(original.decode('utf-8'), raw, zone_ids(plan))
         verified = _verify_inputs(candidate, board, plan_path, proposed, out)
-        _child(verified, out/'verify', ['inspect', '/candidate/'+board, '/candidate/'+plan_path, '/work/facts.json'])
+        _child(verified, out/'verify', ['inspect', '/candidate/'+board, '/candidate/'+plan_path, '/work/facts.json'],
+               _execution=_execution)
         facts = read_json(out/'verify/facts.json')
-        drc = dict(native_run.run(native_run.drc('/candidate/'+board, '/work/report.json', timeout=180,
-                                                 executable='/usr/bin/kicad-cli'), inputs=verified, work=out/'drc'))
+        drc = _drc(verified, board, out/'drc', _execution=_execution)
         if drc['execution'] != 'ok' or drc['exit_code'] != 0:
             raise ValueError('native plane DRC execution failed')
         checks = read_json(out/'drc/report.json')
         from .outline_containment import sandboxed
-        containment = sandboxed(verified, board, out/'containment')
+        containment = sandboxed(verified, board, out/'containment', _execution=_execution)
         planned = zone_ids(plan)
         always_ids = {uid for uid, spec in zip(planned, plan['zones']) if spec['island_removal']=='always'}
         _planned_zone_errors(checks, planned, always_ids)
@@ -326,6 +356,19 @@ def generate(candidate, board, plan_path, out, *, phase=None):
         report['findings'].append(dict(code='plane_production_refused', message=str(exc)))
     write_json(out/'planes.json', report)
     return report
+
+
+def _stage_main(argv=None):
+    """Only the captured receipted step may select supervised in-stage children."""
+    from .forward_annotation import _StageExecution
+    execution = _StageExecution()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--board', required=True)
+    parser.add_argument('--plan', required=True)
+    parser.add_argument('--phase', choices=(PRE_ROUTING,), default=None)
+    args = parser.parse_args(argv)
+    report = generate('/candidate', args.board, args.plan, '/work/out', phase=args.phase, _execution=execution)
+    return 0 if report['execution'] == 'ok' else 1
 
 
 def main(argv=None):

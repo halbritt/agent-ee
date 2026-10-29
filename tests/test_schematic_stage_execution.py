@@ -376,6 +376,99 @@ class StageExecutionTests(unittest.TestCase):
                     '--format', 'kicadxml', '-o', str(out/'netlist/design.xml') if confined else '/work/design.xml',
                     '/candidate/'+root])
 
+    def test_plane_children_inherit_fixed_stage_but_standalone_remains_sandboxed(self):
+        from agent_ee import add_planes, outline_containment
+        inputs = self.root/'plane-inputs';inputs.mkdir()
+        (inputs/'board.kicad_pcb').write_bytes(self.board.read_bytes())
+        (inputs/'plan.json').write_text('{}')
+        for confined in (True, False):
+            calls = []
+            def external(intent, *, work, inputs=None, **kwargs):
+                calls.append((intent, inputs));work = Path(work);work.mkdir()
+                (work/'console.log').write_text('authored plane process boundary')
+                (work/'copper-containment.json').write_text('[]')
+                return dict(execution='ok', exit_code=0)
+            execution = self.execution if confined else None
+            with patch.object(native_run, 'run', external):
+                for operation in ('apply','inspect'):
+                    work = self.root/(operation+str(confined))
+                    add_planes._child(inputs, work, [operation, '/candidate/board.kicad_pcb',
+                        '/candidate/plan.json', '/work/result.json'], _execution=execution)
+                add_planes._drc(inputs, 'board.kicad_pcb', self.root/('drc'+str(confined)), _execution=execution)
+                work = self.root/('containment'+str(confined))
+                self.assertEqual(outline_containment.sandboxed(inputs, 'board.kicad_pcb', work,
+                    _execution=execution), [])
+                self.assertTrue((work/'execution.json').is_file())
+            self.assertEqual(len(calls), 4)
+            for intent, captured in calls:
+                self.assertEqual(intent.isolation, 'host' if confined else 'sandbox')
+                if confined:
+                    self.assertIsNone(captured)
+                    self.assertEqual(intent.env['PYTHONPATH'], '/tool/agent-ee')
+                    self.assertTrue(Path(intent.env['HOME']).is_relative_to(self.root))
+                    self.assertIn(str(inputs/'board.kicad_pcb'), intent.argv)
+                    self.assertFalse(any(str(arg).startswith(('/candidate/','/work/')) for arg in intent.argv))
+                else:
+                    self.assertEqual(captured, inputs)
+                    self.assertIsNone(intent.env)
+                    self.assertIn('/candidate/board.kicad_pcb', intent.argv)
+
+    def test_plane_stage_entrypoint_refuses_host_and_cannot_choose_input_output_paths(self):
+        from agent_ee import add_planes
+        argv = ['--board','board.kicad_pcb','--plan','planes.json']
+        with patch.object(Path, 'read_text', return_value=mount_view()), \
+             patch.object(add_planes, 'generate') as generate:
+            with self.assertRaises(fa.AnnotationError):add_planes._stage_main(argv)
+            generate.assert_not_called()  # Live source import is not the captured /tool mount.
+        with patch.object(Path, 'read_text', return_value=mount_view()), \
+             patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'), \
+             patch.object(add_planes, 'generate', return_value={'execution':'ok'}) as generate:
+            self.assertEqual(add_planes._stage_main(argv), 0)
+            args, kw = generate.call_args
+            self.assertEqual(args, ('/candidate','board.kicad_pcb','planes.json','/work/out'))
+            self.assertIsInstance(kw['_execution'], fa._StageExecution)
+            for option in ('--inputs', '--out'):
+                generate.reset_mock()
+                with patch('sys.stderr'), self.assertRaises(SystemExit) as refused:
+                    add_planes._stage_main(argv+[option, '/tmp/elsewhere'])
+                self.assertEqual(refused.exception.code, 2)
+                generate.assert_not_called()
+        with patch.object(add_planes, 'generate', return_value={'execution':'failed'}) as generate:
+            self.assertEqual(add_planes.main(argv), 1)
+            self.assertNotIn('_execution', generate.call_args.kwargs)
+
+    def test_plane_private_input_mutation_and_stage_child_failure_preserve_refusal(self):
+        from agent_ee import add_planes
+        inputs=self.root/'private-plane-inputs';inputs.mkdir();member=inputs/'board.kicad_pcb'
+        member.write_bytes(self.board.read_bytes());(inputs/'plan.json').write_text('{}')
+        def mutate(intent, *, work, **kwargs):
+            Path(work).mkdir();(Path(work)/'console.log').write_text('authored boundary mutation')
+            member.write_bytes(b'changed private input')
+            return dict(execution='ok',exit_code=0)
+        with patch.object(native_run, 'run', mutate):
+            with self.assertRaisesRegex(fa.AnnotationError,'changed its private inputs'):
+                add_planes._child(inputs,self.root/'mutated-apply',['apply','/candidate/board.kicad_pcb',
+                    '/candidate/plan.json','/work/result'],_execution=self.execution)
+            member.write_bytes(self.board.read_bytes())
+            with self.assertRaisesRegex(ValueError,'changed its private inputs'):
+                add_planes._drc(inputs,'board.kicad_pcb',self.root/'mutated-drc',_execution=self.execution)
+        candidate=self.root/'plane-candidate';candidate.mkdir();board=candidate/'board.kicad_pcb'
+        board.write_bytes(self.board.read_bytes())
+        plan={'schema':add_planes.SCHEMA,'zones':[dict(net='GND',layer='F.Cu',outline='board',
+            clearance_mm=.25,min_width_mm=.2,priority=0,island_removal='always',
+            thermal=dict(connection='thermal',gap_mm=.3,spoke_width_mm=.3))]}
+        (candidate/'planes.json').write_text(json.dumps(plan));out=self.root/'plane-failed';execution=context(out);calls=[]
+        def failed(intent, *, work, **kwargs):
+            calls.append(intent);Path(work).mkdir();(Path(work)/'console.log').write_text('authored native failure')
+            return dict(execution='failed',exit_code=9)
+        with patch.object(native_run,'run',failed):
+            report=add_planes.generate(candidate,'board.kicad_pcb','planes.json',out,_execution=execution)
+        self.assertEqual((report['execution'],report['outcome']),('failed','unknown'))
+        self.assertIn('authored native failure',str(report['findings']))
+        self.assertFalse((out/'board.kicad_pcb').exists());self.assertEqual(board.read_bytes(),self.board.read_bytes())
+        self.assertEqual(calls[0].isolation,'host');self.assertTrue((out/'native/console.log').is_file())
+        self.assertEqual((out/'native-input/board.kicad_pcb').read_bytes(),board.read_bytes())
+
     def test_private_footprint_helper_passes_the_concrete_library_and_never_clobbers_output(self):
         from agent_ee import footprint_probe
         output = self.root/'native-helper.json'
