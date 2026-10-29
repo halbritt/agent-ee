@@ -142,3 +142,50 @@ targets remain open. Evidence is under the host root above in
 `acquisition-control-build-r1`, `test-assumptions-native-r1`,
 `add-planes-existing-test-r1`, `za10a-implementation-agent700` and
 `host-review-doctor-r1`.
+
+## Product progress at 2026-10-28 20:00 PDT
+
+The real acquisition board completed its first full subscription review attempt
+through `build review --profile`. One invocation of the existing CI image kept
+the exact pinned Python and native tools, with read-only source, retained build
+and subscription credentials. No scope pin or host policy changed. The attempt
+ended with exit 1 after 968.1 seconds; its original build-report and qualification
+hashes are unchanged and its owned container was removed.
+
+The RF reviewer completed. The circuit reviewer was refused before model work:
+the 1,665,642-character prompt exceeded Codex's 1,048,576-character limit. The
+physical reviewer made 49 response updates and 248 tool updates, then exhausted
+its 900-second allowance. No authentication or quota failure was observed.
+Adjudication was not reached and engineering review remains unassessed.
+
+The complete native review produced 36 passing checks, one informational netlist
+check and two failed executions. Assembly correctly refused a 97.4-hour-old
+catalog capture against the unchanged 24-hour freshness requirement. The pinned
+geometry tool ran but could not find the declared local trace path from C3 pad 2
+to U2 pad 3. Agent-693 is examining the actual topology and measurement contract,
+and the existing path to obtain fresh catalog evidence. Neither requirement is
+waived. Native fabrication, CPL and package checks passed within this diagnostic
+review; a sealed public package and release acceptance remain outstanding.
+
+Two demonstrated software failures now have independently reviewed repairs in
+the campaign branch:
+
+- The plane stage uses its existing outer sandbox for native children. DRC gets
+  a disposable project whose exact preferences file may change, while the
+  original inputs and copied board, project and rules remain checked. The first
+  revision failed two of four native tests; the corrected revision passed both
+  failed tests in 26.6 seconds. Commits `28a77b66` and `94576b5e` contain the repair.
+- Large investigate-mode review prompts reference sections of the complete
+  read-only packet, preserving its bytes, identity and citation inventory.
+  Fixed-packet mode stays inline, and initial reviewer isolation is unchanged.
+  Commit `d1c608ef` contains the repair; `75b3a3fe` clarifies that the 400,000-character
+  packet target does not bound the whole prompt. Five focused pure tests passed.
+  The two native tests excluded by the worker's pure guard both passed under the
+  normal CI wrapper in 55.6 seconds. A live corrected-prompt review remains pending.
+
+The next productive step is to resolve the actual assembly and geometry blockers
+before another full review. Additional generic controller and validation-framework
+development remains frozen. No full-suite pass, trunk landing, M1 acceptance or
+campaign case acceptance is claimed: **0/4 cases remain accepted**. Evidence is
+retained in `acquisition-full-review-r1`, `add-planes-native-r2` and
+`prompt-transport-native-r1` beneath the host evidence root.
