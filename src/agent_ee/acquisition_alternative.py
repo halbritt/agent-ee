@@ -129,7 +129,7 @@ def _refresh_parts(root, document, context, chosen, decision_blob):
         part['selection'] = dict(kind='named', lcsc=lcsc, part_record=name,
             part_record_sha256=_blob(root, name)['sha256'],
             decision_ref={**decision_blob, 'locator': 'parts[id=' + part['id'] + ']'})
-    document['declaration_source'] = {**decision_blob, 'locator': 'parts'}
+    # Purchasing decisions do not replace the authored membership requirement.
     return parts_manifest.prepare_manifest(document, root)
 
 

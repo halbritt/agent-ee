@@ -117,3 +117,13 @@ ACQ-MECH-4 question binds that new roster and actual purchasing decision/catalog
 Primary preference is unchanged even when alternative supplier data is supplied.
 No rotation-policy adjustment, native pad-rule change, network call, supplier
 approval or engineering acceptance follows from this source-closure operation.
+
+Purchasing selection preserves the original authored parts-membership declaration.
+The purchasing decision stays in per-part selection evidence; it does not replace
+that requirement with a `parts` locator in the decision JSON. Before sealing,
+the public preparer checks the actual normal compiler mapping and binds the same
+operative spec hash/locator to the compiler's `requirements-map/spec.md` namespace.
+The normal requirements stage supplies those exact spec bytes; preparation adds
+no fake compiler namespace, requirement, scope approval or consumer exception.
+The ordinary parts_subset capability remains authoritative: a different source,
+locator or mapped membership ID still refuses, even with fresh capture hashes.

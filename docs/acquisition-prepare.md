@@ -275,3 +275,14 @@ added/removed IDs. The ACQ-MECH-4 applicability question names the operative ros
 hash and current purchasing decision/catalog; the old roster is labeled historical.
 It continues to require independent process/applicability judgment and expressly
 does not establish supplier approval or physical validation.
+
+The selected purchasing decision does not become the parts-membership requirement.
+The original authored membership citation is retained through selection. Before
+archive/seal, the preparer derives the ordinary typed requirement accounting,
+requires its one parts check/mapped requirement to match that authored citation's
+spec hash and locator, and binds the citation to the normal compiler provenance
+path. The edit ledger records this namespace binding. Per-part selection records
+still pin the purchasing decision separately. No requirement or consumer guard is
+weakened, and no compiler receipt/native acceptance is manufactured. The normal
+requirements stage later captures the same operative spec bytes into its reserved
+namespace; the input revision does not occupy that namespace itself.

@@ -181,6 +181,27 @@ class PortableCaptureTests(unittest.TestCase):
         self.assertEqual(record['fetched_at'], '2026-10-18T00:00:00+00:00')
         self.assertEqual(result['catalog'], self.context.catalog)
 
+    def test_purchasing_selection_preserves_authored_membership_capability(self):
+        from agent_ee.parts_subset import capability
+        before = copy.deepcopy(self.original_parts['declaration_source'])
+        alternative.revise(self.root, self.context)
+        path = self.root / 'parts.json'
+        document = json.loads(path.read_bytes())
+        self.assertEqual(document['declaration_source'], before)
+        params = dict(manifest='parts.json', netlist_check='netlist', requirement_id='authored-membership')
+        # An authored CPU scope over the fixture's actual declaration, not a
+        # production mapping or an engineering acceptance claim.
+        scope = dict(checks=[dict(id='netlist', kind='netlist'),
+            dict(id='parts', kind='parts_subset', params=params)], baseline=dict(requirements=[dict(
+                id='authored-membership', checks=['parts'],
+                source={k: before[k] for k in ('path', 'locator')})]))
+        result = capability(params, requirement_map.input_inventory(self.root), self.root, scope, 'parts')
+        self.assertIn('parts.json', result['immutable_inputs'])
+        document['declaration_source']['locator'] = 'parts'
+        path.write_bytes(storage.json_bytes(document))
+        with self.assertRaisesRegex(ValueError, 'parts membership must map one requirement'):
+            capability(params, requirement_map.input_inventory(self.root), self.root, scope, 'parts')
+
     def test_synthetic_primary_retained_even_with_more_alternative_stock(self):
         self.synthetic_row('C37593', stockCount=10)
         self.assertEqual(alternative.revise(self.root, self.context)['selected'], 'C37593')

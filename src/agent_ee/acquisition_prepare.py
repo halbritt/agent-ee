@@ -275,6 +275,29 @@ def _source_map(raw, selected, original_record, record):
                       for r in record['requirements'] + record['prose']])
 
 
+def _bind_parts_membership(revised, scope):
+    """Bind the retained authored citation to the normal requirement compiler source."""
+    path = Path(revised) / 'parts.json'
+    document = json.loads(path.read_bytes())
+    checks = [c for c in scope['checks'] if c['kind'] == 'parts_subset']
+    if len(checks) != 1:
+        raise ValueError('acquisition parts membership needs exactly one authored check')
+    check = checks[0]
+    mapped = [r for r in scope['baseline']['requirements'] if check['id'] in r['checks']]
+    citation = document['declaration_source']
+    expected_sha = spec_record.sha256((Path(revised) / 'spec.md').read_bytes())
+    if (len(mapped) != 1 or mapped[0]['id'] != check['params']['requirement_id'] or
+            mapped[0]['source']['path'] != requirement_map.PROVENANCE + '/spec.md' or
+            citation['path'] not in ('spec.md', mapped[0]['source']['path']) or
+            citation['sha256'] != expected_sha or citation['locator'] != mapped[0]['source']['locator']):
+        raise ValueError('authored parts declaration differs from its mapped membership requirement')
+    before = dict(citation)
+    citation['path'] = mapped[0]['source']['path']
+    path.write_bytes(json_bytes(document))
+    return dict(requirement_id=mapped[0]['id'], before=before, after=dict(citation),
+                basis='Normal requirements compiler captures this same operative specification; no decision replaces it')
+
+
 def _archive_revision(base, revised, before, identity):
     changed = {}
     for name, original in before.items():
@@ -434,6 +457,17 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             selected_closure = acquisition_selected_cpl.finalize(revised, overlay, selected_cpl)
             sources['cpl'] = selected_cpl
             overlay['added_inputs']['cpl']['files'] = recipe['selected_cpl_inventory']
+            # Match the ordinary compiler's actual authored requirement mapping,
+            # while it still remains a source revision, before archive and seal.
+            operative = typed_overlay.derive_map(
+                requirement_map.map_declaration((revised / 'requirement-map.json').read_bytes()), overlay)
+            spec = (revised / 'spec.md').read_bytes()
+            obligations = requirement_map.load_obligations(
+                json_bytes(typed_overlay.derive_obligations(record, spec, overlay)), record, spec)
+            membership_scope, _ = requirement_map.account_requirements(
+                operative, record, spec, files=requirement_map.input_inventory(revised),
+                inputs=revised, obligations=obligations)
+            membership_binding = _bind_parts_membership(revised, membership_scope)
             overlay['base']['requirement_map_sha256'] = spec_record.sha256(
                 (revised / 'requirement-map.json').read_bytes())
         changed = _archive_revision(base, revised, before, identity)
@@ -443,6 +477,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             ledger['alternative'] = dict(selected=alternative_report['selected'], context=alternative,
                 changed=alternative_report['changed'], added=alternative_report['added'],
                 catalog=alternative_report['catalog'], selected_part_inputs=selected_closure,
+                membership_binding=membership_binding,
                 captured_sources={acquisition_alternative_context.AT + '/' + n: h
                                   for n, h in context_doc['files'].items()})
             ledger_path.write_bytes(json_bytes(ledger))
